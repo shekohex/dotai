@@ -1,0 +1,10 @@
+
+.claude.json
+/.claude/projects
+/.claude/ide
+/.claude/shell-snapshots
+/.claude/statsig
+/.claude/todos
+/.claude/CLAUDE.md
+
+/.opencode/AGENTS.md

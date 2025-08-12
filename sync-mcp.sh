@@ -17,7 +17,7 @@ CLAUDE_DIR="$HOME/.claude"
 OPENCODE_DIR="$HOME/.config/opencode"
 
 # Target files
-CLAUDE_CONFIG="$CLAUDE_DIR/.claude.json"
+CLAUDE_CONFIG="$HOME/.claude.json"
 OPENCODE_CONFIG="$OPENCODE_DIR/opencode.json"
 
 # Function to print colored output
@@ -54,7 +54,7 @@ ensure_directories() {
 backup_config() {
     local config_file="$1"
     local backup_suffix="$(date +%Y%m%d_%H%M%S)"
-    
+
     if [[ -f "$config_file" ]]; then
         local backup_file="${config_file}.backup_${backup_suffix}"
         cp "$config_file" "$backup_file"
@@ -66,34 +66,34 @@ backup_config() {
 configs_differ() {
     local file1="$1"
     local file2="$2"
-    
+
     if [[ ! -f "$file1" ]] || [[ ! -f "$file2" ]]; then
         return 0  # Consider different if one doesn't exist
     fi
-    
+
     ! git diff --no-index --quiet "$file1" "$file2" 2>/dev/null
 }
 
 # Sync MCP config to Claude format
 sync_to_claude() {
     local claude_config="$1"
-    
+
     print_status "Syncing MCP config to Claude format..."
-    
+
     # Check if Claude config exists
     if [[ ! -f "$claude_config" ]]; then
         print_warning "Claude config not found, creating minimal config"
         echo '{}' > "$claude_config"
     fi
-    
+
     # Extract mcpServers from mcp.json and merge into Claude config
     local mcp_servers
     mcp_servers=$(jq '.mcpServers' "$MCP_JSON")
-    
+
     # Update Claude config with MCP servers
     jq --argjson mcpServers "$mcp_servers" '.mcpServers = $mcpServers' "$claude_config" > "$claude_config.tmp"
     mv "$claude_config.tmp" "$claude_config"
-    
+
     print_status "Claude MCP config updated"
 }
 
@@ -102,7 +102,7 @@ sync_to_claude() {
 # OpenCode: {"type": "remote", "url": "...", "enabled": true}
 transform_to_opencode_format() {
     local mcp_servers="$1"
-    
+
     echo "$mcp_servers" | jq '
         to_entries | map(
             .value as $server |
@@ -137,9 +137,9 @@ transform_to_opencode_format() {
 # Sync MCP config to OpenCode format
 sync_to_opencode() {
     local opencode_config="$1"
-    
+
     print_status "Syncing MCP config to OpenCode format..."
-    
+
     # Check if OpenCode config exists
     if [[ ! -f "$opencode_config" ]]; then
         print_warning "OpenCode config not found, creating minimal config"
@@ -152,18 +152,18 @@ sync_to_opencode() {
 }
 EOF
     fi
-    
+
     # Extract and transform mcpServers from mcp.json
     local mcp_servers
     mcp_servers=$(jq '.mcpServers' "$MCP_JSON")
-    
+
     local opencode_mcp
     opencode_mcp=$(transform_to_opencode_format "$mcp_servers")
-    
+
     # Update OpenCode config with transformed MCP servers
     jq --argjson mcp "$opencode_mcp" '.mcp = $mcp' "$opencode_config" > "$opencode_config.tmp"
     mv "$opencode_config.tmp" "$opencode_config"
-    
+
     print_status "OpenCode MCP config updated"
 }
 
@@ -172,11 +172,11 @@ prompt_if_different() {
     local config_file="$1"
     local temp_file="${config_file}.new"
     local tool_name="$2"
-    
+
     if configs_differ "$config_file" "$temp_file" 2>/dev/null; then
         print_warning "Differences found in $tool_name configuration:"
         git diff --no-index "$config_file" "$temp_file" 2>/dev/null || true
-        
+
         echo -n "Apply changes to $tool_name config? [y/N]: "
         read -r response
         if [[ "$response" =~ ^[Yy]$ ]]; then
@@ -198,27 +198,27 @@ sync_configs() {
         print_error "mcp.json not found at $MCP_JSON"
         exit 1
     fi
-    
+
     # Validate mcp.json
     if ! jq empty "$MCP_JSON" 2>/dev/null; then
         print_error "Invalid JSON in $MCP_JSON"
         exit 1
     fi
-    
+
     ensure_directories
-    
+
     # Sync to Claude
     if [[ -f "$CLAUDE_CONFIG" ]]; then
         backup_config "$CLAUDE_CONFIG"
     fi
     sync_to_claude "$CLAUDE_CONFIG"
-    
+
     # Sync to OpenCode
     if [[ -f "$OPENCODE_CONFIG" ]]; then
         backup_config "$OPENCODE_CONFIG"
     fi
     sync_to_opencode "$OPENCODE_CONFIG"
-    
+
     print_status "MCP configuration sync completed!"
 }
 
@@ -258,15 +258,15 @@ done
 # Main execution
 main() {
     print_status "Starting MCP configuration sync..."
-    
+
     check_dependencies
-    
+
     if [[ "$DRY_RUN" == "true" ]]; then
         print_status "Dry run mode - no changes will be made"
         # TODO: Implement dry run logic
         exit 0
     fi
-    
+
     sync_configs
 }
 

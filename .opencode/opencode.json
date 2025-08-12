@@ -59,6 +59,15 @@
         "FIRECRAWL_RETRY_MAX_ATTEMPTS": "10",
         "FIRECRAWL_RETRY_INITIAL_DELAY": "500"
       }
+    },
+    "gemini": {
+      "type": "local",
+      "command": [
+        "bunx",
+        "-y",
+        "gemini-mcp-tool"
+      ],
+      "enabled": true
     }
   }
 }

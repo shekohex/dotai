@@ -15,7 +15,7 @@ set "CLAUDE_DIR=%USERPROFILE%\.claude"
 set "OPENCODE_DIR=%USERPROFILE%\.config\opencode"
 
 REM Target files
-set "CLAUDE_CONFIG=%CLAUDE_DIR%\.claude.json"
+set "CLAUDE_CONFIG=%USERPROFILE%\.claude.json"
 set "OPENCODE_CONFIG=%OPENCODE_DIR%\opencode.json"
 
 goto :main

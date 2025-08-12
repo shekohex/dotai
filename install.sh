@@ -6,10 +6,15 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_CONFIG="$HOME/.claude"
 OPENCODE_CONFIG="$HOME/.config/opencode"
 
+# Source files
+AI_MD="$REPO_DIR/AI.md"
+MCP_JSON="$REPO_DIR/mcp.json"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 log_info() {
@@ -22,6 +27,36 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_title() {
+    echo -e "${BLUE}=== $1 ===${NC}"
+}
+
+# Check if required tools are available
+check_dependencies() {
+    local deps=("jq")
+    local missing=()
+    
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            missing+=("$dep")
+        fi
+    done
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_error "Missing required dependencies: ${missing[*]}"
+        echo "Please install:"
+        for dep in "${missing[@]}"; do
+            case $dep in
+                jq)
+                    echo "  - jq: https://stedolan.github.io/jq/download/"
+                    ;;
+            esac
+        done
+        return 1
+    fi
+    return 0
 }
 
 confirm_action() {
@@ -116,6 +151,42 @@ sync_directory() {
     log_info "Synced $name directory"
 }
 
+# Sync MCP configurations using dedicated script
+sync_mcp_configs() {
+    local mcp_sync_script="$REPO_DIR/sync-mcp.sh"
+    
+    if [[ ! -f "$mcp_sync_script" ]]; then
+        log_warn "MCP sync script not found at $mcp_sync_script"
+        return 0
+    fi
+    
+    if [[ ! -x "$mcp_sync_script" ]]; then
+        log_warn "MCP sync script is not executable"
+        return 0
+    fi
+    
+    if [[ ! -f "$MCP_JSON" ]]; then
+        log_warn "mcp.json not found, skipping MCP sync"
+        return 0
+    fi
+    
+    log_title "Syncing MCP Configurations"
+    
+    # Check dependencies for MCP sync
+    if ! check_dependencies; then
+        log_warn "Missing dependencies for MCP sync, skipping"
+        return 0
+    fi
+    
+    # Run the MCP sync script
+    if "$mcp_sync_script"; then
+        log_info "MCP configurations synchronized successfully"
+    else
+        log_error "Failed to sync MCP configurations"
+        return 1
+    fi
+}
+
 main() {
     log_info "AI Configuration Installer"
     log_info "Repository: $REPO_DIR"
@@ -140,9 +211,20 @@ main() {
         sync_directory "$REPO_DIR/.opencode" "$OPENCODE_CONFIG" "OpenCode"
     fi
     
+    # Sync MCP configurations
+    sync_mcp_configs
+    
     log_info "Installation complete!"
     log_info "Claude config: $CLAUDE_CONFIG"
     log_info "OpenCode config: $OPENCODE_CONFIG"
+    echo ""
+    echo "Synchronized files:"
+    echo "  - AI.md → $CLAUDE_CONFIG/CLAUDE.md"
+    echo "  - AI.md → $OPENCODE_CONFIG/AGENTS.md"
+    if [[ -f "$MCP_JSON" ]]; then
+        echo "  - mcp.json → Claude MCP servers"
+        echo "  - mcp.json → OpenCode MCP servers"
+    fi
 }
 
 # Check if script is being sourced or executed

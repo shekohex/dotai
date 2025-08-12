@@ -5,6 +5,10 @@ set "REPO_DIR=%~dp0"
 set "CLAUDE_CONFIG=%USERPROFILE%\.claude"
 set "OPENCODE_CONFIG=%USERPROFILE%\.config\opencode"
 
+REM Source files
+set "AI_MD=%REPO_DIR%AI.md"
+set "MCP_JSON=%REPO_DIR%mcp.json"
+
 echo [INFO] AI Configuration Installer
 echo [INFO] Repository: %REPO_DIR%
 
@@ -78,6 +82,47 @@ xcopy "%source_dir%\*" "%target_dir%\" /E /I /Y /Q 2>nul
 echo [INFO] Synced %name% directory
 goto :eof
 
+:check_dependencies
+REM Check if jq is available
+where jq >nul 2>&1
+if !errorlevel! neq 0 (
+    echo [WARN] jq is required for MCP sync but not installed
+    echo [WARN] Please install jq from: https://stedolan.github.io/jq/download/
+    exit /b 1
+)
+goto :eof
+
+:sync_mcp_configs
+set "mcp_sync_script=%REPO_DIR%sync-mcp.bat"
+
+if not exist "%mcp_sync_script%" (
+    echo [WARN] MCP sync script not found at %mcp_sync_script%
+    goto :eof
+)
+
+if not exist "%MCP_JSON%" (
+    echo [WARN] mcp.json not found, skipping MCP sync
+    goto :eof
+)
+
+echo === Syncing MCP Configurations ===
+
+REM Check dependencies for MCP sync
+call :check_dependencies
+if !errorlevel! neq 0 (
+    echo [WARN] Missing dependencies for MCP sync, skipping
+    goto :eof
+)
+
+REM Run the MCP sync script
+call "%mcp_sync_script%"
+if !errorlevel! equ 0 (
+    echo [INFO] MCP configurations synchronized successfully
+) else (
+    echo [ERROR] Failed to sync MCP configurations
+)
+goto :eof
+
 :main
 REM Sync AI.md to CLAUDE.md
 call :check_and_sync_file "%REPO_DIR%AI.md" "%CLAUDE_CONFIG%\CLAUDE.md" "Claude instructions"
@@ -97,8 +142,19 @@ if exist "%REPO_DIR%.opencode" (
     call :sync_directory "%REPO_DIR%.opencode" "%OPENCODE_CONFIG%" "OpenCode"
 )
 
+REM Sync MCP configurations
+call :sync_mcp_configs
+
 echo [INFO] Installation complete!
 echo [INFO] Claude config: %CLAUDE_CONFIG%
 echo [INFO] OpenCode config: %OPENCODE_CONFIG%
+echo.
+echo Synchronized files:
+echo   - AI.md → %CLAUDE_CONFIG%\CLAUDE.md
+echo   - AI.md → %OPENCODE_CONFIG%\AGENTS.md
+if exist "%MCP_JSON%" (
+    echo   - mcp.json → Claude MCP servers
+    echo   - mcp.json → OpenCode MCP servers
+)
 
 endlocal

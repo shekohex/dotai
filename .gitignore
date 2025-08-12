@@ -8,3 +8,5 @@
 /.claude/CLAUDE.md
 
 /.opencode/AGENTS.md
+
+*.backup_*

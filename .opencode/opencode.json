@@ -45,10 +45,10 @@
       "url": "https://mcp.grep.app",
       "enabled": true
     },
-    "firecrawl": {
+    "firecrawl-mcp": {
       "type": "local",
       "command": [
-        "npx",
+        "bunx",
         "-y",
         "firecrawl-mcp"
       ],

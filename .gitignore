@@ -9,4 +9,10 @@
 
 /.opencode/AGENTS.md
 
+# Backup files (format: filename.backup.YYYYMMDD_HHMMSS)
+*.backup.*
 *.backup_*
+
+# Log and database files
+*.log
+*.db

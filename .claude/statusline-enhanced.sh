@@ -11,6 +11,7 @@ GREEN='\033[92m'     # Haiku
 WHITE='\033[97m'     # Unknown
 YELLOW='\033[93m'    # Project name
 GRAY='\033[90m'      # Cached tokens
+BLUE='\033[94m'      # Git branch
 BOLD='\033[1m'
 
 # Function to format numbers with thousand separators
@@ -41,6 +42,19 @@ get_project_name() {
         basename "$project_dir"
     else
         echo "unknown"
+    fi
+}
+
+# Function to get git branch
+get_git_branch() {
+    local project_dir="$1"
+    local branch=""
+    
+    if [[ -n "$project_dir" && -d "$project_dir" ]]; then
+        # Change to project directory and get branch
+        if branch=$(cd "$project_dir" && git rev-parse --abbrev-ref HEAD 2>/dev/null); then
+            echo "$branch"
+        fi
     fi
 }
 
@@ -114,6 +128,9 @@ main() {
     # Get project name
     local project_name=$(get_project_name "$project_dir")
     
+    # Get git branch
+    local git_branch=$(get_git_branch "$project_dir")
+    
     # Calculate tokens
     local token_info=($(calculate_tokens "$transcript_path"))
     local total_tokens=${token_info[0]:-0}
@@ -134,6 +151,11 @@ main() {
     
     # Project name in yellow
     status_line+="${BOLD}${YELLOW}${project_name}${RESET}"
+    
+    # Git branch (if available)
+    if [[ -n "$git_branch" ]]; then
+        status_line+=" | ${BLUE}⎇ ${git_branch}${RESET}"
+    fi
     
     # Tokens section
     if [[ "$total_tokens" -gt 0 ]]; then

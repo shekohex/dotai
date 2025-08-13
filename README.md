@@ -225,6 +225,65 @@ chmod +x sync-mcp.sh
 **Windows:**
 Ensure the batch file is accessible and jq is in your PATH.
 
+## Claude Notification System Configuration
+
+The Claude notification system supports configurable working hours to prevent notifications during sleep hours. Configuration is managed through `claude-notify-config.json` alongside the notification script.
+
+### Configuration File: claude-notify-config.json
+
+```json
+{
+  "working_hours": {
+    "enabled": true,
+    "timezone": "Africa/Cairo",
+    "schedule": {
+      "monday": {"start": "09:00", "end": "18:00"},
+      "tuesday": {"start": "09:00", "end": "18:00"},
+      "wednesday": {"start": "09:00", "end": "18:00"},
+      "thursday": {"start": "09:00", "end": "18:00"},
+      "friday": {"start": "09:00", "end": "18:00"},
+      "saturday": {"start": "10:00", "end": "14:00"},
+      "sunday": {"enabled": false}
+    }
+  },
+  "notifications": {
+    "ntfy_topic": "claude-code",
+    "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
+    "notify_delay": 30,
+    "activity_window": 90,
+    "notify_tool_activity": false
+  }
+}
+```
+
+### Configuration Options
+
+#### Working Hours
+- **enabled**: Enable/disable working hours filtering (boolean)
+- **timezone**: Timezone for working hours (e.g., "Africa/Cairo", "America/New_York")
+- **schedule**: Per-day working hours configuration
+  - **[day]**: Each day can have `start`/`end` times in "HH:MM" format (24-hour)
+  - **enabled**: Set to `false` to disable notifications for entire day
+
+#### Notifications
+- **ntfy_topic**: ntfy topic name for notifications
+- **ntfy_icon**: Icon URL displayed in notifications
+- **notify_delay**: Delay in seconds before sending notifications (default: 30)
+- **activity_window**: Window in seconds to cancel notifications on user activity (default: 90)
+- **notify_tool_activity**: Send notifications for tool activity (boolean, default: false)
+
+### Environment Variable Overrides
+
+Environment variables override JSON configuration values:
+
+- `CLAUDE_NTFY_TOPIC`: Override ntfy topic
+- `CLAUDE_NTFY_ICON`: Override notification icon
+- `CLAUDE_NOTIFY_DELAY`: Override notification delay (seconds)
+- `CLAUDE_ACTIVITY_WINDOW`: Override activity window (seconds)
+- `CLAUDE_NOTIFY_TOOL_ACTIVITY`: Override tool activity notifications ("true"/"false")
+- `CLAUDE_WORKING_HOURS_ENABLED`: Override working hours enable ("true"/"false")
+- `CLAUDE_WORKING_HOURS_TIMEZONE`: Override working hours timezone
+
 ## Backup and Recovery
 
 Backups are automatically created with timestamps:

@@ -17,6 +17,22 @@ import multiprocessing
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime, timezone, timedelta
 
+# Python 3.9+ has zoneinfo, fallback to UTC for older versions
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    # Fallback for Python < 3.9
+    class ZoneInfo:
+        def __init__(self, key):
+            self.key = key
+            
+        def __repr__(self):
+            return f"ZoneInfo({self.key})"
+    
+    # For older Python versions, we'll use UTC as fallback
+    import warnings
+    warnings.warn("zoneinfo not available, timezone support limited to UTC", ImportWarning)
+
 # Windows compatibility imports
 if platform.system() == 'Windows':
     import psutil
@@ -133,10 +149,22 @@ class ClaudePromptTracker:
         """Initialize the prompt tracker with database setup"""
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.db_path = os.path.join(script_dir, "claude-notify.db")
-        self.ntfy_topic = os.environ.get('CLAUDE_NTFY_TOPIC', 'claude-code')
-        self.ntfy_icon = os.environ.get('CLAUDE_NTFY_ICON', 'https://claude.ai/images/claude_app_icon.png')
-        self.notify_delay = int(os.environ.get('CLAUDE_NOTIFY_DELAY', '30'))
-        self.activity_window = int(os.environ.get('CLAUDE_ACTIVITY_WINDOW', '90'))
+        self.config_path = os.path.join(script_dir, "claude-notify-config.json")
+        
+        # Load configuration
+        self.config = self._load_config()
+        
+        # Set notification settings with env overrides
+        self.ntfy_topic = os.environ.get('CLAUDE_NTFY_TOPIC', self.config['notifications']['ntfy_topic'])
+        self.ntfy_icon = os.environ.get('CLAUDE_NTFY_ICON', self.config['notifications']['ntfy_icon'])
+        self.notify_delay = int(os.environ.get('CLAUDE_NOTIFY_DELAY', str(self.config['notifications']['notify_delay'])))
+        self.activity_window = int(os.environ.get('CLAUDE_ACTIVITY_WINDOW', str(self.config['notifications']['activity_window'])))
+        
+        # Working hours settings with env overrides
+        self.working_hours_enabled = os.environ.get('CLAUDE_WORKING_HOURS_ENABLED', str(self.config['working_hours']['enabled'])).lower() == 'true'
+        self.working_hours_timezone = os.environ.get('CLAUDE_WORKING_HOURS_TIMEZONE', self.config['working_hours']['timezone'])
+        self.working_hours_schedule = self.config['working_hours']['schedule']
+        
         self.setup_logging()
 
         try:
@@ -147,6 +175,54 @@ class ClaudePromptTracker:
             print(error_msg, file=sys.stderr)
             logging.error(error_msg)
             raise
+
+    def _load_config(self):
+        """Load configuration from JSON file with defaults"""
+        default_config = {
+            "working_hours": {
+                "enabled": False,
+                "timezone": "UTC",
+                "schedule": {
+                    "monday": {"start": "09:00", "end": "17:00"},
+                    "tuesday": {"start": "09:00", "end": "17:00"},
+                    "wednesday": {"start": "09:00", "end": "17:00"},
+                    "thursday": {"start": "09:00", "end": "17:00"},
+                    "friday": {"start": "09:00", "end": "17:00"},
+                    "saturday": {"enabled": False},
+                    "sunday": {"enabled": False}
+                }
+            },
+            "notifications": {
+                "ntfy_topic": "claude-code",
+                "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
+                "notify_delay": 30,
+                "activity_window": 90,
+                "notify_tool_activity": False
+            }
+        }
+        
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    user_config = json.load(f)
+                
+                # Merge user config with defaults
+                config = default_config.copy()
+                if 'working_hours' in user_config:
+                    config['working_hours'].update(user_config['working_hours'])
+                    if 'schedule' in user_config['working_hours']:
+                        config['working_hours']['schedule'].update(user_config['working_hours']['schedule'])
+                if 'notifications' in user_config:
+                    config['notifications'].update(user_config['notifications'])
+                
+                return config
+            else:
+                logging.info(f"Config file not found at {self.config_path}, using defaults")
+                return default_config
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Error loading config file {self.config_path}: {e}")
+            logging.info("Using default configuration")
+            return default_config
 
     def setup_logging(self):
         """Setup logging to file with daily rotation"""
@@ -465,6 +541,11 @@ class ClaudePromptTracker:
 
     def send_notification(self, title, message, cwd=None, notification_context=None):
         """Send enhanced notification using ntfy with rich content and actions"""
+        # Check working hours before sending notification
+        if not self._is_within_working_hours():
+            logging.info(f"Notification suppressed - outside working hours: {title} - {message}")
+            return
+        
         from datetime import datetime
         current_time = datetime.now().strftime("%B %d, %Y at %H:%M")
 
@@ -578,6 +659,61 @@ class ClaudePromptTracker:
                 })
 
         return enhanced
+
+    def _is_within_working_hours(self):
+        """Check if current time is within configured working hours"""
+        if not self.working_hours_enabled:
+            return True
+        
+        try:
+            # Get current time in the configured timezone
+            if 'ZoneInfo' in globals() and hasattr(ZoneInfo, '__call__'):
+                try:
+                    tz = ZoneInfo(self.working_hours_timezone)
+                    current_time = datetime.now(tz)
+                except Exception:
+                    # Fallback to UTC if timezone is invalid
+                    current_time = datetime.now(timezone.utc)
+                    logging.warning(f"Invalid timezone {self.working_hours_timezone}, using UTC")
+            else:
+                # Fallback for Python < 3.9
+                current_time = datetime.now(timezone.utc)
+                logging.warning("Using UTC as timezone fallback")
+            
+            # Get current day of week (lowercase)
+            current_day = current_time.strftime('%A').lower()
+            
+            # Check if day is configured and enabled
+            if current_day not in self.working_hours_schedule:
+                return False
+                
+            day_config = self.working_hours_schedule[current_day]
+            
+            # Check if day is explicitly disabled
+            if 'enabled' in day_config and not day_config['enabled']:
+                return False
+            
+            # Check if start/end times are configured
+            if 'start' not in day_config or 'end' not in day_config:
+                return False
+            
+            # Parse start and end times
+            start_time = datetime.strptime(day_config['start'], '%H:%M').time()
+            end_time = datetime.strptime(day_config['end'], '%H:%M').time()
+            current_time_only = current_time.time()
+            
+            # Check if current time is within working hours
+            if start_time <= end_time:
+                # Normal case: start time is before end time
+                return start_time <= current_time_only <= end_time
+            else:
+                # Edge case: working hours span midnight
+                return current_time_only >= start_time or current_time_only <= end_time
+                
+        except Exception as e:
+            logging.error(f"Error checking working hours: {e}")
+            # On error, allow notifications to prevent missing important ones
+            return True
 
     def _format_message_plain(self, message):
         """Format a basic message in plain text"""

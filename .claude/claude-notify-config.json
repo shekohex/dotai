@@ -1,0 +1,22 @@
+{
+  "working_hours": {
+    "enabled": true,
+    "timezone": "Africa/Cairo",
+    "schedule": {
+      "monday": {"start": "09:00", "end": "18:00"},
+      "tuesday": {"start": "09:00", "end": "18:00"},
+      "wednesday": {"start": "09:00", "end": "18:00"},
+      "thursday": {"start": "09:00", "end": "18:00"},
+      "friday": {"start": "09:00", "end": "18:00"},
+      "saturday": {"start": "10:00", "end": "14:00"},
+      "sunday": {"enabled": false}
+    }
+  },
+  "notifications": {
+    "ntfy_topic": "claude-code",
+    "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
+    "notify_delay": 30,
+    "activity_window": 90,
+    "notify_tool_activity": false
+  }
+}

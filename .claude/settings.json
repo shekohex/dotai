@@ -19,6 +19,10 @@
           {
             "type": "command",
             "command": "claude-code-wakatime"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/claude-notify.py PostToolUse"
           }
         ]
       }
@@ -30,6 +34,10 @@
           {
             "type": "command",
             "command": "claude-code-wakatime"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/claude-notify.py UserPromptSubmit"
           }
         ]
       }
@@ -52,6 +60,21 @@
           {
             "type": "command",
             "command": "claude-code-wakatime"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/claude-notify.py Stop"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/claude-notify.py Notification"
           }
         ]
       }

@@ -1,5 +1,24 @@
 {
+  "theme": "dark",
+  "autoUpdates": false,
   "includeCoAuthoredBy": false,
+  "cleanupPeriodDays": 90,
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline-enhanced.sh"
+  },
+  "env": {
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
+  },
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)"
+    ],
+    "defaultMode": "plan"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -80,5 +99,5 @@
       }
     ]
   },
-  "model": "sonnet"
+  "model": "opusplan"
 }

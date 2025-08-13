@@ -13,6 +13,7 @@
     }
   },
   "notifications": {
+    "enabled": false,
     "ntfy_topic": "claude-code",
     "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
     "notify_delay": 30,

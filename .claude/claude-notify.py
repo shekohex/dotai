@@ -155,6 +155,7 @@ class ClaudePromptTracker:
         self.config = self._load_config()
         
         # Set notification settings with env overrides
+        self.notifications_enabled = os.environ.get('CLAUDE_NOTIFICATIONS_ENABLED', str(self.config['notifications'].get('enabled', True))).lower() == 'true'
         self.ntfy_topic = os.environ.get('CLAUDE_NTFY_TOPIC', self.config['notifications']['ntfy_topic'])
         self.ntfy_icon = os.environ.get('CLAUDE_NTFY_ICON', self.config['notifications']['ntfy_icon'])
         self.notify_delay = int(os.environ.get('CLAUDE_NOTIFY_DELAY', str(self.config['notifications']['notify_delay'])))
@@ -193,6 +194,7 @@ class ClaudePromptTracker:
                 }
             },
             "notifications": {
+                "enabled": True,
                 "ntfy_topic": "claude-code",
                 "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
                 "notify_delay": 30,
@@ -405,6 +407,11 @@ class ClaudePromptTracker:
 
     def handle_notification(self, data):
         """Handle Notification event - schedule delayed notifications with enhanced context detection"""
+        # Check if notifications are enabled
+        if not self.notifications_enabled:
+            logging.info("Notification event ignored - notifications disabled")
+            return
+            
         session_id = data.get('session_id')
         message = data.get('message', '')
         cwd = data.get('cwd', '')
@@ -541,6 +548,11 @@ class ClaudePromptTracker:
 
     def send_notification(self, title, message, cwd=None, notification_context=None):
         """Send enhanced notification using ntfy with rich content and actions"""
+        # Check if notifications are enabled
+        if not self.notifications_enabled:
+            logging.info(f"Notification disabled: {title} - {message}")
+            return
+        
         # Check working hours before sending notification
         if not self._is_within_working_hours():
             logging.info(f"Notification suppressed - outside working hours: {title} - {message}")
@@ -814,9 +826,7 @@ class ClaudePromptTracker:
 
     @safe_db_operation
     def _cancel_recent_notifications(self, conn, session_id, reason):
-        """Cancel recent pending notifications due to user activity"""
-        cutoff_time = datetime.now() - timedelta(seconds=self.activity_window)
-
+        """Cancel all pending notifications for the session due to user activity"""
         # Get PIDs of watchers to terminate
         cursor = conn.execute("""
             SELECT DISTINCT watcher_pid
@@ -824,9 +834,8 @@ class ClaudePromptTracker:
             WHERE session_id = ?
               AND sent = 0
               AND cancelled = 0
-              AND scheduled_at > ?
               AND watcher_pid IS NOT NULL
-        """, (session_id, cutoff_time))
+        """, (session_id,))
 
         watcher_pids = [row[0] for row in cursor.fetchall() if row[0]]
 
@@ -837,8 +846,7 @@ class ClaudePromptTracker:
             WHERE session_id = ?
               AND sent = 0
               AND cancelled = 0
-              AND scheduled_at > ?
-        """, (session_id, cutoff_time))
+        """, (session_id,))
 
         # Terminate watcher processes
         for pid in watcher_pids:
@@ -907,6 +915,11 @@ class ClaudePromptTracker:
     @safe_db_operation
     def _send_scheduled_notification(self, conn, notification_id):
         """Send a scheduled notification if it hasn't been cancelled"""
+        # Check if notifications are enabled
+        if not self.notifications_enabled:
+            logging.info(f"Scheduled notification {notification_id} skipped - notifications disabled")
+            return False
+            
         cursor = conn.execute("""
             SELECT session_id, message, cwd, notification_type, context_info, cancelled, sent
             FROM notifications

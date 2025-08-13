@@ -247,6 +247,7 @@ The Claude notification system supports configurable working hours to prevent no
     }
   },
   "notifications": {
+    "enabled": true,
     "ntfy_topic": "claude-code",
     "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
     "notify_delay": 30,
@@ -266,6 +267,7 @@ The Claude notification system supports configurable working hours to prevent no
   - **enabled**: Set to `false` to disable notifications for entire day
 
 #### Notifications
+- **enabled**: Enable/disable all notifications globally (boolean, default: true)
 - **ntfy_topic**: ntfy topic name for notifications
 - **ntfy_icon**: Icon URL displayed in notifications
 - **notify_delay**: Delay in seconds before sending notifications (default: 30)
@@ -276,6 +278,7 @@ The Claude notification system supports configurable working hours to prevent no
 
 Environment variables override JSON configuration values:
 
+- `CLAUDE_NOTIFICATIONS_ENABLED`: Override global notification enable ("true"/"false")
 - `CLAUDE_NTFY_TOPIC`: Override ntfy topic
 - `CLAUDE_NTFY_ICON`: Override notification icon
 - `CLAUDE_NOTIFY_DELAY`: Override notification delay (seconds)
@@ -283,6 +286,19 @@ Environment variables override JSON configuration values:
 - `CLAUDE_NOTIFY_TOOL_ACTIVITY`: Override tool activity notifications ("true"/"false")
 - `CLAUDE_WORKING_HOURS_ENABLED`: Override working hours enable ("true"/"false")
 - `CLAUDE_WORKING_HOURS_TIMEZONE`: Override working hours timezone
+
+### Notification Toggle Slash Command
+
+A convenient `/notification` slash command is available for quickly toggling notifications on/off:
+
+#### Usage:
+- `/notification` - Show current notification status
+- `/notification on` - Enable all notifications
+- `/notification off` - Disable all notifications  
+- `/notification status` - Show current notification status
+
+#### How it works:
+The command modifies the `notifications.enabled` field in `~/.claude/claude-notify-config.json`. When disabled, all notification hooks will exit early without sending any notifications through ntfy. This provides an immediate way to control notifications across all Claude Code sessions.
 
 ## Backup and Recovery
 

@@ -2,6 +2,26 @@
 
 A unified configuration management system for AI tools including Claude Code and OpenCode. This repository synchronizes configuration files and AI instructions across different AI development environments.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+  - [Required Dependencies](#required-dependencies)
+  - [Installation Instructions](#installation-instructions)
+    - [macOS](#macos)
+    - [Linux (Ubuntu/Debian)](#linux-ubuntudebian)
+    - [Linux (CentOS/RHEL/Fedora)](#linux-centosrhelfedora)
+    - [Arch Linux](#arch-linux)
+    - [Windows](#windows)
+- [Target Locations](#target-locations)
+- [Configuration Files](#configuration-files)
+- [Installation](#installation)
+- [Features](#features)
+- [Usage Examples](#usage-examples)
+- [Claude Notification System Configuration](#claude-notification-system-configuration)
+- [Troubleshooting](#troubleshooting)
+- [Backup and Recovery](#backup-and-recovery)
+
 ## Overview
 
 This system manages AI tool configurations by:
@@ -11,6 +31,175 @@ This system manages AI tool configurations by:
 - Copying configuration directories to their expected locations
 - Providing diff-based confirmation for file changes
 - Supporting both Unix-like systems and Windows
+
+## Prerequisites
+
+### Required Dependencies
+
+This system requires several command-line tools to function properly:
+
+#### Core Dependencies (Required)
+- **jq** - JSON processor for MCP configuration transformation
+- **bash** (Unix/Linux/macOS) or **cmd** (Windows) - Shell execution
+- **cmp** (Unix/Linux/macOS) or **fc** (Windows) - File comparison
+
+#### Notification System Dependencies
+- **ntfy** - Cross-platform notification service for Claude Code notifications
+- **curl** - HTTP client (usually pre-installed, used by ntfy)
+
+#### Optional Dependencies (Recommended)
+- **git** - Version control system (provides better diff output, fallback available)
+- **rsync** (Unix/Linux/macOS) - Efficient directory synchronization (fallback to cp available)
+- **diff** - Text comparison tool (fallback when git unavailable)
+
+### Installation Instructions
+
+#### macOS
+
+Using [Homebrew](https://brew.sh/) (recommended):
+
+```bash
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install required dependencies
+brew install jq ntfy git
+
+# rsync and diff are usually pre-installed on macOS
+```
+
+Using [MacPorts](https://www.macports.org/):
+
+```bash
+# Install required dependencies
+sudo port install jq git
+pip3 install ntfy-sh  # ntfy via pip
+```
+
+#### Linux (Ubuntu/Debian)
+
+```bash
+# Update package list
+sudo apt update
+
+# Install required dependencies
+sudo apt install jq git rsync curl
+
+# Install ntfy
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://archive.heckel.io/apt/pubkey.txt | sudo gpg --dearmor -o /etc/apt/keyrings/archive.heckel.io.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/archive.heckel.io.gpg] https://archive.heckel.io/apt debian main" | sudo tee /etc/apt/sources.list.d/archive.heckel.io.list
+sudo apt update
+sudo apt install ntfy
+
+# Alternative: Install ntfy via pip
+# pip3 install ntfy-sh
+```
+
+#### Linux (CentOS/RHEL/Fedora)
+
+**CentOS/RHEL:**
+```bash
+# Install EPEL repository (CentOS/RHEL)
+sudo yum install epel-release
+
+# Install required dependencies
+sudo yum install jq git rsync curl
+
+# Install ntfy via pip
+sudo yum install python3-pip
+pip3 install ntfy-sh
+```
+
+**Fedora:**
+```bash
+# Install required dependencies
+sudo dnf install jq git rsync curl
+
+# Install ntfy via pip
+pip3 install ntfy-sh
+```
+
+#### Arch Linux
+
+```bash
+# Install required dependencies from official repositories
+sudo pacman -S jq git rsync curl
+
+# Install ntfy from AUR
+yay -S ntfy-sh
+# or using paru: paru -S ntfy-sh
+# or manually: git clone https://aur.archlinux.org/ntfy-sh.git && cd ntfy-sh && makepkg -si
+```
+
+#### Windows
+
+**Using [Chocolatey](https://chocolatey.org/) (recommended):**
+
+```powershell
+# Install Chocolatey if not already installed
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# Install required dependencies
+choco install jq git curl
+
+# Install ntfy via pip (requires Python)
+choco install python
+pip install ntfy-sh
+```
+
+**Using [Scoop](https://scoop.sh/):**
+
+```powershell
+# Install Scoop if not already installed
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+irm get.scoop.sh | iex
+
+# Install required dependencies
+scoop install jq git curl
+
+# Install ntfy via pip
+scoop install python
+pip install ntfy-sh
+```
+
+**Manual Installation:**
+
+1. **jq**: Download from [https://stedolan.github.io/jq/download/](https://stedolan.github.io/jq/download/)
+2. **git**: Download from [https://git-scm.com/download/win](https://git-scm.com/download/win)
+3. **curl**: Usually included with Windows 10+ or download from [https://curl.se/windows/](https://curl.se/windows/)
+4. **ntfy**: Install Python from [https://python.org](https://python.org), then run `pip install ntfy-sh`
+
+**Using Windows Subsystem for Linux (WSL):**
+
+```bash
+# Install WSL if not already installed (run in PowerShell as Administrator)
+wsl --install
+
+# Inside WSL, follow the Linux Ubuntu/Debian instructions above
+```
+
+#### Verification
+
+After installation, verify all dependencies are working:
+
+```bash
+# Check core dependencies
+jq --version
+git --version
+
+# Check notification dependencies  
+ntfy --version
+curl --version
+
+# Check optional dependencies (Unix/Linux/macOS)
+rsync --version
+diff --version
+
+# Windows equivalents
+fc /?  # File compare (Windows)
+xcopy /?  # Directory copy (Windows)
+```
 
 ## Target Locations
 
@@ -108,7 +297,9 @@ install.bat
 - Provides clear error messages and colored output
 - Graceful fallbacks when optional tools are unavailable
 
-## Required Tools
+## Legacy Tool Requirements
+
+The following tools are required by the installation scripts as documented above. See the [Prerequisites](#prerequisites) section for detailed installation instructions.
 
 ### Unix/macOS/Linux
 - **bash** - Shell execution
@@ -203,11 +394,10 @@ The installer works without git but provides better diff output when git is avai
 Directory synchronization falls back to `cp` when rsync is unavailable.
 
 ### jq Not Available
-MCP synchronization requires `jq` for JSON processing. Install it from:
-- **macOS**: `brew install jq`
-- **Ubuntu/Debian**: `sudo apt-get install jq`
-- **CentOS/RHEL**: `sudo yum install jq`
-- **Windows**: Download from https://stedolan.github.io/jq/download/
+MCP synchronization requires `jq` for JSON processing. See the [Prerequisites](#prerequisites) section for detailed installation instructions for your platform.
+
+### ntfy Not Available
+The Claude notification system requires `ntfy` for cross-platform notifications. See the [Prerequisites](#prerequisites) section for detailed installation instructions for your platform.
 
 ### Invalid MCP Configuration
 If you see "Invalid JSON in mcp.json", validate your JSON syntax:

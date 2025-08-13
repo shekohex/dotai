@@ -3,13 +3,13 @@
     "enabled": true,
     "timezone": "Africa/Cairo",
     "schedule": {
-      "monday": {"start": "09:00", "end": "18:00"},
-      "tuesday": {"start": "09:00", "end": "18:00"},
-      "wednesday": {"start": "09:00", "end": "18:00"},
-      "thursday": {"start": "09:00", "end": "18:00"},
-      "friday": {"start": "09:00", "end": "18:00"},
-      "saturday": {"start": "10:00", "end": "14:00"},
-      "sunday": {"enabled": false}
+      "monday": {"start": "10:00", "end": "03:00"},
+      "tuesday": {"start": "10:00", "end": "03:00"},
+      "wednesday": {"start": "10:00", "end": "03:00"},
+      "thursday": {"start": "10:00", "end": "03:00"},
+      "friday": {"start": "10:00", "end": "03:00"},
+      "saturday": {"start": "10:00", "end": "03:00"},
+      "sunday": {"start": "10:00", "end": "03:00"}
     }
   },
   "notifications": {

@@ -15,4 +15,5 @@
 
 # Log and database files
 *.log
+*.log.*
 *.db

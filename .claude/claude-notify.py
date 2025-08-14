@@ -573,8 +573,9 @@ class ClaudePromptTracker:
             title, message, cwd, notification_context
         )
 
-        # Combine message with timestamp in plain text format
-        full_message = f"{enhanced_content['message']} ({current_time})"
+        # Get hostname and combine message with timestamp and hostname
+        hostname = platform.node()
+        full_message = f"{enhanced_content['message']} ({current_time}) [host: {hostname}]"
 
         try:
             # Check if ntfy is available

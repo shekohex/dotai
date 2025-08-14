@@ -3,20 +3,20 @@
     "enabled": true,
     "timezone": "Africa/Cairo",
     "schedule": {
-      "monday": {"start": "10:00", "end": "03:00"},
-      "tuesday": {"start": "10:00", "end": "03:00"},
-      "wednesday": {"start": "10:00", "end": "03:00"},
-      "thursday": {"start": "10:00", "end": "03:00"},
-      "friday": {"start": "10:00", "end": "03:00"},
-      "saturday": {"start": "10:00", "end": "03:00"},
-      "sunday": {"start": "10:00", "end": "03:00"}
+      "monday": { "start": "10:00", "end": "03:00" },
+      "tuesday": { "start": "10:00", "end": "03:00" },
+      "wednesday": { "start": "10:00", "end": "03:00" },
+      "thursday": { "start": "10:00", "end": "03:00" },
+      "friday": { "start": "10:00", "end": "03:00" },
+      "saturday": { "start": "10:00", "end": "03:00" },
+      "sunday": { "start": "10:00", "end": "03:00" }
     }
   },
   "notifications": {
-    "enabled": false,
+    "enabled": true,
     "ntfy_topic": "claude-code",
     "ntfy_icon": "https://claude.ai/images/claude_app_icon.png",
-    "notify_delay": 30,
+    "notify_delay": 60,
     "activity_window": 90,
     "notify_tool_activity": false
   }

@@ -11,6 +11,7 @@
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
   "permissions": {
+    "allow": ["Bash(gh issue view)"],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",

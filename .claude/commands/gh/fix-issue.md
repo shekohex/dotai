@@ -11,10 +11,13 @@ Follow these steps:
 1. Use `gh issue view` to get the issue details
 2. Understand the problem described in the issue
 3. Search the codebase for relevant files
-4. Implement the necessary changes to fix the issue
-5. Write and run tests to verify the fix
-6. Ensure code passes linting and type checking
-7. Create a descriptive commit message by using the `git-commiter` subagent
-8. Push and create a PR
+4. IMPORTANT: Before you make any changes, ensure you are on the correct git branch
+   - If not, switch to the appropriate branch using `git checkout <branch-name>`
+   - If the branch does not exist, create it using `git checkout -b shady/<new-branch-name>`
+5. Implement the necessary changes to fix the issue
+6. Write and run tests to verify the fix
+7. Ensure code passes linting and type checking
+8. Create a descriptive commit message by using the `git-commiter` subagent
+9. Push and create a PR against the branch we used as our base in step 4
 
 Remember to use the GitHub CLI (`gh`) for all GitHub-related tasks.

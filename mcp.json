@@ -9,8 +9,9 @@
       "url": "https://mcp.grep.app"
     },
     "firecrawl-mcp": {
-      "command": "bunx",
+      "command": "bun",
       "args": [
+        "x",
         "-y",
         "firecrawl-mcp"
       ],
@@ -22,15 +23,17 @@
       }
     },
     "gemini": {
-      "command": "bunx",
+      "command": "bun",
       "args": [
+        "x",
         "-y",
         "gemini-mcp-tool"
       ]
     },
     "taskmaster-ai": {
-      "command": "bunx",
+      "command": "bun",
       "args": [
+        "x",
         "-y",
         "--package=task-master-ai",
         "task-master-ai"

@@ -5,13 +5,15 @@
   "cleanupPeriodDays": 90,
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline-enhanced.sh"
+    "command": "python3 \"%USERPROFILE%\\.claude\\statusline-enhanced.py\""
   },
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
   "permissions": {
-    "allow": ["Bash(gh issue view)"],
+    "allow": [
+      "Bash(gh issue view)"
+    ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
@@ -42,7 +44,7 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/claude-notify.py PostToolUse"
+            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" PostToolUse"
           }
         ]
       }
@@ -57,7 +59,7 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/claude-notify.py UserPromptSubmit"
+            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" UserPromptSubmit"
           }
         ]
       }
@@ -83,7 +85,7 @@
           },
           {
             "type": "command",
-            "command": "python3 ~/.claude/claude-notify.py Stop"
+            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" Stop"
           }
         ]
       }
@@ -94,7 +96,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/claude-notify.py Notification"
+            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" Notification"
           }
         ]
       }

@@ -12,6 +12,8 @@ set "MCP_JSON=%REPO_DIR%mcp.json"
 echo [INFO] AI Configuration Installer
 echo [INFO] Repository: %REPO_DIR%
 
+goto :main
+
 :check_and_sync_file
 set "source=%~1"
 set "target=%~2"

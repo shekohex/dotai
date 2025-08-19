@@ -57,14 +57,17 @@ if not exist "%claude_config%" (
     echo {}> "%claude_config%"
 )
 
-REM Extract mcpServers from mcp.json and merge into Claude config
-for /f "delims=" %%i in ('jq ".mcpServers" "%MCP_JSON%"') do set "mcp_servers=%%i"
+REM Use the cross-platform jq utility
+set "temp_mcp=%TEMP%\mcp_servers_%RANDOM%.json"
+call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" ".mcpServers"
+if !errorlevel! neq 0 goto :eof
 
-REM Update Claude config with MCP servers
-jq --argjson mcpServers "!mcp_servers!" ".mcpServers = $mcpServers" "%claude_config%" > "%claude_config%.tmp"
-move "%claude_config%.tmp" "%claude_config%" >nul
-
-%INFO_COLOR% Claude MCP config updated
+call "%SCRIPT_DIR%jq-patch.bat" set_field "%claude_config%" "%claude_config%.tmp" ".mcpServers" "%temp_mcp%"
+if !errorlevel! equ 0 (
+    move "%claude_config%.tmp" "%claude_config%" >nul
+    %INFO_COLOR% Claude MCP config updated
+)
+del "%temp_mcp%" 2>nul
 goto :eof
 
 :sync_to_opencode
@@ -85,50 +88,28 @@ if not exist "%opencode_config%" (
     ) > "%opencode_config%"
 )
 
-REM Extract and transform mcpServers from mcp.json
-for /f "delims=" %%i in ('jq ".mcpServers" "%MCP_JSON%"') do set "mcp_servers=%%i"
+REM Use the cross-platform jq utility
+set "temp_mcp=%TEMP%\mcp_servers_%RANDOM%.json"
+set "temp_transformed=%TEMP%\opencode_mcp_%RANDOM%.json"
 
-REM Create temporary transformation script
-set "temp_transform=%TEMP%\transform_mcp.jq"
-(
-    echo to_entries ^| map(
-    echo   .value as $server ^| .key as $name ^|
-    echo   {
-    echo     key: $name,
-    echo     value: (
-    echo       if $server.type == "http" then
-    echo         {
-    echo           type: "remote",
-    echo           url: $server.url,
-    echo           enabled: true
-    echo         }
-    echo       else
-    echo         {
-    echo           type: "local",
-    echo           command: ([$server.command] + ($server.args // [])),
-    echo           enabled: true
-    echo         } + (
-    echo           if $server.env then
-    echo             {environment: $server.env}
-    echo           else
-    echo             {}
-    echo           end
-    echo         )
-    echo       end
-    echo     )
-    echo   }
-    echo ) ^| from_entries
-) > "%temp_transform%"
+REM Extract mcpServers and transform to OpenCode format
+call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" ".mcpServers"
+if !errorlevel! neq 0 goto :eof
 
-REM Transform to OpenCode format using the temp script
-for /f "delims=" %%i in ('jq -f "%temp_transform%" "%MCP_JSON%"') do set "opencode_mcp=%%i"
-del "%temp_transform%" 2>nul
+call "%SCRIPT_DIR%jq-patch.bat" transform_opencode "%temp_mcp%" "%temp_transformed%"
+if !errorlevel! neq 0 (
+    del "%temp_mcp%" 2>nul
+    goto :eof
+)
 
-REM Update OpenCode config with transformed MCP servers
-jq --argjson mcp "!opencode_mcp!" ".mcp = $mcp" "%opencode_config%" > "%opencode_config%.tmp"
-move "%opencode_config%.tmp" "%opencode_config%" >nul
+call "%SCRIPT_DIR%jq-patch.bat" set_field "%opencode_config%" "%opencode_config%.tmp" ".mcp" "%temp_transformed%"
+if !errorlevel! equ 0 (
+    move "%opencode_config%.tmp" "%opencode_config%" >nul
+    %INFO_COLOR% OpenCode MCP config updated
+)
 
-%INFO_COLOR% OpenCode MCP config updated
+del "%temp_mcp%" 2>nul
+del "%temp_transformed%" 2>nul
 goto :eof
 
 :sync_configs

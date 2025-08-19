@@ -1,15 +1,9 @@
 {
-  "theme": "dark",
-  "autoUpdates": false,
-  "includeCoAuthoredBy": false,
   "cleanupPeriodDays": 90,
-  "statusLine": {
-    "type": "command",
-    "command": "python3 \"%USERPROFILE%\\.claude\\statusline-enhanced.py\""
-  },
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "Bash(gh issue view)"
@@ -22,6 +16,7 @@
     ],
     "defaultMode": "plan"
   },
+  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -44,7 +39,7 @@
           },
           {
             "type": "command",
-            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" PostToolUse"
+            "command": "python3 \"~/.claude/claude-notify.py\" UserPromptSubmit"
           }
         ]
       }
@@ -59,7 +54,7 @@
           },
           {
             "type": "command",
-            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" UserPromptSubmit"
+            "command": "python3 \"~/.claude/claude-notify.py\" UserPromptSubmit"
           }
         ]
       }
@@ -85,7 +80,7 @@
           },
           {
             "type": "command",
-            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" Stop"
+            "command": "python3 \"~/.claude/claude-notify.py\" Stop"
           }
         ]
       }
@@ -96,11 +91,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"%USERPROFILE%\\.claude\\claude-notify.py\" Notification"
+            "command": "python3 \"~/.claude/claude-notify.py\" Notification"
           }
         ]
       }
     ]
   },
-  "model": "opusplan"
+  "statusLine": {
+    "type": "command",
+    "command": "bunx -y @owloops/claude-powerline@latest --theme=tokyo-night"
+  },
+  "theme": "dark",
+  "autoUpdates": false
 }

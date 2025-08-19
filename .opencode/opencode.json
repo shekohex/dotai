@@ -48,7 +48,8 @@
     "firecrawl-mcp": {
       "type": "local",
       "command": [
-        "bunx",
+        "bun",
+        "x",
         "-y",
         "firecrawl-mcp"
       ],
@@ -63,7 +64,8 @@
     "gemini": {
       "type": "local",
       "command": [
-        "bunx",
+        "bun",
+        "x",
         "-y",
         "gemini-mcp-tool"
       ],
@@ -72,7 +74,8 @@
     "taskmaster-ai": {
       "type": "local",
       "command": [
-        "bunx",
+        "bun",
+        "x",
         "-y",
         "--package=task-master-ai",
         "task-master-ai"

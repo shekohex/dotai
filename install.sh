@@ -143,7 +143,7 @@ sync_directory() {
     
     # Use rsync for directory synchronization if available, otherwise use cp
     if command -v rsync &> /dev/null; then
-        rsync -av --exclude='.git' "$source_dir/" "$target_dir/"
+        rsync -av --exclude='.git' --exclude='node_modules' "$source_dir/" "$target_dir/"
     else
         cp -r "$source_dir/"* "$target_dir/" 2>/dev/null || true
     fi

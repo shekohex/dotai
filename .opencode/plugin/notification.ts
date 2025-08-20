@@ -42,9 +42,9 @@ async function sendNtfyNotification(
   // Get the project name from the cwd
   const projectName = cwd.split("/").pop();
   let title = "Opencode";
-  let formattedMessage = `Session ${sessionId} is idle on ${hostname}`;
+  let formattedMessage = `I'm waiting for your response.\nProject: ${projectName}\nHost: ${hostname}`;
   if (projectName) {
     title = `[${projectName}] ${title}`;
   }
-  await $`ntfy send --title "${title}" --message ${formattedMessage} --icon ${notificationConfig.ntfyIcon} --topic ${notificationConfig.ntfyTopic} --priority 4`;
+  await $`ntfy send --title "${title}" --icon ${notificationConfig.ntfyIcon} --priority 4 --tags robot ${notificationConfig.ntfyTopic} ${formattedMessage}`;
 }

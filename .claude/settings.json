@@ -36,10 +36,6 @@
           {
             "type": "command",
             "command": "claude-code-wakatime"
-          },
-          {
-            "type": "command",
-            "command": "python3 \"~/.claude/claude-notify.py\" UserPromptSubmit"
           }
         ]
       }
@@ -51,10 +47,6 @@
           {
             "type": "command",
             "command": "claude-code-wakatime"
-          },
-          {
-            "type": "command",
-            "command": "python3 \"~/.claude/claude-notify.py\" UserPromptSubmit"
           }
         ]
       }
@@ -62,12 +54,7 @@
     "SessionStart": [
       {
         "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-code-wakatime"
-          }
-        ]
+        "hooks": []
       }
     ],
     "Stop": [
@@ -77,10 +64,6 @@
           {
             "type": "command",
             "command": "claude-code-wakatime"
-          },
-          {
-            "type": "command",
-            "command": "python3 \"~/.claude/claude-notify.py\" Stop"
           }
         ]
       }
@@ -88,18 +71,13 @@
     "Notification": [
       {
         "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"~/.claude/claude-notify.py\" Notification"
-          }
-        ]
+        "hooks": []
       }
     ]
   },
   "statusLine": {
     "type": "command",
-    "command": "bunx -y @owloops/claude-powerline@latest --theme=tokyo-night"
+    "command": "bun x ccusage statusline"
   },
   "theme": "dark",
   "autoUpdates": false

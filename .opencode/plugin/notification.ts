@@ -46,5 +46,5 @@ async function sendNtfyNotification(
   if (projectName) {
     title = `[${projectName}] ${title}`;
   }
-  await $`ntfy send --title "${title}" --icon ${notificationConfig.ntfyIcon} --priority 4 --tags robot ${notificationConfig.ntfyTopic} ${formattedMessage}`;
+  await $`ntfy send --title "${title}" --icon ${notificationConfig.ntfyIcon} --priority 5 --tags robot ${notificationConfig.ntfyTopic} ${formattedMessage}`;
 }

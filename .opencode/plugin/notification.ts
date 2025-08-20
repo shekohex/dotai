@@ -46,5 +46,6 @@ async function sendNtfyNotification(
   if (projectName) {
     title = `[${projectName}] ${title}`;
   }
-  await $`ntfy send --title "${title}" --icon ${notificationConfig.ntfyIcon} --priority 5 --tags robot ${notificationConfig.ntfyTopic} ${formattedMessage}`;
+  // route the output to /dev/null, stdout and stderr are not needed
+  await $`ntfy send --title "${title}" --icon ${notificationConfig.ntfyIcon} --priority 5 --tags robot ${notificationConfig.ntfyTopic} ${formattedMessage} &> /dev/null`;
 }

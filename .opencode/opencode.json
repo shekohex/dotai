@@ -35,16 +35,6 @@
     }
   },
   "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp",
-      "enabled": true
-    },
-    "grep": {
-      "type": "remote",
-      "url": "https://mcp.grep.app",
-      "enabled": true
-    },
     "firecrawl-mcp": {
       "type": "local",
       "command": [
@@ -59,34 +49,6 @@
         "FIRECRAWL_API_URL": "http://192.168.1.121:3000",
         "FIRECRAWL_RETRY_MAX_ATTEMPTS": "10",
         "FIRECRAWL_RETRY_INITIAL_DELAY": "500"
-      }
-    },
-    "gemini": {
-      "type": "local",
-      "command": [
-        "bun",
-        "x",
-        "-y",
-        "gemini-mcp-tool"
-      ],
-      "enabled": true
-    },
-    "taskmaster-ai": {
-      "type": "local",
-      "command": [
-        "bun",
-        "x",
-        "-y",
-        "--package=task-master-ai",
-        "task-master-ai"
-      ],
-      "enabled": true,
-      "environment": {
-        "MODEL": "claude-sonnet-4-20250514",
-        "MAX_TOKENS": "64000",
-        "TEMPERATURE": "0.2",
-        "DEFAULT_SUBTASKS": "5",
-        "DEFAULT_PRIORITY": "medium"
       }
     }
   }

@@ -114,13 +114,13 @@ transform_to_opencode_format() {
                         {
                             type: "remote",
                             url: $server.url,
-                            enabled: false
+                            enabled: $server.enabled
                         }
                     else
                         {
                             type: "local",
                             command: ([$server.command] + ($server.args // [])),
-                            enabled: false
+                            enabled: $server.enabled
                         } + (
                             if $server.env then
                                 {environment: $server.env}

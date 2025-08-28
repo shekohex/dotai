@@ -88,7 +88,7 @@ sync_to_claude() {
 
   # Extract mcpServers from mcp.json and merge into Claude config
   local mcp_servers
-  mcp_servers=$(jq '.mcpServers' "$MCP_JSON")
+  mcp_servers=$(jq '.mcpServers | with_entries(select(.value.enabled == true))' "$MCP_JSON")
 
   # Update Claude config with MCP servers
   jq --argjson mcpServers "$mcp_servers" '.mcpServers = $mcpServers' "$claude_config" >"$claude_config.tmp"
@@ -155,7 +155,7 @@ EOF
 
   # Extract and transform mcpServers from mcp.json
   local mcp_servers
-  mcp_servers=$(jq '.mcpServers' "$MCP_JSON")
+  mcp_servers=$(jq '.mcpServers | with_entries(select(.value.enabled == true))' "$MCP_JSON")
 
   local opencode_mcp
   opencode_mcp=$(transform_to_opencode_format "$mcp_servers")

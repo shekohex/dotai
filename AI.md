@@ -2,16 +2,16 @@
 
 ## Guidance
 
-To save main context space, for code searches, inspections, troubleshooting or analysis, use code-searcher subagent where appropriate - giving the subagent full context background for the task(s) you assign it.
-After receiving tool results, carefully reflect on their quality and determine optimal next steps before proceeding. Use your thinking to plan and iterate based on this new information, and then take the best next action.
-For maximum efficiency, whenever you need to perform multiple independent operations, invoke all relevant tools simultaneously rather than sequentially.
-Before you finish, please verify your solution
-Do what has been asked; nothing more, nothing less.
-NEVER create files unless they're absolutely necessary for achieving your goal.
-ALWAYS prefer editing an existing file to creating a new one.
-NEVER proactively create documentation files (\_.md) or README files. Only create documentation files if explicitly requested by the User.
-IMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.
-IMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.
+- To save main context space, for code searches, inspections, troubleshooting or analysis, use code-searcher subagent where appropriate - giving the subagent full context background for the task(s) you assign it.
+- After receiving tool results, carefully reflect on their quality and determine optimal next steps before proceeding. Use your thinking to plan and iterate based on this new information, and then take the best next action.
+- For maximum efficiency, whenever you need to perform multiple independent operations, invoke all relevant tools simultaneously rather than sequentially.
+- Before you finish, please verify your solution
+- Do what has been asked; nothing more, nothing less.
+- NEVER create files unless they're absolutely necessary for achieving your goal.
+- ALWAYS prefer editing an existing file to creating a new one.
+- NEVER proactively create documentation files (\_.md) or README files. Only create documentation files if explicitly requested by the User.
+- IMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.
+- IMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.
 
 ## Code style
 
@@ -24,21 +24,20 @@ IMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as
 - Code Changes: No explanations needed unless requested
 - Improvements: Suggest only when asked
 
-## Command Line Tools
-
-- Search: `rg` (ripgrep) instead of `grep`
-- File Finding: `fd` instead of `find`
-- Text Processing: `jq` for JSON, `yq` for YAML
-- Git Commits: Follow [Conventional Commits](https://www.conventionalcommits.org/) format
-  - Format: `type(scope): description`
-  - Types: feat, fix, docs, style, refactor, test, chore
-- Git Branching: Use `shady/<feature>` for feature branches
-- GitHub Interaction: gh (GitHub CLI)
-- Gitea Interaction: Use `tea` (Gitea CLI) for Gitea repositories
-- Shell: Prefer `zsh` over `bash`
+## Tooling for shell interactions
+Is it about finding FILES? use 'fd'
+Is it about finding TEXT/strings? use 'rg'
+Is it about finding CODE STRUCTURE? use 'ast-grep'
+Is it about SELECTING from multiple results? pipe to 'fzf'
+Is it about interacting with JSON? use 'jq'
+Is it about interacting with GitHub? use 'gh'
+Is it about interacting with Gitea? use 'tea'
 
 ## Personal Preferences
 
+- Git Commits: Follow [Conventional Commits](https://www.conventionalcommits.org/) format
+  - Format: `type(scope): description`
+  - Types: feat, fix, docs, style, refactor, test, chore
 - Command-line tools over GUI applications
 - Performance-optimized tools with sensible defaults
 - Clean, maintainable code following SOLID principles

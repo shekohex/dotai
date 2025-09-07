@@ -31,7 +31,7 @@
       "name": "Z.AI",
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "https://api.z.ai/api/anthropic"
+        "baseURL": "https://api.z.ai/api/anthropic/v1"
       },
       "models": {
         "glm-4.5-air": {

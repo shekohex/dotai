@@ -73,6 +73,10 @@
           }
         }
       }
+    },
+    "zhipuai": {
+      "name": "Z.AI (Coding)",
+      "api": "https://api.z.ai/api/coding/paas/v4"
     }
   },
   "permission": {

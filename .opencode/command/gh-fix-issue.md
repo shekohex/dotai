@@ -1,7 +1,6 @@
 ---
 agent: plan
 description: Automatically fix a GitHub issue by analyzing the codebase and implementing changes.
-model: anthropic/claude-opus-4-1-20250805
 ---
 
 Please analyze and fix the GitHub issue: $ARGUMENTS.

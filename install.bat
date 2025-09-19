@@ -78,8 +78,12 @@ echo [INFO] Syncing %name% directory...
 REM Create target directory if it doesn't exist
 if not exist "%target_dir%" mkdir "%target_dir%"
 
-REM Copy directory contents (excluding .git)
-xcopy "%source_dir%\*" "%target_dir%\" /E /I /Y /Q 2>nul
+REM Copy directory contents (excluding .git) - copy symlink targets instead of symlinks
+if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" (
+    powershell -Command "Get-ChildItem -Path '%source_dir%' -Exclude '.git' | Copy-Item -Destination '%target_dir%' -Recurse -Force"
+) else (
+    xcopy "%source_dir%\*" "%target_dir%\" /E /I /Y /Q 2>nul
+)
 
 echo [INFO] Synced %name% directory
 goto :eof

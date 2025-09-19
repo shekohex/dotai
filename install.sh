@@ -143,9 +143,9 @@ sync_directory() {
     
     # Use rsync for directory synchronization if available, otherwise use cp
     if command -v rsync &> /dev/null; then
-        rsync -av --exclude='.git' --exclude='node_modules' "$source_dir/" "$target_dir/"
+        rsync -av --copy-links --exclude='.git' --exclude='node_modules' "$source_dir/" "$target_dir/"
     else
-        cp -r "$source_dir/"* "$target_dir/" 2>/dev/null || true
+        cp -r -L "$source_dir/"* "$target_dir/" 2>/dev/null || true
     fi
     
     log_info "Synced $name directory"

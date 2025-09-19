@@ -45,7 +45,7 @@
       "enabled": false
     },
     "zai": {
-      "type": "stdio",
+      "enabled": true,
       "command": "bun",
       "args": [
         "x",

@@ -43,6 +43,19 @@
         "task-master-ai"
       ],
       "enabled": false
+    },
+    "zai": {
+      "type": "stdio",
+      "command": "bun",
+      "args": [
+        "x",
+        "-y",
+        "@z_ai/mcp-server"
+      ],
+      "env": {
+        "Z_AI_API_KEY": "your_api_key",
+        "Z_AI_MODE": "ZAI"
+      }
     }
   }
 }

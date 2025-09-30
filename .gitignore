@@ -18,3 +18,4 @@
 *.log
 *.log.*
 *.db
+.claude/history.jsonl

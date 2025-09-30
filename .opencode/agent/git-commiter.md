@@ -2,7 +2,6 @@
 description: |
   Analyzes git changes, groups them logically, and creates Conventional Commits for each group. Ensures atomic, meaningful commits and can be invoked by other agents.
 mode: subagent
-model: github-copilot/gpt-4.1
 temperature: 0.1
 tools:
   bash: true

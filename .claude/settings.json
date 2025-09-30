@@ -16,7 +16,6 @@
     ],
     "defaultMode": "plan"
   },
-  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -80,5 +79,6 @@
     "command": "bun x ccusage statusline"
   },
   "theme": "dark",
-  "autoUpdates": false
+  "autoUpdates": false,
+  "alwaysThinkingEnabled": true
 }

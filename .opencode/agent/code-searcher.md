@@ -2,7 +2,6 @@
 name: code-searcher
 description: |
   Use this agent when you need to locate specific functions, classes, or logic within the codebase. Examples: <example>Context: User needs to find authentication-related code in the project. user: "Where is the user authentication logic implemented?" assistant: "I'll use the code-searcher agent to locate authentication-related code in the codebase" <commentary>Since the user is asking about locating specific code, use the code-searcher agent to efficiently find and summarize authentication logic.</commentary></example> <example>Context: User wants to understand how a specific feature is implemented. user: "How does the license validation work in this system?" assistant: "Let me use the code-searcher agent to find and analyze the license validation implementation" <commentary>The user is asking about understanding specific functionality, so use the code-searcher agent to locate and summarize the relevant code.</commentary></example> <example>Context: User needs to find where a bug might be occurring. user: "I'm getting an error with the payment processing, can you help me find where that code is?" assistant: "I'll use the code-searcher agent to locate the payment processing code and identify potential issues" <commentary>Since the user needs to locate specific code related to an error, use the code-searcher agent to find and analyze the relevant files.</commentary></example>
-model: github-copilot/gpt-4.1
 mode: subagent
 tools:
   bash: true

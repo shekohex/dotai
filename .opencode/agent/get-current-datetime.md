@@ -9,7 +9,6 @@ tools:
   write: false
   edit: false
 mode: subagent
-model: github-copilot/gpt-4.1
 ---
 
 Execute `TZ='Africa/Cairo' date` and return ONLY the command output.

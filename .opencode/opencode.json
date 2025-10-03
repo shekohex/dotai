@@ -3,6 +3,9 @@
   "theme": "system",
   "autoshare": false,
   "autoupdate": true,
+  "plugin": [
+    "opencode-openai-codex-auth@1.0.3"
+  ],
   "provider": {
     "bigboss": {
       "npm": "@ai-sdk/openai-compatible",

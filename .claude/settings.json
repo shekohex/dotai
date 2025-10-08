@@ -78,7 +78,7 @@
     "type": "command",
     "command": "bun x ccusage statusline"
   },
+  "alwaysThinkingEnabled": true,
   "theme": "dark",
-  "autoUpdates": false,
-  "alwaysThinkingEnabled": true
+  "autoUpdates": false
 }

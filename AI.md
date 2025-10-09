@@ -20,13 +20,13 @@
 
 ## Communication Preferences
 
-- Response Style: Concise and to-the-point
+- Response Style: Be extremely concise. Sacrifice grammar for the sake of concision.
 - Code Changes: No explanations needed unless requested
 - Improvements: Suggest only when asked
 
 ## Tooling for shell interactions
-Is it about finding FILES? use 'fd'
-Is it about finding TEXT/strings? use 'rg'
+Is it about finding FILES? use 'fd' instead of `find`
+Is it about finding TEXT/strings? use 'rg' instead of `grep`
 Is it about finding CODE STRUCTURE? use 'ast-grep'
 Is it about SELECTING from multiple results? pipe to 'fzf'
 Is it about interacting with JSON? use 'jq'

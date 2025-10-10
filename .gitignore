@@ -19,3 +19,6 @@
 *.log.*
 *.db
 .claude/history.jsonl
+.claude/debug/
+.claude/file-history/
+.claude/plugins/marketplaces/

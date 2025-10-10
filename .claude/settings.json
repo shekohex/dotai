@@ -78,6 +78,10 @@
     "type": "command",
     "command": "bun x ccusage statusline"
   },
+  "enabledPlugins": {
+    "pr-review-toolkit@claude-code-plugins": true,
+    "feature-dev@claude-code-plugins": true
+  },
   "alwaysThinkingEnabled": true,
   "theme": "dark",
   "autoUpdates": false

@@ -22,3 +22,4 @@
 .claude/debug/
 .claude/file-history/
 .claude/plugins/marketplaces/
+.claude/plugins/cache/

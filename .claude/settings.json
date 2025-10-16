@@ -10,73 +10,22 @@
     ],
     "deny": [
       "Read(./.env)",
-      "Read(./.env.*)",
       "Read(./secrets/**)",
       "Read(./config/credentials.json)"
     ],
     "defaultMode": "plan"
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-code-wakatime"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-code-wakatime"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-code-wakatime"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": []
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-code-wakatime"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "*",
-        "hooks": []
-      }
-    ]
+    "PreToolUse": [],
+    "PostToolUse": [],
+    "UserPromptSubmit": [],
+    "SessionStart": [],
+    "Stop": [],
+    "Notification": []
   },
   "statusLine": {
     "type": "command",
-    "command": "bun x ccusage statusline"
+    "command": "bun x ccusage@latest statusline"
   },
   "enabledPlugins": {
     "pr-review-toolkit@claude-code-plugins": true,

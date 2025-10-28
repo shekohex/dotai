@@ -30,7 +30,8 @@
   "enabledPlugins": {
     "pr-review-toolkit@claude-code-plugins": true,
     "feature-dev@claude-code-plugins": true,
-    "superpowers@superpowers-marketplace": true
+    "superpowers@superpowers-marketplace": true,
+    "document-skills@anthropic-agent-skills": true
   },
   "alwaysThinkingEnabled": true,
   "theme": "dark",

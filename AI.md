@@ -23,6 +23,15 @@
 - Response Style: Be extremely concise. Sacrifice grammar for the sake of concision.
 - Code Changes: No explanations needed unless requested
 - Improvements: Suggest only when asked
+- You may notify the user at any point of time using the following command:
+  `ntfy send --title "<topic> | <your_name>" --priority <1-to-5> --tags <tags> coding-agent "<message>"`
+Where:
+  - `<topic>` is a short description of the notification topic
+  - `<your_name>` is your agent name (Claude, OpenCode, Codex, etc.)
+  - `<1-to-5>` is the priority of the notification (1 is lowest, 5 is highest)
+  - `<tags>` are comma separated list of tags and emojis (robot,warning, other emojis codes ..etc)
+  - `<message>` is the content of the notification (Keep it short and concise)
+  - add `--markdown` flag if the message contains markdown formatting
 
 ## Tooling for shell interactions
 Is it about finding FILES? use 'fd' instead of `find`

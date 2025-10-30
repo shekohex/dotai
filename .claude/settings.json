@@ -23,10 +23,6 @@
     "Stop": [],
     "Notification": []
   },
-  "statusLine": {
-    "type": "command",
-    "command": "bun x ccusage@latest statusline"
-  },
   "enabledPlugins": {
     "pr-review-toolkit@claude-code-plugins": true,
     "feature-dev@claude-code-plugins": true,

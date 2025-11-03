@@ -1,6 +1,5 @@
 ---
-description: |
-  Analyzes git changes, groups them logically, and creates Conventional Commits for each group. Ensures atomic, meaningful commits and can be invoked by other agents.
+description: Analyzes git changes, groups them logically, and creates Conventional Commits for each group. Ensures atomic, meaningful commits and can be invoked by other agents.
 mode: subagent
 temperature: 0.1
 tools:
@@ -43,4 +42,3 @@ Example output:
 - docs: update README with usage instructions
 
 If there are uncommitted changes left, warn the user.
-

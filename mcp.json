@@ -3,14 +3,14 @@
     "context7": {
       "type": "http",
       "url": "https://mcp.context7.com/mcp",
-      "enabled": false
+      "enabled": true
     },
     "grep": {
       "type": "http",
       "url": "https://mcp.grep.app",
       "enabled": false
     },
-    "firecrawl-mcp": {
+    "firecrawl": {
       "command": "bun",
       "args": [
         "x",

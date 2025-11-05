@@ -4,7 +4,7 @@
   "autoshare": false,
   "autoupdate": true,
   "plugin": [
-    "opencode-openai-codex-auth@2.1.2"
+    "opencode-openai-codex-auth@3.0.0"
   ],
   "provider": {
     "bigboss": {
@@ -21,10 +21,6 @@
           "cost": {
             "input": 0.3,
             "output": 1.2
-          },
-          "limit": {
-            "context": 131072,
-            "output": 8192
           },
           "temperature": false
         }

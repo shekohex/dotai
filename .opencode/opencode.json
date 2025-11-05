@@ -39,7 +39,10 @@
       "models": {
         "gpt-5-codex-low": {
           "name": "GPT 5 Codex Low (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "low",
             "reasoningSummary": "auto",
             "textVerbosity": "medium",
@@ -51,7 +54,10 @@
         },
         "gpt-5-codex-medium": {
           "name": "GPT 5 Codex Medium (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "medium",
             "reasoningSummary": "auto",
             "textVerbosity": "medium",
@@ -63,7 +69,10 @@
         },
         "gpt-5-codex-high": {
           "name": "GPT 5 Codex High (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "high",
             "reasoningSummary": "detailed",
             "textVerbosity": "medium",
@@ -75,7 +84,10 @@
         },
         "gpt-5-minimal": {
           "name": "GPT 5 Minimal (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "minimal",
             "reasoningSummary": "auto",
             "textVerbosity": "low",
@@ -87,7 +99,10 @@
         },
         "gpt-5-low": {
           "name": "GPT 5 Low (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "low",
             "reasoningSummary": "auto",
             "textVerbosity": "low",
@@ -99,7 +114,10 @@
         },
         "gpt-5-medium": {
           "name": "GPT 5 Medium (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "medium",
             "reasoningSummary": "auto",
             "textVerbosity": "medium",
@@ -111,7 +129,10 @@
         },
         "gpt-5-high": {
           "name": "GPT 5 High (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "high",
             "reasoningSummary": "detailed",
             "textVerbosity": "high",
@@ -123,7 +144,10 @@
         },
         "gpt-5-mini": {
           "name": "GPT 5 Mini (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "low",
             "reasoningSummary": "auto",
             "textVerbosity": "low",
@@ -135,7 +159,10 @@
         },
         "gpt-5-nano": {
           "name": "GPT 5 Nano (OAuth)",
-          "options": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },          "options": {
             "reasoningEffort": "minimal",
             "reasoningSummary": "auto",
             "textVerbosity": "low",

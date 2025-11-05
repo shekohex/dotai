@@ -23,6 +23,10 @@
     "Stop": [],
     "Notification": []
   },
+  "statusLine": {
+    "type": "command",
+    "command": "$SHELL ~/.claude/statusline-wrapper.sh"
+  },
   "enabledPlugins": {
     "pr-review-toolkit@claude-code-plugins": true,
     "feature-dev@claude-code-plugins": true,

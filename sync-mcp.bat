@@ -54,12 +54,13 @@ set "claude_config=%~1"
 REM Check if Claude config exists
 if not exist "%claude_config%" (
     %WARN_COLOR% Claude config not found, creating minimal config
-    echo {}> "%claude_config%"
+    echo {^}> "%claude_config%"
 )
 
 REM Use the cross-platform jq utility
 set "temp_mcp=%TEMP%\mcp_servers_%RANDOM%.json"
-call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" ".mcpServers | with_entries(select(.value.enabled == true))"
+set "jq_filter=.mcpServers | with_entries(select(.value.enabled == true))"
+call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" "!jq_filter!"
 if !errorlevel! neq 0 goto :eof
 
 call "%SCRIPT_DIR%jq-patch.bat" set_field "%claude_config%" "%claude_config%.tmp" ".mcpServers" "%temp_mcp%"
@@ -79,12 +80,12 @@ REM Check if OpenCode config exists
 if not exist "%opencode_config%" (
     %WARN_COLOR% OpenCode config not found, creating minimal config
     (
-        echo {
+        echo ^{
         echo   "$schema": "https://opencode.ai/config.json",
         echo   "theme": "system",
         echo   "autoshare": false,
         echo   "autoupdate": true
-        echo }
+        echo ^}
     ) > "%opencode_config%"
 )
 
@@ -93,7 +94,8 @@ set "temp_mcp=%TEMP%\mcp_servers_%RANDOM%.json"
 set "temp_transformed=%TEMP%\opencode_mcp_%RANDOM%.json"
 
 REM Extract mcpServers and transform to OpenCode format
-call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" ".mcpServers | with_entries(select(.value.enabled == true))"
+set "jq_filter=.mcpServers | with_entries(select(.value.enabled == true))"
+call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" "!jq_filter!"
 if !errorlevel! neq 0 goto :eof
 
 call "%SCRIPT_DIR%jq-patch.bat" transform_opencode "%temp_mcp%" "%temp_transformed%"

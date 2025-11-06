@@ -75,7 +75,7 @@ if "%field_path%"=="" goto :usage
 jq "%field_path%" "%input_file%" > "%output_file%.tmp"
 if !errorlevel! equ 0 (
     move "%output_file%.tmp" "%output_file%" >nul
-    echo [INFO] Successfully extracted %field_path%
+    echo [INFO] Successfully extracted field
 ) else (
     echo [ERROR] Failed to extract field
     del "%output_file%.tmp" 2>nul
@@ -90,30 +90,30 @@ set "transform_script=%temp_dir%\transform.jq"
 (
     echo to_entries ^| map^(
     echo   .value as $server ^| .key as $name ^|
-    echo   {
+    echo   ^{
     echo     key: $name,
     echo     value: ^(
     echo       if $server.type == "http" then
-    echo         {
+    echo         ^{
     echo           type: "remote",
     echo           url: $server.url,
     echo           enabled: true
-    echo         }
+    echo         ^}
     echo       else
-    echo         {
+    echo         ^{
     echo           type: "local",
     echo           command: ^([$server.command] + ^($server.args // []^)^),
     echo           enabled: true
-    echo         } + ^(
+    echo         ^} + ^(
     echo           if $server.env then
-    echo             {environment: $server.env}
+    echo             ^{environment: $server.env^}
     echo           else
-    echo             {}
+    echo             ^{^}
     echo           end
     echo         ^)
     echo       end
     echo     ^)
-    echo   }
+    echo   ^}
     echo ^) ^| from_entries
 ) > "%transform_script%"
 
@@ -143,7 +143,7 @@ if not exist "%value_file%" (
 jq --slurpfile value "%value_file%" "%field_path% = $value[0]" "%input_file%" > "%output_file%.tmp"
 if !errorlevel! equ 0 (
     move "%output_file%.tmp" "%output_file%" >nul
-    echo [INFO] Successfully set %field_path%
+    echo [INFO] Successfully set field
 ) else (
     echo [ERROR] Failed to set field
     del "%output_file%.tmp" 2>nul

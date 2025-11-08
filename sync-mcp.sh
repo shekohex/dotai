@@ -114,6 +114,7 @@ transform_to_opencode_format() {
                         {
                             type: "remote",
                             url: $server.url,
+                            headers: $server.headers,
                             enabled: $server.enabled
                         }
                     else

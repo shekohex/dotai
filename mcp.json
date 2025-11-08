@@ -12,11 +12,7 @@
     },
     "firecrawl": {
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "firecrawl-mcp"
-      ],
+      "args": ["x", "-y", "firecrawl-mcp"],
       "env": {
         "FIRECRAWL_API_KEY": "fc-free",
         "FIRECRAWL_API_URL": "http://192.168.1.121:3000",
@@ -27,34 +23,29 @@
     },
     "gemini": {
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "gemini-mcp-tool"
-      ],
+      "args": ["x", "-y", "gemini-mcp-tool"],
       "enabled": false
     },
     "taskmaster-ai": {
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "--package=task-master-ai",
-        "task-master-ai"
-      ],
+      "args": ["x", "-y", "--package=task-master-ai", "task-master-ai"],
       "enabled": false
     },
     "zai": {
       "enabled": true,
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "@z_ai/mcp-server"
-      ],
+      "args": ["x", "-y", "@z_ai/mcp-server"],
       "env": {
         "Z_AI_API_KEY": "your_api_key",
         "Z_AI_MODE": "ZAI"
+      }
+    },
+    "web-search-prime": {
+      "enabled": true,
+      "type": "http",
+      "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+      "headers": {
+        "Authorization": "Bearer your_api_key"
       }
     }
   }

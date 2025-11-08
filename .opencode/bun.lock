@@ -7,7 +7,7 @@
         "@types/bun": "latest",
       },
       "peerDependencies": {
-        "@opencode-ai/plugin": "1.0.11",
+        "@opencode-ai/plugin": "1.0.41",
         "typescript": "^5",
       },
     },

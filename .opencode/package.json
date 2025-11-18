@@ -8,6 +8,6 @@
   },
   "peerDependencies": {
     "typescript": "^5",
-    "@opencode-ai/plugin": "1.0.65"
+    "@opencode-ai/plugin": "1.0.72"
   }
 }

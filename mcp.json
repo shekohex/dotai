@@ -11,19 +11,9 @@
       "enabled": false
     },
     "firecrawl": {
-      "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "firecrawl-mcp"
-      ],
-      "env": {
-        "FIRECRAWL_API_KEY": "fc-free",
-        "FIRECRAWL_API_URL": "http://192.168.1.121:3000",
-        "FIRECRAWL_RETRY_MAX_ATTEMPTS": "10",
-        "FIRECRAWL_RETRY_INITIAL_DELAY": "500"
-      },
-      "enabled": false
+      "type": "http",
+      "url": "http://192.168.1.121:8081/mcp",
+      "enabled": true
     },
     "gemini": {
       "command": "bun",

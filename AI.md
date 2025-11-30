@@ -35,13 +35,13 @@
     - add `--markdown` flag if the message contains markdown formatting
 
 ## Tooling for shell interactions
-Is it about finding FILES? use 'fd' instead of `find`
-Is it about finding TEXT/strings? use 'rg' instead of `grep`
-Is it about finding CODE STRUCTURE? use 'ast-grep'
-Is it about SELECTING from multiple results? pipe to 'fzf'
-Is it about interacting with JSON? use 'jq'
-Is it about interacting with GitHub? use 'gh'
-Is it about interacting with Gitea? use 'tea'
+- Is it about finding FILES? use 'fd' instead of `find`
+- Is it about finding TEXT/strings? use 'rg' instead of `grep`
+- Is it about finding CODE STRUCTURE? use 'ast-grep'
+- Is it about SELECTING from multiple results? pipe to 'fzf'
+- Is it about interacting with JSON? use 'jq'
+- Is it about interacting with GitHub? use 'gh'
+- Is it about interacting with Gitea? use 'tea'
 
 ## Personal Preferences
 

@@ -17,31 +17,18 @@
     },
     "gemini": {
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "gemini-mcp-tool"
-      ],
+      "args": ["x", "-y", "gemini-mcp-tool"],
       "enabled": false
     },
     "taskmaster-ai": {
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "--package=task-master-ai",
-        "task-master-ai"
-      ],
+      "args": ["x", "-y", "--package=task-master-ai", "task-master-ai"],
       "enabled": false
     },
     "zai": {
-      "enabled": false,
+      "enabled": true,
       "command": "bun",
-      "args": [
-        "x",
-        "-y",
-        "@z_ai/mcp-server"
-      ],
+      "args": ["x", "-y", "@z_ai/mcp-server"],
       "env": {
         "Z_AI_API_KEY": "your_api_key",
         "Z_AI_MODE": "ZAI"

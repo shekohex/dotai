@@ -13,7 +13,7 @@
     "firecrawl": {
       "type": "http",
       "url": "http://192.168.1.121:8081/mcp",
-      "enabled": true
+      "enabled": false
     },
     "gemini": {
       "command": "bun",

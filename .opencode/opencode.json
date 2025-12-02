@@ -228,15 +228,6 @@
           }
         }
       }
-    },
-    "zai-coding-plan": {
-      "name": "Z.AI Coding Plan",
-      "api": "https://api.z.ai/api/anthropic/v1",
-      "npm": "@ai-sdk/anthropic",
-      "env": ["ZHIPU_API_KEY"],
-      "options": {
-        "baseURL": "https://api.z.ai/api/anthropic/v1"
-      }
     }
   },
   "permission": {

@@ -235,8 +235,7 @@
       "npm": "@ai-sdk/anthropic",
       "env": ["ZHIPU_API_KEY"],
       "options": {
-        "baseURL": "https://api.z.ai/api/anthropic/v1",
-        "setCacheKey": true,
+        "baseURL": "https://api.z.ai/api/anthropic/v1"
       }
     }
   },

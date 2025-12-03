@@ -151,10 +151,10 @@ function Sync-Directory {
 }
 
 function Sync-Mcp-Configs {
-    $mcpSyncBat = Join-Path $RepoDir "sync-mcp.bat"
-    
-    if (-not (Test-Path -LiteralPath $mcpSyncBat)) {
-        Log-Warn "MCP sync script not found at $mcpSyncBat"
+    $mcpSyncPs1 = Join-Path $RepoDir "sync-mcp.ps1"
+
+    if (-not (Test-Path -LiteralPath $mcpSyncPs1)) {
+        Log-Warn "MCP sync script not found at $mcpSyncPs1"
         return
     }
 
@@ -170,13 +170,17 @@ function Sync-Mcp-Configs {
         return
     }
 
-    # Execute the batch script
-    $p = Start-Process "cmd.exe" -ArgumentList "/c `"$mcpSyncBat`"" -Wait -PassThru -NoNewWindow
-    
-    if ($p.ExitCode -eq 0) {
-        Log-Info "MCP configurations synchronized successfully"
-    } else {
-        Log-Error "Failed to sync MCP configurations"
+    # Execute the PowerShell script
+    try {
+        & "$mcpSyncPs1"
+        if ($LASTEXITCODE -eq 0) {
+            Log-Info "MCP configurations synchronized successfully"
+        } else {
+            Log-Error "Failed to sync MCP configurations"
+        }
+    }
+    catch {
+        Log-Error "Failed to sync MCP configurations: $_"
     }
 }
 

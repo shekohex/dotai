@@ -16,6 +16,7 @@ function zai {
   $env:ANTHROPIC_SMALL_FAST_MODEL = 'glm-4.5-air'
   $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1
   $env:API_TIMEOUT_MS = 3000000
+  Remove-Item Env:\CLAUDE_CODE_MAX_OUTPUT_TOKENS -ErrorAction SilentlyContinue
 
   try {
     # Build the command and arguments

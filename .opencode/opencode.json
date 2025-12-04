@@ -245,6 +245,6 @@
     }
   },
   "experimental": {
-    "batch_tool": true
+    "batch_tool": false
   }
 }

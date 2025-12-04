@@ -1,3 +1,7 @@
+---
+description: Removes AI generated slop from the generated code
+---
+
 # Remove AI code slop
 
 Check the diff against base branch (usually main), and remove all AI generated slop introduced in this branch.

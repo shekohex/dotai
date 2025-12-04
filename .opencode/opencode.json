@@ -11,6 +11,7 @@
   ],
   "provider": {
     "openai": {
+      "npm": "@ai-sdk/openai",
       "options": {
         "reasoningEffort": "medium",
         "reasoningSummary": "auto",

@@ -3,6 +3,7 @@
   "theme": "catppuccin",
   "autoshare": false,
   "autoupdate": false,
+  "username": "shekohex",
   "plugin": [
     "opencode-openai-codex-auth@4.0.2",
     "opencode-gemini-auth@1.1.6",
@@ -236,5 +237,14 @@
       "git push": "ask",
       "*": "allow"
     }
+  },
+  "tui": {
+    "diff_style": "auto",
+    "scroll_acceleration": {
+      "enabled": true
+    }
+  },
+  "experimental": {
+    "batch_tool": true
   }
 }

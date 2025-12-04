@@ -5,6 +5,7 @@ set -e
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_CONFIG="$HOME/.claude"
 OPENCODE_CONFIG="$HOME/.config/opencode"
+CODEX_CONFIG="$HOME/.codex"
 
 # Source files
 AI_MD="$REPO_DIR/AI.md"
@@ -151,6 +152,27 @@ sync_directory() {
     log_info "Synced $name directory"
 }
 
+sync_skills_directory() {
+    local skills_source="$REPO_DIR/skills"
+    
+    if [[ ! -d "$skills_source" ]]; then
+        log_warn "Skills directory not found: $skills_source"
+        return 0
+    fi
+    
+    log_info "Syncing shared skills directory..."
+    
+    # Sync to Claude config
+    local claude_skills_target="$CLAUDE_CONFIG/skills"
+    sync_directory "$skills_source" "$claude_skills_target" "Claude skills"
+    
+    # Sync to OpenCode config
+    local opencode_skills_target="$OPENCODE_CONFIG/skills"
+    sync_directory "$skills_source" "$opencode_skills_target" "OpenCode skills"
+    
+    log_info "Shared skills directory synchronized to both configurations"
+}
+
 # Sync MCP configurations using dedicated script
 sync_mcp_configs() {
     local mcp_sync_script="$REPO_DIR/sync-mcp.sh"
@@ -201,6 +223,11 @@ main() {
         log_info "OpenCode configuration synchronized"
     fi
     
+    # Sync AI.md to Codex AGENTS.md
+    if check_and_sync_file "$REPO_DIR/AI.md" "$CODEX_CONFIG/AGENTS.md" "Codex instructions"; then
+        log_info "Codex configuration synchronized"
+    fi
+    
     # Sync .claude directory
     if [[ -d "$REPO_DIR/.claude" ]]; then
         sync_directory "$REPO_DIR/.claude" "$CLAUDE_CONFIG" "Claude"
@@ -211,19 +238,36 @@ main() {
         sync_directory "$REPO_DIR/.opencode" "$OPENCODE_CONFIG" "OpenCode"
     fi
     
+    # Sync .codex directory
+    if [[ -d "$REPO_DIR/.codex" ]]; then
+        sync_directory "$REPO_DIR/.codex" "$CODEX_CONFIG" "Codex"
+    fi
+    
+    # Sync shared skills directory
+    sync_skills_directory
+    
     # Sync MCP configurations
     sync_mcp_configs
     
     log_info "Installation complete!"
     log_info "Claude config: $CLAUDE_CONFIG"
     log_info "OpenCode config: $OPENCODE_CONFIG"
+    log_info "Codex config: $CODEX_CONFIG"
     echo ""
     echo "Synchronized files:"
     echo "  - AI.md → $CLAUDE_CONFIG/CLAUDE.md"
     echo "  - AI.md → $OPENCODE_CONFIG/AGENTS.md"
+    echo "  - AI.md → $CODEX_CONFIG/AGENTS.md"
+    if [[ -d "$REPO_DIR/skills" ]]; then
+        echo "  - skills/ → $CLAUDE_CONFIG/skills/"
+        echo "  - skills/ → $OPENCODE_CONFIG/skills/"
+    fi
     if [[ -f "$MCP_JSON" ]]; then
         echo "  - mcp.json → Claude MCP servers"
         echo "  - mcp.json → OpenCode MCP servers"
+    fi
+    if [[ -d "$REPO_DIR/.codex" ]]; then
+        echo "  - .codex/ → $CODEX_CONFIG/"
     fi
 }
 

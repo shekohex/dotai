@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $RepoDir = $PSScriptRoot
 $ClaudeConfig = Join-Path $HOME ".claude"
 $OpenCodeConfig = Join-Path $HOME ".config\opencode"
+$CodexConfig = Join-Path $HOME ".codex"
 
 # Source files
 $AiMd = Join-Path $RepoDir "AI.md"
@@ -150,6 +151,27 @@ function Sync-Directory {
     Log-Info "Synced $name directory"
 }
 
+function Sync-Skills-Directory {
+    $skillsSource = Join-Path $RepoDir "skills"
+    
+    if (-not (Test-Path -LiteralPath $skillsSource)) {
+        Log-Warn "Skills directory not found: $skillsSource"
+        return
+    }
+    
+    Log-Info "Syncing shared skills directory..."
+    
+    # Sync to Claude config
+    $claudeSkillsTarget = Join-Path $ClaudeConfig "skills"
+    Sync-Directory $skillsSource $claudeSkillsTarget "Claude skills"
+    
+    # Sync to OpenCode config
+    $opencodeSkillsTarget = Join-Path $OpenCodeConfig "skills"
+    Sync-Directory $skillsSource $opencodeSkillsTarget "OpenCode skills"
+    
+    Log-Info "Shared skills directory synchronized to both configurations"
+}
+
 function Sync-Mcp-Configs {
     $mcpSyncPs1 = Join-Path $RepoDir "sync-mcp.ps1"
 
@@ -197,6 +219,10 @@ function Main {
     $opencodeFile = Join-Path $OpenCodeConfig "AGENTS.md"
     Check-And-Sync-File $AiMd $opencodeFile "OpenCode instructions" | Out-Null
 
+    # Sync AI.md to Codex AGENTS.md
+    $codexFile = Join-Path $CodexConfig "AGENTS.md"
+    Check-And-Sync-File $AiMd $codexFile "Codex instructions" | Out-Null
+
     # Sync .claude directory
     $dotClaudeSrc = Join-Path $RepoDir ".claude"
     if (Test-Path -LiteralPath $dotClaudeSrc) {
@@ -209,19 +235,37 @@ function Main {
         Sync-Directory $dotOpencodeSrc $OpenCodeConfig "OpenCode"
     }
 
+    # Sync .codex directory
+    $dotCodexSrc = Join-Path $RepoDir ".codex"
+    if (Test-Path -LiteralPath $dotCodexSrc) {
+        Sync-Directory $dotCodexSrc $CodexConfig "Codex"
+    }
+
+    # Sync shared skills directory
+    Sync-Skills-Directory
+
     # Sync MCP configurations
     Sync-Mcp-Configs
 
     Log-Info "Installation complete!"
     Log-Info "Claude config: $ClaudeConfig"
     Log-Info "OpenCode config: $OpenCodeConfig"
+    Log-Info "Codex config: $CodexConfig"
     Write-Host ""
     Write-Host "Synchronized files:"
     Write-Host "  - AI.md -> $claudeFile"
     Write-Host "  - AI.md -> $opencodeFile"
+    Write-Host "  - AI.md -> $codexFile"
+    if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
+        Write-Host "  - skills/ -> $ClaudeConfig/skills/"
+        Write-Host "  - skills/ -> $OpenCodeConfig/skills/"
+    }
     if (Test-Path -LiteralPath $McpJson) {
         Write-Host "  - mcp.json -> Claude MCP servers"
         Write-Host "  - mcp.json -> OpenCode MCP servers"
+    }
+    if (Test-Path -LiteralPath (Join-Path $RepoDir ".codex")) {
+        Write-Host "  - .codex/ -> $CodexConfig/"
     }
 }
 

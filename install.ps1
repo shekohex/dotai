@@ -8,6 +8,7 @@ $RepoDir = $PSScriptRoot
 $ClaudeConfig = Join-Path $HOME ".claude"
 $OpenCodeConfig = Join-Path $HOME ".config\opencode"
 $CodexConfig = Join-Path $HOME ".codex"
+$GeminiConfig = Join-Path $HOME ".gemini"
 
 # Source files
 $AiMd = Join-Path $RepoDir "AI.md"
@@ -223,6 +224,10 @@ function Main {
     $codexFile = Join-Path $CodexConfig "AGENTS.md"
     Check-And-Sync-File $AiMd $codexFile "Codex instructions" | Out-Null
 
+    # Sync AI.md to Gemini GEMINI.md
+    $geminiFile = Join-Path $GeminiConfig "GEMINI.md"
+    Check-And-Sync-File $AiMd $geminiFile "Gemini instructions" | Out-Null
+
     # Sync .claude directory
     $dotClaudeSrc = Join-Path $RepoDir ".claude"
     if (Test-Path -LiteralPath $dotClaudeSrc) {
@@ -251,11 +256,13 @@ function Main {
     Log-Info "Claude config: $ClaudeConfig"
     Log-Info "OpenCode config: $OpenCodeConfig"
     Log-Info "Codex config: $CodexConfig"
+    Log-Info "Gemini config: $GeminiConfig"
     Write-Host ""
     Write-Host "Synchronized files:"
     Write-Host "  - AI.md -> $claudeFile"
     Write-Host "  - AI.md -> $opencodeFile"
     Write-Host "  - AI.md -> $codexFile"
+    Write-Host "  - AI.md -> $geminiFile"
     if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
         Write-Host "  - skills/ -> $ClaudeConfig/skills/"
         Write-Host "  - skills/ -> $OpenCodeConfig/skills/"

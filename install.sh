@@ -6,6 +6,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_CONFIG="$HOME/.claude"
 OPENCODE_CONFIG="$HOME/.config/opencode"
 CODEX_CONFIG="$HOME/.codex"
+GEMINI_CONFIG="$HOME/.gemini"
 
 # Source files
 AI_MD="$REPO_DIR/AI.md"
@@ -227,6 +228,11 @@ main() {
     if check_and_sync_file "$REPO_DIR/AI.md" "$CODEX_CONFIG/AGENTS.md" "Codex instructions"; then
         log_info "Codex configuration synchronized"
     fi
+
+    # Sync AI.md to Gemini GEMINI.md
+    if check_and_sync_file "$REPO_DIR/AI.md" "$GEMINI_CONFIG/GEMINI.md" "Gemini instructions"; then
+        log_info "Gemini configuration synchronized"
+    fi
     
     # Sync .claude directory
     if [[ -d "$REPO_DIR/.claude" ]]; then
@@ -253,11 +259,13 @@ main() {
     log_info "Claude config: $CLAUDE_CONFIG"
     log_info "OpenCode config: $OPENCODE_CONFIG"
     log_info "Codex config: $CODEX_CONFIG"
+    log_info "Gemini config: $GEMINI_CONFIG"
     echo ""
     echo "Synchronized files:"
     echo "  - AI.md → $CLAUDE_CONFIG/CLAUDE.md"
     echo "  - AI.md → $OPENCODE_CONFIG/AGENTS.md"
     echo "  - AI.md → $CODEX_CONFIG/AGENTS.md"
+    echo "  - AI.md → $GEMINI_CONFIG/GEMINI.md"
     if [[ -d "$REPO_DIR/skills" ]]; then
         echo "  - skills/ → $CLAUDE_CONFIG/skills/"
         echo "  - skills/ → $OPENCODE_CONFIG/skills/"

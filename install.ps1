@@ -228,6 +228,13 @@ function Main {
     $geminiFile = Join-Path $GeminiConfig "GEMINI.md"
     Check-And-Sync-File $AiMd $geminiFile "Gemini instructions" | Out-Null
 
+    # Sync .gemini/workflows directory to Antigravity global workflows
+    $dotGeminiWorkflowsSrc = Join-Path $RepoDir ".gemini/workflows"
+    if (Test-Path -LiteralPath $dotGeminiWorkflowsSrc) {
+        $antigravityWorkflows = Join-Path $GeminiConfig "antigravity/global_workflows"
+        Sync-Directory $dotGeminiWorkflowsSrc $antigravityWorkflows "Antigravity workflows"
+    }
+
     # Sync .claude directory
     $dotClaudeSrc = Join-Path $RepoDir ".claude"
     if (Test-Path -LiteralPath $dotClaudeSrc) {

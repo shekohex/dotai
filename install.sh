@@ -233,6 +233,12 @@ main() {
     if check_and_sync_file "$REPO_DIR/AI.md" "$GEMINI_CONFIG/GEMINI.md" "Gemini instructions"; then
         log_info "Gemini configuration synchronized"
     fi
+
+    # Sync .gemini/workflows directory
+    if [[ -d "$REPO_DIR/.gemini/workflows" ]]; then
+        ANTIGRAVITY_WORKFLOWS="$GEMINI_CONFIG/antigravity/global_workflows"
+        sync_directory "$REPO_DIR/.gemini/workflows" "$ANTIGRAVITY_WORKFLOWS" "Antigravity workflows"
+    fi
     
     # Sync .claude directory
     if [[ -d "$REPO_DIR/.claude" ]]; then

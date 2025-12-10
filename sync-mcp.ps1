@@ -16,7 +16,7 @@ $McpJson = Join-Path $ScriptDir "mcp.json"
 $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $OpenCodeDir = Join-Path $env:USERPROFILE ".config\opencode"
 $ClaudeConfig = Join-Path $env:USERPROFILE ".claude.json"
-$OpenCodeConfig = Join-Path $OpenCodeDir "opencode.json"
+$OpenCodeConfig = Join-Path $OpenCodeDir "opencode.jsonc"
 
 # Helper functions for colored logging
 function Log-Info([string]$msg) { Write-Host "[INFO] $msg" -ForegroundColor Green }
@@ -83,6 +83,13 @@ function Sync-To-Claude([string]$ClaudeConfigPath) {
 
 function Sync-To-OpenCode([string]$OpenCodeConfigPath) {
     Log-Info "Syncing MCP config to OpenCode format..."
+
+    # Migrate old config if it exists
+    $oldConfig = $OpenCodeConfigPath -replace '\.jsonc$', '.json'
+    if ((Test-Path $oldConfig) -and -not (Test-Path $OpenCodeConfigPath)) {
+        Move-Item $oldConfig $OpenCodeConfigPath
+        Log-Info "Migrated $oldConfig to $OpenCodeConfigPath"
+    }
 
     # Check if OpenCode config exists
     if (-not (Test-Path -LiteralPath $OpenCodeConfigPath)) {

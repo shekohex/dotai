@@ -143,7 +143,7 @@ sync-mcp.bat
 
 REM Check the generated configs
 type "%USERPROFILE%\.claude.json"
-type "%USERPROFILE%\.config\opencode\opencode.json"
+type "%USERPROFILE%\.config\opencode\opencode.jsonc"
 ```
 
 ## Error Handling

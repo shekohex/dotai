@@ -211,7 +211,7 @@ xcopy /?  # Directory copy (Windows)
 ### OpenCode
 - Configuration directory: `$HOME/.config/opencode/` (Unix) / `%USERPROFILE%\.config\opencode\` (Windows)
 - Instructions file: `AGENTS.md`
-- MCP servers: Updated in `opencode.json` (transformed to OpenCode format)
+- MCP servers: Updated in `opencode.jsonc` (transformed to OpenCode format)
 
 ## Configuration Files
 
@@ -340,7 +340,7 @@ Edit `mcp.json` with your MCP server configurations and run:
 
 This will automatically:
 1. Update the `mcpServers` section in `~/.claude/.claude.json` 
-2. Transform and update the `mcp` section in `~/.config/opencode/opencode.json`
+2. Transform and update the `mcp` section in `~/.config/opencode/opencode.jsonc`
 3. Create backups of existing configurations
 4. Show diffs and ask for confirmation
 

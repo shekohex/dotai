@@ -18,7 +18,7 @@ OPENCODE_DIR="$HOME/.config/opencode"
 
 # Target files
 CLAUDE_CONFIG="$HOME/.claude.json"
-OPENCODE_CONFIG="$OPENCODE_DIR/opencode.json"
+OPENCODE_CONFIG="$OPENCODE_DIR/opencode.jsonc"
 
 # Function to print colored output
 print_status() {
@@ -141,6 +141,13 @@ sync_to_opencode() {
 
   print_status "Syncing MCP config to OpenCode format..."
 
+  # Migrate old config if it exists
+  local old_config="${opencode_config%.jsonc}.json"
+  if [[ -f "$old_config" ]] && [[ ! -f "$opencode_config" ]]; then
+    mv "$old_config" "$opencode_config"
+    print_status "Migrated $old_config to $opencode_config"
+  fi
+
   # Check if OpenCode config exists
   if [[ ! -f "$opencode_config" ]]; then
     print_warning "OpenCode config not found, creating minimal config"
@@ -162,7 +169,8 @@ EOF
   opencode_mcp=$(transform_to_opencode_format "$mcp_servers")
 
   # Update OpenCode config with transformed MCP servers
-  jq --argjson mcp "$opencode_mcp" '.mcp = $mcp' "$opencode_config" >"$opencode_config.tmp"
+  # Use sed to strip comments before passing to jq
+  jq --argjson mcp "$opencode_mcp" '.mcp = $mcp' <(sed 's/^[[:space:]]*\/\/.*$//' "$opencode_config") >"$opencode_config.tmp"
   mv "$opencode_config.tmp" "$opencode_config"
 
   print_status "OpenCode MCP config updated"

@@ -22,8 +22,15 @@ if (-not (Test-Path -LiteralPath $InputFile)) {
     exit 1
 }
 
+# Function to strip comments
+function Get-CleanJsonContent {
+    param([string]$Path)
+    Get-Content $Path | Where-Object { $_ -notmatch '^\s*//' } | Out-String
+}
+
 # Validate JSON
-jq empty "$InputFile" 2>$null
+$cleanContent = Get-CleanJsonContent $InputFile
+$cleanContent | jq empty 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Error "[ERROR] Invalid JSON in $InputFile"
     exit 1
@@ -45,7 +52,7 @@ try {
 
             # Read source object and merge
             # Uses slurpfile to safely handle the merge
-            jq --slurpfile source "$SourceFile" ".[\`"$ObjectKey\`"] = `$source[0][\`"$ObjectKey\`"]" "$InputFile" | Out-File -FilePath $OutputFile -Encoding utf8
+            $cleanContent | jq --slurpfile source "$SourceFile" ".[\`"$ObjectKey\`"] = `$source[0][\`"$ObjectKey\`"]" | Out-File -FilePath $OutputFile -Encoding utf8
             Write-Host "[INFO] Successfully merged $ObjectKey from $SourceFile"
         }
 
@@ -54,7 +61,7 @@ try {
             $FieldPath = $Arg1
             if (-not $FieldPath) { throw "Missing argument for extract_field" }
 
-            jq "$FieldPath" "$InputFile" | Out-File -FilePath $OutputFile -Encoding utf8
+            $cleanContent | jq "$FieldPath" | Out-File -FilePath $OutputFile -Encoding utf8
             Write-Host "[INFO] Successfully extracted $FieldPath"
         }
 
@@ -73,13 +80,14 @@ to_entries | map(
                 {
                     type: "remote",
                     url: `$server.url,
-                    enabled: true
+                    headers: `$server.headers,
+                    enabled: `$server.enabled
                 }
             else
                 {
                     type: "local",
                     command: (([`$server.command] + (`$server.args // []))),
-                    enabled: true
+                    enabled: `$server.enabled
                 } + (
                     if `$server.env then
                         {environment: `$server.env}
@@ -93,7 +101,7 @@ to_entries | map(
 ) | from_entries
 "@
             Set-Content -Path $TransformScript -Value $JqFilter -Encoding UTF8
-            jq -f "$TransformScript" "$InputFile" | Out-File -FilePath $OutputFile -Encoding utf8
+            $cleanContent | jq -f "$TransformScript" | Out-File -FilePath $OutputFile -Encoding utf8
             
             # Clean up temp file
             if (Test-Path $TransformScript) { Remove-Item $TransformScript }
@@ -109,7 +117,7 @@ to_entries | map(
             if (-not $FieldPath -or -not $ValueFile) { throw "Missing arguments for set_field" }
             if (-not (Test-Path -LiteralPath $ValueFile)) { throw "Value file not found: $ValueFile" }
 
-            jq --slurpfile value "$ValueFile" "$FieldPath = `$value[0]" "$InputFile" | Out-File -FilePath $OutputFile -Encoding utf8
+            $cleanContent | jq --slurpfile value "$ValueFile" "$FieldPath = `$value[0]" | Out-File -FilePath $OutputFile -Encoding utf8
             Write-Host "[INFO] Successfully set $FieldPath"
         }
 

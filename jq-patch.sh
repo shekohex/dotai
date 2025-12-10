@@ -27,7 +27,12 @@ if [[ ! -f "$input_file" ]]; then
     exit 1
 fi
 
-if ! jq empty "$input_file" 2>/dev/null; then
+# Function to strip comments (lines starting with optional whitespace and //)
+clean_json() {
+    sed 's/^[[:space:]]*\/\/.*$//' "$1"
+}
+
+if ! clean_json "$input_file" | jq empty 2>/dev/null; then
     echo "[ERROR] Invalid JSON in $input_file"
     exit 1
 fi
@@ -53,8 +58,79 @@ case "$operation" in
         fi
 
         # Read source object and merge
-        jq --slurpfile source "$source_file" ".[\"$object_key\"] = \$source[0][\"$object_key\"]" "$input_file" > "$output_file"
+        clean_json "$input_file" | jq --slurpfile source "$source_file" ".[\"$object_key\"] = \$source[0][\"$object_key\"]" > "$output_file"
         echo "[INFO] Successfully merged $object_key from $source_file"
+        ;;
+
+    extract_field)
+        # Usage: jq-patch.sh extract_field input.json output.json field_path
+        field_path="$4"
+
+        if [[ -z "$field_path" ]]; then
+            usage
+            exit 1
+        fi
+
+        clean_json "$input_file" | jq "$field_path" > "$output_file"
+        echo "[INFO] Successfully extracted $field_path"
+        ;;
+
+    transform_opencode)
+        # Usage: jq-patch.sh transform_opencode input.json output.json
+        transform_script="$temp_dir/transform.jq"
+
+        cat > "$transform_script" << 'EOF'
+to_entries | map(
+    .value as $server | .key as $name |
+    {
+        key: $name,
+        value: (
+            if $server.type == "http" then
+                {
+                    type: "remote",
+                    url: $server.url,
+                    headers: $server.headers,
+                    enabled: $server.enabled
+                }
+            else
+                {
+                    type: "local",
+                    command: ([$server.command] + ($server.args // [])),
+                    enabled: $server.enabled
+                } + (
+                    if $server.env then
+                        {environment: $server.env}
+                    else
+                        {}
+                    end
+                )
+            end
+        )
+    }
+) | from_entries
+EOF
+
+        clean_json "$input_file" | jq -f "$transform_script" > "$output_file"
+        echo "[INFO] Successfully transformed to OpenCode format"
+        ;;
+
+    set_field)
+        # Usage: jq-patch.sh set_field input.json output.json field_path value_file
+        field_path="$4"
+        value_file="$5"
+
+        if [[ -z "$field_path" ]] || [[ -z "$value_file" ]]; then
+            usage
+            exit 1
+        fi
+
+        if [[ ! -f "$value_file" ]]; then
+            echo "[ERROR] Value file not found: $value_file"
+            exit 1
+        fi
+
+        clean_json "$input_file" | jq --slurpfile value "$value_file" "$field_path = \$value[0]" > "$output_file"
+        echo "[INFO] Successfully set $field_path"
         ;;
 
     extract_field)

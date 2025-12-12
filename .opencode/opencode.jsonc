@@ -7,7 +7,7 @@
   "plugin": [
     "opencode-openai-codex-auth@4.0.2",
     "opencode-skills@0.1.1",
-    "opencode-google-antigravity-auth@0.1.8"
+    "opencode-google-antigravity-auth@0.1.10"
   ],
   "model": "google/gemini-3-pro-high",
   "small_model": "google/gemini-2.5-flash-lite",
@@ -18,29 +18,7 @@
         "gemini-3-pro-preview": {
           "id": "gemini-3-pro-preview",
           "name": "Gemini 3 Pro Preview",
-          "release_date": "2025-11-18",
-          "reasoning": true,
-          "limit": {
-            "context": 1000000,
-            "output": 64000
-          },
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cache_read": 0.2
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video",
-              "audio",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
+          "reasoning": true
         },
         "gemini-3-pro-high": {
           "id": "gemini-3-pro-preview",
@@ -75,70 +53,31 @@
         "gemini-2.5-flash": {
           "id": "gemini-2.5-flash",
           "name": "Gemini 2.5 Flash",
-          "release_date": "2025-03-20",
           "reasoning": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          },
-          "cost": {
-            "input": 0.3,
-            "output": 2.5,
-            "cache_read": 0.075
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio",
-              "video",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
+          "options": {
+            "thinkingConfig": {
+              "thinkingBudget": 8192,
+              "includeThoughts": true
+            }
           }
+        },
+        "gemini-2.5-flash-thinking-none": {
+          "id": "gemini-2.5-flash",
+          "name": "Gemini 2.5 Flash (Non-Thinking)",
+          "reasoning": false
         },
         "gemini-2.5-flash-lite": {
           "id": "gemini-2.5-flash-lite",
           "name": "Gemini 2.5 Flash Lite",
-          "release_date": "2025-06-17",
-          "reasoning": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          },
-          "cost": {
-            "input": 0.1,
-            "output": 0.4,
-            "cache_read": 0.025
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio",
-              "video",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
+          "reasoning": false
         },
         "gemini-claude-sonnet-4-5-thinking-high": {
           "id": "gemini-claude-sonnet-4-5-thinking",
           "name": "Claude Sonnet 4.5 (High Thinking)",
-          "release_date": "2025-11-18",
           "reasoning": true,
           "limit": {
             "context": 200000,
             "output": 64000
-          },
-          "cost": {
-            "input": 3,
-            "output": 15,
-            "cache_read": 0.3
           },
           "modalities": {
             "input": [
@@ -160,16 +99,10 @@
         "gemini-claude-sonnet-4-5-thinking-medium": {
           "id": "gemini-claude-sonnet-4-5-thinking",
           "name": "Claude Sonnet 4.5 (Medium Thinking)",
-          "release_date": "2025-11-18",
           "reasoning": true,
           "limit": {
             "context": 200000,
             "output": 64000
-          },
-          "cost": {
-            "input": 3,
-            "output": 15,
-            "cache_read": 0.3
           },
           "modalities": {
             "input": [
@@ -191,16 +124,10 @@
         "gemini-claude-sonnet-4-5-thinking-low": {
           "id": "gemini-claude-sonnet-4-5-thinking",
           "name": "Claude Sonnet 4.5 (Low Thinking)",
-          "release_date": "2025-11-18",
           "reasoning": true,
           "limit": {
             "context": 200000,
             "output": 64000
-          },
-          "cost": {
-            "input": 3,
-            "output": 15,
-            "cache_read": 0.3
           },
           "modalities": {
             "input": [
@@ -219,19 +146,32 @@
             }
           }
         },
-        "gemini-claude-opus-4-5-thinking-high": {
-          "id": "gemini-claude-opus-4-5-thinking",
-          "name": "Claude Opus 4.5 (High Thinking)",
-          "release_date": "2025-11-24",
-          "reasoning": true,
+        "gemini-claude-sonnet-4-5-thinking-none": {
+          "id": "gemini-claude-sonnet-4-5-thinking",
+          "name": "Claude Sonnet 4.5 (Non-Thinking)",
+          "reasoning": false,
           "limit": {
             "context": 200000,
             "output": 64000
           },
-          "cost": {
-            "input": 5,
-            "output": 25,
-            "cache_read": 0.5
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-claude-opus-4-5-thinking-high": {
+          "id": "gemini-claude-opus-4-5-thinking",
+          "name": "Claude Opus 4.5 (High Thinking)",
+          "reasoning": true,
+          "limit": {
+            "context": 200000,
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -259,11 +199,6 @@
             "context": 200000,
             "output": 64000
           },
-          "cost": {
-            "input": 5,
-            "output": 25,
-            "cache_read": 0.5
-          },
           "modalities": {
             "input": [
               "text",
@@ -289,11 +224,6 @@
           "limit": {
             "context": 200000,
             "output": 64000
-          },
-          "cost": {
-            "input": 5,
-            "output": 25,
-            "cache_read": 0.5
           },
           "modalities": {
             "input": [

@@ -51,6 +51,9 @@ This system requires several command-line tools to function properly:
 - **git** - Version control system (provides better diff output, fallback available)
 - **rsync** (Unix/Linux/macOS) - Efficient directory synchronization (fallback to cp available)
 - **diff** - Text comparison tool (fallback when git unavailable)
+- **openskills** - Universal skills loader for AI agents (syncs skills to AI.md)
+  - Requires Node.js 20.6+ or Bun
+  - Install with: `npm i -g openskills` or `bun i -g openskills`
 
 ### Installation Instructions
 
@@ -66,6 +69,9 @@ Using [Homebrew](https://brew.sh/) (recommended):
 brew install jq ntfy git
 
 # rsync and diff are usually pre-installed on macOS
+
+# Install openskills (optional, for skills management)
+npm i -g openskills  # or: bun i -g openskills
 ```
 
 Using [MacPorts](https://www.macports.org/):
@@ -94,6 +100,9 @@ sudo apt install ntfy
 
 # Alternative: Install ntfy via pip
 # pip3 install ntfy-sh
+
+# Install openskills (optional, for skills management)
+npm i -g openskills  # or: bun i -g openskills
 ```
 
 #### Linux (CentOS/RHEL/Fedora)
@@ -118,6 +127,9 @@ sudo dnf install jq git rsync curl
 
 # Install ntfy via pip
 pip3 install ntfy-sh
+
+# Install openskills (optional, for skills management)
+npm i -g openskills  # or: bun i -g openskills
 ```
 
 #### Arch Linux
@@ -130,6 +142,9 @@ sudo pacman -S jq git rsync curl
 yay -S ntfy-sh
 # or using paru: paru -S ntfy-sh
 # or manually: git clone https://aur.archlinux.org/ntfy-sh.git && cd ntfy-sh && makepkg -si
+
+# Install openskills (optional, for skills management)
+npm i -g openskills  # or: bun i -g openskills
 ```
 
 #### Windows
@@ -146,6 +161,9 @@ choco install jq git curl
 # Install ntfy via pip (requires Python)
 choco install python
 pip install ntfy-sh
+
+# Install openskills (optional, for skills management)
+npm i -g openskills  # or: bun i -g openskills
 ```
 
 **Using [Scoop](https://scoop.sh/):**
@@ -161,6 +179,9 @@ scoop install jq git curl
 # Install ntfy via pip
 scoop install python
 pip install ntfy-sh
+
+# Install openskills (optional, for skills management)
+npm i -g openskills  # or: bun i -g openskills
 ```
 
 **Manual Installation:**
@@ -169,6 +190,7 @@ pip install ntfy-sh
 2. **git**: Download from [https://git-scm.com/download/win](https://git-scm.com/download/win)
 3. **curl**: Usually included with Windows 10+ or download from [https://curl.se/windows/](https://curl.se/windows/)
 4. **ntfy**: Install Python from [https://python.org](https://python.org), then run `pip install ntfy-sh`
+5. **openskills** (optional): `npm i -g openskills` or `bun i -g openskills`
 
 **Using Windows Subsystem for Linux (WSL):**
 
@@ -195,6 +217,9 @@ curl --version
 # Check optional dependencies (Unix/Linux/macOS)
 rsync --version
 diff --version
+
+# Check openskills (optional)
+openskills --version
 
 # Windows equivalents
 fc /?  # File compare (Windows)

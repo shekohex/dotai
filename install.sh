@@ -155,23 +155,32 @@ sync_directory() {
 
 sync_skills_directory() {
     local skills_source="$REPO_DIR/skills"
+    local agent_skills_target="$HOME/.agent/skills"
     
     if [[ ! -d "$skills_source" ]]; then
         log_warn "Skills directory not found: $skills_source"
         return 0
     fi
     
-    log_info "Syncing shared skills directory..."
+    log_info "Syncing skills to universal location..."
+    sync_directory "$skills_source" "$agent_skills_target" "universal skills"
+    log_info "Skills synchronized to $agent_skills_target"
+}
+
+sync_skills_to_ai_md() {
+    if ! command -v openskills &> /dev/null; then
+        log_warn "openskills not installed, skipping skills sync to AI.md"
+        log_warn "Install with: npm i -g openskills (or: bun i -g openskills)"
+        return 0
+    fi
     
-    # Sync to Claude config
-    local claude_skills_target="$CLAUDE_CONFIG/skills"
-    sync_directory "$skills_source" "$claude_skills_target" "Claude skills"
-    
-    # Sync to OpenCode config
-    local opencode_skills_target="$OPENCODE_CONFIG/skills"
-    sync_directory "$skills_source" "$opencode_skills_target" "OpenCode skills"
-    
-    log_info "Shared skills directory synchronized to both configurations"
+    log_info "Syncing skills to AI.md via openskills..."
+    if openskills sync --output "$AI_MD" -y; then
+        log_info "Skills synchronized to AI.md"
+    else
+        log_error "Failed to sync skills to AI.md"
+        return 1
+    fi
 }
 
 # Sync MCP configurations using dedicated script
@@ -214,6 +223,12 @@ main() {
     log_info "AI Configuration Installer"
     log_info "Repository: $REPO_DIR"
     
+    # Sync skills directory first (before AI.md sync)
+    sync_skills_directory
+    
+    # Sync skills to AI.md via openskills (must happen before copying AI.md)
+    sync_skills_to_ai_md
+    
     # Sync AI.md to CLAUDE.md
     if check_and_sync_file "$REPO_DIR/AI.md" "$CLAUDE_CONFIG/CLAUDE.md" "Claude instructions"; then
         log_info "Claude configuration synchronized"
@@ -255,9 +270,6 @@ main() {
         sync_directory "$REPO_DIR/.codex" "$CODEX_CONFIG" "Codex"
     fi
     
-    # Sync shared skills directory
-    sync_skills_directory
-    
     # Sync MCP configurations
     sync_mcp_configs
     
@@ -273,8 +285,7 @@ main() {
     echo "  - AI.md → $CODEX_CONFIG/AGENTS.md"
     echo "  - AI.md → $GEMINI_CONFIG/GEMINI.md"
     if [[ -d "$REPO_DIR/skills" ]]; then
-        echo "  - skills/ → $CLAUDE_CONFIG/skills/"
-        echo "  - skills/ → $OPENCODE_CONFIG/skills/"
+        echo "  - skills/ → ~/.agent/skills/"
     fi
     if [[ -f "$MCP_JSON" ]]; then
         echo "  - mcp.json → Claude MCP servers"

@@ -154,23 +154,37 @@ function Sync-Directory {
 
 function Sync-Skills-Directory {
     $skillsSource = Join-Path $RepoDir "skills"
+    $agentSkillsTarget = Join-Path $HOME ".agent/skills"
     
     if (-not (Test-Path -LiteralPath $skillsSource)) {
         Log-Warn "Skills directory not found: $skillsSource"
         return
     }
     
-    Log-Info "Syncing shared skills directory..."
+    Log-Info "Syncing skills to universal location..."
+    Sync-Directory $skillsSource $agentSkillsTarget "universal skills"
+    Log-Info "Skills synchronized to $agentSkillsTarget"
+}
+
+function Sync-Skills-To-AiMd {
+    if (-not (Get-Command "openskills" -ErrorAction SilentlyContinue)) {
+        Log-Warn "openskills not installed, skipping skills sync to AI.md"
+        Log-Warn "Install with: npm i -g openskills (or: bun i -g openskills)"
+        return
+    }
     
-    # Sync to Claude config
-    $claudeSkillsTarget = Join-Path $ClaudeConfig "skills"
-    Sync-Directory $skillsSource $claudeSkillsTarget "Claude skills"
-    
-    # Sync to OpenCode config
-    $opencodeSkillsTarget = Join-Path $OpenCodeConfig "skills"
-    Sync-Directory $skillsSource $opencodeSkillsTarget "OpenCode skills"
-    
-    Log-Info "Shared skills directory synchronized to both configurations"
+    Log-Info "Syncing skills to AI.md via openskills..."
+    try {
+        & openskills sync --output $AiMd -y
+        if ($LASTEXITCODE -eq 0) {
+            Log-Info "Skills synchronized to AI.md"
+        } else {
+            Log-Error "Failed to sync skills to AI.md"
+        }
+    }
+    catch {
+        Log-Error "Failed to sync skills to AI.md: $_"
+    }
 }
 
 function Sync-Mcp-Configs {
@@ -211,6 +225,12 @@ function Sync-Mcp-Configs {
 function Main {
     Log-Info "AI Configuration Installer"
     Log-Info "Repository: $RepoDir"
+
+    # Sync skills directory first (before AI.md sync)
+    Sync-Skills-Directory
+
+    # Sync skills to AI.md via openskills (must happen before copying AI.md)
+    Sync-Skills-To-AiMd
 
     # Sync AI.md to CLAUDE.md
     $claudeFile = Join-Path $ClaudeConfig "CLAUDE.md"
@@ -253,9 +273,6 @@ function Main {
         Sync-Directory $dotCodexSrc $CodexConfig "Codex"
     }
 
-    # Sync shared skills directory
-    Sync-Skills-Directory
-
     # Sync MCP configurations
     Sync-Mcp-Configs
 
@@ -271,8 +288,7 @@ function Main {
     Write-Host "  - AI.md -> $codexFile"
     Write-Host "  - AI.md -> $geminiFile"
     if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
-        Write-Host "  - skills/ -> $ClaudeConfig/skills/"
-        Write-Host "  - skills/ -> $OpenCodeConfig/skills/"
+        Write-Host "  - skills/ -> ~/.agent/skills/"
     }
     if (Test-Path -LiteralPath $McpJson) {
         Write-Host "  - mcp.json -> Claude MCP servers"

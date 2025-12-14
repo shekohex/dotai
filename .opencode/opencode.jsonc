@@ -6,8 +6,8 @@
   "username": "shekohex",
   "plugin": [
     "opencode-openai-codex-auth@4.1.0",
-    "opencode-skills@0.1.1",
-    "opencode-google-antigravity-auth@0.1.10"
+    "opencode-google-antigravity-auth@0.1.10",
+    "opencode-pty@0.1.0"
   ],
   "model": "google/gemini-3-pro-high",
   "small_model": "google/gemini-2.5-flash-lite",

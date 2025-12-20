@@ -5,8 +5,8 @@
   "autoupdate": false,
   "username": "shekohex",
   "plugin": [
-    "opencode-openai-codex-auth@4.1.0",
-    "opencode-google-antigravity-auth@0.2.1",
+    "opencode-openai-codex-auth@4.2.0",
+    "opencode-google-antigravity-auth@0.2.8",
     "opencode-pty@0.1.0"
   ],
   "model": "google/gemini-3-pro-high",
@@ -17,12 +17,34 @@
       "models": {
         "gemini-3-pro-preview": {
           "id": "gemini-3-pro-preview",
-          "name": "Gemini 3 Pro Preview",
-          "reasoning": true
+          "name": "3 Pro",
+          "release_date": "2025-11-18",
+          "reasoning": true,
+          "limit": {
+            "context": 1000000,
+            "output": 64000
+          },
+          "cost": {
+            "input": 2,
+            "output": 12,
+            "cache_read": 0.2
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
         },
         "gemini-3-pro-high": {
           "id": "gemini-3-pro-preview",
-          "name": "Gemini 3 Pro Preview (High Thinking)",
+          "name": "3 Pro (H)",
           "options": {
             "thinkingConfig": {
               "thinkingLevel": "high",
@@ -32,7 +54,7 @@
         },
         "gemini-3-pro-medium": {
           "id": "gemini-3-pro-preview",
-          "name": "Gemini 3 Pro Preview (Medium Thinking)",
+          "name": "3 Pro (M)",
           "options": {
             "thinkingConfig": {
               "thinkingLevel": "medium",
@@ -42,7 +64,7 @@
         },
         "gemini-3-pro-low": {
           "id": "gemini-3-pro-preview",
-          "name": "Gemini 3 Pro Preview (Low Thinking)",
+          "name": "3 Pro (L)",
           "options": {
             "thinkingConfig": {
               "thinkingLevel": "low",
@@ -50,25 +72,71 @@
             }
           }
         },
-        "gemini-2.5-flash": {
-          "id": "gemini-2.5-flash",
-          "name": "Gemini 2.5 Flash",
+        "gemini-3-flash": {
+          "id": "gemini-3-flash",
+          "name": "3 Flash",
+          "release_date": "2025-12-17",
           "reasoning": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          },
+          "cost": {
+            "input": 0.5,
+            "output": 3,
+            "cache_read": 0.05
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-3-flash-high": {
+          "id": "gemini-3-flash",
+          "name": "3 Flash (H)",
           "options": {
             "thinkingConfig": {
-              "thinkingBudget": 8192,
+              "thinkingLevel": "high",
+              "includeThoughts": true
+            }
+          }
+        },
+        "gemini-3-flash-medium": {
+          "id": "gemini-3-flash",
+          "name": "3 Flash (M)",
+          "options": {
+            "thinkingConfig": {
+              "thinkingLevel": "medium",
+              "includeThoughts": true
+            }
+          }
+        },
+        "gemini-3-flash-low": {
+          "id": "gemini-3-flash",
+          "name": "3 Flash (L)",
+          "options": {
+            "thinkingConfig": {
+              "thinkingLevel": "low",
               "includeThoughts": true
             }
           }
         },
         "gemini-2.5-flash-lite": {
           "id": "gemini-2.5-flash-lite",
-          "name": "Gemini 2.5 Flash Lite",
+          "name": "2.5 Flash Lite",
           "reasoning": false
         },
         "gemini-claude-sonnet-4-5-thinking-high": {
           "id": "gemini-claude-sonnet-4-5-thinking",
-          "name": "Claude Sonnet 4.5 (High Thinking)",
+          "name": "Sonnet 4.5 (H)",
           "reasoning": true,
           "limit": {
             "context": 200000,
@@ -93,7 +161,7 @@
         },
         "gemini-claude-sonnet-4-5-thinking-medium": {
           "id": "gemini-claude-sonnet-4-5-thinking",
-          "name": "Claude Sonnet 4.5 (Medium Thinking)",
+          "name": "Sonnet 4.5 (M)",
           "reasoning": true,
           "limit": {
             "context": 200000,
@@ -118,7 +186,7 @@
         },
         "gemini-claude-sonnet-4-5-thinking-low": {
           "id": "gemini-claude-sonnet-4-5-thinking",
-          "name": "Claude Sonnet 4.5 (Low Thinking)",
+          "name": "Sonnet 4.5 (L)",
           "reasoning": true,
           "limit": {
             "context": 200000,
@@ -143,7 +211,7 @@
         },
         "gemini-claude-sonnet-4-5-thinking-none": {
           "id": "gemini-claude-sonnet-4-5-thinking",
-          "name": "Claude Sonnet 4.5 (Non-Thinking)",
+          "name": "Sonnet 4.5",
           "reasoning": false,
           "limit": {
             "context": 200000,
@@ -162,7 +230,7 @@
         },
         "gemini-claude-opus-4-5-thinking-high": {
           "id": "gemini-claude-opus-4-5-thinking",
-          "name": "Claude Opus 4.5 (High Thinking)",
+          "name": "Opus 4.5 (H)",
           "reasoning": true,
           "limit": {
             "context": 200000,
@@ -187,7 +255,7 @@
         },
         "gemini-claude-opus-4-5-thinking-medium": {
           "id": "gemini-claude-opus-4-5-thinking",
-          "name": "Claude Opus 4.5 (Medium Thinking)",
+          "name": "Opus 4.5 (M)",
           "release_date": "2025-11-24",
           "reasoning": true,
           "limit": {
@@ -213,7 +281,7 @@
         },
         "gemini-claude-opus-4-5-thinking-low": {
           "id": "gemini-claude-opus-4-5-thinking",
-          "name": "Claude Opus 4.5 (Low Thinking)",
+          "name": "Opus 4.5 (L)",
           "release_date": "2025-11-24",
           "reasoning": true,
           "limit": {
@@ -266,8 +334,8 @@
         "store": false
       },
       "models": {
-        "gpt-5.2-low": {
-          "name": "GPT 5.2 Low (OAuth)",
+        "gpt-5.2-xhigh": {
+          "name": "5.2 (XH)",
           "limit": {
             "context": 272000,
             "output": 128000
@@ -282,33 +350,8 @@
             ]
           },
           "options": {
-            "reasoningEffort": "low",
-            "reasoningSummary": "auto",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.2-medium": {
-          "name": "GPT 5.2 Medium (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "medium",
-            "reasoningSummary": "auto",
+            "reasoningEffort": "xhigh",
+            "reasoningSummary": "detailed",
             "textVerbosity": "medium",
             "include": [
               "reasoning.encrypted_content"
@@ -317,7 +360,7 @@
           }
         },
         "gpt-5.2-high": {
-          "name": "GPT 5.2 High (OAuth)",
+          "name": "5.2 (H)",
           "limit": {
             "context": 272000,
             "output": 128000
@@ -341,8 +384,133 @@
             "store": false
           }
         },
-        "gpt-5.2-xhigh": {
-          "name": "GPT 5.2 Extra High (OAuth)",
+        "gpt-5.2-medium": {
+          "name": "5.2 (M)",
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "medium",
+            "reasoningSummary": "auto",
+            "textVerbosity": "medium",
+            "include": [
+              "reasoning.encrypted_content"
+            ],
+            "store": false
+          }
+        },
+        "gpt-5.2-low": {
+          "name": "5.2 (L)",
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "low",
+            "reasoningSummary": "auto",
+            "textVerbosity": "medium",
+            "include": [
+              "reasoning.encrypted_content"
+            ],
+            "store": false
+          }
+        },
+        "gpt-5.2-codex-low": {
+          "name": "5.2 Codex (L)",
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "low",
+            "reasoningSummary": "auto",
+            "textVerbosity": "medium",
+            "include": [
+              "reasoning.encrypted_content"
+            ],
+            "store": false
+          }
+        },
+        "gpt-5.2-codex-medium": {
+          "name": "5.2 Codex (M)",
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "medium",
+            "reasoningSummary": "auto",
+            "textVerbosity": "medium",
+            "include": [
+              "reasoning.encrypted_content"
+            ],
+            "store": false
+          }
+        },
+        "gpt-5.2-codex-high": {
+          "name": "5.2 Codex (H)",
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "high",
+            "reasoningSummary": "detailed",
+            "textVerbosity": "medium",
+            "include": [
+              "reasoning.encrypted_content"
+            ],
+            "store": false
+          }
+        },
+        "gpt-5.2-codex-xhigh": {
+          "name": "5.2 Codex (XH)",
           "limit": {
             "context": 272000,
             "output": 128000
@@ -360,306 +528,6 @@
             "reasoningEffort": "xhigh",
             "reasoningSummary": "detailed",
             "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-max-low": {
-          "name": "GPT 5.1 Codex Max Low (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "low",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-max-medium": {
-          "name": "GPT 5.1 Codex Max Medium (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "medium",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-max-high": {
-          "name": "GPT 5.1 Codex Max High (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-max-xhigh": {
-          "name": "GPT 5.1 Codex Max Extra High (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "xhigh",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-low": {
-          "name": "GPT 5.1 Codex Low (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "low",
-            "reasoningSummary": "auto",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-medium": {
-          "name": "GPT 5.1 Codex Medium (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "medium",
-            "reasoningSummary": "auto",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-high": {
-          "name": "GPT 5.1 Codex High (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-mini-medium": {
-          "name": "GPT 5.1 Codex Mini Medium (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "medium",
-            "reasoningSummary": "auto",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-codex-mini-high": {
-          "name": "GPT 5.1 Codex Mini High (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-low": {
-          "name": "GPT 5.1 Low (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "low",
-            "reasoningSummary": "auto",
-            "textVerbosity": "low",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-medium": {
-          "name": "GPT 5.1 Medium (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "medium",
-            "reasoningSummary": "auto",
-            "textVerbosity": "medium",
-            "include": [
-              "reasoning.encrypted_content"
-            ],
-            "store": false
-          }
-        },
-        "gpt-5.1-high": {
-          "name": "GPT 5.1 High (OAuth)",
-          "limit": {
-            "context": 272000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "high",
             "include": [
               "reasoning.encrypted_content"
             ],
@@ -672,6 +540,7 @@
   "permission": {
     "bash": {
       "git push": "ask",
+      "rm -rf": "ask",
       "*": "allow"
     }
   },
@@ -682,7 +551,7 @@
     }
   },
   "experimental": {
-    "batch_tool": false
+    "batch_tool": true
   },
   "mcp": {}
 }

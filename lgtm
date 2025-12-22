@@ -9,7 +9,7 @@ set -e
 # ============================================================================
 
 # --- Configuration ---
-readonly MODEL="google/gemini-3-flash"
+readonly MODEL="google/gemini-3-flash-low"
 readonly HOSTNAME="127.0.0.1"
 readonly SERVER_READY_TIMEOUT=30
 

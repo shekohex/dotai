@@ -9,7 +9,7 @@ set -e
 # ============================================================================
 
 # --- Configuration ---
-readonly MODEL="google/gemini-2.5-flash"
+readonly MODEL="google/gemini-3-flash"
 readonly HOSTNAME="127.0.0.1"
 readonly SERVER_READY_TIMEOUT=30
 
@@ -26,36 +26,7 @@ PUSH_CHANGES=0
 AUTO_CONFIRM=0
 
 # --- Base prompt for the commit agent ---
-readonly BASE_PROMPT='You are a git commit assistant. Your job is to:
-
-- List all staged and unstaged changes in the repository.
-- Analyze each change and group related changes together (by feature, fix, refactor, etc.).
-- When using `git diff`, ALWAYS use `--no-ext-diff`, and focus on the actual code changes, ignoring whitespace and formatting-only changes.
-- For each group, generate a commit message in the Conventional Commits format (<https://www.conventionalcommits.org/en/v1.0.0/>):
-  <type>[optional scope]: <description>
-  [optional body]
-  [optional footer(s)]
-- If changes are unrelated, create multiple commits.
-- Only group changes that are logically related and should be committed together.
-- Output a summary of the commits you create, including the files in each commit.
-- Do not make any code changes yourself; only stage and commit files as needed.
-- Be atomic and precise. Never mix unrelated changes in a single commit.
-- Always do `git add <files> && git commit -m "<message>"` for each commit you create, to ensure the changes are properly staged and committed in one step.
-- If invoked by another agent, return a structured summary of the commits created.
-
-Best practices:
-
-- Use `feat` for new features, `fix` for bug fixes, `refactor` for code refactoring, `docs` for documentation, `test` for test changes, `chore` for maintenance.
-- Use a scope if the change is limited to a module, directory, or feature.
-- Write clear, concise descriptions in the imperative mood.
-- If in doubt, ask for clarification before committing.
-
-Example output:
-
-- feat(parser): add support for new chunk type
-- fix(animation): correct frame interpolation bug
-- docs: update README with usage instructions
-
+readonly BASE_PROMPT='NEVER DO ANY CHANGES TO THE FILES, YOU ONLY CAN DO GIT OPERATIONS
 If there are uncommitted changes left, warn the user.'
 
 # ============================================================================
@@ -63,13 +34,13 @@ If there are uncommitted changes left, warn the user.'
 # ============================================================================
 
 log() {
-    if [[ "$VERBOSE" -eq 1 ]]; then
-        echo "[lgtm] $*" >&2
-    fi
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    echo "[lgtm] $*" >&2
+  fi
 }
 
 log_error() {
-    echo "[lgtm] ERROR: $*" >&2
+  echo "[lgtm] ERROR: $*" >&2
 }
 
 # ============================================================================
@@ -77,43 +48,43 @@ log_error() {
 # ============================================================================
 
 parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -v|--verbose)
-                VERBOSE=1
-                shift
-                ;;
-            -P|--push)
-                PUSH_CHANGES=1
-                shift
-                ;;
-            -y|--yes)
-                AUTO_CONFIRM=1
-                shift
-                ;;
-            -p|--prompt)
-                if [[ -n "$2" && "$2" != -* ]]; then
-                    EXTRA_PROMPT="$2"
-                    shift 2
-                else
-                    log_error "--prompt requires an argument"
-                    exit 1
-                fi
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            *)
-                EXTRA_ARGS+=("$1")
-                shift
-                ;;
-        esac
-    done
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -v | --verbose)
+      VERBOSE=1
+      shift
+      ;;
+    -P | --push)
+      PUSH_CHANGES=1
+      shift
+      ;;
+    -y | --yes)
+      AUTO_CONFIRM=1
+      shift
+      ;;
+    -p | --prompt)
+      if [[ -n "$2" && "$2" != -* ]]; then
+        EXTRA_PROMPT="$2"
+        shift 2
+      else
+        log_error "--prompt requires an argument"
+        exit 1
+      fi
+      ;;
+    -h | --help)
+      show_help
+      exit 0
+      ;;
+    *)
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+    esac
+  done
 }
 
 show_help() {
-    cat <<EOF
+  cat <<EOF
 Usage: lgtm [OPTIONS] [-- EXTRA_OPENCODE_ARGS...]
 
 Git commit assistant using opencode.
@@ -138,35 +109,35 @@ EOF
 # ============================================================================
 
 cleanup() {
-    local exit_code=$?
-    log "Cleaning up..."
+  local exit_code=$?
+  log "Cleaning up..."
 
-    # Delete the session if we have one
-    if [[ -n "$SESSION_ID" && -n "$SERVER_PORT" ]]; then
-        log "Deleting session $SESSION_ID..."
-        curl -s -X DELETE "http://${HOSTNAME}:${SERVER_PORT}/session/${SESSION_ID}" >/dev/null 2>&1 || true
-    fi
+  # Delete the session if we have one
+  if [[ -n "$SESSION_ID" && -n "$SERVER_PORT" ]]; then
+    log "Deleting session $SESSION_ID..."
+    curl -s -X DELETE "http://${HOSTNAME}:${SERVER_PORT}/session/${SESSION_ID}" >/dev/null 2>&1 || true
+  fi
 
-    # Kill the tail process if running (verbose mode)
-    if [[ -n "$TAIL_PID" ]]; then
-        kill "$TAIL_PID" 2>/dev/null || true
-    fi
+  # Kill the tail process if running (verbose mode)
+  if [[ -n "$TAIL_PID" ]]; then
+    kill "$TAIL_PID" 2>/dev/null || true
+  fi
 
-    # Kill the server if running
-    if [[ -n "$SERVER_PID" ]]; then
-        log "Stopping server (PID: $SERVER_PID)..."
-        kill "$SERVER_PID" 2>/dev/null || true
-        sleep 0.2
-        kill -9 "$SERVER_PID" 2>/dev/null || true
-    fi
+  # Kill the server if running
+  if [[ -n "$SERVER_PID" ]]; then
+    log "Stopping server (PID: $SERVER_PID)..."
+    kill "$SERVER_PID" 2>/dev/null || true
+    sleep 0.2
+    kill -9 "$SERVER_PID" 2>/dev/null || true
+  fi
 
-    # Clean up temp log file
-    if [[ -n "$SERVER_LOG_FILE" && -f "$SERVER_LOG_FILE" ]]; then
-        rm -f "$SERVER_LOG_FILE"
-    fi
+  # Clean up temp log file
+  if [[ -n "$SERVER_LOG_FILE" && -f "$SERVER_LOG_FILE" ]]; then
+    rm -f "$SERVER_LOG_FILE"
+  fi
 
-    log "Cleanup complete (exit code: $exit_code)"
-    exit $exit_code
+  log "Cleanup complete (exit code: $exit_code)"
+  exit $exit_code
 }
 
 # ============================================================================
@@ -174,57 +145,57 @@ cleanup() {
 # ============================================================================
 
 start_server() {
-    log "Starting opencode server..."
+  log "Starting opencode server..."
 
-    # Create temp file for server logs
-    SERVER_LOG_FILE=$(mktemp)
+  # Create temp file for server logs
+  SERVER_LOG_FILE=$(mktemp)
 
-    # Start server with port 0 (random available port)
-    # Note: We redirect to file and optionally tail it for verbose mode
-    opencode serve --port 0 --hostname "$HOSTNAME" --print-logs >"$SERVER_LOG_FILE" 2>&1 &
-    SERVER_PID=$!
+  # Start server with port 0 (random available port)
+  # Note: We redirect to file and optionally tail it for verbose mode
+  opencode serve --log-level DEBUG --port 0 --hostname "$HOSTNAME" --print-logs >"$SERVER_LOG_FILE" 2>&1 &
+  SERVER_PID=$!
 
-    # In verbose mode, tail the log file in background
-    if [[ "$VERBOSE" -eq 1 ]]; then
-        tail -f "$SERVER_LOG_FILE" &
-        TAIL_PID=$!
-    fi
+  # In verbose mode, tail the log file in background
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    tail -f "$SERVER_LOG_FILE" &
+    TAIL_PID=$!
+  fi
 
-    log "Server started with PID: $SERVER_PID"
+  log "Server started with PID: $SERVER_PID"
 }
 
 wait_for_server() {
-    log "Waiting for server to be ready..."
+  log "Waiting for server to be ready..."
 
-    local elapsed=0
-    while [[ $elapsed -lt $SERVER_READY_TIMEOUT ]]; do
-        # Try to extract port from log file
-        if [[ -f "$SERVER_LOG_FILE" ]]; then
-            # Look for: "opencode server listening on http://127.0.0.1:PORT"
-            SERVER_PORT=$(grep -oE "listening on http://${HOSTNAME}:([0-9]+)" "$SERVER_LOG_FILE" 2>/dev/null | grep -oE '[0-9]+$' | head -1 || true)
+  local elapsed=0
+  while [[ $elapsed -lt $SERVER_READY_TIMEOUT ]]; do
+    # Try to extract port from log file
+    if [[ -f "$SERVER_LOG_FILE" ]]; then
+      # Look for: "opencode server listening on http://127.0.0.1:PORT"
+      SERVER_PORT=$(grep -oE "listening on http://${HOSTNAME}:([0-9]+)" "$SERVER_LOG_FILE" 2>/dev/null | grep -oE '[0-9]+$' | head -1 || true)
 
-            if [[ -n "$SERVER_PORT" ]]; then
-                # Verify server is responding
-                if curl -s "http://${HOSTNAME}:${SERVER_PORT}/config" >/dev/null 2>&1; then
-                    log "Server ready on port $SERVER_PORT"
-                    return 0
-                fi
-            fi
+      if [[ -n "$SERVER_PORT" ]]; then
+        # Verify server is responding
+        if curl -s "http://${HOSTNAME}:${SERVER_PORT}/config" >/dev/null 2>&1; then
+          log "Server ready on port $SERVER_PORT"
+          return 0
         fi
+      fi
+    fi
 
-        # Check if server process is still alive
-        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            log_error "Server process died unexpectedly"
-            cat "$SERVER_LOG_FILE" >&2
-            return 1
-        fi
+    # Check if server process is still alive
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      log_error "Server process died unexpectedly"
+      cat "$SERVER_LOG_FILE" >&2
+      return 1
+    fi
 
-        sleep 0.5
-        elapsed=$((elapsed + 1))
-    done
+    sleep 0.5
+    elapsed=$((elapsed + 1))
+  done
 
-    log_error "Timeout waiting for server to be ready"
-    return 1
+  log_error "Timeout waiting for server to be ready"
+  return 1
 }
 
 # ============================================================================
@@ -232,32 +203,32 @@ wait_for_server() {
 # ============================================================================
 
 create_session() {
-    log "Creating new session..."
+  log "Creating new session..."
 
-    local response
-    response=$(curl -s -X POST "http://${HOSTNAME}:${SERVER_PORT}/session" \
-        -H "Content-Type: application/json" \
-        -d '{"title": "lgtm commit session"}')
+  local response
+  response=$(curl -s -X POST "http://${HOSTNAME}:${SERVER_PORT}/session" \
+    -H "Content-Type: application/json" \
+    -d '{"title": "lgtm commit session"}')
 
-    SESSION_ID=$(echo "$response" | jq -r '.id // empty' 2>/dev/null || true)
+  SESSION_ID=$(echo "$response" | jq -r '.id // empty' 2>/dev/null || true)
 
-    if [[ -z "$SESSION_ID" ]]; then
-        log_error "Failed to create session"
-        log "Response: $response"
-        return 1
-    fi
+  if [[ -z "$SESSION_ID" ]]; then
+    log_error "Failed to create session"
+    log "Response: $response"
+    return 1
+  fi
 
-    log "Session created: $SESSION_ID"
+  log "Session created: $SESSION_ID"
 }
 
 delete_session() {
-    if [[ -z "$SESSION_ID" || -z "$SERVER_PORT" ]]; then
-        return 0
-    fi
+  if [[ -z "$SESSION_ID" || -z "$SERVER_PORT" ]]; then
+    return 0
+  fi
 
-    log "Deleting session $SESSION_ID..."
-    curl -s -X DELETE "http://${HOSTNAME}:${SERVER_PORT}/session/${SESSION_ID}" >/dev/null 2>&1 || true
-    SESSION_ID=""
+  log "Deleting session $SESSION_ID..."
+  curl -s -X DELETE "http://${HOSTNAME}:${SERVER_PORT}/session/${SESSION_ID}" >/dev/null 2>&1 || true
+  SESSION_ID=""
 }
 
 # ============================================================================
@@ -265,32 +236,32 @@ delete_session() {
 # ============================================================================
 
 build_prompt() {
-    local prompt="$BASE_PROMPT"
+  local prompt="$BASE_PROMPT"
 
-    if [[ -n "$EXTRA_PROMPT" ]]; then
-        prompt="${prompt}
+  if [[ -n "$EXTRA_PROMPT" ]]; then
+    prompt="${prompt}
 
 User additional instructions:
 ${EXTRA_PROMPT}"
-    fi
+  fi
 
-    echo "$prompt"
+  echo "$prompt"
 }
 
 run_agent() {
-    log "Running commit agent..."
+  log "Running commit agent..."
 
-    local prompt
-    prompt=$(build_prompt)
+  local prompt
+  prompt=$(build_prompt)
 
-    local attach_url="http://${HOSTNAME}:${SERVER_PORT}"
+  local attach_url="http://${HOSTNAME}:${SERVER_PORT}"
 
-    # Run opencode with the prompt, attaching to our server
-    if [[ "$VERBOSE" -eq 1 ]]; then
-        opencode run --attach "$attach_url" -m "$MODEL" "${EXTRA_ARGS[@]}" "$prompt"
-    else
-        opencode run --attach "$attach_url" -m "$MODEL" "${EXTRA_ARGS[@]}" "$prompt" 2>/dev/null
-    fi
+  # Run opencode with the prompt, attaching to our server
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    opencode run --command commit --attach "$attach_url" -m "$MODEL" "${EXTRA_ARGS[@]}" "$prompt"
+  else
+    opencode run --command commit --attach "$attach_url" -m "$MODEL" "${EXTRA_ARGS[@]}" "$prompt" 2>/dev/null
+  fi
 }
 
 # ============================================================================
@@ -298,32 +269,32 @@ run_agent() {
 # ============================================================================
 
 push_to_remote() {
-    if [[ "$PUSH_CHANGES" -eq 1 ]]; then
-        local current_branch
-        current_branch=$(git branch --show-current)
+  if [[ "$PUSH_CHANGES" -eq 1 ]]; then
+    local current_branch
+    current_branch=$(git branch --show-current)
 
-        if [[ -z "$current_branch" ]]; then
-            log_error "Could not detect current git branch."
-            return
-        fi
-
-        if [[ "$AUTO_CONFIRM" -eq 0 ]]; then
-            # Read from /dev/tty to ensure we get user input even if stdin is redirected
-            echo -n "Push changes to remote branch '$current_branch'? [y/N] "
-            read -r response < /dev/tty
-            if [[ ! "$response" =~ ^[yY]$ ]]; then
-                log "Push aborted by user."
-                return
-            fi
-        fi
-
-        log "Pushing to origin/$current_branch..."
-        if git push origin "$current_branch"; then
-            log "Successfully pushed to origin/$current_branch"
-        else
-            log_error "Failed to push to origin/$current_branch"
-        fi
+    if [[ -z "$current_branch" ]]; then
+      log_error "Could not detect current git branch."
+      return
     fi
+
+    if [[ "$AUTO_CONFIRM" -eq 0 ]]; then
+      # Read from /dev/tty to ensure we get user input even if stdin is redirected
+      echo -n "Push changes to remote branch '$current_branch'? [y/N] "
+      read -r response </dev/tty
+      if [[ ! "$response" =~ ^[yY]$ ]]; then
+        log "Push aborted by user."
+        return
+      fi
+    fi
+
+    log "Pushing to origin/$current_branch..."
+    if git push origin "$current_branch"; then
+      log "Successfully pushed to origin/$current_branch"
+    else
+      log_error "Failed to push to origin/$current_branch"
+    fi
+  fi
 }
 
 # ============================================================================
@@ -331,21 +302,21 @@ push_to_remote() {
 # ============================================================================
 
 main() {
-    parse_args "$@"
+  parse_args "$@"
 
-    # Set up cleanup trap for various signals
-    trap cleanup EXIT INT TERM HUP
+  # Set up cleanup trap for various signals
+  trap cleanup EXIT INT TERM HUP
 
-    # Start and wait for server
-    start_server
-    wait_for_server || exit 1
+  # Start and wait for server
+  start_server
+  wait_for_server || exit 1
 
-    # Create session and run agent
-    create_session || exit 1
-    run_agent
-    push_to_remote
+  # Create session and run agent
+  create_session || exit 1
+  run_agent
+  push_to_remote
 
-    log "Done!"
+  log "Done!"
 }
 
 main "$@"

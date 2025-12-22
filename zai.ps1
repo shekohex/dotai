@@ -9,9 +9,9 @@ function zai {
   # Set environment variables
   $env:ANTHROPIC_AUTH_TOKEN = 'your_api_key'
   $env:ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic'
-  $env:ANTHROPIC_MODEL = 'glm-4.6'
-  $env:ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-4.6'
-  $env:ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-4.6'
+  $env:ANTHROPIC_MODEL = 'glm-4.7'
+  $env:ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-4.7'
+  $env:ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-4.7'
   $env:ANTHROPIC_DEFAULT_HAIKU_MODEL = 'glm-4.5-air'
   $env:ANTHROPIC_SMALL_FAST_MODEL = 'glm-4.5-air'
   $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1

@@ -3,9 +3,9 @@
 # Usage: zai claude [--dangerously-skip-permissions] ...
 
 export ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic
-export ANTHROPIC_MODEL="glm-4.6"
-export ANTHROPIC_DEFAULT_OPUS_MODEL="glm-4.6"
-export ANTHROPIC_DEFAULT_SONNET_MODEL="glm-4.6"
+export ANTHROPIC_MODEL="glm-4.7"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="glm-4.7"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="glm-4.7"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="glm-4.5-air"
 export ANTHROPIC_SMALL_FAST_MODEL="glm-4.5-air"
 export ANTHROPIC_AUTH_TOKEN="<YOUR_ZAI_CODING_PLAN>"
@@ -16,4 +16,3 @@ unset CLAUDE_CODE_MAX_OUTPUT_TOKENS
 exec "$@"
 
 # vim: set ft=sh
-

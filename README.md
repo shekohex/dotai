@@ -46,9 +46,6 @@ This system requires several command-line tools to function properly:
 - **git** - Version control system (provides better diff output, fallback available)
 - **rsync** (Unix/Linux/macOS) - Efficient directory synchronization (fallback to cp available)
 - **diff** - Text comparison tool (fallback when git unavailable)
-- **openskills** - Universal skills loader for AI agents (syncs skills to AI.md)
-  - Requires Node.js 20.6+ or Bun
-  - Install with: `npm i -g openskills` or `bun i -g openskills`
 
 ### Installation Instructions
 
@@ -64,9 +61,6 @@ Using [Homebrew](https://brew.sh/) (recommended):
 brew install jq git
 
 # rsync and diff are usually pre-installed on macOS
-
-# Install openskills (optional, for skills management)
-npm i -g openskills  # or: bun i -g openskills
 ```
 
 Using [MacPorts](https://www.macports.org/):
@@ -84,9 +78,6 @@ sudo apt update
 
 # Install required dependencies
 sudo apt install jq git rsync curl
-
-# Install openskills (optional, for skills management)
-npm i -g openskills  # or: bun i -g openskills
 ```
 
 #### Linux (CentOS/RHEL/Fedora)
@@ -101,12 +92,11 @@ sudo yum install jq git rsync curl
 ```
 
 **Fedora:**
+
+**Fedora:**
 ```bash
 # Install required dependencies
 sudo dnf install jq git rsync curl
-
-# Install openskills (optional, for skills management)
-npm i -g openskills  # or: bun i -g openskills
 ```
 
 #### Arch Linux
@@ -114,9 +104,6 @@ npm i -g openskills  # or: bun i -g openskills
 ```bash
 # Install required dependencies from official repositories
 sudo pacman -S jq git rsync curl
-
-# Install openskills (optional, for skills management)
-npm i -g openskills  # or: bun i -g openskills
 ```
 
 #### Windows
@@ -129,9 +116,6 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManage
 
 # Install required dependencies
 choco install jq git curl
-
-# Install openskills (optional, for skills management)
-npm i -g openskills  # or: bun i -g openskills
 ```
 
 **Using [Scoop](https://scoop.sh/):**
@@ -143,9 +127,6 @@ irm get.scoop.sh | iex
 
 # Install required dependencies
 scoop install jq git curl
-
-# Install openskills (optional, for skills management)
-npm i -g openskills  # or: bun i -g openskills
 ```
 
 **Manual Installation:**
@@ -153,7 +134,6 @@ npm i -g openskills  # or: bun i -g openskills
 1. **jq**: Download from [https://stedolan.github.io/jq/download/](https://stedolan.github.io/jq/download/)
 2. **git**: Download from [https://git-scm.com/download/win](https://git-scm.com/download/win)
 3. **curl**: Usually included with Windows 10+ or download from [https://curl.se/windows/](https://curl.se/windows/)
-4. **openskills** (optional): `npm i -g openskills` or `bun i -g openskills`
 
 **Using Windows Subsystem for Linux (WSL):**
 
@@ -177,9 +157,6 @@ git --version
 rsync --version
 diff --version
 
-# Check openskills (optional)
-openskills --version
-
 # Windows equivalents
 fc /?  # File compare (Windows)
 xcopy /?  # Directory copy (Windows)
@@ -194,6 +171,7 @@ xcopy /?  # Directory copy (Windows)
 
 ### OpenCode
 - Configuration directory: `$HOME/.config/opencode/` (Unix) / `%USERPROFILE%\.config\opencode\` (Windows)
+- Skills directory: `$HOME/.opencode/skill/` (Unix) / `%USERPROFILE%\.opencode\skill\` (Windows)
 - Instructions file: `AGENTS.md`
 - MCP servers: Updated in `opencode.jsonc` (transformed to OpenCode format)
 
@@ -293,6 +271,8 @@ The following tools are required by the installation scripts as documented above
 - **cmp** - File comparison
 - **diff** - Text comparison fallback
 
+OpenCode automatically loads skills from `~/.opencode/skill/`
+
 ### Windows
 - **cmd** - Command interpreter
 - **jq** - JSON processing for MCP configuration transformation
@@ -323,10 +303,17 @@ Edit `mcp.json` with your MCP server configurations and run:
 ```
 
 This will automatically:
-1. Update the `mcpServers` section in `~/.claude/.claude.json` 
+1. Update the `mcpServers` section in `~/.claude/.claude.json`
 2. Transform and update the `mcp` section in `~/.config/opencode/opencode.jsonc`
 3. Create backups of existing configurations
 4. Show diffs and ask for confirmation
+
+### After Updating Skills
+Edit skills in the `skills/` directory and run:
+```bash
+./install.sh
+```
+This will automatically sync skills to `~/.opencode/skill/` for OpenCode.
 
 ### Manual MCP Sync Only
 To sync only MCP configurations without touching other files:

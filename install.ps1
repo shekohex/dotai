@@ -154,38 +154,19 @@ function Sync-Directory {
 
 function Sync-Skills-Directory {
     $skillsSource = Join-Path $RepoDir "skills"
-    $agentSkillsTarget = Join-Path $HOME ".agent/skills"
+    $agentSkillsTarget = Join-Path $HOME ".opencode/skill"
     
     if (-not (Test-Path -LiteralPath $skillsSource)) {
         Log-Warn "Skills directory not found: $skillsSource"
         return
     }
     
-    Log-Info "Syncing skills to universal location..."
-    Sync-Directory $skillsSource $agentSkillsTarget "universal skills"
+    Log-Info "Syncing skills to OpenCode..."
+    Sync-Directory $skillsSource $agentSkillsTarget "OpenCode skills"
     Log-Info "Skills synchronized to $agentSkillsTarget"
 }
 
-function Sync-Skills-To-AiMd {
-    if (-not (Get-Command "openskills" -ErrorAction SilentlyContinue)) {
-        Log-Warn "openskills not installed, skipping skills sync to AI.md"
-        Log-Warn "Install with: npm i -g openskills (or: bun i -g openskills)"
-        return
-    }
-    
-    Log-Info "Syncing skills to AI.md via openskills..."
-    try {
-        & openskills sync --output $AiMd -y
-        if ($LASTEXITCODE -eq 0) {
-            Log-Info "Skills synchronized to AI.md"
-        } else {
-            Log-Error "Failed to sync skills to AI.md"
-        }
-    }
-    catch {
-        Log-Error "Failed to sync skills to AI.md: $_"
-    }
-}
+
 
 function Sync-Mcp-Configs {
     $mcpSyncPs1 = Join-Path $RepoDir "sync-mcp.ps1"
@@ -228,9 +209,6 @@ function Main {
 
     # Sync skills directory first (before AI.md sync)
     Sync-Skills-Directory
-
-    # Sync skills to AI.md via openskills (must happen before copying AI.md)
-    Sync-Skills-To-AiMd
 
     # Sync AI.md to CLAUDE.md
     $claudeFile = Join-Path $ClaudeConfig "CLAUDE.md"
@@ -288,7 +266,7 @@ function Main {
     Write-Host "  - AI.md -> $codexFile"
     Write-Host "  - AI.md -> $geminiFile"
     if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
-        Write-Host "  - skills/ -> ~/.agent/skills/"
+        Write-Host "  - skills/ -> ~/.opencode/skill/"
     }
     if (Test-Path -LiteralPath $McpJson) {
         Write-Host "  - mcp.json -> Claude MCP servers"

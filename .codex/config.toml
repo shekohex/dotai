@@ -2,10 +2,10 @@
 # Adjust to your liking. See Codex CLI docs for full options.
 
 # Core (root defaults)
-model = "gpt-5.1-codex-max"
-approval_policy = "on-request"       # untrusted|on-failure|on-request|never
-sandbox_mode   = "workspace-write"   # read-only|workspace-write|danger-full-access
-profile = "balanced"                 # active profile: balanced|safe|minimal|yolo
+model = "gpt-5.2-codex"
+approval_policy = "on-request"   # untrusted|on-failure|on-request|never
+sandbox_mode = "workspace-write" # read-only|workspace-write|danger-full-access
+profile = "balanced"             # active profile: balanced|safe|minimal|yolo
 
 # Extra settings that only apply when `sandbox = "workspace-write"`.
 [sandbox_workspace_write]
@@ -33,14 +33,15 @@ apply_patch_freeform = false
 view_image_tool = true
 experimental_sandbox_command_assessment = false
 ghost_commit = false
-enable_experimental_windows_sandbox = false
+experimental_windows_sandbox = false
+shell_snapshot = true
 
 # ---- Profiles (override only what differs from root) -----------------------
 
 [profiles.balanced]
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
-model = "gpt-5.1-codex"
+model = "gpt-5.2-codex"
 model_reasoning_effort = "medium"
 [profiles.balanced.features]
 web_search_request = true
@@ -48,13 +49,13 @@ web_search_request = true
 [profiles.safe]
 approval_policy = "on-failure"
 sandbox_mode = "workspace-write"
-model = "gpt-5.1-codex"
+model = "gpt-5.2-codex"
 model_reasoning_effort = "medium"
 [profiles.safe.features]
 web_search_request = false
 
 [profiles.minimal]
-model = "gpt-5.1-codex"
+model = "gpt-5.2-codex"
 model_reasoning_effort = "medium"
 [profiles.minimal.features]
 web_search_request = false
@@ -62,21 +63,14 @@ web_search_request = false
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
-model = "gpt-5.1-codex-max"
+model = "gpt-5.2-codex"
 model_reasoning_effort = "high"
 tool_output_token_limit = 25000
+
 [profiles.yolo.features]
 web_search_request = true
-
-[mcp_servers.chrome-devtools]
-command = "npx"
-enabled = false
-args = ["chrome-devtools-mcp@latest"]
 
 [shell_environment_policy]
 inherit = "all"
 ignore_default_excludes = true
 experimental_use_profile = true
-
-[notice]
-"hide_gpt-5.1-codex-max_migration_prompt" = true

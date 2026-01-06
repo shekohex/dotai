@@ -5,7 +5,9 @@
   },
   "includeCoAuthoredBy": false,
   "permissions": {
-    "allow": ["Bash(gh issue view)"],
+    "allow": [
+      "Bash(gh issue view)"
+    ],
     "deny": [
       "Read(./.env)",
       "Read(./secrets/**)",
@@ -25,12 +27,7 @@
     "type": "command",
     "command": "bash ~/.claude/statusline-wrapper.sh"
   },
-  "enabledPlugins": {
-    "pr-review-toolkit@claude-code-plugins": true,
-    "feature-dev@claude-code-plugins": true,
-    "superpowers@superpowers-marketplace": true,
-    "document-skills@anthropic-agent-skills": true
-  },
+  "enabledPlugins": {},
   "alwaysThinkingEnabled": true,
   "theme": "dark",
   "autoUpdates": false

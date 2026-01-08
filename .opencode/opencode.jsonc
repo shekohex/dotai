@@ -235,7 +235,7 @@
       }
     },
     "zai": {
-      "name": "Z.AI (Anthropic)",
+      "name": "Z.AI",
       "env": [
         "ZHIPU_API_KEY",
         "ZAI_API_KEY"
@@ -243,6 +243,7 @@
       "npm": "@ai-sdk/anthropic",
       "api": "https://api.z.ai/api/anthropic/v1",
       "options": {
+        "setCacheKey": true,
         "thinking": {
           "type": "enabled",
           "budgetTokens": 64000

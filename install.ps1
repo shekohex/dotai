@@ -155,6 +155,7 @@ function Sync-Directory {
 function Sync-Skills-Directory {
     $skillsSource = Join-Path $RepoDir "skills"
     $agentSkillsTarget = Join-Path $HOME ".opencode/skill"
+    $codexSkillsTarget = Join-Path $CodexConfig "skills"
     
     if (-not (Test-Path -LiteralPath $skillsSource)) {
         Log-Warn "Skills directory not found: $skillsSource"
@@ -164,8 +165,44 @@ function Sync-Skills-Directory {
     Log-Info "Syncing skills to OpenCode..."
     Sync-Directory $skillsSource $agentSkillsTarget "OpenCode skills"
     Log-Info "Skills synchronized to $agentSkillsTarget"
+
+    Log-Info "Syncing skills to Codex..."
+    Sync-Directory $skillsSource $codexSkillsTarget "Codex skills"
+    Log-Info "Skills synchronized to $codexSkillsTarget"
 }
 
+function Sync-Codex-Prompts {
+    $codexPromptsTarget = Join-Path $CodexConfig "prompts"
+    $codexPromptsSource = Join-Path $RepoDir ".codex/prompts"
+    $claudeCommandsSource = Join-Path $RepoDir ".claude/commands"
+
+    function Flatten-Prompts($sourceDir, $targetDir) {
+        if (-not (Test-Path -LiteralPath $targetDir)) {
+            New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        }
+        Get-ChildItem -LiteralPath $sourceDir -Recurse -File -Filter *.md | ForEach-Object {
+            $relative = $_.FullName.Substring($sourceDir.Length).TrimStart('\','/')
+            $flat = $relative -replace '[\\/]', '-'
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $targetDir $flat) -Force
+        }
+    }
+
+    if (Test-Path -LiteralPath $codexPromptsSource) {
+        Log-Info "Syncing custom prompts to Codex..."
+        Flatten-Prompts $codexPromptsSource $codexPromptsTarget
+        Log-Info "Custom prompts synchronized to $codexPromptsTarget"
+        return
+    }
+
+    if (Test-Path -LiteralPath $claudeCommandsSource) {
+        Log-Info "Syncing Claude commands to Codex prompts..."
+        Flatten-Prompts $claudeCommandsSource $codexPromptsTarget
+        Log-Info "Custom prompts synchronized to $codexPromptsTarget"
+        return
+    }
+
+    Log-Warn "No custom prompts source found for Codex"
+}
 
 
 function Sync-Mcp-Configs {
@@ -209,6 +246,7 @@ function Main {
 
     # Sync skills directory first (before AI.md sync)
     Sync-Skills-Directory
+    Sync-Codex-Prompts
 
     # Sync AI.md to CLAUDE.md
     $claudeFile = Join-Path $ClaudeConfig "CLAUDE.md"
@@ -267,6 +305,10 @@ function Main {
     Write-Host "  - AI.md -> $geminiFile"
     if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
         Write-Host "  - skills/ -> ~/.opencode/skill/"
+        Write-Host "  - skills/ -> ~/.codex/skills/"
+    }
+    if (Test-Path -LiteralPath (Join-Path $RepoDir ".codex/prompts") -or (Test-Path -LiteralPath (Join-Path $RepoDir ".claude/commands"))) {
+        Write-Host "  - prompts/ -> ~/.codex/prompts/"
     }
     if (Test-Path -LiteralPath $McpJson) {
         Write-Host "  - mcp.json -> Claude MCP servers"

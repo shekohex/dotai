@@ -156,6 +156,7 @@ sync_directory() {
 sync_skills_directory() {
   local skills_source="$REPO_DIR/skills"
   local agent_skills_target="$HOME/.opencode/skill"
+  local codex_skills_target="$CODEX_CONFIG/skills"
 
   if [[ ! -d "$skills_source" ]]; then
     log_warn "Skills directory not found: $skills_source"
@@ -165,8 +166,44 @@ sync_skills_directory() {
   log_info "Syncing skills to OpenCode..."
   sync_directory "$skills_source" "$agent_skills_target" "OpenCode skills"
   log_info "Skills synchronized to $agent_skills_target"
+
+  log_info "Syncing skills to Codex..."
+  sync_directory "$skills_source" "$codex_skills_target" "Codex skills"
+  log_info "Skills synchronized to $codex_skills_target"
 }
 
+sync_codex_prompts_directory() {
+  local codex_prompts_target="$CODEX_CONFIG/prompts"
+  local codex_prompts_source="$REPO_DIR/.codex/prompts"
+  local claude_commands_source="$REPO_DIR/.claude/commands"
+
+  flatten_prompts() {
+    local source_dir="$1"
+    local target_dir="$2"
+    mkdir -p "$target_dir"
+    while IFS= read -r -d '' file; do
+      local rel="${file#$source_dir/}"
+      local flat="${rel//\//-}"
+      cp "$file" "$target_dir/$flat"
+    done < <(find "$source_dir" -type f -name "*.md" -print0)
+  }
+
+  if [[ -d "$codex_prompts_source" ]]; then
+    log_info "Syncing custom prompts to Codex..."
+    flatten_prompts "$codex_prompts_source" "$codex_prompts_target"
+    log_info "Custom prompts synchronized to $codex_prompts_target"
+    return 0
+  fi
+
+  if [[ -d "$claude_commands_source" ]]; then
+    log_info "Syncing Claude commands to Codex prompts..."
+    flatten_prompts "$claude_commands_source" "$codex_prompts_target"
+    log_info "Custom prompts synchronized to $codex_prompts_target"
+    return 0
+  fi
+
+  log_warn "No custom prompts source found for Codex"
+}
 # Sync MCP configurations using dedicated script
 sync_mcp_configs() {
   local mcp_sync_script="$REPO_DIR/sync-mcp.sh"
@@ -209,6 +246,7 @@ main() {
 
   # Sync skills directory first (before AI.md sync)
   sync_skills_directory
+  sync_codex_prompts_directory
 
   # Sync AI.md to CLAUDE.md
   if check_and_sync_file "$REPO_DIR/AI.md" "$CLAUDE_CONFIG/CLAUDE.md" "Claude instructions"; then
@@ -267,6 +305,10 @@ main() {
   echo "  - AI.md → $GEMINI_CONFIG/GEMINI.md"
   if [[ -d "$REPO_DIR/skills" ]]; then
     echo "  - skills/ → ~/.opencode/skill/"
+    echo "  - skills/ → ~/.codex/skills/"
+  fi
+  if [[ -d "$REPO_DIR/.codex/prompts" || -d "$REPO_DIR/.claude/commands" ]]; then
+    echo "  - prompts/ → ~/.codex/prompts/"
   fi
   if [[ -f "$MCP_JSON" ]]; then
     echo "  - mcp.json → Claude MCP servers"

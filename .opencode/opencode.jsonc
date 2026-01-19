@@ -67,6 +67,13 @@
       "options": {
         "baseURL": "https://ai-gateway.0iq.xyz/v1"
       }
+    },
+    "zai": {
+      "name": "Z.AI (Bigboss)",
+      "api": "https://ai-gateway.0iq.xyz/v1",
+      "options": {
+        "baseURL": "https://ai-gateway.0iq.xyz/v1"
+      }
     }
   },
   "permission": {

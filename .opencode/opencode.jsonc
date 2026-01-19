@@ -5,7 +5,7 @@
   "autoupdate": false,
   "username": "shekohex",
   "plugin": [
-    "opencode-google-antigravity-auth@0.2.11",
+    "opencode-google-antigravity-auth@0.2.14",
     "opencode-pty@0.1.4"
   ],
   "small_model": "opencode/gpt-5-nano",
@@ -13,176 +13,9 @@
     "google": {
       "npm": "@ai-sdk/google",
       "models": {
-        "gemini-3-pro-preview": {
-          "id": "gemini-3-pro-preview",
-          "name": "3 Pro",
-          "release_date": "2025-11-18",
-          "reasoning": true,
-          "limit": {
-            "context": 1000000,
-            "output": 64000
-          },
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cache_read": 0.2
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video",
-              "audio",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "variants": {
-            "low": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "low",
-                  "includeThoughts": true
-                }
-              }
-            },
-            "medium": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "medium",
-                  "includeThoughts": true
-                }
-              }
-            },
-            "high": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "high",
-                  "includeThoughts": true
-                }
-              }
-            }
-          }
-        },
-        "gemini-3-flash": {
-          "id": "gemini-3-flash",
-          "name": "3 Flash",
-          "release_date": "2025-12-17",
-          "reasoning": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          },
-          "cost": {
-            "input": 0.5,
-            "output": 3,
-            "cache_read": 0.05
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video",
-              "audio",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "variants": {
-            "minimal": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "minimal",
-                  "includeThoughts": true
-                }
-              }
-            },
-            "low": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "low",
-                  "includeThoughts": true
-                }
-              }
-            },
-            "medium": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "medium",
-                  "includeThoughts": true
-                }
-              }
-            },
-            "high": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingLevel": "high",
-                  "includeThoughts": true
-                }
-              }
-            }
-          }
-        },
-        "gemini-claude-sonnet-4-5-thinking": {
-          "id": "gemini-claude-sonnet-4-5-thinking",
-          "name": "Sonnet 4.5",
-          "reasoning": true,
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "variants": {
-            "none": {
-              "reasoning": false,
-              "options": {
-                "thinkingConfig": {
-                  "includeThoughts": false
-                }
-              }
-            },
-            "low": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingBudget": 4000,
-                  "includeThoughts": true
-                }
-              }
-            },
-            "medium": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingBudget": 16000,
-                  "includeThoughts": true
-                }
-              }
-            },
-            "high": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingBudget": 32000,
-                  "includeThoughts": true
-                }
-              }
-            }
-          }
-        },
         "gemini-claude-opus-4-5-thinking": {
           "id": "gemini-claude-opus-4-5-thinking",
-          "name": "Opus 4.5",
+          "name": "Claude Opus 4.5",
           "release_date": "2025-11-24",
           "reasoning": true,
           "limit": {
@@ -226,6 +59,13 @@
             }
           }
         }
+      }
+    },
+    "openai": {
+      "name": "OpenAI (Bigboss)",
+      "api": "https://ai-gateway.0iq.xyz/v1",
+      "options": {
+        "baseURL": "https://ai-gateway.0iq.xyz/v1"
       }
     }
   },

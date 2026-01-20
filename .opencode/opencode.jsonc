@@ -71,6 +71,7 @@
     "zai": {
       "name": "Z.AI (Bigboss)",
       "api": "https://ai-gateway.0iq.xyz/v1",
+      "npm": "@ai-sdk/anthropic",
       "options": {
         "baseURL": "https://ai-gateway.0iq.xyz/v1"
       }

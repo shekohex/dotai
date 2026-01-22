@@ -5,60 +5,16 @@
   "autoupdate": false,
   "username": "shekohex",
   "plugin": [
-    "opencode-google-antigravity-auth@0.2.14",
     "opencode-pty@0.1.4"
   ],
   "small_model": "opencode/gpt-5-nano",
   "provider": {
     "google": {
       "npm": "@ai-sdk/google",
-      "models": {
-        "gemini-claude-opus-4-5-thinking": {
-          "id": "gemini-claude-opus-4-5-thinking",
-          "name": "Claude Opus 4.5",
-          "release_date": "2025-11-24",
-          "reasoning": true,
-          "limit": {
-            "context": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "variants": {
-            "low": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingBudget": 4000,
-                  "includeThoughts": true
-                }
-              }
-            },
-            "medium": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingBudget": 16000,
-                  "includeThoughts": true
-                }
-              }
-            },
-            "high": {
-              "options": {
-                "thinkingConfig": {
-                  "thinkingBudget": 32000,
-                  "includeThoughts": true
-                }
-              }
-            }
-          }
-        }
+      "name": "Google (Bigboss)",
+      "api": "https://ai-gateway.0iq.xyz/v1beta",
+      "options": {
+        "baseURL": "https://ai-gateway.0iq.xyz/v1beta"
       }
     },
     "openai": {
@@ -70,6 +26,14 @@
     },
     "zai": {
       "name": "Z.AI (Bigboss)",
+      "api": "https://ai-gateway.0iq.xyz/v1",
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "baseURL": "https://ai-gateway.0iq.xyz/v1"
+      }
+    },
+    "anthropic": {
+      "name": "Anthropic (Bigboss)",
       "api": "https://ai-gateway.0iq.xyz/v1",
       "npm": "@ai-sdk/anthropic",
       "options": {

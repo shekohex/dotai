@@ -5,46 +5,54 @@
   "autoupdate": false,
   "username": "shekohex",
   "plugin": [
-    "opencode-pty@0.1.4"
+    "opencode-pty@0.1.5"
   ],
   "small_model": "opencode/gpt-5-nano",
   "provider": {
     "google": {
       "npm": "@ai-sdk/google",
       "name": "Google (Bigboss)",
-      "api": "https://ai-gateway.0iq.xyz/v1beta",
+      "api": "http://192.168.1.116:4000/v1beta",
       "options": {
-        "baseURL": "https://ai-gateway.0iq.xyz/v1beta"
+        "baseURL": "http://192.168.1.116:4000/v1beta"
       }
     },
     "openai": {
       "name": "OpenAI (Bigboss)",
-      "api": "https://ai-gateway.0iq.xyz/v1",
+      "api": "http://192.168.1.116:4000/v1",
       "options": {
-        "baseURL": "https://ai-gateway.0iq.xyz/v1"
+        "baseURL": "http://192.168.1.116:4000/v1"
       }
     },
     "zai": {
       "name": "Z.AI (Bigboss)",
-      "api": "https://ai-gateway.0iq.xyz/v1",
+      "api": "http://192.168.1.116:4000/v1",
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "https://ai-gateway.0iq.xyz/v1"
+        "baseURL": "http://192.168.1.116:4000/v1"
       }
     },
     "anthropic": {
       "name": "Anthropic (Bigboss)",
-      "api": "https://ai-gateway.0iq.xyz/v1",
+      "api": "http://192.168.1.116:4000/v1",
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "https://ai-gateway.0iq.xyz/v1"
+        "baseURL": "http://192.168.1.116:4000/v1"
+      }
+    },
+    "kimi-for-coding": {
+      "name": "Kimi (Bigboss)",
+      "api": "http://192.168.1.116:4000/v1",
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "baseURL": "http://192.168.1.116:4000/v1"
       }
     }
   },
   "permission": {
     "bash": {
-      "git push *": "ask",
-      "rm -rf *": "ask",
+      "git push*": "ask",
+      "rm -rf*": "ask",
       "*": "allow"
     }
   },

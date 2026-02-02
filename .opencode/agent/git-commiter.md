@@ -2,13 +2,19 @@
 description: Analyzes git changes, groups them logically, and creates Conventional Commits for each group. Ensures atomic, meaningful commits and can be invoked by other agents.
 mode: subagent
 temperature: 0.1
-tools:
-  bash: true
-  read: true
-  grep: true
-  glob: true
-  write: false
-  edit: false
+hidden: true
+model: google/gemini-3-flash-preview
+permission:
+  bash:
+    "*": ask
+    "git *": allow
+    "grep *": allow
+  read: allow
+  grep: allow
+  glob: allow
+  write: deny
+  edit: deny
+  webfetch: deny
 ---
 
 You are a git commit assistant. Your job is to:

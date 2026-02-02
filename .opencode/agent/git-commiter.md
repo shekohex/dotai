@@ -2,13 +2,10 @@
 description: Analyzes git changes, groups them logically, and creates Conventional Commits for each group. Ensures atomic, meaningful commits and can be invoked by other agents.
 mode: subagent
 temperature: 0.1
-hidden: true
+hidden: false
 model: google/gemini-3-flash-preview
 permission:
-  bash:
-    "*": ask
-    "git *": allow
-    "grep *": allow
+  bash: allow
   read: allow
   grep: allow
   glob: allow

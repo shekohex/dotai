@@ -8,6 +8,23 @@
     "opencode-pty@0.1.5"
   ],
   "small_model": "opencode/gpt-5-nano",
+  "agent": {
+    "explore": {
+      "model": "google/gemini-3-flash-preview",
+      "variant": "medium",
+      "color": "#4285F4"
+    },
+    "plan": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "build": {
+      "model": "openai/gpt-5.2-codex",
+      "variant": "medium",
+      "color": "#FF6B35"
+    }
+  },
   "provider": {
     "google": {
       "npm": "@ai-sdk/google",

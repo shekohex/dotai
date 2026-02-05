@@ -20,7 +20,7 @@
       "color": "#10A37F"
     },
     "build": {
-      "model": "openai/gpt-5.2-codex",
+      "model": "openai/gpt-5.3-codex",
       "variant": "medium",
       "color": "#FF6B35"
     }

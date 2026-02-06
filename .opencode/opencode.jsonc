@@ -39,6 +39,20 @@
       "api": "http://192.168.1.116:4000/v1",
       "options": {
         "baseURL": "http://192.168.1.116:4000/v1"
+      },
+      "models": {
+        "gpt-5.2": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          }
+        },
+        "gpt-5.3-codex": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          }
+        }
       }
     },
     "zai": {

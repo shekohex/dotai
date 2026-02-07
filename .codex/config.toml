@@ -25,7 +25,6 @@ hide_agent_reasoning = false
 
 # Centralized feature flags — booleans only
 [features]
-web_search_request = true
 unified_exec = false
 streamable_shell = false
 rmcp_client = false
@@ -43,7 +42,6 @@ approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 model = "gpt-5.3-codex"
 model_reasoning_effort = "medium"
-[profiles.balanced.features]
 web_search = "live"
 
 [profiles.safe]
@@ -51,24 +49,21 @@ approval_policy = "on-failure"
 sandbox_mode = "workspace-write"
 model = "gpt-5.3-codex"
 model_reasoning_effort = "medium"
-[profiles.safe.features]
 web_search = "disabled"
 
 [profiles.minimal]
 model = "gpt-5.3-codex"
 model_reasoning_effort = "medium"
-[profiles.minimal.features]
 web_search = "disabled"
 
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
-model = "gpt-5.3-codex"
+model = "gpt-5.2"
 model_reasoning_effort = "high"
 tool_output_token_limit = 25000
-
-[profiles.yolo.features]
 web_search = "live"
+
 
 [shell_environment_policy]
 inherit = "all"

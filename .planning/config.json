@@ -1,0 +1,32 @@
+{
+  "profiles": {
+    "active_profile": "quality",
+    "presets": {
+      "quality": {
+        "planning": "openai/gpt-5.2",
+        "execution": "openai/gpt-5.3-codex",
+        "verification": "kimi-for-coding/k2p5"
+      },
+      "balanced": {
+        "planning": "openai/gpt-5.2",
+        "execution": "kimi-for-coding/k2p5",
+        "verification": "kimi-for-coding/k2p5"
+      },
+      "budget": {
+        "planning": "kimi-for-coding/k2p5",
+        "execution": "zai/glm-4.7",
+        "verification": "google/gemini-3-flash-preview"
+      }
+    },
+    "custom_overrides": {
+      "quality": {},
+      "balanced": {},
+      "budget": {}
+    }
+  },
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true
+  }
+}

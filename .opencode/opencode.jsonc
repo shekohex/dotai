@@ -23,6 +23,76 @@
       "model": "openai/gpt-5.3-codex",
       "variant": "medium",
       "color": "#FF6B35"
+    },
+    "gsd-planner": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-plan-checker": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-phase-researcher": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-roadmapper": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-project-researcher": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-research-synthesizer": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-codebase-mapper": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "color": "#10A37F"
+    },
+    "gsd-executor": {
+      "model": "openai/gpt-5.3-codex",
+      "variant": "high",
+      "color": "#FF6B35"
+    },
+    "gsd-debugger": {
+      "model": "openai/gpt-5.3-codex",
+      "variant": "high",
+      "color": "#FF6B35"
+    },
+    "gsd-verifier": {
+      "model": "kimi-for-coding/k2p5",
+      "variant": "high",
+      "color": "#4285F4"
+    },
+    "gsd-integration-checker": {
+      "model": "kimi-for-coding/k2p5",
+      "variant": "high",
+      "color": "#4285F4"
+    },
+    "gsd-set-profile": {
+      "model": "kimi-for-coding/k2p5",
+      "variant": "high",
+      "color": "#4285F4"
+    },
+    "gsd-settings": {
+      "model": "kimi-for-coding/k2p5",
+      "variant": "high",
+      "color": "#4285F4"
+    },
+    "gsd-set-model": {
+      "model": "kimi-for-coding/k2p5",
+      "variant": "high",
+      "color": "#4285F4"
     }
   },
   "provider": {

@@ -99,16 +99,16 @@
     "google": {
       "npm": "@ai-sdk/google",
       "name": "Google (Bigboss)",
-      "api": "http://192.168.1.116:4000/v1beta",
+      "api": "http://100.100.1.116:4000/v1beta",
       "options": {
-        "baseURL": "http://192.168.1.116:4000/v1beta"
+        "baseURL": "http://100.100.1.116:4000/v1beta"
       }
     },
     "openai": {
       "name": "OpenAI (Bigboss)",
-      "api": "http://192.168.1.116:4000/v1",
+      "api": "http://100.100.1.116:4000/v1",
       "options": {
-        "baseURL": "http://192.168.1.116:4000/v1"
+        "baseURL": "http://100.100.1.116:4000/v1"
       },
       "models": {
         "gpt-5.2": {
@@ -127,26 +127,26 @@
     },
     "zai": {
       "name": "Z.AI (Bigboss)",
-      "api": "http://192.168.1.116:4000/v1",
+      "api": "http://100.100.1.116:4000/v1",
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "http://192.168.1.116:4000/v1"
+        "baseURL": "http://100.100.1.116:4000/v1"
       }
     },
     "anthropic": {
       "name": "Anthropic (Bigboss)",
-      "api": "http://192.168.1.116:4000/v1",
+      "api": "http://100.100.1.116:4000/v1",
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "http://192.168.1.116:4000/v1"
+        "baseURL": "http://100.100.1.116:4000/v1"
       }
     },
     "kimi-for-coding": {
       "name": "Kimi (Bigboss)",
-      "api": "http://192.168.1.116:4000/v1",
+      "api": "http://100.100.1.116:4000/v1",
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "http://192.168.1.116:4000/v1"
+        "baseURL": "http://100.100.1.116:4000/v1"
       }
     }
   },

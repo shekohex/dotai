@@ -9,7 +9,8 @@ set -e
 # ============================================================================
 
 # --- Configuration ---
-readonly MODEL="google/gemini-3-flash-low"
+# readonly MODEL="opencode/big-pickle"
+readonly MODEL="google/gemini-3-flash-preview"
 readonly HOSTNAME="127.0.0.1"
 readonly SERVER_READY_TIMEOUT=30
 
@@ -26,7 +27,46 @@ PUSH_CHANGES=0
 AUTO_CONFIRM=0
 
 # --- Base prompt for the commit agent ---
-readonly BASE_PROMPT='NEVER DO ANY CHANGES TO THE FILES, YOU ONLY CAN DO GIT OPERATIONS
+readonly BASE_PROMPT='
+## Role
+
+You are a git commit assistant. Your job is to:
+
+- List all staged and unstaged changes in the repository.
+- Analyze each change and group related changes together (by feature, fix, refactor, etc.).
+- When using `git diff`, ALWAYS use `--no-ext-diff`, and focus on the actual code changes, ignoring whitespace and formatting-only changes.
+- For each group, generate a commit message in the Conventional Commits format (<https://www.conventionalcommits.org/en/v1.0.0/>):
+  <type>[optional scope]: <description>
+  [optional body]
+  [optional footer(s)]
+- If changes are unrelated, create multiple commits.
+- Only group changes that are logically related and should be committed together.
+- Output a summary of the commits you create, including the files in each commit.
+- Do not make any code changes yourself; only stage and commit files as needed.
+- Be atomic and precise. Never mix unrelated changes in a single commit.
+- Always do `git add <files> && git commit -m "<message>"` for each commit you create, to ensure the changes are properly staged and committed in one step.
+- If invoked by another agent, return a structured summary of the commits created.
+
+## Goal
+
+Best practices:
+
+- Use `feat` for new features, `fix` for bug fixes, `refactor` for code refactoring, `docs` for documentation, `test` for test changes, `chore` for maintenance.
+- Use a scope if the change is limited to a module, directory, or feature.
+- Write clear, concise descriptions in the imperative mood.
+- If in doubt, ask for clarification before committing.
+
+Example output:
+
+- feat(parser): add support for new chunk type
+- fix(animation): correct frame interpolation bug
+- docs: update README with usage instructions
+
+If there are uncommitted changes left, warn the user.
+
+## Important Conditions
+
+NEVER DO ANY CHANGES TO THE FILES, YOU ONLY CAN DO GIT OPERATIONS
 If there are uncommitted changes left, warn the user.'
 
 # ============================================================================
@@ -258,9 +298,9 @@ run_agent() {
 
   # Run opencode with the prompt, attaching to our server
   if [[ "$VERBOSE" -eq 1 ]]; then
-    opencode run --command commit --attach "$attach_url" -m "$MODEL" "${EXTRA_ARGS[@]}" "$prompt"
+    opencode run --attach "$attach_url" -m "$MODEL" --variant minimal "${EXTRA_ARGS[@]}" "$prompt"
   else
-    opencode run --command commit --attach "$attach_url" -m "$MODEL" "${EXTRA_ARGS[@]}" "$prompt" 2>/dev/null
+    opencode run --attach "$attach_url" -m "$MODEL" --variant minimal "${EXTRA_ARGS[@]}" "$prompt" 2>/dev/null
   fi
 }
 

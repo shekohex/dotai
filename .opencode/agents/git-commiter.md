@@ -4,6 +4,7 @@ mode: subagent
 temperature: 0.1
 hidden: false
 model: google/gemini-3-flash-preview
+color: "#0000FF"
 permission:
   bash: allow
   read: allow

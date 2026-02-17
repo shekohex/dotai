@@ -1,4 +1,5 @@
 ---
+name: gh-address-pr-reviews
 agent: plan
 description: Automatically fix a GitHub PR reviews by analyzing the codebase changes and the PR Reviews and implementing changes.
 ---

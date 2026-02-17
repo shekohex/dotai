@@ -1,4 +1,5 @@
 ---
+name: gh-fix-issue
 agent: plan
 description: Automatically fix a GitHub issue by analyzing the codebase and implementing changes.
 ---

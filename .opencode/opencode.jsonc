@@ -5,7 +5,7 @@
   "autoupdate": false,
   "username": "shekohex",
   "plugin": [
-    "opencode-pty@0.1.5"
+    "opencode-pty@0.2.3"
   ],
   "small_model": "opencode/gpt-5-nano",
   "agent": {

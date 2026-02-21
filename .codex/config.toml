@@ -1,29 +1,16 @@
-# ~/.codex/config.toml — created by codex-1up
-# Adjust to your liking. See Codex CLI docs for full options.
-
-# Core (root defaults)
 model = "gpt-5.3-codex"
-approval_policy = "on-request"   # untrusted|on-failure|on-request|never
-sandbox_mode = "workspace-write" # read-only|workspace-write|danger-full-access
-profile = "balanced"             # active profile: balanced|safe|minimal|yolo
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+profile = "balanced"
 
-# Extra settings that only apply when `sandbox = "workspace-write"`.
 [sandbox_workspace_write]
-# Allow the command being run inside the sandbox to make outbound network
-# requests. Disabled by default.
 network_access = true
 
-# UI & notifications (can be toggled by installer)
 [tui]
-# Desktop notifications from the TUI: boolean or filtered list. Default: false
-# Examples: true | ["agent-turn-complete", "approval-requested"]
 notifications = false
-# Show raw reasoning content when available (default: false)
 show_raw_agent_reasoning = true
-# Ensure we do not hide internal reasoning (default: false)
 hide_agent_reasoning = false
 
-# Centralized feature flags — booleans only
 [features]
 unified_exec = false
 streamable_shell = false
@@ -34,8 +21,7 @@ experimental_sandbox_command_assessment = false
 ghost_commit = false
 experimental_windows_sandbox = false
 shell_snapshot = true
-
-# ---- Profiles (override only what differs from root) -----------------------
+multi_agent = true
 
 [profiles.balanced]
 approval_policy = "on-request"
@@ -59,13 +45,14 @@ web_search = "disabled"
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
-model = "gpt-5.2"
+model = "gpt-5.3-codex"
 model_reasoning_effort = "high"
 tool_output_token_limit = 25000
 web_search = "live"
-
 
 [shell_environment_policy]
 inherit = "all"
 ignore_default_excludes = true
 experimental_use_profile = true
+
+[mcp_servers]

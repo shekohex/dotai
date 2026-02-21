@@ -155,14 +155,31 @@
       "git push*": "ask",
       "rm -rf*": "ask",
       "*": "allow"
+    },
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.example": "allow"
+    },
+    "external_directory": {
+      "*": "ask",
+      "/tmp": "allow",
+      "/tmp/*": "allow",
+      "/home/coder/*": "allow",
+      "/private/tmp": "allow",
+      "/private/tmp/*": "allow",
+      "env:$TMPDIR": "allow",
+      "env:$TMPDIR/*": "allow"
     }
   },
   "tui": {
     "diff_style": "auto",
+    "scroll_speed": 6,
     "scroll_acceleration": {
       "enabled": true
     }
   },
+  "formatter": false,
   "experimental": {
     "batch_tool": false
   },

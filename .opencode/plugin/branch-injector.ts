@@ -1,32 +1,68 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import crypto from "crypto";
 
-export const BranchInjector: Plugin = async ({ $ }) => {
-  // Track last known branch per session
+export const BranchInjector: Plugin = async ({ $, client }) => {
   const sessionBranches = new Map<string, string>();
+  const sessionGitRoots = new Map<string, string | null>();
+
+  const resolveSessionGitRoot = async (sessionID: string): Promise<string | null> => {
+    if (sessionGitRoots.has(sessionID)) {
+      return sessionGitRoots.get(sessionID) ?? null;
+    }
+
+    const sessionResult = await client.session.get({
+      path: { id: sessionID },
+      throwOnError: true,
+    });
+
+    const result = await $`git -C ${sessionResult.data.directory} rev-parse --show-toplevel`
+      .quiet()
+      .nothrow();
+
+    if (result.exitCode !== 0) {
+      sessionGitRoots.set(sessionID, null);
+      return null;
+    }
+
+    const gitRoot = result.stdout.toString().trim();
+    if (!gitRoot) {
+      sessionGitRoots.set(sessionID, null);
+      return null;
+    }
+
+    sessionGitRoots.set(sessionID, gitRoot);
+    return gitRoot;
+  };
 
   return {
 
     "chat.message": async (input, output) => {
-      const result = await $`git branch --show-current`.quiet();
+      let gitRoot: string | null;
+      try {
+        gitRoot = await resolveSessionGitRoot(input.sessionID);
+      } catch {
+        return;
+      }
+
+      if (!gitRoot) return;
+
+      const result = await $`git -C ${gitRoot} branch --show-current`.quiet().nothrow();
+      if (result.exitCode !== 0) return;
+
       const branch = result.stdout.toString().trim();
 
-      if (!branch) return; // Not in git repo or detached HEAD
+      if (!branch) return;
 
       const lastBranch = sessionBranches.get(input.sessionID);
 
-      // Only inject if unknown or changed
       if (lastBranch === branch) return;
 
-      // Update tracking
       sessionBranches.set(input.sessionID, branch);
 
-      // Determine message based on whether branch changed or first time
       const info = lastBranch
         ? `[Branch changed: ${lastBranch} → ${branch}]`
         : `[Current branch: ${branch}]`;
 
-      // Add as synthetic part (hidden from TUI, sent to model)
       const first = output.parts[0];
       if (!first) return;
       output.parts.push({
@@ -39,10 +75,11 @@ export const BranchInjector: Plugin = async ({ $ }) => {
       });
     },
 
-    // Clean up on session delete
     event: async ({ event }) => {
       if (event.type === "session.deleted") {
-        sessionBranches.delete(event.properties.info.id);
+        const sessionID = event.properties.info.id;
+        sessionBranches.delete(sessionID);
+        sessionGitRoots.delete(sessionID);
       }
     },
   };

@@ -3,7 +3,7 @@ description: Analyzes git changes, groups them logically, and creates Convention
 mode: subagent
 temperature: 0.1
 hidden: false
-model: google/gemini-3-flash-preview
+model: kimi-for-coding/k2p5
 color: "#0000FF"
 permission:
   bash: allow

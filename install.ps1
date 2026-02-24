@@ -156,19 +156,89 @@ function Sync-Skills-Directory {
     $skillsSource = Join-Path $RepoDir "skills"
     $agentSkillsTarget = Join-Path $HOME ".opencode/skill"
     $codexSkillsTarget = Join-Path $CodexConfig "skills"
+    $skillsConfig = Join-Path $RepoDir "skills.json"
+    $useEnabledFilter = $false
+    $enabledLookup = @{}
     
     if (-not (Test-Path -LiteralPath $skillsSource)) {
         Log-Warn "Skills directory not found: $skillsSource"
         return
     }
-    
-    Log-Info "Syncing skills to OpenCode..."
-    Sync-Directory $skillsSource $agentSkillsTarget "OpenCode skills"
-    Log-Info "Skills synchronized to $agentSkillsTarget"
 
-    Log-Info "Syncing skills to Codex..."
-    Sync-Directory $skillsSource $codexSkillsTarget "Codex skills"
-    Log-Info "Skills synchronized to $codexSkillsTarget"
+    if (Test-Path -LiteralPath $skillsConfig) {
+        if (Get-Command "jq" -ErrorAction SilentlyContinue) {
+            & jq -e '.enabled and (.enabled | type == "array")' "$skillsConfig" *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $enabledSkills = @(& jq -r '.enabled[]' "$skillsConfig")
+                foreach ($skill in $enabledSkills) {
+                    if ($skill) {
+                        $enabledLookup[$skill] = $true
+                    }
+                }
+                $useEnabledFilter = $true
+                Log-Info "Using enabled skills from $skillsConfig"
+            }
+            else {
+                Log-Warn "skills.json is invalid or missing 'enabled' array, syncing all skills"
+            }
+        }
+        else {
+            Log-Warn "jq not found, skills.json ignored and all skills will be synced"
+        }
+    }
+
+    $targets = @(
+        @{ Path = $agentSkillsTarget; Name = "OpenCode" },
+        @{ Path = $codexSkillsTarget; Name = "Codex" }
+    )
+
+    foreach ($target in $targets) {
+        Log-Info "Syncing skills to $($target.Name)..."
+        $cleanupCandidates = @()
+
+        if (-not (Test-Path -LiteralPath $target.Path)) {
+            New-Item -ItemType Directory -Force -Path $target.Path | Out-Null
+        }
+
+        Get-ChildItem -LiteralPath $skillsSource -Directory | ForEach-Object {
+            $skillName = $_.Name
+            $targetSkillDir = Join-Path $target.Path $skillName
+            $isEnabled = $true
+
+            if ($useEnabledFilter) {
+                $isEnabled = $enabledLookup.ContainsKey($skillName)
+            }
+
+            if ($isEnabled) {
+                Sync-Directory $_.FullName $targetSkillDir "$($target.Name) skill '$skillName'"
+            }
+            elseif (Test-Path -LiteralPath $targetSkillDir) {
+                $cleanupCandidates += [PSCustomObject]@{
+                    Name = $skillName
+                    Path = $targetSkillDir
+                }
+            }
+        }
+
+        if ($cleanupCandidates.Count -gt 0) {
+            Log-Warn "Found disabled skills in $($target.Name) target:"
+            foreach ($candidate in $cleanupCandidates) {
+                Write-Host "  - $($candidate.Name)"
+            }
+
+            if (Confirm-Action "Remove disabled skills from $($target.Name) target?") {
+                foreach ($candidate in $cleanupCandidates) {
+                    Remove-Item -LiteralPath $candidate.Path -Recurse -Force
+                }
+                Log-Info "Removed disabled skills from $($target.Name) target"
+            }
+            else {
+                Log-Info "Kept disabled skills in $($target.Name) target"
+            }
+        }
+
+        Log-Info "Skills synchronized to $($target.Path)"
+    }
 }
 
 function Sync-Codex-Prompts {

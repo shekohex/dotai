@@ -157,19 +157,81 @@ sync_skills_directory() {
   local skills_source="$REPO_DIR/skills"
   local agent_skills_target="$HOME/.opencode/skill"
   local codex_skills_target="$CODEX_CONFIG/skills"
+  local skills_config="$REPO_DIR/skills.json"
+  local use_enabled_filter=0
+  local enabled_lookup="|"
 
   if [[ ! -d "$skills_source" ]]; then
     log_warn "Skills directory not found: $skills_source"
     return 0
   fi
 
-  log_info "Syncing skills to OpenCode..."
-  sync_directory "$skills_source" "$agent_skills_target" "OpenCode skills"
-  log_info "Skills synchronized to $agent_skills_target"
+  if [[ -f "$skills_config" ]]; then
+    if command -v jq &>/dev/null; then
+      if jq -e '.enabled and (.enabled | type == "array")' "$skills_config" >/dev/null 2>&1; then
+        local enabled_skill
+        while IFS= read -r enabled_skill; do
+          [[ -n "$enabled_skill" ]] || continue
+          enabled_lookup+="$enabled_skill|"
+        done < <(jq -r '.enabled[]' "$skills_config")
+        use_enabled_filter=1
+        log_info "Using enabled skills from $skills_config"
+      else
+        log_warn "skills.json is invalid or missing 'enabled' array, syncing all skills"
+      fi
+    else
+      log_warn "jq not found, skills.json ignored and all skills will be synced"
+    fi
+  fi
 
-  log_info "Syncing skills to Codex..."
-  sync_directory "$skills_source" "$codex_skills_target" "Codex skills"
-  log_info "Skills synchronized to $codex_skills_target"
+  sync_skills_to_target() {
+    local target_dir="$1"
+    local target_name="$2"
+    local skill_dir
+    local skill_name
+    local target_skill_dir
+    local cleanup_candidates=()
+
+    log_info "Syncing skills to $target_name..."
+    mkdir -p "$target_dir"
+
+    for skill_dir in "$skills_source"/*; do
+      [[ -d "$skill_dir" ]] || continue
+      skill_name="$(basename "$skill_dir")"
+      target_skill_dir="$target_dir/$skill_name"
+
+      if [[ $use_enabled_filter -eq 1 && "$enabled_lookup" != *"|$skill_name|"* ]]; then
+        if [[ -d "$target_skill_dir" ]]; then
+          cleanup_candidates+=("$target_skill_dir")
+        fi
+        continue
+      fi
+
+      sync_directory "$skill_dir" "$target_skill_dir" "$target_name skill '$skill_name'"
+    done
+
+    if [[ ${#cleanup_candidates[@]} -gt 0 ]]; then
+      log_warn "Found disabled skills in $target_name target:"
+      local disabled_path
+      for disabled_path in "${cleanup_candidates[@]}"; do
+        echo "  - $(basename "$disabled_path")"
+      done
+
+      if confirm_action "Remove disabled skills from $target_name target?"; then
+        for disabled_path in "${cleanup_candidates[@]}"; do
+          rm -rf "$disabled_path"
+        done
+        log_info "Removed disabled skills from $target_name target"
+      else
+        log_info "Kept disabled skills in $target_name target"
+      fi
+    fi
+
+    log_info "Skills synchronized to $target_dir"
+  }
+
+  sync_skills_to_target "$agent_skills_target" "OpenCode"
+  sync_skills_to_target "$codex_skills_target" "Codex"
 }
 
 sync_codex_prompts_directory() {

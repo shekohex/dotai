@@ -106,6 +106,7 @@
     },
     "openai": {
       "name": "OpenAI (Bigboss)",
+      "npm": "@ai-sdk/openai",
       "api": "http://100.100.1.116:4000/v1",
       "options": {
         "baseURL": "http://100.100.1.116:4000/v1"
@@ -133,14 +134,6 @@
         "baseURL": "http://100.100.1.116:4000/v1"
       }
     },
-    "anthropic": {
-      "name": "Anthropic (Bigboss)",
-      "api": "http://100.100.1.116:4000/v1",
-      "npm": "@ai-sdk/anthropic",
-      "options": {
-        "baseURL": "http://100.100.1.116:4000/v1"
-      }
-    },
     "kimi-for-coding": {
       "name": "Kimi (Bigboss)",
       "api": "http://100.100.1.116:4000/v1",
@@ -152,8 +145,8 @@
   },
   "permission": {
     "bash": {
-      "git push*": "ask",
-      "rm -rf*": "ask",
+      "git push *": "ask",
+      "rm -rf *": "ask",
       "*": "allow"
     },
     "read": {
@@ -164,12 +157,13 @@
     "external_directory": {
       "*": "ask",
       "/tmp": "allow",
-      "/tmp/*": "allow",
-      "/home/coder/*": "allow",
+      "/tmp/**": "allow",
+      "~/coder/**": "allow",
+      "~/shady/**": "allow",
       "/private/tmp": "allow",
-      "/private/tmp/*": "allow",
+      "/private/tmp/**": "allow",
       "env:$TMPDIR": "allow",
-      "env:$TMPDIR/*": "allow"
+      "env:$TMPDIR/**": "allow"
     }
   },
   "tui": {

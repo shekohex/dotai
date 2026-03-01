@@ -15,7 +15,7 @@ Template for `.planning/codebase/STRUCTURE.md` - captures physical file organiza
 
 ## Directory Layout
 
-[ASCII tree of top-level directories with purpose]
+[ASCII box-drawing tree of top-level directories with purpose - use ├── └── │ characters for tree structure only]
 
 ```
 [project-root]/
@@ -127,7 +127,7 @@ get-shit-done/
 ├── bin/                # Executable entry points
 ├── commands/           # Slash command definitions
 │   └── gsd/           # GSD-specific commands
-├── get-shit-done/     # Skill resources
+├── get-shit-done/     # skill resources
 │   ├── references/    # Principle documents
 │   ├── templates/     # File templates
 │   └── workflows/     # Multi-step procedures
@@ -186,14 +186,14 @@ get-shit-done/
 
 **Documentation:**
 - `README.md` - User-facing installation and usage guide
-- `CLAUDE.md` - Instructions for OpenCode when working in this repo
+- `AGENTS.md` - Instructions for OpenCode when working in this repo
 
 ## Naming Conventions
 
 **Files:**
 - kebab-case.md: Markdown documents
 - kebab-case.js: JavaScript source files
-- UPPERCASE.md: Important project files (README, CLAUDE, CHANGELOG)
+- UPPERCASE.md: Important project files (README, OPENCODE, CHANGELOG)
 
 **Directories:**
 - kebab-case: All directories
@@ -216,7 +216,7 @@ get-shit-done/
 
 **New Workflow:**
 - Implementation: `get-shit-done/workflows/{name}.md`
-- Usage: Reference from command with `@~/.config/opencode/get-shit-done/workflows/{name}.md`
+- Usage: Reference from command with `@./.opencode/get-shit-done/workflows/{name}.md`
 
 **New Reference Document:**
 - Implementation: `get-shit-done/references/{name}.md`
@@ -229,12 +229,12 @@ get-shit-done/
 ## Special Directories
 
 **get-shit-done/**
-- Purpose: Resources installed to ~/.config/opencode/
+- Purpose: Resources installed to ./.opencode/
 - Source: Copied by bin/install.js during installation
 - Committed: Yes (source of truth)
 
 **commands/**
-- Purpose: Slash commands installed to ~/.config/opencode/commands/
+- Purpose: Slash commands installed to ./.opencode/commands/
 - Source: Copied by bin/install.js during installation
 - Committed: Yes (source of truth)
 
@@ -247,7 +247,7 @@ get-shit-done/
 
 <guidelines>
 **What belongs in STRUCTURE.md:**
-- Directory layout (ASCII tree)
+- Directory layout (ASCII box-drawing tree for structure visualization)
 - Purpose of each directory
 - Key file locations (entry points, configs, core logic)
 - Naming conventions
@@ -267,7 +267,7 @@ get-shit-done/
 - Locate entry points, configs, and main logic areas
 - Keep directory tree concise (max 2-3 levels)
 
-**ASCII tree format:**
+**Tree format (ASCII box-drawing characters for structure only):**
 ```
 root/
 ├── dir1/           # Purpose

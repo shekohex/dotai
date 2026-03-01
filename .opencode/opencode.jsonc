@@ -1,6 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "theme": "catppuccin",
   "share": "manual",
   "autoupdate": false,
   "username": "shekohex",
@@ -164,13 +163,6 @@
       "/private/tmp/**": "allow",
       "env:$TMPDIR": "allow",
       "env:$TMPDIR/**": "allow"
-    }
-  },
-  "tui": {
-    "diff_style": "auto",
-    "scroll_speed": 6,
-    "scroll_acceleration": {
-      "enabled": true
     }
   },
   "formatter": false,

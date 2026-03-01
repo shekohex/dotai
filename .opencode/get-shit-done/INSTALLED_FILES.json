@@ -2,260 +2,332 @@
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-codebase-mapper.md",
     "relativePath": "agents/gsd-codebase-mapper.md",
-    "size": 14861,
-    "hash": "sha256:df7192ea657c4a277904ae935932d8c3baaf44e90e42efcd07b0dc1ecaf4d78e"
+    "size": 16321,
+    "hash": "sha256:0e3ac0a76b1d5b0244f224abcd038c284aa0f7cb27d9c2b862fee3fa0bac8c0f"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-debugger.md",
     "relativePath": "agents/gsd-debugger.md",
-    "size": 35924,
-    "hash": "sha256:70c5cfda6e48d0cd40176fedbf69c80212db1167cff855997a8e2890a832f8a6"
+    "size": 36127,
+    "hash": "sha256:dced4cb2a2653c75397ce8ff5a5cd14af9b17575370e9d31643e96eea186b8a5"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-executor.md",
     "relativePath": "agents/gsd-executor.md",
-    "size": 21853,
-    "hash": "sha256:742e332d2d642365ae63c047bd905f69d009f84e0ef2b36a272f41cf5898bd31"
+    "size": 17655,
+    "hash": "sha256:f1ea1c00da4a4d5c373712e4bb3227e4e84a6c81cb38f41cba73e8a9e90fc1ad"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-integration-checker.md",
     "relativePath": "agents/gsd-integration-checker.md",
-    "size": 12156,
-    "hash": "sha256:38716126d3b94e076bc08be417fbe129a287de74bffe4c707e0db70f752ebd7a"
+    "size": 13250,
+    "hash": "sha256:36b55b35791104291072f75896135e2aa45509eddef299b0946cea4befbfdf56"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-phase-researcher.md",
     "relativePath": "agents/gsd-phase-researcher.md",
-    "size": 17969,
-    "hash": "sha256:1df13eec874faef90a74e73229f034a1181e232a45190c12b028d8dd0c550032"
+    "size": 18801,
+    "hash": "sha256:9f8091d34ce0d185a0b3dd44a1cd3a51543250c0c719d7c22b380d62ddee81f4"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-plan-checker.md",
     "relativePath": "agents/gsd-plan-checker.md",
-    "size": 19891,
-    "hash": "sha256:ab41b9b6dbdaed2439c26ad35a90c518d92ea8359612365f54b47b367e065124"
+    "size": 24238,
+    "hash": "sha256:3b994b94abb9a78aa7f2bdb1e56ab4f73bf0f12a61562511ee6b34ee07508cef"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-planner.md",
     "relativePath": "agents/gsd-planner.md",
-    "size": 41871,
-    "hash": "sha256:50401efa3873e87dcd2a62d565ff8c0ec191f1a8800356b9d22f3cf7ab1a75ce"
+    "size": 38932,
+    "hash": "sha256:ce70300a87c719dc6151173c06c46e889c6bb4fc043e16d5f322393393942f17"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-project-researcher.md",
     "relativePath": "agents/gsd-project-researcher.md",
-    "size": 21744,
-    "hash": "sha256:d7d09efd0f68c72035627e097383a1a88be4158377910d831ecf73dc554f38f6"
+    "size": 16092,
+    "hash": "sha256:c7cbe5b83d6058a25a9c00b06bcf34c5956ca90313499712729610328dd74738"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-research-synthesizer.md",
     "relativePath": "agents/gsd-research-synthesizer.md",
-    "size": 7355,
-    "hash": "sha256:f8f5c07734fbd7f494945e50dc45636443acac16e89b165261a77b304ddf6cf5"
+    "size": 6985,
+    "hash": "sha256:bd3e4f6e9a9f1a3a23d9f1ef9929851b41cb535addefd00b810355830b52cfe2"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-roadmapper.md",
     "relativePath": "agents/gsd-roadmapper.md",
-    "size": 15836,
-    "hash": "sha256:21d8fd3ed9818c7ec13290a6e9d7108212311676066f971a09a852e70002d410"
-  },
-  {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-set-model.md",
-    "relativePath": "agents/gsd-set-model.md",
-    "size": 8943,
-    "hash": "sha256:67facb537e1f20312b5bb8ed78bf8962e7d31c5f867bd3830409e4ba639e9abb"
-  },
-  {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-set-profile.md",
-    "relativePath": "agents/gsd-set-profile.md",
-    "size": 8105,
-    "hash": "sha256:a3d619a72fb535c1352e4c24fd361c4257deef7c10de6dedf5bde36ba3b0f0bc"
-  },
-  {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-settings.md",
-    "relativePath": "agents/gsd-settings.md",
-    "size": 10796,
-    "hash": "sha256:3aee952b05c963b88fc72c208f17d38254cbfe1b84eaef7c24f6947acafe8b58"
+    "size": 16969,
+    "hash": "sha256:68c9e84fc4f0b47e3cb2da838584425751a3c3076ae02f4cb5bdec7157db8bff"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/agents/gsd-verifier.md",
     "relativePath": "agents/gsd-verifier.md",
-    "size": 21823,
-    "hash": "sha256:61c98f8e67ab6e1dcb8c95f27d7f8503de54ef791863cdb57f3426bf403a0738"
+    "size": 17706,
+    "hash": "sha256:4448f682264dda568a1cdf807c254698477da98b2e10b642e48d69389828578b"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/add-phase.md",
-    "relativePath": "commands/gsd/add-phase.md",
-    "size": 5054,
-    "hash": "sha256:1e9808775432a7b698851e426180a94a5733817419ae262571505c526ff44608"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-add-phase.md",
+    "relativePath": "commands/gsd/gsd-add-phase.md",
+    "size": 1141,
+    "hash": "sha256:6af50b9a1f79dadf61bc1515e6559f2bb0ffaf92f692b75253d0a80e87708731"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/add-todo.md",
-    "relativePath": "commands/gsd/add-todo.md",
-    "size": 4742,
-    "hash": "sha256:d42b1600c365492d81634d4e8b92774e6b87cf9f65a15582dd145acce8dfac7c"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-add-todo.md",
+    "relativePath": "commands/gsd/gsd-add-todo.md",
+    "size": 1196,
+    "hash": "sha256:cebdc3d9c36e4a2065133b8c350edf329ce894552cd2da57dfe66c26f7a0bfa6"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/audit-milestone.md",
-    "relativePath": "commands/gsd/audit-milestone.md",
-    "size": 7687,
-    "hash": "sha256:3ea3221d88e13ecf084bd3b204efec19c40cc951aec2771f435fe563dc6a397c"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-audit-milestone.md",
+    "relativePath": "commands/gsd/gsd-audit-milestone.md",
+    "size": 1221,
+    "hash": "sha256:71cf94104d09583be11c50584b6e6dd98cfe9b32fdb9f2698059b0aec0640534"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/check-todos.md",
-    "relativePath": "commands/gsd/check-todos.md",
-    "size": 5611,
-    "hash": "sha256:c707523da3afaa39295a3f8072aa2ae4986d60a512b8af0ead613487715743a5"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-check-todos.md",
+    "relativePath": "commands/gsd/gsd-check-todos.md",
+    "size": 1243,
+    "hash": "sha256:88eceecf7f7ba98c6cda2883bd240b643aea6eb6aee72980caa1be106b00ffca"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/complete-milestone.md",
-    "relativePath": "commands/gsd/complete-milestone.md",
-    "size": 4503,
-    "hash": "sha256:f3e9a2d30da1a2eddae3da2b045efa5b2d637292adab17b2246963b5f88e7cf2"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-cleanup.md",
+    "relativePath": "commands/gsd/gsd-cleanup.md",
+    "size": 580,
+    "hash": "sha256:32689edf9813af1414e4cacc87a63c95f40b1c88a558337b586413952ef5a6b7"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/debug.md",
-    "relativePath": "commands/gsd/debug.md",
-    "size": 3766,
-    "hash": "sha256:ff3d75d08d7979f1f1e38872ef3194ea368b31fc068c4a2e094600236766123f"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-complete-milestone.md",
+    "relativePath": "commands/gsd/gsd-complete-milestone.md",
+    "size": 4497,
+    "hash": "sha256:452b54ef91bb3ec5abebf627f0eecdd87c24951ddcf9d97de08a81aed03d7a19"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/discuss-phase.md",
-    "relativePath": "commands/gsd/discuss-phase.md",
-    "size": 2963,
-    "hash": "sha256:03e4d59b6af353f5fe0881dcb9509574cb81add5ac0da4eceadd58386139d320"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-debug.md",
+    "relativePath": "commands/gsd/gsd-debug.md",
+    "size": 3619,
+    "hash": "sha256:529deb72d86d4caeec5de43fc8f4a01b712d1381e6f247b823aa9f8ad770d9eb"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/execute-phase.md",
-    "relativePath": "commands/gsd/execute-phase.md",
-    "size": 12427,
-    "hash": "sha256:d02da7efd956c622abb9f3250e99c384bf5b14817637b6412c572b51d04b6bd5"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-discuss-phase.md",
+    "relativePath": "commands/gsd/gsd-discuss-phase.md",
+    "size": 2983,
+    "hash": "sha256:1051e3933545c1f52c7d01812e1f925efe82540ea2b43ef1ecb93109c170adca"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/help.md",
-    "relativePath": "commands/gsd/help.md",
-    "size": 14197,
-    "hash": "sha256:0863e5c0a5b47f218a3b6c5c6affae8a58e90a44ce78b327003668b3e60bb2fd"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-execute-phase.md",
+    "relativePath": "commands/gsd/gsd-execute-phase.md",
+    "size": 1300,
+    "hash": "sha256:3f20cc39c0f6a623552a6a278d78be31373a911196e733ae9250e104d7ac63ae"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/insert-phase.md",
-    "relativePath": "commands/gsd/insert-phase.md",
-    "size": 5694,
-    "hash": "sha256:b7f63cce18d2f5ad9bcc6e362d3c1af89379e2c99eb1253070277f38226aec48"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-health.md",
+    "relativePath": "commands/gsd/gsd-health.md",
+    "size": 631,
+    "hash": "sha256:acb8277b49caa6c345f28746349b0d2269fb0d82f45a4cead1f9b30b8de08ba4"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/list-phase-assumptions.md",
-    "relativePath": "commands/gsd/list-phase-assumptions.md",
-    "size": 1488,
-    "hash": "sha256:183e46a5dc522559e844eab0246b8ba6c90ce7fe3c23e8146fccdb12ba6dbd09"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-help.md",
+    "relativePath": "commands/gsd/gsd-help.md",
+    "size": 598,
+    "hash": "sha256:c6572346bdacb61837f16c2241eaab9b6f57ddae966f59f59d3fce1fb9ba46e0"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/map-codebase.md",
-    "relativePath": "commands/gsd/map-codebase.md",
-    "size": 2586,
-    "hash": "sha256:21aadc1627410e4976451a318344f6fa18bc0212d04b5e5f899f0b1d265c5761"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-insert-phase.md",
+    "relativePath": "commands/gsd/gsd-insert-phase.md",
+    "size": 1076,
+    "hash": "sha256:a1d34a822a7ebaddf10be894c013c54658e942c2605895cb11b7fc77b2f22e64"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/new-milestone.md",
-    "relativePath": "commands/gsd/new-milestone.md",
-    "size": 20823,
-    "hash": "sha256:b02ba3de2bf1064b6179a5212f0170910eafae30e3d9d504c676c42277cacf27"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-join-discord.md",
+    "relativePath": "commands/gsd/gsd-join-discord.md",
+    "size": 396,
+    "hash": "sha256:961e22c68861a14273f360a5ea5af1926625503e05a25ec7865b58a00ec794d1"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/new-project.md",
-    "relativePath": "commands/gsd/new-project.md",
-    "size": 30932,
-    "hash": "sha256:d9b4f1cee90a44804e31609a6e625c3ff6c60a93f5cc0ce2380b073792d4b0ab"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-list-phase-assumptions.md",
+    "relativePath": "commands/gsd/gsd-list-phase-assumptions.md",
+    "size": 1467,
+    "hash": "sha256:1743d950eaef83918eab9637a2a615caae33271263a9401a2a3a7ac28c6f3bb3"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/pause-work.md",
-    "relativePath": "commands/gsd/pause-work.md",
-    "size": 2870,
-    "hash": "sha256:ed582df9724594e8059e5af80078e2b00f72523e3900683f2ad144bcfde0a187"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-map-codebase.md",
+    "relativePath": "commands/gsd/gsd-map-codebase.md",
+    "size": 2593,
+    "hash": "sha256:1ee5a3baa86e7f011c2151584927742e97f1048e7fd2c75576d51ea9b04ba6a7"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/plan-milestone-gaps.md",
-    "relativePath": "commands/gsd/plan-milestone-gaps.md",
-    "size": 6648,
-    "hash": "sha256:81c3b68cbae94efbeb2097a9f826f7223e3a0bf77d27621adb581358fddafae6"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-new-milestone.md",
+    "relativePath": "commands/gsd/gsd-new-milestone.md",
+    "size": 1715,
+    "hash": "sha256:03bd9432523bbcef6118a5a43c5ade51ecbe81df2cbe134ee73e07a41409664c"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/plan-phase.md",
-    "relativePath": "commands/gsd/plan-phase.md",
-    "size": 14571,
-    "hash": "sha256:9dc95c7d96521198442d88b53d324d64a40e3c8ff3e02ffe5ba99caaed126745"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-new-project.md",
+    "relativePath": "commands/gsd/gsd-new-project.md",
+    "size": 1407,
+    "hash": "sha256:d8868f366fed04b5cf38a456a271ae9e75fe482306b69c6b6755a688a470ebf0"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/progress.md",
-    "relativePath": "commands/gsd/progress.md",
-    "size": 8142,
-    "hash": "sha256:e9c1e994737d7793e37563976dd62f65a9ed8e25c40391c48ca40703ebbcd85b"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-pause-work.md",
+    "relativePath": "commands/gsd/gsd-pause-work.md",
+    "size": 1040,
+    "hash": "sha256:78052f82f56634deb990ddd91a45a61d29c6a699d43385ace59cefcb63770e30"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/quick.md",
-    "relativePath": "commands/gsd/quick.md",
-    "size": 7060,
-    "hash": "sha256:89b0d9eb78b7068bc958d2a76828b5b2edb80d66e39f6ac205c6a7ae81fe01c1"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-plan-milestone-gaps.md",
+    "relativePath": "commands/gsd/gsd-plan-milestone-gaps.md",
+    "size": 1034,
+    "hash": "sha256:70dc6916452c6b4c20f2341091327c4e131e2faedc9ae0da2b8b2f6ddd65d882"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/remove-phase.md",
-    "relativePath": "commands/gsd/remove-phase.md",
-    "size": 9212,
-    "hash": "sha256:dbb6a83cadfdf648966d2985450b0adc6e79b0df1ec3bcc7cffda0a59b0c2bd3"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-plan-phase.md",
+    "relativePath": "commands/gsd/gsd-plan-phase.md",
+    "size": 1496,
+    "hash": "sha256:763904433b341b9b0d119a07f93d72e56c08a69c076083d233f046094140cff4"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/research-phase.md",
-    "relativePath": "commands/gsd/research-phase.md",
-    "size": 5648,
-    "hash": "sha256:0a729b4ee8bff893af12d2c12d9f95c312b9bb204e7207b4768f8d18fcb988c9"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-progress.md",
+    "relativePath": "commands/gsd/gsd-progress.md",
+    "size": 716,
+    "hash": "sha256:30d62993e388d4c732e56dda11ee270b0a87b2a52f53679e29073bba9bd9fe2a"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/resume-work.md",
-    "relativePath": "commands/gsd/resume-work.md",
-    "size": 1133,
-    "hash": "sha256:fd0c3e8cc0c464bbe8cc92109304ad0b88cecd022546f9f53a61e5c469b42f44"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-quick.md",
+    "relativePath": "commands/gsd/gsd-quick.md",
+    "size": 1305,
+    "hash": "sha256:1674199a87c99b4a1de6b61872fb3c66abc158b2827e3d7b20b8328b4579e85c"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/set-model.md",
-    "relativePath": "commands/gsd/set-model.md",
-    "size": 1850,
-    "hash": "sha256:dd9e1a3989bb6382bc75e1351228f91249f29b9cd62bd5d207e175512202f4c9"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-reapply-patches.md",
+    "relativePath": "commands/gsd/gsd-reapply-patches.md",
+    "size": 3663,
+    "hash": "sha256:5fae17b515ef06b73f6555da74b3dc795b89203e9c6d249feae2fc49b28afc6d"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/set-profile.md",
-    "relativePath": "commands/gsd/set-profile.md",
-    "size": 831,
-    "hash": "sha256:67790bcc3a01fd2fb49fb06931c6c1de7fa4666b1b6cc34782da15e1d0d10f48"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-remove-phase.md",
+    "relativePath": "commands/gsd/gsd-remove-phase.md",
+    "size": 987,
+    "hash": "sha256:ee811107c29b089e55c50efa4743db3f654b10d3970ab20d439f469fc208a01d"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/settings.md",
-    "relativePath": "commands/gsd/settings.md",
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-research-phase.md",
+    "relativePath": "commands/gsd/gsd-research-phase.md",
+    "size": 5579,
+    "hash": "sha256:2940d989611e41ae076b72af1c9e5e85c50f5ec18187515342486666365e5708"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-resume-work.md",
+    "relativePath": "commands/gsd/gsd-resume-work.md",
+    "size": 1127,
+    "hash": "sha256:fc62b5b683f31dfb9edb1b470311de171334c0f379d7b33fcfb13e8329d5a3ee"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-set-profile.md",
+    "relativePath": "commands/gsd/gsd-set-profile.md",
     "size": 939,
-    "hash": "sha256:e3f011dd48d8c866e0b5cece5b778b4a7cc096b27f016d07eaf1dcaf2424da8a"
+    "hash": "sha256:8546cba60a2a39121ca30dcd7b90440f1e6dd3a074c4cb36864bf3b8a7d096c4"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/update.md",
-    "relativePath": "commands/gsd/update.md",
-    "size": 4212,
-    "hash": "sha256:98b16b1f09a02e6d1ae6a0a21bdfbf1df614b6075014e357f55b1539dc2f1767"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-settings.md",
+    "relativePath": "commands/gsd/gsd-settings.md",
+    "size": 999,
+    "hash": "sha256:faaca29f1ddf58f636cf3b1d031334696fc8b2fadde82cbb6b6fec091d540ba1"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/verify-work.md",
-    "relativePath": "commands/gsd/verify-work.md",
-    "size": 8646,
-    "hash": "sha256:cebae87c82f6b2bd3a33d797d3f1d87b56cc0ea26f2bd77296aba7435688fc3b"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-update.md",
+    "relativePath": "commands/gsd/gsd-update.md",
+    "size": 953,
+    "hash": "sha256:4de98c1b83ff020c96108650c32c6a2fde3779b2b4bfb3e32616ee34f636c03e"
   },
   {
-    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/whats-new.md",
-    "relativePath": "commands/gsd/whats-new.md",
-    "size": 2867,
-    "hash": "sha256:d977dd2a9510dacaf202bda8f966245da136ed97d8a1085d675496fd54418a40"
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/commands/gsd/gsd-verify-work.md",
+    "relativePath": "commands/gsd/gsd-verify-work.md",
+    "size": 1320,
+    "hash": "sha256:3ed5fcd438af53eb2caa191c4b948539d61d5ed3a040b3047652d13a585f3c28"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/gsd-tools.cjs",
+    "relativePath": "get-shit-done/bin/gsd-tools.cjs",
+    "size": 21634,
+    "hash": "sha256:c10406c855db27aa25bfc0c1fb70194ef885a0419e3972e3018aaf09c8d6ec56"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/gsd-tools.test.cjs",
+    "relativePath": "get-shit-done/bin/gsd-tools.test.cjs",
+    "size": 87424,
+    "hash": "sha256:96e8e7c4572544de84495725fb10d345373cca399c9cabfb0034a3241f67d84a"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/commands.cjs",
+    "relativePath": "get-shit-done/bin/lib/commands.cjs",
+    "size": 18328,
+    "hash": "sha256:ce7631e84e2bf2f588205da244f08c25509c20a69f62e485a5ab30fa50b1bbea"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/config.cjs",
+    "relativePath": "get-shit-done/bin/lib/config.cjs",
+    "size": 4744,
+    "hash": "sha256:8375c83d26ebdebaf898a341d1a187d051fbc1d026b4b91b2bb436b1cacfd6a8"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/core.cjs",
+    "relativePath": "get-shit-done/bin/lib/core.cjs",
+    "size": 13914,
+    "hash": "sha256:d39c63dd96def317958cecce6187251726a2451218e0957df85342e402ed9ede"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/frontmatter.cjs",
+    "relativePath": "get-shit-done/bin/lib/frontmatter.cjs",
+    "size": 12051,
+    "hash": "sha256:517cc733f4f71c41602270aceb668ae098b4224a39c27ced2f68527d127c57c3"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/init.cjs",
+    "relativePath": "get-shit-done/bin/lib/init.cjs",
+    "size": 22134,
+    "hash": "sha256:565a9162c9ee5fe70e3269420b83fdc9f3bdd91e898c4ac4ff7ad50b2a98c153"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/milestone.cjs",
+    "relativePath": "get-shit-done/bin/lib/milestone.cjs",
+    "size": 7549,
+    "hash": "sha256:50db977a6f688ffe5c2dc978173f8ef80a4eb4dfe23797a8c0a9d4cdad292810"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/phase.cjs",
+    "relativePath": "get-shit-done/bin/lib/phase.cjs",
+    "size": 28377,
+    "hash": "sha256:bbe3a818efa4523b97622bdfa19ad2aa3f01d22e31e49bb7c67bf724d51ea214"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/roadmap.cjs",
+    "relativePath": "get-shit-done/bin/lib/roadmap.cjs",
+    "size": 10626,
+    "hash": "sha256:ffaf00fe14afff63ca3b430227a9a53c93e28a1fa74425267a288a28fdfa4a86"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/state.cjs",
+    "relativePath": "get-shit-done/bin/lib/state.cjs",
+    "size": 18050,
+    "hash": "sha256:0bda8bbb175b3692b4ac3ec51b708e513e7752655ca68319060237c5b8b4f382"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/template.cjs",
+    "relativePath": "get-shit-done/bin/lib/template.cjs",
+    "size": 7177,
+    "hash": "sha256:440a42d840ef596c8d521152cc8828b542163bf8aeda6810f78f324477131265"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/bin/lib/verify.cjs",
+    "relativePath": "get-shit-done/bin/lib/verify.cjs",
+    "size": 28765,
+    "hash": "sha256:f1dc2b92f0e504d34ae6fbea66e8c1ff84afab13819202f73794a19dbd276dff"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/checkpoints.md",
     "relativePath": "get-shit-done/references/checkpoints.md",
-    "size": 39284,
-    "hash": "sha256:1014fabddcf88f57a2e1efbb3a35bba759a1eab075f2957d811d0e83358cea6f"
+    "size": 29657,
+    "hash": "sha256:66151f43c7ae798557ea883097a7df5eeed7eb717d68513c5af68fcefdf4bad1"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/continuation-format.md",
@@ -264,28 +336,52 @@
     "hash": "sha256:aae5111e2a6e93014fd1f8594923fc3b96c07b7491cbfb524be7a8905898aa0a"
   },
   {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/decimal-phase-calculation.md",
+    "relativePath": "get-shit-done/references/decimal-phase-calculation.md",
+    "size": 1360,
+    "hash": "sha256:8385f4b6dce885a5f157b44f0a55b16fef49fd0a4d4e0d7010e5bfd3d0d211a4"
+  },
+  {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/git-integration.md",
     "relativePath": "get-shit-done/references/git-integration.md",
-    "size": 6553,
-    "hash": "sha256:133c81f65364a8156950f94a1ada722df6c4cb53a41ebe1aca103e931097d204"
+    "size": 6804,
+    "hash": "sha256:159514ee6385fd4a07d66176083783e82295dfbb0d4c18b6d03fa26bbfeb8830"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/git-planning-commit.md",
+    "relativePath": "get-shit-done/references/git-planning-commit.md",
+    "size": 1416,
+    "hash": "sha256:317e4626f41e961899f78a8955646bee79d64a0c45cf7d826a093a1852f7a4af"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/model-profile-resolution.md",
+    "relativePath": "get-shit-done/references/model-profile-resolution.md",
+    "size": 1101,
+    "hash": "sha256:2148cd5c33912ce312ee93a1c231a48731ee2d981b28336eaba3c6ceceb719a4"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/model-profiles.md",
     "relativePath": "get-shit-done/references/model-profiles.md",
-    "size": 3478,
-    "hash": "sha256:5b2276cc23dc2256cb73e6968d3e17dba3f216d1c297f589493510706ed665a1"
+    "size": 3255,
+    "hash": "sha256:71fbbced41d16b941ca8daac6250927613644d72fdbd33bd665af500eaa49e49"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/phase-argument-parsing.md",
+    "relativePath": "get-shit-done/references/phase-argument-parsing.md",
+    "size": 1582,
+    "hash": "sha256:0fd5f8fd12288d77af0b36a6f7330e652b50f0b4f6c180f766f1081b6a4e9f2e"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/planning-config.md",
     "relativePath": "get-shit-done/references/planning-config.md",
-    "size": 2524,
-    "hash": "sha256:7fa966f402c3a4aadcf9d2ffd34ce661fc495925fd0cf33b4d2eeb339e5db7f1"
+    "size": 7177,
+    "hash": "sha256:5190cb724034b4a496a6a66d6f8b1b9b6d7c72c716aa11786d3aa1bf2e2124e5"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/questioning.md",
     "relativePath": "get-shit-done/references/questioning.md",
-    "size": 5030,
-    "hash": "sha256:872c56a5cfaa1f2a5d62ec87b66c91ff4720241d8b9afff7331f43623bb03a7c"
+    "size": 5375,
+    "hash": "sha256:0fa922c935a4dada592c939fb140aa34375b0327b37943a18d7ae743495d1404"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/tdd.md",
@@ -297,13 +393,13 @@
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/ui-brand.md",
     "relativePath": "get-shit-done/references/ui-brand.md",
     "size": 4410,
-    "hash": "sha256:6592f42809a51e10328e6950b45eab1dcd4f4ff099040cb8fde7afb478c71050"
+    "hash": "sha256:00d0ab39bb8791d704587720f4165ce6687c2ce305c5e76ae905b0a8874c001f"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/references/verification-patterns.md",
     "relativePath": "get-shit-done/references/verification-patterns.md",
-    "size": 16559,
-    "hash": "sha256:f32f9d0ef43336a4cee25e525d9f0394a2997c54ec4ed976a2fbaabe24c7c920"
+    "size": 16552,
+    "hash": "sha256:5f8ca1e6c09ae5063603f3ee8f512de1005c10ea32670d9e5c0aef73d436514a"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/DEBUG.md",
@@ -314,8 +410,14 @@
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/UAT.md",
     "relativePath": "get-shit-done/templates/UAT.md",
-    "size": 6180,
-    "hash": "sha256:c1f1e685366b095c428ca1e2e0e87b0ec09fd29c7baf14e1d1262b004e7873e9"
+    "size": 6184,
+    "hash": "sha256:7fc593ebea2691c9f50fc929ba1cccd02c840a2af5766fed5c6ae18fbddebc2e"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/VALIDATION.md",
+    "relativePath": "get-shit-done/templates/VALIDATION.md",
+    "size": 3532,
+    "hash": "sha256:b01f1061601503a2fd62ab5a1331607b94a8d9c8b9d7f7755db94f944d1ef708"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/codebase/architecture.md",
@@ -350,8 +452,8 @@
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/codebase/structure.md",
     "relativePath": "get-shit-done/templates/codebase/structure.md",
-    "size": 7984,
-    "hash": "sha256:5c3f961f8b67db1edaa486a55e96950d7fc0d35fc9f438d1a646c84f78fc059d"
+    "size": 8126,
+    "hash": "sha256:9956cd1366b4a5fa6d6eeda3260d2e73a8f06af76fe5e5be4bf05875bfd4e49a"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/codebase/testing.md",
@@ -360,34 +462,40 @@
     "hash": "sha256:a07f16add4b1dbff8f5493dc93d980109e36df355155a001f903fafc1e057a97"
   },
   {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/config.json",
+    "relativePath": "get-shit-done/templates/config.json",
+    "size": 822,
+    "hash": "sha256:f492366aa03f29cb590fccf3a24ad7553fed88caeb77a611ff51de3b04f0a903"
+  },
+  {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/context.md",
     "relativePath": "get-shit-done/templates/context.md",
-    "size": 7774,
-    "hash": "sha256:045bde30fbb61d0c9dca500719ca324b55acddfcfee4fb644b21c527e97eed65"
+    "size": 7188,
+    "hash": "sha256:58c32a455591eef6163966d7df84a12b031db3861b8d283db1244544ad185f7e"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/continue-here.md",
     "relativePath": "get-shit-done/templates/continue-here.md",
     "size": 1823,
-    "hash": "sha256:2f2f8b29031c9111f9d86eea2338586118bd9d9f3b03f210b321fb1671fb2f5a"
+    "hash": "sha256:d42809910137dff9a0a282ce6515005adce688b4e26487cfb38bad7582921292"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/debug-subagent-prompt.md",
     "relativePath": "get-shit-done/templates/debug-subagent-prompt.md",
     "size": 1802,
-    "hash": "sha256:8c18a89e25929d8e7ea26fce0e6e2edcb5d1a791051b38989ab383a56081476c"
+    "hash": "sha256:2879fb62b4258b56029155ec515d313bd37edb64f74da1ce95071cc643de6aca"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/discovery.md",
     "relativePath": "get-shit-done/templates/discovery.md",
-    "size": 4072,
-    "hash": "sha256:b6bd160aaaf20773378886aa9f647e50ecff0d2e86061afa81cb3f8773623e9b"
+    "size": 4077,
+    "hash": "sha256:4138b4f210b98d209f7ab7221a44d1c7ac8ec5dcc52ba1d0e946df864b4e4868"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/milestone-archive.md",
     "relativePath": "get-shit-done/templates/milestone-archive.md",
     "size": 2803,
-    "hash": "sha256:591b6decdc0c0e51fba1359ed015ed140b33d50a9dcf9c0dbe149d605e3e5f54"
+    "hash": "sha256:c8f5fde017e27d520d41c2f8af779ff22d2792b0b4918bc6ec4d9184973978b3"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/milestone.md",
@@ -398,14 +506,14 @@
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/phase-prompt.md",
     "relativePath": "get-shit-done/templates/phase-prompt.md",
-    "size": 16704,
-    "hash": "sha256:e58f55701af1ea5fb276aacdc3690a3790647de41ccac3d127424a02a57ada5c"
+    "size": 16877,
+    "hash": "sha256:6b4165d78c76ba9ff38ad9f36cde72ac10e163346005712d486269fb6003e21d"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/planner-subagent-prompt.md",
     "relativePath": "get-shit-done/templates/planner-subagent-prompt.md",
-    "size": 2666,
-    "hash": "sha256:a9582ab1bd43d478447afc4a39ed75acf1e21651686e8be969e36896b8a3d415"
+    "size": 2682,
+    "hash": "sha256:31a4585cff5b92d1bf3406b93ae9d8ac00bf7f6255162692375f5d0849ac787e"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/project.md",
@@ -422,8 +530,8 @@
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/research-project/ARCHITECTURE.md",
     "relativePath": "get-shit-done/templates/research-project/ARCHITECTURE.md",
-    "size": 6856,
-    "hash": "sha256:3dc32875c82c284e80726fa87ec3b571541ffd7723368ae26031cd6f7be0345c"
+    "size": 6931,
+    "hash": "sha256:746b9ef791d758b0222ca03e03d6da314f54c0d560966b5a3d34766b1553b1ea"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/research-project/FEATURES.md",
@@ -452,115 +560,277 @@
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/research.md",
     "relativePath": "get-shit-done/templates/research.md",
-    "size": 15664,
-    "hash": "sha256:1987d3c66920a0b02ebdfa00749feed5826d4bf2cd9c253f23c8451410b13c37"
+    "size": 16348,
+    "hash": "sha256:f3c4b18cb5984c8463061afbe78a28eacde62e53a5e7727bdb008e582f468d57"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/roadmap.md",
     "relativePath": "get-shit-done/templates/roadmap.md",
-    "size": 5611,
-    "hash": "sha256:b71c37a8f09778577efa1d8ff4388bb923762665dd33793ca125bc2692ee232d"
+    "size": 5668,
+    "hash": "sha256:ee57dfe1c25f6acabe62d57f74437e77f0e1cffaaedecbbfd1221b00d772db69"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/state.md",
     "relativePath": "get-shit-done/templates/state.md",
-    "size": 5503,
-    "hash": "sha256:83ed53757a7440325f65a50251b61ede3cf155146454793b0df0f28c5e428e9c"
+    "size": 4550,
+    "hash": "sha256:965dcc0b2a9508d5298e61aeaee31ea0874a57bfd3424a3743d60dd870b48ec4"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/summary-complex.md",
+    "relativePath": "get-shit-done/templates/summary-complex.md",
+    "size": 1308,
+    "hash": "sha256:e567a8bb699285af65159cff5a6c8c9499675b81889af8ecdf937fd75e769469"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/summary-minimal.md",
+    "relativePath": "get-shit-done/templates/summary-minimal.md",
+    "size": 861,
+    "hash": "sha256:667325734e820b026bf2a37d02e8717a818b52b36faa15ec67edf81ce8e2bbf8"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/summary-standard.md",
+    "relativePath": "get-shit-done/templates/summary-standard.md",
+    "size": 1054,
+    "hash": "sha256:c586b0adb3bc2a7abc715471add98059cbf78b7516f8958fa60cfa0cba34fcd0"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/summary.md",
     "relativePath": "get-shit-done/templates/summary.md",
-    "size": 8469,
-    "hash": "sha256:4ea3f60c098af2c9e73d4acdd3ca977925edf3422abaaf4c94eb31130ef12ce7"
+    "size": 7826,
+    "hash": "sha256:69acc6ae074b6658ad687f7ee7a5efb4ef9f713b4707736237c1d01e71cadc07"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/user-setup.md",
     "relativePath": "get-shit-done/templates/user-setup.md",
-    "size": 9406,
-    "hash": "sha256:edb7665ece926968cf56751993f465dece3a8f1611a10d49ef9a9672a2709568"
+    "size": 9065,
+    "hash": "sha256:9cfeb31975e1c749f21cc7cb1a906c8a8e0f527c8e4a4d69f8539f02b4e8709c"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/templates/verification-report.md",
     "relativePath": "get-shit-done/templates/verification-report.md",
-    "size": 9641,
-    "hash": "sha256:fcc0fcb45cd2d54e2042282659550cf0f141320d72146a43e9963922173270f0"
+    "size": 9645,
+    "hash": "sha256:78d00d657ef49ba4028c8864853b34d24df9259c51760bc34c024bb7509bd406"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/add-phase.md",
+    "relativePath": "get-shit-done/workflows/add-phase.md",
+    "size": 2687,
+    "hash": "sha256:a8661b809daca8ccbec25292aeb7bb180accb5840971f2cdada2d6d4feca50b5"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/add-todo.md",
+    "relativePath": "get-shit-done/workflows/add-todo.md",
+    "size": 4071,
+    "hash": "sha256:295940ca589eebaf7358664fc013172062e5248e1f3376a3a5444d0444777833"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/audit-milestone.md",
+    "relativePath": "get-shit-done/workflows/audit-milestone.md",
+    "size": 10392,
+    "hash": "sha256:25ed200f0040d3165c7a99131246e6cc5dd1c46e739befa0771b5bcb11bdf094"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/check-todos.md",
+    "relativePath": "get-shit-done/workflows/check-todos.md",
+    "size": 4501,
+    "hash": "sha256:31a66c36b9c93ab15a1ef5dd3bdde4910af02dadf337d3b76d0c793f787bc9d7"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/cleanup.md",
+    "relativePath": "get-shit-done/workflows/cleanup.md",
+    "size": 3396,
+    "hash": "sha256:b673b2ed71a5a77f22dd867fcba4af8f30b1993e76fa83a75b00bff5aca16e35"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/complete-milestone.md",
     "relativePath": "get-shit-done/workflows/complete-milestone.md",
-    "size": 18402,
-    "hash": "sha256:0e9dfd597ab9fd54f09c0f00b72f0d6723c9013d0ddf574b05186fb2f4c677e7"
+    "size": 18764,
+    "hash": "sha256:529ba47e196e59374a1a99d942a5534f4bdd60fc608686946a1639c6a06fc54a"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/diagnose-issues.md",
     "relativePath": "get-shit-done/workflows/diagnose-issues.md",
-    "size": 7179,
-    "hash": "sha256:0ca1dd0ee4a5c3d633ae9753ca4152fe49ae2d4e99a4f8709147f0c1f87fe05b"
+    "size": 6653,
+    "hash": "sha256:d6e5f7ffab7b6ffef20da1f98fb87457f8b953f2ac41cef318d931b68bf85358"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/discovery-phase.md",
     "relativePath": "get-shit-done/workflows/discovery-phase.md",
-    "size": 8270,
-    "hash": "sha256:c67ff34e6faa97e7cb40e4084496d44ba05c558250cc94cccf065d8ce51f09bb"
+    "size": 8238,
+    "hash": "sha256:4caf20773c166fea20185c1b4d1ec6a05cfd51e591082dee05c2873645f672b0"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/discuss-phase.md",
     "relativePath": "get-shit-done/workflows/discuss-phase.md",
-    "size": 13504,
-    "hash": "sha256:5016b671d25181b7c7b7bc2cbb2ba052b62ba599aac88c43a8b33879c2318448"
+    "size": 18600,
+    "hash": "sha256:e23745262d26dc46d98c6886bf9711c4e3ebd40ff6c54e83cff610c0b64c2cda"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/execute-phase.md",
     "relativePath": "get-shit-done/workflows/execute-phase.md",
-    "size": 16445,
-    "hash": "sha256:f75bf7171d93d668571eb2ff4624b6b2d2df66ec86486f30270ed37e4762f71b"
+    "size": 16674,
+    "hash": "sha256:c37ff46c063709daed19a4310f833fa7fe4ce9e21a9c1a8fa8167b1fea2cec74"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/execute-plan.md",
     "relativePath": "get-shit-done/workflows/execute-plan.md",
-    "size": 56914,
-    "hash": "sha256:c3b26b4bd9380c9bec59ece9d59e9772d39dcaa78c828e77ef71317d9eec6776"
+    "size": 18290,
+    "hash": "sha256:2e417319b353b4ab73a309a1401fcf744b408383ed15a9b835d62a423e62ba7c"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/health.md",
+    "relativePath": "get-shit-done/workflows/health.md",
+    "size": 4192,
+    "hash": "sha256:53ba4fcd4695a886ce85f39652f5187e0a9341872ae30b38ded1917d4cbb48b2"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/help.md",
+    "relativePath": "get-shit-done/workflows/help.md",
+    "size": 14656,
+    "hash": "sha256:83e82ef5dec572a83f8f21980d568593dbfdf0229bdf9f7753c5c41148fc520a"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/insert-phase.md",
+    "relativePath": "get-shit-done/workflows/insert-phase.md",
+    "size": 3529,
+    "hash": "sha256:9ee3b2576e3abed416bb4239ceaf9935a8a8f8a01fb8ed8e93163805fbd7b748"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/list-phase-assumptions.md",
     "relativePath": "get-shit-done/workflows/list-phase-assumptions.md",
-    "size": 4326,
-    "hash": "sha256:621c2514349775331b46a4619e3354041c6cbb538e4423e31271e01f7682149c"
+    "size": 4309,
+    "hash": "sha256:54c3da9563f0496931b7a63369461c4c0fe696316bb2c68715cd3fa7fdd8ef38"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/map-codebase.md",
     "relativePath": "get-shit-done/workflows/map-codebase.md",
-    "size": 8370,
-    "hash": "sha256:46a11ac502e0c41324328b6d7e6524b05a4884b675e68bc5e12caa0c86e7350f"
+    "size": 8753,
+    "hash": "sha256:38898ce39acd7363df551c87aa1bb3cb5ceebbef48f5a8db5a3bef58beab0533"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/new-milestone.md",
+    "relativePath": "get-shit-done/workflows/new-milestone.md",
+    "size": 13545,
+    "hash": "sha256:48a72e3d1ada78942d2646ff46a255efd720dfbbb8e4e287f9ffbaac120653ae"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/new-project.md",
+    "relativePath": "get-shit-done/workflows/new-project.md",
+    "size": 33517,
+    "hash": "sha256:9599b097f1db35ccfd380244396bc9d8cfae5f5377e0e573ca71f47b570ea654"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/oc-set-profile.md",
+    "relativePath": "get-shit-done/workflows/oc-set-profile.md",
+    "size": 8914,
+    "hash": "sha256:883b4d7733bd1660e53617b230433b80256e876aad5faac500d3bd0d5f242817"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/pause-work.md",
+    "relativePath": "get-shit-done/workflows/pause-work.md",
+    "size": 2950,
+    "hash": "sha256:3056a2f3ca6a23988cf85c055f1e0f02f87958c3fc869cbeecee312815060fbd"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/plan-milestone-gaps.md",
+    "relativePath": "get-shit-done/workflows/plan-milestone-gaps.md",
+    "size": 6780,
+    "hash": "sha256:f3b94c37e960a522baf984abe76a81404abe36fdc79cdef11e8e1615d7b03dd4"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/plan-phase.md",
+    "relativePath": "get-shit-done/workflows/plan-phase.md",
+    "size": 17404,
+    "hash": "sha256:057c09f5fb51e6c174b35ac99daf83cc7fff4f133527e255e59f81b03aa5f40b"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/progress.md",
+    "relativePath": "get-shit-done/workflows/progress.md",
+    "size": 9065,
+    "hash": "sha256:805048ca20681373ba176f06dcb4a776dfe954c2795b2ad50d0d28f6c13e50fd"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/quick.md",
+    "relativePath": "get-shit-done/workflows/quick.md",
+    "size": 12837,
+    "hash": "sha256:0b18a5976a6f98b7e2b60c372118dfe3d4bc1a5e2362ce2e13942ffb28408003"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/remove-phase.md",
+    "relativePath": "get-shit-done/workflows/remove-phase.md",
+    "size": 4029,
+    "hash": "sha256:8160cc1889265aedc294b94d13042f24741dc25ef4dadfccd894e6288a1f3931"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/research-phase.md",
+    "relativePath": "get-shit-done/workflows/research-phase.md",
+    "size": 1828,
+    "hash": "sha256:538c10b1d2b11798972613177ec050cd9bdcba80337119f3a8c11e3caa451856"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/resume-project.md",
     "relativePath": "get-shit-done/workflows/resume-project.md",
-    "size": 9169,
-    "hash": "sha256:6e3ad989705e9636830329f13be3dfd09af10d8048ae129645b8383b1046d841"
+    "size": 8996,
+    "hash": "sha256:99df08cb846b137d8ebb73d15f2284e3d51b7b71d347126a13baf670fd1d820d"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/set-profile.md",
+    "relativePath": "get-shit-done/workflows/set-profile.md",
+    "size": 1854,
+    "hash": "sha256:b2465573c421219fb9799935ad91460db7367356c12df5c4cafc82e4f81f40ef"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/settings.md",
+    "relativePath": "get-shit-done/workflows/settings.md",
+    "size": 6843,
+    "hash": "sha256:50d3118d34d093cfae6e06dc47e0a3d2ce03a54e399df20ee9cf6e45b9d47161"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/transition.md",
     "relativePath": "get-shit-done/workflows/transition.md",
-    "size": 12357,
-    "hash": "sha256:12f6e2c5baed038d1e7d02ef31c5d88cdacfc813bab2db2a1555177ced9b2190"
+    "size": 12254,
+    "hash": "sha256:fefa316566684a8c8e579a3834646bda5e64e3e88a4904010b2774de014f281c"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/update.md",
+    "relativePath": "get-shit-done/workflows/update.md",
+    "size": 5563,
+    "hash": "sha256:00eab8ceb47875f6ec4609902e3476433dbcb60c923ce42f5462f6b4a536eb7a"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/verify-phase.md",
     "relativePath": "get-shit-done/workflows/verify-phase.md",
-    "size": 17940,
-    "hash": "sha256:dd3c1c0845e5dc74174877f5299b0f898f4ada7a3087baf0f6e62e630d5d5759"
+    "size": 9767,
+    "hash": "sha256:4493080f307351c3e1b57a6c8ea6a76c46dcf23bcec95507224b1a3504578ba1"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/workflows/verify-work.md",
     "relativePath": "get-shit-done/workflows/verify-work.md",
-    "size": 15704,
-    "hash": "sha256:48963e5233525cda6364d01e1684e3e89fe06f807a25e0a9e219ea5addc4f157"
+    "size": 14903,
+    "hash": "sha256:3be276bbfab05b418fdd092199c7df3d0732954a45e16826951ea39f7b0630e9"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/rules/gsd-oc-work-hard.md",
+    "relativePath": "rules/gsd-oc-work-hard.md",
+    "size": 1540,
+    "hash": "sha256:729cd24f9f8014504d9b21dcb7ab181cb0bae1b201ef70fe6659e721e7a12748"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/skills/gsd-oc-select-model/SKILL.md",
+    "relativePath": "skills/gsd-oc-select-model/SKILL.md",
+    "size": 13331,
+    "hash": "sha256:b172e63665eac5ba31bbf674e4d96c10de336a8538e8e2378b3244464f75d411"
+  },
+  {
+    "path": "/Users/shady/github/shekohex/dotai/.opencode/skills/gsd-oc-select-model/scripts/select-models.cjs",
+    "relativePath": "skills/gsd-oc-select-model/scripts/select-models.cjs",
+    "size": 8090,
+    "hash": "sha256:3c652f97dd24431aed336be0f33eaddd3609f336279f5a34bef0c6b4287a287f"
   },
   {
     "path": "/Users/shady/github/shekohex/dotai/.opencode/get-shit-done/package.json",
     "relativePath": "get-shit-done/package.json",
-    "size": 1158,
-    "hash": "sha256:8fb07957d3c5715a1c08f63ffde8d06d8b46f73e4385973041a916a798c5bc59"
+    "size": 1232,
+    "hash": "sha256:8fed10c2600ea092d7b5cb303deffc12dd72a5f7cd7c89d03d7a885ac72727c2"
   }
 ]

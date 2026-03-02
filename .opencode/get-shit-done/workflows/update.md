@@ -17,8 +17,8 @@ Detect whether GSD is installed locally or globally by checking both locations:
 if [ -f ./.OpenCode/get-shit-done/VERSION ]; then
   cat ./.OpenCode/get-shit-done/VERSION
   echo "LOCAL"
-elif [ -f ./.opencode/get-shit-done/VERSION ]; then
-  cat ./.opencode/get-shit-done/VERSION
+elif [ -f ~/.opencode/get-shit-done/VERSION ]; then
+  cat ~/.opencode/get-shit-done/VERSION
   echo "GLOBAL"
 else
   echo "UNKNOWN"
@@ -122,7 +122,7 @@ Exit.
 - `get-shit-done/` will be wiped and replaced
 - `agents/gsd-*` files will be replaced
 
-(Paths are relative to your install location: `./.opencode/` for global, `./.OpenCode/` for local)
+(Paths are relative to your install location: `~/.opencode/` for global, `./.OpenCode/` for local)
 
 Your custom files in other locations are preserved:
 - Custom commands not in `commands/gsd/` ✓
@@ -166,7 +166,7 @@ rm -f ./.OpenCode/cache/gsd-update-check.json
 
 **If GLOBAL install:**
 ```bash
-rm -f ./.opencode/cache/gsd-update-check.json
+rm -f ~/.opencode/cache/gsd-update-check.json
 ```
 (Paths are templated at install time for runtime compatibility)
 </step>

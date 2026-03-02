@@ -25,7 +25,7 @@ fi
 **Run health validation:**
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs validate health $REPAIR_FLAG
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs validate health $REPAIR_FLAG
 ```
 
 Parse JSON output:
@@ -112,7 +112,7 @@ If yes, re-run with --repair flag and display results.
 Re-run health check without --repair to confirm issues are resolved:
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs validate health
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs validate health
 ```
 
 Report final status.

@@ -19,11 +19,11 @@ Routes to the set-profile workflow which handles:
 </objective>
 
 <execution_context>
-@./.opencode/get-shit-done/workflows/oc-set-profile.md
+@~/.opencode/get-shit-done/workflows/oc-set-profile.md
 </execution_context>
 
 <process>
-**Follow the set-profile workflow** from `@./.opencode/get-shit-done/workflows/oc-set-profile.md`.
+**Follow the set-profile workflow** from `@~/.opencode/get-shit-done/workflows/oc-set-profile.md`.
 
 The workflow handles all logic including:
 1. Profile argument validation

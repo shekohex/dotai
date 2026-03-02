@@ -16,7 +16,7 @@ read STATE.md before any operation to load project context.
 Load all context in one call:
 
 ```bash
-INIT=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs init execute-phase "${PHASE_ARG}")
+INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init execute-phase "${PHASE_ARG}")
 ```
 
 Parse JSON for: `executor_model`, `verifier_model`, `commit_docs`, `parallelization`, `branching_strategy`, `branch_name`, `phase_found`, `phase_dir`, `phase_number`, `phase_name`, `phase_slug`, `plans`, `incomplete_plans`, `plan_count`, `incomplete_count`, `state_exists`, `roadmap_exists`.
@@ -51,7 +51,7 @@ Report: "Found {plan_count} plans in {phase_dir} ({incomplete_count} incomplete)
 Load plan inventory with wave grouping in one call:
 
 ```bash
-PLAN_INDEX=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs phase-plan-index "${PHASE_NUMBER}")
+PLAN_INDEX=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs phase-plan-index "${PHASE_NUMBER}")
 ```
 
 Parse JSON for: `phase`, `plans[]` (each with `id`, `wave`, `autonomous`, `objective`, `files_modified`, `task_count`, `has_summary`), `waves` (map of wave number → plan IDs), `incomplete`, `has_checkpoints`.
@@ -110,10 +110,10 @@ Execute each wave in sequence. Within a wave: parallel if `PARALLELIZATION=true`
        </objective>
 
        <execution_context>
-       @./.opencode/get-shit-done/workflows/execute-plan.md
-       @./.opencode/get-shit-done/templates/summary.md
-       @./.opencode/get-shit-done/references/checkpoints.md
-       @./.opencode/get-shit-done/references/tdd.md
+       @~/.opencode/get-shit-done/workflows/execute-plan.md
+       @~/.opencode/get-shit-done/templates/summary.md
+       @~/.opencode/get-shit-done/references/checkpoints.md
+       @~/.opencode/get-shit-done/references/tdd.md
        </execution_context>
 
        <files_to_read>
@@ -181,7 +181,7 @@ Plans with `autonomous: false` require user interaction.
 
 read auto-advance config:
 ```bash
-AUTO_CFG=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
+AUTO_CFG=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
 ```
 
 When executor returns a checkpoint AND `AUTO_CFG` is `"true"`:
@@ -256,7 +256,7 @@ fi
 
 **2. Find parent UAT file:**
 ```bash
-PARENT_INFO=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs find-phase "${PARENT_PHASE}" --raw)
+PARENT_INFO=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs find-phase "${PARENT_PHASE}" --raw)
 # Extract directory from PARENT_INFO JSON, then find UAT file in that directory
 ```
 
@@ -287,7 +287,7 @@ mv .planning/debug/{slug}.md .planning/debug/resolved/
 
 **6. Commit updated artifacts:**
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(phase-${PARENT_PHASE}): resolve UAT gaps and debug sessions after ${PHASE_NUMBER} gap closure" --files .planning/phases/*${PARENT_PHASE}*/*-UAT.md .planning/debug/resolved/*.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(phase-${PARENT_PHASE}): resolve UAT gaps and debug sessions after ${PHASE_NUMBER} gap closure" --files .planning/phases/*${PARENT_PHASE}*/*-UAT.md .planning/debug/resolved/*.md
 ```
 </step>
 
@@ -295,7 +295,7 @@ node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(phase-${PARENT_PHA
 Verify phase achieved its GOAL, not just completed tasks.
 
 ```bash
-PHASE_REQ_IDS=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE_NUMBER}" | jq -r '.section' | grep -i "Requirements:" | sed 's/.*Requirements:\*\*\s*//' | sed 's/[\[\]]//g')
+PHASE_REQ_IDS=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE_NUMBER}" | jq -r '.section' | grep -i "Requirements:" | sed 's/.*Requirements:\*\*\s*//' | sed 's/[\[\]]//g')
 ```
 
 ```
@@ -362,7 +362,7 @@ Gap closure cycle: `/gsd-plan-phase {X} --gaps` reads VERIFICATION.md → create
 **Mark phase complete and update all tracking files:**
 
 ```bash
-COMPLETION=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs phase complete "${PHASE_NUMBER}")
+COMPLETION=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs phase complete "${PHASE_NUMBER}")
 ```
 
 The CLI handles:
@@ -375,7 +375,7 @@ The CLI handles:
 Extract from result: `next_phase`, `next_phase_name`, `is_last_phase`.
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(phase-{X}): complete phase execution" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md {phase_dir}/*-VERIFICATION.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(phase-{X}): complete phase execution" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md {phase_dir}/*-VERIFICATION.md
 ```
 </step>
 
@@ -411,7 +411,7 @@ STOP. Do not proceed to auto-advance or transition.
 1. Parse `--auto` flag from $ARGUMENTS
 2. read `workflow.auto_advance` from config:
    ```bash
-   AUTO_CFG=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
+   AUTO_CFG=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
    ```
 
 **If `--auto` flag present OR `AUTO_CFG` is true (AND verification passed with no gaps):**
@@ -425,7 +425,7 @@ STOP. Do not proceed to auto-advance or transition.
 
 Execute the transition workflow inline (do NOT use task — orchestrator context is ~10-15%, transition needs phase completion data already in context):
 
-read and follow `./.opencode/get-shit-done/workflows/transition.md`, passing through the `--auto` flag so it propagates to the next phase invocation.
+read and follow `~/.opencode/get-shit-done/workflows/transition.md`, passing through the `--auto` flag so it propagates to the next phase invocation.
 
 **If neither `--auto` nor `AUTO_CFG` is true:**
 

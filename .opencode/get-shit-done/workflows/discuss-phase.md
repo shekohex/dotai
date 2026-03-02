@@ -111,7 +111,7 @@ Phase: "API documentation"
 Phase number from argument (required).
 
 ```bash
-INIT=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs init phase-op "${PHASE}")
+INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init phase-op "${PHASE}")
 ```
 
 Parse JSON for: `commit_docs`, `phase_found`, `phase_dir`, `phase_number`, `phase_name`, `phase_slug`, `padded_phase`, `has_research`, `has_context`, `has_plans`, `has_verification`, `plan_count`, `roadmap_exists`, `planning_exists`.
@@ -413,7 +413,7 @@ Created: .planning/phases/${PADDED_PHASE}-${SLUG}/${PADDED_PHASE}-CONTEXT.md
 Commit phase context (uses `commit_docs` from init internally):
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(${padded_phase}): capture phase context" --files "${phase_dir}/${padded_phase}-CONTEXT.md"
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(${padded_phase}): capture phase context" --files "${phase_dir}/${padded_phase}-CONTEXT.md"
 ```
 
 Confirm: "Committed: docs(${padded_phase}): capture phase context"
@@ -423,7 +423,7 @@ Confirm: "Committed: docs(${padded_phase}): capture phase context"
 Update STATE.md with session info:
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs state record-session \
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs state record-session \
   --stopped-at "Phase ${PHASE} context gathered" \
   --resume-file "${phase_dir}/${padded_phase}-CONTEXT.md"
 ```
@@ -431,7 +431,7 @@ node ./.opencode/get-shit-done/bin/gsd-tools.cjs state record-session \
 Commit STATE.md:
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(state): record phase ${PHASE} context session" --files .planning/STATE.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs(state): record phase ${PHASE} context session" --files .planning/STATE.md
 ```
 </step>
 
@@ -441,12 +441,12 @@ Check for auto-advance trigger:
 1. Parse `--auto` flag from $ARGUMENTS
 2. read `workflow.auto_advance` from config:
    ```bash
-   AUTO_CFG=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
+   AUTO_CFG=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
    ```
 
 **If `--auto` flag present AND `AUTO_CFG` is not true:** Persist auto-advance to config (handles direct `--auto` usage without new-project):
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.auto_advance true
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.auto_advance true
 ```
 
 **If `--auto` flag present OR `AUTO_CFG` is true:**
@@ -469,9 +469,9 @@ task(
     </objective>
 
     <execution_context>
-    @./.opencode/get-shit-done/workflows/plan-phase.md
-    @./.opencode/get-shit-done/references/ui-brand.md
-    @./.opencode/get-shit-done/references/model-profile-resolution.md
+    @~/.opencode/get-shit-done/workflows/plan-phase.md
+    @~/.opencode/get-shit-done/references/ui-brand.md
+    @~/.opencode/get-shit-done/references/model-profile-resolution.md
     </execution_context>
 
     <arguments>

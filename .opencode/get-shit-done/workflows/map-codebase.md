@@ -26,7 +26,7 @@ Documents are reference material for OpenCode when planning/executing. Always in
 Load codebase mapping context:
 
 ```bash
-INIT=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs init map-codebase)
+INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init map-codebase)
 ```
 
 Extract from init JSON: `mapper_model`, `commit_docs`, `codebase_dir`, `existing_maps`, `has_maps`, `codebase_dir_exists`.
@@ -250,7 +250,7 @@ Continue to commit_codebase_map.
 Commit the codebase map:
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: map existing codebase" --files .planning/codebase/*.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: map existing codebase" --files .planning/codebase/*.md
 ```
 
 Continue to offer_next.

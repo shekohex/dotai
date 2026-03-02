@@ -71,13 +71,13 @@ Keep Accumulated Context section from previous milestone.
 Delete MILESTONE-CONTEXT.md if exists (consumed).
 
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: start milestone v[X.Y] [Name]" --files .planning/PROJECT.md .planning/STATE.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: start milestone v[X.Y] [Name]" --files .planning/PROJECT.md .planning/STATE.md
 ```
 
 ## 7. Load Context and Resolve Models
 
 ```bash
-INIT=$(node ./.opencode/get-shit-done/bin/gsd-tools.cjs init new-milestone)
+INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init new-milestone)
 ```
 
 Extract from init JSON: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `research_enabled`, `current_milestone`, `project_exists`, `roadmap_exists`.
@@ -92,10 +92,10 @@ question: "Research the domain ecosystem for new features before defining requir
 
 ```bash
 # If "Research first": persist true
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.research true
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.research true
 
 # If "Skip research": persist false
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.research false
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.research false
 ```
 
 **If "Research first":**
@@ -138,7 +138,7 @@ Focus ONLY on what's needed for the NEW features.
 
 <output>
 write to: .planning/research/{FILE}
-Use template: ./.opencode/get-shit-done/templates/research-project/{FILE}
+Use template: ~/.opencode/get-shit-done/templates/research-project/{FILE}
 </output>
 ", subagent_type="gsd-project-researcher", model="{researcher_model}", description="{DIMENSION} research")
 ```
@@ -167,7 +167,7 @@ Synthesize research outputs into SUMMARY.md.
 </files_to_read>
 
 write to: .planning/research/SUMMARY.md
-Use template: ./.opencode/get-shit-done/templates/research-project/SUMMARY.md
+Use template: ~/.opencode/get-shit-done/templates/research-project/SUMMARY.md
 Commit after writing.
 ", subagent_type="gsd-research-synthesizer", model="{synthesizer_model}", description="Synthesize research")
 ```
@@ -253,7 +253,7 @@ If "adjust": Return to scoping.
 
 **Commit requirements:**
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: define milestone v[X.Y] requirements" --files .planning/REQUIREMENTS.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: define milestone v[X.Y] requirements" --files .planning/REQUIREMENTS.md
 ```
 
 ## 10. Create Roadmap
@@ -330,7 +330,7 @@ Success criteria:
 
 **Commit roadmap** (after approval):
 ```bash
-node ./.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: create milestone v[X.Y] roadmap ([N] phases)" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md
+node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: create milestone v[X.Y] roadmap ([N] phases)" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md
 ```
 
 ## 11. Done

@@ -12,8 +12,8 @@ read all files referenced by the invoking prompt's execution_context before star
 Ensure config exists and load current state:
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-ensure-section
-INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs state load)
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs config-ensure-section
+INIT=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs state load)
 ```
 
 Creates `.planning/config.json` with defaults if missing and loads current config values.

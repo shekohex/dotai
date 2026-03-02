@@ -46,7 +46,7 @@ The document should describe what you want to build.
 **MANDATORY FIRST STEP — Execute these checks before ANY user interaction:**
 
 ```bash
-INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init new-project)
+INIT=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs init new-project)
 ```
 
 Parse JSON for: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `project_exists`, `has_codebase_map`, `planning_exists`, `has_existing_code`, `has_package_file`, `is_brownfield`, `needs_codebase_map`, `has_git`, `project_path`.
@@ -188,13 +188,13 @@ Create `.planning/config.json` with mode set to "yolo":
 
 ```bash
 mkdir -p .planning
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "chore: add project config" --files .planning/config.json
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "chore: add project config" --files .planning/config.json
 ```
 
 **Persist auto-advance to config (survives context compaction):**
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.auto_advance true
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs config-set workflow.auto_advance true
 ```
 
 Proceed to Step 4 (skip Steps 3 and 5).
@@ -338,7 +338,7 @@ Do not compress. Capture everything gathered.
 
 ```bash
 mkdir -p .planning
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: initialize project" --files .planning/PROJECT.md
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: initialize project" --files .planning/PROJECT.md
 ```
 
 ## 5. Workflow Preferences
@@ -490,7 +490,7 @@ Create `.planning/config.json` with all settings:
 **Commit config.json:**
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "chore: add project config" --files .planning/config.json
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "chore: add project config" --files .planning/config.json
 ```
 
 **Note:** Run `/gsd-settings` anytime to update these preferences.
@@ -544,7 +544,7 @@ Display spawning indicator:
 Spawn 4 parallel gsd-project-researcher agents with path references:
 
 ```
-task(prompt="First, read ~/.opencode/agents/gsd-project-researcher.md for your role and instructions.
+task(prompt="First, read ~/.config/opencode/agents/gsd-project-researcher.md for your role and instructions.
 
 <research_type>
 Project Research — Stack dimension for [domain].
@@ -580,11 +580,11 @@ Your STACK.md feeds into roadmap creation. Be prescriptive:
 
 <output>
 write to: .planning/research/STACK.md
-Use template: ~/.opencode/get-shit-done/templates/research-project/STACK.md
+Use template: ~/.config/opencode/get-shit-done/templates/research-project/STACK.md
 </output>
 ", subagent_type="general", model="{researcher_model}", description="Stack research")
 
-task(prompt="First, read ~/.opencode/agents/gsd-project-researcher.md for your role and instructions.
+task(prompt="First, read ~/.config/opencode/agents/gsd-project-researcher.md for your role and instructions.
 
 <research_type>
 Project Research — Features dimension for [domain].
@@ -620,11 +620,11 @@ Your FEATURES.md feeds into requirements definition. Categorize clearly:
 
 <output>
 write to: .planning/research/FEATURES.md
-Use template: ~/.opencode/get-shit-done/templates/research-project/FEATURES.md
+Use template: ~/.config/opencode/get-shit-done/templates/research-project/FEATURES.md
 </output>
 ", subagent_type="general", model="{researcher_model}", description="Features research")
 
-task(prompt="First, read ~/.opencode/agents/gsd-project-researcher.md for your role and instructions.
+task(prompt="First, read ~/.config/opencode/agents/gsd-project-researcher.md for your role and instructions.
 
 <research_type>
 Project Research — Architecture dimension for [domain].
@@ -660,11 +660,11 @@ Your ARCHITECTURE.md informs phase structure in roadmap. Include:
 
 <output>
 write to: .planning/research/ARCHITECTURE.md
-Use template: ~/.opencode/get-shit-done/templates/research-project/ARCHITECTURE.md
+Use template: ~/.config/opencode/get-shit-done/templates/research-project/ARCHITECTURE.md
 </output>
 ", subagent_type="general", model="{researcher_model}", description="Architecture research")
 
-task(prompt="First, read ~/.opencode/agents/gsd-project-researcher.md for your role and instructions.
+task(prompt="First, read ~/.config/opencode/agents/gsd-project-researcher.md for your role and instructions.
 
 <research_type>
 Project Research — Pitfalls dimension for [domain].
@@ -700,7 +700,7 @@ Your PITFALLS.md prevents mistakes in roadmap/planning. For each pitfall:
 
 <output>
 write to: .planning/research/PITFALLS.md
-Use template: ~/.opencode/get-shit-done/templates/research-project/PITFALLS.md
+Use template: ~/.config/opencode/get-shit-done/templates/research-project/PITFALLS.md
 </output>
 ", subagent_type="general", model="{researcher_model}", description="Pitfalls research")
 ```
@@ -722,7 +722,7 @@ Synthesize research outputs into SUMMARY.md.
 
 <output>
 write to: .planning/research/SUMMARY.md
-Use template: ~/.opencode/get-shit-done/templates/research-project/SUMMARY.md
+Use template: ~/.config/opencode/get-shit-done/templates/research-project/SUMMARY.md
 Commit after writing.
 </output>
 ", subagent_type="gsd-research-synthesizer", model="{synthesizer_model}", description="Synthesize research")
@@ -887,7 +887,7 @@ If "adjust": Return to scoping.
 **Commit requirements:**
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: define v1 requirements" --files .planning/REQUIREMENTS.md
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: define v1 requirements" --files .planning/REQUIREMENTS.md
 ```
 
 ## 8. Create Roadmap
@@ -1017,7 +1017,7 @@ Use question:
 **Commit roadmap (after approval or auto mode):**
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: create roadmap ([N] phases)" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "docs: create roadmap ([N] phases)" --files .planning/ROADMAP.md .planning/STATE.md .planning/REQUIREMENTS.md
 ```
 
 ## 9. Done

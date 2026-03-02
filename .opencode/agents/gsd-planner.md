@@ -399,8 +399,8 @@ Output: [Artifacts created]
 </objective>
 
 <execution_context>
-@~/.opencode/get-shit-done/workflows/execute-plan.md
-@~/.opencode/get-shit-done/templates/summary.md
+@~/.config/opencode/get-shit-done/workflows/execute-plan.md
+@~/.config/opencode/get-shit-done/templates/summary.md
 </execution_context>
 
 <context>
@@ -836,7 +836,7 @@ Group by plan, dimension, severity.
 ### Step 6: Commit
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "fix($PHASE): revise plans based on checker feedback" --files .planning/phases/$PHASE-*/$PHASE-*-PLAN.md
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "fix($PHASE): revise plans based on checker feedback" --files .planning/phases/$PHASE-*/$PHASE-*-PLAN.md
 ```
 
 ### Step 7: Return Revision Summary
@@ -875,7 +875,7 @@ node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "fix($PHASE): revise pla
 Load planning context:
 
 ```bash
-INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init plan-phase "${PHASE}")
+INIT=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs init plan-phase "${PHASE}")
 ```
 
 Extract from init JSON: `planner_model`, `researcher_model`, `checker_model`, `commit_docs`, `research_enabled`, `phase_dir`, `phase_number`, `has_research`, `has_context`.
@@ -931,7 +931,7 @@ Apply discovery level protocol (see discovery_levels section).
 
 **Step 1 — Generate digest index:**
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs history-digest
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs history-digest
 ```
 
 **Step 2 — Select relevant phases (typically 2-4):**
@@ -1049,7 +1049,7 @@ Include all frontmatter fields.
 Validate each created PLAN.md using gsd-tools:
 
 ```bash
-VALID=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan)
+VALID=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs frontmatter validate "$PLAN_PATH" --schema plan)
 ```
 
 Returns JSON: `{ valid, missing, present, schema }`
@@ -1062,7 +1062,7 @@ Required plan frontmatter fields:
 Also validate plan structure:
 
 ```bash
-STRUCTURE=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH")
+STRUCTURE=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs verify plan-structure "$PLAN_PATH")
 ```
 
 Returns JSON: `{ valid, errors, warnings, task_count, tasks }`
@@ -1099,7 +1099,7 @@ Plans:
 
 <step name="git_commit">
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit "docs($PHASE): create phase plan" --files .planning/phases/$PHASE-*/$PHASE-*-PLAN.md .planning/ROADMAP.md
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit "docs($PHASE): create phase plan" --files .planning/phases/$PHASE-*/$PHASE-*-PLAN.md .planning/ROADMAP.md
 ```
 </step>
 

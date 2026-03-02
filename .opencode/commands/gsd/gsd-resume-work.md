@@ -22,11 +22,11 @@ Routes to the resume-project workflow which handles:
   </objective>
 
 <execution_context>
-@~/.opencode/get-shit-done/workflows/resume-project.md
+@~/.config/opencode/get-shit-done/workflows/resume-project.md
 </execution_context>
 
 <process>
-**Follow the resume-project workflow** from `@~/.opencode/get-shit-done/workflows/resume-project.md`.
+**Follow the resume-project workflow** from `@~/.config/opencode/get-shit-done/workflows/resume-project.md`.
 
 The workflow handles all resumption logic including:
 

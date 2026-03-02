@@ -24,7 +24,7 @@ Check for local patches directory:
 
 ```bash
 # Global install (path templated at install time)
-PATCHES_DIR=~/.opencode/gsd-local-patches
+PATCHES_DIR=~/.config/opencode/gsd-local-patches
 # Local install fallback
 if [ ! -d "$PATCHES_DIR" ]; then
   PATCHES_DIR=./.OpenCode/gsd-local-patches

@@ -5,7 +5,7 @@ Create executable phase prompts (PLAN.md files) for a roadmap phase with integra
 <required_reading>
 read all files referenced by the invoking prompt's execution_context before starting.
 
-@~/.opencode/get-shit-done/references/ui-brand.md
+@~/.config/opencode/get-shit-done/references/ui-brand.md
 </required_reading>
 
 <process>
@@ -15,7 +15,7 @@ read all files referenced by the invoking prompt's execution_context before star
 Load all context in one call (paths only to minimize orchestrator context):
 
 ```bash
-INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs init plan-phase "$PHASE")
+INIT=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs init plan-phase "$PHASE")
 ```
 
 Parse JSON for: `researcher_model`, `planner_model`, `checker_model`, `research_enabled`, `plan_checker_enabled`, `nyquist_validation_enabled`, `commit_docs`, `phase_found`, `phase_dir`, `phase_number`, `phase_name`, `phase_slug`, `padded_phase`, `has_research`, `has_context`, `has_plans`, `plan_count`, `planning_exists`, `roadmap_exists`.
@@ -40,7 +40,7 @@ mkdir -p ".planning/phases/${padded_phase}-${phase_slug}"
 ## 3. Validate Phase
 
 ```bash
-PHASE_INFO=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}")
+PHASE_INFO=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}")
 ```
 
 **If `found` is false:** Error with available phases. **If `found` is true:** Extract `phase_number`, `phase_name`, `goal` from JSON.
@@ -83,8 +83,8 @@ Display banner:
 ### Spawn gsd-phase-researcher
 
 ```bash
-PHASE_DESC=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}" | jq -r '.section')
-PHASE_REQ_IDS=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}" | jq -r '.section // empty' | grep -i "Requirements:" | head -1 | sed 's/.*Requirements:\*\*\s*//' | sed 's/[\[\]]//g' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+PHASE_DESC=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}" | jq -r '.section')
+PHASE_REQ_IDS=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs roadmap get-phase "${PHASE}" | jq -r '.section // empty' | grep -i "Requirements:" | head -1 | sed 's/.*Requirements:\*\*\s*//' | sed 's/[\[\]]//g' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
 ```
 
 Research prompt:
@@ -116,7 +116,7 @@ write to: {phase_dir}/{phase_num}-RESEARCH.md
 
 ```
 task(
-  prompt="First, read ~/.opencode/agents/gsd-phase-researcher.md for your role and instructions.\n\n" + research_prompt,
+  prompt="First, read ~/.config/opencode/agents/gsd-phase-researcher.md for your role and instructions.\n\n" + research_prompt,
   subagent_type="general",
   model="{researcher_model}",
   description="Research Phase {phase}"
@@ -139,12 +139,12 @@ grep -l "## Validation Architecture" "${PHASE_DIR}"/*-RESEARCH.md 2>/dev/null
 ```
 
 **If found:**
-1. read validation template from `~/.opencode/get-shit-done/templates/VALIDATION.md`
+1. read validation template from `~/.config/opencode/get-shit-done/templates/VALIDATION.md`
 2. write to `${PHASE_DIR}/${PADDED_PHASE}-VALIDATION.md`
 3. Fill frontmatter: replace `{N}` with phase number, `{phase-slug}` with phase slug, `{date}` with current date
 4. If `commit_docs` is true:
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs commit-docs "docs(phase-${PHASE}): add validation strategy"
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs commit-docs "docs(phase-${PHASE}): add validation strategy"
 ```
 
 **If not found (and nyquist enabled):** Display warning:
@@ -229,7 +229,7 @@ Output consumed by /gsd-execute-phase. Plans need:
 
 ```
 task(
-  prompt="First, read ~/.opencode/agents/gsd-planner.md for your role and instructions.\n\n" + filled_prompt,
+  prompt="First, read ~/.config/opencode/agents/gsd-planner.md for your role and instructions.\n\n" + filled_prompt,
   subagent_type="general",
   model="{planner_model}",
   description="Plan Phase {phase}"
@@ -326,7 +326,7 @@ Return what changed.
 
 ```
 task(
-  prompt="First, read ~/.opencode/agents/gsd-planner.md for your role and instructions.\n\n" + revision_prompt,
+  prompt="First, read ~/.config/opencode/agents/gsd-planner.md for your role and instructions.\n\n" + revision_prompt,
   subagent_type="general",
   model="{planner_model}",
   description="Revise Phase {phase} plans"
@@ -352,7 +352,7 @@ Check for auto-advance trigger:
 1. Parse `--auto` flag from $ARGUMENTS
 2. read `workflow.auto_advance` from config:
    ```bash
-   AUTO_CFG=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
+   AUTO_CFG=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs config-get workflow.auto_advance 2>/dev/null || echo "false")
    ```
 
 **If `--auto` flag present OR `AUTO_CFG` is true:**
@@ -375,10 +375,10 @@ task(
     </objective>
 
     <execution_context>
-    @~/.opencode/get-shit-done/workflows/execute-phase.md
-    @~/.opencode/get-shit-done/references/checkpoints.md
-    @~/.opencode/get-shit-done/references/tdd.md
-    @~/.opencode/get-shit-done/references/model-profile-resolution.md
+    @~/.config/opencode/get-shit-done/workflows/execute-phase.md
+    @~/.config/opencode/get-shit-done/references/checkpoints.md
+    @~/.config/opencode/get-shit-done/references/tdd.md
+    @~/.config/opencode/get-shit-done/references/model-profile-resolution.md
     </execution_context>
 
     <arguments>

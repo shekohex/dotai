@@ -23,8 +23,8 @@ if $ARGUMENTS.profile not in ["quality", "balanced", "budget"]:
 Ensure config exists and load current state:
 
 ```bash
-node ~/.opencode/get-shit-done/bin/gsd-tools.cjs config-ensure-section
-INIT=$(node ~/.opencode/get-shit-done/bin/gsd-tools.cjs state load)
+node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs config-ensure-section
+INIT=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs state load)
 ```
 
 This creates `.planning/config.json` with defaults if missing and loads current config.

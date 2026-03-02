@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_MODEL = "gemini-2.5-flash";
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_USE_RESPONSE_SCHEMA = false;
 const THINKING_BUDGET_DEEP = 1024;
 const THINKING_BUDGET_FAST = 128;
 const MAX_URLS = 10;
@@ -127,6 +128,139 @@ function normalizeBaseUrl(baseURL?: string): string {
   const normalized = raw.endsWith("/") ? raw.slice(0, -1) : raw;
   new URL(normalized);
   return normalized;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  return value as Record<string, unknown>;
+}
+
+function getStringAtPath(source: unknown, path: string[]): string | undefined {
+  let current: unknown = source;
+  for (const segment of path) {
+    const record = toRecord(current);
+    if (!record) return undefined;
+    current = record[segment];
+  }
+  return typeof current === "string" ? current : undefined;
+}
+
+function getBooleanAtPath(source: unknown, path: string[]): boolean | undefined {
+  let current: unknown = source;
+  for (const segment of path) {
+    const record = toRecord(current);
+    if (!record) return undefined;
+    current = record[segment];
+  }
+  if (typeof current === "boolean") return current;
+  if (typeof current === "string") {
+    const normalized = current.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
+}
+
+const BASE_URL_CANDIDATES: Array<{ path: string[]; source: string }> = [
+  { path: ["provider", "google", "options", "baseURL"], source: "provider.google.options.baseURL" },
+  { path: ["provider", "google", "options", "baseUrl"], source: "provider.google.options.baseUrl" },
+  { path: ["provider", "google", "api"], source: "provider.google.api" },
+  { path: ["settings", "provider", "google", "options", "baseURL"], source: "settings.provider.google.options.baseURL" },
+  { path: ["settings", "provider", "google", "options", "baseUrl"], source: "settings.provider.google.options.baseUrl" },
+  { path: ["settings", "provider", "google", "api"], source: "settings.provider.google.api" },
+  { path: ["data", "provider", "google", "options", "baseURL"], source: "data.provider.google.options.baseURL" },
+  { path: ["data", "provider", "google", "options", "baseUrl"], source: "data.provider.google.options.baseUrl" },
+  { path: ["data", "provider", "google", "api"], source: "data.provider.google.api" },
+  { path: ["config", "provider", "google", "options", "baseURL"], source: "config.provider.google.options.baseURL" },
+  { path: ["config", "provider", "google", "options", "baseUrl"], source: "config.provider.google.options.baseUrl" },
+  { path: ["config", "provider", "google", "api"], source: "config.provider.google.api" },
+  {
+    path: ["config", "settings", "provider", "google", "options", "baseURL"],
+    source: "config.settings.provider.google.options.baseURL",
+  },
+  {
+    path: ["config", "settings", "provider", "google", "options", "baseUrl"],
+    source: "config.settings.provider.google.options.baseUrl",
+  },
+  { path: ["config", "settings", "provider", "google", "api"], source: "config.settings.provider.google.api" },
+];
+
+const RESPONSE_SCHEMA_CANDIDATES: Array<{ path: string[]; source: string }> = [
+  { path: ["provider", "google", "options", "googleSearchResponseSchema"], source: "provider.google.options.googleSearchResponseSchema" },
+  { path: ["provider", "google", "options", "googleSearchJsonSchema"], source: "provider.google.options.googleSearchJsonSchema" },
+  { path: ["provider", "google", "options", "useResponseSchema"], source: "provider.google.options.useResponseSchema" },
+  { path: ["provider", "google", "options", "useJsonSchema"], source: "provider.google.options.useJsonSchema" },
+  {
+    path: ["settings", "provider", "google", "options", "googleSearchResponseSchema"],
+    source: "settings.provider.google.options.googleSearchResponseSchema",
+  },
+  {
+    path: ["settings", "provider", "google", "options", "googleSearchJsonSchema"],
+    source: "settings.provider.google.options.googleSearchJsonSchema",
+  },
+  { path: ["settings", "provider", "google", "options", "useResponseSchema"], source: "settings.provider.google.options.useResponseSchema" },
+  { path: ["settings", "provider", "google", "options", "useJsonSchema"], source: "settings.provider.google.options.useJsonSchema" },
+  {
+    path: ["data", "provider", "google", "options", "googleSearchResponseSchema"],
+    source: "data.provider.google.options.googleSearchResponseSchema",
+  },
+  {
+    path: ["data", "provider", "google", "options", "googleSearchJsonSchema"],
+    source: "data.provider.google.options.googleSearchJsonSchema",
+  },
+  { path: ["data", "provider", "google", "options", "useResponseSchema"], source: "data.provider.google.options.useResponseSchema" },
+  { path: ["data", "provider", "google", "options", "useJsonSchema"], source: "data.provider.google.options.useJsonSchema" },
+  {
+    path: ["config", "provider", "google", "options", "googleSearchResponseSchema"],
+    source: "config.provider.google.options.googleSearchResponseSchema",
+  },
+  {
+    path: ["config", "provider", "google", "options", "googleSearchJsonSchema"],
+    source: "config.provider.google.options.googleSearchJsonSchema",
+  },
+  { path: ["config", "provider", "google", "options", "useResponseSchema"], source: "config.provider.google.options.useResponseSchema" },
+  { path: ["config", "provider", "google", "options", "useJsonSchema"], source: "config.provider.google.options.useJsonSchema" },
+  {
+    path: ["config", "settings", "provider", "google", "options", "googleSearchResponseSchema"],
+    source: "config.settings.provider.google.options.googleSearchResponseSchema",
+  },
+  {
+    path: ["config", "settings", "provider", "google", "options", "googleSearchJsonSchema"],
+    source: "config.settings.provider.google.options.googleSearchJsonSchema",
+  },
+  {
+    path: ["config", "settings", "provider", "google", "options", "useResponseSchema"],
+    source: "config.settings.provider.google.options.useResponseSchema",
+  },
+  { path: ["config", "settings", "provider", "google", "options", "useJsonSchema"], source: "config.settings.provider.google.options.useJsonSchema" },
+];
+
+function resolveConfiguredBaseUrl(source: unknown): { value: string; source: string } | undefined {
+  for (const candidate of BASE_URL_CANDIDATES) {
+    const value = getStringAtPath(source, candidate.path);
+    if (value?.trim()) {
+      return { value, source: candidate.source };
+    }
+  }
+  return undefined;
+}
+
+function collectBaseUrlDebug(source: unknown): Record<string, string | undefined> {
+  const output: Record<string, string | undefined> = {};
+  for (const candidate of BASE_URL_CANDIDATES) {
+    output[candidate.source] = getStringAtPath(source, candidate.path);
+  }
+  return output;
+}
+
+function resolveResponseSchemaMode(source: unknown): { value: boolean; source: string } | undefined {
+  for (const candidate of RESPONSE_SCHEMA_CANDIDATES) {
+    const value = getBooleanAtPath(source, candidate.path);
+    if (typeof value === "boolean") {
+      return { value, source: candidate.source };
+    }
+  }
+  return undefined;
 }
 
 function buildSystemInstruction(thinking: boolean): string {
@@ -377,7 +511,7 @@ export const GeminiTools: Plugin = async ({ client }) => {
             );
           }
 
-          let config: any;
+          let config: unknown;
           try {
             config = await client.config.get({ responseStyle: "data" });
           } catch (error) {
@@ -386,12 +520,19 @@ export const GeminiTools: Plugin = async ({ client }) => {
           }
 
           let baseURL: string;
+          let baseURLSource = "default";
+          const configuredBaseURL = resolveConfiguredBaseUrl(config);
+          const configuredResponseSchema = resolveResponseSchemaMode(config);
+          const useResponseSchema = configuredResponseSchema?.value ?? DEFAULT_USE_RESPONSE_SCHEMA;
+          const useResponseSchemaSource = configuredResponseSchema?.source ?? "default";
+          const baseURLCandidates = collectBaseUrlDebug(config);
+          if (configuredBaseURL) baseURLSource = configuredBaseURL.source;
           try {
-            baseURL = normalizeBaseUrl(config?.provider?.google?.options?.baseURL);
+            baseURL = normalizeBaseUrl(configuredBaseURL?.value);
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             return createError(
-              `invalid provider.google.options.baseURL: ${message}`,
+              `invalid ${baseURLSource}: ${message}`,
               "Fix the provider baseURL override or remove it.",
               requestId,
             );
@@ -402,13 +543,33 @@ export const GeminiTools: Plugin = async ({ client }) => {
               body: {
                 service: "gemini-tools",
                 level: "debug",
+                message: "google_search config resolution",
+                extra: {
+                  requestId,
+                  baseURL,
+                  baseURLSource,
+                  baseURLCandidates,
+                  useResponseSchema,
+                  useResponseSchemaSource,
+                },
+              },
+            })
+            .catch(() => {});
+
+          await client.app
+            .log({
+              body: {
+                service: "gemini-tools",
+                level: "debug",
                 message: "google_search request",
                 extra: {
                   requestId,
                   baseURL,
+                  baseURLSource,
                   model: DEFAULT_MODEL,
                   urlCount: urls.length,
                   thinking: Boolean(args.thinking),
+                  useResponseSchema,
                 },
               },
             })
@@ -502,8 +663,43 @@ export const GeminiTools: Plugin = async ({ client }) => {
           const requestWithRetry = async (useSchema: boolean) => {
             let lastResponse: Response | undefined;
             for (let attempt = 0; attempt < RETRY_BACKOFF_MS.length + 1; attempt += 1) {
+              await client.app
+                .log({
+                  body: {
+                    service: "gemini-tools",
+                    level: "debug",
+                    message: "google_search request attempt",
+                    extra: {
+                      requestId,
+                      endpoint,
+                      attempt: attempt + 1,
+                      maxAttempts: RETRY_BACKOFF_MS.length + 1,
+                      useSchema,
+                      timeoutMs,
+                    },
+                  },
+                })
+                .catch(() => {});
+
               const response = await makeRequest(useSchema);
               lastResponse = response;
+              await client.app
+                .log({
+                  body: {
+                    service: "gemini-tools",
+                    level: "debug",
+                    message: "google_search response",
+                    extra: {
+                      requestId,
+                      endpoint,
+                      attempt: attempt + 1,
+                      useSchema,
+                      status: response.status,
+                      statusText: response.statusText,
+                    },
+                  },
+                })
+                .catch(() => {});
               if (response.status < 500 || response.status >= 600) return response;
               if (attempt < RETRY_BACKOFF_MS.length) {
                 const delay = RETRY_BACKOFF_MS[attempt];
@@ -516,16 +712,45 @@ export const GeminiTools: Plugin = async ({ client }) => {
           };
 
           try {
-            let response = await requestWithRetry(true);
-            if (!response.ok) {
-              if (response.status >= 400 && response.status < 500) {
-                response = await requestWithRetry(false);
-              }
+            let response = await requestWithRetry(useResponseSchema);
+            if (useResponseSchema && !response.ok) {
+              await client.app
+                .log({
+                  body: {
+                    service: "gemini-tools",
+                    level: "warn",
+                    message: "google_search schema request failed, retrying without schema",
+                    extra: {
+                      requestId,
+                      endpoint,
+                      status: response.status,
+                      statusText: response.statusText,
+                    },
+                  },
+                })
+                .catch(() => {});
+              response = await requestWithRetry(false);
             }
 
             if (!response.ok) {
               const errorText = await response.text();
               const snippet = errorText.length > 2000 ? `${errorText.slice(0, 2000)}...` : errorText;
+              await client.app
+                .log({
+                  body: {
+                    service: "gemini-tools",
+                    level: "error",
+                    message: "google_search request failed",
+                    extra: {
+                      requestId,
+                      endpoint,
+                      status: response.status,
+                      statusText: response.statusText,
+                      bodySnippet: snippet,
+                    },
+                  },
+                })
+                .catch(() => {});
               return createError(
                 `Gemini API error: ${response.status} ${response.statusText}\n${snippet}`,
                 "Verify the api key, model access, and baseURL.",

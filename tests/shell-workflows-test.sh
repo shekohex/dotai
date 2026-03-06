@@ -131,8 +131,8 @@ EOF
   assert_contains '100\.100\.1\.116' "$log_file"
   assert_contains '192.168.1.116' "$log_file"
   assert_contains 'bun install -g opencode-ai@latest @openchamber/web@latest' "$log_file"
-  assert_contains 'openchamber restart' "$log_file"
   assert_contains 'kill -HUP' "$log_file"
+  assert_contains 'OpenChamber' "$log_file"
 }
 
 test_sync_coder_workspaces_supports_full_workspace_restart_flag() {
@@ -176,11 +176,11 @@ EOF
 
   assert_contains 'ssh shekohex/alpha' "$log_file"
   assert_contains 'restart shekohex/alpha' "$log_file"
-  assert_not_contains 'openchamber restart' "$log_file"
+  assert_not_contains 'OpenChamber' "$log_file"
 }
 
 test_sync_coder_workspaces_executes_remote_flow_without_timeout_binary() {
-  local temp_dir fake_bin remote_home remote_bin remote_log actual_jq actual_python3 opencode_pid
+  local temp_dir fake_bin remote_home remote_bin remote_log actual_jq actual_python3 opencode_pid openchamber_pid
   temp_dir="$(mktemp -d)"
   fake_bin="$temp_dir/bin"
   remote_home="$temp_dir/remote-home"
@@ -219,20 +219,30 @@ while true; do
 done
 EOF
 
+  cat > "$remote_bin/openchamber" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+while true; do
+  sleep 300
+done
+EOF
+
   cat > "$remote_bin/pgrep" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "-fo" ]]; then
-  printf '%s\n' "${FAKE_OPENCODE_PID:?}"
-  exit 0
+  case "$2" in
+    *openchamber*)
+      printf '%s\n' "${FAKE_OPENCHAMBER_PID:?}"
+      exit 0
+      ;;
+    *)
+      printf '%s\n' "${FAKE_OPENCODE_PID:?}"
+      exit 0
+      ;;
+  esac
 fi
 exit 1
-EOF
-
-  cat > "$remote_bin/openchamber" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'openchamber %s\n' "$*" >> "${FAKE_REMOTE_LOG:?}"
 EOF
 
   cat > "$remote_bin/jq" <<EOF
@@ -264,10 +274,12 @@ with open(path, 'w', encoding='utf-8') as handle:
 PY
 EOF
 
-  chmod +x "$remote_bin/git" "$remote_bin/bun" "$remote_bin/opencode" "$remote_bin/pgrep" "$remote_bin/openchamber" "$remote_bin/jq" "$remote_bin/sed"
+  chmod +x "$remote_bin/git" "$remote_bin/bun" "$remote_bin/opencode" "$remote_bin/openchamber" "$remote_bin/pgrep" "$remote_bin/jq" "$remote_bin/sed"
 
   "$remote_bin/opencode" serve >/dev/null 2>&1 &
   opencode_pid=$!
+  "$remote_bin/openchamber" serve >/dev/null 2>&1 &
+  openchamber_pid=$!
 
   cat > "$fake_bin/coder" <<EOF
 #!/usr/bin/env bash
@@ -285,7 +297,7 @@ JSON
     workspace="\$2"
     command="\$3"
     printf 'ssh %s\n' "\$workspace" >> "$remote_log"
-    HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" FAKE_OPENCODE_PID="$opencode_pid" /bin/bash -c "\$command"
+    HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" FAKE_OPENCODE_PID="$opencode_pid" FAKE_OPENCHAMBER_PID="$openchamber_pid" /bin/bash -c "\$command"
     ;;
   restart)
     if [[ "\$2" == "-y" ]]; then
@@ -308,12 +320,18 @@ EOF
   assert_contains 'git -C ' "$remote_log"
   assert_contains 'pull --ff-only' "$remote_log"
   assert_contains 'bun install -g opencode-ai@latest @openchamber/web@latest' "$remote_log"
-  assert_contains 'openchamber restart' "$remote_log"
   assert_contains '192.168.1.116' "$remote_home/.config/opencode/opencode.jsonc"
 
   if kill -0 "$opencode_pid" 2>/dev/null; then
     fail "opencode process should have received SIGHUP"
   fi
+
+  if kill -0 "$openchamber_pid" 2>/dev/null; then
+    fail "openchamber process should have received SIGHUP"
+  fi
+
+  wait "$opencode_pid" 2>/dev/null || true
+  wait "$openchamber_pid" 2>/dev/null || true
 }
 
 test_install_refuses_implicit_noninteractive_without_opt_in

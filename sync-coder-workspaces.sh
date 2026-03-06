@@ -224,7 +224,9 @@ build_remote_update_command() {
 }
 
 build_remote_restart_command() {
-  printf 'set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; find_opencode_pid() { local pid=""; if command -v pgrep >/dev/null 2>&1; then pid="$(pgrep -fo '\''(^|.*/)opencode([[:space:]]|$)|opencode.*(serve|server)'\'' || true)"; fi; if [[ -z "$pid" ]]; then pid="$(ps -eo pid=,args= | awk '\''/(^|[[:space:]\/])opencode([[:space:]]|$)|opencode.*(serve|server)/ && !/awk/ { print $1; exit }'\'' || true)"; fi; [[ -n "$pid" ]] || { printf '\''OpenCode process not found\n'\'' >&2; return 1; }; kill -HUP "$pid"; }; find_opencode_pid; run_with_timeout %s openchamber restart' "$RESTART_TIMEOUT"
+  cat <<'EOF'
+set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; find_process_pid() { local process_name="$1"; local process_pattern="$2"; local pid=""; if command -v pgrep >/dev/null 2>&1; then pid="$(pgrep -fo "$process_pattern" || true)"; fi; if [[ -z "$pid" ]]; then pid="$(ps -eo pid=,args= | awk -v pattern="$process_pattern" '$0 ~ pattern && $0 !~ /awk/ { print $1; exit }' || true)"; fi; [[ -n "$pid" ]] || { printf '%s process not found\n' "$process_name" >&2; return 1; }; printf '%s\n' "$pid"; }; kill -HUP "$(find_process_pid OpenCode '(^|.*/)opencode([[:space:]]|$)|opencode.*(serve|server)')"; kill -HUP "$(find_process_pid OpenChamber '(^|.*/)openchamber([[:space:]]|$)|openchamber.*(serve|server)')"
+EOF
 }
 
 run_update_workspace() {

@@ -70,27 +70,27 @@
       "color": "#FF6B35"
     },
     "gsd-verifier": {
-      "model": "kimi-for-coding/k2p5",
+      "model": "openai/gpt-4",
       "variant": "high",
       "color": "#4285F4"
     },
     "gsd-integration-checker": {
-      "model": "kimi-for-coding/k2p5",
+      "model": "openai/gpt-4",
       "variant": "high",
       "color": "#4285F4"
     },
     "gsd-set-profile": {
-      "model": "kimi-for-coding/k2p5",
+      "model": "openai/gpt-4",
       "variant": "high",
       "color": "#4285F4"
     },
     "gsd-settings": {
-      "model": "kimi-for-coding/k2p5",
+      "model": "openai/gpt-4",
       "variant": "high",
       "color": "#4285F4"
     },
     "gsd-set-model": {
-      "model": "kimi-for-coding/k2p5",
+      "model": "openai/gpt-4",
       "variant": "high",
       "color": "#4285F4"
     }

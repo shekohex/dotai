@@ -7,6 +7,8 @@ CLAUDE_CONFIG="$HOME/.claude"
 OPENCODE_CONFIG="$HOME/.config/opencode"
 CODEX_CONFIG="$HOME/.codex"
 GEMINI_CONFIG="$HOME/.gemini"
+DOTAI_NONINTERACTIVE="${DOTAI_NONINTERACTIVE:-}"
+PROMPT_BLOCKED=0
 
 # Source files
 AI_MD="$REPO_DIR/AI.md"
@@ -33,6 +35,68 @@ log_error() {
 
 log_title() {
   echo -e "${BLUE}=== $1 ===${NC}"
+}
+
+is_truthy() {
+  case "${1,,}" in
+  1 | true | yes | y | on)
+    return 0
+    ;;
+  *)
+    return 1
+    ;;
+  esac
+}
+
+should_auto_confirm() {
+  if is_truthy "$DOTAI_NONINTERACTIVE"; then
+    return 0
+  fi
+
+  if is_truthy "${CI:-}"; then
+    return 0
+  fi
+
+  return 1
+}
+
+is_non_interactive_shell() {
+  [[ ! -t 0 || ! -t 1 ]]
+}
+
+usage() {
+  cat <<EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  --non-interactive  Apply changes without prompting
+  -h, --help         Show this help message
+
+Environment:
+  DOTAI_NONINTERACTIVE=1  Apply changes without prompting
+  CI=true                 Automatically treated as non-interactive
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --non-interactive)
+      DOTAI_NONINTERACTIVE=1
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      log_error "Unknown option: $1"
+      usage
+      exit 1
+      ;;
+    esac
+
+    shift
+  done
 }
 
 # Check if required tools are available
@@ -63,8 +127,25 @@ check_dependencies() {
 
 confirm_action() {
   local message="$1"
+
+  if should_auto_confirm; then
+    log_info "Non-interactive mode enabled, applying: $message"
+    return 0
+  fi
+
+  if is_non_interactive_shell; then
+    PROMPT_BLOCKED=1
+    log_error "Detected non-interactive shell while prompting for: $message"
+    log_error "Use --non-interactive or DOTAI_NONINTERACTIVE=1 to auto-apply changes"
+    return 1
+  fi
+
   echo -e "${YELLOW}$message${NC}"
-  read -p "Continue? (y/N): " -n 1 -r
+  if ! read -p "Continue? (y/N): " -n 1 -r; then
+    echo
+    log_info "Operation cancelled by user"
+    return 1
+  fi
   echo
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     log_info "Operation cancelled by user"
@@ -303,6 +384,8 @@ sync_mcp_configs() {
 }
 
 main() {
+  parse_args "$@"
+
   log_info "AI Configuration Installer"
   log_info "Repository: $REPO_DIR"
 
@@ -378,6 +461,11 @@ main() {
   fi
   if [[ -d "$REPO_DIR/.codex" ]]; then
     echo "  - .codex/ → $CODEX_CONFIG/"
+  fi
+
+  if (( PROMPT_BLOCKED )); then
+    log_error "Installation requires explicit non-interactive opt-in when no TTY is available"
+    return 1
   fi
 }
 

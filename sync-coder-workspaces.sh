@@ -14,6 +14,7 @@ PACKAGE_TIMEOUT="${SYNC_CODER_PACKAGE_TIMEOUT:-20m}"
 RESTART_TIMEOUT="${SYNC_CODER_RESTART_TIMEOUT:-30m}"
 DRY_RUN=false
 SKIP_RESTART=false
+FULL_RESTART=false
 declare -a WORKSPACES=()
 
 log_info() {
@@ -36,7 +37,8 @@ Options:
   --old-ip IP            Source IP to replace (default: $OLD_IP)
   --new-ip IP            Target IP (default: $NEW_IP)
   --parallel N           Concurrent workspace operations (default: $PARALLEL)
-  --skip-restart         Skip workspace restart phase
+  --restart              Do full workspace restart via coder restart
+  --skip-restart         Skip any restart phase
   --dry-run              Print commands without executing them
   -h, --help             Show this help message
 
@@ -171,6 +173,9 @@ parse_args() {
     --skip-restart)
       SKIP_RESTART=true
       ;;
+    --restart)
+      FULL_RESTART=true
+      ;;
     --dry-run)
       DRY_RUN=true
       ;;
@@ -218,6 +223,10 @@ build_remote_update_command() {
     "$repo" "$config" "$PULL_TIMEOUT" "$INSTALL_TIMEOUT" "$old_ip_pattern" "$new_ip_replacement" "$new_ip" "$old_ip" "$PACKAGE_TIMEOUT"
 }
 
+build_remote_restart_command() {
+  printf 'set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; find_opencode_pid() { local pid=""; if command -v pgrep >/dev/null 2>&1; then pid="$(pgrep -fo '\''(^|.*/)opencode([[:space:]]|$)|opencode.*(serve|server)'\'' || true)"; fi; if [[ -z "$pid" ]]; then pid="$(ps -eo pid=,args= | awk '\''/(^|[[:space:]\/])opencode([[:space:]]|$)|opencode.*(serve|server)/ && !/awk/ { print $1; exit }'\'' || true)"; fi; [[ -n "$pid" ]] || { printf '\''OpenCode process not found\n'\'' >&2; return 1; }; kill -HUP "$pid"; }; find_opencode_pid; run_with_timeout %s openchamber restart' "$RESTART_TIMEOUT"
+}
+
 run_update_workspace() {
   local workspace="$1"
   local command
@@ -233,13 +242,26 @@ run_update_workspace() {
 
 run_restart_workspace() {
   local workspace="$1"
+  local command
 
-  if [[ "$DRY_RUN" == true ]]; then
-    printf 'coder restart -y %s\n' "$workspace"
+  if [[ "$FULL_RESTART" == true ]]; then
+    if [[ "$DRY_RUN" == true ]]; then
+      printf 'coder restart -y %s\n' "$workspace"
+      return 0
+    fi
+
+    timeout_wrapper "$RESTART_TIMEOUT" coder restart -y "$workspace"
     return 0
   fi
 
-  timeout_wrapper "$RESTART_TIMEOUT" coder restart -y "$workspace"
+  command="$(build_remote_restart_command)"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    printf 'coder ssh %s %s\n' "$workspace" "$command"
+    return 0
+  fi
+
+  timeout_wrapper "$RESTART_TIMEOUT" coder ssh "$workspace" "$command"
 }
 
 run_parallel_phase() {

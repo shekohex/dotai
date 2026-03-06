@@ -23,6 +23,15 @@ assert_contains() {
   grep -Fq -- "$needle" "$haystack" || fail "expected to find '$needle' in $haystack"
 }
 
+assert_not_contains() {
+  local needle="$1"
+  local haystack="$2"
+
+  if grep -Fq -- "$needle" "$haystack"; then
+    fail "did not expect to find '$needle' in $haystack"
+  fi
+}
+
 make_temp_home() {
   local temp_home
   temp_home="$(mktemp -d)"
@@ -122,12 +131,56 @@ EOF
   assert_contains '100\.100\.1\.116' "$log_file"
   assert_contains '192.168.1.116' "$log_file"
   assert_contains 'bun install -g opencode-ai@latest @openchamber/web@latest' "$log_file"
+  assert_contains 'openchamber restart' "$log_file"
+  assert_contains 'kill -HUP' "$log_file"
+}
+
+test_sync_coder_workspaces_supports_full_workspace_restart_flag() {
+  local temp_dir fake_bin log_file
+  temp_dir="$(mktemp -d)"
+  fake_bin="$temp_dir/bin"
+  log_file="$temp_dir/coder.log"
+  mkdir -p "$fake_bin"
+
+  cat > "$fake_bin/coder" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_file="${FAKE_CODER_LOG:?}"
+
+case "$1" in
+  list)
+    cat <<'JSON'
+[
+  {"owner_name":"shekohex","name":"alpha"}
+]
+JSON
+    ;;
+  ssh)
+    workspace="$2"
+    command="$3"
+    printf 'ssh %s %s\n' "$workspace" "$command" >> "$log_file"
+    ;;
+  restart)
+    printf 'restart %s\n' "$3" >> "$log_file"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "$fake_bin/coder"
+
+  PATH="$fake_bin:$PATH" FAKE_CODER_LOG="$log_file" bash "$ROOT_DIR/sync-coder-workspaces.sh" --parallel 1 --restart >"$temp_dir/sync.log" 2>&1 || \
+    fail "sync-coder-workspaces.sh should support --restart"
+
+  assert_contains 'ssh shekohex/alpha' "$log_file"
   assert_contains 'restart shekohex/alpha' "$log_file"
-  assert_contains 'restart shekohex/beta' "$log_file"
+  assert_not_contains 'openchamber restart' "$log_file"
 }
 
 test_sync_coder_workspaces_executes_remote_flow_without_timeout_binary() {
-  local temp_dir fake_bin remote_home remote_bin remote_log actual_jq actual_python3
+  local temp_dir fake_bin remote_home remote_bin remote_log actual_jq actual_python3 opencode_pid
   temp_dir="$(mktemp -d)"
   fake_bin="$temp_dir/bin"
   remote_home="$temp_dir/remote-home"
@@ -156,6 +209,30 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'bun %s\n' "$*" >> "${FAKE_REMOTE_LOG:?}"
+EOF
+
+  cat > "$remote_bin/opencode" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+while true; do
+  sleep 300
+done
+EOF
+
+  cat > "$remote_bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "-fo" ]]; then
+  printf '%s\n' "${FAKE_OPENCODE_PID:?}"
+  exit 0
+fi
+exit 1
+EOF
+
+  cat > "$remote_bin/openchamber" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'openchamber %s\n' "$*" >> "${FAKE_REMOTE_LOG:?}"
 EOF
 
   cat > "$remote_bin/jq" <<EOF
@@ -187,7 +264,10 @@ with open(path, 'w', encoding='utf-8') as handle:
 PY
 EOF
 
-  chmod +x "$remote_bin/git" "$remote_bin/bun" "$remote_bin/jq" "$remote_bin/sed"
+  chmod +x "$remote_bin/git" "$remote_bin/bun" "$remote_bin/opencode" "$remote_bin/pgrep" "$remote_bin/openchamber" "$remote_bin/jq" "$remote_bin/sed"
+
+  "$remote_bin/opencode" serve >/dev/null 2>&1 &
+  opencode_pid=$!
 
   cat > "$fake_bin/coder" <<EOF
 #!/usr/bin/env bash
@@ -205,7 +285,7 @@ JSON
     workspace="\$2"
     command="\$3"
     printf 'ssh %s\n' "\$workspace" >> "$remote_log"
-    HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" /bin/bash -c "\$command"
+    HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" FAKE_OPENCODE_PID="$opencode_pid" /bin/bash -c "\$command"
     ;;
   restart)
     if [[ "\$2" == "-y" ]]; then
@@ -228,14 +308,19 @@ EOF
   assert_contains 'git -C ' "$remote_log"
   assert_contains 'pull --ff-only' "$remote_log"
   assert_contains 'bun install -g opencode-ai@latest @openchamber/web@latest' "$remote_log"
-  assert_contains 'restart shekohex/alpha' "$remote_log"
+  assert_contains 'openchamber restart' "$remote_log"
   assert_contains '192.168.1.116' "$remote_home/.config/opencode/opencode.jsonc"
+
+  if kill -0 "$opencode_pid" 2>/dev/null; then
+    fail "opencode process should have received SIGHUP"
+  fi
 }
 
 test_install_refuses_implicit_noninteractive_without_opt_in
 test_install_supports_noninteractive_env
 test_install_supports_noninteractive_flag
 test_sync_coder_workspaces_builds_expected_remote_flow
+test_sync_coder_workspaces_supports_full_workspace_restart_flag
 test_sync_coder_workspaces_executes_remote_flow_without_timeout_binary
 
 printf 'PASS\n'

@@ -10,7 +10,7 @@ set -e
 
 # --- Configuration ---
 # readonly MODEL="opencode/big-pickle"
-readonly MODEL="google/gemini-3-flash-preview"
+readonly MODEL="openai/gpt-5.3-codex-spark"
 readonly HOSTNAME="127.0.0.1"
 readonly SERVER_READY_TIMEOUT=30
 

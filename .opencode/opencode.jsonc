@@ -7,6 +7,7 @@
     "opencode-pty@0.2.3"
   ],
   "small_model": "opencode/gpt-5-nano",
+  "default_agent": "plan",
   "agent": {
     "explore": {
       "model": "kimi-for-coding/k2p5",
@@ -163,8 +164,7 @@
       "*": "ask",
       "/tmp": "allow",
       "/tmp/**": "allow",
-      "~/coder/**": "allow",
-      "~/shady/**": "allow",
+      "/home/coder/**": "allow",
       "/private/tmp": "allow",
       "/private/tmp/**": "allow",
       "env:$TMPDIR": "allow",

@@ -1,4 +1,4 @@
-model = "gpt-5.3-codex"
+model = "gpt-5.4"
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 profile = "balanced"
@@ -26,14 +26,14 @@ multi_agent = true
 [profiles.balanced]
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
-model = "gpt-5.3-codex"
+model = "gpt-5.4"
 model_reasoning_effort = "medium"
 web_search = "live"
 
 [profiles.safe]
 approval_policy = "on-failure"
 sandbox_mode = "workspace-write"
-model = "gpt-5.3-codex"
+model = "gpt-5.4"
 model_reasoning_effort = "medium"
 web_search = "disabled"
 
@@ -45,7 +45,7 @@ web_search = "disabled"
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
-model = "gpt-5.3-codex"
+model = "gpt-5.4"
 model_reasoning_effort = "high"
 tool_output_token_limit = 25000
 web_search = "live"

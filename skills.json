@@ -1,6 +1,7 @@
 {
   "enabled": [
     "extreme-programming",
-    "frontend-design"
+    "frontend-design",
+    "babysit-pr"
   ]
 }

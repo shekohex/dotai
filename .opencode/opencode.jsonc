@@ -7,7 +7,7 @@
     "opencode-pty@0.2.3"
   ],
   "small_model": "opencode/gpt-5-nano",
-  "default_agent": "plan",
+  "default_agent": "build",
   "agent": {
     "explore": {
       "model": "kimi-for-coding/k2p5",

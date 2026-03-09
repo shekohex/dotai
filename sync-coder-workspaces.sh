@@ -16,6 +16,7 @@ DRY_RUN=false
 SKIP_RESTART=false
 FULL_RESTART=false
 declare -a WORKSPACES=()
+declare -a SKIPPED_WORKSPACES=()
 
 log_info() {
   printf '[INFO] %s\n' "$1"
@@ -109,6 +110,20 @@ sanitize_name() {
   value="${value//\//_}"
   value="${value// /_}"
   printf '%s' "$value"
+}
+
+array_contains() {
+  local needle="$1"
+  shift
+  local value
+
+  for value in "$@"; do
+    if [[ "$value" == "$needle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 parse_args() {
@@ -208,6 +223,53 @@ discover_workspaces() {
   fi
 
   coder list -o json --search "$SEARCH" | jq -r '.[] | "\(.owner_name)/\(.name // .latest_build.workspace_name)"'
+}
+
+list_workspace_states() {
+  coder list -o json --search "$SEARCH" | jq -r '
+    .[]
+    | [
+        "\(.owner_name)/\(.name // .latest_build.workspace_name)",
+        (.latest_build.transition // ""),
+        (
+          if any(.latest_build.resources[]?.agents[]?; .status == "connected" or .status == "connecting" or .lifecycle_state == "ready")
+          then "true"
+          else "false"
+          end
+        )
+      ]
+    | @tsv
+  '
+}
+
+filter_stopped_workspaces() {
+  local workspace known_workspace transition reachable
+  local all_workspaces=()
+  local active_workspaces=()
+  local filtered_workspaces=()
+
+  while IFS=$'\t' read -r known_workspace transition reachable; do
+    [[ -n "$known_workspace" ]] || continue
+    all_workspaces+=("$known_workspace")
+
+    if [[ "$transition" == "start" && "$reachable" == "true" ]]; then
+      active_workspaces+=("$known_workspace")
+    fi
+  done < <(list_workspace_states)
+
+  SKIPPED_WORKSPACES=()
+  filtered_workspaces=()
+
+  for workspace in "${WORKSPACES[@]}"; do
+    if array_contains "$workspace" "${all_workspaces[@]}" && ! array_contains "$workspace" "${active_workspaces[@]}"; then
+      SKIPPED_WORKSPACES+=("$workspace")
+      continue
+    fi
+
+    filtered_workspaces+=("$workspace")
+  done
+
+  WORKSPACES=("${filtered_workspaces[@]}")
 }
 
 build_remote_update_command() {
@@ -339,6 +401,17 @@ main() {
   if [[ ${#WORKSPACES[@]} -eq 0 ]]; then
     log_error "No workspaces found"
     exit 1
+  fi
+
+  filter_stopped_workspaces
+
+  for workspace in "${SKIPPED_WORKSPACES[@]}"; do
+    log_info "Skipping stopped workspace $workspace"
+  done
+
+  if [[ ${#WORKSPACES[@]} -eq 0 ]]; then
+    log_info "No running workspaces to sync"
+    return 0
   fi
 
   log_info "Syncing ${#WORKSPACES[@]} workspace(s)"

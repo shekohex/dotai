@@ -273,21 +273,22 @@ filter_stopped_workspaces() {
 }
 
 build_remote_update_command() {
-  local repo config old_ip new_ip old_ip_pattern new_ip_replacement
+  local repo config config_dir old_ip new_ip old_ip_pattern new_ip_replacement
   repo="$(escape_dq "$REMOTE_REPO")"
   config="$(escape_dq "$REMOTE_CONFIG")"
+  config_dir="$(escape_dq "$(dirname "$REMOTE_CONFIG")")"
   old_ip="$(escape_dq "$OLD_IP")"
   new_ip="$(escape_dq "$NEW_IP")"
   old_ip_pattern="$(escape_sed_pattern "$OLD_IP")"
   new_ip_replacement="$(escape_sed_replacement "$NEW_IP")"
 
-  printf 'set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; REPO_DIR="%s"; CONFIG_PATH="%s"; run_with_timeout %s git -C "$REPO_DIR" pull --ff-only; DOTAI_NONINTERACTIVE=1 run_with_timeout %s bash "$REPO_DIR/install.sh" --non-interactive; run_with_timeout 1m sed -i "s/%s/%s/g" "$CONFIG_PATH"; run_with_timeout 1m jq -R -s -e --arg new_ip "%s" --arg old_ip "%s" '\''contains($new_ip) and (contains($old_ip) | not)'\'' "$CONFIG_PATH" >/dev/null; run_with_timeout %s bun install -g opencode-ai@latest @openchamber/web@latest' \
-    "$repo" "$config" "$PULL_TIMEOUT" "$INSTALL_TIMEOUT" "$old_ip_pattern" "$new_ip_replacement" "$new_ip" "$old_ip" "$PACKAGE_TIMEOUT"
+  printf 'set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; REPO_DIR="%s"; CONFIG_PATH="%s"; CONFIG_DIR="%s"; run_with_timeout %s git -C "$REPO_DIR" pull --ff-only; run_with_timeout 1m rm -rf "$CONFIG_DIR"; DOTAI_NONINTERACTIVE=1 run_with_timeout %s bash "$REPO_DIR/install.sh" --non-interactive; run_with_timeout 1m sed -i "s/%s/%s/g" "$CONFIG_PATH"; run_with_timeout 1m jq -R -s -e --arg new_ip "%s" --arg old_ip "%s" '\''contains($new_ip) and (contains($old_ip) | not)'\'' "$CONFIG_PATH" >/dev/null; run_with_timeout %s bun install -g opencode-ai@latest @openchamber/web@latest' \
+    "$repo" "$config" "$config_dir" "$PULL_TIMEOUT" "$INSTALL_TIMEOUT" "$old_ip_pattern" "$new_ip_replacement" "$new_ip" "$old_ip" "$PACKAGE_TIMEOUT"
 }
 
 build_remote_restart_command() {
   cat <<'EOF'
-set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; find_process_pid() { local process_name="$1"; local process_pattern="$2"; local pid=""; if command -v pgrep >/dev/null 2>&1; then pid="$(pgrep -fo "$process_pattern" || true)"; fi; if [[ -z "$pid" ]]; then pid="$(ps -eo pid=,args= | awk -v pattern="$process_pattern" '$0 ~ pattern && $0 !~ /awk/ { print $1; exit }' || true)"; fi; [[ -n "$pid" ]] || { printf '%s process not found\n' "$process_name" >&2; return 1; }; printf '%s\n' "$pid"; }; kill -HUP "$(find_process_pid OpenCode '(^|.*/)opencode([[:space:]]|$)|opencode.*(serve|server)')"; kill -HUP "$(find_process_pid OpenChamber '(^|.*/)openchamber([[:space:]]|$)|openchamber.*(serve|server)')"
+set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; query_process_pid() { local process_pattern="$1"; local selection="${2:-oldest}"; local pid=""; if command -v pgrep >/dev/null 2>&1; then if [[ "$selection" == "newest" ]]; then pid="$(pgrep -fn "$process_pattern" || true)"; else pid="$(pgrep -fo "$process_pattern" || true)"; fi; fi; if [[ -z "$pid" ]]; then if [[ "$selection" == "newest" ]]; then pid="$(ps -eo pid=,args= | awk -v pattern="$process_pattern" '$0 ~ pattern && $0 !~ /awk/ { pid=$1 } END { if (pid) print pid }' || true)"; else pid="$(ps -eo pid=,args= | awk -v pattern="$process_pattern" '$0 ~ pattern && $0 !~ /awk/ { print $1; exit }' || true)"; fi; fi; printf '%s' "$pid"; }; find_process_pid() { local process_name="$1"; local process_pattern="$2"; local selection="${3:-oldest}"; local pid=""; pid="$(query_process_pid "$process_pattern" "$selection")"; [[ -n "$pid" ]] || { printf '%s process not found\n' "$process_name" >&2; return 1; }; printf '%s\n' "$pid"; }; restart_process() { local process_name="$1"; local process_pattern="$2"; local before_pid after_pid attempt; before_pid="$(find_process_pid "$process_name" "$process_pattern" oldest)"; kill -HUP "$before_pid"; after_pid=""; for attempt in 1 2 3 4 5; do sleep 0.1; after_pid="$(query_process_pid "$process_pattern" newest)"; if [[ -n "$after_pid" && "$after_pid" != "$before_pid" ]]; then break; fi; done; [[ -n "$after_pid" && "$after_pid" != "$before_pid" ]] || { printf '%s pid did not change after restart (old=%s new=%s)\n' "$process_name" "$before_pid" "${after_pid:-missing}" >&2; return 1; }; }; restart_process OpenCode '(^|.*/)opencode([[:space:]]|$)|opencode.*(serve|server)'; restart_process OpenChamber '(^|.*/)openchamber([[:space:]]|$)|openchamber.*(serve|server)'
 EOF
 }
 

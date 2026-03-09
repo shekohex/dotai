@@ -95,8 +95,8 @@ case "$1" in
   list)
     cat <<'JSON'
 [
-  {"owner_name":"shekohex","name":"alpha"},
-  {"owner_name":"shekohex","name":"beta"}
+  {"owner_name":"shekohex","name":"alpha","latest_build":{"transition":"start","resources":[{"agents":[{"status":"connected"}]}]}},
+  {"owner_name":"shekohex","name":"beta","latest_build":{"transition":"start","resources":[{"agents":[{"status":"connected"}]}]}}
 ]
 JSON
     ;;
@@ -128,10 +128,12 @@ EOF
   assert_contains 'DOTAI_NONINTERACTIVE=1' "$log_file"
   assert_contains 'install.sh' "$log_file"
   assert_contains '--non-interactive' "$log_file"
+  assert_contains 'rm -rf "$CONFIG_DIR"' "$log_file"
   assert_contains '100\.100\.1\.116' "$log_file"
   assert_contains '192.168.1.116' "$log_file"
   assert_contains 'bun install -g opencode-ai@latest @openchamber/web@latest' "$log_file"
   assert_contains 'kill -HUP' "$log_file"
+  assert_contains 'pid did not change after restart' "$log_file"
   assert_contains 'OpenChamber' "$log_file"
 }
 
@@ -152,7 +154,7 @@ case "$1" in
   list)
     cat <<'JSON'
 [
-  {"owner_name":"shekohex","name":"alpha"}
+  {"owner_name":"shekohex","name":"alpha","latest_build":{"transition":"start","resources":[{"agents":[{"status":"connected"}]}]}}
 ]
 JSON
     ;;
@@ -180,7 +182,9 @@ EOF
 }
 
 test_sync_coder_workspaces_executes_remote_flow_without_timeout_binary() {
-  local temp_dir fake_bin remote_home remote_bin remote_log actual_jq actual_python3 opencode_pid openchamber_pid
+  local temp_dir fake_bin remote_home remote_bin remote_log actual_jq actual_python3
+  local opencode_pid openchamber_pid new_opencode_pid new_openchamber_pid
+  local opencode_pid_file openchamber_pid_file opencode_supervisor_pid openchamber_supervisor_pid
   temp_dir="$(mktemp -d)"
   fake_bin="$temp_dir/bin"
   remote_home="$temp_dir/remote-home"
@@ -191,11 +195,16 @@ test_sync_coder_workspaces_executes_remote_flow_without_timeout_binary() {
 
   mkdir -p "$fake_bin" "$remote_home/dotai" "$remote_home/.config/opencode" "$remote_bin"
   printf 'api=http://100.100.1.116:4000\n' > "$remote_home/.config/opencode/opencode.jsonc"
+  printf 'stale\n' > "$remote_home/.config/opencode/stale.txt"
+  opencode_pid_file="$temp_dir/opencode.pid"
+  openchamber_pid_file="$temp_dir/openchamber.pid"
 
   cat > "$remote_home/dotai/install.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'install %s %s\n' "${DOTAI_NONINTERACTIVE:-unset}" "$*" >> "${FAKE_REMOTE_LOG:?}"
+mkdir -p "$HOME/.config/opencode"
+printf 'api=http://100.100.1.116:4000\n' > "$HOME/.config/opencode/opencode.jsonc"
 EOF
   chmod +x "$remote_home/dotai/install.sh"
 
@@ -214,30 +223,46 @@ EOF
   cat > "$remote_bin/opencode" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'exit 0' HUP
 while true; do
-  sleep 300
+  sleep 0.1
 done
 EOF
 
   cat > "$remote_bin/openchamber" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'exit 0' HUP
 while true; do
-  sleep 300
+  sleep 0.1
+done
+EOF
+
+  cat > "$remote_bin/service-supervisor" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+service="$1"
+pid_file="$2"
+while true; do
+  "$service" serve >/dev/null 2>&1 &
+  child=$!
+  printf '%s\n' "$child" > "$pid_file"
+  wait "$child" || true
+  sleep 0.05
 done
 EOF
 
   cat > "$remote_bin/pgrep" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "-fo" ]]; then
+if [[ "$1" == "-fo" || "$1" == "-fn" ]]; then
   case "$2" in
     *openchamber*)
-      printf '%s\n' "${FAKE_OPENCHAMBER_PID:?}"
+      cat "${FAKE_OPENCHAMBER_PID_FILE:?}"
       exit 0
       ;;
     *)
-      printf '%s\n' "${FAKE_OPENCODE_PID:?}"
+      cat "${FAKE_OPENCODE_PID_FILE:?}"
       exit 0
       ;;
   esac
@@ -274,12 +299,19 @@ with open(path, 'w', encoding='utf-8') as handle:
 PY
 EOF
 
-  chmod +x "$remote_bin/git" "$remote_bin/bun" "$remote_bin/opencode" "$remote_bin/openchamber" "$remote_bin/pgrep" "$remote_bin/jq" "$remote_bin/sed"
+  chmod +x "$remote_bin/git" "$remote_bin/bun" "$remote_bin/opencode" "$remote_bin/openchamber" "$remote_bin/service-supervisor" "$remote_bin/pgrep" "$remote_bin/jq" "$remote_bin/sed"
 
-  "$remote_bin/opencode" serve >/dev/null 2>&1 &
-  opencode_pid=$!
-  "$remote_bin/openchamber" serve >/dev/null 2>&1 &
-  openchamber_pid=$!
+  "$remote_bin/service-supervisor" "$remote_bin/opencode" "$opencode_pid_file" >/dev/null 2>&1 &
+  opencode_supervisor_pid=$!
+  "$remote_bin/service-supervisor" "$remote_bin/openchamber" "$openchamber_pid_file" >/dev/null 2>&1 &
+  openchamber_supervisor_pid=$!
+
+  while [[ ! -s "$opencode_pid_file" || ! -s "$openchamber_pid_file" ]]; do
+    sleep 0.05
+  done
+
+  opencode_pid="$(cat "$opencode_pid_file")"
+  openchamber_pid="$(cat "$openchamber_pid_file")"
 
   cat > "$fake_bin/coder" <<EOF
 #!/usr/bin/env bash
@@ -289,7 +321,7 @@ case "\$1" in
   list)
     cat <<'JSON'
 [
-  {"owner_name":"shekohex","name":"alpha"}
+  {"owner_name":"shekohex","name":"alpha","latest_build":{"transition":"start","resources":[{"agents":[{"status":"connected"}]}]}}
 ]
 JSON
     ;;
@@ -297,7 +329,7 @@ JSON
     workspace="\$2"
     command="\$3"
     printf 'ssh %s\n' "\$workspace" >> "$remote_log"
-    HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" FAKE_OPENCODE_PID="$opencode_pid" FAKE_OPENCHAMBER_PID="$openchamber_pid" /bin/bash -c "\$command"
+    HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" FAKE_OPENCODE_PID_FILE="$opencode_pid_file" FAKE_OPENCHAMBER_PID_FILE="$openchamber_pid_file" /bin/bash -c "\$command"
     ;;
   restart)
     if [[ "\$2" == "-y" ]]; then
@@ -321,17 +353,22 @@ EOF
   assert_contains 'pull --ff-only' "$remote_log"
   assert_contains 'bun install -g opencode-ai@latest @openchamber/web@latest' "$remote_log"
   assert_contains '192.168.1.116' "$remote_home/.config/opencode/opencode.jsonc"
+  [[ ! -e "$remote_home/.config/opencode/stale.txt" ]] || fail "stale opencode config should be removed before install"
 
-  if kill -0 "$opencode_pid" 2>/dev/null; then
-    fail "opencode process should have received SIGHUP"
-  fi
+  new_opencode_pid="$(cat "$opencode_pid_file")"
+  new_openchamber_pid="$(cat "$openchamber_pid_file")"
 
-  if kill -0 "$openchamber_pid" 2>/dev/null; then
-    fail "openchamber process should have received SIGHUP"
-  fi
+  [[ "$new_opencode_pid" != "$opencode_pid" ]] || fail "opencode pid should change after restart"
+  [[ "$new_openchamber_pid" != "$openchamber_pid" ]] || fail "openchamber pid should change after restart"
+  kill -0 "$new_opencode_pid" 2>/dev/null || fail "restarted opencode process should be running"
+  kill -0 "$new_openchamber_pid" 2>/dev/null || fail "restarted openchamber process should be running"
 
   wait "$opencode_pid" 2>/dev/null || true
   wait "$openchamber_pid" 2>/dev/null || true
+  kill "$opencode_supervisor_pid" "$openchamber_supervisor_pid" 2>/dev/null || true
+  kill "$new_opencode_pid" "$new_openchamber_pid" 2>/dev/null || true
+  wait "$opencode_supervisor_pid" 2>/dev/null || true
+  wait "$openchamber_supervisor_pid" 2>/dev/null || true
 }
 
 test_install_refuses_implicit_noninteractive_without_opt_in

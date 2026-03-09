@@ -2,13 +2,13 @@
 name: gsd-audit-milestone
 description: Audit milestone completion against original intent before archiving
 argument-hint: "[version]"
-allowed-tools:
-  - read
-  - glob
-  - grep
-  - bash
-  - task
-  - write
+permissions:
+   read: true
+   glob: true
+   grep: true
+   bash: true
+   task: true
+   write: true
 ---
 <objective>
 Verify milestone achieved its definition of done. Check requirements coverage, cross-phase integration, and end-to-end flows.
@@ -17,7 +17,7 @@ Verify milestone achieved its definition of done. Check requirements coverage, c
 </objective>
 
 <execution_context>
-@~/.config/opencode/get-shit-done/workflows/audit-milestone.md
+@$HOME/.config/opencode/get-shit-done/workflows/audit-milestone.md
 </execution_context>
 
 <context>
@@ -31,6 +31,6 @@ glob: .planning/phases/*/*-VERIFICATION.md
 </context>
 
 <process>
-Execute the audit-milestone workflow from @~/.config/opencode/get-shit-done/workflows/audit-milestone.md end-to-end.
+Execute the audit-milestone workflow from @$HOME/.config/opencode/get-shit-done/workflows/audit-milestone.md end-to-end.
 Preserve all workflow gates (scope determination, verification reading, integration check, requirements coverage, routing).
 </process>

@@ -2,11 +2,11 @@
 name: gsd-list-phase-assumptions
 description: Surface OpenCode's assumptions about a phase approach before planning
 argument-hint: "[phase]"
-allowed-tools:
-  - read
-  - bash
-  - grep
-  - glob
+permissions:
+   read: true
+   bash: true
+   grep: true
+   glob: true
 ---
 
 <objective>
@@ -17,7 +17,7 @@ Output: Conversational output only (no file creation) - ends with "What do you t
 </objective>
 
 <execution_context>
-@~/.config/opencode/get-shit-done/workflows/list-phase-assumptions.md
+@$HOME/.config/opencode/get-shit-done/workflows/list-phase-assumptions.md
 </execution_context>
 
 <context>

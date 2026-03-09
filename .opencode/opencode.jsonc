@@ -50,7 +50,7 @@
       "color": "#10A37F"
     },
     "gsd-research-synthesizer": {
-      "model": "openai/gpt-5.3-codex-spark",
+      "model": "openai/gpt-5.4",
       "variant": "high",
       "color": "#10A37F"
     },
@@ -70,27 +70,17 @@
       "color": "#FF6B35"
     },
     "gsd-verifier": {
-      "model": "openai/gpt-5.3-codex-spark",
+      "model": "openai/gpt-5.4",
       "variant": "high",
       "color": "#4285F4"
     },
     "gsd-integration-checker": {
-      "model": "openai/gpt-5.3-codex-spark",
+      "model": "openai/gpt-5.4",
       "variant": "high",
       "color": "#4285F4"
     },
-    "gsd-set-profile": {
-      "model": "openai/gpt-5.3-codex-spark",
-      "variant": "high",
-      "color": "#4285F4"
-    },
-    "gsd-settings": {
-      "model": "openai/gpt-5.3-codex-spark",
-      "variant": "high",
-      "color": "#4285F4"
-    },
-    "gsd-set-model": {
-      "model": "openai/gpt-5.3-codex-spark",
+    "gsd-nyquist-executor": {
+      "model": "openai/gpt-5.4",
       "variant": "high",
       "color": "#4285F4"
     }

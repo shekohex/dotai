@@ -1,17 +1,17 @@
 ---
 name: gsd-plan-phase
 description: Create detailed phase plan (PLAN.md) with verification loop
-argument-hint: "[phase] [--auto] [--research] [--skip-research] [--gaps] [--skip-verify]"
+argument-hint: "[phase] [--auto] [--research] [--skip-research] [--gaps] [--skip-verify] [--prd <file>]"
 agent: gsd-planner
-allowed-tools:
-  - read
-  - write
-  - bash
-  - glob
-  - grep
-  - task
-  - webfetch
-  - mcp__context7__*
+permissions:
+   read: true
+   write: true
+   bash: true
+   glob: true
+   grep: true
+   task: true
+   webfetch: true
+   mcp__context7__*: true
 ---
 <objective>
 Create executable phase prompts (PLAN.md files) for a roadmap phase with integrated research and verification.
@@ -22,8 +22,8 @@ Create executable phase prompts (PLAN.md files) for a roadmap phase with integra
 </objective>
 
 <execution_context>
-@~/.config/opencode/get-shit-done/workflows/plan-phase.md
-@~/.config/opencode/get-shit-done/references/ui-brand.md
+@$HOME/.config/opencode/get-shit-done/workflows/plan-phase.md
+@$HOME/.config/opencode/get-shit-done/references/ui-brand.md
 </execution_context>
 
 <context>
@@ -34,11 +34,12 @@ Phase number: $ARGUMENTS (optional — auto-detects next unplanned phase if omit
 - `--skip-research` — Skip research, go straight to planning
 - `--gaps` — Gap closure mode (reads VERIFICATION.md, skips research)
 - `--skip-verify` — Skip verification loop
+- `--prd <file>` — Use a PRD/acceptance criteria file instead of discuss-phase. Parses requirements into CONTEXT.md automatically. Skips discuss-phase entirely.
 
 Normalize phase input in step 2 before any directory lookups.
 </context>
 
 <process>
-Execute the plan-phase workflow from @~/.config/opencode/get-shit-done/workflows/plan-phase.md end-to-end.
+Execute the plan-phase workflow from @$HOME/.config/opencode/get-shit-done/workflows/plan-phase.md end-to-end.
 Preserve all workflow gates (validation, research, planning, verification loop, routing).
 </process>

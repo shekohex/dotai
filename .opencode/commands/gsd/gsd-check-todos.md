@@ -2,11 +2,11 @@
 name: gsd-check-todos
 description: List pending todos and select one to work on
 argument-hint: [area filter]
-allowed-tools:
-  - read
-  - write
-  - bash
-  - question
+permissions:
+   read: true
+   write: true
+   bash: true
+   question: true
 ---
 
 <objective>
@@ -21,7 +21,7 @@ Routes to the check-todos workflow which handles:
 </objective>
 
 <execution_context>
-@~/.config/opencode/get-shit-done/workflows/check-todos.md
+@$HOME/.config/opencode/get-shit-done/workflows/check-todos.md
 </execution_context>
 
 <context>
@@ -31,7 +31,7 @@ Todo state and roadmap correlation are loaded in-workflow using `init todos` and
 </context>
 
 <process>
-**Follow the check-todos workflow** from `@~/.config/opencode/get-shit-done/workflows/check-todos.md`.
+**Follow the check-todos workflow** from `@$HOME/.config/opencode/get-shit-done/workflows/check-todos.md`.
 
 The workflow handles all logic including:
 1. Todo existence checking

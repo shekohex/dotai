@@ -3,20 +3,20 @@
 You are executing the `/gsd-set-profile` command. Switch the project's active model profile (simple/smart/genius) with optional model reuse.
 
 This command reads/writes:
-- `.planning/config.json` — profile state (profile_type, models)
-- `opencode.json` — agent model assignments (derived from profile)
+- `.planning/oc_config.json` — source of truth for profile state (profile_type, stage-to-model mapping)
+- `opencode.json` — agent model assignments (derived from profile; updated automatically by CLI)
+- `opencode.json` — external_directory permissions for reading GSD config folder (added automatically)
 
-Do NOT modify agent .md files. Profile switching updates `opencode.json` in the project root.
+Do NOT modify agent .md files. Profile switching only updates these two JSON files.
 </role>
 
 <context>
-**Invocation styles:**
+## Invocation
 
-1. No args (interactive wizard): `/gsd-set-profile`
-2. Positional with type: `/gsd-set-profile simple|smart|genius`
-3. With reuse flag: `/gsd-set-profile smart --reuse`
+1. **Interactive wizard (no args):** `/gsd-set-profile`
+2. **Direct switch (positional arg):** `/gsd-set-profile simple|smart|genius`
 
-**Stage-to-agent mapping (11 agents):**
+## Stage-to-Agent Mapping (11 agents)
 
 | Stage        | Agents |
 |--------------|--------|
@@ -24,297 +24,161 @@ Do NOT modify agent .md files. Profile switching updates `opencode.json` in the 
 | Execution    | gsd-executor, gsd-debugger |
 | Verification | gsd-verifier, gsd-integration-checker |
 
-**Profile types:**
+## Profile Types
 
-- **Simple**: 1 model total — all stages use same model
-- **Smart**: 2 models — planning+execution share model, verification uses different
-- **Genius**: 3 models — each stage can have different model
+| Profile  | Models | Stage assignment |
+|----------|--------|-----------------|
+| Simple   | 1      | All stages use the same model |
+| Smart    | 2      | Planning + Execution share one model; Verification uses a different model |
+| Genius   | 3      | Each stage uses a different model |
 
-**Migration:** Old configs with `model_profile: quality / balanced / budget` are auto-migrated to genius profile.
+## Output Format (reused throughout)
+
+When displaying profile state, always use this format:
+
+```
+Active profile: **{profile_name}**
+
+| Stage        | Model |
+|--------------|-------|
+| Planning     | {models.planning} |
+| Execution    | {models.execution} |
+| Verification | {models.verification} |
+```
 </context>
 
 <behavior>
 
-## Step 1: Load and validate config
+## Step 0: Ensure GSD config read permission
 
-read `.planning/config.json`. Handle these cases:
-
-**Case A: File missing or invalid**
-- Print: `Error: No GSD project found. Run /gsd-new-project first.`
-- Stop.
-
-**Case B: Legacy config (has model_profile but no profiles.profile_type)**
-- Auto-migrate to genius profile
-- Use OLD_PROFILE_MODEL_MAP to convert quality / balanced / budget → genius
-
-**Case C: Current config**
-- Use `profiles.profile_type` and `profiles.models`
-
-**Also check `opencode.json`:**
-- If missing, it will be created
-- If exists, merge agent assignments (preserve other keys)
-
-
-## Step 3: Display current state
-
-If profile exists:
-
-```
-Active profile: {profile_type}
-
-Current configuration:
-| Stage        | Model |
-|--------------|-------|
-| planning     | {models.planning} |
-| execution    | {models.execution} |
-| verification | {models.verification} |
-```
-
-## Step 4: Determine requested profile
-
-**A) Check for positional argument:**
-- If user typed `/gsd-set-profile simple|smart|genius`, use that as `newProfileType`
-
-**B) Interactive picker (no args):**
-
-Use question tool:
-
-```
-header: "Profile Type"
-question: "Select a profile type for model configuration"
-options:
-  - label: "Simple"
-    description: "1 model for all gsd stages (easiest setup)"
-  - label: "Smart"
-    description: "2 models: advanced for planning & execution, cheaper for verification stages"
-  - label: "Genius"
-    description: "3 models: different model for planning, execution, or verification stages"
-  - label: "Cancel"
-    description: "Exit without changes"
-```
-
-If Cancel selected, print cancellation message and stop.
-
-**C) Invalid profile handling:**
-
-If invalid profile name:
-- Print: `Unknown profile type '{name}'. Valid options: simple, smart, genius`
-- Fall back to interactive picker
-
-## Step 5: Handle --reuse flag
-
-If `--reuse` flag present and current profile exists:
+Before any profile operations, ensure opencode.json has permission to read the GSD config folder:
 
 ```bash
-node gsd-opencode/get-shit-done/bin/gsd-tools.cjs profile-switch {newProfileType} --reuse --raw
+node ~/.config/opencode/get-shit-done/bin/gsd-oc-tools.cjs allow-read-config --dry-run
 ```
 
-Parse the reuse analysis:
-- Shows which stages can reuse existing models
-- Displays suggestions for each stage
+Parse the response:
+- **`success: true` with `action: "permission_exists"`** — Permission already configured. Continue to Step 1.
+- **`success: true` with `action: "add_permission"`** — Permission would be added. Execute without `--dry-run`:
 
-Present to user:
-
-```
-Model Reuse Analysis for {newProfileType} profile:
-
-Current models:
-- Planning: {current.planning}
-- Execution: {current.execution}
-- Verification: {current.verification}
-
-Suggested reuse:
-{reuse analysis from tool}
-
-Use these suggestions? (yes/no)
+Attempt to switch to the saved profile:
+```bash
+node ~/.config/opencode/get-shit-done/bin/gsd-oc-tools.cjs allow-read-config
 ```
 
-If yes, proceed with suggested models.
-If no, run full model selection wizard.
+- **`success: false`** — Handle error appropriately.
 
-## Step 6: Model selection wizard
+This ensures gsd-opencode can access workflow files, templates, and configuration from `~/.config/opencode/get-shit-done/`.
 
-Based on profile type, prompt for models:
+## Step 1: Load current profile
 
-### Simple Profile (1 model)
-
-Use gsd-oc-select-model skill to select model for "Simple Profile - One model to rule them all".
-
-Store selected model. All stages will use this model.
-
-### Smart Profile (2 models)
-
-Use gsd-oc-select-model skill twice.
-
-**First model** (planning + execution):
-
-Use gsd-oc-select-model skill to select model for "Smart Profile - Planning & Execution"
-
-**Second model** (verification):
-
-Use gsd-oc-select-model skill to select model for "Smart Profile - Verification"
-
-Store selected models. 
-
-Planning + Execution will use First model selected.
-Verification will use Second model selected.
-
-
-### Genius Profile (3 models)
-
-Use gsd-oc-select-model skill
-
-
-**First model** (planning):
-
-Use gsd-oc-select-model skill to select model for "Genius Profile - Planning"
-
-**Second model** (execution)
-
-Use gsd-oc-select-model skill to select model for "Genius Profile - Execution"
-
-**Thrid model** (verification):
-
-Use gsd-oc-select-model skill to select model for "Genius Profile - Verification"
-
-Store selected models. 
-
-Planning will use First model selected.
-Execution will use Second model selected.
-Verification will use Third model selected.
-
-
-
-## Step 7: Validate selected models
-
-Before writing files, validate models exist:
+Run `get-profile` to read the current state from `.planning/oc_config.json`:
 
 ```bash
-opencode models | grep -q "^{model}$" && echo "valid" || echo "invalid"
+node ~/.config/opencode/get-shit-done/bin/gsd-oc-tools.cjs get-profile
 ```
 
-If any model invalid:
-- Print error with list of missing models
-- Stop. Do NOT write config files.
+Parse the JSON response:
 
-## Step 8: Apply changes
+- **`success: true`** — Extract `data` (keyed by profile name) containing `planning`, `execution`, `verification` model IDs. Display the profile using the Output Format. Continue to Step 2.
+- **`success: false` with `CONFIG_NOT_FOUND`** — No profile exists yet. Skip display, go directly to Step 2.
 
-### Save config.json
+## Step 2: Determine target profile
 
-Save config.json Or build and save manually:
+### Path A — Positional argument provided
+
+If the user typed `/gsd-set-profile {type}` where `{type}` is one of `simple`, `smart`, `genius`:
+
+Attempt to switch to the saved profile:
+```bash
+node ~/.config/opencode/get-shit-done/bin/gsd-oc-tools.cjs set-profile {type}
+```
+
+- **`success: true`** — The profile already has saved model assignments. Display the updated configuration using the Output Format. Print: `Use /gsd-set-profile (without parameter) to change models assigned to stages.` **Stop.**
+- **`PROFILE_NOT_FOUND` error** — No saved models for this profile type. Fall through to Path B (interactive wizard) with the profile type pre-selected (skip the profile type picker, go straight to Step 3).
+
+### Path B — No argument (interactive wizard)
+
+Prompt the user to choose a profile type using the question tool:
 
 ```json
 {
-  "profiles": {
-    "profile_type": "{simple|smart|genius}",
-    "models": {
-      "planning": "{model}",
-      "execution": "{model}",
-      "verification": "{model}"
-    }
-  }
+  "header": "Profile Type",
+  "question": "Select a profile type for model configuration",
+  "options": [
+    { "label": "Simple", "description": "1 model for all GSD stages (easiest setup)" },
+    { "label": "Smart", "description": "2 models: advanced for planning & execution, cheaper for verification" },
+    { "label": "Genius", "description": "3 models: different model for each stage" },
+    { "label": "Cancel", "description": "Exit without changes" }
+  ]
 }
 ```
 
+- If **Cancel** selected: print cancellation message and **stop**.
+- If invalid profile name was provided as positional arg: print `Unknown profile type '{name}'. Valid options: simple, smart, genius` and show this picker.
 
-## Step 8: Check for changes
+## Step 3: Model selection
 
-If no changes were made (all stages selected "Keep current"):
-```
-No changes made to {targetProfile} profile.
-```
-Stop.
+Based on the selected profile type, collect model choices. If a current profile exists from Step 1, offer to reuse its models where applicable.
 
-## Step 9: Save changes
+### Simple (1 model)
 
-Use the **write tool directly** to update files. Do NOT use bash, python, or other scripts—use native file writing.
+Ask the user (via question tool) if they want to keep the current model (only if one exists from Step 1).
+- **Yes:** Use existing model for all three stages. Go to Step 4.
+- **No** (or no current model exists): Load the `gsd-oc-select-model` skill. Select one model for "Simple Profile - All stages".
 
-1. **Update .planning/config.json:**
+Assign the selected model to `planning`, `execution`, and `verification`.
 
-    - Set `config.profiles.presets[targetProfile].planning` to selected value
-    - Set `config.profiles.presets[targetProfile].execution` to selected value
-    - Set `config.profiles.presets[targetProfile].verification` to selected value
-    - write the config file (preserve all other keys)
+### Smart (2 models)
 
-2. **Update opencode.json (only if targetProfile is active):**
+Load the `gsd-oc-select-model` skill, then:
 
-Check if `config.profiles.active_profile === targetProfile`. If so, regenerate `opencode.json` with the new effective models.
+1. Select model for **"Smart Profile - Planning & Execution"** — assign to `planning` and `execution`.
+2. Select model for **"Smart Profile - Verification"** — assign to `verification`.
 
-Compute effective models (preset + overrides):
-```
-overrides = config.profiles.genius_overrides[targetProfile] || {}
-effective.planning = overrides.planning || newPreset.planning
-effective.execution = overrides.execution || newPreset.execution
-effective.verification = overrides.verification || newPreset.verification
-```
+### Genius (3 models)
 
-Build agent config:
+Load the `gsd-oc-select-model` skill, then:
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "agent": {
-    "gsd-planner": { "model": "{effective.planning}" },
-    "gsd-plan-checker": { "model": "{effective.planning}" },
-    "gsd-phase-researcher": { "model": "{effective.planning}" },
-    "gsd-roadmapper": { "model": "{effective.planning}" },
-    "gsd-project-researcher": { "model": "{effective.planning}" },
-    "gsd-research-synthesizer": { "model": "{effective.planning}" },
-    "gsd-codebase-mapper": { "model": "{effective.planning}" },
-    "gsd-executor": { "model": "{effective.execution}" },
-    "gsd-debugger": { "model": "{effective.execution}" },
-    "gsd-verifier": { "model": "{effective.verification}" },
-    "gsd-integration-checker": { "model": "{effective.verification}" },
-  }
-}
+1. Select model for **"Genius Profile - Planning"** — assign to `planning`.
+2. Select model for **"Genius Profile - Execution"** — assign to `execution`.
+3. Select model for **"Genius Profile - Verification"** — assign to `verification`.
+
+## Step 4: Apply changes
+
+Using the collected values (`profile_name`, `model_for_planning_stage`, `model_for_execution_stage`, `model_for_verification_stage`), execute:
+
+```bash
+node ~/.config/opencode/get-shit-done/bin/gsd-oc-tools.cjs set-profile '{profile_name}:{"planning": "{model_for_planning_stage}", "execution": "{model_for_execution_stage}", "verification": "{model_for_verification_stage}"}'
 ```
 
-If `opencode.json` already exists, merge the `agent` key (preserve other top-level keys).
+Parse the response. On success, the CLI updates both `.planning/oc_config.json` and `opencode.json` (with automatic backup).
 
-## Step 10: Report success
+## Step 5: Confirm result
 
-```text
-✓ Updated {targetProfile} profile:
+Display the updated profile using the Output Format, prefixed with a checkmark:
+
+```
+Done! Updated {profile_name} profile:
 
 | Stage        | Model |
 |--------------|-------|
-| planning     | {newPreset.planning} |
-| execution    | {newPreset.execution} |
-| verification | {newPreset.verification} |
+| Planning     | {models.planning} |
+| Execution    | {models.execution} |
+| Verification | {models.verification} |
 ```
 
-If `targetProfile` is the active profile:
-```text
-Note: This is your active profile. Quit and relaunch OpenCode to apply model changes.
-```
+We just updated the `./opencode.json` file. Apply the agent settings you need to **restart your opencode**.
 
-If `targetProfile` is NOT the active profile:
-```text
-To use this profile, run: /gsd-set-profile {targetProfile}
-```
-
-</behavior>
-
-
-Parse output and write to `opencode.json`, merging with existing content.
-
-Note: Quit and relaunch OpenCode to apply model changes.
-```
-
-If migration occurred:
-```
-⚡ Auto-migrated from {old_profile} to genius profile
-```
+Note: GSD config read permission has been configured to allow access to `~/.config/opencode/get-shit-done/`.
 
 </behavior>
 
 <notes>
-- Use question tool for ALL user input
-- Always show full model IDs (e.g., `opencode/glm-4.7-free`)
-- Preserve all other config.json keys when writing
-- Do NOT rewrite agent .md files — only update opencode.json
-- If opencode.json doesn't exist, create it
-- **Source of truth:** `config.json` stores profile_type and models; `opencode.json` is derived
-- When migrating, preserve old model_profile field for backward compat during transition
-- Model selection uses gsd-oc-select-model skill 
+- Use the question tool for ALL user input — never prompt via text.
+- Always display full model IDs (e.g., `bailian-coding-plan/qwen3-coder-plus`), never abbreviate.
+- All file reads/writes go through `gsd-oc-tools.cjs` — do not manually edit JSON files.
+- Backups are created automatically by the CLI when writing changes.
+- `.planning/oc_config.json` is the source of truth; `opencode.json` is always derived from it.
+- The `gsd-oc-select-model` skill handles paginated provider/model browsing — load it via the skill tool when model selection is needed.
 </notes>

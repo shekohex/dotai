@@ -2,10 +2,10 @@
 name: gsd-set-profile
 description: Switch model profile for GSD agents (simple/smart/genius)
 argument-hint: <profile>
-allowed-tools:
-  - read
-  - write
-  - bash
+permissions:
+   read: true
+   write: true
+   bash: true
 ---
 
 <objective>
@@ -19,11 +19,11 @@ Routes to the set-profile workflow which handles:
 </objective>
 
 <execution_context>
-@~/.config/opencode/get-shit-done/workflows/oc-set-profile.md
+@$HOME/.config/opencode/get-shit-done/workflows/oc-set-profile.md
 </execution_context>
 
 <process>
-**Follow the set-profile workflow** from `@~/.config/opencode/get-shit-done/workflows/oc-set-profile.md`.
+**Follow the set-profile workflow** from `@$HOME/.config/opencode/get-shit-done/workflows/oc-set-profile.md`.
 
 The workflow handles all logic including:
 1. Profile argument validation

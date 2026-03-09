@@ -12,8 +12,9 @@ read all files referenced by the invoking prompt's execution_context before star
 Ensure config exists and load current state:
 
 ```bash
-node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs config-ensure-section
-INIT=$(node ~/.config/opencode/get-shit-done/bin/gsd-tools.cjs state load)
+node "$HOME/.config/opencode/get-shit-done/bin/gsd-tools.cjs" config-ensure-section
+INIT=$(node "$HOME/.config/opencode/get-shit-done/bin/gsd-tools.cjs" state load)
+if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
 Creates `.planning/config.json` with defaults if missing and loads current config values.
@@ -28,7 +29,7 @@ Parse current values (default to `true` if not present):
 - `workflow.research` — spawn researcher during plan-phase
 - `workflow.plan_check` — spawn plan checker during plan-phase
 - `workflow.verifier` — spawn verifier during execute-phase
-- `workflow.nyquist_validation` — validation architecture research during plan-phase
+- `workflow.nyquist_validation` — validation architecture research during plan-phase (default: true if absent)
 - `model_profile` — which model each agent uses (default: `simple`)
 - `git.branching_strategy` — branching approach (default: `"none"`)
 </step>
@@ -45,7 +46,7 @@ question([
     options: [
       { label: "Simple", description: "One model for all agents (not flexible)" },
       { label: "Smart (Recommended)", description: "Two models: one for reseach and planing, other for execution and verification" },
-      { label: "Custom (most flexible)", description: "Three models: different for every stage" }
+      { label: "Genius (most flexible)", description: "Three models: different for every stage" }
     ]
   },
   {
@@ -113,7 +114,7 @@ Merge new settings into existing config.json:
 ```json
 {
   ...existing_config,
-  "model_profile": "simple" | "smart" | "custom",
+  "model_profile": "simple" | "smart" | "genius",
   "workflow": {
     "research": true/false,
     "plan_check": true/false,
@@ -157,7 +158,7 @@ write `~/.gsd/defaults.json` with:
 ```json
 {
   "mode": <current>,
-  "depth": <current>,
+  "granularity": <current>,
   "model_profile": <current>,
   "commit_docs": <current>,
   "parallelization": <current>,
@@ -183,7 +184,7 @@ Display:
 
 | Setting              | Value |
 |----------------------|-------|
-| Model Profile        | {simple/smart/custom} |
+| Model Profile        | {simple/smart/genius} |
 | Plan Researcher      | {On/Off} |
 | Plan Checker         | {On/Off} |
 | Execution Verifier   | {On/Off} |
@@ -195,7 +196,7 @@ Display:
 These settings apply to future /gsd-plan-phase and /gsd-execute-phase runs.
 
 Quick commands:
-- /gsd-set-profile <profile> — switch model profile
+- /gsd-set-profile <profile> — switch model profile/choose models/choose models/choose models/choose models/choose models/choose models/choose models/choose models
 - /gsd-plan-phase --research — force research
 - /gsd-plan-phase --skip-research — skip research
 - /gsd-plan-phase --skip-verify — skip plan check

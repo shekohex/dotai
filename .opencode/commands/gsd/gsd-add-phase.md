@@ -2,10 +2,10 @@
 name: gsd-add-phase
 description: Add phase to end of current milestone in roadmap
 argument-hint: <description>
-allowed-tools:
-  - read
-  - write
-  - bash
+permissions:
+   read: true
+   write: true
+   bash: true
 ---
 
 <objective>
@@ -19,7 +19,7 @@ Routes to the add-phase workflow which handles:
 </objective>
 
 <execution_context>
-@~/.config/opencode/get-shit-done/workflows/add-phase.md
+@$HOME/.config/opencode/get-shit-done/workflows/add-phase.md
 </execution_context>
 
 <context>
@@ -29,7 +29,7 @@ Roadmap and state are resolved in-workflow via `init phase-op` and targeted tool
 </context>
 
 <process>
-**Follow the add-phase workflow** from `@~/.config/opencode/get-shit-done/workflows/add-phase.md`.
+**Follow the add-phase workflow** from `@$HOME/.config/opencode/get-shit-done/workflows/add-phase.md`.
 
 The workflow handles all logic including:
 1. Argument parsing and validation

@@ -236,7 +236,7 @@ sync_directory() {
 
 sync_skills_directory() {
   local skills_source="$REPO_DIR/skills"
-  local agent_skills_target="$HOME/.opencode/skill"
+  local agent_skills_target="$OPENCODE_CONFIG/skills"
   local codex_skills_target="$CODEX_CONFIG/skills"
   local skills_config="$REPO_DIR/skills.json"
   local use_enabled_filter=0
@@ -449,8 +449,8 @@ main() {
   echo "  - AI.md → $CODEX_CONFIG/AGENTS.md"
   echo "  - AI.md → $GEMINI_CONFIG/GEMINI.md"
   if [[ -d "$REPO_DIR/skills" ]]; then
-    echo "  - skills/ → ~/.opencode/skill/"
-    echo "  - skills/ → ~/.codex/skills/"
+    echo "  - skills/ → $OPENCODE_CONFIG/skills/"
+    echo "  - skills/ → $CODEX_CONFIG/skills/"
   fi
   if [[ -d "$REPO_DIR/.codex/prompts" || -d "$REPO_DIR/.claude/commands" ]]; then
     echo "  - prompts/ → ~/.codex/prompts/"

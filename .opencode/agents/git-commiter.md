@@ -3,7 +3,7 @@ description: Analyzes git changes, groups them logically, and creates Convention
 mode: subagent
 temperature: 0.1
 hidden: false
-model: kimi-for-coding/k2p5
+model: openai/gpt-5.3-codex-spark
 color: "#0000FF"
 permission:
   bash: allow

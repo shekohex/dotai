@@ -2,6 +2,7 @@
   "enabled": [
     "extreme-programming",
     "frontend-design",
-    "babysit-pr"
+    "babysit-pr",
+    "creating-pull-requests"
   ]
 }

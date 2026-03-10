@@ -1,6 +1,6 @@
 ---
 description: Removes AI generated slop from the generated code
-model: openai/gpt-5.3-codex
+model: openai/gpt-5.4
 subtask: true
 ---
 # Remove AI code slop

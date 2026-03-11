@@ -298,11 +298,11 @@ run_update_workspace() {
   command="$(build_remote_update_command)"
 
   if [[ "$DRY_RUN" == true ]]; then
-    printf 'coder ssh %s %s\n' "$workspace" "$command"
+    printf 'coder ssh --wait=no %s %q\n' "$workspace" "$command"
     return 0
   fi
 
-  coder ssh "$workspace" "$command"
+  coder ssh --wait=no "$workspace" "$command" </dev/null
 }
 
 run_restart_workspace() {
@@ -322,11 +322,11 @@ run_restart_workspace() {
   command="$(build_remote_restart_command)"
 
   if [[ "$DRY_RUN" == true ]]; then
-    printf 'coder ssh %s %s\n' "$workspace" "$command"
+    printf 'coder ssh --wait=no %s %q\n' "$workspace" "$command"
     return 0
   fi
 
-  timeout_wrapper "$RESTART_TIMEOUT" coder ssh "$workspace" "$command"
+  timeout_wrapper "$RESTART_TIMEOUT" coder ssh --wait=no "$workspace" "$command" </dev/null
 }
 
 run_parallel_phase() {

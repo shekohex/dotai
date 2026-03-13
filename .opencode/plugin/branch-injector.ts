@@ -65,8 +65,9 @@ export const BranchInjector: Plugin = async ({ $, client }) => {
 
       const first = output.parts[0];
       if (!first) return;
+      const id = `prt-branch-injector-${crypto.randomUUID()}`;
       output.parts.push({
-        id: crypto.randomUUID(),
+        id,
         sessionID: first.sessionID,
         messageID: first.messageID,
         type: "text",

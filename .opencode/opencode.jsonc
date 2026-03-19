@@ -102,13 +102,19 @@
         "baseURL": "http://100.100.1.116:4000/v1"
       },
       "models": {
-        "gpt-5.4": {
+        "gpt-5.4-mini": {
           "limit": {
             "context": 272000,
             "output": 128000
           }
         },
-        "gpt-5.2": {
+        "gpt-5.4-nano": {
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          }
+        },
+        "gpt-5.4": {
           "limit": {
             "context": 272000,
             "output": 128000

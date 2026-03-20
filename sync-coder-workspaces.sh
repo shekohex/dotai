@@ -4,11 +4,13 @@ set -euo pipefail
 
 SEARCH="${SYNC_CODER_SEARCH:-owner:me}"
 REMOTE_REPO="${SYNC_CODER_REMOTE_REPO:-\$HOME/dotai}"
+CLONE_REPO="${SYNC_CODER_CLONE_REPO:-shekohex/dotai}"
 REMOTE_CONFIG="${SYNC_CODER_REMOTE_CONFIG:-\$HOME/.config/opencode/opencode.jsonc}"
 OLD_IP="${SYNC_CODER_OLD_IP:-100.100.1.116}"
 NEW_IP="${SYNC_CODER_NEW_IP:-192.168.1.116}"
 PARALLEL="${SYNC_CODER_PARALLEL:-4}"
 PULL_TIMEOUT="${SYNC_CODER_PULL_TIMEOUT:-5m}"
+CLONE_TIMEOUT="${SYNC_CODER_CLONE_TIMEOUT:-10m}"
 INSTALL_TIMEOUT="${SYNC_CODER_INSTALL_TIMEOUT:-10m}"
 PACKAGE_TIMEOUT="${SYNC_CODER_PACKAGE_TIMEOUT:-20m}"
 RESTART_TIMEOUT="${SYNC_CODER_RESTART_TIMEOUT:-30m}"
@@ -34,6 +36,7 @@ Options:
   --workspace NAME       Sync only this workspace (repeatable)
   --search QUERY         Coder search query (default: $SEARCH)
   --repo PATH            Remote dotai path (default: $REMOTE_REPO)
+  --clone-repo REPO      GitHub repo to clone when repair is needed (default: $CLONE_REPO)
   --config PATH          Remote opencode config path (default: $REMOTE_CONFIG)
   --old-ip IP            Source IP to replace (default: $OLD_IP)
   --new-ip IP            Target IP (default: $NEW_IP)
@@ -46,11 +49,13 @@ Options:
 Environment:
   SYNC_CODER_SEARCH
   SYNC_CODER_REMOTE_REPO
+  SYNC_CODER_CLONE_REPO
   SYNC_CODER_REMOTE_CONFIG
   SYNC_CODER_OLD_IP
   SYNC_CODER_NEW_IP
   SYNC_CODER_PARALLEL
   SYNC_CODER_PULL_TIMEOUT
+  SYNC_CODER_CLONE_TIMEOUT
   SYNC_CODER_INSTALL_TIMEOUT
   SYNC_CODER_PACKAGE_TIMEOUT
   SYNC_CODER_RESTART_TIMEOUT
@@ -151,6 +156,14 @@ parse_args() {
         exit 1
       }
       REMOTE_REPO="$2"
+      shift
+      ;;
+    --clone-repo)
+      [[ $# -ge 2 ]] || {
+        log_error "--clone-repo requires a value"
+        exit 1
+      }
+      CLONE_REPO="$2"
       shift
       ;;
     --config)
@@ -273,8 +286,9 @@ filter_stopped_workspaces() {
 }
 
 build_remote_update_command() {
-  local repo config config_dir old_ip new_ip old_ip_pattern new_ip_replacement
+  local repo clone_repo config config_dir old_ip new_ip old_ip_pattern new_ip_replacement
   repo="$(escape_dq "$REMOTE_REPO")"
+  clone_repo="$(escape_dq "$CLONE_REPO")"
   config="$(escape_dq "$REMOTE_CONFIG")"
   config_dir="$(escape_dq "$(dirname "$REMOTE_CONFIG")")"
   old_ip="$(escape_dq "$OLD_IP")"
@@ -282,8 +296,75 @@ build_remote_update_command() {
   old_ip_pattern="$(escape_sed_pattern "$OLD_IP")"
   new_ip_replacement="$(escape_sed_replacement "$NEW_IP")"
 
-  printf 'set -euo pipefail; run_with_timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; return; fi; if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return; fi; shift; "$@"; }; REPO_DIR="%s"; CONFIG_PATH="%s"; CONFIG_DIR="%s"; run_with_timeout %s git -C "$REPO_DIR" pull --ff-only; run_with_timeout 1m rm -rf "$CONFIG_DIR"; DOTAI_NONINTERACTIVE=1 run_with_timeout %s bash "$REPO_DIR/install.sh" --non-interactive; run_with_timeout 1m sed -i "s/%s/%s/g" "$CONFIG_PATH"; run_with_timeout 1m jq -R -s -e --arg new_ip "%s" --arg old_ip "%s" '\''contains($new_ip) and (contains($old_ip) | not)'\'' "$CONFIG_PATH" >/dev/null; run_with_timeout %s bun install -g opencode-ai@latest @openchamber/web@latest' \
-    "$repo" "$config" "$config_dir" "$PULL_TIMEOUT" "$INSTALL_TIMEOUT" "$old_ip_pattern" "$new_ip_replacement" "$new_ip" "$old_ip" "$PACKAGE_TIMEOUT"
+  cat <<EOF
+set -euo pipefail
+
+run_with_timeout() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "\$@"
+    return
+  fi
+
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "\$@"
+    return
+  fi
+
+  shift
+  "\$@"
+}
+
+repair_repo() {
+  local repo_parent
+
+  command -v gh >/dev/null 2>&1 || {
+    printf 'gh is required to repair %s\n' "\$REPO_DIR" >&2
+    return 1
+  }
+
+  repo_parent="\$(dirname "\$REPO_DIR")"
+  run_with_timeout 1m mkdir -p "\$repo_parent"
+  run_with_timeout 1m rm -rf "\$REPO_DIR"
+  run_with_timeout ${CLONE_TIMEOUT} gh repo clone "\$CLONE_REPO" "\$REPO_DIR"
+}
+
+ensure_repo() {
+  if [[ ! -e "\$REPO_DIR" ]]; then
+    printf '[INFO] Missing repo at %s; recloning\n' "\$REPO_DIR" >&2
+    repair_repo
+    return
+  fi
+
+  if [[ ! -d "\$REPO_DIR/.git" ]] || ! git -C "\$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '[INFO] Broken repo at %s; recloning\n' "\$REPO_DIR" >&2
+    repair_repo
+    return
+  fi
+
+  if ! git -C "\$REPO_DIR" diff --quiet --ignore-submodules HEAD -- || ! git -C "\$REPO_DIR" diff --cached --quiet --ignore-submodules HEAD -- || [[ -n "\$(git -C "\$REPO_DIR" ls-files --others --exclude-standard)" ]]; then
+    printf '[INFO] Dirty repo at %s; recloning\n' "\$REPO_DIR" >&2
+    repair_repo
+    return
+  fi
+
+  if ! run_with_timeout ${PULL_TIMEOUT} git -C "\$REPO_DIR" pull --ff-only; then
+    printf '[INFO] Failed to update repo at %s; recloning\n' "\$REPO_DIR" >&2
+    repair_repo
+  fi
+}
+
+REPO_DIR="${repo}"
+CLONE_REPO="${clone_repo}"
+CONFIG_PATH="${config}"
+CONFIG_DIR="${config_dir}"
+
+ensure_repo
+run_with_timeout 1m rm -rf "\$CONFIG_DIR"
+DOTAI_NONINTERACTIVE=1 run_with_timeout ${INSTALL_TIMEOUT} bash "\$REPO_DIR/install.sh" --non-interactive
+run_with_timeout 1m sed -i "s/${old_ip_pattern}/${new_ip_replacement}/g" "\$CONFIG_PATH"
+run_with_timeout 1m jq -R -s -e --arg new_ip "${new_ip}" --arg old_ip "${old_ip}" 'contains(\$new_ip) and (contains(\$old_ip) | not)' "\$CONFIG_PATH" >/dev/null
+run_with_timeout ${PACKAGE_TIMEOUT} bun install -g opencode-ai@latest @openchamber/web@latest
+EOF
 }
 
 build_remote_restart_command() {

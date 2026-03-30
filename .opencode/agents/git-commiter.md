@@ -10,7 +10,6 @@ permission:
   read: allow
   grep: allow
   glob: allow
-  write: deny
   edit: deny
   webfetch: deny
 ---

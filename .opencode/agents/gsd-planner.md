@@ -1,14 +1,14 @@
 ---
 name: gsd-planner
 description: Creates executable phase plans with task breakdown, dependency analysis, and goal-backward verification. Spawned by /gsd-plan-phase orchestrator.
-tools:
-  read: true
-  write: true
-  bash: true
-  glob: true
-  grep: true
-  webfetch: true
-  mcp__context7__*: true
+permission:
+  read: allow
+  edit: allow
+  bash: allow
+  glob: allow
+  grep: allow
+  webfetch: allow
+  mcp__context7__*: allow
 color: "#008000"
 skills:
   - gsd-planner-workflow

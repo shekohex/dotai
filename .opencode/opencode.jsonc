@@ -4,7 +4,7 @@
   "autoupdate": false,
   "username": "shekohex",
   "plugin": [
-    "opencode-pty@0.3.1"
+    "opencode-pty@0.3.2"
   ],
   "small_model": "opencode/gpt-5-nano",
   "default_agent": "build",
@@ -159,9 +159,11 @@
       "env:$TMPDIR/**": "allow"
     }
   },
+  "lsp": false,
   "formatter": false,
   "experimental": {
-    "batch_tool": false
+    "batch_tool": false,
+    "disable_paste_summary": true
   },
   "mcp": {}
 }

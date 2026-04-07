@@ -9,6 +9,7 @@ $ClaudeConfig = Join-Path $HOME ".claude"
 $OpenCodeConfig = Join-Path $HOME ".config\opencode"
 $CodexConfig = Join-Path $HOME ".codex"
 $GeminiConfig = Join-Path $HOME ".gemini"
+$PiConfig = Join-Path $HOME ".pi\agent"
 
 # Source files
 $AiMd = Join-Path $RepoDir "AI.md"
@@ -334,6 +335,10 @@ function Main {
     $geminiFile = Join-Path $GeminiConfig "GEMINI.md"
     Check-And-Sync-File $AiMd $geminiFile "Gemini instructions" | Out-Null
 
+    # Sync AI.md to Pi AGENTS.md
+    $piFile = Join-Path $PiConfig "AGENTS.md"
+    Check-And-Sync-File $AiMd $piFile "Pi instructions" | Out-Null
+
     # Sync .gemini/workflows directory to Antigravity global workflows
     $dotGeminiWorkflowsSrc = Join-Path $RepoDir ".gemini/workflows"
     if (Test-Path -LiteralPath $dotGeminiWorkflowsSrc) {
@@ -367,12 +372,14 @@ function Main {
     Log-Info "OpenCode config: $OpenCodeConfig"
     Log-Info "Codex config: $CodexConfig"
     Log-Info "Gemini config: $GeminiConfig"
+    Log-Info "Pi config: $PiConfig"
     Write-Host ""
     Write-Host "Synchronized files:"
     Write-Host "  - AI.md -> $claudeFile"
     Write-Host "  - AI.md -> $opencodeFile"
     Write-Host "  - AI.md -> $codexFile"
     Write-Host "  - AI.md -> $geminiFile"
+    Write-Host "  - AI.md -> $piFile"
     if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
         Write-Host "  - skills/ -> ~/.opencode/skill/"
         Write-Host "  - skills/ -> ~/.codex/skills/"

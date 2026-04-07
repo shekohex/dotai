@@ -7,6 +7,7 @@ CLAUDE_CONFIG="$HOME/.claude"
 OPENCODE_CONFIG="$HOME/.config/opencode"
 CODEX_CONFIG="$HOME/.codex"
 GEMINI_CONFIG="$HOME/.gemini"
+PI_CONFIG="$HOME/.pi/agent"
 DOTAI_NONINTERACTIVE="${DOTAI_NONINTERACTIVE:-}"
 PROMPT_BLOCKED=0
 
@@ -413,6 +414,11 @@ main() {
     log_info "Gemini configuration synchronized"
   fi
 
+  # Sync AI.md to Pi AGENTS.md
+  if check_and_sync_file "$REPO_DIR/AI.md" "$PI_CONFIG/AGENTS.md" "Pi instructions"; then
+    log_info "Pi configuration synchronized"
+  fi
+
   # Sync .gemini/workflows directory
   if [[ -d "$REPO_DIR/.gemini/workflows" ]]; then
     ANTIGRAVITY_WORKFLOWS="$GEMINI_CONFIG/antigravity/global_workflows"
@@ -442,12 +448,14 @@ main() {
   log_info "OpenCode config: $OPENCODE_CONFIG"
   log_info "Codex config: $CODEX_CONFIG"
   log_info "Gemini config: $GEMINI_CONFIG"
+  log_info "Pi config: $PI_CONFIG"
   echo ""
   echo "Synchronized files:"
   echo "  - AI.md → $CLAUDE_CONFIG/CLAUDE.md"
   echo "  - AI.md → $OPENCODE_CONFIG/AGENTS.md"
   echo "  - AI.md → $CODEX_CONFIG/AGENTS.md"
   echo "  - AI.md → $GEMINI_CONFIG/GEMINI.md"
+  echo "  - AI.md → $PI_CONFIG/AGENTS.md"
   if [[ -d "$REPO_DIR/skills" ]]; then
     echo "  - skills/ → $OPENCODE_CONFIG/skills/"
     echo "  - skills/ → $CODEX_CONFIG/skills/"

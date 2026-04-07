@@ -35,11 +35,12 @@ assert_not_contains() {
 make_temp_home() {
   local temp_home
   temp_home="$(mktemp -d)"
-  mkdir -p "$temp_home/.claude" "$temp_home/.config/opencode" "$temp_home/.codex" "$temp_home/.gemini"
+  mkdir -p "$temp_home/.claude" "$temp_home/.config/opencode" "$temp_home/.codex" "$temp_home/.gemini" "$temp_home/.pi/agent"
   printf 'old claude\n' > "$temp_home/.claude/CLAUDE.md"
   printf 'old opencode\n' > "$temp_home/.config/opencode/AGENTS.md"
   printf 'old codex\n' > "$temp_home/.codex/AGENTS.md"
   printf 'old gemini\n' > "$temp_home/.gemini/GEMINI.md"
+  printf 'old pi\n' > "$temp_home/.pi/agent/AGENTS.md"
   printf '%s\n' "$temp_home"
 }
 
@@ -54,6 +55,7 @@ test_install_supports_noninteractive_env() {
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.config/opencode/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.codex/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.gemini/GEMINI.md"
+  assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
 }
 
 test_install_refuses_implicit_noninteractive_without_opt_in() {
@@ -76,6 +78,7 @@ test_install_supports_noninteractive_flag() {
 
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.claude/CLAUDE.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.config/opencode/AGENTS.md"
+  assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
 }
 
 test_sync_coder_workspaces_builds_expected_remote_flow() {

@@ -23,3 +23,5 @@
 .claude/file-history/
 .claude/plugins/marketplaces/
 .claude/plugins/cache/
+agent/dist/
+agent/node_modules/

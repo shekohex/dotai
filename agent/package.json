@@ -1,0 +1,32 @@
+{
+  "name": "@shekohex/agent",
+  "version": "0.65.2",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pi": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs",
+    "prepare": "npm run build",
+    "postinstall": "node ./scripts/postinstall.mjs",
+    "postprepare": "node ./scripts/postinstall.mjs",
+    "pi": "PI_SKIP_VERSION_CHECK=1 tsx src/cli.ts"
+  },
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "0.65.2",
+    "@sinclair/typebox": "^0.34.41"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  },
+  "piConfig": {
+    "name": "pi",
+    "configDir": ".pi"
+  }
+}

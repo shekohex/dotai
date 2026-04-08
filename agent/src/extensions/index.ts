@@ -7,6 +7,7 @@ import openUsageExtension from "./openusage/index.js";
 import webSearchExtension from "./websearch.js";
 import compaction from "./compaction.js";
 import handoff from "./handoff.js";
+import debugProviderRequestExtension from "./debug-provider-request.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
   litellmGatewayExtension,
@@ -17,4 +18,5 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   commentaryModeExtension,
   compaction,
   handoff,
+  debugProviderRequestExtension,
 ];

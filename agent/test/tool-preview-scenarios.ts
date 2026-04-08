@@ -3,6 +3,7 @@ import { ToolExecutionComponent, keyHint, type ToolDefinition } from "@mariozech
 import { Text, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
+import { webFetchTool } from "../src/extensions/fetch.js";
 import {
   createBashToolOverrideDefinition,
   createEditToolOverrideDefinition,
@@ -104,6 +105,180 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
           "*** Add File: src/tool-preview-demo.ts",
           "+export const preview = true;",
         ].join("\n"),
+      },
+    },
+    {
+      id: "webfetch:compact",
+      title: "webfetch compact preview",
+      toolName: webFetchTool.name,
+      toolDefinition: webFetchTool,
+      cwd,
+      args: {
+        url: "https://example.com/docs/pi/fetch-preview",
+        timeout: 10,
+        format: "markdown",
+      },
+      partialResult: {
+        content: [{
+          type: "text",
+          text: [
+            "Fetch preview",
+            "=============",
+            "",
+            "Streaming body chunk",
+          ].join("\n"),
+        }],
+        details: {
+          url: "https://example.com/docs/pi/fetch-preview",
+          finalUrl: "https://example.com/docs/pi/fetch-preview",
+          format: "markdown",
+          status: 200,
+          statusText: "OK",
+          contentType: "text/html; charset=utf-8",
+          bytes: 412,
+          durationMs: 0,
+          timeoutSeconds: 10,
+          body: [
+            "Fetch preview",
+            "=============",
+            "",
+            "Streaming body chunk",
+          ].join("\n"),
+          isBinary: false,
+        },
+      },
+      previewAnimation: {
+        frameDurationMs: 1000,
+        partialFrames: [
+          {
+            content: [{
+              type: "text",
+              text: "Fetch preview",
+            }],
+            details: {
+              url: "https://example.com/docs/pi/fetch-preview",
+              finalUrl: "https://example.com/docs/pi/fetch-preview",
+              format: "markdown",
+              status: 200,
+              statusText: "OK",
+              contentType: "text/html; charset=utf-8",
+              bytes: 96,
+              durationMs: 0,
+              timeoutSeconds: 10,
+              body: "Fetch preview",
+              isBinary: false,
+            },
+          },
+          {
+            content: [{
+              type: "text",
+              text: [
+                "Fetch preview",
+                "=============",
+              ].join("\n"),
+            }],
+            details: {
+              url: "https://example.com/docs/pi/fetch-preview",
+              finalUrl: "https://example.com/docs/pi/fetch-preview",
+              format: "markdown",
+              status: 200,
+              statusText: "OK",
+              contentType: "text/html; charset=utf-8",
+              bytes: 224,
+              durationMs: 1000,
+              timeoutSeconds: 10,
+              body: [
+                "Fetch preview",
+                "=============",
+              ].join("\n"),
+              isBinary: false,
+            },
+          },
+          {
+            content: [{
+              type: "text",
+              text: [
+                "Fetch preview",
+                "=============",
+                "",
+                "Streaming body chunk",
+              ].join("\n"),
+            }],
+            details: {
+              url: "https://example.com/docs/pi/fetch-preview",
+              finalUrl: "https://example.com/docs/pi/fetch-preview",
+              format: "markdown",
+              status: 200,
+              statusText: "OK",
+              contentType: "text/html; charset=utf-8",
+              bytes: 412,
+              durationMs: 2000,
+              timeoutSeconds: 10,
+              body: [
+                "Fetch preview",
+                "=============",
+                "",
+                "Streaming body chunk",
+              ].join("\n"),
+              isBinary: false,
+            },
+          },
+        ],
+      },
+      successResult: {
+        content: [{
+          type: "text",
+          text: [
+            "URL: https://example.com/docs/pi/fetch-preview",
+            "Status: 200 OK",
+            "Content-Type: text/html; charset=utf-8",
+            "Bytes: 2.2KB",
+            "",
+            "Fetch preview",
+            "=============",
+            "",
+            "This is the expanded preview body.",
+            "",
+            "[Output truncated: showing 18 of 42 lines. Full output saved to: /tmp/pi-fetch-preview.txt]",
+          ].join("\n"),
+        }],
+        details: {
+          url: "https://example.com/docs/pi/fetch-preview",
+          finalUrl: "https://example.com/docs/pi/fetch-preview",
+          format: "markdown",
+          status: 200,
+          statusText: "OK",
+          contentType: "text/html; charset=utf-8",
+          bytes: 2236,
+          durationMs: 4000,
+          timeoutSeconds: 10,
+          body: [
+            "Fetch preview",
+            "=============",
+            "",
+            "This is the expanded preview body.",
+            "",
+            "[Output truncated: showing 18 of 42 lines. Full output saved to: /tmp/pi-fetch-preview.txt]",
+          ].join("\n"),
+          isBinary: false,
+          truncation: {
+            content: "Fetch preview\n=============",
+            truncated: true,
+            truncatedBy: "lines",
+            totalLines: 42,
+            totalBytes: 2236,
+            outputLines: 18,
+            outputBytes: 987,
+            lastLinePartial: false,
+            firstLineExceedsLimit: false,
+            maxLines: 2000,
+            maxBytes: 51200,
+          },
+          fullOutputPath: "/tmp/pi-fetch-preview.txt",
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "Request timed out after 10s" }],
       },
     },
     {
@@ -766,6 +941,22 @@ export function createPreviewComponent(
   }
 
   const result = resolvePreviewResult(scenario, panel, animationMs);
+
+  if (result?.details && typeof result.details === "object") {
+    const durationMs = (result.details as { durationMs?: unknown }).durationMs;
+    if (typeof durationMs === "number") {
+      const rendererState = (component as unknown as { rendererState?: { startedAt?: number; endedAt?: number } }).rendererState;
+      if (rendererState) {
+        const now = Date.now();
+        rendererState.startedAt = now - durationMs;
+        if (panel.isPartial) {
+          rendererState.endedAt = undefined;
+        } else {
+          rendererState.endedAt = now;
+        }
+      }
+    }
+  }
 
   if (result) {
     component.updateResult(

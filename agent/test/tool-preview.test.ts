@@ -8,6 +8,7 @@ import stripAnsi from "strip-ansi";
 import { createReadToolOverrideDefinition } from "../src/extensions/coreui/tools.js";
 import {
   assertVisibleWidths,
+  createPreviewComponent,
   getToolPreviewPanels,
   getToolPreviewScenarios,
   renderPreviewText,
@@ -140,6 +141,41 @@ test("compact bash preview renders condensed collapsed result", () => {
   assert.match(stripAnsi(errorText), /ctrl\+o to expand/);
   assert.doesNotMatch(stripAnsi(collapsedText), /apply_patch preview renders collapsed/);
   assert.match(stripAnsi(expandedText), /apply_patch preview renders collapsed and expanded states/);
+});
+
+test("webfetch preview renders pending, collapsed status, and expanded body", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "webfetch:compact");
+  assert.ok(scenario);
+
+  const pending = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-collapsed");
+  const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
+  const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
+
+  assert.ok(pending);
+  assert.ok(collapsed);
+  assert.ok(expanded);
+  assert.ok(error);
+
+  const pendingText = stripAnsi(renderPreviewText(scenario, pending, 120));
+  const animatedPendingText = stripAnsi(createPreviewComponent(scenario, pending, undefined, 2000).render(120).join("\n"));
+  const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
+  const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
+  const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
+
+  assert.match(pendingText, /fetching https:\/\/example\.com\/docs\/pi\/fetch-preview \(10s\)/);
+  assert.match(pendingText, /Fetch preview/);
+  assert.match(animatedPendingText, /Streaming body chunk/);
+  assert.match(animatedPendingText, /line[s]? so far \(2s\)/);
+  assert.match(collapsedText, /✓ fetched https:\/\/example\.com\/docs\/pi\/fetch-preview in 4s/);
+  assert.match(collapsedText, /200 OK/);
+  assert.match(collapsedText, /text\/html; charset=utf-8/);
+  assert.match(collapsedText, /ctrl\+o to expand/);
+  assert.match(expandedText, /Fetch preview/);
+  assert.match(expandedText, /=============|# Fetch preview/);
+  assert.match(expandedText, /Full output saved to: \/tmp\/pi-fetch-preview\.txt|Full output saved to: \/tmp\/pi-webfetch-/);
+  assert.match(errorText, /✗ fetch https:\/\/example\.com\/docs\/pi\/fetch-preview/);
+  assert.match(errorText, /Request timed out after 10s/);
 });
 
 test("multiline bash call preview truncates middle lines in collapsed mode", () => {

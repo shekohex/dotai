@@ -100,7 +100,7 @@ export const webSearchTool = defineTool({
     ),
   }),
   renderCall(args, theme) {
-    let text = theme.fg("toolTitle", theme.bold("⌕ web "));
+    let text = theme.fg("toolTitle", theme.bold("google"));
     text += theme.fg("accent", args.query);
 
     const meta: string[] = [];

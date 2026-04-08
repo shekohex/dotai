@@ -7,7 +7,7 @@ import { registerCoreUIToolOverrides } from "./coreui/tools.js";
 import { calculateTotalCost } from "./coreui/usage.js";
 
 export default function coreUIExtension(pi: ExtensionAPI) {
-  registerCoreUIToolOverrides(pi);
+  const ensureToolOverridesRegistered = registerCoreUIToolOverrides(pi);
 
   const state = createCoreUIState();
   let requestRender: (() => void) | undefined;
@@ -31,6 +31,7 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    ensureToolOverridesRegistered(pi.getActiveTools());
     bindCoreUI(ctx, pi, state, (nextRequestRender) => {
       requestRender = nextRequestRender;
     });
@@ -43,11 +44,18 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_tree", async (_event, ctx) => {
+    ensureToolOverridesRegistered(pi.getActiveTools());
     await refreshAll(ctx);
   });
 
   pi.on("model_select", async () => {
+    ensureToolOverridesRegistered(pi.getActiveTools());
     requestRender?.();
+  });
+
+  pi.on("before_agent_start", async () => {
+    ensureToolOverridesRegistered(pi.getActiveTools());
+    return undefined;
   });
 
   pi.on("session_shutdown", async () => {

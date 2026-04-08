@@ -1,0 +1,879 @@
+import { createTwoFilesPatch, diffLines } from "diff";
+import {
+  defineTool,
+  isToolCallEventType,
+  keyHint,
+  renderDiff,
+  type ExtensionAPI,
+  type ExtensionContext,
+  withFileMutationQueue,
+} from "@mariozechner/pi-coding-agent";
+import { Container, Text } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
+import { readFileSync } from "node:fs";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+
+type Hunk =
+  | { type: "add"; path: string; contents: string }
+  | { type: "delete"; path: string }
+  | { type: "update"; path: string; move_path?: string; chunks: UpdateFileChunk[] };
+
+type UpdateFileChunk = {
+  old_lines: string[];
+  new_lines: string[];
+  change_context?: string;
+  is_end_of_file?: boolean;
+};
+
+type PatchFileChange = {
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+  type: "add" | "update" | "delete" | "move";
+  movePath?: string;
+  diff: string;
+  additions: number;
+  deletions: number;
+};
+
+type PatchFileDetails = {
+  filePath: string;
+  relativePath: string;
+  type: "add" | "update" | "delete" | "move";
+  diff: string;
+  before: string;
+  after: string;
+  additions: number;
+  deletions: number;
+  movePath?: string;
+};
+
+type ApplyPatchDetails = {
+  diff: string;
+  files: PatchFileDetails[];
+};
+
+const APPLY_PATCH_DESCRIPTION = `Use the \`apply_patch\` tool to edit files. Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
+
+*** Begin Patch
+[ one or more file sections ]
+*** End Patch
+
+Within that envelope, you get a sequence of file operations.
+You MUST include a header to specify the action you are taking.
+Each operation starts with one of three headers:
+
+*** Add File: <path> - create a new file. Every following line is a + line (the initial contents).
+*** Delete File: <path> - remove an existing file. Nothing follows.
+*** Update File: <path> - patch an existing file in place (optionally with a rename).
+
+Example patch:
+
+\`\`\`
+*** Begin Patch
+*** Add File: hello.txt
++Hello world
+*** Update File: src/app.py
+*** Move to: src/main.py
+@@ def greet():
+-print("Hi")
++print("Hello, world!")
+*** Delete File: obsolete.txt
+*** End Patch
+\`\`\`
+
+It is important to remember:
+
+- You must include a header with your intended action (Add/Delete/Update)
+- You must prefix new lines with \`+\` even when creating a new file
+`;
+
+const applyPatchTool = defineTool({
+  name: "apply_patch",
+  label: "apply_patch",
+  description: APPLY_PATCH_DESCRIPTION,
+  parameters: Type.Object(
+    {
+      patchText: Type.String({ description: "The full patch text that describes all changes to be made" }),
+    },
+    { additionalProperties: false },
+  ),
+  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    if (!params.patchText) {
+      throw new Error("patchText is required");
+    }
+
+    let hunks: Hunk[];
+    try {
+      hunks = parsePatch(params.patchText).hunks;
+    } catch (error) {
+      throw new Error(`apply_patch verification failed: ${error}`);
+    }
+
+    if (hunks.length === 0) {
+      const normalized = params.patchText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+      if (normalized === "*** Begin Patch\n*** End Patch") {
+        throw new Error("patch rejected: empty patch");
+      }
+      throw new Error("apply_patch verification failed: no hunks found");
+    }
+
+    const queuePaths = getQueuePaths(hunks, ctx);
+
+    return withFileMutationQueues(queuePaths, async () => {
+      const fileChanges: PatchFileChange[] = [];
+      let totalDiff = "";
+
+      for (const hunk of hunks) {
+        const filePath = resolvePatchPath(ctx, hunk.path);
+
+        switch (hunk.type) {
+          case "add": {
+            const oldContent = "";
+            const newContent =
+              hunk.contents.length === 0 || hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`;
+            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent));
+
+            let additions = 0;
+            let deletions = 0;
+            for (const change of diffLines(oldContent, newContent)) {
+              if (change.added) additions += change.count || 0;
+              if (change.removed) deletions += change.count || 0;
+            }
+
+            fileChanges.push({
+              filePath,
+              oldContent,
+              newContent,
+              type: "add",
+              diff,
+              additions,
+              deletions,
+            });
+
+            totalDiff += `${diff}\n`;
+            break;
+          }
+
+          case "update": {
+            const stats = await fs.stat(filePath).catch(() => null);
+            if (!stats || stats.isDirectory()) {
+              throw new Error(`apply_patch verification failed: Failed to read file to update: ${filePath}`);
+            }
+
+            const oldContent = await fs.readFile(filePath, "utf-8");
+            let newContent = oldContent;
+
+            try {
+              const fileUpdate = deriveNewContentsFromChunks(filePath, hunk.chunks);
+              newContent = fileUpdate.content;
+            } catch (error) {
+              throw new Error(`apply_patch verification failed: ${error}`);
+            }
+
+            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent));
+
+            let additions = 0;
+            let deletions = 0;
+            for (const change of diffLines(oldContent, newContent)) {
+              if (change.added) additions += change.count || 0;
+              if (change.removed) deletions += change.count || 0;
+            }
+
+            const movePath = hunk.move_path ? resolvePatchPath(ctx, hunk.move_path) : undefined;
+
+            fileChanges.push({
+              filePath,
+              oldContent,
+              newContent,
+              type: hunk.move_path ? "move" : "update",
+              movePath,
+              diff,
+              additions,
+              deletions,
+            });
+
+            totalDiff += `${diff}\n`;
+            break;
+          }
+
+          case "delete": {
+            const contentToDelete = await fs.readFile(filePath, "utf-8").catch((error) => {
+              throw new Error(`apply_patch verification failed: ${error}`);
+            });
+            const diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentToDelete, ""));
+            const deletions = contentToDelete.split("\n").length;
+
+            fileChanges.push({
+              filePath,
+              oldContent: contentToDelete,
+              newContent: "",
+              type: "delete",
+              diff,
+              additions: 0,
+              deletions,
+            });
+
+            totalDiff += `${diff}\n`;
+            break;
+          }
+        }
+      }
+
+      const files = fileChanges.map((change) => ({
+        filePath: change.filePath,
+        relativePath: path.relative(ctx.cwd, change.movePath ?? change.filePath).replaceAll("\\", "/"),
+        type: change.type,
+        diff: change.diff,
+        before: change.oldContent,
+        after: change.newContent,
+        additions: change.additions,
+        deletions: change.deletions,
+        movePath: change.movePath,
+      } satisfies PatchFileDetails));
+
+      for (const change of fileChanges) {
+        switch (change.type) {
+          case "add":
+            await fs.mkdir(path.dirname(change.filePath), { recursive: true });
+            await fs.writeFile(change.filePath, change.newContent, "utf-8");
+            break;
+          case "update":
+            await fs.writeFile(change.filePath, change.newContent, "utf-8");
+            break;
+          case "move":
+            if (change.movePath) {
+              await fs.mkdir(path.dirname(change.movePath), { recursive: true });
+              await fs.writeFile(change.movePath, change.newContent, "utf-8");
+              await fs.unlink(change.filePath);
+            }
+            break;
+          case "delete":
+            await fs.unlink(change.filePath);
+            break;
+        }
+      }
+
+      const summaryLines = fileChanges.map((change) => {
+        if (change.type === "add") {
+          return `A ${path.relative(ctx.cwd, change.filePath).replaceAll("\\", "/")}`;
+        }
+        if (change.type === "delete") {
+          return `D ${path.relative(ctx.cwd, change.filePath).replaceAll("\\", "/")}`;
+        }
+        const target = change.movePath ?? change.filePath;
+        return `M ${path.relative(ctx.cwd, target).replaceAll("\\", "/")}`;
+      });
+
+      const output = `Success. Updated the following files:\n${summaryLines.join("\n")}`;
+
+      return {
+        content: [{ type: "text", text: output }],
+        details: {
+          diff: totalDiff,
+          files,
+        } satisfies ApplyPatchDetails,
+      };
+    });
+  },
+  renderCall(args, theme, context) {
+    const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+    text.setText(formatApplyPatchCall(args.patchText, theme, context.expanded));
+    return text;
+  },
+  renderResult(result, options, theme, context) {
+    const output = getResultText(result.content);
+    if (context.isError) {
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(output ? `\n${theme.fg("error", output)}` : "");
+      return text;
+    }
+
+    const details = result.details as ApplyPatchDetails | undefined;
+    if (!details?.files?.length) {
+      const component = (context.lastComponent as Container | undefined) ?? new Container();
+      component.clear();
+      return component;
+    }
+
+    if (!options.expanded) {
+      const component = (context.lastComponent as Container | undefined) ?? new Container();
+      component.clear();
+      return component;
+    }
+
+    const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+    text.setText(renderApplyPatchResult(details.files, theme));
+    return text;
+  },
+});
+
+export default function patchExtension(pi: ExtensionAPI) {
+  pi.registerTool(applyPatchTool);
+
+  let patchMode = false;
+  let savedToolsBeforePatch: string[] | undefined;
+
+  const syncTools = (ctx: ExtensionContext) => {
+    const modelId = ctx.model?.id;
+    const shouldEnablePatch = shouldUsePatch(modelId);
+    const activeTools = pi.getActiveTools();
+
+    if (shouldEnablePatch) {
+      if (!patchMode) {
+        savedToolsBeforePatch = activeTools.filter((toolName) => toolName !== "apply_patch");
+      }
+
+      const nextTools = new Set(activeTools);
+      nextTools.delete("edit");
+      nextTools.delete("write");
+      nextTools.add(applyPatchTool.name);
+      const next = Array.from(nextTools);
+      if (!sameToolSet(activeTools, next)) {
+        pi.setActiveTools(next);
+      }
+      patchMode = true;
+      return;
+    }
+
+    if (patchMode) {
+      const restored = (savedToolsBeforePatch ?? activeTools.filter((toolName) => toolName !== "apply_patch")).filter(
+        (toolName) => toolName !== "apply_patch",
+      );
+      if (!sameToolSet(activeTools, restored)) {
+        pi.setActiveTools(restored);
+      }
+      savedToolsBeforePatch = undefined;
+      patchMode = false;
+      return;
+    }
+
+    if (activeTools.includes("apply_patch")) {
+      const next = activeTools.filter((toolName) => toolName !== "apply_patch");
+      if (!sameToolSet(activeTools, next)) {
+        pi.setActiveTools(next);
+      }
+    }
+  };
+
+  pi.on("session_start", async (_event, ctx) => {
+    syncTools(ctx);
+  });
+
+  pi.on("model_select", async (_event, ctx) => {
+    syncTools(ctx);
+  });
+
+  pi.on("before_agent_start", async (_event, ctx) => {
+    syncTools(ctx);
+    return undefined;
+  });
+
+  pi.on("tool_call", async (event) => {
+    if (!isToolCallEventType("bash", event)) {
+      return undefined;
+    }
+
+    const command = event.input.command.trim();
+    if (pi.getActiveTools().includes(applyPatchTool.name)) {
+      return undefined;
+    }
+
+    if (!isApplyPatchShellCommand(command)) {
+      return undefined;
+    }
+
+    return {
+      block: true,
+      reason: "`apply_patch` is not active for this model. Use the available file-editing tools instead.",
+    };
+  });
+}
+
+function shouldUsePatch(modelId: string | undefined): boolean {
+  if (!modelId) {
+    return false;
+  }
+
+  const normalizedModelId = modelId.toLowerCase();
+  return normalizedModelId.includes("gpt-") && !normalizedModelId.includes("oss") && !normalizedModelId.includes("gpt-4");
+}
+
+function sameToolSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isApplyPatchShellCommand(command: string): boolean {
+  return /(^|[\n;&|]\s*)(?:apply_patch|applypatch)\b/.test(command);
+}
+
+function resolvePatchPath(ctx: ExtensionContext, filePath: string): string {
+  const normalized = filePath.startsWith("@") ? filePath.slice(1) : filePath;
+  if (path.isAbsolute(normalized)) {
+    return normalized;
+  }
+  return path.resolve(ctx.cwd, normalized);
+}
+
+function getQueuePaths(hunks: Hunk[], ctx: ExtensionContext): string[] {
+  const unique = new Set<string>();
+  for (const hunk of hunks) {
+    unique.add(resolvePatchPath(ctx, hunk.path));
+    if (hunk.type === "update" && hunk.move_path) {
+      unique.add(resolvePatchPath(ctx, hunk.move_path));
+    }
+  }
+  return Array.from(unique).sort();
+}
+
+async function withFileMutationQueues<T>(paths: string[], fn: () => Promise<T>): Promise<T> {
+  if (paths.length === 0) {
+    return fn();
+  }
+
+  const [first, ...rest] = paths;
+  return withFileMutationQueue(first, () => withFileMutationQueues(rest, fn));
+}
+
+function formatApplyPatchCall(
+  patchText: string,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[1],
+  expanded: boolean,
+): string {
+  const summary = summarizePatch(patchText);
+  const title = `${theme.fg("toolTitle", theme.bold("apply_patch"))} ${theme.fg("accent", summary)}`;
+  if (expanded) {
+    return title;
+  }
+  return `${title}\n${theme.fg("dim", `↳ ${keyHint("app.tools.expand", "to expand")}`)}`;
+}
+
+function summarizePatch(patchText: string): string {
+  try {
+    const hunks = parsePatch(patchText).hunks;
+    if (hunks.length === 0) {
+      return "...";
+    }
+
+    const firstPath = hunks[0]?.type === "update" && hunks[0].move_path ? hunks[0].move_path : hunks[0]?.path;
+    if (hunks.length === 1 && firstPath) {
+      return firstPath;
+    }
+
+    return `${hunks.length} files`;
+  } catch {
+    return "...";
+  }
+}
+
+function renderApplyPatchResult(
+  files: PatchFileDetails[],
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+): string {
+  return files
+    .map((file) => {
+      const label =
+        file.type === "delete"
+          ? `Deleted ${file.relativePath}`
+          : file.type === "add"
+            ? `Created ${file.relativePath}`
+            : file.type === "move"
+              ? `Moved ${file.filePath.replaceAll("\\", "/")} → ${file.relativePath}`
+              : `Patched ${file.relativePath}`;
+      return `${theme.fg("muted", label)}\n${renderDiff(file.diff, { filePath: file.filePath })}`;
+    })
+    .join("\n\n");
+}
+
+function getResultText(content: Array<{ type: string; text?: string }>): string {
+  return content
+    .filter((item) => item.type === "text")
+    .map((item) => item.text ?? "")
+    .join("\n")
+    .trim();
+}
+
+function parsePatchHeader(
+  lines: string[],
+  startIdx: number,
+): { filePath: string; movePath?: string; nextIdx: number } | null {
+  const line = lines[startIdx];
+
+  if (line.startsWith("*** Add File:")) {
+    const filePath = line.slice("*** Add File:".length).trim();
+    return filePath ? { filePath, nextIdx: startIdx + 1 } : null;
+  }
+
+  if (line.startsWith("*** Delete File:")) {
+    const filePath = line.slice("*** Delete File:".length).trim();
+    return filePath ? { filePath, nextIdx: startIdx + 1 } : null;
+  }
+
+  if (line.startsWith("*** Update File:")) {
+    const filePath = line.slice("*** Update File:".length).trim();
+    let movePath: string | undefined;
+    let nextIdx = startIdx + 1;
+
+    if (nextIdx < lines.length && lines[nextIdx].startsWith("*** Move to:")) {
+      movePath = lines[nextIdx].slice("*** Move to:".length).trim();
+      nextIdx++;
+    }
+
+    return filePath ? { filePath, movePath, nextIdx } : null;
+  }
+
+  return null;
+}
+
+function parseUpdateFileChunks(lines: string[], startIdx: number): { chunks: UpdateFileChunk[]; nextIdx: number } {
+  const chunks: UpdateFileChunk[] = [];
+  let i = startIdx;
+
+  while (i < lines.length && !lines[i].startsWith("***")) {
+    if (lines[i].startsWith("@@")) {
+      const contextLine = lines[i].substring(2).trim();
+      i++;
+
+      const oldLines: string[] = [];
+      const newLines: string[] = [];
+      let isEndOfFile = false;
+
+      while (i < lines.length && !lines[i].startsWith("@@") && !lines[i].startsWith("***")) {
+        const changeLine = lines[i];
+
+        if (changeLine === "*** End of File") {
+          isEndOfFile = true;
+          i++;
+          break;
+        }
+
+        if (changeLine.startsWith(" ")) {
+          const content = changeLine.substring(1);
+          oldLines.push(content);
+          newLines.push(content);
+        } else if (changeLine.startsWith("-")) {
+          oldLines.push(changeLine.substring(1));
+        } else if (changeLine.startsWith("+")) {
+          newLines.push(changeLine.substring(1));
+        }
+
+        i++;
+      }
+
+      chunks.push({
+        old_lines: oldLines,
+        new_lines: newLines,
+        change_context: contextLine || undefined,
+        is_end_of_file: isEndOfFile || undefined,
+      });
+    } else {
+      i++;
+    }
+  }
+
+  return { chunks, nextIdx: i };
+}
+
+function parseAddFileContent(lines: string[], startIdx: number): { content: string; nextIdx: number } {
+  let content = "";
+  let i = startIdx;
+
+  while (i < lines.length && !lines[i].startsWith("***")) {
+    if (lines[i].startsWith("+")) {
+      content += `${lines[i].substring(1)}\n`;
+    }
+    i++;
+  }
+
+  if (content.endsWith("\n")) {
+    content = content.slice(0, -1);
+  }
+
+  return { content, nextIdx: i };
+}
+
+function stripHeredoc(input: string): string {
+  const heredocMatch = input.match(/^(?:cat\s+)?<<['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1\s*$/);
+  if (heredocMatch) {
+    return heredocMatch[2];
+  }
+  return input;
+}
+
+function parsePatch(patchText: string): { hunks: Hunk[] } {
+  const cleaned = stripHeredoc(patchText.trim());
+  const lines = cleaned.split("\n");
+  const hunks: Hunk[] = [];
+
+  const beginIdx = lines.findIndex((line) => line.trim() === "*** Begin Patch");
+  const endIdx = lines.findIndex((line) => line.trim() === "*** End Patch");
+
+  if (beginIdx === -1 || endIdx === -1 || beginIdx >= endIdx) {
+    throw new Error("Invalid patch format: missing Begin/End markers");
+  }
+
+  let i = beginIdx + 1;
+
+  while (i < endIdx) {
+    const header = parsePatchHeader(lines, i);
+    if (!header) {
+      i++;
+      continue;
+    }
+
+    if (lines[i].startsWith("*** Add File:")) {
+      const { content, nextIdx } = parseAddFileContent(lines, header.nextIdx);
+      hunks.push({
+        type: "add",
+        path: header.filePath,
+        contents: content,
+      });
+      i = nextIdx;
+    } else if (lines[i].startsWith("*** Delete File:")) {
+      hunks.push({
+        type: "delete",
+        path: header.filePath,
+      });
+      i = header.nextIdx;
+    } else if (lines[i].startsWith("*** Update File:")) {
+      const { chunks, nextIdx } = parseUpdateFileChunks(lines, header.nextIdx);
+      hunks.push({
+        type: "update",
+        path: header.filePath,
+        move_path: header.movePath,
+        chunks,
+      });
+      i = nextIdx;
+    } else {
+      i++;
+    }
+  }
+
+  return { hunks };
+}
+
+function deriveNewContentsFromChunks(filePath: string, chunks: UpdateFileChunk[]): { unified_diff: string; content: string } {
+  let originalContent: string;
+  try {
+    originalContent = readFileSync(filePath, "utf-8");
+  } catch (error) {
+    throw new Error(`Failed to read file ${filePath}: ${error}`);
+  }
+
+  let originalLines = originalContent.split("\n");
+
+  if (originalLines.length > 0 && originalLines[originalLines.length - 1] === "") {
+    originalLines.pop();
+  }
+
+  const replacements = computeReplacements(originalLines, filePath, chunks);
+  let newLines = applyReplacements(originalLines, replacements);
+
+  if (newLines.length === 0 || newLines[newLines.length - 1] !== "") {
+    newLines.push("");
+  }
+
+  const newContent = newLines.join("\n");
+  const unifiedDiff = generateUnifiedDiff(originalContent, newContent);
+
+  return {
+    unified_diff: unifiedDiff,
+    content: newContent,
+  };
+}
+
+function computeReplacements(
+  originalLines: string[],
+  filePath: string,
+  chunks: UpdateFileChunk[],
+): Array<[number, number, string[]]> {
+  const replacements: Array<[number, number, string[]]> = [];
+  let lineIndex = 0;
+
+  for (const chunk of chunks) {
+    if (chunk.change_context) {
+      const contextIdx = seekSequence(originalLines, [chunk.change_context], lineIndex);
+      if (contextIdx === -1) {
+        throw new Error(`Failed to find context '${chunk.change_context}' in ${filePath}`);
+      }
+      lineIndex = contextIdx + 1;
+    }
+
+    if (chunk.old_lines.length === 0) {
+      const insertionIdx =
+        originalLines.length > 0 && originalLines[originalLines.length - 1] === ""
+          ? originalLines.length - 1
+          : originalLines.length;
+      replacements.push([insertionIdx, 0, chunk.new_lines]);
+      continue;
+    }
+
+    let pattern = chunk.old_lines;
+    let newSlice = chunk.new_lines;
+    let found = seekSequence(originalLines, pattern, lineIndex, chunk.is_end_of_file);
+
+    if (found === -1 && pattern.length > 0 && pattern[pattern.length - 1] === "") {
+      pattern = pattern.slice(0, -1);
+      if (newSlice.length > 0 && newSlice[newSlice.length - 1] === "") {
+        newSlice = newSlice.slice(0, -1);
+      }
+      found = seekSequence(originalLines, pattern, lineIndex, chunk.is_end_of_file);
+    }
+
+    if (found !== -1) {
+      replacements.push([found, pattern.length, newSlice]);
+      lineIndex = found + pattern.length;
+    } else {
+      throw new Error(`Failed to find expected lines in ${filePath}:\n${chunk.old_lines.join("\n")}`);
+    }
+  }
+
+  replacements.sort((a, b) => a[0] - b[0]);
+
+  return replacements;
+}
+
+function applyReplacements(lines: string[], replacements: Array<[number, number, string[]]>): string[] {
+  const result = [...lines];
+
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const [startIdx, oldLen, newSegment] = replacements[i];
+    result.splice(startIdx, oldLen);
+    for (let j = 0; j < newSegment.length; j++) {
+      result.splice(startIdx + j, 0, newSegment[j]);
+    }
+  }
+
+  return result;
+}
+
+function normalizeUnicode(value: string): string {
+  return value
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/\u00A0/g, " ");
+}
+
+function tryMatch(
+  lines: string[],
+  pattern: string[],
+  startIndex: number,
+  compare: (a: string, b: string) => boolean,
+  eof: boolean,
+): number {
+  if (eof) {
+    const fromEnd = lines.length - pattern.length;
+    if (fromEnd >= startIndex) {
+      let matches = true;
+      for (let j = 0; j < pattern.length; j++) {
+        if (!compare(lines[fromEnd + j], pattern[j])) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) return fromEnd;
+    }
+  }
+
+  for (let i = startIndex; i <= lines.length - pattern.length; i++) {
+    let matches = true;
+    for (let j = 0; j < pattern.length; j++) {
+      if (!compare(lines[i + j], pattern[j])) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return i;
+  }
+
+  return -1;
+}
+
+function seekSequence(lines: string[], pattern: string[], startIndex: number, eof = false): number {
+  if (pattern.length === 0) return -1;
+
+  const exact = tryMatch(lines, pattern, startIndex, (a, b) => a === b, eof);
+  if (exact !== -1) return exact;
+
+  const rstrip = tryMatch(lines, pattern, startIndex, (a, b) => a.trimEnd() === b.trimEnd(), eof);
+  if (rstrip !== -1) return rstrip;
+
+  const trim = tryMatch(lines, pattern, startIndex, (a, b) => a.trim() === b.trim(), eof);
+  if (trim !== -1) return trim;
+
+  return tryMatch(lines, pattern, startIndex, (a, b) => normalizeUnicode(a.trim()) === normalizeUnicode(b.trim()), eof);
+}
+
+function generateUnifiedDiff(oldContent: string, newContent: string): string {
+  const oldLines = oldContent.split("\n");
+  const newLines = newContent.split("\n");
+
+  let diff = "@@ -1 +1 @@\n";
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  let hasChanges = false;
+
+  for (let i = 0; i < maxLen; i++) {
+    const oldLine = oldLines[i] || "";
+    const newLine = newLines[i] || "";
+
+    if (oldLine !== newLine) {
+      if (oldLine) diff += `-${oldLine}\n`;
+      if (newLine) diff += `+${newLine}\n`;
+      hasChanges = true;
+    } else if (oldLine) {
+      diff += ` ${oldLine}\n`;
+    }
+  }
+
+  return hasChanges ? diff : "";
+}
+
+function trimDiff(diff: string): string {
+  const lines = diff.split("\n");
+  const contentLines = lines.filter(
+    (line) =>
+      (line.startsWith("+") || line.startsWith("-") || line.startsWith(" ")) &&
+      !line.startsWith("---") &&
+      !line.startsWith("+++"),
+  );
+
+  if (contentLines.length === 0) return diff;
+
+  let min = Infinity;
+  for (const line of contentLines) {
+    const content = line.slice(1);
+    if (content.trim().length > 0) {
+      const match = content.match(/^(\s*)/);
+      if (match) min = Math.min(min, match[1].length);
+    }
+  }
+  if (min === Infinity || min === 0) return diff;
+
+  return lines
+    .map((line) => {
+      if (
+        (line.startsWith("+") || line.startsWith("-") || line.startsWith(" ")) &&
+        !line.startsWith("---") &&
+        !line.startsWith("+++")
+      ) {
+        const prefix = line[0];
+        const content = line.slice(1);
+        return prefix + content.slice(min);
+      }
+      return line;
+    })
+    .join("\n");
+}

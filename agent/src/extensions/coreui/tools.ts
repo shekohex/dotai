@@ -15,10 +15,27 @@ type ToolPathArgs = {
   limit?: unknown;
 };
 
-export function registerCoreUIToolOverrides(pi: ExtensionAPI): void {
-  registerReadToolOverride(pi);
-  registerEditToolOverride(pi);
-  registerWriteToolOverride(pi);
+export function registerCoreUIToolOverrides(pi: ExtensionAPI): (activeToolNames: string[]) => void {
+  const registeredToolNames = new Set<string>();
+
+  return (activeToolNames: string[]) => {
+    const activeTools = new Set(activeToolNames);
+
+    if (activeTools.has(readToolDefinition.name) && !registeredToolNames.has(readToolDefinition.name)) {
+      registerReadToolOverride(pi);
+      registeredToolNames.add(readToolDefinition.name);
+    }
+
+    if (activeTools.has(editToolDefinition.name) && !registeredToolNames.has(editToolDefinition.name)) {
+      registerEditToolOverride(pi);
+      registeredToolNames.add(editToolDefinition.name);
+    }
+
+    if (activeTools.has(writeToolDefinition.name) && !registeredToolNames.has(writeToolDefinition.name)) {
+      registerWriteToolOverride(pi);
+      registeredToolNames.add(writeToolDefinition.name);
+    }
+  };
 }
 
 function registerReadToolOverride(pi: ExtensionAPI): void {
@@ -64,11 +81,7 @@ function registerEditToolOverride(pi: ExtensionAPI): void {
     },
     renderResult(result, options, theme, context) {
       if (!options.expanded) {
-        return new Text(
-          theme.fg("dim", `↳ ${keyHint("app.tools.expand", "to expand")}`),
-          0,
-          0,
-        );
+        return new Text("", 0, 0);
       }
 
       if (editToolDefinition.renderResult) {

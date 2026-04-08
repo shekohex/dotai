@@ -46,3 +46,22 @@ npm run build
 ```
 
 This compiles the TypeScript sources, copies bundled resources, and generates the default settings JSON used by postinstall.
+
+It also prepares `bin/pi.js` and `bin/pi.cmd`, and marks the Unix entrypoints executable.
+
+## Maintaining upstream UI patches
+
+This package uses `patch-package` to keep a small UI patch on top of `@mariozechner/pi-coding-agent`.
+
+When upgrading `@mariozechner/pi-coding-agent`:
+
+1. Reinstall dependencies for the new version.
+2. Reapply or regenerate the patch in `patches/` if `patch-package` reports a conflict.
+3. Run:
+
+```bash
+npm run test:tool-preview
+npm run test:harness
+```
+
+4. Rebuild and reload pi to verify the real runtime still matches the preview harness.

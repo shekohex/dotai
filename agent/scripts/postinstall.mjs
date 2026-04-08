@@ -1,14 +1,56 @@
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(__dirname, "..");
-const compiledPostinstall = join(packageDir, "dist", "postinstall.js");
+const templatePath = join(packageDir, "dist", "defaults", "settings.json");
+const agentDir = join(homedir(), ".pi", "agent");
+const targetPath = join(agentDir, "settings.json");
+const patchPackageBin = join(packageDir, "node_modules", "patch-package", "index.js");
 
-if (!existsSync(compiledPostinstall)) {
-	console.log(`[shekohex/agent] Skipping settings seed; compiled postinstall not found: ${compiledPostinstall}`);
+if (process.env.SHEKOHEX_AGENT_SKIP_SETTINGS_INSTALL === "1") {
+	console.log("[shekohex/agent] Skipping settings seed (SHEKOHEX_AGENT_SKIP_SETTINGS_INSTALL=1)");
+	await applyDependencyPatches();
 	process.exit(0);
 }
 
-await import(pathToFileURL(compiledPostinstall).href);
+if (!existsSync(templatePath)) {
+	console.log(`[shekohex/agent] Skipping settings seed; template not found: ${templatePath}`);
+} else {
+	mkdirSync(agentDir, { recursive: true });
+
+	if (existsSync(targetPath)) {
+		console.log(`[shekohex/agent] Keeping existing settings: ${targetPath}`);
+	} else {
+		copyFileSync(templatePath, targetPath);
+		console.log(`[shekohex/agent] Seeded default settings: ${targetPath}`);
+	}
+}
+
+await applyDependencyPatches();
+
+async function applyDependencyPatches() {
+	if (!existsSync(patchPackageBin)) {
+		console.log(`[shekohex/agent] Skipping dependency patches; patch-package not found: ${patchPackageBin}`);
+		return;
+	}
+
+	const result = spawnSync(process.execPath, [patchPackageBin], {
+		cwd: packageDir,
+		stdio: "inherit",
+		env: {
+			...process.env,
+			GIT_CONFIG_NOSYSTEM: "1",
+			GIT_CONFIG_COUNT: "1",
+			GIT_CONFIG_KEY_0: "commit.gpgSign",
+			GIT_CONFIG_VALUE_0: "false",
+		},
+	});
+
+	if (result.status !== 0) {
+		process.exit(result.status ?? 1);
+	}
+}

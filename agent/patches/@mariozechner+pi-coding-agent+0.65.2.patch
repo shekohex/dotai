@@ -1,0 +1,706 @@
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+index 83a0cd3..a9e9aa4 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+@@ -3,6 +3,7 @@ import { allToolDefinitions } from "../../../core/tools/index.js";
+ import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
+ import { convertToPng } from "../../../utils/image-convert.js";
+ import { theme } from "../theme/theme.js";
++const TOOL_RAIL_WIDTH = 3;
+ export class ToolExecutionComponent extends Container {
+     contentBox;
+     contentText;
+@@ -36,11 +37,10 @@ export class ToolExecutionComponent extends Container {
+         this.showImages = options.showImages ?? true;
+         this.ui = ui;
+         this.cwd = cwd;
+-        this.addChild(new Spacer(1));
+         // Always create both. contentBox is used for tools with renderer-based call/result composition.
+         // contentText is reserved for generic fallback rendering when no tool definition exists.
+-        this.contentBox = new Box(1, 1, (text) => theme.bg("toolPendingBg", text));
+-        this.contentText = new Text("", 1, 1, (text) => theme.bg("toolPendingBg", text));
++        this.contentBox = new Box(0, 0);
++        this.contentText = new Text("", 0, 0);
+         if (this.hasRendererDefinition()) {
+             this.addChild(this.contentBox);
+         }
+@@ -160,18 +160,29 @@ export class ToolExecutionComponent extends Container {
+         if (this.hideComponent) {
+             return [];
+         }
+-        return super.render(width);
++        const lines = [];
++        const topSpacer = this.children[0];
++        if (topSpacer instanceof Spacer) {
++            lines.push(...topSpacer.render(width));
++        }
++        const contentComponent = this.hasRendererDefinition() ? this.contentBox : this.contentText;
++        const contentWidth = Math.max(1, width - TOOL_RAIL_WIDTH);
++        const railPrefix = this.getRailPrefix();
++        for (const line of contentComponent.render(contentWidth)) {
++            lines.push(`${railPrefix}${line}`);
++        }
++        for (const spacer of this.imageSpacers) {
++            lines.push(...spacer.render(width));
++        }
++        for (const image of this.imageComponents) {
++            lines.push(...image.render(width));
++        }
++        return lines;
+     }
+     updateDisplay() {
+-        const bgFn = this.isPartial
+-            ? (text) => theme.bg("toolPendingBg", text)
+-            : this.result?.isError
+-                ? (text) => theme.bg("toolErrorBg", text)
+-                : (text) => theme.bg("toolSuccessBg", text);
+         let hasContent = false;
+         this.hideComponent = false;
+         if (this.hasRendererDefinition()) {
+-            this.contentBox.setBgFn(bgFn);
+             this.contentBox.clear();
+             const callRenderer = this.getCallRenderer();
+             if (!callRenderer) {
+@@ -219,7 +230,6 @@ export class ToolExecutionComponent extends Container {
+             }
+         }
+         else {
+-            this.contentText.setCustomBgFn(bgFn);
+             this.contentText.setText(this.formatToolExecution());
+             hasContent = true;
+         }
+@@ -270,5 +280,14 @@ export class ToolExecutionComponent extends Container {
+         }
+         return text;
+     }
++    getRailPrefix() {
++        if (this.result?.isError) {
++            return `${theme.fg("error", "▏")}`;
++        }
++        if (this.isPartial) {
++            return `${theme.fg("borderAccent", "▏")}`;
++        }
++        return `${theme.fg("borderMuted", "▏")}`;
++    }
+ }
+ //# sourceMappingURL=tool-execution.js.map
+\ No newline at end of file
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+index 3bc7eb9..9578aba 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+@@ -53,6 +53,77 @@ import { getAvailableThemes, getAvailableThemesWithPaths, getEditorTheme, getMar
+ function isExpandable(obj) {
+     return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
+ }
++function getVisibleChatChildKind(component, width) {
++    if (component instanceof Spacer) {
++        return undefined;
++    }
++    if (component instanceof ToolExecutionComponent) {
++        return "tool";
++    }
++    if (component instanceof Text || component instanceof Markdown) {
++        return component.text.trim() ? "other" : undefined;
++    }
++    if (component instanceof BashExecutionComponent ||
++        component instanceof BranchSummaryMessageComponent ||
++        component instanceof CompactionSummaryMessageComponent ||
++        component instanceof CustomMessageComponent ||
++        component instanceof DynamicBorder ||
++        component instanceof SkillInvocationMessageComponent ||
++        component instanceof UserMessageComponent ||
++        component instanceof ArminComponent ||
++        component instanceof DaxnutsComponent) {
++        return "other";
++    }
++    const renderedLines = component.render(width);
++    return renderedLines.some((line) => visibleWidth(line.trim()) > 0) ? "other" : undefined;
++}
++function recomputeLastVisibleChatChildKind(interactiveMode, width) {
++    for (let i = interactiveMode.chatContainer.children.length - 1; i >= 0; i--) {
++        const kind = getVisibleChatChildKind(interactiveMode.chatContainer.children[i], width);
++        if (kind) {
++            interactiveMode.lastVisibleChatChildKind = kind;
++            return;
++        }
++    }
++    interactiveMode.lastVisibleChatChildKind = undefined;
++}
++function addChatChild(interactiveMode, component) {
++    interactiveMode.chatContainer.addChild(component);
++    const kind = getVisibleChatChildKind(component, interactiveMode.ui.terminal.columns);
++    if (kind) {
++        interactiveMode.lastVisibleChatChildKind = kind;
++    }
++}
++function removeChatChild(interactiveMode, component) {
++    interactiveMode.chatContainer.removeChild(component);
++    if (getVisibleChatChildKind(component, interactiveMode.ui.terminal.columns)) {
++        recomputeLastVisibleChatChildKind(interactiveMode, interactiveMode.ui.terminal.columns);
++    }
++}
++function clearChat(interactiveMode) {
++    interactiveMode.chatContainer.clear();
++    interactiveMode.lastVisibleChatChildKind = undefined;
++}
++function refreshLastVisibleChatChildKind(interactiveMode, component) {
++    const children = interactiveMode.chatContainer.children;
++    if (children.length === 0 || children[children.length - 1] !== component) {
++        return;
++    }
++    const kind = getVisibleChatChildKind(component, interactiveMode.ui.terminal.columns);
++    if (kind) {
++        interactiveMode.lastVisibleChatChildKind = kind;
++    }
++    else {
++        recomputeLastVisibleChatChildKind(interactiveMode, interactiveMode.ui.terminal.columns);
++    }
++}
++function addToolExecutionToChat(interactiveMode, component) {
++    const previousKind = interactiveMode.lastVisibleChatChildKind;
++    if (previousKind && previousKind !== "tool") {
++        addChatChild(interactiveMode, new Spacer(1));
++    }
++    addChatChild(interactiveMode, component);
++}
+ export class InteractiveMode {
+     options;
+     runtimeHost;
+@@ -83,6 +154,7 @@ export class InteractiveMode {
+     // Status line tracking (for mutating immediately-sequential status updates)
+     lastStatusSpacer = undefined;
+     lastStatusText = undefined;
++    lastVisibleChatChildKind = undefined;
+     // Streaming message tracking
+     streamingComponent = undefined;
+     streamingMessage = undefined;
+@@ -789,12 +861,12 @@ export class InteractiveMode {
+         if (showListing) {
+             const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+             if (contextFiles.length > 0) {
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Spacer(1));
+                 const contextList = contextFiles
+                     .map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
+                     .join("\n");
+-                this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             const skills = skillsResult.skills;
+             if (skills.length > 0) {
+@@ -803,8 +875,8 @@ export class InteractiveMode {
+                     formatPath: (item) => this.formatDisplayPath(item.path),
+                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
+                 });
+-                this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             const templates = this.session.promptTemplates;
+             if (templates.length > 0) {
+@@ -820,8 +892,8 @@ export class InteractiveMode {
+                         return template ? `/${template.name}` : this.formatDisplayPath(item.path);
+                     },
+                 });
+-                this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             if (extensions.length > 0) {
+                 const groups = this.buildScopeGroups(extensions);
+@@ -829,8 +901,8 @@ export class InteractiveMode {
+                     formatPath: (item) => this.formatDisplayPath(item.path),
+                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
+                 });
+-                this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             // Show loaded themes (excluding built-in)
+             const loadedThemes = themesResult.themes;
+@@ -844,22 +916,22 @@ export class InteractiveMode {
+                     formatPath: (item) => this.formatDisplayPath(item.path),
+                     formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
+                 });
+-                this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+         }
+         if (showDiagnostics) {
+             const skillDiagnostics = skillsResult.diagnostics;
+             if (skillDiagnostics.length > 0) {
+                 const warningLines = this.formatDiagnostics(skillDiagnostics, sourceInfos);
+-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             const promptDiagnostics = promptsResult.diagnostics;
+             if (promptDiagnostics.length > 0) {
+                 const warningLines = this.formatDiagnostics(promptDiagnostics, sourceInfos);
+-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             const extensionDiagnostics = [];
+             const extensionErrors = this.session.resourceLoader.getExtensions().errors;
+@@ -875,14 +947,14 @@ export class InteractiveMode {
+             extensionDiagnostics.push(...shortcutDiagnostics);
+             if (extensionDiagnostics.length > 0) {
+                 const warningLines = this.formatDiagnostics(extensionDiagnostics, sourceInfos);
+-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+             const themeDiagnostics = themesResult.diagnostics;
+             if (themeDiagnostics.length > 0) {
+                 const warningLines = this.formatDiagnostics(themeDiagnostics, sourceInfos);
+-                this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
++                addChatChild(this, new Spacer(1));
+             }
+         }
+     }
+@@ -939,7 +1011,7 @@ export class InteractiveMode {
+                     if (result.cancelled) {
+                         return { cancelled: true };
+                     }
+-                    this.chatContainer.clear();
++                    clearChat(this);
+                     this.renderInitialMessages();
+                     if (result.editorText && !this.editor.getText().trim()) {
+                         this.editor.setText(result.editorText);
+@@ -1010,7 +1082,7 @@ export class InteractiveMode {
+         process.exit(1);
+     }
+     renderCurrentSessionState() {
+-        this.chatContainer.clear();
++        clearChat(this);
+         this.pendingMessagesContainer.clear();
+         this.compactionQueuedMessages = [];
+         this.streamingComponent = undefined;
+@@ -1598,7 +1670,7 @@ export class InteractiveMode {
+     showExtensionError(extensionPath, error, stack) {
+         const errorMsg = `Extension "${extensionPath}" error: ${error}`;
+         const errorText = new Text(theme.fg("error", errorMsg), 1, 0);
+-        this.chatContainer.addChild(errorText);
++        addChatChild(this, errorText);
+         if (stack) {
+             // Show stack trace in dim color, indented
+             const stackLines = stack
+@@ -1607,7 +1679,7 @@ export class InteractiveMode {
+                 .map((line) => theme.fg("dim", `  ${line.trim()}`))
+                 .join("\n");
+             if (stackLines) {
+-                this.chatContainer.addChild(new Text(stackLines, 1, 0));
++                addChatChild(this, new Text(stackLines, 1, 0));
+             }
+         }
+         this.ui.requestRender();
+@@ -1921,8 +1993,8 @@ export class InteractiveMode {
+                 else if (event.message.role === "assistant") {
+                     this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel);
+                     this.streamingMessage = event.message;
+-                    this.chatContainer.addChild(this.streamingComponent);
+                     this.streamingComponent.updateContent(this.streamingMessage);
++                    addChatChild(this, this.streamingComponent);
+                     this.ui.requestRender();
+                 }
+                 break;
+@@ -1930,6 +2002,7 @@ export class InteractiveMode {
+                 if (this.streamingComponent && event.message.role === "assistant") {
+                     this.streamingMessage = event.message;
+                     this.streamingComponent.updateContent(this.streamingMessage);
++                    refreshLastVisibleChatChildKind(this, this.streamingComponent);
+                     for (const content of this.streamingMessage.content) {
+                         if (content.type === "toolCall") {
+                             if (!this.pendingTools.has(content.id)) {
+@@ -1937,7 +2010,7 @@ export class InteractiveMode {
+                                     showImages: this.settingsManager.getShowImages(),
+                                 }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+                                 component.setExpanded(this.toolOutputExpanded);
+-                                this.chatContainer.addChild(component);
++                                addToolExecutionToChat(this, component);
+                                 this.pendingTools.set(content.id, component);
+                             }
+                             else {
+@@ -1966,6 +2039,7 @@ export class InteractiveMode {
+                         this.streamingMessage.errorMessage = errorMessage;
+                     }
+                     this.streamingComponent.updateContent(this.streamingMessage);
++                    refreshLastVisibleChatChildKind(this, this.streamingComponent);
+                     if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
+                         if (!errorMessage) {
+                             errorMessage = this.streamingMessage.errorMessage || "Error";
+@@ -1997,7 +2071,7 @@ export class InteractiveMode {
+                         showImages: this.settingsManager.getShowImages(),
+                     }, this.getRegisteredToolDefinition(event.toolName), this.ui, this.sessionManager.getCwd());
+                     component.setExpanded(this.toolOutputExpanded);
+-                    this.chatContainer.addChild(component);
++                    addToolExecutionToChat(this, component);
+                     this.pendingTools.set(event.toolCallId, component);
+                 }
+                 component.markExecutionStarted();
+@@ -2028,7 +2102,7 @@ export class InteractiveMode {
+                     this.statusContainer.clear();
+                 }
+                 if (this.streamingComponent) {
+-                    this.chatContainer.removeChild(this.streamingComponent);
++                    removeChatChild(this, this.streamingComponent);
+                     this.streamingComponent = undefined;
+                     this.streamingMessage = undefined;
+                 }
+@@ -2071,7 +2145,7 @@ export class InteractiveMode {
+                     }
+                 }
+                 else if (event.result) {
+-                    this.chatContainer.clear();
++                    clearChat(this);
+                     this.rebuildChatFromMessages();
+                     this.addMessageToChat(createCompactionSummaryMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));
+                     this.footer.invalidate();
+@@ -2081,8 +2155,8 @@ export class InteractiveMode {
+                         this.showError(event.errorMessage);
+                     }
+                     else {
+-                        this.chatContainer.addChild(new Spacer(1));
+-                        this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
++                        addChatChild(this, new Spacer(1));
++                        addChatChild(this, new Text(theme.fg("error", event.errorMessage), 1, 0));
+                     }
+                 }
+                 void this.flushCompactionQueue({ willRetry: event.willRetry });
+@@ -2150,8 +2224,8 @@ export class InteractiveMode {
+         }
+         const spacer = new Spacer(1);
+         const text = new Text(theme.fg("dim", message), 1, 0);
+-        this.chatContainer.addChild(spacer);
+-        this.chatContainer.addChild(text);
++        addChatChild(this, spacer);
++        addChatChild(this, text);
+         this.lastStatusSpacer = spacer;
+         this.lastStatusText = text;
+         this.ui.requestRender();
+@@ -2164,7 +2238,7 @@ export class InteractiveMode {
+                     component.appendOutput(message.output);
+                 }
+                 component.setComplete(message.exitCode, message.cancelled, message.truncated ? { truncated: true } : undefined, message.fullOutputPath);
+-                this.chatContainer.addChild(component);
++                addChatChild(this, component);
+                 break;
+             }
+             case "custom": {
+@@ -2172,22 +2246,22 @@ export class InteractiveMode {
+                     const renderer = this.session.extensionRunner?.getMessageRenderer(message.customType);
+                     const component = new CustomMessageComponent(message, renderer, this.getMarkdownThemeWithSettings());
+                     component.setExpanded(this.toolOutputExpanded);
+-                    this.chatContainer.addChild(component);
++                    addChatChild(this, component);
+                 }
+                 break;
+             }
+             case "compactionSummary": {
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Spacer(1));
+                 const component = new CompactionSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
+                 component.setExpanded(this.toolOutputExpanded);
+-                this.chatContainer.addChild(component);
++                addChatChild(this, component);
+                 break;
+             }
+             case "branchSummary": {
+-                this.chatContainer.addChild(new Spacer(1));
++                addChatChild(this, new Spacer(1));
+                 const component = new BranchSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
+                 component.setExpanded(this.toolOutputExpanded);
+-                this.chatContainer.addChild(component);
++                addChatChild(this, component);
+                 break;
+             }
+             case "user": {
+@@ -2196,19 +2270,19 @@ export class InteractiveMode {
+                     const skillBlock = parseSkillBlock(textContent);
+                     if (skillBlock) {
+                         // Render skill block (collapsible)
+-                        this.chatContainer.addChild(new Spacer(1));
++                        addChatChild(this, new Spacer(1));
+                         const component = new SkillInvocationMessageComponent(skillBlock, this.getMarkdownThemeWithSettings());
+                         component.setExpanded(this.toolOutputExpanded);
+-                        this.chatContainer.addChild(component);
++                        addChatChild(this, component);
+                         // Render user message separately if present
+                         if (skillBlock.userMessage) {
+                             const userComponent = new UserMessageComponent(skillBlock.userMessage, this.getMarkdownThemeWithSettings());
+-                            this.chatContainer.addChild(userComponent);
++                            addChatChild(this, userComponent);
+                         }
+                     }
+                     else {
+                         const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
+-                        this.chatContainer.addChild(userComponent);
++                        addChatChild(this, userComponent);
+                     }
+                     if (options?.populateHistory) {
+                         this.editor.addToHistory?.(textContent);
+@@ -2218,7 +2292,7 @@ export class InteractiveMode {
+             }
+             case "assistant": {
+                 const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock, this.getMarkdownThemeWithSettings(), this.hiddenThinkingLabel);
+-                this.chatContainer.addChild(assistantComponent);
++                addChatChild(this, assistantComponent);
+                 break;
+             }
+             case "toolResult": {
+@@ -2251,7 +2325,7 @@ export class InteractiveMode {
+                     if (content.type === "toolCall") {
+                         const component = new ToolExecutionComponent(content.name, content.id, content.arguments, { showImages: this.settingsManager.getShowImages() }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+                         component.setExpanded(this.toolOutputExpanded);
+-                        this.chatContainer.addChild(component);
++                        addToolExecutionToChat(this, component);
+                         if (message.stopReason === "aborted" || message.stopReason === "error") {
+                             let errorMessage;
+                             if (message.stopReason === "aborted") {
+@@ -2312,7 +2386,7 @@ export class InteractiveMode {
+         });
+     }
+     rebuildChatFromMessages() {
+-        this.chatContainer.clear();
++        clearChat(this);
+         const context = this.sessionManager.buildSessionContext();
+         this.renderSessionContext(context);
+     }
+@@ -2482,13 +2556,13 @@ export class InteractiveMode {
+         this.hideThinkingBlock = !this.hideThinkingBlock;
+         this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
+         // Rebuild chat from session messages
+-        this.chatContainer.clear();
++        clearChat(this);
+         this.rebuildChatFromMessages();
+         // If streaming, re-add the streaming component with updated visibility and re-render
+         if (this.streamingComponent && this.streamingMessage) {
+             this.streamingComponent.setHideThinkingBlock(this.hideThinkingBlock);
+             this.streamingComponent.updateContent(this.streamingMessage);
+-            this.chatContainer.addChild(this.streamingComponent);
++            addChatChild(this, this.streamingComponent);
+         }
+         this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
+     }
+@@ -2542,13 +2616,13 @@ export class InteractiveMode {
+         this.ui.requestRender();
+     }
+     showError(errorMessage) {
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
+         this.ui.requestRender();
+     }
+     showWarning(warningMessage) {
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+         this.ui.requestRender();
+     }
+     showNewVersionNotification(newVersion) {
+@@ -2556,20 +2630,20 @@ export class InteractiveMode {
+         const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
+         const changelogUrl = theme.fg("accent", "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md");
+         const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+-        this.chatContainer.addChild(new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`, 1, 0));
+-        this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new DynamicBorder((text) => theme.fg("warning", text)));
++        addChatChild(this, new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`, 1, 0));
++        addChatChild(this, new DynamicBorder((text) => theme.fg("warning", text)));
+         this.ui.requestRender();
+     }
+     showPackageUpdateNotification(packages) {
+         const action = theme.fg("accent", `${APP_NAME} update`);
+         const updateInstruction = theme.fg("muted", "Package updates are available. Run ") + action;
+         const packageLines = packages.map((pkg) => `- ${pkg}`).join("\n");
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+-        this.chatContainer.addChild(new Text(`${theme.bold(theme.fg("warning", "Package Updates Available"))}\n${updateInstruction}\n${theme.fg("muted", "Packages:")}\n${packageLines}`, 1, 0));
+-        this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new DynamicBorder((text) => theme.fg("warning", text)));
++        addChatChild(this, new Text(`${theme.bold(theme.fg("warning", "Package Updates Available"))}\n${updateInstruction}\n${theme.fg("muted", "Packages:")}\n${packageLines}`, 1, 0));
++        addChatChild(this, new DynamicBorder((text) => theme.fg("warning", text)));
+         this.ui.requestRender();
+     }
+     /**
+@@ -2734,7 +2808,7 @@ export class InteractiveMode {
+     flushPendingBashComponents() {
+         for (const component of this.pendingBashComponents) {
+             this.pendingMessagesContainer.removeChild(component);
+-            this.chatContainer.addChild(component);
++            addChatChild(this, component);
+         }
+         this.pendingBashComponents = [];
+     }
+@@ -2842,7 +2916,7 @@ export class InteractiveMode {
+                             child.setHideThinkingBlock(hidden);
+                         }
+                     }
+-                    this.chatContainer.clear();
++                    clearChat(this);
+                     this.rebuildChatFromMessages();
+                 },
+                 onCollapseChangelogChange: (collapsed) => {
+@@ -3139,7 +3213,7 @@ export class InteractiveMode {
+                     this.defaultEditor.onEscape = () => {
+                         this.session.abortBranchSummary();
+                     };
+-                    this.chatContainer.addChild(new Spacer(1));
++                    addChatChild(this, new Spacer(1));
+                     summaryLoader = new Loader(this.ui, (spinner) => theme.fg("accent", spinner), (text) => theme.fg("muted", text), `Summarizing branch... (${keyText("app.interrupt")} to cancel)`);
+                     this.statusContainer.addChild(summaryLoader);
+                     this.ui.requestRender();
+@@ -3160,7 +3234,7 @@ export class InteractiveMode {
+                         return;
+                     }
+                     // Update UI
+-                    this.chatContainer.clear();
++                    clearChat(this);
+                     this.renderInitialMessages();
+                     if (result.editorText && !this.editor.getText().trim()) {
+                         this.editor.setText(result.editorText);
+@@ -3601,8 +3675,8 @@ export class InteractiveMode {
+         if (!name) {
+             const currentName = this.sessionManager.getSessionName();
+             if (currentName) {
+-                this.chatContainer.addChild(new Spacer(1));
+-                this.chatContainer.addChild(new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
++                addChatChild(this, new Spacer(1));
++                addChatChild(this, new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
+             }
+             else {
+                 this.showWarning("Usage: /name <name>");
+@@ -3612,8 +3686,8 @@ export class InteractiveMode {
+         }
+         this.sessionManager.appendSessionInfo(name);
+         this.updateTerminalTitle();
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
+         this.ui.requestRender();
+     }
+     handleSessionCommand() {
+@@ -3645,8 +3719,8 @@ export class InteractiveMode {
+             info += `\n${theme.bold("Cost")}\n`;
+             info += `${theme.fg("dim", "Total:")} ${stats.cost.toFixed(4)}`;
+         }
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Text(info, 1, 0));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Text(info, 1, 0));
+         this.ui.requestRender();
+     }
+     handleChangelogCommand() {
+@@ -3658,12 +3732,12 @@ export class InteractiveMode {
+                 .map((e) => e.content)
+                 .join("\n\n")
+             : "No changelog entries found.";
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new DynamicBorder());
+-        this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
+-        this.chatContainer.addChild(new DynamicBorder());
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new DynamicBorder());
++        addChatChild(this, new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
++        addChatChild(this, new DynamicBorder());
+         this.ui.requestRender();
+     }
+     /**
+@@ -3793,12 +3867,12 @@ export class InteractiveMode {
+                 }
+             }
+         }
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new DynamicBorder());
+-        this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+-        this.chatContainer.addChild(new DynamicBorder());
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new DynamicBorder());
++        addChatChild(this, new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
++        addChatChild(this, new DynamicBorder());
+         this.ui.requestRender();
+     }
+     async handleClearCommand() {
+@@ -3814,8 +3888,8 @@ export class InteractiveMode {
+             }
+             await this.handleRuntimeSessionChange();
+             this.renderCurrentSessionState();
+-            this.chatContainer.addChild(new Spacer(1));
+-            this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
++            addChatChild(this, new Spacer(1));
++            addChatChild(this, new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+             this.ui.requestRender();
+         }
+         catch (error) {
+@@ -3845,18 +3919,18 @@ export class InteractiveMode {
+         ].join("\n");
+         fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
+         fs.writeFileSync(debugLogPath, debugData);
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1));
+         this.ui.requestRender();
+     }
+     handleArminSaysHi() {
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new ArminComponent(this.ui));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new ArminComponent(this.ui));
+         this.ui.requestRender();
+     }
+     handleDaxnuts() {
+-        this.chatContainer.addChild(new Spacer(1));
+-        this.chatContainer.addChild(new DaxnutsComponent(this.ui));
++        addChatChild(this, new Spacer(1));
++        addChatChild(this, new DaxnutsComponent(this.ui));
+         this.ui.requestRender();
+     }
+     checkDaxnutsEasterEgg(model) {
+@@ -3885,7 +3959,7 @@ export class InteractiveMode {
+                 this.pendingBashComponents.push(this.bashComponent);
+             }
+             else {
+-                this.chatContainer.addChild(this.bashComponent);
++                addChatChild(this, this.bashComponent);
+             }
+             // Show output and complete
+             if (result.output) {
+@@ -3908,7 +3982,7 @@ export class InteractiveMode {
+         }
+         else {
+             // Show in chat immediately when agent is idle
+-            this.chatContainer.addChild(this.bashComponent);
++            addChatChild(this, this.bashComponent);
+         }
+         this.ui.requestRender();
+         try {

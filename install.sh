@@ -241,6 +241,7 @@ sync_skills_directory() {
   local skills_source="$REPO_DIR/skills"
   local agent_skills_target="$OPENCODE_CONFIG/skills"
   local codex_skills_target="$CODEX_CONFIG/skills"
+  local pi_skills_target="$PI_CONFIG/skills"
   local skills_config="$REPO_DIR/skills.json"
   local use_enabled_filter=0
   local enabled_lookup="|"
@@ -316,6 +317,7 @@ sync_skills_directory() {
 
   sync_skills_to_target "$agent_skills_target" "OpenCode"
   sync_skills_to_target "$codex_skills_target" "Codex"
+  sync_skills_to_target "$pi_skills_target" "Pi"
 }
 
 sync_codex_prompts_directory() {
@@ -461,6 +463,7 @@ main() {
   if [[ -d "$REPO_DIR/skills" ]]; then
     echo "  - skills/ → $OPENCODE_CONFIG/skills/"
     echo "  - skills/ → $CODEX_CONFIG/skills/"
+    echo "  - skills/ → $PI_CONFIG/skills/"
   fi
   if [[ -d "$REPO_DIR/.codex/prompts" || -d "$REPO_DIR/.claude/commands" ]]; then
     echo "  - prompts/ → ~/.codex/prompts/"

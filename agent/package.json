@@ -2,27 +2,45 @@
   "name": "@shekohex/agent",
   "version": "0.65.2",
   "private": true,
+  "author": {
+    "name": "Shady Khalifa",
+    "email": "dev+npm@shadykhalifa.me",
+    "url": "https://shadykhalifa.me"
+  },
   "type": "module",
   "bin": {
-    "pi": "./dist/cli.js"
+    "pi": "./bin/pi.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs",
+    "test": "npm run test:tool-preview && npm run test:harness",
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
     "prepare": "npm run build",
     "postinstall": "node ./scripts/postinstall.mjs",
     "postprepare": "node ./scripts/postinstall.mjs",
-    "pi": "PI_SKIP_VERSION_CHECK=1 tsx src/cli.ts"
+    "pi": "PI_SKIP_VERSION_CHECK=1 tsx src/cli.ts",
+    "preview:tools": "node --import tsx ./scripts/preview-tools.ts --watch",
+    "preview:tools:once": "node --import tsx ./scripts/preview-tools.ts",
+    "preview:tools:watch": "node --import tsx ./scripts/preview-tools.ts --watch",
+    "patch:deps": "patch-package",
+    "test:tool-preview": "node --import tsx --test ./test/tool-preview.test.ts",
+    "test:harness": "node --import tsx --test ./test/harness.test.ts"
   },
   "files": [
+    "bin",
     "dist",
+    "patches",
     "scripts"
   ],
   "dependencies": {
     "@mariozechner/pi-coding-agent": "0.65.2",
     "@sinclair/typebox": "^0.34.41",
-    "diff": "^8.0.4"
+    "beautiful-mermaid": "^1.1.3",
+    "diff": "^8.0.4",
+    "mermaid": "^11.14.0",
+    "patch-package": "8.0.1"
   },
   "devDependencies": {
+    "@marcfargas/pi-test-harness": "^0.5.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },

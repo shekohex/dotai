@@ -16,7 +16,7 @@ export const defaultSettings = {
   defaultThinkingLevel: "high",
   transport: "auto",
   quietStartup: true,
-  editorPaddingX: 1,
+  editorPaddingX: 0,
   collapseChangelog: true,
   lastChangelogVersion: packageJson.version,
   theme: "catppuccin-mocha",

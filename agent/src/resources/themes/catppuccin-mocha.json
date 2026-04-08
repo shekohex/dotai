@@ -45,7 +45,7 @@
     "muted": "subtext0",
     "dim": "overlay1",
     "text": "text",
-    "thinkingText": "subtext1",
+    "thinkingText": "overlay1",
 
     "selectedBg": "surface1",
     "userMessageBg": "surface0",

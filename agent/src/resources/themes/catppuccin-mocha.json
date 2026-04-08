@@ -29,9 +29,9 @@
     "mantle": "#181825",
     "crust": "#11111b",
     "customMessageBg": "#302d41",
-    "toolPendingBg": "#26273a",
-    "toolSuccessBg": "#243025",
-    "toolErrorBg": "#3a2734",
+    "toolPendingBg": "#232537",
+    "toolSuccessBg": "#242638",
+    "toolErrorBg": "#342735",
     "exportInfoBg": "#3a3348"
   },
   "colors": {

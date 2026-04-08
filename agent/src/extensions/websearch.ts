@@ -17,6 +17,8 @@ const COLLAPSED_MAX_CHARS = 900;
 const COLLAPSED_ERROR_MAX_LINES = 8;
 const COLLAPSED_ERROR_MAX_CHARS = 1200;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const TOOL_TEXT_PADDING_X = 1;
+const TOOL_TEXT_PADDING_Y = 0;
 
 type GroundingChunk = {
   web?: {
@@ -112,7 +114,7 @@ export const webSearchTool = defineTool({
       text += theme.fg("dim", ` (${meta.join(" • ")})`);
     }
 
-    return new Text(text, 0, 0);
+    return new Text(text, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
     const state = context.state as { interval?: ReturnType<typeof setInterval>; frame?: number };
@@ -138,7 +140,7 @@ export const webSearchTool = defineTool({
       if (context.args.query) {
         text += `\n${theme.fg("dim", context.args.query)}`;
       }
-      return new Text(text, 0, 0);
+      return new Text(text, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
     }
 
     const details = result.details as WebSearchDetails | undefined;
@@ -160,7 +162,7 @@ export const webSearchTool = defineTool({
     if (context.isError) {
       const errorText = answer || "Web search failed.";
       const preview = truncateForDisplay(errorText, COLLAPSED_ERROR_MAX_LINES, COLLAPSED_ERROR_MAX_CHARS);
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text = createTextComponent(context.lastComponent);
       const lines = [theme.fg("error", "↳ search failed")];
       if (preview.text) {
         lines.push(theme.fg("error", expanded ? errorText : preview.text));
@@ -173,7 +175,7 @@ export const webSearchTool = defineTool({
 
     if (!expanded) {
       const preview = truncateForDisplay(answer || "No answer returned.", COLLAPSED_MAX_LINES, COLLAPSED_MAX_CHARS);
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text = createTextComponent(context.lastComponent);
       const lines = [header];
       if (preview.text) {
         lines.push(theme.fg("toolOutput", preview.text));
@@ -188,9 +190,9 @@ export const webSearchTool = defineTool({
     const markdown = (details?.markdown ?? buildExpandedMarkdown(answer || "No answer returned.", details)).trim();
     const container = (context.lastComponent as Container | undefined) ?? new Container();
     container.clear();
-    container.addChild(new Text(header, 0, 0));
+    container.addChild(new Text(header, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
     container.addChild(new Spacer(1));
-    container.addChild(new Markdown(markdown, 0, 0, getMarkdownTheme()));
+    container.addChild(new Markdown(markdown, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y, getMarkdownTheme()));
     return container;
   },
   async execute(_toolCallId, params, signal) {
@@ -502,4 +504,8 @@ function escapeMarkdownLinkText(text: string): string {
 
 function escapeMarkdownText(text: string): string {
   return text.replace(/([\\`*_{}\[\]()#+\-.!|>])/g, "\\$1");
+}
+
+function createTextComponent(lastComponent: unknown): Text {
+  return (lastComponent as Text | undefined) ?? new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
 }

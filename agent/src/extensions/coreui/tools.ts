@@ -1,6 +1,10 @@
 import {
+  type AgentToolResult,
+  type ToolRenderResultOptions,
+  bashToolDefinition,
   editToolDefinition,
   keyHint,
+  renderDiff,
   readToolDefinition,
   writeToolDefinition,
   type ExtensionAPI,
@@ -13,7 +17,57 @@ type ToolPathArgs = {
   file_path?: unknown;
   offset?: unknown;
   limit?: unknown;
+  command?: unknown;
+  timeout?: unknown;
+  content?: unknown;
+  edits?: unknown;
 };
+
+type ToolPhase = "pending" | "success" | "error";
+
+type ToolVerbs = {
+  pending: string;
+  success: string;
+  error: string;
+};
+
+type ToolTheme = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[1];
+type BaseRenderContext = {
+  cwd: string;
+  isPartial: boolean;
+  isError: boolean;
+  lastComponent: unknown;
+};
+type ReadCallArgs = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[0];
+type ReadCallContext = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[2];
+type ReadResult = Parameters<NonNullable<typeof readToolDefinition.renderResult>>[0];
+type ReadResultContext = Parameters<NonNullable<typeof readToolDefinition.renderResult>>[3];
+type BashCallArgs = Parameters<NonNullable<typeof bashToolDefinition.renderCall>>[0];
+type BashCallContext = Parameters<NonNullable<typeof bashToolDefinition.renderCall>>[2];
+type BashResult = Parameters<NonNullable<typeof bashToolDefinition.renderResult>>[0];
+type BashResultOptions = Parameters<NonNullable<typeof bashToolDefinition.renderResult>>[1];
+type BashResultContext = Parameters<NonNullable<typeof bashToolDefinition.renderResult>>[3];
+type EditCallArgs = Parameters<NonNullable<typeof editToolDefinition.renderCall>>[0];
+type EditCallContext = Parameters<NonNullable<typeof editToolDefinition.renderCall>>[2];
+type EditResult = Parameters<NonNullable<typeof editToolDefinition.renderResult>>[0];
+type EditResultOptions = Parameters<NonNullable<typeof editToolDefinition.renderResult>>[1];
+type EditResultContext = Parameters<NonNullable<typeof editToolDefinition.renderResult>>[3];
+type WriteCallArgs = Parameters<NonNullable<typeof writeToolDefinition.renderCall>>[0];
+type WriteCallContext = Parameters<NonNullable<typeof writeToolDefinition.renderCall>>[2];
+type ToolResult = {
+  content: Array<{ type: string; text?: string }>;
+  details?: unknown;
+};
+
+type BashRenderState = {
+  startedAt?: number;
+  endedAt?: number;
+  interval?: NodeJS.Timeout;
+};
+
+const BASH_OUTPUT_LINE_LIMIT = 80;
+const TOOL_TEXT_PADDING_X = 0;
+const TOOL_TEXT_PADDING_Y = 0;
 
 export function registerCoreUIToolOverrides(pi: ExtensionAPI): (activeToolNames: string[]) => void {
   const registeredToolNames = new Set<string>();
@@ -24,6 +78,11 @@ export function registerCoreUIToolOverrides(pi: ExtensionAPI): (activeToolNames:
     if (activeTools.has(readToolDefinition.name) && !registeredToolNames.has(readToolDefinition.name)) {
       registerReadToolOverride(pi);
       registeredToolNames.add(readToolDefinition.name);
+    }
+
+    if (activeTools.has(bashToolDefinition.name) && !registeredToolNames.has(bashToolDefinition.name)) {
+      registerBashToolOverride(pi);
+      registeredToolNames.add(bashToolDefinition.name);
     }
 
     if (activeTools.has(editToolDefinition.name) && !registeredToolNames.has(editToolDefinition.name)) {
@@ -38,87 +97,265 @@ export function registerCoreUIToolOverrides(pi: ExtensionAPI): (activeToolNames:
   };
 }
 
+function registerBashToolOverride(pi: ExtensionAPI): void {
+  pi.registerTool(createBashToolOverrideDefinition());
+}
+
 function registerReadToolOverride(pi: ExtensionAPI): void {
-  pi.registerTool({
-    ...readToolDefinition,
-    renderCall(args, theme, context) {
-      const path = shortenPathForTool(readPathArg(args), context.cwd);
-      const text =
-        `${theme.fg("toolTitle", theme.bold("read"))} ` +
-        `${theme.fg("accent", path || "...")}` +
-        formatReadRangeSuffix(theme, args.offset, args.limit);
-
-      return new Text(text, 0, 0);
-    },
-    renderResult(result, options, theme, context) {
-      if (!options.expanded) {
-        return new Text(
-          theme.fg("dim", `↳ ${keyHint("app.tools.expand", "to expand")}`),
-          0,
-          0,
-        );
-      }
-
-      const textContent = result.content.find((part) => part.type === "text");
-      if (!textContent || textContent.type !== "text") {
-        return new Text("", 0, 0);
-      }
-
-      return delegateReadResult(result, options, theme, context, textContent.text);
-    },
-  });
+  pi.registerTool(createReadToolOverrideDefinition());
 }
 
 function registerEditToolOverride(pi: ExtensionAPI): void {
-  pi.registerTool({
-    ...editToolDefinition,
-    renderCall(args, theme, context) {
-      if (context.expanded && editToolDefinition.renderCall) {
-        return editToolDefinition.renderCall(args, theme, context);
-      }
-
-      return renderCompactPathToolCall("edit", readPathArg(args), theme, context.cwd);
-    },
-    renderResult(result, options, theme, context) {
-      if (!options.expanded) {
-        return new Text("", 0, 0);
-      }
-
-      if (editToolDefinition.renderResult) {
-        return editToolDefinition.renderResult(result, options, theme, context);
-      }
-
-      return new Text("", 0, 0);
-    },
-  });
+  pi.registerTool(createEditToolOverrideDefinition());
 }
 
 function registerWriteToolOverride(pi: ExtensionAPI): void {
-  pi.registerTool({
-    ...writeToolDefinition,
-    renderCall(args, theme, context) {
-      if (context.expanded && writeToolDefinition.renderCall) {
-        return writeToolDefinition.renderCall(args, theme, context);
-      }
-
-      return renderCompactPathToolCall("write", readPathArg(args), theme, context.cwd);
-    },
-  });
+  pi.registerTool(createWriteToolOverrideDefinition());
 }
 
-function renderCompactPathToolCall(
-  toolName: "edit" | "write",
-  rawPath: string,
-  theme: Parameters<NonNullable<typeof readToolDefinition.renderCall>>[1],
-  cwd: string,
-): Text {
-  const path = shortenPathForTool(rawPath, cwd);
-  const text =
-    `${theme.fg("toolTitle", theme.bold(toolName))} ` +
-    `${theme.fg("accent", path || "...")}` +
-    `\n${theme.fg("dim", `↳ ${keyHint("app.tools.expand", "to expand")}`)}`;
+export function createReadToolOverrideDefinition() {
+  return {
+    ...readToolDefinition,
+    renderCall(args: ReadCallArgs, theme: ToolTheme, context: ReadCallContext) {
+      return renderStatusPathToolCall(
+        { pending: "reading", success: "read", error: "read" },
+        readPathArg(args),
+        theme,
+        context,
+        formatReadRangeSuffix(theme, args.offset, args.limit),
+      );
+    },
+    renderResult(result: ReadResult, options: ToolRenderResultOptions, theme: ToolTheme, context: ReadResultContext) {
+      const textContent = getTextContent(result);
 
-  return new Text(text, 0, 0);
+      if (context.isError) {
+        return renderToolError(textContent || "failed to read", theme, context.lastComponent);
+      }
+
+      if (options.isPartial) {
+        return renderCollapsedMeta(
+          summarizeReadResult(result, true),
+          theme,
+          context.lastComponent,
+        );
+      }
+
+      if (!options.expanded) {
+        return renderCollapsedMeta(
+          appendExpandHint(theme, summarizeReadResult(result, false)),
+          theme,
+          context.lastComponent,
+        );
+      }
+
+      if (!textContent) {
+        return createTextComponent(context.lastComponent, "");
+      }
+
+      return delegateReadResult(result, options, theme, context, textContent);
+    },
+  };
+}
+
+export function createBashToolOverrideDefinition() {
+  return {
+    ...bashToolDefinition,
+    renderCall(args: BashCallArgs, theme: ToolTheme, context: BashCallContext) {
+      const state = syncBashRenderState(context, context.isPartial);
+      const command = typeof args.command === "string" ? args.command.trim() : "";
+      const timeout = typeof args.timeout === "number" ? args.timeout : undefined;
+      const elapsed = getBashElapsed(state);
+      const suffix = context.isPartial
+        ? timeout !== undefined
+          ? theme.fg("muted", ` · (${formatDurationHuman(timeout * 1000)})`)
+          : ""
+        : elapsed !== undefined
+          ? theme.fg("muted", ` · ${formatDurationHuman(elapsed)}`)
+          : "";
+      const text = formatBashCallPreview(command || "...", theme, suffix, context.expanded);
+      return createTextComponent(context.lastComponent, text);
+    },
+    renderResult(result: BashResult, options: BashResultOptions, theme: ToolTheme, context: BashResultContext) {
+      const state = syncBashRenderState(context, options.isPartial);
+      const elapsedMs = getBashElapsed(state);
+      const showResultExpandHint = shouldShowBashResultExpandHint(context.args);
+      if (options.isPartial) {
+        const output = getTextContent(result);
+        const bashOutput = summarizeBashOutput(output, theme);
+        return renderStreamingPreview(
+          bashOutput.renderedText,
+          theme,
+          context.lastComponent,
+          {
+            expanded: options.expanded,
+            footer: `${summarizeLineCount(bashOutput.lineCount)} so far${elapsedMs !== undefined ? ` (${formatDurationHuman(elapsedMs)})` : ""}`,
+            expandHint: showResultExpandHint && !options.expanded,
+          },
+        );
+      }
+
+      const summary = summarizeBashResult(result, false, theme, elapsedMs);
+      const output = getTextContent(result);
+
+      if (context.isError) {
+        const bashOutput = summarizeBashOutput(output, theme);
+        return renderStreamingPreview(
+          bashOutput.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT),
+          theme,
+          context.lastComponent,
+          {
+            expanded: options.expanded,
+            footer: summarizeBashFooter(result, theme),
+            expandHint: showResultExpandHint && !options.expanded,
+            tailLines: 5,
+          },
+        );
+      }
+
+      if (options.expanded) {
+        const bashOutput = summarizeBashOutput(output, theme);
+        return renderStreamingPreview(
+          bashOutput.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT),
+          theme,
+          context.lastComponent,
+          {
+            expanded: true,
+            footer: elapsedMs !== undefined ? `Took ${formatDurationHuman(elapsedMs)}` : undefined,
+          },
+        );
+      }
+
+      if (!summary) {
+        return createTextComponent(context.lastComponent, "");
+      }
+
+      return createTextComponent(context.lastComponent, summary ? `${theme.fg("dim", "↳ ")}${summary}` : "");
+    },
+  };
+}
+
+export function createEditToolOverrideDefinition() {
+  return {
+    ...editToolDefinition,
+    renderCall(args: EditCallArgs, theme: ToolTheme, context: EditCallContext) {
+      return renderStatusPathToolCall(
+        { pending: "editing", success: "edited", error: "edit" },
+        readPathArg(args),
+        theme,
+        context,
+      );
+    },
+    renderResult(result: EditResult, options: EditResultOptions, theme: ToolTheme, context: EditResultContext) {
+      const textContent = getTextContent(result);
+
+      if (context.isError) {
+        return renderToolError(textContent || "failed to edit", theme, context.lastComponent);
+      }
+
+      if (options.isPartial) {
+        const diff = getDiffText(result.details);
+        const stats = diff ? summarizeDiff(diff) : undefined;
+        return renderStreamingPreview(
+          diff ? renderDiff(diff, { filePath: readPathArg(context.args) || undefined }) : styleToolOutput(getTextContent(result), theme),
+          theme,
+          context.lastComponent,
+          {
+            expanded: options.expanded,
+            footer: stats ? formatDiffStats(theme, stats.additions, stats.deletions) : summarizeEditProgress(context.args),
+            expandHint: !options.expanded,
+          },
+        );
+      }
+
+      if (!options.expanded) {
+        const summary = renderEditSummary(result, theme);
+        return createTextComponent(context.lastComponent, summary ? `${theme.fg("dim", "↳ ")}${summary}` : "");
+      }
+
+      const diff = getDiffText(result.details);
+      if (diff) {
+        return createTextComponent(context.lastComponent, `\n${renderDiff(diff, { filePath: readPathArg(context.args) || undefined })}`);
+      }
+
+      if (editToolDefinition.renderResult) {
+        return editToolDefinition.renderResult(result, options, theme, {
+          ...context,
+          lastComponent: createTextComponent(context.lastComponent, ""),
+        });
+      }
+
+      return createTextComponent(context.lastComponent, "");
+    },
+  };
+}
+
+export function createWriteToolOverrideDefinition() {
+  return {
+    ...writeToolDefinition,
+    renderCall(args: WriteCallArgs, theme: ToolTheme, context: WriteCallContext) {
+      return renderStatusPathToolCall(
+        { pending: "writing", success: "written", error: "write" },
+        readPathArg(args),
+        theme,
+        context,
+        formatLineCountSuffix(args.content, theme),
+      );
+    },
+    renderResult(
+      result: AgentToolResult<undefined>,
+      options: ToolRenderResultOptions,
+      theme: ToolTheme,
+      context: WriteCallContext,
+    ) {
+      const textContent = getTextContent(result);
+
+      if (context.isError) {
+        return renderToolError(textContent || "failed to write", theme, context.lastComponent);
+      }
+
+      if (options.isPartial) {
+        const streamedText = getTextContent(result) || readContentArg(context.args);
+        return renderStreamingPreview(
+          styleToolOutput(streamedText, theme),
+          theme,
+          context.lastComponent,
+          {
+            expanded: options.expanded,
+            footer: `${summarizeLineCount(countTextLines(streamedText))} so far`,
+            expandHint: !options.expanded,
+          },
+        );
+      }
+
+      return createTextComponent(context.lastComponent, "");
+    },
+  };
+}
+
+function renderStatusPathToolCall(
+  verbs: ToolVerbs,
+  rawPath: string,
+  theme: ToolTheme,
+  context: BaseRenderContext,
+  detail = "",
+): Text {
+  const path = shortenPathForTool(rawPath, context.cwd);
+  return renderStatusLine(verbs, path || "...", detail, theme, context);
+}
+
+function renderStatusLine(
+  verbs: ToolVerbs,
+  subject: string,
+  detail: string,
+  theme: ToolTheme,
+  context: BaseRenderContext,
+): Text {
+  const phase = getToolPhase(context);
+  const status = formatToolStatus(theme, phase, verbs);
+  const subjectColor = phase === "error" ? "text" : "accent";
+  const text = `${status} ${theme.fg(subjectColor, subject)}${detail}`;
+
+  return createTextComponent(context.lastComponent, text);
 }
 
 function delegateReadResult(
@@ -129,10 +366,280 @@ function delegateReadResult(
   fallbackText: string,
 ) {
   if (readToolDefinition.renderResult) {
-    return readToolDefinition.renderResult(result, options, theme, context);
+    return readToolDefinition.renderResult(result, options, theme, {
+      ...context,
+      lastComponent: createTextComponent(context.lastComponent, ""),
+    });
   }
 
-  return new Text(`\n${theme.fg("toolOutput", fallbackText)}`, 0, 0);
+  return new Text(`\n${theme.fg("toolOutput", fallbackText)}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+}
+
+function createTextComponent(lastComponent: unknown, text: string): Text {
+  const component = lastComponent instanceof Text
+    ? lastComponent
+    : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  component.setText(text);
+  return component;
+}
+
+function renderCollapsedMeta(summary: string, theme: ToolTheme, lastComponent: unknown): Text {
+  if (!summary) {
+    return createTextComponent(lastComponent, "");
+  }
+
+  return createTextComponent(lastComponent, theme.fg("dim", `↳ ${summary}`));
+}
+
+function formatBashCallPreview(command: string, theme: ToolTheme, suffix: string, expanded: boolean): string {
+  const lines = command.split("\n");
+  if (lines.length <= 1) {
+    return `${theme.fg("toolTitle", "$ ")}${theme.fg("accent", command)}${suffix}`;
+  }
+
+  if (expanded) {
+    return lines
+      .map((line, index) =>
+        index === 0
+          ? `${theme.fg("toolTitle", "$ ")}${theme.fg("accent", line)}${suffix}`
+          : theme.fg("toolOutput", line),
+      )
+      .join("\n");
+  }
+
+  const firstLines = lines.slice(0, 2).map((line, index) =>
+    index === 0
+      ? `${theme.fg("toolTitle", "$ ")}${theme.fg("accent", line)}${suffix}`
+      : theme.fg("toolOutput", line),
+  );
+  const tailLines = lines.slice(-3).map((line) => theme.fg("toolOutput", line));
+  const hiddenCount = Math.max(lines.length - 5, 0);
+  const hiddenLine = hiddenCount > 0
+    ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${hiddenCount} more lines, `)}${keyHint("app.tools.expand", "to expand")})`
+    : "";
+
+  return [...firstLines, hiddenLine, ...tailLines].filter(Boolean).join("\n");
+}
+
+function renderStreamingPreview(
+  renderedText: string,
+  theme: ToolTheme,
+  lastComponent: unknown,
+  options: {
+    expanded: boolean;
+    footer?: string;
+    expandHint?: boolean;
+    tailLines?: number;
+  },
+): Text {
+  const lines = renderedText.split("\n").filter((line) => line.length > 0);
+  const tailSize = options.tailLines ?? 5;
+
+  if (options.expanded) {
+    const footerLines = [options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    const text = [renderedText, footerLines].filter(Boolean).join("\n");
+    return createTextComponent(lastComponent, text);
+  }
+
+  const visibleLines = lines.slice(-tailSize);
+  const earlierCount = Math.max(lines.length - visibleLines.length, 0);
+  const blocks: string[] = [];
+
+  if (earlierCount > 0) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`);
+  }
+
+  if (visibleLines.length > 0) {
+    blocks.push(visibleLines.join("\n"));
+  }
+
+  if (options.footer) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
+  }
+
+  if (options.expandHint) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
+  }
+
+  return createTextComponent(lastComponent, blocks.join("\n"));
+}
+
+function renderToolError(message: string, theme: ToolTheme, lastComponent: unknown): Text {
+  return createTextComponent(lastComponent, message ? theme.fg("error", `↳ ${message.trim()}`) : "");
+}
+
+function appendExpandHint(theme: ToolTheme, summary: string): string {
+  const parts = [summary, keyHint("app.tools.expand", "expand")].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function getToolPhase(context: Pick<BaseRenderContext, "isPartial" | "isError">): ToolPhase {
+  if (context.isError) {
+    return "error";
+  }
+
+  if (context.isPartial) {
+    return "pending";
+  }
+
+  return "success";
+}
+
+function formatToolStatus(theme: ToolTheme, phase: ToolPhase, verbs: ToolVerbs): string {
+  if (phase === "error") {
+    return theme.fg("error", `✗ ${verbs.error}`);
+  }
+
+  if (phase === "success") {
+    return theme.fg("muted", `✓ ${verbs.success}`);
+  }
+
+  return theme.fg("dim", `… ${verbs.pending}`);
+}
+
+function getTextContent(result: ToolResult): string {
+  return result.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n")
+    .trim();
+}
+
+function summarizeReadResult(result: ToolResult, partial: boolean): string {
+  const image = result.content.find((part) => part.type === "image");
+  if (image) {
+    return partial ? "image loading" : "image";
+  }
+
+  const text = getTextContent(result);
+  if (!text) {
+    return partial ? "waiting for output" : "ready";
+  }
+
+  const lineSummary = summarizeTextLineCount(text);
+  return partial ? `${lineSummary} so far` : lineSummary;
+}
+
+function summarizeBashResult(result: ToolResult, partial: boolean, theme: ToolTheme, elapsedMs?: number): string {
+  const output = getTextContent(result);
+  const { lineCount, exitCode } = summarizeBashOutput(output, theme);
+
+  if (partial) {
+    return `${theme.fg("muted", `${summarizeLineCount(lineCount)} so far`)}${elapsedMs !== undefined ? theme.fg("muted", ` (${formatDurationHuman(elapsedMs)})`) : ""}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
+  }
+
+  const exitStatus = exitCode === undefined || exitCode === "0"
+    ? theme.fg("toolDiffAdded", "exit ok")
+    : theme.fg("error", `exit ${exitCode}`);
+  return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
+}
+
+function summarizeBashFooter(result: ToolResult, theme: ToolTheme): string {
+  const { lineCount, exitCode } = summarizeBashOutput(getTextContent(result), theme);
+  const exitStatus = exitCode === undefined || exitCode === "0"
+    ? theme.fg("toolDiffAdded", "exit ok")
+    : theme.fg("error", `exit ${exitCode}`);
+  return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
+}
+
+function summarizeBashOutput(output: string, theme: ToolTheme): { lineCount: number; exitCode?: string; renderedText: string } {
+  if (!output) {
+    return { lineCount: 0, renderedText: "" };
+  }
+
+  const lines = output.split("\n");
+  const exitLine = [...lines].reverse().find((line: string) => /^exit code:/i.test(line.trim()));
+  const exitCode = exitLine?.match(/exit code:\s*(-?\d+)/i)?.[1];
+  const bodyLines = lines.filter(
+    (line) => line.trim().length > 0 && line !== exitLine && !line.trimStart().startsWith("> "),
+  );
+  const visibleLines = bodyLines.length > 0 ? bodyLines : lines.filter((line) => line.trim().length > 0 && line !== exitLine);
+  return {
+    lineCount: visibleLines.length,
+    exitCode,
+    renderedText: styleToolOutput(visibleLines.join("\n"), theme, BASH_OUTPUT_LINE_LIMIT),
+  };
+}
+
+function summarizeEditProgress(args: ToolPathArgs): string {
+  const editCount = Array.isArray(args.edits) ? args.edits.length : 0;
+  if (editCount === 0) {
+    return "waiting for diff";
+  }
+
+  return `${editCount} edit${editCount === 1 ? "" : "s"} queued`;
+}
+
+function summarizeEditResult(result: ToolResult): string {
+  const diff = getDiffText(result.details);
+  const stats = diff ? summarizeDiff(diff) : undefined;
+  if (stats && stats.changes > 0) {
+    return `${stats.changes} change${stats.changes === 1 ? "" : "s"} · +${stats.additions} -${stats.deletions}`;
+  }
+
+  const text = getTextContent(result);
+  const match = text.match(/replaced\s+(\d+)\s+block/i);
+  if (match) {
+    const count = Number(match[1]);
+    return `${count} block${count === 1 ? "" : "s"}`;
+  }
+
+  return text ? "updated" : "";
+}
+
+function renderEditSummary(result: ToolResult, theme: ToolTheme): string {
+  const diff = getDiffText(result.details);
+  const stats = diff ? summarizeDiff(diff) : undefined;
+  if (stats && stats.changes > 0) {
+    return `${theme.fg("muted", `${stats.changes} change${stats.changes === 1 ? "" : "s"} · `)}${formatDiffStats(theme, stats.additions, stats.deletions)}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
+  }
+
+  const summary = summarizeEditResult(result);
+  return summary ? `${theme.fg("muted", summary)}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}` : "";
+}
+
+function summarizeWriteProgress(args: ToolPathArgs): string {
+  const lineCount = countTextLines(args.content);
+  if (lineCount === 0) {
+    return "waiting for content";
+  }
+
+  return `${summarizeLineCount(lineCount)} queued`;
+}
+
+function getDiffText(details: unknown): string {
+  if (!details || typeof details !== "object") {
+    return "";
+  }
+
+  const diff = (details as { diff?: unknown }).diff;
+  return typeof diff === "string" ? diff : "";
+}
+
+function summarizeDiff(diff: string): { additions: number; deletions: number; changes: number } {
+  let additions = 0;
+  let deletions = 0;
+
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      continue;
+    }
+    if (line.startsWith("+")) {
+      additions++;
+      continue;
+    }
+    if (line.startsWith("-")) {
+      deletions++;
+    }
+  }
+
+  return {
+    additions,
+    deletions,
+    changes: additions + deletions,
+  };
 }
 
 function readPathArg(args: ToolPathArgs): string {
@@ -140,11 +647,7 @@ function readPathArg(args: ToolPathArgs): string {
   return typeof value === "string" ? value : "";
 }
 
-function formatReadRangeSuffix(
-  theme: Parameters<NonNullable<typeof readToolDefinition.renderCall>>[1],
-  offset: unknown,
-  limit: unknown,
-): string {
+function formatReadRangeSuffix(theme: ToolTheme, offset: unknown, limit: unknown): string {
   const startLine = typeof offset === "number" ? offset : undefined;
   const maxLines = typeof limit === "number" ? limit : undefined;
 
@@ -154,5 +657,120 @@ function formatReadRangeSuffix(
 
   const start = startLine ?? 1;
   const end = maxLines !== undefined ? start + maxLines - 1 : undefined;
-  return theme.fg("warning", `:${start}${end ? `-${end}` : ""}`);
+  return theme.fg("muted", `:${start}${end ? `-${end}` : ""}`);
+}
+
+function formatLineCountSuffix(content: unknown, theme: ToolTheme): string {
+  const lineCount = countTextLines(content);
+  if (lineCount === 0) {
+    return "";
+  }
+
+  return theme.fg("muted", ` · ± ${summarizeLineCount(lineCount)}`);
+}
+
+function countTextLines(content: unknown): number {
+  if (typeof content !== "string" || content.length === 0) {
+    return 0;
+  }
+
+  return content.split("\n").length;
+}
+
+function readContentArg(args: ToolPathArgs): string {
+  return typeof args.content === "string" ? args.content : "";
+}
+
+function summarizeTextLineCount(text: string): string {
+  return summarizeLineCount(text.split("\n").filter((line) => line.length > 0 || text.includes("\n")).length || 1);
+}
+
+function summarizeLineCount(lineCount: number): string {
+  return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
+}
+
+function styleToolOutput(text: string, theme: ToolTheme, maxLineLength?: number): string {
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .split("\n")
+    .map((line) => styleToolOutputLine(line, theme, maxLineLength))
+    .join("\n");
+}
+
+function styleToolOutputLine(line: string, theme: ToolTheme, maxLineLength?: number): string {
+  if (maxLineLength === undefined || line.length <= maxLineLength) {
+    return theme.fg("toolOutput", line);
+  }
+
+  const truncatedChars = line.length - maxLineLength;
+  const visibleText = line.slice(0, maxLineLength);
+  return `${theme.fg("toolOutput", visibleText)}${theme.fg("muted", ` …(truncated ${truncatedChars} chars)…`)}`;
+}
+
+function shouldShowBashResultExpandHint(args: ToolPathArgs): boolean {
+  const command = readCommandArg(args);
+  return !command.includes("\n");
+}
+
+function readCommandArg(args: ToolPathArgs): string {
+  return typeof args.command === "string" ? args.command : "";
+}
+
+function syncBashRenderState(
+  context: Pick<BashCallContext, "state" | "executionStarted" | "invalidate">,
+  isPartial: boolean,
+): BashRenderState {
+  const state = context.state as BashRenderState;
+
+  if (context.executionStarted && state.startedAt === undefined) {
+    state.startedAt = Date.now();
+    state.endedAt = undefined;
+  }
+
+  if (state.startedAt !== undefined && isPartial && !state.interval) {
+    state.interval = setInterval(() => context.invalidate(), 1000);
+    state.interval.unref?.();
+  }
+
+  if (!isPartial && state.startedAt !== undefined) {
+    state.endedAt ??= Date.now();
+    if (state.interval) {
+      clearInterval(state.interval);
+      state.interval = undefined;
+    }
+  }
+
+  return state;
+}
+
+function getBashElapsed(state: BashRenderState): number | undefined {
+  if (state.startedAt === undefined) {
+    return undefined;
+  }
+
+  return (state.endedAt ?? Date.now()) - state.startedAt;
+}
+
+function formatDurationHuman(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
+}
+
+function formatDiffStats(theme: ToolTheme, additions: number, deletions: number): string {
+  return `${theme.fg("toolDiffAdded", `+${additions}`)} ${theme.fg("toolDiffRemoved", `-${deletions}`)}`;
 }

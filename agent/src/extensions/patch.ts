@@ -3,12 +3,12 @@ import {
   defineTool,
   isToolCallEventType,
   keyHint,
-  renderDiff,
+  type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionContext,
   withFileMutationQueue,
 } from "@mariozechner/pi-coding-agent";
-import { Container, Text } from "@mariozechner/pi-tui";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
@@ -40,6 +40,7 @@ type PatchFileChange = {
 type PatchFileDetails = {
   filePath: string;
   relativePath: string;
+  sourceRelativePath?: string;
   type: "add" | "update" | "delete" | "move";
   diff: string;
   before: string;
@@ -49,10 +50,22 @@ type PatchFileDetails = {
   movePath?: string;
 };
 
+type PatchTargetDetails = {
+  relativePath: string;
+  type: "add" | "update" | "delete" | "move";
+  sourcePath?: string;
+};
+
 type ApplyPatchDetails = {
   diff: string;
   files: PatchFileDetails[];
+  targets: PatchTargetDetails[];
+  totalFiles: number;
+  completedFiles: number;
 };
+
+const TOOL_TEXT_PADDING_X = 0;
+const TOOL_TEXT_PADDING_Y = 0;
 
 const APPLY_PATCH_DESCRIPTION = `Use the \`apply_patch\` tool to edit files. Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
 
@@ -89,17 +102,18 @@ It is important to remember:
 - You must prefix new lines with \`+\` even when creating a new file
 `;
 
-const applyPatchTool = defineTool({
+export const applyPatchTool = defineTool({
   name: "apply_patch",
-  label: "apply_patch",
+  label: "patch",
   description: APPLY_PATCH_DESCRIPTION,
+  promptSnippet: `use \`apply_patch\` to edit/patch files`,
   parameters: Type.Object(
     {
       patchText: Type.String({ description: "The full patch text that describes all changes to be made" }),
     },
     { additionalProperties: false },
   ),
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  async execute(_toolCallId, params, _signal, onUpdate, ctx) {
     if (!params.patchText) {
       throw new Error("patchText is required");
     }
@@ -120,10 +134,19 @@ const applyPatchTool = defineTool({
     }
 
     const queuePaths = getQueuePaths(hunks, ctx);
+    const targets = summarizeHunks(hunks);
 
     return withFileMutationQueues(queuePaths, async () => {
       const fileChanges: PatchFileChange[] = [];
       let totalDiff = "";
+
+      emitApplyPatchUpdate(onUpdate, {
+        diff: totalDiff,
+        files: [],
+        targets,
+        totalFiles: targets.length,
+        completedFiles: 0,
+      });
 
       for (const hunk of hunks) {
         const filePath = resolvePatchPath(ctx, hunk.path);
@@ -153,6 +176,13 @@ const applyPatchTool = defineTool({
             });
 
             totalDiff += `${diff}\n`;
+            emitApplyPatchUpdate(onUpdate, {
+              diff: totalDiff,
+              files: createPatchFileDetailsFromChanges(fileChanges, ctx),
+              targets,
+              totalFiles: targets.length,
+              completedFiles: fileChanges.length,
+            });
             break;
           }
 
@@ -195,6 +225,13 @@ const applyPatchTool = defineTool({
             });
 
             totalDiff += `${diff}\n`;
+            emitApplyPatchUpdate(onUpdate, {
+              diff: totalDiff,
+              files: createPatchFileDetailsFromChanges(fileChanges, ctx),
+              targets,
+              totalFiles: targets.length,
+              completedFiles: fileChanges.length,
+            });
             break;
           }
 
@@ -216,22 +253,19 @@ const applyPatchTool = defineTool({
             });
 
             totalDiff += `${diff}\n`;
+            emitApplyPatchUpdate(onUpdate, {
+              diff: totalDiff,
+              files: createPatchFileDetailsFromChanges(fileChanges, ctx),
+              targets,
+              totalFiles: targets.length,
+              completedFiles: fileChanges.length,
+            });
             break;
           }
         }
       }
 
-      const files = fileChanges.map((change) => ({
-        filePath: change.filePath,
-        relativePath: path.relative(ctx.cwd, change.movePath ?? change.filePath).replaceAll("\\", "/"),
-        type: change.type,
-        diff: change.diff,
-        before: change.oldContent,
-        after: change.newContent,
-        additions: change.additions,
-        deletions: change.deletions,
-        movePath: change.movePath,
-      } satisfies PatchFileDetails));
+      const files = createPatchFileDetailsFromChanges(fileChanges, ctx);
 
       for (const change of fileChanges) {
         switch (change.type) {
@@ -273,38 +307,43 @@ const applyPatchTool = defineTool({
         details: {
           diff: totalDiff,
           files,
+          targets,
+          totalFiles: targets.length,
+          completedFiles: files.length,
         } satisfies ApplyPatchDetails,
       };
     });
   },
   renderCall(args, theme, context) {
-    const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-    text.setText(formatApplyPatchCall(args.patchText, theme, context.expanded));
+    const text = createTextComponent(context.lastComponent);
+    text.setText(formatApplyPatchCall(args.patchText, theme, context));
     return text;
   },
   renderResult(result, options, theme, context) {
+    syncPatchRenderState(context, result.details as ApplyPatchDetails | undefined, getResultText(result.content));
     const output = getResultText(result.content);
+    const details = getApplyPatchDetails(result.details, context.args.patchText);
+
     if (context.isError) {
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      text.setText(output ? `\n${theme.fg("error", output)}` : "");
+      const text = createTextComponent(context.lastComponent);
+      text.setText(renderApplyPatchError(details.targets, output, theme, options.expanded));
       return text;
     }
 
-    const details = result.details as ApplyPatchDetails | undefined;
-    if (!details?.files?.length) {
-      const component = (context.lastComponent as Container | undefined) ?? new Container();
-      component.clear();
-      return component;
+    if (options.isPartial) {
+      const text = createTextComponent(context.lastComponent);
+      text.setText(renderApplyPatchProgress(details, theme, options.expanded));
+      return text;
     }
 
     if (!options.expanded) {
-      const component = (context.lastComponent as Container | undefined) ?? new Container();
-      component.clear();
-      return component;
+      const text = createTextComponent(context.lastComponent);
+      text.setText(renderApplyPatchCollapsedSuccess(details, theme));
+      return text;
     }
 
-    const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-    text.setText(renderApplyPatchResult(details.files, theme));
+    const text = createTextComponent(context.lastComponent);
+    text.setText(renderApplyPatchExpandedSuccess(details, theme, context.args.patchText));
     return text;
   },
 });
@@ -449,51 +488,501 @@ async function withFileMutationQueues<T>(paths: string[], fn: () => Promise<T>):
 function formatApplyPatchCall(
   patchText: string,
   theme: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[1],
+  context: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[2],
+): string {
+  if (context.isPartial && !context.argsComplete && patchText.trim().length > 0) {
+    const streamedTargets = summarizePartialPatchText(patchText);
+    const headline = streamedTargets.length > 1
+      ? `${streamedTargets.length} files`
+      : streamedTargets[0]?.relativePath ?? "...";
+    const preview = renderStreamingPatchPreview(stylePatchInputPreview(patchText, theme), theme, {
+      expanded: context.expanded,
+      footer: streamedTargets.length > 0 ? formatPatchTargetList(streamedTargets, theme, context.expanded, { includeExpandHint: !context.expanded }) : undefined,
+      tailLines: 6,
+    });
+    return [`${theme.fg("dim", "… patching")} ${theme.fg("accent", headline)}`, preview].filter(Boolean).join("\n");
+  }
+
+  const details = getApplyPatchDetails(context.state.applyPatchDetails, patchText);
+  const totalChanges = countPatchChanges(details.files);
+  const progress =
+    context.isPartial && details.totalFiles > 1 ? theme.fg("muted", ` · ${details.completedFiles}/${details.totalFiles}`) : "";
+
+  if (context.isError) {
+    return `${theme.fg("error", "✗ patch")} ${theme.fg("text", formatPatchHeadline(details, false))}`;
+  }
+
+  if (context.isPartial) {
+    return `${theme.fg("dim", "… patching")} ${theme.fg("accent", formatPatchHeadline(details, true))}${progress}`;
+  }
+
+  const totalSummary = totalChanges.additions + totalChanges.deletions > 0
+    ? `${theme.fg("muted", " · ")}${formatPatchChangeSummary(theme, totalChanges.additions, totalChanges.deletions)}`
+    : "";
+  return `${theme.fg("muted", "✓ patched")} ${theme.fg("accent", formatPatchHeadline(details, false))}${totalSummary}`;
+}
+
+function renderApplyPatchProgress(
+  details: ApplyPatchDetails,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
   expanded: boolean,
 ): string {
-  const summary = summarizePatch(patchText);
-  const title = `${theme.fg("toolTitle", theme.bold("apply_patch"))} ${theme.fg("accent", summary)}`;
-  if (expanded) {
-    return title;
+  const diffText = details.files
+    .map((file) => renderPatchFileDiff(file, theme))
+    .join("\n\n")
+    .trim();
+
+  if (diffText) {
+    return renderStreamingPatchPreview(diffText, theme, {
+      expanded,
+      footer: `${details.completedFiles}/${Math.max(details.totalFiles, 1)} files`,
+      expandHint: !expanded,
+    });
   }
-  return `${title}\n${theme.fg("dim", `↳ ${keyHint("app.tools.expand", "to expand")}`)}`;
+
+  if (details.totalFiles <= 1) {
+    return theme.fg("dim", `↳ ${details.completedFiles}/${Math.max(details.totalFiles, 1)} files`);
+  }
+
+  const list = formatPatchTargetList(details.targets, theme, expanded, {
+    prefix: `${details.completedFiles}/${details.totalFiles}`,
+    includeExpandHint: !expanded,
+  });
+
+  if (!expanded) {
+    return theme.fg("dim", `↳ ${list}`);
+  }
+
+  return list;
 }
 
-function summarizePatch(patchText: string): string {
-  try {
-    const hunks = parsePatch(patchText).hunks;
-    if (hunks.length === 0) {
-      return "...";
-    }
+function renderStreamingPatchPreview(
+  renderedText: string,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  options: { expanded: boolean; footer?: string; expandHint?: boolean; tailLines?: number },
+): string {
+  const lines = renderedText.split("\n").filter((line) => line.length > 0);
+  const tailSize = options.tailLines ?? 5;
 
-    const firstPath = hunks[0]?.type === "update" && hunks[0].move_path ? hunks[0].move_path : hunks[0]?.path;
-    if (hunks.length === 1 && firstPath) {
-      return firstPath;
-    }
-
-    return `${hunks.length} files`;
-  } catch {
-    return "...";
+  if (options.expanded) {
+    return [
+      renderedText,
+      options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "",
+    ].filter(Boolean).join("\n");
   }
+
+  const visibleLines = lines.slice(-tailSize);
+  const earlierCount = Math.max(lines.length - visibleLines.length, 0);
+  const blocks: string[] = [];
+
+  if (earlierCount > 0) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`);
+  }
+
+  if (visibleLines.length > 0) {
+    blocks.push(visibleLines.join("\n"));
+  }
+
+  if (options.footer) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
+  }
+
+  if (options.expandHint) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
+  }
+
+  return blocks.join("\n");
 }
 
-function renderApplyPatchResult(
-  files: PatchFileDetails[],
+function renderApplyPatchCollapsedSuccess(
+  details: ApplyPatchDetails,
   theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
 ): string {
-  return files
-    .map((file) => {
-      const label =
-        file.type === "delete"
-          ? `Deleted ${file.relativePath}`
-          : file.type === "add"
-            ? `Created ${file.relativePath}`
-            : file.type === "move"
-              ? `Moved ${file.filePath.replaceAll("\\", "/")} → ${file.relativePath}`
-              : `Patched ${file.relativePath}`;
-      return `${theme.fg("muted", label)}\n${renderDiff(file.diff, { filePath: file.filePath })}`;
-    })
+  if (!details.files.length) {
+    return "";
+  }
+
+  if (details.files.length === 1) {
+    return "";
+  }
+
+  return `${theme.fg("dim", "↳ ")}${formatCollapsedPatchFileSummary(details.files, theme, false)}${theme.fg("dim", ` · ${keyHint("app.tools.expand", "expand")}`)}`;
+}
+
+function renderApplyPatchExpandedSuccess(
+  details: ApplyPatchDetails,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  patchText: string,
+): string {
+  if (details.files.length === 0) {
+    return "";
+  }
+
+  const rendered = details.files
+    .map((file) => `${formatExpandedPatchFileLabel(file, theme)}\n${renderPatchFileDiff(file, theme)}`)
     .join("\n\n");
+
+  return rendered;
+}
+
+function renderApplyPatchError(
+  targets: PatchTargetDetails[],
+  output: string,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  expanded: boolean,
+): string {
+  const lines: string[] = [];
+  if (targets.length > 1) {
+    const list = formatPatchTargetList(targets, theme, expanded, {
+      includeExpandHint: !expanded,
+    });
+    lines.push(theme.fg("dim", `↳ ${list}`));
+  }
+
+  if (output) {
+    lines.push(theme.fg("error", `↳ ${output}`));
+  }
+
+  return lines.join("\n");
+}
+
+function formatPatchHeadline(details: ApplyPatchDetails, partial: boolean): string {
+  if (details.targets.length === 0) {
+    return "...";
+  }
+
+  if (details.targets.length === 1) {
+    return formatPatchTargetLabel(details.targets[0], partial);
+  }
+
+  return `${details.totalFiles} files`;
+}
+
+function formatPatchTargetList(
+  targets: PatchTargetDetails[],
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  expanded: boolean,
+  options: { prefix?: string; includeExpandHint?: boolean } = {},
+): string {
+  const visibleTargets = expanded ? targets : targets.slice(0, 3);
+  const list = visibleTargets.map((target) => formatPatchTargetLabel(target, true)).join(", ");
+  const remaining = targets.length - visibleTargets.length;
+  const parts = [options.prefix, list || undefined];
+
+  if (remaining > 0) {
+    parts.push(`+${remaining} more`);
+  }
+
+  if (options.includeExpandHint) {
+    parts.push(keyHint("app.tools.expand", "expand"));
+  }
+
+  return parts.filter(Boolean).join(" · ");
+}
+
+function formatPatchTargetLabel(target: PatchTargetDetails, partial: boolean): string {
+  if (!partial && target.type === "move" && target.sourcePath) {
+    return `${target.sourcePath} → ${target.relativePath}`;
+  }
+
+  return target.relativePath;
+}
+
+function formatCollapsedPatchFileSummary(
+  files: PatchFileDetails[],
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  expanded: boolean,
+): string {
+  const visibleFiles = expanded ? files : files.slice(0, 3);
+  const items = visibleFiles.map((file) => formatCollapsedPatchFileItem(file, theme));
+  const remaining = files.length - visibleFiles.length;
+  if (remaining > 0) {
+    items.push(`+${remaining} more`);
+  }
+  return items.join(" · ");
+}
+
+function formatCollapsedPatchFileItem(
+  file: PatchFileDetails,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+): string {
+  if (file.type === "add") {
+    return `A ${file.relativePath}`;
+  }
+
+  if (file.type === "delete") {
+    return `D ${file.relativePath}`;
+  }
+
+  if (file.type === "move") {
+    return `R ${file.sourceRelativePath ?? file.relativePath} → ${file.relativePath}`;
+  }
+
+  return `${formatPatchChangeSummary(theme, file.additions, file.deletions)} ${file.relativePath}`;
+}
+
+function formatExpandedPatchFileLabel(
+  file: PatchFileDetails,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+): string {
+  if (file.type === "add") {
+    return theme.fg("muted", `A ${file.relativePath}`);
+  }
+
+  if (file.type === "delete") {
+    return theme.fg("muted", `D ${file.relativePath}`);
+  }
+
+  if (file.type === "move") {
+    return theme.fg("muted", `R ${file.sourceRelativePath ?? file.relativePath} → ${file.relativePath}`);
+  }
+
+  return `${theme.fg("muted", `M ${file.relativePath} · `)}${formatPatchChangeSummary(theme, file.additions, file.deletions)}`;
+}
+
+function renderPatchFileDiff(
+  file: PatchFileDetails,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+): string {
+  return renderGitStyleDiff(file, theme);
+}
+
+function renderGitStyleDiff(
+  file: PatchFileDetails,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+): string {
+  const sourcePath = file.type === "add" ? "/dev/null" : `a/${file.sourceRelativePath ?? file.relativePath}`;
+  const targetPath = file.type === "delete" ? "/dev/null" : `b/${file.relativePath}`;
+  const diff = trimDiff(createTwoFilesPatch(sourcePath, targetPath, file.before, file.after));
+  const relativeSourcePath = file.sourceRelativePath ?? file.relativePath;
+  const relativeTargetPath = file.relativePath;
+  const headerLines = [theme.fg("muted", `diff --git a/${relativeSourcePath} b/${relativeTargetPath}`)];
+
+  if (file.type === "move") {
+    headerLines.push(theme.fg("muted", `rename from ${relativeSourcePath}`));
+    headerLines.push(theme.fg("muted", `rename to ${relativeTargetPath}`));
+  }
+
+  for (const line of diff.split("\n")) {
+    if (!line) {
+      headerLines.push("");
+      continue;
+    }
+
+    if (line.startsWith("Index:") || line.startsWith("===================================================================")) {
+      continue;
+    }
+
+    if (line.startsWith("--- ")) {
+      headerLines.push(theme.fg("muted", `--- ${line.slice(4)}`));
+      continue;
+    }
+
+    if (line.startsWith("+++ ")) {
+      headerLines.push(theme.fg("muted", `+++ ${line.slice(4)}`));
+      continue;
+    }
+
+    if (line.startsWith("@@")) {
+      headerLines.push(theme.fg("accent", line));
+      continue;
+    }
+
+    if (line.startsWith("+")) {
+      headerLines.push(theme.fg("toolDiffAdded", line));
+      continue;
+    }
+
+    if (line.startsWith("-")) {
+      headerLines.push(theme.fg("toolDiffRemoved", line));
+      continue;
+    }
+
+    headerLines.push(theme.fg("toolDiffContext", line));
+  }
+
+  return headerLines.join("\n");
+}
+
+function getApplyPatchDetails(details: unknown, patchText: string): ApplyPatchDetails {
+  if (details && typeof details === "object") {
+    const patchDetails = details as Partial<ApplyPatchDetails>;
+    if (Array.isArray(patchDetails.targets)) {
+      return {
+        diff: typeof patchDetails.diff === "string" ? patchDetails.diff : "",
+        files: Array.isArray(patchDetails.files) ? patchDetails.files : [],
+        targets: patchDetails.targets,
+        totalFiles: typeof patchDetails.totalFiles === "number" ? patchDetails.totalFiles : patchDetails.targets.length,
+        completedFiles: typeof patchDetails.completedFiles === "number"
+          ? patchDetails.completedFiles
+          : Array.isArray(patchDetails.files)
+            ? patchDetails.files.length
+            : 0,
+      };
+    }
+  }
+
+  const targets = summarizePatchText(patchText);
+  return {
+    diff: "",
+    files: [],
+    targets,
+    totalFiles: targets.length,
+    completedFiles: 0,
+  };
+}
+
+function summarizePatchText(patchText: string): PatchTargetDetails[] {
+  try {
+    return summarizeHunks(parsePatch(patchText).hunks);
+  } catch {
+    return [];
+  }
+}
+
+function summarizePartialPatchText(patchText: string): PatchTargetDetails[] {
+  const targets: PatchTargetDetails[] = [];
+  const lines = stripHeredoc(patchText.trim()).split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith("*** Add File:")) {
+      targets.push({ relativePath: line.slice("*** Add File:".length).trim(), type: "add" });
+      continue;
+    }
+    if (line.startsWith("*** Delete File:")) {
+      targets.push({ relativePath: line.slice("*** Delete File:".length).trim(), type: "delete" });
+      continue;
+    }
+    if (line.startsWith("*** Update File:")) {
+      const relativePath = line.slice("*** Update File:".length).trim();
+      const moveLine = lines[i + 1]?.trim();
+      if (moveLine?.startsWith("*** Move to:")) {
+        targets.push({
+          relativePath: moveLine.slice("*** Move to:".length).trim(),
+          type: "move",
+          sourcePath: relativePath,
+        });
+        i++;
+        continue;
+      }
+      targets.push({ relativePath, type: "update" });
+    }
+  }
+
+  return targets.filter((target) => target.relativePath.length > 0);
+}
+
+function stylePatchInputPreview(
+  patchText: string,
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+): string {
+  return patchText
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      if (line.startsWith("***")) {
+        return theme.fg("muted", line);
+      }
+      if (line.startsWith("@@")) {
+        return theme.fg("accent", line);
+      }
+      if (line.startsWith("+")) {
+        return theme.fg("toolDiffAdded", line);
+      }
+      if (line.startsWith("-")) {
+        return theme.fg("toolDiffRemoved", line);
+      }
+      return theme.fg("toolDiffContext", line);
+    })
+    .join("\n");
+}
+
+function summarizeHunks(hunks: Hunk[]): PatchTargetDetails[] {
+  return hunks.map((hunk) => ({
+    relativePath: hunk.type === "update" && hunk.move_path ? hunk.move_path : hunk.path,
+    type: hunk.type === "update" && hunk.move_path ? "move" : hunk.type,
+    sourcePath: hunk.type === "update" && hunk.move_path ? hunk.path : undefined,
+  }));
+}
+
+function createPatchFileDetailsFromChanges(changes: PatchFileChange[], ctx: ExtensionContext): PatchFileDetails[] {
+  return changes.map((change) => ({
+    filePath: change.filePath,
+    relativePath: path.relative(ctx.cwd, change.movePath ?? change.filePath).replaceAll("\\", "/"),
+    sourceRelativePath: change.type === "move" ? path.relative(ctx.cwd, change.filePath).replaceAll("\\", "/") : undefined,
+    type: change.type,
+    diff: change.diff,
+    before: change.oldContent,
+    after: change.newContent,
+    additions: change.additions,
+    deletions: change.deletions,
+    movePath: change.movePath,
+  } satisfies PatchFileDetails));
+}
+
+function countPatchChanges(files: PatchFileDetails[]): { additions: number; deletions: number } {
+  return files.reduce(
+    (total, file) => ({
+      additions: total.additions + file.additions,
+      deletions: total.deletions + file.deletions,
+    }),
+    { additions: 0, deletions: 0 },
+  );
+}
+
+function formatPatchChangeSummary(
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  additions: number,
+  deletions: number,
+): string {
+  return `${theme.fg("toolDiffAdded", `+${additions}`)} ${theme.fg("toolDiffRemoved", `-${deletions}`)}`;
+}
+
+function emitApplyPatchUpdate(onUpdate: AgentToolUpdateCallback<ApplyPatchDetails> | undefined, details: ApplyPatchDetails): void {
+  if (!onUpdate) {
+    return;
+  }
+
+  onUpdate({
+    content: [{ type: "text", text: `Patching ${details.completedFiles}/${details.totalFiles} files` }],
+    details,
+  });
+}
+
+function syncPatchRenderState(
+  context: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[3],
+  details: ApplyPatchDetails | undefined,
+  output: string,
+): void {
+  const fileCount = Array.isArray(details?.files) ? details.files.length : 0;
+  const diffLength = typeof details?.diff === "string" ? details.diff.length : 0;
+  const completedFiles = typeof details?.completedFiles === "number" ? details.completedFiles : 0;
+  const totalFiles = typeof details?.totalFiles === "number" ? details.totalFiles : 0;
+  const nextSignature = details
+    ? `${completedFiles}/${totalFiles}:${fileCount}:${diffLength}:${output}`
+    : `error:${output}`;
+
+  if (context.state.applyPatchSignature === nextSignature) {
+    return;
+  }
+
+  context.state.applyPatchSignature = nextSignature;
+  context.state.applyPatchDetails = details;
+  queueMicrotask(() => {
+    context.invalidate();
+  });
+}
+
+function appendExpandHint(
+  theme: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[1],
+  summary: string,
+): string {
+  return [summary, keyHint("app.tools.expand", "expand")].filter(Boolean).join(" · ");
+}
+
+function createTextComponent(lastComponent: unknown): Text {
+  return (lastComponent as Text | undefined) ?? new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
 }
 
 function getResultText(content: Array<{ type: string; text?: string }>): string {
@@ -671,14 +1160,14 @@ function deriveNewContentsFromChunks(filePath: string, chunks: UpdateFileChunk[]
     throw new Error(`Failed to read file ${filePath}: ${error}`);
   }
 
-  let originalLines = originalContent.split("\n");
+  const originalLines = originalContent.split("\n");
 
   if (originalLines.length > 0 && originalLines[originalLines.length - 1] === "") {
     originalLines.pop();
   }
 
   const replacements = computeReplacements(originalLines, filePath, chunks);
-  let newLines = applyReplacements(originalLines, replacements);
+  const newLines = applyReplacements(originalLines, replacements);
 
   if (newLines.length === 0 || newLines[newLines.length - 1] !== "") {
     newLines.push("");

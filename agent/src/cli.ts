@@ -5,6 +5,7 @@ import {
 	type ExtensionFactory,
 	main,
 } from "@mariozechner/pi-coding-agent";
+import { installBundledResourcePaths } from "./extensions/bundled-resources.js";
 import { bundledExtensionFactories } from "./extensions/index.js";
 
 const prototypePatched = Symbol.for("@shekohex/agent/default-resource-loader-patched");
@@ -21,6 +22,7 @@ type LoaderPrototype = {
 
 process.title = "pi";
 
+installBundledResourcePaths();
 installBundledExtensionFactories(bundledExtensionFactories);
 
 await main(process.argv.slice(2));

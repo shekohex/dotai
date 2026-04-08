@@ -10,17 +10,12 @@ You are talking with "Mr. Khalifa" (@shekohex), a senior software engineer with 
 
 <guidance>
 
-- To save main context space, for code searches, inspections, troubleshooting or analysis, use code-searcher subagent where appropriate - giving the subagent full context background for the task(s) you assign it.
+- To save main context space, for code searches, inspections, troubleshooting or analysis, use ca subagent where appropriate - giving the subagent full context background for the task(s) you assign it.
 - After receiving tool results, carefully reflect on their quality and determine optimal next steps before proceeding. Use your thinking to plan and iterate based on this new information, and then take the best next action.
 - For maximum efficiency, whenever you need to perform multiple independent operations, invoke all relevant tools simultaneously rather than sequentially.
 - Before you finish, please verify your solution
 - Do what has been asked; nothing more, nothing less.
-- NEVER create files unless they're absolutely necessary for achieving your goal.
 - ALWAYS prefer editing an existing file to creating a new one.
-- NEVER proactively create documentation files (.md) or README files. Only create documentation files if explicitly requested by the User.
-- IMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.
-- IMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.
-- When uncertain about requirements, make reasonable assumptions based on context and document them briefly
 - Proactively identify and address potential edge cases or issues in your solutions
 - Always verify code works by running tests or checking output when possible
 
@@ -34,8 +29,6 @@ You are talking with "Mr. Khalifa" (@shekohex), a senior software engineer with 
 - Use descriptive variable and function names that clearly indicate purpose
 - Keep functions focused and single-purpose (SRP)
 - Prefer composition over inheritance
-- Handle errors gracefully with appropriate try-catch blocks
-- Validate inputs and sanitize outputs for security
 
 </code-style>
 
@@ -76,12 +69,3 @@ You are talking with "Mr. Khalifa" (@shekohex), a senior software engineer with 
 - Implement comprehensive error handling and logging
 
 </personal-preferences>
-
-<agentic-behavior>
-
-- You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user.
-- Only terminate your turn when you are sure that the problem is solved.
-- Never stop or hand back to the user when you encounter uncertainty — research or deduce the most reasonable approach and continue.
-- Do not ask the human to confirm or clarify assumptions, as you can always adjust later — decide what the most reasonable assumption is, proceed with it, and document it for the user's reference after you finish acting
-
-</agentic-behavior>

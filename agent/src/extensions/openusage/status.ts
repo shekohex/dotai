@@ -24,6 +24,15 @@ export function renderStatus(snapshot: UsageSnapshot): string {
   return parts.join(" ");
 }
 
+export function formatRemainingPercent(metric: UsageMetric): string {
+  const remaining = getRemainingPercent(metric);
+  return remaining === undefined ? "n/a" : formatPercent(remaining);
+}
+
+export function formatUsedPercent(metric: UsageMetric): string {
+  return formatPercent(getUsedPercent(metric));
+}
+
 export function setStatus(
   ctx: ExtensionContext,
   snapshot: UsageSnapshot | undefined,
@@ -100,15 +109,6 @@ function formatMetricLine(
   return `${label}: ${formatRemainingPercent(metric)} left (${formatUsedPercent(metric)} used)${reset ? `, resets ${reset}` : ""}`;
 }
 
-function formatRemainingPercent(metric: UsageMetric): string {
-  const remaining = getRemainingPercent(metric);
-  return remaining === undefined ? "n/a" : formatPercent(remaining);
-}
-
-function formatUsedPercent(metric: UsageMetric): string {
-  return formatPercent(getUsedPercent(metric));
-}
-
 function formatPercent(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) {
     return "n/a";
@@ -161,7 +161,7 @@ function colorForMetric(
   return theme.fg("success", text);
 }
 
-function maskAccountLabel(value: string | undefined): string | undefined {
+export function maskAccountLabel(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) {
     return undefined;
@@ -179,7 +179,7 @@ function maskAccountLabel(value: string | undefined): string | undefined {
   return `${primary.slice(0, 3)}***${primary.slice(-3)}`;
 }
 
-function formatReset(
+export function formatReset(
   value: string | undefined,
   mode: ResetTimeFormat,
   now: number,

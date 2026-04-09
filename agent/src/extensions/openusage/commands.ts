@@ -7,6 +7,7 @@ import {
   formatRemainingPercent,
   formatSnapshotSummary,
   formatUsedPercent,
+  getMetricLabel,
   getMetricPaceDetails,
   getRemainingPercent,
   maskAccountLabel,
@@ -25,6 +26,7 @@ import type {
 import {
   isSupportedProviderId,
   OPENUSAGE_STATE_ENTRY,
+  SUPPORTED_PROVIDER_IDS,
 } from "./types.js";
 
 type OpenUsageViewData = {
@@ -161,7 +163,7 @@ class OpenUsageView implements Component {
       lines.push(
         ...renderMetricSection(
           this.theme,
-          "5h",
+          getMetricLabel(snapshot, "session5h"),
           snapshot.session5h,
           width,
           this.data.state.persisted.resetTimeFormat,
@@ -172,7 +174,7 @@ class OpenUsageView implements Component {
       lines.push(
         ...renderMetricSection(
           this.theme,
-          "Weekly",
+          getMetricLabel(snapshot, "weekly"),
           snapshot.weekly,
           width,
           this.data.state.persisted.resetTimeFormat,
@@ -526,7 +528,7 @@ async function handleStatus(
   }
 
   const accountsByProvider: CliproxyAccountsByProvider = await listCliproxyAccounts(ctx).catch(() => ({}));
-  const providerIds: SupportedProviderId[] = ["codex", "zai"];
+  const providerIds: SupportedProviderId[] = [...SUPPORTED_PROVIDER_IDS];
   const activeProviderId = resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
 
   await ctx.ui.custom<void>((tui, theme, _kb, done) => {
@@ -592,8 +594,10 @@ async function handleDebug(
     `Cliproxy: ${cliproxyState.label}${cliproxyState.baseUrl ? ` ${cliproxyState.baseUrl}` : ""}${cliproxyState.error ? ` (${cliproxyState.error})` : ""}`,
     `Reset time format: ${state.persisted.resetTimeFormat}`,
     `Selected codex account: ${state.persisted.selectedAccounts.codex ?? "host"}`,
+    `Selected google account: ${state.persisted.selectedAccounts.google ?? "host"}`,
     `Selected zai account: ${state.persisted.selectedAccounts.zai ?? "host"}`,
     `Cliproxy codex accounts: ${(cliproxyAccounts.codex ?? []).length}`,
+    `Cliproxy google accounts: ${(cliproxyAccounts.google ?? []).length}`,
     `Cliproxy zai accounts: ${(cliproxyAccounts.zai ?? []).length}`,
     `Cached snapshot: ${snapshot ? snapshot.displayName : "none"}`,
   ];
@@ -871,7 +875,15 @@ function composeMetricFooter(left: string, right: string, width: number): string
 }
 
 function providerDisplayName(providerId: SupportedProviderId): string {
-  return providerId === "zai" ? "Z.ai" : "Codex";
+  if (providerId === "zai") {
+    return "Z.ai";
+  }
+
+  if (providerId === "google") {
+    return "Google";
+  }
+
+  return "Codex";
 }
 
 function formatAge(timestamp: number): string {

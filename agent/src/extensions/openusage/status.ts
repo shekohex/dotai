@@ -25,20 +25,30 @@ export type MetricPaceDetails = {
 
 export function renderStatus(snapshot: UsageSnapshot): string {
   const parts: string[] = [];
+  const sessionLabel = getMetricShortLabel(snapshot, "session5h");
+  const weeklyLabel = getMetricShortLabel(snapshot, "weekly");
 
   if (snapshot.session5h) {
-    parts.push(`5h ${formatRemainingPercent(snapshot.session5h)}`);
+    parts.push(`${sessionLabel} ${formatRemainingPercent(snapshot.session5h)}`);
   }
 
   if (snapshot.weekly) {
-    parts.push(`wk ${formatRemainingPercent(snapshot.weekly)}`);
+    parts.push(`${weeklyLabel} ${formatRemainingPercent(snapshot.weekly)}`);
   }
 
   if (parts.length === 0) {
-    parts.push("5h n/a", "wk n/a");
+    parts.push(`${sessionLabel} n/a`, `${weeklyLabel} n/a`);
   }
 
   return parts.join(" ");
+}
+
+export function getMetricLabel(snapshot: UsageSnapshot, kind: "session5h" | "weekly"): string {
+  return snapshot.metricLabels?.[kind] ?? (kind === "weekly" ? "Weekly" : "5h");
+}
+
+export function getMetricShortLabel(snapshot: UsageSnapshot, kind: "session5h" | "weekly"): string {
+  return snapshot.metricShortLabels?.[kind] ?? (kind === "weekly" ? "wk" : "5h");
 }
 
 export function formatRemainingPercent(metric: UsageMetric): string {
@@ -198,8 +208,10 @@ export function setStatus(
   const theme = ctx.ui.theme;
   const sessionMetric = snapshot.session5h;
   const weeklyMetric = snapshot.weekly;
+  const sessionLabel = getMetricShortLabel(snapshot, "session5h");
+  const weeklyLabel = getMetricShortLabel(snapshot, "weekly");
 
-  let text = theme.fg("dim", "5h ");
+  let text = theme.fg("dim", `${sessionLabel} `);
   text += sessionMetric
     ? colorForMetric(
         theme,
@@ -208,7 +220,7 @@ export function setStatus(
       )
     : theme.fg("muted", "n/a");
 
-  text += theme.fg("dim", " wk ");
+  text += theme.fg("dim", ` ${weeklyLabel} `);
   text += weeklyMetric
     ? colorForMetric(theme, weeklyMetric, formatRemainingPercent(weeklyMetric))
     : theme.fg("muted", "n/a");
@@ -235,11 +247,11 @@ export function formatSnapshotSummary(
   }
 
   if (snapshot.session5h) {
-    lines.push(formatMetricLine("5h", snapshot.session5h, options));
+    lines.push(formatMetricLine(getMetricLabel(snapshot, "session5h"), snapshot.session5h, options));
   }
 
   if (snapshot.weekly) {
-    lines.push(formatMetricLine("Weekly", snapshot.weekly, options));
+    lines.push(formatMetricLine(getMetricLabel(snapshot, "weekly"), snapshot.weekly, options));
   }
 
   if (snapshot.summary) {

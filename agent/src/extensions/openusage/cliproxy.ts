@@ -324,6 +324,15 @@ function mapCliproxyProvider(value: string): SupportedProviderId | undefined {
     return "codex";
   }
 
+  if (
+    normalized === "google" ||
+    normalized === "gemini" ||
+    normalized === "gemini-cli" ||
+    normalized === "google-gemini-cli"
+  ) {
+    return "google";
+  }
+
   if (normalized === "zai" || normalized === "glm") {
     return "zai";
   }

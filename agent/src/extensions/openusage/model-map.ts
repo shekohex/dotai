@@ -15,6 +15,18 @@ export function resolveSupportedProviderId(
     return "codex";
   }
 
+  if (
+    normalizedProvider === "google" ||
+    normalizedProvider === "gemini" ||
+    normalizedProvider === "google-gemini-cli" ||
+    normalizedProvider === "google-generative-ai" ||
+    normalizedProvider === "google-ai-studio" ||
+    normalizedProvider === "google-ai" ||
+    normalizedModelId.includes("gemini")
+  ) {
+    return "google";
+  }
+
   if (normalizedProvider === "zai-coding-plan" || normalizedProvider === "zai") {
     return "zai";
   }

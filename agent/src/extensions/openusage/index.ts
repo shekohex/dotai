@@ -21,6 +21,16 @@ import {
 } from "./types.js";
 import { usageProviders } from "./providers/index.js";
 
+function getMetricLabels(snapshot: UsageSnapshot | undefined, providerId: SupportedProviderId): {
+  session: string;
+  weekly: string;
+} {
+  return {
+    session: snapshot?.metricShortLabels?.session5h ?? (providerId === "google" ? "P24" : "5h"),
+    weekly: snapshot?.metricShortLabels?.weekly ?? (providerId === "google" ? "F24" : "wk"),
+  };
+}
+
 async function resolveAndRefreshProvider(
   provider: string | undefined,
   modelId: string | undefined,
@@ -55,11 +65,14 @@ export default function openUsageExtension(pi: ExtensionAPI) {
     state.notifiedAlerts.clear();
     state.persisted = restorePersistedState(ctx.sessionManager.getBranch());
     await refreshActiveProvider(ctx, { force: false });
+    schedulePublishCurrentModelUsage(ctx);
     startInterval(ctx);
   });
 
   pi.on("model_select", async (_event, ctx) => {
     await refreshActiveProvider(ctx, { force: false });
+    publishCurrentModelUsage(ctx);
+    schedulePublishCurrentModelUsage(ctx);
   });
 
   pi.events.on("modes:changed", async (data) => {
@@ -78,6 +91,11 @@ export default function openUsageExtension(pi: ExtensionAPI) {
         refreshProvider,
         publishUsageUpdate,
       );
+      publishUsageForProvider(
+        ctx,
+        resolveSupportedProviderId(event.spec?.provider, event.spec?.modelId),
+      );
+      schedulePublishCurrentModelUsage(ctx);
     } catch {
       return;
     }
@@ -115,6 +133,39 @@ export default function openUsageExtension(pi: ExtensionAPI) {
     } catch {
       return;
     }
+  }
+
+  function publishCurrentModelUsage(ctx: ExtensionContext): void {
+    publishUsageForProvider(
+      ctx,
+      resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id),
+    );
+  }
+
+  function publishUsageForProvider(
+    ctx: ExtensionContext,
+    providerId: SupportedProviderId | undefined,
+  ): void {
+    if (!providerId) {
+      return;
+    }
+
+    const snapshot = state.snapshots.get(providerId);
+    if (!snapshot) {
+      return;
+    }
+
+    publishUsageUpdate(ctx, snapshot, true);
+  }
+
+  function schedulePublishCurrentModelUsage(ctx: ExtensionContext): void {
+    setTimeout(() => {
+      if (currentCtx !== ctx) {
+        return;
+      }
+
+      publishCurrentModelUsage(ctx);
+    }, 150);
   }
 
   async function refreshProvider(
@@ -214,9 +265,10 @@ export default function openUsageExtension(pi: ExtensionAPI) {
 
     if (isActive) {
       const theme = ctx.ui.theme;
+      const labels = getMetricLabels(cached, providerId);
       ctx.ui.setStatus(
         "openusage",
-        `${theme.fg("dim", "5h ")}${theme.fg("warning", "n/a")}${theme.fg("dim", " wk ")}${theme.fg("warning", "n/a")}`,
+        `${theme.fg("dim", `${labels.session} `)}${theme.fg("warning", "n/a")}${theme.fg("dim", ` ${labels.weekly} `)}${theme.fg("warning", "n/a")}`,
       );
       pi.events.emit(OPENUSAGE_UPDATED_EVENT, {
         active: true,
@@ -289,7 +341,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
 }
 
 function formatAlertMessage(alert: OpenUsageAlertEvent): string {
-  const metricLabel = alert.metric === "weekly" ? "weekly" : "5h";
+  const metricLabel = alert.snapshot.metricLabels?.[alert.metric] ?? (alert.metric === "weekly" ? "weekly" : "5h");
   const remaining = formatPercent(alert.remainingPercent);
   const threshold = formatPercent(alert.thresholdPercent);
   return `OpenUsage ${alert.displayName}: ${metricLabel} remaining ${remaining} (≤ ${threshold})`;

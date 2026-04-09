@@ -23,6 +23,7 @@ const LITELLM_CANDIDATES: LiteLLMCandidate[] = [
 ];
 
 const CODEX_OPENAI_PROVIDER = "codex-openai";
+const GOOGLE_PROVIDER = "google";
 const ZAI_CODING_PLAN_PROVIDER = "zai-coding-plan";
 const LITELLM_AUTH_PROVIDER = "litellm";
 export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
@@ -34,20 +35,53 @@ export default async function litellmGatewayExtension(pi: ExtensionAPI) {
   const litellmApiKey = await resolveLiteLLMApiKey();
 
   const state = await resolveLiteLLMState();
-  if (state.baseUrl) {
-    pi.registerProvider(CODEX_OPENAI_PROVIDER, {
-      baseUrl: state.baseUrl,
-      apiKey: litellmApiKey ?? LITELLM_API_KEY_ENV,
-      models: createCodexOpenAIModels(),
-    });
+  for (const registration of createLiteLLMProviderRegistrations(state, litellmApiKey)) {
+    pi.registerProvider(registration.provider, registration.config);
+  }
+}
 
-    pi.registerProvider(ZAI_CODING_PLAN_PROVIDER, {
-      baseUrl: state.baseUrl,
-      apiKey: litellmApiKey ?? LITELLM_API_KEY_ENV,
-      api: "openai-completions",
-      models: createZaiCodingPlanModels(),
+type RegisteredProviderConfig = Parameters<ExtensionAPI["registerProvider"]>[1];
+
+export function createLiteLLMProviderRegistrations(
+  state: LiteLLMState,
+  litellmApiKey?: string,
+): Array<{ provider: string; config: RegisteredProviderConfig }> {
+  if (!state.baseUrl) {
+    return [];
+  }
+
+  const apiKey = litellmApiKey ?? LITELLM_API_KEY_ENV;
+  const registrations: Array<{ provider: string; config: RegisteredProviderConfig }> = [
+    {
+      provider: CODEX_OPENAI_PROVIDER,
+      config: {
+        baseUrl: state.baseUrl,
+        apiKey,
+        models: createCodexOpenAIModels(),
+      },
+    },
+    {
+      provider: ZAI_CODING_PLAN_PROVIDER,
+      config: {
+        baseUrl: state.baseUrl,
+        apiKey,
+        api: "openai-completions",
+        models: createZaiCodingPlanModels(),
+      },
+    },
+  ];
+
+  if (state.origin) {
+    registrations.push({
+      provider: GOOGLE_PROVIDER,
+      config: {
+        baseUrl: `${state.origin}/v1beta`,
+        apiKey,
+      },
     });
   }
+
+  return registrations;
 }
 
 export async function resolveLiteLLMApiKey(): Promise<string | undefined> {

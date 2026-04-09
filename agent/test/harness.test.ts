@@ -12,6 +12,7 @@ import { createPlaybookStreamFn } from "../node_modules/@marcfargas/pi-test-harn
 import webFetchExtension from "../src/extensions/fetch.ts";
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
+import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
 import {
@@ -551,4 +552,26 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
     providers.dispose();
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test("LiteLLM provider registrations override built-in google via v1beta", () => {
+  const registrations = createLiteLLMProviderRegistrations(
+    {
+      healthy: true,
+      label: "public",
+      origin: "https://litellm.example.test",
+      baseUrl: "https://litellm.example.test/v1",
+    },
+    "TEST_KEY",
+  );
+
+  const googleRegistration = registrations.find((registration) => registration.provider === "google");
+
+  assert.deepEqual(googleRegistration, {
+    provider: "google",
+    config: {
+      baseUrl: "https://litellm.example.test/v1beta",
+      apiKey: "TEST_KEY",
+    },
+  });
 });

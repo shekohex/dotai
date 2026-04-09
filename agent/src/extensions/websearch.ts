@@ -1,5 +1,5 @@
 import { StringEnum } from "@mariozechner/pi-ai";
-import { defineTool, getMarkdownTheme, keyHint, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { defineTool, getMarkdownTheme, keyHint, type AgentToolUpdateCallback, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { LITELLM_API_KEY_ENV, resolveLiteLLMApiKey, resolveLiteLLMState } from "./litellm.js";
@@ -330,7 +330,7 @@ async function readStreamingSearchResponse(
     timeoutMs: number;
     endpoint: string;
     startedAt: number;
-    onUpdate: ((result: { content: Array<{ type: string; text?: string }>; details: WebSearchDetails }) => void) | undefined;
+    onUpdate: AgentToolUpdateCallback<unknown> | undefined;
   },
 ): Promise<SearchResult> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -400,7 +400,7 @@ function emitStreamingUpdate(
     timeoutMs: number;
     endpoint: string;
     startedAt: number;
-    onUpdate: ((result: { content: Array<{ type: string; text?: string }>; details: WebSearchDetails }) => void) | undefined;
+    onUpdate: AgentToolUpdateCallback<unknown> | undefined;
   },
   aggregate: SearchAccumulator,
 ): void {

@@ -460,13 +460,15 @@ test("pi-test-harness runs webfetch against the real tool implementation", async
 
 test("websearch emits streaming updates before the final result", async () => {
   const originalFetch = globalThis.fetch;
-  const originalLiteLLMApiKey = process.env.LITELLM_API_KEY;
   const encoder = new TextEncoder();
   const updates: Array<{ content?: Array<{ type: string; text?: string }>; details?: { answer?: string } }> = [];
 
-  process.env.LITELLM_API_KEY = "litellm-test-key";
-
   globalThis.fetch = async (input, init) => {
+    const requestHeaders = input instanceof Request ? input.headers : undefined;
+    const initHeaders = init?.headers instanceof Headers
+      ? init.headers
+      : new Headers((init?.headers as Record<string, string> | undefined) ?? {});
+    const getHeader = (name: string) => requestHeaders?.get(name) ?? initHeaders.get(name) ?? "";
     const url = typeof input === "string"
       ? input
       : input instanceof URL
@@ -478,7 +480,7 @@ test("websearch emits streaming updates before the final result", async () => {
     }
 
     if (url.includes(":streamGenerateContent")) {
-      assert.ok(((init?.headers as Record<string, string>)?.["x-goog-api-key"] ?? "").length > 0);
+      assert.ok(getHeader("x-goog-api-key").length > 0);
       const stream = new ReadableStream({
         start(controller) {
           const events = [
@@ -541,7 +543,28 @@ test("websearch emits streaming updates before the final result", async () => {
       (update) => {
         updates.push(update as { content?: Array<{ type: string; text?: string }>; details?: { answer?: string } });
       },
-      {} as never,
+      {
+        modelRegistry: {
+          find(provider: string, modelId: string) {
+            assert.equal(provider, "gemini");
+            return {
+              id: modelId,
+              name: modelId,
+              provider: "gemini",
+              api: "google-generative-ai",
+              baseUrl: "https://litellm.example.test/v1beta",
+              reasoning: true,
+              input: ["text"],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 1_000_000,
+              maxTokens: 65_536,
+            };
+          },
+          async getApiKeyAndHeaders() {
+            return { ok: true as const, apiKey: "litellm-test-key", headers: undefined };
+          },
+        },
+      } as never,
     );
 
     assert.ok(updates.length > 1);
@@ -555,15 +578,10 @@ test("websearch emits streaming updates before the final result", async () => {
     assert.match(toolResult, /https:\/\/nextjs\.org\/blog\/next-16/);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalLiteLLMApiKey === undefined) {
-      delete process.env.LITELLM_API_KEY;
-    } else {
-      process.env.LITELLM_API_KEY = originalLiteLLMApiKey;
-    }
   }
 });
 
-test("websearch uses the LiteLLM api key with the google model provider", async () => {
+test("websearch uses the LiteLLM api key with the gemini model provider", async () => {
   const originalFetch = globalThis.fetch;
   const originalLiteLLMApiKey = process.env.LITELLM_API_KEY;
   let session: TestSession | undefined;
@@ -571,6 +589,11 @@ test("websearch uses the LiteLLM api key with the google model provider", async 
   process.env.LITELLM_API_KEY = "litellm-test-key";
 
   globalThis.fetch = async (input, init) => {
+    const requestHeaders = input instanceof Request ? input.headers : undefined;
+    const initHeaders = init?.headers instanceof Headers
+      ? init.headers
+      : new Headers((init?.headers as Record<string, string> | undefined) ?? {});
+    const getHeader = (name: string) => requestHeaders?.get(name) ?? initHeaders.get(name) ?? "";
     const url = typeof input === "string"
       ? input
       : input instanceof URL
@@ -582,7 +605,7 @@ test("websearch uses the LiteLLM api key with the google model provider", async 
     }
 
     if (url.includes(":streamGenerateContent")) {
-      assert.equal((init?.headers as Record<string, string>)?.["x-goog-api-key"], "litellm-test-key");
+      assert.equal(getHeader("x-goog-api-key"), "litellm-test-key");
       return new Response(JSON.stringify([{
         candidates: [{
           content: {
@@ -835,7 +858,7 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
   }
 });
 
-test("LiteLLM provider registrations override built-in google via v1beta", () => {
+test("LiteLLM provider registrations add the gemini provider via v1beta", () => {
   const registrations = createLiteLLMProviderRegistrations(
     {
       healthy: true,
@@ -846,15 +869,14 @@ test("LiteLLM provider registrations override built-in google via v1beta", () =>
     "TEST_KEY",
   );
 
-  const googleRegistration = registrations.find((registration) => registration.provider === "google");
+  const geminiRegistration = registrations.find((registration) => registration.provider === "gemini");
 
-  assert.deepEqual(googleRegistration, {
-    provider: "google",
-    config: {
-      baseUrl: "https://litellm.example.test/v1beta",
-      apiKey: "TEST_KEY",
-    },
-  });
+  assert.ok(geminiRegistration);
+  assert.equal(geminiRegistration.provider, "gemini");
+  assert.equal(geminiRegistration.config.baseUrl, "https://litellm.example.test/v1beta");
+  assert.equal(geminiRegistration.config.apiKey, "TEST_KEY");
+  assert.ok(Array.isArray(geminiRegistration.config.models));
+  assert.ok(geminiRegistration.config.models!.some((model) => model.id === "gemini-2.5-flash"));
 });
 
 test("model family system prompt updates immediately on model switching and preserves the pi tail", async () => {

@@ -23,7 +23,7 @@ const LITELLM_CANDIDATES: LiteLLMCandidate[] = [
 ];
 
 const CODEX_OPENAI_PROVIDER = "codex-openai";
-const GOOGLE_PROVIDER = "google";
+const GEMINI_PROVIDER = "gemini";
 const ZAI_CODING_PLAN_PROVIDER = "zai-coding-plan";
 const LITELLM_AUTH_PROVIDER = "litellm";
 export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
@@ -73,10 +73,11 @@ export function createLiteLLMProviderRegistrations(
 
   if (state.origin) {
     registrations.push({
-      provider: GOOGLE_PROVIDER,
+      provider: GEMINI_PROVIDER,
       config: {
         baseUrl: `${state.origin}/v1beta`,
         apiKey,
+        models: createGeminiModels(),
       },
     });
   }
@@ -167,6 +168,21 @@ function createCodexOpenAIModels(): ProviderModelConfig[] {
     id: model.id,
     name: model.name,
     api: "openai-responses",
+    reasoning: model.reasoning,
+    input: [...model.input],
+    cost: { ...model.cost },
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    compat: model.compat,
+    headers: model.headers,
+  }));
+}
+
+function createGeminiModels(): ProviderModelConfig[] {
+  return getModels("google").map((model) => ({
+    id: model.id,
+    name: model.name,
+    api: model.api,
     reasoning: model.reasoning,
     input: [...model.input],
     cost: { ...model.cost },

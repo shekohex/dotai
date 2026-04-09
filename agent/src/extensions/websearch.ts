@@ -1,9 +1,9 @@
-import { StringEnum } from "@mariozechner/pi-ai";
-import { defineTool, getMarkdownTheme, keyHint, type AgentToolUpdateCallback, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { stream, StringEnum } from "@mariozechner/pi-ai";
+import { defineTool, getMarkdownTheme, keyHint, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { LITELLM_API_KEY_ENV, resolveLiteLLMApiKey, resolveLiteLLMState } from "./litellm.js";
 
+const WEBSEARCH_PROVIDER = "gemini";
 const WEBSEARCH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"] as const;
 const DEFAULT_MODEL = "gemini-2.5-flash";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -17,32 +17,6 @@ const COLLAPSED_ERROR_MAX_CHARS = 1200;
 const STREAM_PREVIEW_LINE_LIMIT = 5;
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
-
-type GroundingChunk = {
-  web?: {
-    title?: string;
-    uri?: string;
-  };
-};
-
-type GroundingMetadata = {
-  groundingChunks?: GroundingChunk[];
-  webSearchQueries?: string[];
-};
-
-type GeminiCandidate = {
-  content?: {
-    parts?: Array<{ text?: string }>;
-  };
-  groundingMetadata?: GroundingMetadata;
-};
-
-type GeminiResponse = {
-  candidates?: GeminiCandidate[];
-  error?: {
-    message?: string;
-  };
-};
 
 type StructuredSearchResult = {
   answer?: string;
@@ -59,12 +33,6 @@ type SearchResult = {
   answer: string;
   sources: WebSearchSource[];
   searchQueries: string[];
-};
-
-type SearchAccumulator = {
-  answer: string;
-  sources: Map<string, WebSearchSource>;
-  searchQueries: Set<string>;
 };
 
 type WebSearchDetails = {
@@ -84,6 +52,8 @@ type WebSearchRenderState = {
   endedAt?: number;
   interval?: ReturnType<typeof setInterval>;
 };
+
+type SearchSection = "answer" | "sources" | "queries";
 
 export const webSearchTool = defineTool({
   name: "websearch",
@@ -183,7 +153,7 @@ export const webSearchTool = defineTool({
     container.addChild(new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
     return container;
   },
-  async execute(_toolCallId, params, signal, onUpdate) {
+  async execute(_toolCallId, params, signal, onUpdate, ctx) {
     const query = params.query.trim();
     if (!query) {
       throw new Error("websearch query is empty");
@@ -208,69 +178,73 @@ export const webSearchTool = defineTool({
       } satisfies WebSearchDetails,
     });
 
-    const state = await resolveLiteLLMState();
-    const apiKey = (await resolveLiteLLMApiKey()) ?? process.env[LITELLM_API_KEY_ENV];
-
-    if (!state.origin) {
-      throw new Error(`LiteLLM gateway unavailable${state.error ? `: ${state.error}` : ""}`);
+    const searchModel = ctx.modelRegistry.find(WEBSEARCH_PROVIDER, model);
+    if (!searchModel) {
+      throw new Error(`Gemini model ${model} is not available. Ensure the LiteLLM-backed \`${WEBSEARCH_PROVIDER}\` provider is loaded.`);
     }
 
-    if (!apiKey) {
-      throw new Error(`LiteLLM API key not configured in auth storage or ${LITELLM_API_KEY_ENV}.`);
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(searchModel);
+    if (!auth.ok) {
+      throw new Error(`Websearch auth failed: ${auth.error}`);
     }
 
-    const requestBody = buildRequestBody(query);
-    const streamEndpoint = `${state.origin}/v1beta/models/${model}:streamGenerateContent?alt=sse`;
-    const streamResponse = await fetch(streamEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        "x-goog-api-key": apiKey,
+    if (!auth.apiKey) {
+      throw new Error(`No API key for ${searchModel.provider}/${searchModel.id}`);
+    }
+
+    const endpoint = `${searchModel.baseUrl?.replace(/\/$/, "") ?? `${searchModel.provider}/${searchModel.id}`}/models/${searchModel.id}:streamGenerateContent?alt=sse`;
+    const searchStream = stream(
+      searchModel,
+      {
+        systemPrompt: buildSystemInstruction(),
+        messages: [{ role: "user", content: buildUserPrompt(query), timestamp: Date.now() }],
       },
-      body: JSON.stringify(requestBody),
-      signal: mergeAbortSignals(signal, timeoutMs),
-    });
+      {
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        signal: mergeAbortSignals(signal, timeoutMs),
+        onPayload: (payload) => configureGroundedSearchPayload(payload, searchModel.reasoning),
+      },
+    );
 
-    if (streamResponse.ok) {
-      const streamed = await readStreamingSearchResponse(streamResponse, {
-        query,
-        model,
-        timeoutMs,
-        endpoint: streamEndpoint,
-        startedAt,
-        onUpdate,
-      });
+    let lastPartialAnswer = "";
 
-      if (streamed.answer) {
-        return {
-          content: [{ type: "text", text: formatResult(streamed) }],
-          details: buildDetails(query, model, timeoutMs, streamEndpoint, startedAt, streamed),
-        };
+    for await (const event of searchStream) {
+      if (event.type !== "text_start" && event.type !== "text_delta" && event.type !== "text_end") {
+        continue;
       }
+
+      const partialText = getAssistantText(event.partial.content).trim();
+      const partialAnswer = extractStreamingAnswerText(partialText);
+      if (!partialAnswer || partialAnswer === lastPartialAnswer) {
+        continue;
+      }
+
+      lastPartialAnswer = partialAnswer;
+      onUpdate?.({
+        content: [{ type: "text", text: partialAnswer }],
+        details: buildDetails(query, model, timeoutMs, endpoint, startedAt, {
+          answer: partialAnswer,
+          sources: [],
+          searchQueries: [],
+        }),
+      });
     }
 
-    const endpoint = `${state.origin}/v1beta/models/${model}:generateContent`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify(requestBody),
-      signal: mergeAbortSignals(signal, timeoutMs),
-    });
+    const response = await searchStream.result();
+    const text = getAssistantText(response.content).trim();
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      const snippet = errorText.length > 2000 ? `${errorText.slice(0, 2000)}...` : errorText;
-      throw new Error(`LiteLLM websearch failed: ${response.status} ${response.statusText}${snippet ? `\n${snippet}` : ""}`);
+    if (response.stopReason === "aborted") {
+      throw new Error(response.errorMessage ?? "Websearch request aborted");
     }
 
-    const data = (await response.json()) as GeminiResponse;
-    const result = parseSearchResponse(data);
+    if (response.stopReason === "error") {
+      throw new Error(response.errorMessage || text || "Websearch failed");
+    }
+
+    const result = parseSearchResponseText(text);
     if (!result.answer) {
-      throw new Error(data.error?.message ?? "LiteLLM websearch returned no answer");
+      throw new Error("Websearch returned no answer");
     }
 
     return {
@@ -301,118 +275,27 @@ function mergeAbortSignals(signal: AbortSignal | undefined, timeoutMs: number): 
   return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 }
 
-function buildRequestBody(query: string) {
-  return {
-    systemInstruction: {
-      parts: [{ text: buildSystemInstruction() }],
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: buildUserPrompt(query) }],
-      },
-    ],
-    tools: [{ googleSearch: {} }],
-    generationConfig: {
-      thinkingConfig: {
-        thinkingBudget: THINKING_BUDGET,
-        includeThoughts: false,
-      },
-    },
-  };
-}
-
-async function readStreamingSearchResponse(
-  response: Response,
-  input: {
-    query: string;
-    model: string;
-    timeoutMs: number;
-    endpoint: string;
-    startedAt: number;
-    onUpdate: AgentToolUpdateCallback<unknown> | undefined;
-  },
-): Promise<SearchResult> {
-  const contentType = response.headers.get("content-type") ?? "";
-
-  if (!response.body) {
-    return { answer: "", sources: [], searchQueries: [] };
+function configureGroundedSearchPayload(payload: unknown, includeThinking: boolean): unknown {
+  if (!payload || typeof payload !== "object") {
+    return payload;
   }
 
-  if (!contentType.includes("text/event-stream")) {
-    const text = await response.text();
-    return parseStreamingFallbackBody(text);
+  const request = { ...(payload as Record<string, unknown>) };
+  const config = request.config && typeof request.config === "object"
+    ? { ...(request.config as Record<string, unknown>) }
+    : {};
+
+  config.tools = [{ googleSearch: {} }];
+
+  if (includeThinking) {
+    config.thinkingConfig = {
+      thinkingBudget: THINKING_BUDGET,
+      includeThoughts: false,
+    };
   }
 
-  const decoder = new TextDecoder();
-  const reader = response.body.getReader();
-  let buffer = "";
-  const aggregate = createSearchAccumulator();
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-    const events = consumeSseEvents(buffer);
-    buffer = events.rest;
-
-    for (const eventText of events.events) {
-      const payload = parseSseDataPayload(eventText);
-      if (!payload) {
-        continue;
-      }
-
-      const chunks = Array.isArray(payload) ? payload : [payload];
-      let didChange = false;
-      for (const chunk of chunks) {
-        didChange = mergeSearchChunk(aggregate, chunk) || didChange;
-      }
-
-      if (didChange) {
-        emitStreamingUpdate(input, aggregate);
-      }
-    }
-  }
-
-  const finalPayload = buffer.trim();
-  if (finalPayload) {
-    const payload = parseSseDataPayload(finalPayload);
-    if (payload) {
-      const chunks = Array.isArray(payload) ? payload : [payload];
-      for (const chunk of chunks) {
-        mergeSearchChunk(aggregate, chunk);
-      }
-    }
-  }
-
-  emitStreamingUpdate(input, aggregate);
-
-  return finalizeSearchAccumulator(aggregate);
-}
-
-function emitStreamingUpdate(
-  input: {
-    query: string;
-    model: string;
-    timeoutMs: number;
-    endpoint: string;
-    startedAt: number;
-    onUpdate: AgentToolUpdateCallback<unknown> | undefined;
-  },
-  aggregate: SearchAccumulator,
-): void {
-  if (!input.onUpdate) {
-    return;
-  }
-
-  const result = finalizeSearchAccumulator(aggregate);
-  input.onUpdate({
-    content: result.answer ? [{ type: "text", text: result.answer }] : [],
-    details: buildDetails(input.query, input.model, input.timeoutMs, input.endpoint, input.startedAt, result),
-  });
+  request.config = config;
+  return request;
 }
 
 function syncRenderState(
@@ -450,103 +333,31 @@ function getElapsedMs(state: WebSearchRenderState): number | undefined {
   return (state.endedAt ?? Date.now()) - state.startedAt;
 }
 
-function createSearchAccumulator(): SearchAccumulator {
-  return {
-    answer: "",
-    sources: new Map<string, WebSearchSource>(),
-    searchQueries: new Set<string>(),
-  };
-}
-
-function finalizeSearchAccumulator(accumulator: SearchAccumulator): SearchResult {
-  return {
-    answer: accumulator.answer.trim(),
-    sources: [...accumulator.sources.values()],
-    searchQueries: [...accumulator.searchQueries],
-  };
-}
-
-function mergeSearchChunk(accumulator: SearchAccumulator, data: GeminiResponse): boolean {
-  const result = parseSearchResponse(data);
-  let changed = false;
-
-  if (result.answer) {
-    const nextAnswer = mergeStreamingAnswer(accumulator.answer, result.answer);
-    if (nextAnswer !== accumulator.answer) {
-      accumulator.answer = nextAnswer;
-      changed = true;
-    }
-  }
-
-  for (const source of result.sources) {
-    if (accumulator.sources.has(source.url) || accumulator.sources.size >= MAX_SOURCES) {
-      continue;
-    }
-
-    accumulator.sources.set(source.url, source);
-    changed = true;
-  }
-
-  for (const searchQuery of result.searchQueries) {
-    if (accumulator.searchQueries.has(searchQuery) || accumulator.searchQueries.size >= MAX_SEARCH_QUERIES) {
-      continue;
-    }
-
-    accumulator.searchQueries.add(searchQuery);
-    changed = true;
-  }
-
-  return changed;
-}
-
-function mergeStreamingAnswer(currentAnswer: string, chunkAnswer: string): string {
-  const current = currentAnswer.trimEnd();
-  const chunk = chunkAnswer.trim();
-
-  if (!chunk) {
-    return currentAnswer;
-  }
-
-  if (!current) {
-    return chunk;
-  }
-
-  if (chunk === current || current.endsWith(chunk)) {
-    return current;
-  }
-
-  if (chunk.startsWith(current)) {
-    return chunk;
-  }
-
-  if (current.startsWith(chunk)) {
-    return current;
-  }
-
-  return `${current}\n${chunk}`;
-}
-
 function buildSystemInstruction(): string {
   return [
     "<role>",
-    "You are a super fast and smart Google Search research agent.",
-    "You are precise, analytical, and persistent.",
+    "You are a fast web research agent using Google Search grounding.",
     "</role>",
     "",
     "<instructions>",
-    "1. Plan: break the query into focused sub-questions.",
-    "2. Execute: search broadly, cross-check claims, and use multiple sources.",
-    '3. Cite: every specific claim must include a source link; if none, say "uncited".',
-    "4. Validate: resolve conflicts or call them out explicitly.",
-    "5. Format: return a concise technical answer in Markdown prose.",
+    "1. Break the query into the smallest useful research questions.",
+    "2. Search broadly, verify facts across sources, and prefer official sources.",
+    "3. Resolve conflicts explicitly and state uncertainty when needed.",
+    "4. Return exactly one JSON object with keys answer, sources, and searchQueries.",
+    "5. answer must be Markdown prose only, with no Sources or Search queries headings.",
+    "6. sources must contain only URLs you are confident came from grounded search results.",
+    "7. searchQueries must list the main web searches you actually used.",
     "</instructions>",
     "",
+    "<output_schema>",
+    '{"answer":"markdown answer","sources":[{"title":"source title","url":"https://example.com"}],"searchQueries":["query"]}',
+    "</output_schema>",
+    "",
     "<constraints>",
-    "- Verbosity: High",
-    "- Tone: Technical",
+    "- No code fences",
+    "- No prose outside the JSON object",
     "- No fabricated facts or URLs",
-    "- Do not reveal planning, analysis, or tool-use reasoning",
-    "- Do not include a Sources or Search queries section; the tool renders that separately",
+    "- Keep the answer concise and technical",
     "</constraints>",
   ].join("\n");
 }
@@ -554,164 +365,365 @@ function buildSystemInstruction(): string {
 function buildUserPrompt(query: string): string {
   return [
     "<task>",
-    `Search the web and answer this query: ${query}`,
+    query,
     "</task>",
     "",
     "<requirements>",
-    "Favor official and primary sources when available.",
+    "Favor primary sources when available.",
     "Call out uncertainty or source conflicts explicitly.",
+    `Return at most ${MAX_SOURCES} sources and at most ${MAX_SEARCH_QUERIES} search queries.`,
     "</requirements>",
-    "",
-    "<final_instruction>",
-    "Use deeper reasoning internally, but output only the final answer body in Markdown.",
-    "</final_instruction>",
   ].join("\n");
 }
 
-function parseSearchResponse(data: GeminiResponse): SearchResult {
-  const sources = new Map<string, WebSearchSource>();
-  const searchQueries = new Set<string>();
-  let answer = "";
-
-  const candidate = data.candidates?.[0];
-  const text = candidate?.content?.parts
-    ?.map((part) => part.text ?? "")
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-
-  if (text) {
-    const jsonPayload = text.startsWith("```") ? text.replace(/^```\w*\n?|```$/g, "").trim() : text;
-    const match = /\{[\s\S]*\}/.exec(jsonPayload);
-    const candidateJson = match ? match[0] : jsonPayload;
-
-    if (candidateJson.startsWith("{") && candidateJson.endsWith("}")) {
-      try {
-        const structured = JSON.parse(candidateJson) as StructuredSearchResult;
-        if (structured.answer?.trim()) {
-          answer = structured.answer.trim();
-        }
-        for (const source of structured.sources ?? []) {
-          const title = source.title?.trim();
-          const url = source.url?.trim();
-          if (!title || !url || sources.has(url)) {
-            continue;
-          }
-          sources.set(url, { title, url });
-          if (sources.size >= MAX_SOURCES) {
-            break;
-          }
-        }
-        for (const searchQuery of structured.searchQueries ?? []) {
-          const normalized = searchQuery.trim();
-          if (!normalized) {
-            continue;
-          }
-          searchQueries.add(normalized);
-          if (searchQueries.size >= MAX_SEARCH_QUERIES) {
-            break;
-          }
-        }
-      } catch {
-        answer = text;
-      }
-    } else {
-      answer = text;
-    }
-  }
-
-  for (const metadata of candidate?.groundingMetadata ? [candidate.groundingMetadata] : []) {
-    for (const chunk of metadata.groundingChunks ?? []) {
-      const title = chunk.web?.title?.trim();
-      const url = chunk.web?.uri?.trim();
-      if (!title || !url || sources.has(url)) {
-        continue;
-      }
-      sources.set(url, { title, url });
-      if (sources.size >= MAX_SOURCES) {
-        break;
-      }
-    }
-
-    for (const searchQuery of metadata.webSearchQueries ?? []) {
-      const normalized = searchQuery.trim();
-      if (!normalized) {
-        continue;
-      }
-      searchQueries.add(normalized);
-      if (searchQueries.size >= MAX_SEARCH_QUERIES) {
-        break;
-      }
-    }
-  }
-
-  return {
-    answer,
-    sources: [...sources.values()],
-    searchQueries: [...searchQueries],
-  };
-}
-
-function consumeSseEvents(buffer: string): { events: string[]; rest: string } {
-  const normalized = buffer.replace(/\r\n/g, "\n");
-  const events: string[] = [];
-  let start = 0;
-
-  while (true) {
-    const boundary = normalized.indexOf("\n\n", start);
-    if (boundary === -1) {
-      break;
-    }
-
-    events.push(normalized.slice(start, boundary));
-    start = boundary + 2;
-  }
-
-  return {
-    events,
-    rest: normalized.slice(start),
-  };
-}
-
-function parseSseDataPayload(eventText: string): GeminiResponse | GeminiResponse[] | undefined {
-  const data = eventText
-    .split("\n")
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice(5).trim())
-    .join("\n")
-    .trim();
-
-  if (!data || data === "[DONE]") {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(data) as GeminiResponse | GeminiResponse[];
-  } catch {
-    return undefined;
-  }
-}
-
-function parseStreamingFallbackBody(text: string): SearchResult {
+function parseSearchResponseText(text: string): SearchResult {
   const normalized = text.trim();
   if (!normalized) {
     return { answer: "", sources: [], searchQueries: [] };
   }
 
-  try {
-    const parsed = JSON.parse(normalized) as GeminiResponse | GeminiResponse[];
-    if (Array.isArray(parsed)) {
-      const accumulator = createSearchAccumulator();
-      for (const item of parsed) {
-        mergeSearchChunk(accumulator, item);
-      }
-      return finalizeSearchAccumulator(accumulator);
+  const structured = parseStructuredSearchJson(normalized);
+  if (structured) {
+    return structured;
+  }
+
+  return parseSectionedSearchText(stripWrappingCodeFence(normalized));
+}
+
+function extractStreamingAnswerText(text: string): string {
+  const normalized = text.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.startsWith("{") && !normalized.includes("\"answer\"")) {
+    return "";
+  }
+
+  const answerValue = extractPartialJsonStringValue(normalized, "answer");
+  if (answerValue !== undefined) {
+    return answerValue.trim();
+  }
+
+  if (normalized.startsWith("{")) {
+    return "";
+  }
+
+  return parseSectionedSearchText(stripWrappingCodeFence(normalized)).answer;
+}
+
+function extractPartialJsonStringValue(text: string, key: string): string | undefined {
+  const pattern = new RegExp(`"${escapeRegex(key)}"\\s*:\\s*"`, "m");
+  const match = pattern.exec(text);
+  if (!match) {
+    return undefined;
+  }
+
+  let index = match.index + match[0].length;
+  let value = "";
+
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\"") {
+      return value;
     }
 
-    return parseSearchResponse(parsed);
-  } catch {
-    return { answer: normalized, sources: [], searchQueries: [] };
+    if (char !== "\\") {
+      value += char;
+      index += 1;
+      continue;
+    }
+
+    const next = text[index + 1];
+    if (next === undefined) {
+      return value;
+    }
+
+    if (next === "u") {
+      const hex = text.slice(index + 2, index + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+        return value;
+      }
+      value += String.fromCharCode(Number.parseInt(hex, 16));
+      index += 6;
+      continue;
+    }
+
+    value += decodeJsonEscape(next);
+    index += 2;
   }
+
+  return value;
+}
+
+function decodeJsonEscape(value: string): string {
+  switch (value) {
+    case "\"":
+      return "\"";
+    case "\\":
+      return "\\";
+    case "/":
+      return "/";
+    case "b":
+      return "\b";
+    case "f":
+      return "\f";
+    case "n":
+      return "\n";
+    case "r":
+      return "\r";
+    case "t":
+      return "\t";
+    default:
+      return value;
+  }
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseStructuredSearchJson(text: string): SearchResult | undefined {
+  const normalized = stripWrappingCodeFence(text);
+  const objects = extractTopLevelJsonObjects(normalized);
+  const candidateJsons = objects.length > 0 ? objects : [normalized];
+  if (candidateJsons.length === 0) {
+    return undefined;
+  }
+
+  try {
+    const sources = new Map<string, WebSearchSource>();
+    const searchQueries = new Set<string>();
+    let answer = "";
+
+    for (const candidateJson of candidateJsons) {
+      const trimmed = candidateJson.trim();
+      if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+        continue;
+      }
+
+      const parsed = JSON.parse(trimmed) as StructuredSearchResult;
+
+      if (parsed.answer?.trim()) {
+        answer = parsed.answer.trim();
+      }
+
+      for (const source of parsed.sources ?? []) {
+        addSource(sources, source.title, source.url);
+      }
+
+      for (const searchQuery of parsed.searchQueries ?? []) {
+        addSearchQuery(searchQueries, searchQuery);
+      }
+    }
+
+    if (!answer && sources.size === 0 && searchQueries.size === 0) {
+      return undefined;
+    }
+
+    return {
+      answer,
+      sources: [...sources.values()],
+      searchQueries: [...searchQueries],
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function extractTopLevelJsonObjects(text: string): string[] {
+  const objects: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaping = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaping = true;
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char !== "}") {
+      continue;
+    }
+
+    if (depth === 0) {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0 && start !== -1) {
+      objects.push(text.slice(start, index + 1));
+      start = -1;
+    }
+  }
+
+  return objects;
+}
+
+function parseSectionedSearchText(text: string): SearchResult {
+  const lines = text.split("\n");
+  const answerLines: string[] = [];
+  const sources = new Map<string, WebSearchSource>();
+  const searchQueries = new Set<string>();
+  let section: SearchSection = "answer";
+  let pendingSourceTitle: string | undefined;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const normalizedHeading = trimmed.replace(/^[#*\s]+|[*\s]+$/g, "").trim();
+
+    if (/^sources:?$/i.test(normalizedHeading)) {
+      section = "sources";
+      pendingSourceTitle = undefined;
+      continue;
+    }
+
+    if (/^search\s+queries:?$/i.test(normalizedHeading)) {
+      section = "queries";
+      pendingSourceTitle = undefined;
+      continue;
+    }
+
+    if (section === "sources") {
+      const standaloneUrl = parseStandaloneUrl(trimmed);
+      if (standaloneUrl && pendingSourceTitle) {
+        addSource(sources, pendingSourceTitle, standaloneUrl);
+        pendingSourceTitle = undefined;
+        continue;
+      }
+
+      const source = parseSourceLine(trimmed);
+      if (source) {
+        addSource(sources, source.title, source.url);
+        pendingSourceTitle = undefined;
+        continue;
+      }
+
+      const sourceTitle = parseSourceTitleLine(trimmed);
+      if (sourceTitle) {
+        pendingSourceTitle = sourceTitle;
+        continue;
+      }
+    }
+
+    if (section === "queries") {
+      const searchQuery = parseSearchQueryLine(trimmed);
+      if (searchQuery) {
+        addSearchQuery(searchQueries, searchQuery);
+        continue;
+      }
+    }
+
+    if (section === "answer") {
+      answerLines.push(line);
+    }
+  }
+
+  return {
+    answer: answerLines.join("\n").trim() || text.trim(),
+    sources: [...sources.values()],
+    searchQueries: [...searchQueries],
+  };
+}
+
+function stripWrappingCodeFence(text: string): string {
+  return text.replace(/^```\w*\n?|```$/g, "").trim();
+}
+
+function parseSourceLine(line: string): WebSearchSource | undefined {
+  if (!line) {
+    return undefined;
+  }
+
+  const normalized = line.replace(/^[-*]\s*/, "").trim();
+
+  const markdownAngleMatch = /^\[(.+?)\]\(<(.+?)>\)$/.exec(normalized);
+  if (markdownAngleMatch) {
+    return { title: markdownAngleMatch[1].trim(), url: markdownAngleMatch[2].trim() };
+  }
+
+  const markdownMatch = /^\[(.+?)\]\((https?:\/\/[^\s)]+)\)$/.exec(normalized);
+  if (markdownMatch) {
+    return { title: markdownMatch[1].trim(), url: markdownMatch[2].trim() };
+  }
+
+  const dashMatch = /^(.+?)\s+[—-]\s+(https?:\/\/\S+)$/.exec(normalized);
+  if (dashMatch) {
+    return { title: dashMatch[1].trim(), url: dashMatch[2].trim() };
+  }
+
+  const rawUrlMatch = /^(https?:\/\/\S+)$/.exec(normalized);
+  if (rawUrlMatch) {
+    return { title: rawUrlMatch[1].trim(), url: rawUrlMatch[1].trim() };
+  }
+
+  return undefined;
+}
+
+function parseSourceTitleLine(line: string): string | undefined {
+  const normalized = line.replace(/^[-*]\s*/, "").trim();
+  if (!normalized || normalized.startsWith("http://") || normalized.startsWith("https://")) {
+    return undefined;
+  }
+
+  return normalized.replace(/^\*\*|\*\*$/g, "").trim();
+}
+
+function parseStandaloneUrl(line: string): string | undefined {
+  return /^https?:\/\/\S+$/.test(line) ? line : undefined;
+}
+
+function parseSearchQueryLine(line: string): string | undefined {
+  const match = /^[-*]\s*(.+)$/.exec(line);
+  return match?.[1].trim() || undefined;
+}
+
+function addSource(sources: Map<string, WebSearchSource>, title: string | undefined, url: string | undefined): void {
+  const normalizedTitle = title?.trim();
+  const normalizedUrl = url?.trim();
+  if (!normalizedTitle || !normalizedUrl || sources.has(normalizedUrl) || sources.size >= MAX_SOURCES) {
+    return;
+  }
+
+  sources.set(normalizedUrl, { title: normalizedTitle, url: normalizedUrl });
+}
+
+function addSearchQuery(searchQueries: Set<string>, searchQuery: string | undefined): void {
+  const normalized = searchQuery?.trim();
+  if (!normalized || searchQueries.has(normalized) || searchQueries.size >= MAX_SEARCH_QUERIES) {
+    return;
+  }
+
+  searchQueries.add(normalized);
 }
 
 function buildDetails(
@@ -760,6 +772,12 @@ function formatMarkdownResult(result: SearchResult): string {
     searchQueries: result.searchQueries,
     sources: result.sources,
   });
+}
+
+function getAssistantText(content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>): string {
+  return content
+    .flatMap((item) => (item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : []))
+    .join("\n");
 }
 
 function getTextContent(content: Array<{ type: string; text?: string }>): string {

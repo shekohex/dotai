@@ -4,6 +4,7 @@ import { Text, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
 import { webFetchTool } from "../src/extensions/fetch.js";
+import { webSearchTool } from "../src/extensions/websearch.js";
 import {
   createBashToolOverrideDefinition,
   createEditToolOverrideDefinition,
@@ -69,6 +70,42 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const writeFile = joinPath(cwd, "src/extensions/preview-look.ts");
   const bashDefinition = createBashToolOverrideDefinition();
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
+  const webSearchAnswer = [
+    "Next.js 16 is the current major release, published in October 2025.",
+    "The official release post highlights a stable Turbopack for builds, improved caching defaults, and React 19.2 alignment.",
+    "The upgrade guide also calls out cacheComponents replacing the older ppr flag, plus continued server/client boundary improvements.",
+    "Teams upgrading should review the breaking changes list and re-run production builds because build pipeline defaults changed.",
+    "Official docs remain the best source for migration steps and flag-by-flag behavior.",
+    "Community summaries exist, but the release blog and upgrade guide are the primary references.",
+    "If you need exact migration steps, compare the release notes with the versioned upgrade guide before enabling new defaults in CI.",
+  ].join("\n");
+  const webSearchMarkdown = [
+    webSearchAnswer,
+    "",
+    "## Sources",
+    "- [Next.js 16](<https://nextjs.org/blog/next-16>)",
+    "- [Version 16 Upgrade Guide](<https://nextjs.org/docs/app/guides/upgrading/version-16>)",
+    "- [Next.js 16 docs](<https://nextjs.org/docs/app/getting-started/installation>)",
+    "",
+    "## Search queries",
+    "- next.js 16 release date official",
+    "- next.js 16 upgrade guide",
+    "- next.js 16 breaking changes",
+  ].join("\n");
+  const webSearchText = [
+    webSearchAnswer,
+    "",
+    "Sources:",
+    "- Next.js 16 — https://nextjs.org/blog/next-16",
+    "- Version 16 Upgrade Guide — https://nextjs.org/docs/app/guides/upgrading/version-16",
+    "- Next.js 16 docs — https://nextjs.org/docs/app/getting-started/installation",
+    "",
+    "Search queries:",
+    "- next.js 16 release date official",
+    "- next.js 16 upgrade guide",
+    "- next.js 16 breaking changes",
+  ].join("\n");
+  const webSearchMinimalAnswer = "Bun 1.3.0 is not released yet in this preview fixture.";
 
   const beforePatch = [
     "const title = \"before\";",
@@ -279,6 +316,165 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       },
       errorResult: {
         content: [{ type: "text", text: "Request timed out after 10s" }],
+      },
+    },
+    {
+      id: "websearch:grounded-answer",
+      title: "websearch grounded answer",
+      toolName: webSearchTool.name,
+      toolDefinition: webSearchTool,
+      cwd,
+      args: {
+        query: "When did Next.js 16 release and what changed?",
+        model: "gemini-2.5-flash",
+        timeoutMs: 30000,
+      },
+      partialResult: {
+        content: [{ type: "text", text: "Next.js 16 released in October 2025." }],
+        details: {
+          query: "When did Next.js 16 release and what changed?",
+          model: "gemini-2.5-flash",
+          timeoutMs: 30000,
+          durationMs: 0,
+          endpoint: "",
+          answer: "Next.js 16 released in October 2025.",
+          markdown: "Next.js 16 released in October 2025.",
+          searchQueries: [],
+          sources: [],
+        },
+      },
+      previewAnimation: {
+        frameDurationMs: 1000,
+        partialFrames: [
+          {
+            content: [{ type: "text", text: "Next.js 16 released in October 2025." }],
+            details: {
+              query: "When did Next.js 16 release and what changed?",
+              model: "gemini-2.5-flash",
+              timeoutMs: 30000,
+              durationMs: 0,
+              endpoint: "",
+              answer: "Next.js 16 released in October 2025.",
+              markdown: "Next.js 16 released in October 2025.",
+              searchQueries: [],
+              sources: [],
+            },
+          },
+          {
+            content: [{ type: "text", text: [
+              "Next.js 16 released in October 2025.",
+              "The release stabilized Turbopack builds.",
+            ].join("\n") }],
+            details: {
+              query: "When did Next.js 16 release and what changed?",
+              model: "gemini-2.5-flash",
+              timeoutMs: 30000,
+              durationMs: 1000,
+              endpoint: "",
+              answer: [
+                "Next.js 16 released in October 2025.",
+                "The release stabilized Turbopack builds.",
+              ].join("\n"),
+              markdown: [
+                "Next.js 16 released in October 2025.",
+                "The release stabilized Turbopack builds.",
+              ].join("\n"),
+              searchQueries: [],
+              sources: [],
+            },
+          },
+          {
+            content: [{ type: "text", text: [
+              "Next.js 16 released in October 2025.",
+              "The release stabilized Turbopack builds.",
+              "The upgrade guide also replaces ppr with cacheComponents.",
+              "Caching defaults changed for production builds.",
+              "React 19.2 alignment is part of the release.",
+              "Official upgrade docs remain the primary source.",
+              "Teams should re-run production build verification.",
+            ].join("\n") }],
+            details: {
+              query: "When did Next.js 16 release and what changed?",
+              model: "gemini-2.5-flash",
+              timeoutMs: 30000,
+              durationMs: 2000,
+              endpoint: "",
+              answer: [
+                "Next.js 16 released in October 2025.",
+                "The release stabilized Turbopack builds.",
+                "The upgrade guide also replaces ppr with cacheComponents.",
+                "Caching defaults changed for production builds.",
+                "React 19.2 alignment is part of the release.",
+                "Official upgrade docs remain the primary source.",
+                "Teams should re-run production build verification.",
+              ].join("\n"),
+              markdown: [
+                "Next.js 16 released in October 2025.",
+                "The release stabilized Turbopack builds.",
+                "The upgrade guide also replaces ppr with cacheComponents.",
+                "Caching defaults changed for production builds.",
+                "React 19.2 alignment is part of the release.",
+                "Official upgrade docs remain the primary source.",
+                "Teams should re-run production build verification.",
+              ].join("\n"),
+              searchQueries: [],
+              sources: [],
+            },
+          },
+        ],
+      },
+      successResult: {
+        content: [{ type: "text", text: webSearchText }],
+        details: {
+          query: "When did Next.js 16 release and what changed?",
+          model: "gemini-2.5-flash",
+          timeoutMs: 30000,
+          durationMs: 5000,
+          endpoint: "https://litellm.example.test/v1beta/models/gemini-2.5-flash:generateContent",
+          answer: webSearchAnswer,
+          markdown: webSearchMarkdown,
+          searchQueries: [
+            "next.js 16 release date official",
+            "next.js 16 upgrade guide",
+            "next.js 16 breaking changes",
+          ],
+          sources: [
+            { title: "Next.js 16", url: "https://nextjs.org/blog/next-16" },
+            { title: "Version 16 Upgrade Guide", url: "https://nextjs.org/docs/app/guides/upgrading/version-16" },
+            { title: "Next.js 16 docs", url: "https://nextjs.org/docs/app/getting-started/installation" },
+          ],
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "LiteLLM websearch failed: 503 Service Unavailable" }],
+      },
+    },
+    {
+      id: "websearch:minimal-answer",
+      title: "websearch minimal answer",
+      toolName: webSearchTool.name,
+      toolDefinition: webSearchTool,
+      cwd,
+      args: {
+        query: "Has Bun 1.3.0 released yet?",
+        model: "gemini-2.5-flash-lite",
+      },
+      successResult: {
+        content: [{ type: "text", text: webSearchMinimalAnswer }],
+        details: {
+          query: "Has Bun 1.3.0 released yet?",
+          model: "gemini-2.5-flash-lite",
+          timeoutMs: 30000,
+          durationMs: 3000,
+          endpoint: "https://litellm.example.test/v1beta/models/gemini-2.5-flash-lite:generateContent",
+          answer: webSearchMinimalAnswer,
+          markdown: webSearchMinimalAnswer,
+          searchQueries: [],
+          sources: [],
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "LiteLLM API key not configured." }],
       },
     },
     {

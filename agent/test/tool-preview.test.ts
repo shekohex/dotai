@@ -178,6 +178,72 @@ test("webfetch preview renders pending, collapsed status, and expanded body", ()
   assert.match(errorText, /Request timed out after 10s/);
 });
 
+test("websearch preview renders call, collapsed grounded summary, expanded sources, and error", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "websearch:grounded-answer");
+  assert.ok(scenario);
+
+  const call = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
+  const pending = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-collapsed");
+  const pendingExpanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-expanded");
+  const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
+  const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
+
+  assert.ok(call);
+  assert.ok(pending);
+  assert.ok(pendingExpanded);
+  assert.ok(collapsed);
+  assert.ok(expanded);
+  assert.ok(error);
+
+  const callText = stripAnsi(renderPreviewText(scenario, call, 120));
+  const pendingText = stripAnsi(renderPreviewText(scenario, pending, 120));
+  const pendingExpandedText = stripAnsi(renderPreviewText(scenario, pendingExpanded, 120));
+  const animatedPendingText = stripAnsi(createPreviewComponent(scenario, pending, undefined, 2000).render(120).join("\n"));
+  const animatedPendingExpandedText = stripAnsi(createPreviewComponent(scenario, pendingExpanded, undefined, 2000).render(120).join("\n"));
+  const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
+  const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
+  const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
+
+  assert.match(callText, /googling When did Next\.js 16 release and what changed\?/);
+  assert.match(callText, /gemini-2\.5-flash/);
+  assert.match(callText, /30s/);
+  assert.match(pendingText, /googling When did Next\.js 16 release and what changed\?/);
+  assert.match(pendingText, /Next\.js 16 released in October 2025/);
+  assert.match(pendingText, /1 line so far \(0s\)/);
+  assert.match(pendingText, /ctrl\+o to expand/);
+  assert.match(animatedPendingText, /\.{3} \(2 earlier lines\)/);
+  assert.match(animatedPendingText, /7 lines so far \(2s\)/);
+  assert.match(pendingExpandedText, /Next\.js 16 released in October 2025/);
+  assert.match(animatedPendingExpandedText, /The upgrade guide also replaces ppr with cacheComponents/);
+  assert.match(animatedPendingExpandedText, /Teams should re-run production build verification/);
+  assert.match(animatedPendingExpandedText, /↳ 2s/);
+  assert.match(collapsedText, /✓ googled When did Next\.js 16 release and what changed\?/);
+  assert.match(collapsedText, /answered · 3 grounded results · took 5s/);
+  assert.match(collapsedText, /ctrl\+o to expand/);
+  assert.doesNotMatch(collapsedText, /Next\.js 16 is the current major release/);
+  assert.match(expandedText, /answered · 3 grounded results · took 5s/);
+  assert.match(expandedText, /Sources/);
+  assert.match(expandedText, /https:\/\/nextjs\.org\/blog\/next-16/);
+  assert.match(expandedText, /Search queries/);
+  assert.match(errorText, /✗ googled When did Next\.js 16 release and what changed\?/);
+  assert.match(errorText, /503 Service Unavailable/);
+});
+
+test("websearch minimal preview omits source and query counts", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "websearch:minimal-answer");
+  assert.ok(scenario);
+
+  const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  assert.ok(collapsed);
+
+  const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
+
+  assert.match(text, /✓ googled Has Bun 1\.3\.0 released yet\?/);
+  assert.match(text, /gemini-2\.5-flash-lite/);
+  assert.match(text, /answered · 0 grounded results · took 3s/);
+});
+
 test("multiline bash call preview truncates middle lines in collapsed mode", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
   assert.ok(scenario);

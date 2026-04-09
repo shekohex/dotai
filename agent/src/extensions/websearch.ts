@@ -12,12 +12,10 @@ const MAX_TIMEOUT_MS = 120_000;
 const THINKING_BUDGET = 1024;
 const MAX_SOURCES = 8;
 const MAX_SEARCH_QUERIES = 5;
-const COLLAPSED_MAX_LINES = 6;
-const COLLAPSED_MAX_CHARS = 900;
 const COLLAPSED_ERROR_MAX_LINES = 8;
 const COLLAPSED_ERROR_MAX_CHARS = 1200;
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-const TOOL_TEXT_PADDING_X = 1;
+const STREAM_PREVIEW_LINE_LIMIT = 5;
+const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
 
 type GroundingChunk = {
@@ -63,9 +61,17 @@ type SearchResult = {
   searchQueries: string[];
 };
 
+type SearchAccumulator = {
+  answer: string;
+  sources: Map<string, WebSearchSource>;
+  searchQueries: Set<string>;
+};
+
 type WebSearchDetails = {
   query: string;
   model: string;
+  timeoutMs: number;
+  durationMs: number;
   endpoint: string;
   answer: string;
   markdown: string;
@@ -73,9 +79,15 @@ type WebSearchDetails = {
   sources: WebSearchSource[];
 };
 
+type WebSearchRenderState = {
+  startedAt?: number;
+  endedAt?: number;
+  interval?: ReturnType<typeof setInterval>;
+};
+
 export const webSearchTool = defineTool({
   name: "websearch",
-  label: "Web Search",
+  label: "google",
   description: "Search the web with Google Search grounding via Gemini and return an answer with sources.",
   promptSnippet: "Search the live web with Google grounding when the task needs fresh or external information",
   promptGuidelines: [
@@ -99,103 +111,79 @@ export const webSearchTool = defineTool({
       }),
     ),
   }),
-  renderCall(args, theme) {
-    let text = theme.fg("toolTitle", theme.bold("google"));
-    text += theme.fg("accent", args.query);
+  renderCall(args, theme, context) {
+    const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
+    const status = phase === "error"
+      ? theme.fg("error", "✗ googled")
+      : phase === "success"
+        ? theme.fg("muted", "✓ googled")
+        : theme.fg("dim", "… googling");
+    const query = typeof args.query === "string" && args.query.trim().length > 0 ? args.query.trim() : "...";
+    const model = normalizeModel(args.model);
+    const timeoutMs = clampTimeout(args.timeoutMs);
 
-    const meta: string[] = [];
-    if (args.model) {
-      meta.push(args.model);
-    }
-    if (args.timeoutMs) {
-      meta.push(`${args.timeoutMs}ms`);
-    }
-    if (meta.length > 0) {
-      text += theme.fg("dim", ` (${meta.join(" • ")})`);
-    }
+    syncRenderState(context, context.isPartial);
 
-    return new Text(text, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+    return createTextComponent(
+      context.lastComponent,
+      `${status} ${theme.fg("accent", query)}${theme.fg("muted", ` (${model} • ${formatDurationHuman(timeoutMs)})`)}`,
+    );
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
-    const state = context.state as { interval?: ReturnType<typeof setInterval>; frame?: number };
-
-    if (isPartial && !state.interval) {
-      state.frame = state.frame ?? 0;
-      state.interval = setInterval(() => {
-        state.frame = ((state.frame ?? 0) + 1) % SPINNER_FRAMES.length;
-        context.invalidate();
-      }, 100);
-    }
-
-    if (!isPartial || context.isError) {
-      if (state.interval) {
-        clearInterval(state.interval);
-        state.interval = undefined;
-      }
-    }
-
-    if (isPartial) {
-      const spinner = SPINNER_FRAMES[state.frame ?? 0] ?? SPINNER_FRAMES[0];
-      let text = theme.fg("warning", `${spinner} searching the web`);
-      if (context.args.query) {
-        text += `\n${theme.fg("dim", context.args.query)}`;
-      }
-      return new Text(text, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
-    }
-
+    const state = syncRenderState(context, isPartial);
     const details = result.details as WebSearchDetails | undefined;
     const answer = (details?.answer ?? getTextContent(result.content)).trim();
-    const sourceCount = details?.sources.length ?? 0;
-    const queryCount = details?.searchQueries.length ?? 0;
-    const summary: string[] = [];
-
-    if (sourceCount > 0) {
-      summary.push(`${sourceCount} source${sourceCount === 1 ? "" : "s"}`);
-    }
-    if (queryCount > 0) {
-      summary.push(`${queryCount} search${queryCount === 1 ? "" : "es"}`);
-    }
-    if (details?.model) {
-      summary.push(details.model);
-    }
+    const durationMs = details?.durationMs ?? getElapsedMs(state);
 
     if (context.isError) {
       const errorText = answer || "Web search failed.";
       const preview = truncateForDisplay(errorText, COLLAPSED_ERROR_MAX_LINES, COLLAPSED_ERROR_MAX_CHARS);
-      const text = createTextComponent(context.lastComponent);
-      const lines = [theme.fg("error", "↳ search failed")];
-      if (preview.text) {
-        lines.push(theme.fg("error", expanded ? errorText : preview.text));
-      }
-      text.setText(lines.join("\n"));
-      return text;
+      const message = expanded ? errorText : preview.text || errorText;
+      return createTextComponent(context.lastComponent, `${theme.fg("error", "↳ ")}${theme.fg("error", message)}`);
     }
 
-    const header = theme.fg("success", "↳ grounded result") + (summary.length > 0 ? ` ${theme.fg("dim", summary.join(" • "))}` : "");
+    if (isPartial) {
+      const streamedText = styleToolOutput(answer, theme);
+      const footer = durationMs !== undefined ? formatDurationHuman(durationMs) : "0s";
+
+      if (!streamedText) {
+        return createTextComponent(
+          context.lastComponent,
+          `${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`,
+        );
+      }
+
+      return renderStreamingPreview(streamedText, theme, context.lastComponent, {
+        expanded,
+        footer,
+        expandHint: !expanded,
+        tailLines: STREAM_PREVIEW_LINE_LIMIT,
+      });
+    }
+
+    const groundedResultCount = details?.sources.length ?? 0;
+    const summary = [
+      theme.fg("muted", answer ? "answered" : "no response"),
+      theme.fg("muted", `${groundedResultCount} grounded result${groundedResultCount === 1 ? "" : "s"}`),
+      durationMs !== undefined ? theme.fg("muted", `took ${formatDurationHuman(durationMs)}`) : "",
+    ].filter(Boolean).join(`${theme.fg("muted", " · ")}`);
 
     if (!expanded) {
-      const preview = truncateForDisplay(answer || "No answer returned.", COLLAPSED_MAX_LINES, COLLAPSED_MAX_CHARS);
-      const text = createTextComponent(context.lastComponent);
-      const lines = [header];
-      if (preview.text) {
-        lines.push(theme.fg("toolOutput", preview.text));
-      }
-      if (preview.truncated) {
-        lines.push(`${theme.fg("dim", "… full result available, ")}${keyHint("app.tools.expand", "to expand")}`);
-      }
-      text.setText(lines.join("\n"));
-      return text;
+      return createTextComponent(
+        context.lastComponent,
+        `${theme.fg("dim", "↳ ")}${summary}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`,
+      );
     }
 
     const markdown = (details?.markdown ?? buildExpandedMarkdown(answer || "No answer returned.", details)).trim();
-    const container = (context.lastComponent as Container | undefined) ?? new Container();
+    const container = context.lastComponent instanceof Container ? context.lastComponent : new Container();
     container.clear();
-    container.addChild(new Text(header, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
-    container.addChild(new Spacer(1));
     container.addChild(new Markdown(markdown, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y, getMarkdownTheme()));
+    container.addChild(new Spacer(1));
+    container.addChild(new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
     return container;
   },
-  async execute(_toolCallId, params, signal) {
+  async execute(_toolCallId, params, signal, onUpdate) {
     const query = params.query.trim();
     if (!query) {
       throw new Error("websearch query is empty");
@@ -203,6 +191,23 @@ export const webSearchTool = defineTool({
 
     const model = normalizeModel(params.model);
     const timeoutMs = clampTimeout(params.timeoutMs);
+    const startedAt = Date.now();
+
+    onUpdate?.({
+      content: [],
+      details: {
+        query,
+        model,
+        timeoutMs,
+        durationMs: 0,
+        endpoint: "",
+        answer: "",
+        markdown: "",
+        searchQueries: [],
+        sources: [],
+      } satisfies WebSearchDetails,
+    });
+
     const state = await resolveLiteLLMState();
     const apiKey = (await resolveLiteLLMApiKey()) ?? process.env[LITELLM_API_KEY_ENV];
 
@@ -214,6 +219,37 @@ export const webSearchTool = defineTool({
       throw new Error(`LiteLLM API key not configured. Authenticate provider "litellm" or set ${LITELLM_API_KEY_ENV}.`);
     }
 
+    const requestBody = buildRequestBody(query);
+    const streamEndpoint = `${state.origin}/v1beta/models/${model}:streamGenerateContent?alt=sse`;
+    const streamResponse = await fetch(streamEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(requestBody),
+      signal: mergeAbortSignals(signal, timeoutMs),
+    });
+
+    if (streamResponse.ok) {
+      const streamed = await readStreamingSearchResponse(streamResponse, {
+        query,
+        model,
+        timeoutMs,
+        endpoint: streamEndpoint,
+        startedAt,
+        onUpdate,
+      });
+
+      if (streamed.answer) {
+        return {
+          content: [{ type: "text", text: formatResult(streamed) }],
+          details: buildDetails(query, model, timeoutMs, streamEndpoint, startedAt, streamed),
+        };
+      }
+    }
+
     const endpoint = `${state.origin}/v1beta/models/${model}:generateContent`;
     const response = await fetch(endpoint, {
       method: "POST",
@@ -221,24 +257,7 @@ export const webSearchTool = defineTool({
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
       },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: buildSystemInstruction() }],
-        },
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: buildUserPrompt(query) }],
-          },
-        ],
-        tools: [{ googleSearch: {} }],
-        generationConfig: {
-          thinkingConfig: {
-            thinkingBudget: THINKING_BUDGET,
-            includeThoughts: false,
-          },
-        },
-      }),
+      body: JSON.stringify(requestBody),
       signal: mergeAbortSignals(signal, timeoutMs),
     });
 
@@ -256,15 +275,7 @@ export const webSearchTool = defineTool({
 
     return {
       content: [{ type: "text", text: formatResult(result) }],
-      details: {
-        query,
-        model,
-        endpoint,
-        answer: result.answer,
-        markdown: formatMarkdownResult(result),
-        searchQueries: result.searchQueries,
-        sources: result.sources,
-      } satisfies WebSearchDetails,
+      details: buildDetails(query, model, timeoutMs, endpoint, startedAt, result),
     };
   },
 });
@@ -290,6 +301,231 @@ function mergeAbortSignals(signal: AbortSignal | undefined, timeoutMs: number): 
   return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 }
 
+function buildRequestBody(query: string) {
+  return {
+    systemInstruction: {
+      parts: [{ text: buildSystemInstruction() }],
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: buildUserPrompt(query) }],
+      },
+    ],
+    tools: [{ googleSearch: {} }],
+    generationConfig: {
+      thinkingConfig: {
+        thinkingBudget: THINKING_BUDGET,
+        includeThoughts: false,
+      },
+    },
+  };
+}
+
+async function readStreamingSearchResponse(
+  response: Response,
+  input: {
+    query: string;
+    model: string;
+    timeoutMs: number;
+    endpoint: string;
+    startedAt: number;
+    onUpdate: ((result: { content: Array<{ type: string; text?: string }>; details: WebSearchDetails }) => void) | undefined;
+  },
+): Promise<SearchResult> {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (!response.body) {
+    return { answer: "", sources: [], searchQueries: [] };
+  }
+
+  if (!contentType.includes("text/event-stream")) {
+    const text = await response.text();
+    return parseStreamingFallbackBody(text);
+  }
+
+  const decoder = new TextDecoder();
+  const reader = response.body.getReader();
+  let buffer = "";
+  const aggregate = createSearchAccumulator();
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = consumeSseEvents(buffer);
+    buffer = events.rest;
+
+    for (const eventText of events.events) {
+      const payload = parseSseDataPayload(eventText);
+      if (!payload) {
+        continue;
+      }
+
+      const chunks = Array.isArray(payload) ? payload : [payload];
+      let didChange = false;
+      for (const chunk of chunks) {
+        didChange = mergeSearchChunk(aggregate, chunk) || didChange;
+      }
+
+      if (didChange) {
+        emitStreamingUpdate(input, aggregate);
+      }
+    }
+  }
+
+  const finalPayload = buffer.trim();
+  if (finalPayload) {
+    const payload = parseSseDataPayload(finalPayload);
+    if (payload) {
+      const chunks = Array.isArray(payload) ? payload : [payload];
+      for (const chunk of chunks) {
+        mergeSearchChunk(aggregate, chunk);
+      }
+    }
+  }
+
+  emitStreamingUpdate(input, aggregate);
+
+  return finalizeSearchAccumulator(aggregate);
+}
+
+function emitStreamingUpdate(
+  input: {
+    query: string;
+    model: string;
+    timeoutMs: number;
+    endpoint: string;
+    startedAt: number;
+    onUpdate: ((result: { content: Array<{ type: string; text?: string }>; details: WebSearchDetails }) => void) | undefined;
+  },
+  aggregate: SearchAccumulator,
+): void {
+  if (!input.onUpdate) {
+    return;
+  }
+
+  const result = finalizeSearchAccumulator(aggregate);
+  input.onUpdate({
+    content: result.answer ? [{ type: "text", text: result.answer }] : [],
+    details: buildDetails(input.query, input.model, input.timeoutMs, input.endpoint, input.startedAt, result),
+  });
+}
+
+function syncRenderState(
+  context: { state: unknown; executionStarted: boolean; invalidate: () => void },
+  isPartial: boolean,
+): WebSearchRenderState {
+  const state = context.state as WebSearchRenderState;
+
+  if (context.executionStarted && state.startedAt === undefined) {
+    state.startedAt = Date.now();
+    state.endedAt = undefined;
+  }
+
+  if (state.startedAt !== undefined && isPartial && !state.interval) {
+    state.interval = setInterval(() => context.invalidate(), 1000);
+    state.interval.unref?.();
+  }
+
+  if (!isPartial && state.startedAt !== undefined) {
+    state.endedAt ??= Date.now();
+    if (state.interval) {
+      clearInterval(state.interval);
+      state.interval = undefined;
+    }
+  }
+
+  return state;
+}
+
+function getElapsedMs(state: WebSearchRenderState): number | undefined {
+  if (state.startedAt === undefined) {
+    return undefined;
+  }
+
+  return (state.endedAt ?? Date.now()) - state.startedAt;
+}
+
+function createSearchAccumulator(): SearchAccumulator {
+  return {
+    answer: "",
+    sources: new Map<string, WebSearchSource>(),
+    searchQueries: new Set<string>(),
+  };
+}
+
+function finalizeSearchAccumulator(accumulator: SearchAccumulator): SearchResult {
+  return {
+    answer: accumulator.answer.trim(),
+    sources: [...accumulator.sources.values()],
+    searchQueries: [...accumulator.searchQueries],
+  };
+}
+
+function mergeSearchChunk(accumulator: SearchAccumulator, data: GeminiResponse): boolean {
+  const result = parseSearchResponse(data);
+  let changed = false;
+
+  if (result.answer) {
+    const nextAnswer = mergeStreamingAnswer(accumulator.answer, result.answer);
+    if (nextAnswer !== accumulator.answer) {
+      accumulator.answer = nextAnswer;
+      changed = true;
+    }
+  }
+
+  for (const source of result.sources) {
+    if (accumulator.sources.has(source.url) || accumulator.sources.size >= MAX_SOURCES) {
+      continue;
+    }
+
+    accumulator.sources.set(source.url, source);
+    changed = true;
+  }
+
+  for (const searchQuery of result.searchQueries) {
+    if (accumulator.searchQueries.has(searchQuery) || accumulator.searchQueries.size >= MAX_SEARCH_QUERIES) {
+      continue;
+    }
+
+    accumulator.searchQueries.add(searchQuery);
+    changed = true;
+  }
+
+  return changed;
+}
+
+function mergeStreamingAnswer(currentAnswer: string, chunkAnswer: string): string {
+  const current = currentAnswer.trimEnd();
+  const chunk = chunkAnswer.trim();
+
+  if (!chunk) {
+    return currentAnswer;
+  }
+
+  if (!current) {
+    return chunk;
+  }
+
+  if (chunk === current || current.endsWith(chunk)) {
+    return current;
+  }
+
+  if (chunk.startsWith(current)) {
+    return chunk;
+  }
+
+  if (current.startsWith(chunk)) {
+    return current;
+  }
+
+  return `${current}\n${chunk}`;
+}
+
 function buildSystemInstruction(): string {
   return [
     "<role>",
@@ -302,7 +538,7 @@ function buildSystemInstruction(): string {
     "2. Execute: search broadly, cross-check claims, and use multiple sources.",
     '3. Cite: every specific claim must include a source link; if none, say "uncited".',
     "4. Validate: resolve conflicts or call them out explicitly.",
-    "5. Format: return JSON that strictly matches the schema.",
+    "5. Format: return a concise technical answer in Markdown prose.",
     "</instructions>",
     "",
     "<constraints>",
@@ -310,16 +546,8 @@ function buildSystemInstruction(): string {
     "- Tone: Technical",
     "- No fabricated facts or URLs",
     "- Do not reveal planning, analysis, or tool-use reasoning",
-    "- Output ONLY valid JSON matching the schema",
+    "- Do not include a Sources or Search queries section; the tool renders that separately",
     "</constraints>",
-    "",
-    "<output_format>",
-    "{",
-    '  "answer": "..."',
-    '  "sources": [{ "title": "...", "url": "..." }],',
-    '  "searchQueries": ["..."]',
-    "}",
-    "</output_format>",
   ].join("\n");
 }
 
@@ -335,7 +563,7 @@ function buildUserPrompt(query: string): string {
     "</requirements>",
     "",
     "<final_instruction>",
-    "Use deeper reasoning internally, but output only the required JSON format.",
+    "Use deeper reasoning internally, but output only the final answer body in Markdown.",
     "</final_instruction>",
   ].join("\n");
 }
@@ -424,6 +652,89 @@ function parseSearchResponse(data: GeminiResponse): SearchResult {
   };
 }
 
+function consumeSseEvents(buffer: string): { events: string[]; rest: string } {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const events: string[] = [];
+  let start = 0;
+
+  while (true) {
+    const boundary = normalized.indexOf("\n\n", start);
+    if (boundary === -1) {
+      break;
+    }
+
+    events.push(normalized.slice(start, boundary));
+    start = boundary + 2;
+  }
+
+  return {
+    events,
+    rest: normalized.slice(start),
+  };
+}
+
+function parseSseDataPayload(eventText: string): GeminiResponse | GeminiResponse[] | undefined {
+  const data = eventText
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n")
+    .trim();
+
+  if (!data || data === "[DONE]") {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(data) as GeminiResponse | GeminiResponse[];
+  } catch {
+    return undefined;
+  }
+}
+
+function parseStreamingFallbackBody(text: string): SearchResult {
+  const normalized = text.trim();
+  if (!normalized) {
+    return { answer: "", sources: [], searchQueries: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(normalized) as GeminiResponse | GeminiResponse[];
+    if (Array.isArray(parsed)) {
+      const accumulator = createSearchAccumulator();
+      for (const item of parsed) {
+        mergeSearchChunk(accumulator, item);
+      }
+      return finalizeSearchAccumulator(accumulator);
+    }
+
+    return parseSearchResponse(parsed);
+  } catch {
+    return { answer: normalized, sources: [], searchQueries: [] };
+  }
+}
+
+function buildDetails(
+  query: string,
+  model: string,
+  timeoutMs: number,
+  endpoint: string,
+  startedAt: number,
+  result: SearchResult,
+): WebSearchDetails {
+  return {
+    query,
+    model,
+    timeoutMs,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    endpoint,
+    answer: result.answer,
+    markdown: formatMarkdownResult(result),
+    searchQueries: result.searchQueries,
+    sources: result.sources,
+  };
+}
+
 function formatResult(result: SearchResult): string {
   const lines = [result.answer.trim() || "No answer returned."];
 
@@ -455,6 +766,77 @@ function getTextContent(content: Array<{ type: string; text?: string }>): string
   return content
     .flatMap((item) => (item.type === "text" && typeof item.text === "string" ? [item.text] : []))
     .join("\n");
+}
+
+function formatDurationHuman(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
+}
+
+function summarizeLineCount(lineCount: number): string {
+  return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
+}
+
+function styleToolOutput(text: string, theme: { fg: (color: "toolOutput", text: string) => string }): string {
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .split("\n")
+    .map((line) => theme.fg("toolOutput", line))
+    .join("\n");
+}
+
+function renderStreamingPreview(
+  renderedText: string,
+  theme: {
+    fg: (color: "dim" | "muted" | "toolOutput", text: string) => string;
+  },
+  lastComponent: unknown,
+  options: {
+    expanded: boolean;
+    footer?: string;
+    expandHint?: boolean;
+    tailLines?: number;
+  },
+): Text {
+  const lines = renderedText.split("\n").filter((line) => line.length > 0);
+  const tailSize = options.tailLines ?? STREAM_PREVIEW_LINE_LIMIT;
+
+  if (options.expanded) {
+    const footer = options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "";
+    return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
+  }
+
+  const visibleLines = lines.slice(-tailSize);
+  const earlierCount = Math.max(lines.length - visibleLines.length, 0);
+  const blocks: string[] = [];
+
+  if (earlierCount > 0) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`);
+  }
+
+  if (visibleLines.length > 0) {
+    blocks.push(visibleLines.join("\n"));
+  }
+
+  if (options.footer) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`);
+  }
+
+  if (options.expandHint) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
+  }
+
+  return createTextComponent(lastComponent, blocks.join("\n"));
 }
 
 function truncateForDisplay(text: string, maxLines: number, maxChars: number): { text: string; truncated: boolean } {
@@ -506,6 +888,8 @@ function escapeMarkdownText(text: string): string {
   return text.replace(/([\\`*_{}\[\]()#+\-.!|>])/g, "\\$1");
 }
 
-function createTextComponent(lastComponent: unknown): Text {
-  return (lastComponent as Text | undefined) ?? new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+function createTextComponent(lastComponent: unknown, text: string): Text {
+  const component = lastComponent instanceof Text ? lastComponent : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  component.setText(text);
+  return component;
 }

@@ -6,6 +6,7 @@ import { shortenHome } from "./path.js";
 import type { CoreUIState } from "./types.js";
 
 const FOOTER_SIDE_PADDING = 1;
+const FOOTER_TOP_PADDING = 1;
 
 type Theme = ExtensionContext["ui"]["theme"];
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -49,6 +50,7 @@ export function bindCoreUI(
         );
 
         return [
+          ...Array.from({ length: FOOTER_TOP_PADDING }, () => " ".repeat(Math.max(0, width))),
           composeFooterLine(left, rightTop, width),
           composeFooterLine("", rightBottom, width),
         ];

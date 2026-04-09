@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import { bindCoreUI } from "./coreui/footer.js";
+import { createCorePromptEditorFactory } from "./coreui/editor.js";
 import { createProjectInfoRefresher } from "./coreui/project-info.js";
 import { createCoreUIState } from "./coreui/types.js";
 import { registerCoreUIToolOverrides } from "./coreui/tools.js";
@@ -41,6 +42,9 @@ export default function coreUIExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     ensureToolOverridesRegistered(pi.getActiveTools());
+    ctx.ui.setEditorComponent(
+      createCorePromptEditorFactory(() => ctx.ui.theme, () => ctx.isIdle()),
+    );
     bindCoreUI(ctx, pi, state, (nextRequestRender) => {
       requestRender = nextRequestRender;
     });

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const messages = [
+const workingMessages = [
   // Short
   "Schlepping...",
   "Combobulating...",
@@ -459,6 +459,102 @@ const messages = [
   "Cherry-picking the commits...",
 ];
 
+const welcomeMessages = [
+  "How can I help?",
+  "What are we building?",
+  "What needs fixing?",
+  "What should I inspect?",
+  "What are we shipping today?",
+  "What should I refactor?",
+  "What needs debugging?",
+  "What deserves a cleanup?",
+  "What should we improve next?",
+  "Point me at the problem.",
+  "What should I review?",
+  "Where do you want to start?",
+  "What do you want changed?",
+  "What should I look into?",
+  "What are we solving?",
+  "What needs to ship?",
+  "What are we unblocking?",
+  "What should I optimize?",
+  "What should I simplify?",
+  "What should I rewrite?",
+  "What should I polish?",
+  "What should I benchmark?",
+  "What should I validate?",
+  "What should I harden?",
+  "What should I automate?",
+  "What should I test?",
+  "What should I document?",
+  "What should I trace?",
+  "What should I profile?",
+  "What should I audit?",
+  "What should I patch?",
+  "What should I clean up?",
+  "What should I untangle?",
+  "What should I reduce?",
+  "What should I isolate?",
+  "What should I migrate?",
+  "What should I extract?",
+  "What should I rename?",
+  "What should I prune?",
+  "What should I align?",
+  "What should I compare?",
+  "What should I verify first?",
+  "What should I stabilize?",
+  "What should I investigate next?",
+  "What should I tune?",
+  "What should I review first?",
+  "What should I make faster?",
+  "What should I make smaller?",
+  "What should I make clearer?",
+  "What should I make safer?",
+  "What should I make cleaner?",
+  "What should I make more robust?",
+  "What should I make more maintainable?",
+  "What should I make more predictable?",
+  "What should I debug first?",
+  "What should I inspect first?",
+  "What should I refactor first?",
+  "What should I fix first?",
+  "What should I challenge?",
+  "What should I dissect?",
+  "What should I map out?",
+  "What should I wire up?",
+  "What should I unblock first?",
+  "What should I de-risk?",
+  "What should I lock down?",
+  "What should I shore up?",
+  "What should I double-check?",
+  "What should I make production-ready?",
+  "What should I pressure-test?",
+  "What should I tighten up?",
+  "What should I smooth out?",
+  "What should I streamline?",
+  "What should I untwist?",
+  "What should I reconcile?",
+  "What should I connect?",
+  "What should I stage next?",
+];
+
 export function pickRandomWhimsical(): string {
-  return messages[Math.floor(Math.random() * messages.length)];
+  return workingMessages[Math.floor(Math.random() * workingMessages.length)];
+}
+
+export function pickRandomWelcomeMessage(previous?: string): string {
+  if (welcomeMessages.length === 0) {
+    return "How can I help?";
+  }
+
+  if (welcomeMessages.length === 1) {
+    return welcomeMessages[0]!;
+  }
+
+  let next = previous;
+  while (next === previous) {
+    next = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+  }
+
+  return next!;
 }

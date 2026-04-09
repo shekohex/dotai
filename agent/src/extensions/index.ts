@@ -24,7 +24,8 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   litellmGatewayExtension,
   openUsageExtension,
   patchExtension,
-  webFetchExtension,
+  // Disabled: no need to use webfetch, it can just curl markdown
+  // webFetchExtension,
   webSearchExtension,
   commentaryModeExtension,
   modesExtension,

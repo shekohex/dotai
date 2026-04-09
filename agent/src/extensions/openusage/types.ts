@@ -10,7 +10,15 @@ export const OPENUSAGE_SESSION_ALERT_THRESHOLD_PERCENT = 20;
 export const OPENUSAGE_WEEKLY_ALERT_THRESHOLD_PERCENT = 15;
 export const CLIPROXY_AUTH_PROVIDER = "cliproxyapi";
 
-export type SupportedProviderId = "codex" | "zai" | "opencode-go";
+export const SUPPORTED_PROVIDER_IDS = ["codex", "zai"] as const;
+
+export type SupportedProviderId = (typeof SUPPORTED_PROVIDER_IDS)[number];
+
+export function isSupportedProviderId(
+  value: string,
+): value is SupportedProviderId {
+  return value === "codex" || value === "zai";
+}
 
 export type UsageMetric = {
   used: number;

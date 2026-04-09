@@ -5,7 +5,7 @@ import type {
   ResetTimeFormat,
   SupportedProviderId,
 } from "./types.js";
-import { OPENUSAGE_STATE_ENTRY } from "./types.js";
+import { isSupportedProviderId, OPENUSAGE_STATE_ENTRY } from "./types.js";
 
 const EMPTY_PERSISTED_STATE: PersistedOpenUsageState = {
   selectedAccounts: {},
@@ -115,8 +115,4 @@ function normalizeResetTimeFormat(value: unknown): ResetTimeFormat | undefined {
   }
 
   return value;
-}
-
-function isSupportedProviderId(value: string): value is SupportedProviderId {
-  return value === "codex" || value === "zai" || value === "opencode-go";
 }

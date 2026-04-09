@@ -19,9 +19,5 @@ export function resolveSupportedProviderId(
     return "zai";
   }
 
-  if (normalizedProvider === "opencode-go") {
-    return "opencode-go";
-  }
-
   return undefined;
 }

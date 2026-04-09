@@ -215,7 +215,7 @@ function buildAccountsByProvider(files: CliproxyAuthFile[]): CliproxyAccountsByP
     }
 
     const providerId = mapCliproxyProvider(file.provider);
-    if (!providerId || providerId === "opencode-go") {
+    if (!providerId) {
       continue;
     }
 
@@ -326,10 +326,6 @@ function mapCliproxyProvider(value: string): SupportedProviderId | undefined {
 
   if (normalized === "zai" || normalized === "glm") {
     return "zai";
-  }
-
-  if (normalized === "opencode-go") {
-    return "opencode-go";
   }
 
   return undefined;

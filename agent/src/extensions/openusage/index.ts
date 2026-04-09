@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import type { ModeChangedEvent } from "../modes.js";
 import { registerOpenUsageCommands } from "./commands.js";
 import { resolveSupportedProviderId } from "./model-map.js";
 import { getRemainingPercent, setStatus } from "./status.js";
@@ -19,6 +20,22 @@ import {
   type UsageSnapshot,
 } from "./types.js";
 import { usageProviders } from "./providers/index.js";
+
+async function resolveAndRefreshProvider(
+  provider: string | undefined,
+  modelId: string | undefined,
+  ctx: ExtensionContext,
+  state: ReturnType<typeof createRuntimeState>,
+  refreshFn: (providerId: SupportedProviderId, ctx: ExtensionContext, options: { force?: boolean }) => Promise<void>,
+  publishFn: (ctx: ExtensionContext, snapshot: UsageSnapshot | undefined, active: boolean) => void,
+): Promise<void> {
+  const providerId = resolveSupportedProviderId(provider, modelId);
+  if (!providerId) {
+    publishFn(ctx, undefined, true);
+    return;
+  }
+  await refreshFn(providerId, ctx, { force: false });
+}
 
 export default function openUsageExtension(pi: ExtensionAPI) {
   const state = createRuntimeState();
@@ -45,6 +62,27 @@ export default function openUsageExtension(pi: ExtensionAPI) {
     await refreshActiveProvider(ctx, { force: false });
   });
 
+  pi.events.on("modes:changed", async (data) => {
+    const event = data as ModeChangedEvent;
+    const ctx = currentCtx;
+
+    if (!ctx) return;
+    if (event.cwd !== ctx.cwd) return;
+
+    try {
+      await resolveAndRefreshProvider(
+        event.spec?.provider,
+        event.spec?.modelId,
+        ctx,
+        state,
+        refreshProvider,
+        publishUsageUpdate,
+      );
+    } catch {
+      return;
+    }
+  });
+
   pi.on("agent_end", async (_event, ctx) => {
     await refreshActiveProvider(ctx, { force: false });
   });
@@ -65,17 +103,15 @@ export default function openUsageExtension(pi: ExtensionAPI) {
     ctx: ExtensionContext,
     options: { force?: boolean },
   ): Promise<void> {
-    const providerId = resolveSupportedProviderId(
-      ctx.model?.provider,
-      ctx.model?.id,
-    );
-    if (!providerId) {
-      publishUsageUpdate(ctx, undefined, true);
-      return;
-    }
-
     try {
-      await refreshProvider(providerId, ctx, options);
+      await resolveAndRefreshProvider(
+        ctx.model?.provider,
+        ctx.model?.id,
+        ctx,
+        state,
+        refreshProvider,
+        publishUsageUpdate,
+      );
     } catch {
       return;
     }

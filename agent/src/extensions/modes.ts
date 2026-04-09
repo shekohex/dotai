@@ -17,7 +17,7 @@ type ModeRuntime = {
   lastReportedError?: string;
 };
 
-type ModeChangedEvent = {
+export type ModeChangedEvent = {
   mode: string | undefined;
   previousMode: string | undefined;
   spec: ModeSpec | undefined;

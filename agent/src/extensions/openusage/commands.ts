@@ -9,9 +9,10 @@ import type {
   ResetTimeFormat,
   SupportedProviderId,
 } from "./types.js";
-import { OPENUSAGE_STATE_ENTRY } from "./types.js";
-
-const SUPPORTED_PROVIDER_IDS: SupportedProviderId[] = ["codex", "zai", "opencode-go"];
+import {
+  isSupportedProviderId,
+  OPENUSAGE_STATE_ENTRY,
+} from "./types.js";
 const ROOT_COMPLETIONS = [
   "status",
   "status codex",
@@ -304,8 +305,8 @@ function resolveProviderArgument(
   ctx: ExtensionCommandContext,
 ): SupportedProviderId | undefined {
   const normalized = value?.trim().toLowerCase();
-  if (normalized && SUPPORTED_PROVIDER_IDS.includes(normalized as SupportedProviderId)) {
-    return normalized as SupportedProviderId;
+  if (normalized && isSupportedProviderId(normalized)) {
+    return normalized;
   }
 
   return resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);

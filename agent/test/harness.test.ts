@@ -171,6 +171,30 @@ function getMessageText(content: string | Array<{ type: string; text?: string }>
       .join("\n");
 }
 
+async function getCommandArgumentCompletions(
+  testSession: TestSession,
+  commandName: string,
+  prefix: string,
+): Promise<Array<{ value: string; label: string; description?: string }> | null> {
+  const extensionRunner = (testSession.session as {
+    extensionRunner: {
+      getRegisteredCommands: () => Array<{
+        name: string;
+        invocationName: string;
+        getArgumentCompletions?: (argumentPrefix: string) => Promise<Array<{ value: string; label: string; description?: string }> | null> | Array<{ value: string; label: string; description?: string }> | null;
+      }>;
+    };
+  }).extensionRunner;
+
+  const command = extensionRunner.getRegisteredCommands().find((registeredCommand) => registeredCommand.invocationName === commandName);
+  assert.ok(command?.getArgumentCompletions);
+  return await command.getArgumentCompletions(prefix);
+}
+
+function getCurrentSystemPrompt(testSession: TestSession): string {
+  return ((testSession.session as { agent: { state: { systemPrompt: string } } }).agent.state.systemPrompt);
+}
+
 test("pi-test-harness runs apply_patch against the real tool implementation", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-harness-"));
   const filePath = join(cwd, "sample.ts");
@@ -396,6 +420,74 @@ test("handoff command starts the new session in the requested mode", async () =>
     assert.equal(model.model.id, "mode-model");
     assert.equal(model.thinkingLevel, "high");
     assert.equal(getLatestModeState(session), "rush");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("handoff command autocompletes flags, modes, and models", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-autocomplete-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+    });
+    patchHarnessAgent(session);
+
+    const flagCompletions = await getCommandArgumentCompletions(session, "handoff", "-");
+    assert.deepEqual(flagCompletions?.map((item) => item.label), ["-mode", "-model"]);
+
+    const modeCompletions = await getCommandArgumentCompletions(session, "handoff", "-mode ");
+    assert.ok(modeCompletions?.some((item) => item.label === "rush"));
+    assert.ok(modeCompletions?.some((item) => item.label === "smart"));
+    assert.match(modeCompletions?.find((item) => item.label === "rush")?.description ?? "", /mode-provider\/mode-model/);
+    assert.match(modeCompletions?.find((item) => item.label === "rush")?.description ?? "", /thinking:high/);
+
+    const remainingFlagCompletions = await getCommandArgumentCompletions(session, "handoff", "-mode rush -");
+    assert.deepEqual(remainingFlagCompletions?.map((item) => item.label), ["-model"]);
+
+    const modelCompletions = await getCommandArgumentCompletions(session, "handoff", "-model override");
+    assert.equal(modelCompletions?.[0]?.value, "-model override-provider/override-model");
+    assert.equal(modelCompletions?.[0]?.label, "override-model");
+    assert.equal(modelCompletions?.[0]?.description, "override-provider");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("handoff tool prompt includes available modes and refreshes after mode changes", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-modes-prompt-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+    });
+    patchHarnessAgent(session);
+
+    const initialPrompt = getCurrentSystemPrompt(session);
+    assert.match(initialPrompt, /<available_modes>/);
+    assert.match(initialPrompt, /<mode name="rush" model="mode-provider\/mode-model" thinkingLevel="high" \/>/);
+    assert.match(initialPrompt, /<mode name="smart" model="mode-provider\/smart-model" thinkingLevel="low" \/>/);
+
+    await session.session.prompt("/mode store deep");
+    await session.session.agent.waitForIdle();
+
+    const updatedPrompt = getCurrentSystemPrompt(session);
+    assert.match(updatedPrompt, /<mode name="deep"/);
   } finally {
     session?.dispose();
     providers.dispose();

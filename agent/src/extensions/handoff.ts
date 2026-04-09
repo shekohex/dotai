@@ -10,10 +10,10 @@ import {
   type ExtensionContext,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import { Text, fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { resolveModeSpec, type ThinkingLevel } from "../mode-utils.js";
+import { loadModesFile, resolveModeSpec, type ModeSpec, type ThinkingLevel } from "../mode-utils.js";
 import { MODE_STATE_ENTRY } from "./modes.js";
 
 const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
@@ -75,6 +75,20 @@ type PendingCommandHandoff = {
   overrides?: ResolvedHandoffOptions;
 };
 
+type HandoffFlagName = "-mode" | "-model";
+
+type HandoffAutocompleteContext = {
+  kind: "flag" | "mode" | "model" | "goal" | "none";
+  prefixBase: string;
+  query: string;
+  usedFlags: Set<HandoffFlagName>;
+};
+
+type HandoffRuntimeState = {
+  ctx?: ExtensionContext;
+  toolPromptSignature?: string;
+};
+
 const pendingToolHandoffState: {
   pending: PendingToolHandoff | undefined;
   contextCutoffTimestamp: number | undefined;
@@ -82,6 +96,11 @@ const pendingToolHandoffState: {
   pending: undefined,
   contextCutoffTimestamp: undefined,
 };
+
+const HANDOFF_FLAG_OPTIONS: Array<{ name: HandoffFlagName; description: string }> = [
+  { name: "-mode", description: "Apply a saved mode to the new session" },
+  { name: "-model", description: "Override the new session model (provider/modelId)" },
+];
 
 function getPendingCommandHandoff(): PendingCommandHandoff | undefined {
   return (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY];
@@ -129,6 +148,255 @@ function extractMessageText(content: string | Array<{ type: string; text?: strin
     .map((part) => part.text)
     .join("\n")
     .trim();
+}
+
+function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
+  if (!spec) {
+    return undefined;
+  }
+
+  const parts: string[] = [];
+  if (spec.provider && spec.modelId) {
+    parts.push(`${spec.provider}/${spec.modelId}`);
+  }
+  if (spec.thinkingLevel) {
+    parts.push(`thinking:${spec.thinkingLevel}`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("'", "&apos;");
+}
+
+async function loadAvailableModes(cwd: string): Promise<Array<{ name: string; spec: ModeSpec }>> {
+  const loaded = await loadModesFile(cwd);
+  return Object.entries(loaded.data.modes)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, spec]) => ({ name, spec }));
+}
+
+function formatAvailableModesXml(modes: Array<{ name: string; spec: ModeSpec }>): string {
+  if (modes.length === 0) {
+    return "<available_modes>\n</available_modes>";
+  }
+
+  return [
+    "<available_modes>",
+    ...modes.map(({ name, spec }) => {
+      const attrs = [`name=\"${escapeXmlAttribute(name)}\"`];
+      if (spec.provider && spec.modelId) {
+        const model = `${spec.provider}/${spec.modelId}`;
+        attrs.push(`model=\"${escapeXmlAttribute(model)}\"`);
+      }
+      if (spec.thinkingLevel) {
+        attrs.push(`thinkingLevel=\"${escapeXmlAttribute(spec.thinkingLevel)}\"`);
+      }
+      return `  <mode ${attrs.join(" ")} />`;
+    }),
+    "</available_modes>",
+  ].join("\n");
+}
+
+async function buildHandoffPromptGuidelines(ctx: ExtensionContext): Promise<string[]> {
+  const modesXml = formatAvailableModesXml(await loadAvailableModes(ctx.cwd));
+  return [
+    "Only use this tool when the user explicitly asks to hand off the current work into a new session or thread.",
+    "Provide a concrete goal for the new session. Use mode/model overrides only when the user asks for them.",
+    `Available handoff modes. When the user asks for a mode, use one of these exact names:\n${modesXml}`,
+  ];
+}
+
+async function syncHandoffToolRegistration(
+  pi: ExtensionAPI,
+  handoffTool: ReturnType<typeof createHandoffTool>,
+  state: HandoffRuntimeState,
+  ctx: ExtensionContext,
+): Promise<void> {
+  state.ctx = ctx;
+  const promptGuidelines = await buildHandoffPromptGuidelines(ctx);
+  const signature = promptGuidelines.join("\n\n");
+  if (state.toolPromptSignature === signature) {
+    return;
+  }
+
+  handoffTool.promptGuidelines = promptGuidelines;
+  state.toolPromptSignature = signature;
+  pi.registerTool(handoffTool);
+}
+
+function getAvailableModelsForAutocomplete(ctx: ExtensionContext | undefined): SessionModel[] {
+  return (ctx?.modelRegistry.getAvailable() ?? []) as SessionModel[];
+}
+
+function filterAutocompleteItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
+  if (items.length === 0) {
+    return null;
+  }
+
+  if (!query) {
+    return items;
+  }
+
+  const filtered = fuzzyFilter(items, query, (item) => `${item.label} ${item.value} ${item.description ?? ""}`);
+  return filtered.length > 0 ? filtered : null;
+}
+
+function parseHandoffAutocompleteContext(argumentPrefix: string): HandoffAutocompleteContext {
+  const usedFlags = new Set<HandoffFlagName>();
+  let index = 0;
+
+  while (index < argumentPrefix.length) {
+    while (index < argumentPrefix.length && /\s/.test(argumentPrefix[index]!)) {
+      index += 1;
+    }
+
+    if (index >= argumentPrefix.length) {
+      return { kind: "flag", prefixBase: argumentPrefix, query: "", usedFlags };
+    }
+
+    if (argumentPrefix[index] !== "-") {
+      return { kind: "goal", prefixBase: argumentPrefix.slice(0, index), query: "", usedFlags };
+    }
+
+    const flagStart = index;
+    while (index < argumentPrefix.length && !/\s/.test(argumentPrefix[index]!)) {
+      index += 1;
+    }
+
+    const flagToken = argumentPrefix.slice(flagStart, index);
+    const flag = flagToken === "-mode" || flagToken === "-model" ? flagToken : undefined;
+    if (!flag) {
+      if (index >= argumentPrefix.length) {
+        return { kind: "flag", prefixBase: argumentPrefix.slice(0, flagStart), query: flagToken, usedFlags };
+      }
+      return { kind: "none", prefixBase: argumentPrefix.slice(0, flagStart), query: flagToken, usedFlags };
+    }
+
+    if (index >= argumentPrefix.length) {
+      return { kind: "flag", prefixBase: argumentPrefix.slice(0, flagStart), query: flagToken, usedFlags };
+    }
+
+    while (index < argumentPrefix.length && /\s/.test(argumentPrefix[index]!)) {
+      index += 1;
+    }
+
+    const valuePrefixBase = argumentPrefix.slice(0, index);
+    if (index >= argumentPrefix.length) {
+      return {
+        kind: flag === "-mode" ? "mode" : "model",
+        prefixBase: valuePrefixBase,
+        query: "",
+        usedFlags,
+      };
+    }
+
+    const valueStart = index;
+    while (index < argumentPrefix.length && !/\s/.test(argumentPrefix[index]!)) {
+      index += 1;
+    }
+
+    const value = argumentPrefix.slice(valueStart, index);
+    if (index >= argumentPrefix.length) {
+      return {
+        kind: flag === "-mode" ? "mode" : "model",
+        prefixBase: argumentPrefix.slice(0, valueStart),
+        query: value,
+        usedFlags,
+      };
+    }
+
+    usedFlags.add(flag);
+
+    while (index < argumentPrefix.length && /\s/.test(argumentPrefix[index]!)) {
+      index += 1;
+    }
+
+    if (index >= argumentPrefix.length) {
+      return { kind: "flag", prefixBase: argumentPrefix, query: "", usedFlags };
+    }
+
+    if (argumentPrefix[index] !== "-") {
+      return { kind: "goal", prefixBase: argumentPrefix.slice(0, index), query: "", usedFlags };
+    }
+  }
+
+  return { kind: "flag", prefixBase: argumentPrefix, query: "", usedFlags };
+}
+
+function getHandoffFlagCompletions(prefixBase: string, query: string, usedFlags: Set<HandoffFlagName>): AutocompleteItem[] | null {
+  const items = HANDOFF_FLAG_OPTIONS
+    .filter((flag) => !usedFlags.has(flag.name))
+    .map((flag) => ({
+      value: `${prefixBase}${flag.name} `,
+      label: flag.name,
+      description: flag.description,
+    }));
+
+  return filterAutocompleteItems(items, query);
+}
+
+async function getHandoffModeCompletions(
+  prefixBase: string,
+  query: string,
+  ctx: ExtensionContext | undefined,
+): Promise<AutocompleteItem[] | null> {
+  if (!ctx) {
+    return null;
+  }
+
+  const items = (await loadAvailableModes(ctx.cwd)).map(({ name, spec }) => ({
+    value: `${prefixBase}${name}`,
+    label: name,
+    description: describeModeSpec(spec),
+  }));
+
+  return filterAutocompleteItems(items, query);
+}
+
+function getHandoffModelCompletions(
+  prefixBase: string,
+  query: string,
+  ctx: ExtensionContext | undefined,
+): AutocompleteItem[] | null {
+  const models = getAvailableModelsForAutocomplete(ctx);
+  if (models.length === 0) {
+    return null;
+  }
+
+  const items = models.map((model) => ({
+    value: `${prefixBase}${model.provider}/${model.id}`,
+    label: model.id,
+    description: model.provider,
+  }));
+
+  return filterAutocompleteItems(items, query);
+}
+
+async function getHandoffArgumentCompletions(
+  argumentPrefix: string,
+  state: HandoffRuntimeState,
+): Promise<AutocompleteItem[] | null> {
+  const parsed = parseHandoffAutocompleteContext(argumentPrefix);
+  if (parsed.kind === "goal" || parsed.kind === "none") {
+    return null;
+  }
+
+  if (parsed.kind === "flag") {
+    return getHandoffFlagCompletions(parsed.prefixBase, parsed.query, parsed.usedFlags);
+  }
+
+  if (parsed.kind === "mode") {
+    return getHandoffModeCompletions(parsed.prefixBase, parsed.query, state.ctx);
+  }
+
+  return getHandoffModelCompletions(parsed.prefixBase, parsed.query, state.ctx);
 }
 
 function createHandoffTool(pi: ExtensionAPI) {
@@ -523,9 +791,11 @@ async function prepareHandoff(
 
 export default function handoffExtension(pi: ExtensionAPI) {
   const handoffTool = createHandoffTool(pi);
+  const state: HandoffRuntimeState = {};
 
   pi.registerCommand("handoff", {
     description: "Transfer context to a new focused session (-mode <name>, -model <provider/modelId>)",
+    getArgumentCompletions: (prefix) => getHandoffArgumentCompletions(prefix, state),
     handler: async (args, ctx) => {
       if (!ctx.hasUI) {
         ctx.ui.notify("handoff requires interactive mode", "error");
@@ -581,6 +851,14 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
   pi.registerTool(handoffTool);
 
+  pi.events.on("modes:changed", async () => {
+    if (!state.ctx) {
+      return;
+    }
+
+    await syncHandoffToolRegistration(pi, handoffTool, state, state.ctx);
+  });
+
   pi.on("agent_end", async (_event, ctx) => {
     const pending = pendingToolHandoffState.pending;
     if (!pending) {
@@ -617,6 +895,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (event, ctx) => {
     pendingToolHandoffState.contextCutoffTimestamp = undefined;
     pendingToolHandoffState.pending = undefined;
+    await syncHandoffToolRegistration(pi, handoffTool, state, ctx);
 
     if (event.reason !== "new") {
       return;
@@ -637,5 +916,13 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
     ctx.ui.setEditorText(pendingCommandHandoff.prompt);
     ctx.ui.notify("Handoff ready. Submit when ready.", "info");
+  });
+
+  pi.on("model_select", async (_event, ctx) => {
+    state.ctx = ctx;
+  });
+
+  pi.on("before_agent_start", async (_event, ctx) => {
+    await syncHandoffToolRegistration(pi, handoffTool, state, ctx);
   });
 }

@@ -13,7 +13,8 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { resolveModeSpec, type ThinkingLevel } from "./lib/mode-utils.js";
+import { resolveModeSpec, type ThinkingLevel } from "../mode-utils.js";
+import { MODE_STATE_ENTRY } from "./modes.js";
 
 const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
@@ -40,6 +41,7 @@ Files involved:
 const HANDOFF_PROVIDER = "codex-openai" as const;
 const HANDOFF_MODEL = "gpt-5.4-mini" as const;
 const EXPLICIT_HANDOFF_REQUEST = /\b(handoff|hand\s+off|new\s+(session|thread)|another\s+(session|thread)|start\s+a\s+new\s+(session|thread)|continue\s+in\s+(a\s+)?new\s+(session|thread)|switch\s+to\s+(a\s+)?new\s+(session|thread)|transfer\s+(the\s+)?context)\b/i;
+const HANDOFF_COMMAND_GLOBAL_KEY = Symbol.for("dotai-handoff-pending-command");
 
 type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -68,6 +70,11 @@ type HandoffGenerationConfig = {
   warning?: string;
 };
 
+type PendingCommandHandoff = {
+  prompt: string;
+  overrides?: ResolvedHandoffOptions;
+};
+
 const pendingToolHandoffState: {
   pending: PendingToolHandoff | undefined;
   contextCutoffTimestamp: number | undefined;
@@ -75,6 +82,19 @@ const pendingToolHandoffState: {
   pending: undefined,
   contextCutoffTimestamp: undefined,
 };
+
+function getPendingCommandHandoff(): PendingCommandHandoff | undefined {
+  return (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY];
+}
+
+function setPendingCommandHandoff(pending: PendingCommandHandoff | undefined): void {
+  if (pending) {
+    (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY] = pending;
+    return;
+  }
+
+  delete (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY];
+}
 
 function getConversationMessages(ctx: ExtensionContext) {
   return ctx.sessionManager
@@ -394,6 +414,27 @@ async function applyHandoffOverrides(pi: ExtensionAPI, ctx: ExtensionContext, ov
 
   let modelApplied = true;
 
+  if (overrides.thinkingLevel && overrides.targetModel) {
+    const previousThinkingLevel = pi.getThinkingLevel();
+    pi.setThinkingLevel(overrides.thinkingLevel);
+
+    modelApplied = await pi.setModel(overrides.targetModel);
+    if (!modelApplied) {
+      pi.setThinkingLevel(previousThinkingLevel);
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          `No API key available for ${overrides.targetModel.provider}/${overrides.targetModel.id}; keeping current model.`,
+          "warning",
+        );
+      }
+      return;
+    }
+
+    pi.setThinkingLevel(overrides.thinkingLevel);
+
+    return;
+  }
+
   if (overrides.targetModel) {
     modelApplied = await pi.setModel(overrides.targetModel);
     if (!modelApplied && ctx.hasUI) {
@@ -406,6 +447,19 @@ async function applyHandoffOverrides(pi: ExtensionAPI, ctx: ExtensionContext, ov
 
   if (overrides.thinkingLevel && (modelApplied || !overrides.targetModel)) {
     pi.setThinkingLevel(overrides.thinkingLevel);
+  }
+}
+
+function persistHandoffModeState(
+  pi: ExtensionAPI,
+  overrides?: ResolvedHandoffOptions,
+): void {
+  if (!overrides) {
+    return;
+  }
+
+  if (overrides.mode && !overrides.model) {
+    pi.appendEntry(MODE_STATE_ENTRY, { activeMode: overrides.mode });
   }
 }
 
@@ -499,18 +553,29 @@ export default function handoffExtension(pi: ExtensionAPI) {
         ctx.ui.notify(result.warning, "warning");
       }
 
+      setPendingCommandHandoff({
+        prompt: result.prompt,
+        overrides: result.overrides,
+      });
+
       const newSessionResult = await (ctx as ExtensionCommandContext).newSession({
         parentSession: result.parentSession,
       });
 
       if (newSessionResult.cancelled) {
+        setPendingCommandHandoff(undefined);
         ctx.ui.notify("New session cancelled", "info");
         return;
       }
 
-      await applyHandoffOverrides(pi, ctx, result.overrides);
-      ctx.ui.setEditorText(result.prompt);
-      ctx.ui.notify("Handoff ready. Submit when ready.", "info");
+      const pendingCommandHandoff = getPendingCommandHandoff();
+      if (pendingCommandHandoff) {
+        setPendingCommandHandoff(undefined);
+        await applyHandoffOverrides(pi, ctx, pendingCommandHandoff.overrides);
+        persistHandoffModeState(pi, pendingCommandHandoff.overrides);
+        ctx.ui.setEditorText(pendingCommandHandoff.prompt);
+        ctx.ui.notify("Handoff ready. Submit when ready.", "info");
+      }
     },
   });
 
@@ -528,6 +593,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
       parentSession: pending.parentSession,
     });
     await applyHandoffOverrides(pi, ctx, pending.overrides);
+    persistHandoffModeState(pi, pending.overrides);
 
     setTimeout(() => {
       void pi.sendUserMessage(pending.prompt);
@@ -548,8 +614,28 @@ export default function handoffExtension(pi: ExtensionAPI) {
     return { messages };
   });
 
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (event, ctx) => {
     pendingToolHandoffState.contextCutoffTimestamp = undefined;
     pendingToolHandoffState.pending = undefined;
+
+    if (event.reason !== "new") {
+      return;
+    }
+
+    const pendingCommandHandoff = getPendingCommandHandoff();
+    if (!pendingCommandHandoff) {
+      return;
+    }
+
+    setPendingCommandHandoff(undefined);
+    await applyHandoffOverrides(pi, ctx, pendingCommandHandoff.overrides);
+    persistHandoffModeState(pi, pendingCommandHandoff.overrides);
+
+    if (!ctx.hasUI) {
+      return;
+    }
+
+    ctx.ui.setEditorText(pendingCommandHandoff.prompt);
+    ctx.ui.notify("Handoff ready. Submit when ready.", "info");
   });
 }

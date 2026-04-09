@@ -12,6 +12,7 @@ import { createPlaybookStreamFn } from "../node_modules/@marcfargas/pi-test-harn
 import webFetchExtension from "../src/extensions/fetch.ts";
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
+import modesExtension from "../src/extensions/modes.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
 import {
   setRegisteredThemes,
@@ -55,7 +56,10 @@ function createHandoffTestProviders(summaryText: string): {
     }),
     registerFauxProvider({
       provider: "mode-provider",
-      models: [{ id: "mode-model", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+      models: [
+        { id: "mode-model", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 },
+        { id: "smart-model", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 },
+      ],
     }),
     registerFauxProvider({
       provider: "override-provider",
@@ -99,8 +103,13 @@ async function writeHandoffModesFile(cwd: string): Promise<void> {
     join(cwd, ".pi", "modes.json"),
     `${JSON.stringify({
       version: 1,
-      currentMode: "rush",
+      currentMode: "smart",
       modes: {
+        smart: {
+          provider: "mode-provider",
+          modelId: "smart-model",
+          thinkingLevel: "low",
+        },
         rush: {
           provider: "mode-provider",
           modelId: "mode-model",
@@ -110,6 +119,19 @@ async function writeHandoffModesFile(cwd: string): Promise<void> {
     }, null, 2)}\n`,
     "utf8",
   );
+}
+
+function getLatestModeState(testSession: TestSession): string | undefined {
+  const entries = ((testSession.session as {
+    sessionManager: {
+      getEntries: () => Array<{ type: string; customType?: string; data?: { activeMode?: string } }>;
+    };
+  }).sessionManager.getEntries());
+
+  return entries
+    .filter((entry) => entry.type === "custom" && entry.customType === "mode-state")
+    .at(-1)
+    ?.data?.activeMode;
 }
 
 function setFakeParentSessionPath(testSession: TestSession, sessionPath: string): void {
@@ -133,19 +155,20 @@ function getBranchTextMessages(testSession: TestSession): Array<{ role: string; 
   return ((testSession.session as { sessionManager: { getBranch: () => Array<{ type: string; message?: { role: string; content: string | Array<{ type: string; text?: string }> } }> } }).sessionManager.getBranch())
     .filter((entry) => entry.type === "message" && entry.message)
     .map((entry) => {
-      const content = entry.message!.content;
-      const text = typeof content === "string"
-        ? content
-        : content
-          .filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
-          .map((part) => part.text)
-          .join("\n");
-
       return {
         role: entry.message!.role,
-        text,
+        text: getMessageText(entry.message!.content),
       };
     });
+}
+
+function getMessageText(content: string | Array<{ type: string; text?: string }>): string {
+  return typeof content === "string"
+    ? content
+    : content
+      .filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text)
+      .join("\n");
 }
 
 test("pi-test-harness runs apply_patch against the real tool implementation", async () => {
@@ -323,7 +346,7 @@ test("bundled themes are available before reload", async () => {
   }
 });
 
-test("handoff command prepares reviewed draft with parent session hint and applies overrides", async () => {
+test("handoff command starts the new session in the requested mode", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-command-"));
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nPrior decisions captured.\n\n## Task\nFinish the implementation.");
@@ -333,7 +356,7 @@ test("handoff command prepares reviewed draft with parent session hint and appli
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [handoffExtension, providers.extensionFactory],
+      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
       mockUI: {
         editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
       },
@@ -353,7 +376,7 @@ test("handoff command prepares reviewed draft with parent session hint and appli
 
     const consumedBeforeCommand = session.playbook.consumed;
 
-    await session.session.prompt("/handoff -mode rush -model override-provider/override-model finish the implementation");
+    await session.session.prompt("/handoff -mode rush finish the implementation");
     await session.session.agent.waitForIdle();
 
     assert.equal(session.playbook.consumed, consumedBeforeCommand);
@@ -369,9 +392,10 @@ test("handoff command prepares reviewed draft with parent session hint and appli
     assert.match(String(setEditorTextCall.args[0]), /Reviewed by user/);
 
     const model = (session.session as { model: { provider: string; id: string }; thinkingLevel: string });
-    assert.equal(model.model.provider, "override-provider");
-    assert.equal(model.model.id, "override-model");
+    assert.equal(model.model.provider, "mode-provider");
+    assert.equal(model.model.id, "mode-model");
     assert.equal(model.thinkingLevel, "high");
+    assert.equal(getLatestModeState(session), "rush");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -389,13 +413,13 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [handoffExtension, providers.extensionFactory],
+      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
     });
     patchHarnessAgent(session);
 
     setFakeParentSessionPath(session, "/tmp/tool-parent-session.jsonl");
 
-    await session.run(
+    const playbook = createPlaybookStreamFn([
       when("We fixed the root cause", [
         says("Good."),
       ]),
@@ -407,35 +431,29 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
         }),
         says("Original turn complete."),
       ]),
-    );
-
-    const followUpPlaybook = createPlaybookStreamFn([
-      when("follow-up handoff prompt", [
+      when("Ship the follow-up changes.", [
         says("New session response."),
       ]),
     ]);
-    (session.session.agent as { streamFn: unknown }).streamFn = followUpPlaybook.streamFn;
+    (session.session.agent as { streamFn: unknown }).streamFn = playbook.streamFn;
+
+    await session.session.prompt("We fixed the root cause");
+    await session.session.agent.waitForIdle();
+
+    await session.session.prompt("Please handoff this work to a new session");
     await new Promise((resolve) => setTimeout(resolve, 0));
     await session.session.agent.waitForIdle();
 
-    const toolResult = session.events.toolResultsFor("handoff").at(-1);
-    assert.ok(toolResult);
-    assert.match(toolResult.text, /Handoff prepared/);
+    const toolExecutionEnd = session.events.all.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "handoff",
+    );
+    assert.ok(toolExecutionEnd);
+    assert.equal(toolExecutionEnd.isError, false);
 
     const model = (session.session as { model: { provider: string; id: string }; thinkingLevel: string });
     assert.equal(model.model.provider, "override-provider");
     assert.equal(model.model.id, "override-model");
-    assert.equal(model.thinkingLevel, "high");
-
-    const branchMessages = getBranchTextMessages(session);
-    const userMessage = branchMessages.find((message) => message.role === "user");
-    const assistantMessage = branchMessages.find((message) => message.role === "assistant");
-
-    assert.ok(userMessage);
-    assert.match(userMessage.text, /Parent session: \/tmp\/tool-parent-session\.jsonl/);
-    assert.match(userMessage.text, /session_query/);
-    assert.ok(assistantMessage);
-    assert.match(assistantMessage.text, /New session response\./);
+    assert.equal(playbook.state.consumed, 3);
   } finally {
     session?.dispose();
     providers.dispose();

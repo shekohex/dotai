@@ -13,6 +13,10 @@ import bundledResourcesExtension from "./bundled-resources.js";
 import mermaidExtension from "./mermaid.js";
 import sessionQueryExtension from "./session-query.js";
 import modesExtension from "./modes.js";
+import contextExtension from "./context.js";
+import sessionBreakdownExtension from "./session-breakdown.js";
+import filesExtension from "./files.js";
+import terminalNotifyExtension from "./terminal-notify.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
   bundledResourcesExtension,
@@ -29,4 +33,8 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   debugProviderRequestExtension,
   mermaidExtension,
   sessionQueryExtension,
+  contextExtension,
+  sessionBreakdownExtension,
+  filesExtension,
+  terminalNotifyExtension,
 ];

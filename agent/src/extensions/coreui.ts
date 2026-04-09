@@ -6,6 +6,7 @@ import { createProjectInfoRefresher } from "./coreui/project-info.js";
 import { createCoreUIState } from "./coreui/types.js";
 import { registerCoreUIToolOverrides } from "./coreui/tools.js";
 import { calculateTotalCost } from "./coreui/usage.js";
+import { pickRandomWhimsical } from "./coreui/whimsical.js";
 
 export default function coreUIExtension(pi: ExtensionAPI) {
   const ensureToolOverridesRegistered = registerCoreUIToolOverrides(pi);
@@ -47,8 +48,13 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     void refreshProjectInfo(ctx, true);
   });
 
+  pi.on("turn_start", async (_event, ctx) => {
+    ctx.ui.setWorkingMessage(pickRandomWhimsical());
+  });
+
   pi.on("turn_end", async (_event, ctx) => {
     await refreshAll(ctx);
+    ctx.ui.setWorkingMessage(); // Reset for next time
   });
 
   pi.on("session_tree", async (_event, ctx) => {

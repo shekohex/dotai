@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Static } from "@sinclair/typebox";
 
-import { defineModesFile, ModesFileSchema } from "./extensions/lib/mode-utils.js";
+import { defineModesFile, ModesFileSchema } from "./mode-utils.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 const cwd = dirname(fileURLToPath(import.meta.url));

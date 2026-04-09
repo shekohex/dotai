@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
 
-import { getModesProjectPath, loadModesFile, saveModesFile, type ModeSpec, type ModesFile } from "./lib/mode-utils.js";
+import { getModesProjectPath, loadModesFile, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
 
-const MODE_STATE_ENTRY = "mode-state";
+export const MODE_STATE_ENTRY = "mode-state";
 const MODE_STATUS_KEY = "mode";
 const CUSTOM_MODE_LABEL = "custom";
 
@@ -359,12 +359,29 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
     return;
   }
 
-  const modeEntries = ctx.sessionManager.getEntries().filter((entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY);
+  const entries = ctx.sessionManager.getEntries();
+  const modeEntries = entries.filter((entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY);
   const lastEntry = modeEntries[modeEntries.length - 1] as { data?: { activeMode?: string } } | undefined;
   const sessionMode = lastEntry?.data?.activeMode;
+  const hasExplicitSessionSelection = entries.some(
+    (entry) => entry.type === "model_change" || entry.type === "thinking_level_change",
+  );
 
   if (sessionMode && runtime.data.modes[sessionMode]) {
     await applyMode(pi, ctx, sessionMode, "session_start", "restore", { persist: false });
+    return;
+  }
+
+  if (hasExplicitSessionSelection) {
+    await syncFromSelection(pi, ctx, "session_start");
+    emitModeChanged(pi, ctx, {
+      mode: runtime.activeMode,
+      previousMode: undefined,
+      spec: runtime.activeMode ? getModeSpec(runtime.data, runtime.activeMode) : undefined,
+      reason: "restore",
+      source: "session_start",
+      cwd: ctx.cwd,
+    });
     return;
   }
 

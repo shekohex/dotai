@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
 
 import { getModesProjectPath, loadModesFile, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
 
@@ -44,6 +45,128 @@ function orderedModeNames(data: ModesFile): string[] {
 
 function getModeSpec(data: ModesFile, modeName: string): ModeSpec | undefined {
   return data.modes[modeName];
+}
+
+function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
+  if (!spec) return undefined;
+
+  const parts: string[] = [];
+  if (spec.provider && spec.modelId) {
+    parts.push(`${spec.provider}/${spec.modelId}`);
+  }
+  if (spec.thinkingLevel) {
+    parts.push(`thinking:${spec.thinkingLevel}`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function describeModeAutocomplete(modeName: string, spec: ModeSpec | undefined): string | undefined {
+  const parts: string[] = [];
+  if (runtime.activeMode === modeName) {
+    parts.push("active");
+  }
+
+  const details = describeModeSpec(spec);
+  if (details) {
+    parts.push(details);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function filterAutocompleteItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = normalizedQuery.length === 0
+    ? items
+    : items.filter((item) => {
+      const haystack = [item.value, item.label, item.description]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+
+  return filtered.length > 0 ? filtered : null;
+}
+
+function getModeSelectionItems(): AutocompleteItem[] {
+  return orderedModeNames(runtime.data).map((modeName) => ({
+    value: modeName,
+    label: modeName,
+    description: describeModeAutocomplete(modeName, getModeSpec(runtime.data, modeName)),
+  }));
+}
+
+function getModeRootCompletions(query: string): AutocompleteItem[] | null {
+  return filterAutocompleteItems([
+    ...getModeSelectionItems(),
+    {
+      value: "store ",
+      label: "store",
+      description: "Save current selection as a mode",
+    },
+    {
+      value: "reload",
+      label: "reload",
+      description: "Reload modes from config",
+    },
+  ], query);
+}
+
+function getModeStoreCompletions(query: string): AutocompleteItem[] | null {
+  const items = orderedModeNames(runtime.data).map((modeName) => ({
+    value: `store ${modeName}`,
+    label: modeName,
+    description: ["Overwrite existing mode", describeModeAutocomplete(modeName, getModeSpec(runtime.data, modeName))]
+      .filter((value): value is string => Boolean(value))
+      .join(" · "),
+  }));
+
+  return filterAutocompleteItems(items, query);
+}
+
+function getModeArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+  const normalizedPrefix = argumentPrefix.replace(/^\s+/, "");
+  if (!normalizedPrefix) {
+    return getModeRootCompletions("");
+  }
+
+  const tokens = normalizedPrefix.split(/\s+/).filter(Boolean);
+  const endsWithSpace = /\s$/.test(normalizedPrefix);
+  const command = tokens[0];
+  if (!command) {
+    return getModeRootCompletions("");
+  }
+
+  if (command === "store") {
+    if (tokens.length === 1 && !endsWithSpace) {
+      return getModeRootCompletions(command);
+    }
+
+    if (tokens.length > 2) {
+      return null;
+    }
+
+    return getModeStoreCompletions(tokens[1] ?? "");
+  }
+
+  if (command === "reload") {
+    return tokens.length === 1 && !endsWithSpace ? getModeRootCompletions(command) : null;
+  }
+
+  return tokens.length === 1 && !endsWithSpace ? getModeRootCompletions(command) : null;
+}
+
+function notifyModeSwitch(ctx: ExtensionContext, modeName: string | undefined, spec: ModeSpec | undefined): void {
+  if (!ctx.hasUI) return;
+
+  const label = modeName ?? CUSTOM_MODE_LABEL;
+  const description = describeModeSpec(spec);
+  ctx.ui.notify(
+    description ? `Switched mode to "${label}" (${description})` : `Switched mode to "${label}"`,
+    "info",
+  );
 }
 
 function currentSelection(ctx: ExtensionContext, pi: ExtensionAPI): { provider?: string; modelId?: string; thinkingLevel: string } {
@@ -166,6 +289,10 @@ async function syncFromSelection(pi: ExtensionAPI, ctx: ExtensionContext, source
   setStatus(ctx, nextMode);
 
   if (previousMode !== nextMode) {
+    if (source === "model_select") {
+      notifyModeSwitch(ctx, nextMode, nextMode ? getModeSpec(runtime.data, nextMode) : undefined);
+    }
+
     emitModeChanged(pi, ctx, {
       mode: nextMode,
       previousMode,
@@ -234,6 +361,9 @@ async function applyMode(
       source,
       cwd: ctx.cwd,
     });
+    if (previousMode !== modeName && (source === "command" || source === "shortcut")) {
+      notifyModeSwitch(ctx, modeName, spec);
+    }
   } finally {
     runtime.applying = false;
   }
@@ -269,7 +399,11 @@ async function storeMode(pi: ExtensionAPI, ctx: ExtensionContext, modeName: stri
     source: "command",
     cwd: ctx.cwd,
   });
-  ctx.ui.notify(`Stored mode "${name}"`, "info");
+  const description = describeModeSpec(runtime.data.modes[name]);
+  ctx.ui.notify(
+    description ? `Stored and switched to mode "${name}" (${description})` : `Stored and switched to mode "${name}"`,
+    "info",
+  );
 }
 
 async function reloadModes(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
@@ -404,6 +538,7 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
 export default function modesExtension(pi: ExtensionAPI): void {
   pi.registerCommand("mode", {
     description: "Select and store prompt modes: /mode, /mode <name>, /mode store <name>, /mode reload",
+    getArgumentCompletions: (prefix) => getModeArgumentCompletions(prefix),
     handler: async (args, ctx) => {
       const tokens = args.split(/\s+/).map((value) => value.trim()).filter(Boolean);
       if (tokens.length === 0) {

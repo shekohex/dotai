@@ -216,7 +216,7 @@ export const webSearchTool = defineTool({
     }
 
     if (!apiKey) {
-      throw new Error(`LiteLLM API key not configured. Authenticate provider "litellm" or set ${LITELLM_API_KEY_ENV}.`);
+      throw new Error(`LiteLLM API key not configured in auth storage or ${LITELLM_API_KEY_ENV}.`);
     }
 
     const requestBody = buildRequestBody(query);

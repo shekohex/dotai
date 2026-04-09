@@ -1,5 +1,5 @@
 import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
-import commentaryModeExtension from "./commentary-mode.js";
+import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
 import coreUIExtension from "./coreui.js";
 import litellmGatewayExtension from "./litellm.js";
 import openUsageExtension from "./openusage/index.js";
@@ -19,6 +19,7 @@ import filesExtension from "./files.js";
 import terminalNotifyExtension from "./terminal-notify.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
+  modelFamilySystemPromptExtension,
   bundledResourcesExtension,
   coreUIExtension,
   litellmGatewayExtension,
@@ -27,7 +28,6 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   // Disabled: no need to use webfetch, it can just curl markdown
   // webFetchExtension,
   webSearchExtension,
-  commentaryModeExtension,
   modesExtension,
   compactionExtension,
   handoffExtension,

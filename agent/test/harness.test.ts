@@ -10,9 +10,14 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
 import { createPlaybookStreamFn } from "../node_modules/@marcfargas/pi-test-harness/src/playbook.ts";
 import webFetchExtension from "../src/extensions/fetch.ts";
+import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.ts";
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
+import modelFamilySystemPromptExtension, {
+  buildModelFamilySystemPrompt,
+  extractPiDynamicTail,
+} from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
 import {
@@ -96,6 +101,108 @@ function createHandoffTestProviders(summaryText: string): {
       }
     },
   };
+}
+
+function createModelFamilyTestProviders(): {
+  extensionFactory: (pi: ExtensionAPI) => void;
+  getModel: (id: string) => { provider: string; id: string } & Record<string, unknown>;
+  setResponses: (response: Parameters<ReturnType<typeof registerFauxProvider>["setResponses"]>[0][number]) => void;
+  dispose: () => void;
+} {
+  const registrations = [
+    registerFauxProvider({
+      provider: "family-gpt",
+      models: [{ id: "gpt-5.4", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+    registerFauxProvider({
+      provider: "family-gpt-mini",
+      models: [{ id: "gpt-5.4-mini", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+    registerFauxProvider({
+      provider: "family-codex",
+      models: [{ id: "gpt-5.4-codex", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+    registerFauxProvider({
+      provider: "family-gemini",
+      models: [{ id: "gemini-2.5-pro", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+    registerFauxProvider({
+      provider: "family-kimi",
+      models: [{ id: "kimi-k2.5", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+    registerFauxProvider({
+      provider: "family-default",
+      models: [{ id: "router-1", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+  ];
+
+  const modelById = new Map(registrations.map((registration) => {
+    const model = registration.getModel();
+    return [model.id, model] as const;
+  }));
+
+  return {
+    extensionFactory(pi: ExtensionAPI) {
+      for (const registration of registrations) {
+        const model = registration.getModel();
+        pi.registerProvider(model.provider, {
+          baseUrl: model.baseUrl,
+          apiKey: "TEST_KEY",
+          api: registration.api,
+          models: registration.models.map((registeredModel) => ({
+            id: registeredModel.id,
+            name: registeredModel.name,
+            reasoning: registeredModel.reasoning,
+            input: registeredModel.input,
+            cost: registeredModel.cost,
+            contextWindow: registeredModel.contextWindow,
+            maxTokens: registeredModel.maxTokens,
+          })),
+        });
+      }
+    },
+    getModel(id: string) {
+      const model = modelById.get(id);
+      assert.ok(model, `Missing model ${id}`);
+      return model as { provider: string; id: string } & Record<string, unknown>;
+    },
+    setResponses(response) {
+      for (const registration of registrations) {
+        registration.setResponses([response]);
+      }
+    },
+    dispose() {
+      for (const registration of registrations) {
+        registration.unregister();
+      }
+    },
+  };
+}
+
+async function writeModelFamilyModesFile(cwd: string): Promise<void> {
+  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await writeFile(
+    join(cwd, ".pi", "modes.json"),
+    `${JSON.stringify({
+      version: 1,
+      currentMode: "build",
+      modes: {
+        build: {
+          provider: "family-gpt",
+          modelId: "gpt-5.4",
+        },
+        quick: {
+          provider: "family-gpt-mini",
+          modelId: "gpt-5.4-mini",
+        },
+        research: {
+          provider: "family-gemini",
+          modelId: "gemini-2.5-pro",
+        },
+      },
+    }, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 async function writeHandoffModesFile(cwd: string): Promise<void> {
@@ -351,6 +458,180 @@ test("pi-test-harness runs webfetch against the real tool implementation", async
   }
 });
 
+test("websearch emits streaming updates before the final result", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLiteLLMApiKey = process.env.LITELLM_API_KEY;
+  const encoder = new TextEncoder();
+  const updates: Array<{ content?: Array<{ type: string; text?: string }>; details?: { answer?: string } }> = [];
+
+  process.env.LITELLM_API_KEY = "litellm-test-key";
+
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+    if (url.endsWith("/health/readiness")) {
+      return new Response("ok", { status: 200 });
+    }
+
+    if (url.includes(":streamGenerateContent")) {
+      assert.ok(((init?.headers as Record<string, string>)?.["x-goog-api-key"] ?? "").length > 0);
+      const stream = new ReadableStream({
+        start(controller) {
+          const events = [
+            {
+              candidates: [{
+                content: {
+                  parts: [{ text: JSON.stringify({ answer: "Next.js 16 released in October 2025." }) }],
+                },
+              }],
+            },
+            {
+              candidates: [{
+                content: {
+                  parts: [{ text: JSON.stringify({
+                    answer: [
+                      "Next.js 16 released in October 2025.",
+                      "Turbopack stabilization and caching changes were part of the release.",
+                      "Teams should re-run production build verification after upgrading.",
+                    ].join("\n"),
+                    sources: [
+                      { title: "Next.js 16", url: "https://nextjs.org/blog/next-16" },
+                      { title: "Version 16 Upgrade Guide", url: "https://nextjs.org/docs/app/guides/upgrading/version-16" },
+                    ],
+                    searchQueries: ["next.js 16 release date official", "next.js 16 upgrade guide"],
+                  }) }],
+                },
+              }],
+            },
+          ];
+
+          for (const event of events) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          }
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+
+    if (url.includes(":generateContent")) {
+      throw new Error("generateContent fallback should not be used in streaming test");
+    }
+
+    return originalFetch(input as Parameters<typeof fetch>[0], init);
+  };
+
+  try {
+    const result = await webSearchTool.execute!(
+      "test-websearch-stream",
+      {
+        query: "When did Next.js 16 release and what changed?",
+        model: "gemini-2.5-flash",
+        timeoutMs: 30000,
+      },
+      undefined,
+      (update) => {
+        updates.push(update as { content?: Array<{ type: string; text?: string }>; details?: { answer?: string } });
+      },
+      {} as never,
+    );
+
+    assert.ok(updates.length > 1);
+
+    const toolResult = result.content
+      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text)
+      .join("\n");
+    assert.match(toolResult, /Next\.js 16 released in October 2025\./);
+    assert.match(toolResult, /Sources:/);
+    assert.match(toolResult, /https:\/\/nextjs\.org\/blog\/next-16/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalLiteLLMApiKey === undefined) {
+      delete process.env.LITELLM_API_KEY;
+    } else {
+      process.env.LITELLM_API_KEY = originalLiteLLMApiKey;
+    }
+  }
+});
+
+test("websearch uses the LiteLLM api key with the google model provider", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLiteLLMApiKey = process.env.LITELLM_API_KEY;
+  let session: TestSession | undefined;
+
+  process.env.LITELLM_API_KEY = "litellm-test-key";
+
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+    if (url.endsWith("/health/readiness")) {
+      return new Response("ok", { status: 200 });
+    }
+
+    if (url.includes(":streamGenerateContent")) {
+      assert.equal((init?.headers as Record<string, string>)?.["x-goog-api-key"], "litellm-test-key");
+      return new Response(JSON.stringify([{
+        candidates: [{
+          content: {
+            parts: [{ text: JSON.stringify({
+              answer: "Next.js 16 released in October 2025.",
+              sources: [{ title: "Next.js 16", url: "https://nextjs.org/blog/next-16" }],
+              searchQueries: ["next.js 16 release date official"],
+            }) }],
+          },
+        }],
+      }]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    if (url.includes(":generateContent")) {
+      throw new Error("generateContent fallback should not be used in api-key test");
+    }
+
+    return originalFetch(input as Parameters<typeof fetch>[0], init);
+  };
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [webSearchExtension],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Run a web search", [
+        calls("websearch", {
+          query: "When did Next.js 16 release?",
+          model: "gemini-2.5-flash",
+        }),
+        says("Done."),
+      ]),
+    );
+  } finally {
+    session?.dispose();
+    globalThis.fetch = originalFetch;
+    if (originalLiteLLMApiKey === undefined) {
+      delete process.env.LITELLM_API_KEY;
+    } else {
+      process.env.LITELLM_API_KEY = originalLiteLLMApiKey;
+    }
+  }
+});
+
 test("bundled themes are available before reload", async () => {
   installBundledResourcePaths();
 
@@ -574,4 +855,112 @@ test("LiteLLM provider registrations override built-in google via v1beta", () =>
       apiKey: "TEST_KEY",
     },
   });
+});
+
+test("model family system prompt updates immediately on model switching and preserves the pi tail", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-"));
+  let session: TestSession | undefined;
+  const providers = createModelFamilyTestProviders();
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modelFamilySystemPromptExtension, providers.extensionFactory],
+    });
+    await session.session.setModel(providers.getModel("gpt-5.4") as never);
+
+    const initialPrompt = getCurrentSystemPrompt(session);
+    assert.equal(initialPrompt, buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4"));
+    const initialTail = extractPiDynamicTail(initialPrompt);
+
+    await session.session.setModel(providers.getModel("gpt-5.4-mini") as never);
+    assert.equal(getCurrentSystemPrompt(session), initialPrompt);
+
+    await session.session.setModel(providers.getModel("gpt-5.4-codex") as never);
+    const codexSystemPrompt = getCurrentSystemPrompt(session);
+    assert.equal(codexSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4-codex"));
+    assert.equal(extractPiDynamicTail(codexSystemPrompt), initialTail);
+
+    await session.session.setModel(providers.getModel("gemini-2.5-pro") as never);
+    const geminiSystemPrompt = getCurrentSystemPrompt(session);
+    assert.equal(geminiSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "gemini-2.5-pro"));
+    assert.equal(extractPiDynamicTail(geminiSystemPrompt), initialTail);
+
+    await session.session.setModel(providers.getModel("kimi-k2.5") as never);
+    const kimiSystemPrompt = getCurrentSystemPrompt(session);
+    assert.equal(kimiSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "kimi-k2.5"));
+
+    await session.session.setModel(providers.getModel("router-1") as never);
+    const defaultSystemPrompt = getCurrentSystemPrompt(session);
+    assert.equal(defaultSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "router-1"));
+    assert.equal(extractPiDynamicTail(defaultSystemPrompt), initialTail);
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("model family system prompt is used for provider requests after switching models", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-provider-"));
+  let session: TestSession | undefined;
+  const providers = createModelFamilyTestProviders();
+  const seenSystemPrompts: string[] = [];
+  const captureSystemPromptExtension = (pi: ExtensionAPI) => {
+    pi.on("before_agent_start", async (event) => {
+      seenSystemPrompts.push(event.systemPrompt);
+      return undefined;
+    });
+  };
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modelFamilySystemPromptExtension, captureSystemPromptExtension, providers.extensionFactory],
+    });
+    await session.session.setModel(providers.getModel("gpt-5.4") as never);
+    providers.setResponses(fauxAssistantMessage("ok"));
+
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    await session.session.setModel(providers.getModel("gemini-2.5-pro") as never);
+    providers.setResponses(fauxAssistantMessage("ok"));
+
+    await session.session.prompt("hello again");
+    await session.session.agent.waitForIdle();
+
+    assert.equal(seenSystemPrompts[0], buildModelFamilySystemPrompt(seenSystemPrompts[0]!, "gpt-5.4"));
+    assert.equal(seenSystemPrompts[1], buildModelFamilySystemPrompt(seenSystemPrompts[0]!, "gemini-2.5-pro"));
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mode changes switch the system prompt when the selected mode changes model family", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-modes-"));
+  let session: TestSession | undefined;
+  const providers = createModelFamilyTestProviders();
+
+  await writeModelFamilyModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modelFamilySystemPromptExtension, modesExtension, providers.extensionFactory],
+    });
+
+    const gptPrompt = getCurrentSystemPrompt(session);
+    await session.session.prompt("/mode research");
+    await session.session.agent.waitForIdle();
+
+    const currentPrompt = getCurrentSystemPrompt(session);
+    assert.equal(currentPrompt, buildModelFamilySystemPrompt(gptPrompt, "gemini-2.5-pro"));
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
 });

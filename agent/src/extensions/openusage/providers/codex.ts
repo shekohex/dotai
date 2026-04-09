@@ -5,6 +5,8 @@ import type { OpenUsageRuntimeState, UsageProvider, UsageSnapshot } from "../typ
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const REFRESH_URL = "https://auth.openai.com/oauth/token";
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const codexUsageProvider: UsageProvider = {
   id: "codex",
@@ -62,6 +64,7 @@ export const codexUsageProvider: UsageProvider = {
         used: clampPercent(sessionUsed),
         limit: 100,
         resetsAt: resolveResetAt(primaryWindow),
+        periodDurationMs: FIVE_HOURS_MS,
       };
     }
 
@@ -70,6 +73,7 @@ export const codexUsageProvider: UsageProvider = {
         used: clampPercent(weeklyUsed),
         limit: 100,
         resetsAt: resolveResetAt(secondaryWindow),
+        periodDurationMs: SEVEN_DAYS_MS,
       };
     }
 

@@ -1,5 +1,5 @@
 import { DynamicBorder, type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Container, Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
+import { Container, Key, Text, matchesKey, truncateToWidth, visibleWidth, type Component, type TUI } from "@mariozechner/pi-tui";
 import { listCliproxyAccounts, resolveCliproxyState } from "./cliproxy.js";
 import { resolveSupportedProviderId } from "./model-map.js";
 import {
@@ -7,8 +7,11 @@ import {
   formatRemainingPercent,
   formatSnapshotSummary,
   formatUsedPercent,
+  getMetricPaceDetails,
   getRemainingPercent,
   maskAccountLabel,
+  type OpenUsageDisplayMode,
+  type PaceStatus,
 } from "./status.js";
 import { setResetTimeFormat, setSelectedAccount } from "./state.js";
 import type {
@@ -37,8 +40,6 @@ type OpenUsageViewData = {
   ) => Promise<void>;
   persistState: () => void;
 };
-
-type OpenUsageDisplayMode = "left" | "used";
 
 type OpenUsageAccountOption = {
   label: string;
@@ -733,36 +734,44 @@ function renderMetricSection(
 ): string[] {
   const muted = (s: string) => theme.fg("muted", s);
   const text = (s: string) => theme.fg("text", s);
+  const now = Date.now();
 
   if (!metric) {
     return [muted(`${label}: `) + text("n/a")];
   }
 
-  const reset = formatReset(metric.resetsAt, resetTimeFormat, Date.now());
-  const primaryLabel = displayMode === "used"
-    ? colorUsed(theme, metric, formatUsedPercent(metric)) + muted(" used")
-    : colorRemaining(theme, metric, formatRemainingPercent(metric)) + muted(" left");
-  const secondaryLabel = displayMode === "used"
-    ? text(`${formatRemainingPercent(metric)} left`)
-    : text(`${formatUsedPercent(metric)} used`);
-  const line =
-    muted(`${label}: `) +
-    primaryLabel +
-    muted(" · ") +
-    secondaryLabel +
-    (reset ? `${muted(" · resets ")}${text(reset)}` : "");
+  const reset = formatReset(metric.resetsAt, resetTimeFormat, now);
+  const pace = getMetricPaceDetails(metric, displayMode, now);
+  const paceHeader = pace.statusText
+    ? `${muted(`${label} `)}${colorForPaceStatus(theme, pace.paceResult?.status, "●")} ${colorForPaceStatus(theme, pace.paceResult?.status, pace.statusText)}${pace.projectedText ? `${muted(" · ")}${text(pace.projectedText)}` : ""}`
+    : muted(label);
+
+  const primaryText = displayMode === "used"
+    ? `${formatUsedPercent(metric)} used`
+    : `${formatRemainingPercent(metric)} left`;
+  const footerLeft = displayMode === "used"
+    ? colorUsed(theme, metric, primaryText)
+    : colorRemaining(theme, metric, primaryText);
+  const footerRight = reset
+    ? `${muted("resets ")}${text(reset)}`
+    : text(`${formatUsedPercent(metric)} / ${formatRemainingPercent(metric)}`);
 
   const barWidth = Math.max(10, Math.min(36, width - 12));
   const bar =
-    renderMetricBar(theme, metric, barWidth, displayMode) +
+    renderMetricBar(theme, metric, barWidth, displayMode, pace.elapsedPercent) +
     " " +
     theme.fg("dim", "used") +
     (displayMode === "used" ? colorUsed(theme, metric, "█") : theme.fg("dim", "█")) +
     " " +
     theme.fg("dim", "left") +
-    (displayMode === "used" ? theme.fg("dim", "█") : colorRemaining(theme, metric, "█"));
+    (displayMode === "used" ? theme.fg("dim", "█") : colorRemaining(theme, metric, "█")) +
+    (pace.elapsedPercent !== null ? `${muted(" pace ")}${theme.fg("accent", "▏")}` : "");
 
-  return [line, bar];
+  const lines = [paceHeader, bar, composeMetricFooter(footerLeft, footerRight, width)];
+  if (pace.runsOutText) {
+    lines.push(theme.fg("error", pace.runsOutText));
+  }
+  return lines;
 }
 
 function renderMetricBar(
@@ -770,6 +779,7 @@ function renderMetricBar(
   metric: UsageMetric,
   width: number,
   displayMode: OpenUsageDisplayMode,
+  elapsedPercent: number | null,
 ): string {
   const safeWidth = Math.max(10, width);
   const usedRatio =
@@ -778,13 +788,21 @@ function renderMetricBar(
       : 0;
   const usedCols = Math.max(0, Math.min(safeWidth, Math.round(usedRatio * safeWidth)));
   const remainingCols = Math.max(0, safeWidth - usedCols);
-  const used = displayMode === "used"
-    ? colorUsed(theme, metric, "█".repeat(usedCols))
-    : theme.fg("dim", "█".repeat(usedCols));
-  const left = displayMode === "used"
-    ? theme.fg("dim", "█".repeat(remainingCols))
-    : colorRemaining(theme, metric, "█".repeat(remainingCols));
-  return `${used}${left}`;
+  const chars = new Array<string>(safeWidth);
+  for (let i = 0; i < safeWidth; i++) {
+    const isUsed = i < usedCols;
+    chars[i] = isUsed
+      ? (displayMode === "used" ? colorUsed(theme, metric, "█") : theme.fg("dim", "█"))
+      : (displayMode === "used" ? theme.fg("dim", "█") : colorRemaining(theme, metric, "█"));
+  }
+
+  if (elapsedPercent !== null && Number.isFinite(elapsedPercent)) {
+    const markerRatio = Math.max(0, Math.min(1, elapsedPercent / 100));
+    const markerIndex = Math.max(0, Math.min(safeWidth - 1, Math.round(markerRatio * (safeWidth - 1))));
+    chars[markerIndex] = theme.fg("accent", "▏");
+  }
+
+  return chars.join("");
 }
 
 function colorRemaining(theme: any, metric: UsageMetric, value: string): string {
@@ -819,6 +837,37 @@ function colorUsed(theme: any, metric: UsageMetric, value: string): string {
   }
 
   return theme.fg("success", value);
+}
+
+function colorForPaceStatus(theme: any, status: PaceStatus | undefined, value: string): string {
+  if (status === "behind") {
+    return theme.fg("error", value);
+  }
+
+  if (status === "on-track") {
+    return theme.fg("warning", value);
+  }
+
+  if (status === "ahead") {
+    return theme.fg("success", value);
+  }
+
+  return theme.fg("muted", value);
+}
+
+function composeMetricFooter(left: string, right: string, width: number): string {
+  const safeWidth = Math.max(10, width - 4);
+  const rightWidth = visibleWidth(right);
+  if (rightWidth >= safeWidth) {
+    return truncateToWidth(right, safeWidth, "");
+  }
+
+  const gap = left && right ? 1 : 0;
+  const leftBudget = Math.max(0, safeWidth - rightWidth - gap);
+  const leftPart = truncateToWidth(left, leftBudget, "…");
+  const leftWidth = visibleWidth(leftPart);
+  const spacer = " ".repeat(Math.max(0, safeWidth - leftWidth - rightWidth));
+  return `${leftPart}${spacer}${right}`;
 }
 
 function providerDisplayName(providerId: SupportedProviderId): string {

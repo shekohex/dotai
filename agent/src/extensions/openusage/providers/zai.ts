@@ -4,6 +4,8 @@ import type { OpenUsageRuntimeState, UsageProvider, UsageSnapshot } from "../typ
 
 const SUBSCRIPTION_URL = "https://api.z.ai/api/biz/subscription/list";
 const QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const zaiUsageProvider: UsageProvider = {
   id: "zai",
@@ -61,6 +63,7 @@ export const zaiUsageProvider: UsageProvider = {
         used: clampPercent(readNumber(sessionLimit.percentage) ?? 0),
         limit: 100,
         resetsAt: toIso(readNumber(sessionLimit.nextResetTime)),
+        periodDurationMs: FIVE_HOURS_MS,
       };
     }
 
@@ -69,6 +72,7 @@ export const zaiUsageProvider: UsageProvider = {
         used: clampPercent(readNumber(weeklyLimit.percentage) ?? 0),
         limit: 100,
         resetsAt: toIso(readNumber(weeklyLimit.nextResetTime)),
+        periodDurationMs: SEVEN_DAYS_MS,
       };
     }
 

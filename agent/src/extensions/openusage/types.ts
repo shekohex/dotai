@@ -24,6 +24,7 @@ export type UsageMetric = {
   used: number;
   limit: number;
   resetsAt?: string;
+  periodDurationMs?: number;
 };
 
 export type UsageSnapshot = {

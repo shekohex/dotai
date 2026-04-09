@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import { bindCoreUI } from "./coreui/footer.js";
 import { createProjectInfoRefresher } from "./coreui/project-info.js";
@@ -27,6 +28,13 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   };
 
   const unsubscribeOpenUsageEvents = pi.events.on(OPENUSAGE_UPDATED_EVENT, () => {
+    requestRender?.();
+  });
+
+  const unsubscribeModeEvents = pi.events.on("modes:changed", (data) => {
+    const event = data as { mode?: string; spec?: { color?: ThemeColor } };
+    state.activeMode = event.mode ?? "custom";
+    state.activeModeColor = event.spec?.color;
     requestRender?.();
   });
 
@@ -60,6 +68,7 @@ export default function coreUIExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     unsubscribeOpenUsageEvents();
+    unsubscribeModeEvents();
     requestRender = undefined;
   });
 }

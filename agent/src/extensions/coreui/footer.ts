@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { shortenHome } from "./path.js";
 import type { CoreUIState } from "./types.js";
@@ -39,7 +40,7 @@ export function bindCoreUI(
           state,
           ctx,
         );
-        const rightTop = buildModelStatus(theme, ctx, pi);
+        const rightTop = buildModelStatus(theme, ctx, pi, state);
         const rightBottom = buildUsageStatus(
           theme,
           ctx,
@@ -110,7 +111,12 @@ function buildModelStatus(
   theme: Theme,
   ctx: ExtensionContext,
   pi: ExtensionAPI,
+  state: CoreUIState,
 ): string {
+  const modeName = state.activeMode;
+  const modePrefix = modeName
+    ? `${colorModeLabel(theme, modeName, state.activeModeColor)}${theme.fg("dim", " ")}`
+    : "";
   const providerName = ctx.model?.provider ?? "no-provider";
   const modelName = ctx.model?.id ?? "no-model";
   const thinkingLevel: ThinkingLevel = ctx.model?.reasoning
@@ -118,9 +124,18 @@ function buildModelStatus(
     : "off";
 
   return (
+    modePrefix +
     theme.fg("dim", `${providerName}/${modelName}:`) +
     colorThinkingLevel(theme, thinkingLevel)
   );
+}
+
+function colorModeLabel(theme: Theme, mode: string, color?: ThemeColor): string {
+  if (color) {
+    return theme.fg(color, mode);
+  }
+
+  return theme.fg(mode === "custom" ? "warning" : "accent", mode);
 }
 
 function colorThinkingLevel(theme: Theme, level: ThinkingLevel): string {

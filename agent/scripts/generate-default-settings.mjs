@@ -5,10 +5,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(__dirname, "..");
 const moduleUrl = pathToFileURL(join(packageDir, "dist", "default-settings.js")).href;
-const { defaultSettings } = await import(moduleUrl);
+const { defaultModes, defaultSettings } = await import(moduleUrl);
 
 const outDir = join(packageDir, "dist", "defaults");
-const outPath = join(outDir, "settings.json");
+const settingsOutPath = join(outDir, "settings.json");
+const modesOutPath = join(outDir, "modes.json");
 
 function stripUndefined(value) {
 	if (value === undefined) return undefined;
@@ -25,7 +26,10 @@ function stripUndefined(value) {
 }
 
 const sanitizedSettings = stripUndefined(defaultSettings);
+const sanitizedModes = stripUndefined(defaultModes);
 
 mkdirSync(outDir, { recursive: true });
-writeFileSync(outPath, `${JSON.stringify(sanitizedSettings, null, 2)}\n`, "utf8");
-console.log(`[shekohex/agent] Generated ${outPath}`);
+writeFileSync(settingsOutPath, `${JSON.stringify(sanitizedSettings, null, 2)}\n`, "utf8");
+writeFileSync(modesOutPath, `${JSON.stringify(sanitizedModes, null, 2)}\n`, "utf8");
+console.log(`[shekohex/agent] Generated ${settingsOutPath}`);
+console.log(`[shekohex/agent] Generated ${modesOutPath}`);

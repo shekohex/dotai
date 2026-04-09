@@ -7,8 +7,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(__dirname, "..");
 const templatePath = join(packageDir, "dist", "defaults", "settings.json");
+const modesTemplatePath = join(packageDir, "dist", "defaults", "modes.json");
 const agentDir = join(homedir(), ".pi", "agent");
 const targetPath = join(agentDir, "settings.json");
+const modesTargetPath = join(agentDir, "modes.json");
 const patchPackageBin = join(packageDir, "node_modules", "patch-package", "index.js");
 
 if (process.env.SHEKOHEX_AGENT_SKIP_SETTINGS_INSTALL === "1") {
@@ -27,6 +29,19 @@ if (!existsSync(templatePath)) {
 	} else {
 		copyFileSync(templatePath, targetPath);
 		console.log(`[shekohex/agent] Seeded default settings: ${targetPath}`);
+	}
+}
+
+if (!existsSync(modesTemplatePath)) {
+	console.log(`[shekohex/agent] Skipping modes seed; template not found: ${modesTemplatePath}`);
+} else {
+	mkdirSync(agentDir, { recursive: true });
+
+	if (existsSync(modesTargetPath)) {
+		console.log(`[shekohex/agent] Keeping existing modes: ${modesTargetPath}`);
+	} else {
+		copyFileSync(modesTemplatePath, modesTargetPath);
+		console.log(`[shekohex/agent] Seeded default modes: ${modesTargetPath}`);
 	}
 }
 

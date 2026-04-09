@@ -2,6 +2,8 @@ export type CoreUIState = {
   cwd: string;
   repoSlug?: string;
   worktreeName?: string;
+  activeMode?: string;
+  activeModeColor?: import("../lib/mode-utils.js").ThemeColor;
   dirty: boolean;
   addedLines: number;
   removedLines: number;

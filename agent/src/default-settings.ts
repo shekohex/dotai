@@ -66,6 +66,12 @@ export const defaultModes = defineModesFile({
       modelId: "gemini-3-flash-preview",
       thinkingLevel: "high",
       color: "borderMuted"
+    },
+    painter: {
+      provider: "opencode-go",
+      modelId: "glm-5.1",
+      thinkingLevel: "high",
+      color: "bashMode"
     }
   }
 }) satisfies DefaultModes;

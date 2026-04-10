@@ -3,7 +3,6 @@ import {
   type ToolRenderResultOptions,
   bashToolDefinition,
   editToolDefinition,
-  keyHint,
   renderDiff,
   readToolDefinition,
   writeToolDefinition,
@@ -129,23 +128,18 @@ export function createReadToolOverrideDefinition() {
       const textContent = getTextContent(result);
 
       if (context.isError) {
-        return renderToolError(textContent || "failed to read", theme, context.lastComponent);
+        if (options.expanded) {
+          return renderToolError(textContent || "failed to read", theme, context.lastComponent);
+        }
+        return createTextComponent(context.lastComponent, "");
       }
 
       if (options.isPartial) {
-        return renderCollapsedMeta(
-          summarizeReadResult(result, true),
-          theme,
-          context.lastComponent,
-        );
+        return createTextComponent(context.lastComponent, theme.fg("dim", summarizeReadResult(result, true)));
       }
 
       if (!options.expanded) {
-        return renderCollapsedMeta(
-          appendExpandHint(theme, summarizeReadResult(result, false)),
-          theme,
-          context.lastComponent,
-        );
+        return createTextComponent(context.lastComponent, "");
       }
 
       if (!textContent) {
@@ -178,7 +172,6 @@ export function createBashToolOverrideDefinition() {
     renderResult(result: BashResult, options: BashResultOptions, theme: ToolTheme, context: BashResultContext) {
       const state = syncBashRenderState(context, options.isPartial);
       const elapsedMs = getBashElapsed(state);
-      const showResultExpandHint = shouldShowBashResultExpandHint(context.args);
       if (options.isPartial) {
         const output = getTextContent(result);
         const bashOutput = summarizeBashOutput(output, theme);
@@ -189,27 +182,27 @@ export function createBashToolOverrideDefinition() {
           {
             expanded: options.expanded,
             footer: `${summarizeLineCount(bashOutput.lineCount)} so far${elapsedMs !== undefined ? ` (${formatDurationHuman(elapsedMs)})` : ""}`,
-            expandHint: showResultExpandHint && !options.expanded,
           },
         );
       }
 
-      const summary = summarizeBashResult(result, false, theme, elapsedMs);
+      const summary = summarizeBashResult(result, false, theme, elapsedMs, context.isError);
       const output = getTextContent(result);
 
       if (context.isError) {
-        const bashOutput = summarizeBashOutput(output, theme);
-        return renderStreamingPreview(
-          bashOutput.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT),
-          theme,
-          context.lastComponent,
-          {
-            expanded: options.expanded,
-            footer: summarizeBashFooter(result, theme),
-            expandHint: showResultExpandHint && !options.expanded,
-            tailLines: 5,
-          },
-        );
+        if (options.expanded) {
+          const bashOutput = summarizeBashOutput(output, theme);
+          return renderStreamingPreview(
+            bashOutput.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT),
+            theme,
+            context.lastComponent,
+            {
+              expanded: true,
+              footer: summarizeBashFooter(result, theme, context.isError),
+            },
+          );
+        }
+        return createTextComponent(context.lastComponent, summary);
       }
 
       if (options.expanded) {
@@ -229,7 +222,7 @@ export function createBashToolOverrideDefinition() {
         return createTextComponent(context.lastComponent, "");
       }
 
-      return createTextComponent(context.lastComponent, summary ? `${theme.fg("dim", "↳ ")}${summary}` : "");
+      return createTextComponent(context.lastComponent, summary);
     },
   };
 }
@@ -249,7 +242,10 @@ export function createEditToolOverrideDefinition() {
       const textContent = getTextContent(result);
 
       if (context.isError) {
-        return renderToolError(textContent || "failed to edit", theme, context.lastComponent);
+        if (options.expanded) {
+          return renderToolError(textContent || "failed to edit", theme, context.lastComponent);
+        }
+        return createTextComponent(context.lastComponent, "");
       }
 
       if (options.isPartial) {
@@ -262,14 +258,18 @@ export function createEditToolOverrideDefinition() {
           {
             expanded: options.expanded,
             footer: stats ? formatDiffStats(theme, stats.additions, stats.deletions) : summarizeEditProgress(context.args),
-            expandHint: !options.expanded,
           },
         );
       }
 
       if (!options.expanded) {
-        const summary = renderEditSummary(result, theme);
-        return createTextComponent(context.lastComponent, summary ? `${theme.fg("dim", "↳ ")}${summary}` : "");
+        const diff = getDiffText(result.details);
+        const stats = diff ? summarizeDiff(diff) : undefined;
+        const path = shortenPathForTool(readPathArg(context.args), context.cwd) || "...";
+        const summary = stats && stats.changes > 0
+          ? `${theme.fg("muted", " · ")}${formatDiffStats(theme, stats.additions, stats.deletions)}`
+          : "";
+        return createTextComponent(context.lastComponent, `${theme.bold(theme.fg("dim", "edited"))} ${theme.fg("muted", path)}${summary}`);
       }
 
       const diff = getDiffText(result.details);
@@ -310,7 +310,10 @@ export function createWriteToolOverrideDefinition() {
       const textContent = getTextContent(result);
 
       if (context.isError) {
-        return renderToolError(textContent || "failed to write", theme, context.lastComponent);
+        if (options.expanded) {
+          return renderToolError(textContent || "failed to write", theme, context.lastComponent);
+        }
+        return createTextComponent(context.lastComponent, "");
       }
 
       if (options.isPartial) {
@@ -322,7 +325,6 @@ export function createWriteToolOverrideDefinition() {
           {
             expanded: options.expanded,
             footer: `${summarizeLineCount(countTextLines(streamedText))} so far`,
-            expandHint: !options.expanded,
           },
         );
       }
@@ -352,7 +354,7 @@ function renderStatusLine(
 ): Text {
   const phase = getToolPhase(context);
   const status = formatToolStatus(theme, phase, verbs);
-  const subjectColor = phase === "error" ? "text" : "accent";
+  const subjectColor = "muted" as const;
   const text = `${status} ${theme.fg(subjectColor, subject)}${detail}`;
 
   return createTextComponent(context.lastComponent, text);
@@ -383,13 +385,6 @@ function createTextComponent(lastComponent: unknown, text: string): Text {
   return component;
 }
 
-function renderCollapsedMeta(summary: string, theme: ToolTheme, lastComponent: unknown): Text {
-  if (!summary) {
-    return createTextComponent(lastComponent, "");
-  }
-
-  return createTextComponent(lastComponent, theme.fg("dim", `↳ ${summary}`));
-}
 
 function formatBashCallPreview(command: string, theme: ToolTheme, suffix: string, expanded: boolean): string {
   const lines = command.split("\n");
@@ -415,7 +410,7 @@ function formatBashCallPreview(command: string, theme: ToolTheme, suffix: string
   const tailLines = lines.slice(-3).map((line) => theme.fg("toolOutput", line));
   const hiddenCount = Math.max(lines.length - 5, 0);
   const hiddenLine = hiddenCount > 0
-    ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${hiddenCount} more lines, `)}${keyHint("app.tools.expand", "to expand")})`
+    ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${hiddenCount} more lines)`)}`
     : "";
 
   return [...firstLines, hiddenLine, ...tailLines].filter(Boolean).join("\n");
@@ -428,7 +423,6 @@ function renderStreamingPreview(
   options: {
     expanded: boolean;
     footer?: string;
-    expandHint?: boolean;
     tailLines?: number;
   },
 ): Text {
@@ -459,10 +453,6 @@ function renderStreamingPreview(
     blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
   }
 
-  if (options.expandHint) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
-  }
-
   return createTextComponent(lastComponent, blocks.join("\n"));
 }
 
@@ -470,10 +460,7 @@ function renderToolError(message: string, theme: ToolTheme, lastComponent: unkno
   return createTextComponent(lastComponent, message ? theme.fg("error", `↳ ${message.trim()}`) : "");
 }
 
-function appendExpandHint(theme: ToolTheme, summary: string): string {
-  const parts = [summary, keyHint("app.tools.expand", "expand")].filter(Boolean);
-  return parts.join(" · ");
-}
+
 
 function getToolPhase(context: Pick<BaseRenderContext, "isPartial" | "isError">): ToolPhase {
   if (context.isError) {
@@ -489,14 +476,14 @@ function getToolPhase(context: Pick<BaseRenderContext, "isPartial" | "isError">)
 
 function formatToolStatus(theme: ToolTheme, phase: ToolPhase, verbs: ToolVerbs): string {
   if (phase === "error") {
-    return theme.fg("error", `✗ ${verbs.error}`);
+    return theme.bold(theme.fg("error", verbs.error));
   }
 
   if (phase === "success") {
-    return theme.fg("muted", `✓ ${verbs.success}`);
+    return theme.bold(theme.fg("dim", verbs.success));
   }
 
-  return theme.fg("dim", `… ${verbs.pending}`);
+  return theme.bold(theme.fg("dim", verbs.pending));
 }
 
 function getTextContent(result: ToolResult): string {
@@ -522,25 +509,27 @@ function summarizeReadResult(result: ToolResult, partial: boolean): string {
   return partial ? `${lineSummary} so far` : lineSummary;
 }
 
-function summarizeBashResult(result: ToolResult, partial: boolean, theme: ToolTheme, elapsedMs?: number): string {
+function summarizeBashResult(result: ToolResult, partial: boolean, theme: ToolTheme, elapsedMs?: number, isError?: boolean): string {
   const output = getTextContent(result);
   const { lineCount, exitCode } = summarizeBashOutput(output, theme);
 
   if (partial) {
-    return `${theme.fg("muted", `${summarizeLineCount(lineCount)} so far`)}${elapsedMs !== undefined ? theme.fg("muted", ` (${formatDurationHuman(elapsedMs)})`) : ""}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
+    return `${theme.fg("muted", `${summarizeLineCount(lineCount)} so far`)}${elapsedMs !== undefined ? theme.fg("muted", ` (${formatDurationHuman(elapsedMs)})`) : ""}`;
   }
 
-  const exitStatus = exitCode === undefined || exitCode === "0"
+  const isOk = !isError && (exitCode === undefined || exitCode === "0");
+  const exitStatus = isOk
     ? theme.fg("toolDiffAdded", "exit ok")
-    : theme.fg("error", `exit ${exitCode}`);
-  return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
+    : theme.fg("error", `exit ${exitCode ?? "1"}`);
+  return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
 }
 
-function summarizeBashFooter(result: ToolResult, theme: ToolTheme): string {
+function summarizeBashFooter(result: ToolResult, theme: ToolTheme, isError?: boolean): string {
   const { lineCount, exitCode } = summarizeBashOutput(getTextContent(result), theme);
-  const exitStatus = exitCode === undefined || exitCode === "0"
+  const isOk = !isError && (exitCode === undefined || exitCode === "0");
+  const exitStatus = isOk
     ? theme.fg("toolDiffAdded", "exit ok")
-    : theme.fg("error", `exit ${exitCode}`);
+    : theme.fg("error", `exit ${exitCode ?? "1"}`);
   return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
 }
 
@@ -570,43 +559,6 @@ function summarizeEditProgress(args: ToolPathArgs): string {
   }
 
   return `${editCount} edit${editCount === 1 ? "" : "s"} queued`;
-}
-
-function summarizeEditResult(result: ToolResult): string {
-  const diff = getDiffText(result.details);
-  const stats = diff ? summarizeDiff(diff) : undefined;
-  if (stats && stats.changes > 0) {
-    return `${stats.changes} change${stats.changes === 1 ? "" : "s"} · +${stats.additions} -${stats.deletions}`;
-  }
-
-  const text = getTextContent(result);
-  const match = text.match(/replaced\s+(\d+)\s+block/i);
-  if (match) {
-    const count = Number(match[1]);
-    return `${count} block${count === 1 ? "" : "s"}`;
-  }
-
-  return text ? "updated" : "";
-}
-
-function renderEditSummary(result: ToolResult, theme: ToolTheme): string {
-  const diff = getDiffText(result.details);
-  const stats = diff ? summarizeDiff(diff) : undefined;
-  if (stats && stats.changes > 0) {
-    return `${theme.fg("muted", `${stats.changes} change${stats.changes === 1 ? "" : "s"} · `)}${formatDiffStats(theme, stats.additions, stats.deletions)}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
-  }
-
-  const summary = summarizeEditResult(result);
-  return summary ? `${theme.fg("muted", summary)}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}` : "";
-}
-
-function summarizeWriteProgress(args: ToolPathArgs): string {
-  const lineCount = countTextLines(args.content);
-  if (lineCount === 0) {
-    return "waiting for content";
-  }
-
-  return `${summarizeLineCount(lineCount)} queued`;
 }
 
 function getDiffText(details: unknown): string {
@@ -708,15 +660,6 @@ function styleToolOutputLine(line: string, theme: ToolTheme, maxLineLength?: num
   const truncatedChars = line.length - maxLineLength;
   const visibleText = line.slice(0, maxLineLength);
   return `${theme.fg("toolOutput", visibleText)}${theme.fg("muted", ` …(truncated ${truncatedChars} chars)…`)}`;
-}
-
-function shouldShowBashResultExpandHint(args: ToolPathArgs): boolean {
-  const command = readCommandArg(args);
-  return !command.includes("\n");
-}
-
-function readCommandArg(args: ToolPathArgs): string {
-  return typeof args.command === "string" ? args.command : "";
 }
 
 function syncBashRenderState(

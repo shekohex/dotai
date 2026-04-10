@@ -10,7 +10,6 @@ import {
   DEFAULT_MAX_LINES,
   defineTool,
   formatSize,
-  keyHint,
   truncateHead,
   type ExtensionAPI,
   type TruncationResult,
@@ -40,8 +39,6 @@ const MAX_TIMEOUT_SECONDS = 120;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 const STREAM_PREVIEW_LINE_LIMIT = 8;
 const STREAM_PREVIEW_LINE_LENGTH = 220;
-const COLLAPSED_ERROR_MAX_LINES = 8;
-const COLLAPSED_ERROR_MAX_CHARS = 1200;
 const STATUS_CONTENT_TYPE_MAX_LENGTH = 44;
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
@@ -77,6 +74,7 @@ type WebFetchRenderState = {
 
 type ToolTheme = {
   fg: (color: "accent" | "dim" | "error" | "muted" | "success" | "toolOutput" | "warning", text: string) => string;
+  italic: (text: string) => string;
 };
 
 const webFetchSchema = Type.Object({
@@ -111,19 +109,19 @@ export const webFetchTool = defineTool({
         const suffix = elapsedMs !== undefined ? theme.fg("muted", ` after ${formatDurationHuman(elapsedMs)}`) : "";
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("error", "✗ fetch")} ${theme.fg("accent", url)}${suffix}`,
+          `${theme.bold(theme.fg("error", "fetch"))} ${theme.fg("muted", url)}${suffix}`,
         );
       }
       case "partial":
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("dim", "… fetching")} ${theme.fg("accent", url)}${theme.fg("muted", ` (${timeoutSeconds}s)`)}`,
+          `${theme.bold(theme.fg("dim", "fetching"))} ${theme.fg("muted", url)}${theme.fg("muted", ` (${timeoutSeconds}s)`)}`,
         );
       case "success": {
         const suffix = elapsedMs !== undefined ? theme.fg("muted", ` in ${formatDurationHuman(elapsedMs)}`) : "";
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("muted", "✓ fetched")} ${theme.fg("accent", url)}${suffix}`,
+          `${theme.bold(theme.fg("dim", "fetched"))} ${theme.fg("muted", url)}${suffix}`,
         );
       }
     }
@@ -135,9 +133,10 @@ export const webFetchTool = defineTool({
 
     switch (phase) {
       case "error": {
-        const preview = truncateForDisplay(textContent || "webfetch failed", COLLAPSED_ERROR_MAX_LINES, COLLAPSED_ERROR_MAX_CHARS);
-        const message = options.expanded ? (textContent || "webfetch failed") : (preview.text || textContent || "webfetch failed");
-        return createTextComponent(context.lastComponent, renderToolErrorLine(message, theme));
+        if (options.expanded) {
+          return createTextComponent(context.lastComponent, renderToolErrorLine(textContent || "webfetch failed", theme));
+        }
+        return createTextComponent(context.lastComponent, "");
       }
       case "partial": {
         const streamed = styleToolOutput(textContent, theme, STREAM_PREVIEW_LINE_LENGTH);
@@ -145,7 +144,6 @@ export const webFetchTool = defineTool({
         return renderStreamingPreview(streamed, theme, context.lastComponent, {
           expanded: options.expanded,
           footer: `${summarizeLineCount(countTextLines(textContent))} so far${elapsed}${details ? ` · ${renderStatusMeta(details, theme)}` : ""}`,
-          expandHint: !options.expanded && textContent.trim().length > 0,
         });
       }
       case "complete": {
@@ -153,9 +151,8 @@ export const webFetchTool = defineTool({
           return createTextComponent(context.lastComponent, "");
         }
 
-        const summary = `${renderStatusMeta(details, theme)}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`;
         if (!options.expanded) {
-          return createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${summary}`);
+          return createTextComponent(context.lastComponent, "");
         }
 
         const body = details.body.trim();
@@ -527,7 +524,7 @@ function renderStreamingPreview(
   renderedText: string,
   theme: ToolTheme,
   lastComponent: unknown,
-  options: { expanded: boolean; footer?: string; expandHint?: boolean },
+  options: { expanded: boolean; footer?: string },
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
@@ -550,10 +547,6 @@ function renderStreamingPreview(
 
   if (options.footer) {
     blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
-  }
-
-  if (options.expandHint) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
   }
 
   return createTextComponent(lastComponent, blocks.join("\n"));
@@ -639,27 +632,6 @@ function styleToolOutput(
       return `${theme.fg("toolOutput", visibleText)}${theme.fg("muted", ` …(truncated ${truncatedChars} chars)…`)}`;
     })
     .join("\n");
-}
-
-function truncateForDisplay(text: string, maxLines: number, maxChars: number): { text: string; truncated: boolean } {
-  const normalized = text.trim();
-  if (!normalized) {
-    return { text: "", truncated: false };
-  }
-
-  const lines = normalized.split("\n");
-  const limitedLines = lines.slice(0, maxLines);
-  let truncated = lines.length > maxLines;
-  let output = limitedLines.join("\n");
-
-  if (output.length > maxChars) {
-    output = `${output.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
-    truncated = true;
-  } else if (truncated) {
-    output = `${output.trimEnd()}\n…`;
-  }
-
-  return { text: output, truncated };
 }
 
 function getTextContent(content: Array<{ type: string; text?: string }>): string {

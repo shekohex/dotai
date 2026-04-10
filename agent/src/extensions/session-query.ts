@@ -4,14 +4,12 @@ import {
   SessionManager,
   convertToLlm,
   getMarkdownTheme,
-  keyHint,
   serializeConversation,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import path from "node:path";
-import os from "node:os";
 
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
@@ -19,8 +17,6 @@ const STREAM_PREVIEW_LINE_LIMIT = 5;
 
 const QUERY_PROVIDER = "gemini" as const;
 const QUERY_MODEL = "gemini-3.1-flash-lite-preview" as const;
-
-const SESSIONS_ROOT = path.join(os.homedir(), ".pi", "agent", "sessions");
 
 type SessionQueryDetails = {
   sessionPath: string;
@@ -64,16 +60,16 @@ export default function (pi: ExtensionAPI) {
 
       const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
       const status = phase === "error"
-        ? theme.fg("error", "✗ queried")
+        ? theme.bold(theme.fg("error", "queried"))
         : phase === "success"
-          ? theme.fg("muted", "✓ queried")
-          : theme.fg("dim", "… querying");
+          ? theme.bold(theme.fg("dim", "queried"))
+          : theme.bold(theme.fg("dim", "querying"));
       const sessionLabel = extractSessionUuid(args.sessionPath || "");
       const question = typeof args.question === "string" && args.question.trim().length > 0
         ? args.question.trim()
         : "...";
 
-      const text = `${status} ${theme.fg("muted", sessionLabel)}${theme.fg("dim", " → ")}${theme.fg("accent", truncateQuestion(question))}`;
+      const text = `${status} ${theme.fg("muted", sessionLabel)}${theme.fg("dim", " → ")}${theme.fg("muted", truncateQuestion(question))}`;
       return createTextComponent(context.lastComponent, text);
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
@@ -83,10 +79,13 @@ export default function (pi: ExtensionAPI) {
       const elapsedMs = getElapsedMs(state);
 
       if (context.isError) {
-        return createTextComponent(
-          context.lastComponent,
-          `${theme.fg("error", "↳ ")}${theme.fg("error", textContent || "Session query failed.")}`,
-        );
+        if (expanded) {
+          return createTextComponent(
+            context.lastComponent,
+            `${theme.fg("error", "↳ ")}${theme.fg("error", textContent || "Session query failed.")}`,
+          );
+        }
+        return createTextComponent(context.lastComponent, "");
       }
 
       if (isPartial) {
@@ -101,7 +100,6 @@ export default function (pi: ExtensionAPI) {
           return renderStreamingPreview(renderedText, theme, context.lastComponent, {
             expanded,
             footer,
-            expandHint: !expanded,
           });
         }
 
@@ -112,7 +110,6 @@ export default function (pi: ExtensionAPI) {
       }
 
       const answer = textContent;
-      const messageCount = details?.messageCount ?? 0;
       const summary = [
         theme.fg("muted", answer ? "answered" : "no response"),
         elapsedMs !== undefined ? theme.fg("muted", `took ${formatDurationHuman(elapsedMs)}`) : "",
@@ -121,7 +118,7 @@ export default function (pi: ExtensionAPI) {
       if (!expanded) {
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("dim", "↳ ")}${summary}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`,
+          `${theme.fg("dim", "↳ ")}${summary}`,
         );
       }
 
@@ -334,7 +331,7 @@ function renderStreamingPreview(
   renderedText: string,
   theme: { fg: (color: "dim" | "muted" | "toolOutput", text: string) => string },
   lastComponent: unknown,
-  options: { expanded: boolean; footer?: string; expandHint?: boolean },
+  options: { expanded: boolean; footer?: string },
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
@@ -356,10 +353,6 @@ function renderStreamingPreview(
 
   if (options.footer) {
     blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`);
-  }
-
-  if (options.expandHint) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
   }
 
   return createTextComponent(lastComponent, blocks.join("\n"));

@@ -2,7 +2,6 @@ import { createTwoFilesPatch, diffLines } from "diff";
 import {
   defineTool,
   isToolCallEventType,
-  keyHint,
   type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionContext,
@@ -325,9 +324,12 @@ export const applyPatchTool = defineTool({
     const details = getApplyPatchDetails(result.details, context.args.patchText);
 
     if (context.isError) {
-      const text = createTextComponent(context.lastComponent);
-      text.setText(renderApplyPatchError(details.targets, output, theme, options.expanded));
-      return text;
+      if (options.expanded) {
+        const text = createTextComponent(context.lastComponent);
+        text.setText(renderApplyPatchError(details.targets, output, theme, true));
+        return text;
+      }
+      return createTextComponent(context.lastComponent);
     }
 
     if (options.isPartial) {
@@ -497,10 +499,10 @@ function formatApplyPatchCall(
       : streamedTargets[0]?.relativePath ?? "...";
     const preview = renderStreamingPatchPreview(stylePatchInputPreview(patchText, theme), theme, {
       expanded: context.expanded,
-      footer: streamedTargets.length > 0 ? formatPatchTargetList(streamedTargets, theme, context.expanded, { includeExpandHint: !context.expanded }) : undefined,
+      footer: streamedTargets.length > 0 ? formatPatchTargetList(streamedTargets, theme, context.expanded) : undefined,
       tailLines: 6,
     });
-    return [`${theme.fg("dim", "… patching")} ${theme.fg("accent", headline)}`, preview].filter(Boolean).join("\n");
+    return [`${theme.bold(theme.fg("dim", "patching"))} ${theme.fg("muted", headline)}`, preview].filter(Boolean).join("\n");
   }
 
   const details = getApplyPatchDetails(context.state.applyPatchDetails, patchText);
@@ -509,17 +511,17 @@ function formatApplyPatchCall(
     context.isPartial && details.totalFiles > 1 ? theme.fg("muted", ` · ${details.completedFiles}/${details.totalFiles}`) : "";
 
   if (context.isError) {
-    return `${theme.fg("error", "✗ patch")} ${theme.fg("text", formatPatchHeadline(details, false))}`;
+    return `${theme.bold(theme.fg("error", "patch"))} ${theme.fg("muted", formatPatchHeadline(details, false))}`;
   }
 
   if (context.isPartial) {
-    return `${theme.fg("dim", "… patching")} ${theme.fg("accent", formatPatchHeadline(details, true))}${progress}`;
+    return `${theme.bold(theme.fg("dim", "patching"))} ${theme.fg("muted", formatPatchHeadline(details, true))}${progress}`;
   }
 
   const totalSummary = totalChanges.additions + totalChanges.deletions > 0
     ? `${theme.fg("muted", " · ")}${formatPatchChangeSummary(theme, totalChanges.additions, totalChanges.deletions)}`
     : "";
-  return `${theme.fg("muted", "✓ patched")} ${theme.fg("accent", formatPatchHeadline(details, false))}${totalSummary}`;
+  return `${theme.bold(theme.fg("dim", "patched"))} ${theme.fg("muted", formatPatchHeadline(details, false))}${totalSummary}`;
 }
 
 function renderApplyPatchProgress(
@@ -536,7 +538,6 @@ function renderApplyPatchProgress(
     return renderStreamingPatchPreview(diffText, theme, {
       expanded,
       footer: `${details.completedFiles}/${Math.max(details.totalFiles, 1)} files`,
-      expandHint: !expanded,
     });
   }
 
@@ -546,7 +547,6 @@ function renderApplyPatchProgress(
 
   const list = formatPatchTargetList(details.targets, theme, expanded, {
     prefix: `${details.completedFiles}/${details.totalFiles}`,
-    includeExpandHint: !expanded,
   });
 
   if (!expanded) {
@@ -559,7 +559,7 @@ function renderApplyPatchProgress(
 function renderStreamingPatchPreview(
   renderedText: string,
   theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
-  options: { expanded: boolean; footer?: string; expandHint?: boolean; tailLines?: number },
+  options: { expanded: boolean; footer?: string; tailLines?: number },
 ): string {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
   const tailSize = options.tailLines ?? 5;
@@ -587,10 +587,6 @@ function renderStreamingPatchPreview(
     blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
   }
 
-  if (options.expandHint) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
-  }
-
   return blocks.join("\n");
 }
 
@@ -606,13 +602,13 @@ function renderApplyPatchCollapsedSuccess(
     return "";
   }
 
-  return `${theme.fg("dim", "↳ ")}${formatCollapsedPatchFileSummary(details.files, theme, false)}${theme.fg("dim", ` · ${keyHint("app.tools.expand", "expand")}`)}`;
+  return `${theme.fg("dim", "↳ ")}${formatCollapsedPatchFileSummary(details.files, theme, false)}`;
 }
 
 function renderApplyPatchExpandedSuccess(
   details: ApplyPatchDetails,
   theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
-  patchText: string,
+  _patchText: string,
 ): string {
   if (details.files.length === 0) {
     return "";
@@ -633,9 +629,7 @@ function renderApplyPatchError(
 ): string {
   const lines: string[] = [];
   if (targets.length > 1) {
-    const list = formatPatchTargetList(targets, theme, expanded, {
-      includeExpandHint: !expanded,
-    });
+    const list = formatPatchTargetList(targets, theme, expanded);
     lines.push(theme.fg("dim", `↳ ${list}`));
   }
 
@@ -662,7 +656,7 @@ function formatPatchTargetList(
   targets: PatchTargetDetails[],
   theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
   expanded: boolean,
-  options: { prefix?: string; includeExpandHint?: boolean } = {},
+  options: { prefix?: string } = {},
 ): string {
   const visibleTargets = expanded ? targets : targets.slice(0, 3);
   const list = visibleTargets.map((target) => formatPatchTargetLabel(target, true)).join(", ");
@@ -671,10 +665,6 @@ function formatPatchTargetList(
 
   if (remaining > 0) {
     parts.push(`+${remaining} more`);
-  }
-
-  if (options.includeExpandHint) {
-    parts.push(keyHint("app.tools.expand", "expand"));
   }
 
   return parts.filter(Boolean).join(" · ");
@@ -972,13 +962,6 @@ function syncPatchRenderState(
   queueMicrotask(() => {
     context.invalidate();
   });
-}
-
-function appendExpandHint(
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[1],
-  summary: string,
-): string {
-  return [summary, keyHint("app.tools.expand", "expand")].filter(Boolean).join(" · ");
 }
 
 function createTextComponent(lastComponent: unknown): Text {

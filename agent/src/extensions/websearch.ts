@@ -1,5 +1,5 @@
 import { stream, StringEnum } from "@mariozechner/pi-ai";
-import { defineTool, getMarkdownTheme, keyHint, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { defineTool, getMarkdownTheme, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 
@@ -12,8 +12,6 @@ const MAX_TIMEOUT_MS = 120_000;
 const THINKING_BUDGET = 1024;
 const MAX_SOURCES = 8;
 const MAX_SEARCH_QUERIES = 5;
-const COLLAPSED_ERROR_MAX_LINES = 8;
-const COLLAPSED_ERROR_MAX_CHARS = 1200;
 const STREAM_PREVIEW_LINE_LIMIT = 5;
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
@@ -84,15 +82,15 @@ export const webSearchTool = defineTool({
 
     const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
     const status = phase === "error"
-      ? theme.fg("error", "✗ googled")
+      ? theme.bold(theme.fg("error", "googled"))
       : phase === "success"
-        ? theme.fg("muted", "✓ googled")
-        : theme.fg("dim", "… googling");
+        ? theme.bold(theme.fg("dim", "googled"))
+        : theme.bold(theme.fg("dim", "googling"));
     const query = typeof args.query === "string" && args.query.trim().length > 0 ? args.query.trim() : "...";
 
     return createTextComponent(
       context.lastComponent,
-      `${status} ${theme.fg("accent", query)}${theme.fg("muted", ` (${resolveModel(args.model)} • ${formatDurationHuman(resolveTimeoutMs(args.timeoutMs))})`)}`,
+      `${status} ${theme.fg("muted", query)}${theme.fg("muted", ` (${resolveModel(args.model)} • ${formatDurationHuman(resolveTimeoutMs(args.timeoutMs))})`)}`,
     );
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
@@ -102,19 +100,21 @@ export const webSearchTool = defineTool({
     const durationMs = details?.durationMs ?? getElapsedMs(state);
 
     if (context.isError) {
-      const errorText = answer || "Web search failed.";
-      const preview = truncateForDisplay(errorText, COLLAPSED_ERROR_MAX_LINES, COLLAPSED_ERROR_MAX_CHARS);
-      return createTextComponent(
-        context.lastComponent,
-        `${theme.fg("error", "↳ ")}${theme.fg("error", expanded ? errorText : preview.text || errorText)}`,
-      );
+      if (expanded) {
+        const errorText = answer || "Web search failed.";
+        return createTextComponent(
+          context.lastComponent,
+          `${theme.fg("error", "↳ ")}${theme.fg("error", errorText)}`,
+        );
+      }
+      return createTextComponent(context.lastComponent, "");
     }
 
     if (isPartial) {
       const renderedText = renderToolOutput(answer, theme);
       const footer = durationMs !== undefined ? formatDurationHuman(durationMs) : "0s";
       return renderedText
-        ? renderStreamingPreview(renderedText, theme, context.lastComponent, { expanded, footer, expandHint: !expanded })
+        ? renderStreamingPreview(renderedText, theme, context.lastComponent, { expanded, footer })
         : createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`);
     }
 
@@ -128,7 +128,7 @@ export const webSearchTool = defineTool({
     if (!expanded) {
       return createTextComponent(
         context.lastComponent,
-        `${theme.fg("dim", "↳ ")}${summary}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`,
+        `${theme.fg("dim", "↳ ")}${summary}`,
       );
     }
 
@@ -363,7 +363,7 @@ function renderStreamingPreview(
   renderedText: string,
   theme: { fg: (color: "dim" | "muted" | "toolOutput", text: string) => string },
   lastComponent: unknown,
-  options: { expanded: boolean; footer?: string; expandHint?: boolean },
+  options: { expanded: boolean; footer?: string },
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
@@ -385,10 +385,6 @@ function renderStreamingPreview(
 
   if (options.footer) {
     blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`);
-  }
-
-  if (options.expandHint) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
   }
 
   return createTextComponent(lastComponent, blocks.join("\n"));
@@ -490,26 +486,6 @@ function formatDurationHuman(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-}
-
-function truncateForDisplay(text: string, maxLines: number, maxChars: number): { text: string; truncated: boolean } {
-  const normalized = text.trim();
-  if (!normalized) {
-    return { text: "", truncated: false };
-  }
-
-  const lines = normalized.split("\n");
-  let output = lines.slice(0, maxLines).join("\n");
-  let truncated = lines.length > maxLines;
-
-  if (output.length > maxChars) {
-    output = `${output.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
-    truncated = true;
-  } else if (truncated) {
-    output = `${output.trimEnd()}\n…`;
-  }
-
-  return { text: output, truncated };
 }
 
 function buildExpandedMarkdown(

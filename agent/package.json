@@ -12,6 +12,8 @@
     "pi": "./bin/pi.js"
   },
   "scripts": {
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "test": "npm run test:tool-preview && npm run test:harness",
     "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
     "prepare": "npm run build",
@@ -42,6 +44,8 @@
   },
   "devDependencies": {
     "@marcfargas/pi-test-harness": "^0.5.0",
+    "oxfmt": "^0.44.0",
+    "oxlint": "^1.59.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },

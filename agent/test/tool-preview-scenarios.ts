@@ -919,6 +919,32 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       },
     },
     {
+      id: "read:skill-file",
+      title: "core UI read SKILL.md",
+      toolName: "read",
+      toolDefinition: createReadToolOverrideDefinition(),
+      cwd,
+      args: { path: joinPath(cwd, ".pi/agent/skills/git-commiting/SKILL.md") },
+      successResult: {
+        content: [
+          {
+            type: "text",
+            text: [
+              "# Git Commit Skill",
+              "",
+              "Read this skill before making git commits.",
+            ].join("\n"),
+          },
+        ],
+      },
+      partialResult: {
+        content: [{ type: "text", text: "Loading skill..." }],
+      },
+      errorResult: {
+        content: [{ type: "text", text: "File not found: SKILL.md" }],
+      },
+    },
+    {
       id: "read:batch",
       title: "grouped read batch",
       toolName: batchReadDefinition.name,

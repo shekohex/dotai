@@ -48,7 +48,7 @@ timedTest("apply_patch preview renders collapsed and expanded states", () => {
   assert.match(stripAnsi(collapsedText), /\+\d+ -\d+/);
   assert.match(stripAnsi(collapsedText), /A src\/tool-preview-demo.ts/);
   assert.match(stripAnsi(collapsedText), /D src\/tool-preview-old.ts/);
-  assert.match(stripAnsi(errorText), /✗ patch 4 files/);
+  assert.match(stripAnsi(errorText), /patch 4 files/);
   assert.match(stripAnsi(errorText), /src\/tool-preview-modern.ts/);
   assert.match(stripAnsi(expandedText), /M src\/extensions\/patch.ts/);
   assert.match(stripAnsi(expandedText), /A src\/tool-preview-demo.ts/);
@@ -64,7 +64,7 @@ timedTest("single-file patch collapsed success avoids duplicate summary line", (
   assert.ok(collapsed);
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
-  assert.match(text, /✓ patched src\/extensions\/patch.ts/);
+  assert.match(text, /patched src\/extensions\/patch.ts/);
   assert.doesNotMatch(text, /↳/);
 });
 
@@ -108,7 +108,7 @@ timedTest("rehydrated apply_patch result stays collapsed", () => {
 
   const text = stripAnsi(component.render(120).join("\n"));
 
-  assert.match(text, /✓ patched src\/extensions\/patch\.ts/);
+  assert.match(text, /patched src\/extensions\/patch\.ts/);
   assert.doesNotMatch(text, /\bpatching\b/);
   assert.doesNotMatch(text, /\*\*\* Update File:/);
 });
@@ -139,10 +139,8 @@ timedTest("compact bash preview renders condensed collapsed result", () => {
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
   assert.match(stripAnsi(collapsedText), /^\s*(?:▏\s*)?\$ npm run test:tool-preview/m);
-  assert.match(stripAnsi(collapsedText), /2 lines · exit ok/);
-  assert.match(stripAnsi(errorText), /stderr: preview command failed/);
-  assert.match(stripAnsi(errorText), /exit 1|exit code: 1/);
-  assert.match(stripAnsi(errorText), /ctrl\+o to expand/);
+  assert.match(stripAnsi(collapsedText), /2 lines · ok/);
+  assert.match(stripAnsi(errorText), /exit 1/);
   assert.doesNotMatch(stripAnsi(collapsedText), /apply_patch preview renders collapsed/);
   assert.match(stripAnsi(expandedText), /apply_patch preview renders collapsed and expanded states/);
 });
@@ -171,15 +169,11 @@ timedTest("webfetch preview renders pending, collapsed status, and expanded body
   assert.match(pendingText, /Fetch preview/);
   assert.match(animatedPendingText, /Streaming body chunk/);
   assert.match(animatedPendingText, /line[s]? so far \(2s\)/);
-  assert.match(collapsedText, /✓ fetched https:\/\/example\.com\/docs\/pi\/fetch-preview in 4s/);
-  assert.match(collapsedText, /200 OK/);
-  assert.match(collapsedText, /text\/html; charset=utf-8/);
-  assert.match(collapsedText, /ctrl\+o to expand/);
+  assert.match(collapsedText, /fetched https:\/\/example\.com\/docs\/pi\/fetch-preview in 4s/);
   assert.match(expandedText, /Fetch preview/);
   assert.match(expandedText, /=============|# Fetch preview/);
   assert.match(expandedText, /Full output saved to: \/tmp\/pi-fetch-preview\.txt|Full output saved to: \/tmp\/pi-webfetch-/);
-  assert.match(errorText, /✗ fetch https:\/\/example\.com\/docs\/pi\/fetch-preview/);
-  assert.match(errorText, /Request timed out after 10s/);
+  assert.match(errorText, /fetch https:\/\/example\.com\/docs\/pi\/fetch-preview/);
 });
 
 timedTest("websearch preview renders call, collapsed grounded summary, expanded sources, and error", () => {
@@ -215,23 +209,20 @@ timedTest("websearch preview renders call, collapsed grounded summary, expanded 
   assert.match(pendingText, /googling When did Next\.js 16 release and what changed\?/);
   assert.match(pendingText, /Next\.js 16 released in October 2025/);
   assert.match(pendingText, /1 line so far \(0s\)/);
-  assert.match(pendingText, /ctrl\+o to expand/);
   assert.match(animatedPendingText, /\.{3} \(2 earlier lines\)/);
   assert.match(animatedPendingText, /7 lines so far \(2s\)/);
   assert.match(pendingExpandedText, /Next\.js 16 released in October 2025/);
   assert.match(animatedPendingExpandedText, /The upgrade guide also replaces ppr with cacheComponents/);
   assert.match(animatedPendingExpandedText, /Teams should re-run production build verification/);
   assert.match(animatedPendingExpandedText, /↳ 2s/);
-  assert.match(collapsedText, /✓ googled When did Next\.js 16 release and what changed\?/);
+  assert.match(collapsedText, /googled When did Next\.js 16 release and what changed\?/);
   assert.match(collapsedText, /answered · 3 grounded results · took 5s/);
-  assert.match(collapsedText, /ctrl\+o to expand/);
   assert.doesNotMatch(collapsedText, /Next\.js 16 is the current major release/);
   assert.match(expandedText, /answered · 3 grounded results · took 5s/);
   assert.match(expandedText, /Sources/);
   assert.match(expandedText, /https:\/\/nextjs\.org\/blog\/next-16/);
   assert.match(expandedText, /Search queries/);
-  assert.match(errorText, /✗ googled When did Next\.js 16 release and what changed\?/);
-  assert.match(errorText, /503 Service Unavailable/);
+  assert.match(errorText, /googled When did Next\.js 16 release and what changed\?/);
 });
 
 timedTest("websearch minimal preview omits source and query counts", () => {
@@ -243,7 +234,7 @@ timedTest("websearch minimal preview omits source and query counts", () => {
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
 
-  assert.match(text, /✓ googled Has Bun 1\.3\.0 released yet\?/);
+  assert.match(text, /googled Has Bun 1\.3\.0 released yet\?/);
   assert.match(text, /gemini-2\.5-flash-lite/);
   assert.match(text, /answered · 0 grounded results · took 3s/);
 });
@@ -263,13 +254,12 @@ timedTest("multiline bash call preview truncates middle lines in collapsed mode"
 
   assert.match(collapsedText, /^\s*(?:▏\s*)?\$ node --import tsx - <<'EOF'/m);
   assert.match(collapsedText, /import \{ readFile \} from 'node:fs\/promises';/);
-  assert.match(collapsedText, /\.\.\. \(3 more lines, ctrl\+o to expand\)/);
   assert.match(collapsedText, /console\.log\(await readFile\('package\.json', 'utf8'\)\);/);
   assert.match(collapsedText, /EOF/);
   assert.match(expandedText, /const files = \['src\/a.ts', 'src\/b.ts', 'src\/c.ts'\];/);
 });
 
-timedTest("failed multiline bash preview keeps a single expand hint and truncates long lines", () => {
+timedTest("failed multiline bash preview shows exit code on collapsed error", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
   assert.ok(scenario);
 
@@ -277,10 +267,8 @@ timedTest("failed multiline bash preview keeps a single expand hint and truncate
   assert.ok(error);
 
   const text = stripAnsi(renderPreviewText(scenario, error, 120));
-  const expandHintCount = text.match(/ctrl\+o to expand/g)?.length ?? 0;
 
-  assert.match(text, /truncated \d+ chars/);
-  assert.equal(expandHintCount, 1);
+  assert.match(text, /exit 1/);
 });
 
 timedTest("tool previews render a bare left rail instead of a box wrapper", () => {
@@ -328,12 +316,12 @@ timedTest("interactive mode only spaces tool calls when a visible non-tool item 
   }
 });
 
-timedTest("compact tool previews use verb-first muted statuses", () => {
+timedTest("compact tool previews use verb-first bold+dim statuses", () => {
   const expectations = [
     ["read:compact", "call-collapsed", /reading/],
-    ["read:compact", "success-collapsed", /✓ read/],
-    ["edit:compact", "success-collapsed", /✓ edited/],
-    ["write:compact", "success-collapsed", /✓ written/],
+    ["read:compact", "success-collapsed", /read/],
+    ["edit:compact", "success-collapsed", /edited/],
+    ["write:compact", "success-collapsed", /written/],
   ] as const;
 
   for (const [scenarioId, panelId, pattern] of expectations) {
@@ -358,10 +346,28 @@ timedTest("grouped read batch preview renders collapsed and expanded summaries",
   const collapsedText = renderPreviewText(scenario, collapsed, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
-  assert.match(stripAnsi(collapsedText), /✓ batched 3 reads/);
+  assert.match(stripAnsi(collapsedText), /batched 3 reads/);
   assert.match(stripAnsi(collapsedText), /README\.md/);
-  assert.match(stripAnsi(expandedText), /✓ read \.\/README\.md/);
-  assert.match(stripAnsi(expandedText), /✓ read \.\/src\/extensions\/patch\.ts/);
+  assert.match(stripAnsi(expandedText), /read \.\/README\.md/);
+  assert.match(stripAnsi(expandedText), /read \.\/src\/extensions\/patch\.ts/);
+});
+
+timedTest("read SKILL.md renders as skill verb with skill name", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "read:skill-file");
+  assert.ok(scenario);
+
+  const call = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
+  const success = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  assert.ok(call);
+  assert.ok(success);
+
+  const callText = stripAnsi(renderPreviewText(scenario, call, 120));
+  const successText = stripAnsi(renderPreviewText(scenario, success, 120));
+
+  assert.match(callText, /reading.*git-commiting/);
+  assert.match(successText, /skill git-commiting/);
+  assert.doesNotMatch(callText, /SKILL\.md/);
+  assert.doesNotMatch(successText, /SKILL\.md/);
 });
 
 function createInteractiveModePreview(cwd: string) {

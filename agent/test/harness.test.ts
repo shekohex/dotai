@@ -61,6 +61,10 @@ function createHandoffTestProviders(summaryText: string): {
 } {
   const registrations = [
     registerFauxProvider({
+      provider: "gemini",
+      models: [{ id: "gemini-3.1-flash-lite-preview", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
+    }),
+    registerFauxProvider({
       provider: "codex-openai",
       models: [{ id: "gpt-5.4-mini", reasoning: true, input: ["text"], contextWindow: 128_000, maxTokens: 8_192 }],
     }),
@@ -78,11 +82,12 @@ function createHandoffTestProviders(summaryText: string): {
   ];
 
   registrations[0].setResponses([fauxAssistantMessage(summaryText)]);
-  registrations[1].setResponses([
+  registrations[1].setResponses([fauxAssistantMessage(summaryText)]);
+  registrations[2].setResponses([
     fauxAssistantMessage("mode-provider response"),
     fauxAssistantMessage("mode-provider response"),
   ]);
-  registrations[2].setResponses([
+  registrations[3].setResponses([
     fauxAssistantMessage("override-provider response"),
     fauxAssistantMessage("override-provider response"),
   ]);

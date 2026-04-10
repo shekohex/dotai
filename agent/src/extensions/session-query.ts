@@ -1,25 +1,40 @@
-/**
- * Session Query Extension - Query previous pi sessions
- *
- * Provides a tool the model can use to query past sessions for context,
- * decisions, code changes, or other information.
- *
- * Works with handoff: when a handoff prompt includes "Parent session: <path>",
- * the model can use this tool to look up details from that session.
- */
-
-import { complete, type Message } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { stream, type Message } from "@mariozechner/pi-ai";
 import {
+  type ExtensionAPI,
   SessionManager,
   convertToLlm,
   getMarkdownTheme,
+  keyHint,
   serializeConversation,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-
 import { Type } from "@sinclair/typebox";
+import path from "node:path";
+import os from "node:os";
+
+const TOOL_TEXT_PADDING_X = 0;
+const TOOL_TEXT_PADDING_Y = 0;
+const STREAM_PREVIEW_LINE_LIMIT = 5;
+
+const QUERY_PROVIDER = "gemini" as const;
+const QUERY_MODEL = "gemini-3.1-flash-lite-preview" as const;
+
+const SESSIONS_ROOT = path.join(os.homedir(), ".pi", "agent", "sessions");
+
+type SessionQueryDetails = {
+  sessionPath: string;
+  sessionUuid: string;
+  question: string;
+  messageCount: number;
+  answer: string;
+};
+
+type SessionQueryRenderState = {
+  startedAt?: number;
+  endedAt?: number;
+  interval?: ReturnType<typeof setInterval>;
+};
 
 const QUERY_SYSTEM_PROMPT = `You are a session context assistant. Given the conversation history from a pi coding session and a question, provide a concise answer based on the session contents.
 
@@ -36,30 +51,6 @@ export default function (pi: ExtensionAPI) {
     label: "query",
     description:
       "Query a previous pi session file for context, decisions, or information. Use when you need to look up what happened in a parent session or any other session.",
-    renderResult: (result, _options, theme) => {
-      const container = new Container();
-
-      if (result.content && result.content[0]?.type === "text") {
-        const text = result.content[0].text;
-        // Parse: **Query:** question\n\n---\n\nanswer
-        const match = text.match(/\*\*Query:\*\* (.+?)\n\n---\n\n([\s\S]+)/);
-
-        if (match) {
-          const [, query, answer] = match;
-          container.addChild(new Text(theme.bold("Query: ") + theme.fg("accent", query), 0, 0));
-          container.addChild(new Spacer(1));
-          // Render the answer as markdown
-          container.addChild(new Markdown(answer.trim(), 0, 0, getMarkdownTheme(), {
-            color: (text: string) => theme.fg("toolOutput", text),
-          }));
-        } else {
-          // Fallback for other formats (errors, etc)
-          container.addChild(new Text(theme.fg("toolOutput", text), 0, 0));
-        }
-      }
-
-      return container;
-    },
     parameters: Type.Object({
       sessionPath: Type.String({
         description: "Full path to the session file (e.g., /home/user/.pi/agent/sessions/.../session.jsonl)",
@@ -68,42 +59,108 @@ export default function (pi: ExtensionAPI) {
         description: "What you want to know about that session (e.g., 'What files were modified?' or 'What approach was chosen?')",
       }),
     }),
+    renderCall(args, theme, context) {
+      syncRenderState(context, context.isPartial);
+
+      const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
+      const status = phase === "error"
+        ? theme.fg("error", "✗ queried")
+        : phase === "success"
+          ? theme.fg("muted", "✓ queried")
+          : theme.fg("dim", "… querying");
+      const sessionLabel = extractSessionUuid(args.sessionPath || "");
+      const question = typeof args.question === "string" && args.question.trim().length > 0
+        ? args.question.trim()
+        : "...";
+
+      const text = `${status} ${theme.fg("muted", sessionLabel)}${theme.fg("dim", " → ")}${theme.fg("accent", truncateQuestion(question))}`;
+      return createTextComponent(context.lastComponent, text);
+    },
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      const state = syncRenderState(context, isPartial);
+      const textContent = getTextContent(result);
+      const details = result.details as SessionQueryDetails | undefined;
+      const elapsedMs = getElapsedMs(state);
+
+      if (context.isError) {
+        return createTextComponent(
+          context.lastComponent,
+          `${theme.fg("error", "↳ ")}${theme.fg("error", textContent || "Session query failed.")}`,
+        );
+      }
+
+      if (isPartial) {
+        const renderedText = textContent
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) => theme.fg("toolOutput", line))
+          .join("\n");
+        const footer = elapsedMs !== undefined ? formatDurationHuman(elapsedMs) : "0s";
+
+        if (renderedText) {
+          return renderStreamingPreview(renderedText, theme, context.lastComponent, {
+            expanded,
+            footer,
+            expandHint: !expanded,
+          });
+        }
+
+        return createTextComponent(
+          context.lastComponent,
+          `${theme.fg("dim", "↳ ")}${theme.fg("muted", `loading session (${footer})`)}`,
+        );
+      }
+
+      const answer = textContent;
+      const messageCount = details?.messageCount ?? 0;
+      const summary = [
+        theme.fg("muted", answer ? "answered" : "no response"),
+        elapsedMs !== undefined ? theme.fg("muted", `took ${formatDurationHuman(elapsedMs)}`) : "",
+      ].filter(Boolean).join(`${theme.fg("muted", " · ")}`);
+
+      if (!expanded) {
+        return createTextComponent(
+          context.lastComponent,
+          `${theme.fg("dim", "↳ ")}${summary}${theme.fg("muted", " · ")}${keyHint("app.tools.expand", "to expand")}`,
+        );
+      }
+
+      const question = details?.question ?? context.args?.question ?? "";
+      const container = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+      container.clear();
+      container.addChild(new Text(`${theme.fg("muted", "Question:")} ${theme.fg("accent", question)}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
+      container.addChild(new Spacer(1));
+      container.addChild(new Markdown(answer.trim() || "No answer returned.", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y, getMarkdownTheme(), {
+        color: (text: string) => theme.fg("toolOutput", text),
+      }));
+      container.addChild(new Spacer(1));
+      container.addChild(new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
+      return container;
+    },
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const { sessionPath, question } = params;
 
-      // Helper for error returns
+      const sessionUuid = extractSessionUuid(sessionPath);
+
       const errorResult = (text: string) => ({
         content: [{ type: "text" as const, text }],
-        details: { error: true },
+        details: { error: true, sessionPath, sessionUuid, question },
       });
 
-      // Validate session path
       if (!sessionPath.endsWith(".jsonl")) {
-        return errorResult(`Error: Invalid session path. Expected a .jsonl file, got: ${sessionPath}`);
+        return errorResult(`Invalid session path. Expected a .jsonl file, got: ${sessionPath}`);
       }
 
-      // Check if file exists
       try {
         const fs = await import("node:fs");
         if (!fs.existsSync(sessionPath)) {
-          return errorResult(`Error: Session file not found: ${sessionPath}`);
+          return errorResult(`Session file not found: ${sessionPath}`);
         }
       } catch (err) {
         return errorResult(`Error checking session file: ${err}`);
       }
 
-      onUpdate?.({
-        content: [
-          {
-            type: "text",
-            text: `Query: ${question}`,
-          },
-        ],
-        details: { status: "loading", question },
-      });
-
-      // Load the session
       let sessionManager: SessionManager;
       try {
         sessionManager = SessionManager.open(sessionPath);
@@ -111,7 +168,6 @@ export default function (pi: ExtensionAPI) {
         return errorResult(`Error loading session: ${err}`);
       }
 
-      // Get conversation from the session
       const branch = sessionManager.getBranch();
       const messages = branch
         .filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message")
@@ -120,38 +176,23 @@ export default function (pi: ExtensionAPI) {
       if (messages.length === 0) {
         return {
           content: [{ type: "text" as const, text: "Session is empty - no messages found." }],
-          details: { empty: true },
+          details: { empty: true, sessionPath, sessionUuid, question, messageCount: 0, answer: "" },
         };
       }
 
-      // Serialize the conversation
       const llmMessages = convertToLlm(messages);
       const conversationText = serializeConversation(llmMessages);
 
-      // Determine the model to use: prefer the queried session's own model,
-      // fall back to the current session's model.
-      let queryModel = ctx.model;
-      const modelChanges = branch.filter(
-        (entry): entry is SessionEntry & { type: "model_change" } => entry.type === "model_change",
-      );
-      if (modelChanges.length > 0) {
-        const lastChange = modelChanges[modelChanges.length - 1]!;
-        const sessionModel = ctx.modelRegistry.find(lastChange.provider, lastChange.modelId);
-        if (sessionModel) {
-          queryModel = sessionModel;
-        }
-      }
-
-      if (!queryModel) {
-        return errorResult("Error: No model available to analyze the session.");
+      const model = ctx.modelRegistry.find(QUERY_PROVIDER, QUERY_MODEL) ?? ctx.model;
+      if (!model) {
+        return errorResult("No model available to analyze the session.");
       }
 
       try {
-        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(queryModel);
+        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
         if (!auth.ok) {
-          return errorResult(`Error: ${auth.error}`);
+          return errorResult(`Auth failed: ${auth.error}`);
         }
-        const { apiKey, headers } = auth;
 
         const userMessage: Message = {
           role: "user",
@@ -164,35 +205,178 @@ export default function (pi: ExtensionAPI) {
           timestamp: Date.now(),
         };
 
-        const response = await complete(
-          queryModel,
+        const queryStream = stream(
+          model,
           { systemPrompt: QUERY_SYSTEM_PROMPT, messages: [userMessage] },
-          { apiKey, headers, signal },
+          { apiKey: auth.apiKey, headers: auth.headers, signal },
         );
+
+        let lastPartialAnswer = "";
+
+        for await (const event of queryStream) {
+          if (event.type !== "text_start" && event.type !== "text_delta" && event.type !== "text_end") {
+            continue;
+          }
+
+          const partialAnswer = getAssistantText(event.partial.content).trim();
+          if (!partialAnswer || partialAnswer === lastPartialAnswer) {
+            continue;
+          }
+
+          lastPartialAnswer = partialAnswer;
+          onUpdate?.({
+            content: [{ type: "text", text: partialAnswer }],
+            details: {
+              sessionPath,
+              sessionUuid,
+              question,
+              messageCount: messages.length,
+              answer: partialAnswer,
+            } satisfies SessionQueryDetails,
+          });
+        }
+
+        const response = await queryStream.result();
+        const text = getAssistantText(response.content).trim();
 
         if (response.stopReason === "aborted") {
           return {
             content: [{ type: "text" as const, text: "Query was cancelled." }],
-            details: { cancelled: true },
+            details: { cancelled: true, sessionPath, sessionUuid, question, messageCount: messages.length, answer: "" },
           };
         }
 
-        const answer = response.content
-          .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text)
-          .join("\n");
+        if (response.stopReason === "error") {
+          throw new Error(response.errorMessage || text || "Session query failed");
+        }
 
         return {
-          content: [{ type: "text" as const, text: `**Query:** ${question}\n\n---\n\n${answer}` }],
+          content: [{ type: "text" as const, text: text || "No answer returned." }],
           details: {
             sessionPath,
+            sessionUuid,
             question,
             messageCount: messages.length,
-          },
+            answer: text,
+          } satisfies SessionQueryDetails,
         };
       } catch (err) {
         return errorResult(`Error querying session: ${err}`);
       }
     },
   });
+}
+
+function syncRenderState(
+  context: { state: unknown; executionStarted: boolean; invalidate: () => void },
+  isPartial: boolean,
+): SessionQueryRenderState {
+  const state = context.state as SessionQueryRenderState;
+
+  if (context.executionStarted && state.startedAt === undefined) {
+    state.startedAt = Date.now();
+    state.endedAt = undefined;
+  }
+
+  if (isPartial && state.startedAt !== undefined && !state.interval) {
+    state.interval = setInterval(() => context.invalidate(), 1000);
+    state.interval.unref?.();
+  }
+
+  if (!isPartial && state.startedAt !== undefined) {
+    state.endedAt ??= Date.now();
+    if (state.interval) {
+      clearInterval(state.interval);
+      state.interval = undefined;
+    }
+  }
+
+  return state;
+}
+
+function getElapsedMs(state: SessionQueryRenderState): number | undefined {
+  return state.startedAt === undefined ? undefined : (state.endedAt ?? Date.now()) - state.startedAt;
+}
+
+function createTextComponent(lastComponent: unknown, text: string): Text {
+  const component = lastComponent instanceof Text
+    ? lastComponent
+    : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  component.setText(text);
+  return component;
+}
+
+function getTextContent(result: { content: Array<{ type: string; text?: string }> }): string {
+  return result.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n")
+    .trim();
+}
+
+function getAssistantText(content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>): string {
+  return content
+    .flatMap((item) => (item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : []))
+    .join("\n");
+}
+
+function extractSessionUuid(sessionPath: string): string {
+  if (!sessionPath) return "...";
+  const filename = path.basename(sessionPath, ".jsonl");
+  const separatorIndex = filename.indexOf("_");
+  if (separatorIndex === -1) return filename;
+  const uuid = filename.slice(separatorIndex + 1);
+  if (uuid.length >= 8) return uuid.slice(0, 8);
+  return uuid;
+}
+
+function renderStreamingPreview(
+  renderedText: string,
+  theme: { fg: (color: "dim" | "muted" | "toolOutput", text: string) => string },
+  lastComponent: unknown,
+  options: { expanded: boolean; footer?: string; expandHint?: boolean },
+): Text {
+  const lines = renderedText.split("\n").filter((line) => line.length > 0);
+
+  if (options.expanded) {
+    const footer = options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "";
+    return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
+  }
+
+  const visibleLines = lines.slice(-STREAM_PREVIEW_LINE_LIMIT);
+  const blocks: string[] = [];
+
+  if (lines.length > visibleLines.length) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${lines.length - visibleLines.length} earlier lines)`)}`);
+  }
+
+  if (visibleLines.length > 0) {
+    blocks.push(visibleLines.join("\n"));
+  }
+
+  if (options.footer) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`);
+  }
+
+  if (options.expandHint) {
+    blocks.push(`${theme.fg("dim", "↳ ")}${keyHint("app.tools.expand", "to expand")}`);
+  }
+
+  return createTextComponent(lastComponent, blocks.join("\n"));
+}
+
+function truncateQuestion(question: string, maxLength = 60): string {
+  if (question.length <= maxLength) return question;
+  return `${question.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function formatDurationHuman(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function summarizeLineCount(lineCount: number): string {
+  return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
 }

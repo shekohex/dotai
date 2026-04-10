@@ -7,10 +7,14 @@ import {
   readToolDefinition,
   writeToolDefinition,
   type ExtensionAPI,
+  BashToolDetails,
+  ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import path from "node:path";
 import { shortenPathForTool } from "./path.js";
+import { Type } from "@sinclair/typebox";
+import { Static } from "@sinclair/typebox";
 
 type ToolPathArgs = {
   path?: unknown;
@@ -42,7 +46,7 @@ type ReadCallArgs = Parameters<NonNullable<typeof readToolDefinition.renderCall>
 type ReadCallContext = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[2];
 type ReadResult = Parameters<NonNullable<typeof readToolDefinition.renderResult>>[0];
 type ReadResultContext = Parameters<NonNullable<typeof readToolDefinition.renderResult>>[3];
-type BashCallArgs = Parameters<NonNullable<typeof bashToolDefinition.renderCall>>[0];
+type BashCallArgs = Static<typeof bashToolParams>;
 type BashCallContext = Parameters<NonNullable<typeof bashToolDefinition.renderCall>>[2];
 type BashResult = Parameters<NonNullable<typeof bashToolDefinition.renderResult>>[0];
 type BashResultOptions = Parameters<NonNullable<typeof bashToolDefinition.renderResult>>[1];
@@ -59,11 +63,7 @@ type ToolResult = {
   details?: unknown;
 };
 
-type BashRenderState = {
-  startedAt?: number;
-  endedAt?: number;
-  interval?: NodeJS.Timeout;
-};
+type BashRenderState = NonNullable<BashCallContext['state']>;
 
 const BASH_OUTPUT_LINE_LIMIT = 80;
 const TOOL_TEXT_PADDING_X = 0;
@@ -163,22 +163,42 @@ export function createReadToolOverrideDefinition() {
   };
 }
 
-export function createBashToolOverrideDefinition() {
+export const bashToolParams = Type.Object({
+  command: Type.String({ description: "Bash command to execute" }),
+  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+  description: Type.String({
+    description: "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+  })
+});
+
+export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashToolParams, BashToolDetails | undefined, BashRenderState> {
+  const { prepareArguments: _prepareArguments, ...rest } = bashToolDefinition;
   return {
-    ...bashToolDefinition,
+    ...rest,
+    parameters: bashToolParams,
     renderCall(args: BashCallArgs, theme: ToolTheme, context: BashCallContext) {
       const state = syncBashRenderState(context, context.isPartial);
+      const description = typeof args.description === "string" ? args.description.trim() : "";
       const command = typeof args.command === "string" ? args.command.trim() : "";
       const timeout = typeof args.timeout === "number" ? args.timeout : undefined;
       const elapsed = getBashElapsed(state);
       const suffix = context.isPartial
         ? timeout !== undefined
-          ? theme.fg("muted", ` · (${formatDurationHuman(timeout * 1000)})`)
+          ? theme.fg("muted", ` (${formatDurationHuman(timeout * 1000)})`)
           : ""
         : elapsed !== undefined
-          ? theme.fg("muted", ` · ${formatDurationHuman(elapsed)}`)
+          ? theme.fg("muted", ` ${formatDurationHuman(elapsed)}`)
           : "";
-      const text = formatBashCallPreview(command || "...", theme, suffix, context.expanded);
+      if (context.expanded && command) {
+        const commandLines = command.split("\n").map((line, i) =>
+          i === 0
+            ? `${formatBashStatus(theme, context)} ${theme.fg("toolOutput", line)}`
+            : theme.fg("toolOutput", line)
+        ).join("\n");
+        return createTextComponent(context.lastComponent, `${commandLines}${suffix}`);
+      }
+      const label = description || command || "...";
+      const text = `${formatBashStatus(theme, context)} ${theme.fg("text", label)}${suffix}`;
       return createTextComponent(context.lastComponent, text);
     },
     renderResult(result: BashResult, options: BashResultOptions, theme: ToolTheme, context: BashResultContext) {
@@ -284,7 +304,7 @@ export function createEditToolOverrideDefinition() {
         const summary = stats && stats.changes > 0
           ? `${theme.fg("muted", " · ")}${formatDiffStats(theme, stats.additions, stats.deletions)}`
           : "";
-        return createTextComponent(context.lastComponent, `${theme.bold(theme.fg("dim", "edited"))} ${theme.fg("text", basename)}${dirSuffix ? theme.fg("muted", ` · ${dirSuffix}`) : ""}${summary}`);
+        return createTextComponent(context.lastComponent, `${theme.bold(theme.fg("dim", "edited"))} ${theme.fg("text", basename)}${dirSuffix ? theme.fg("muted", ` ${dirSuffix}`) : ""}${summary}`);
       }
 
       const diff = getDiffText(result.details);
@@ -373,7 +393,7 @@ function renderStatusLine(
 ): Text {
   const phase = getToolPhase(context);
   const status = formatToolStatus(theme, phase, verbs);
-  const text = `${status} ${theme.fg("text", subject)}${subjectDir ? theme.fg("muted", ` · ${subjectDir}`) : ""}${detail}`;
+  const text = `${status} ${theme.fg("text", subject)}${subjectDir ? theme.fg("muted", ` ${subjectDir}`) : ""}${detail}`;
 
   return createTextComponent(context.lastComponent, text);
 }
@@ -403,36 +423,6 @@ function createTextComponent(lastComponent: unknown, text: string): Text {
   return component;
 }
 
-
-function formatBashCallPreview(command: string, theme: ToolTheme, suffix: string, expanded: boolean): string {
-  const lines = command.split("\n");
-  if (lines.length <= 1) {
-    return `${theme.fg("toolTitle", "$ ")}${theme.fg("accent", command)}${suffix}`;
-  }
-
-  if (expanded) {
-    return lines
-      .map((line, index) =>
-        index === 0
-          ? `${theme.fg("toolTitle", "$ ")}${theme.fg("accent", line)}${suffix}`
-          : theme.fg("toolOutput", line),
-      )
-      .join("\n");
-  }
-
-  const firstLines = lines.slice(0, 2).map((line, index) =>
-    index === 0
-      ? `${theme.fg("toolTitle", "$ ")}${theme.fg("accent", line)}${suffix}`
-      : theme.fg("toolOutput", line),
-  );
-  const tailLines = lines.slice(-3).map((line) => theme.fg("toolOutput", line));
-  const hiddenCount = Math.max(lines.length - 5, 0);
-  const hiddenLine = hiddenCount > 0
-    ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${hiddenCount} more lines)`)}`
-    : "";
-
-  return [...firstLines, hiddenLine, ...tailLines].filter(Boolean).join("\n");
-}
 
 function renderStreamingPreview(
   renderedText: string,
@@ -502,6 +492,18 @@ function formatToolStatus(theme: ToolTheme, phase: ToolPhase, verbs: ToolVerbs):
   }
 
   return theme.bold(theme.fg("dim", verbs.pending));
+}
+
+function formatBashStatus(theme: ToolTheme, context: BaseRenderContext): string {
+  if (context.isError) {
+    return theme.bold(theme.fg("error", "$"));
+  }
+
+  if (!context.isPartial) {
+    return theme.bold(theme.fg("dim", "$"));
+  }
+
+  return theme.bold(theme.fg("dim", "$"));
 }
 
 function getTextContent(result: ToolResult): string {
@@ -627,7 +629,7 @@ function formatReadRangeSuffix(theme: ToolTheme, offset: unknown, limit: unknown
 
   const start = startLine ?? 1;
   const end = maxLines !== undefined ? start + maxLines - 1 : undefined;
-  return theme.fg("muted", `:${start}${end ? `-${end}` : ""}`);
+  return theme.fg("muted", ` (${start}${end ? `-${end}` : ""})`);
 }
 
 function formatLineCountSuffix(content: unknown, theme: ToolTheme): string {

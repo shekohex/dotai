@@ -138,7 +138,7 @@ timedTest("compact bash preview renders condensed collapsed result", () => {
   const errorText = renderPreviewText(scenario, error, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
-  assert.match(stripAnsi(collapsedText), /^\s*(?:▏\s*)?\$ npm run test:tool-preview/m);
+  assert.match(stripAnsi(collapsedText), /Runs tool preview tests/);
   assert.match(stripAnsi(collapsedText), /2 lines · ok/);
   assert.match(stripAnsi(errorText), /exit 1/);
   assert.doesNotMatch(stripAnsi(collapsedText), /apply_patch preview renders collapsed/);
@@ -252,11 +252,8 @@ timedTest("multiline bash call preview truncates middle lines in collapsed mode"
   const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
   const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
 
-  assert.match(collapsedText, /^\s*(?:▏\s*)?\$ node --import tsx - <<'EOF'/m);
-  assert.match(collapsedText, /import \{ readFile \} from 'node:fs\/promises';/);
-  assert.match(collapsedText, /console\.log\(await readFile\('package\.json', 'utf8'\)\);/);
-  assert.match(collapsedText, /EOF/);
-  assert.match(expandedText, /const files = \['src\/a.ts', 'src\/b.ts', 'src\/c.ts'\];/);
+  assert.match(collapsedText, /Reads package.json using multiline script/);
+  assert.match(expandedText, /node --import tsx - <<'EOF'/);
 });
 
 timedTest("failed multiline bash preview shows exit code on collapsed error", () => {

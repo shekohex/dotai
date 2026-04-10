@@ -8,6 +8,7 @@ import { createCoreUIState } from "./coreui/types.js";
 import { registerCoreUIToolOverrides } from "./coreui/tools.js";
 import { calculateTotalCost } from "./coreui/usage.js";
 import { pickRandomWhimsical } from "./coreui/whimsical.js";
+import registerTPSExtension from "./coreui/tps.js";
 
 export default function coreUIExtension(pi: ExtensionAPI) {
   const ensureToolOverridesRegistered = registerCoreUIToolOverrides(pi);
@@ -81,4 +82,8 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     unsubscribeModeEvents();
     requestRender = undefined;
   });
+
+
+  // Expermintal
+  registerTPSExtension(pi);
 }

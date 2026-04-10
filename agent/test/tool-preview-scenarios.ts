@@ -787,6 +787,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       cwd,
       args: {
         command: "npm run test:tool-preview",
+        description: "Runs tool preview tests",
         timeout: 120,
       },
       partialResult: {
@@ -870,6 +871,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
           "console.log(await readFile('package.json', 'utf8'));",
           "EOF",
         ].join("\n"),
+        description: "Reads package.json using multiline script",
         timeout: 120,
       },
       partialResult: {

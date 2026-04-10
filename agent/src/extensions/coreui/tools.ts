@@ -63,7 +63,35 @@ type ToolResult = {
   details?: unknown;
 };
 
-type BashRenderState = NonNullable<BashCallContext['state']>;
+type ToolPathDisplay = {
+  basename: string;
+  dirSuffix: string;
+};
+
+type DiffStats = {
+  additions: number;
+  deletions: number;
+  changes: number;
+};
+
+type BashCallMetadata = {
+  description: string;
+  command: string;
+  timeout?: number;
+  elapsed?: number;
+  label: string;
+};
+
+type BashOutputSummary = {
+  lineCount: number;
+  exitCode?: string;
+  renderedText: string;
+};
+
+type BashRenderState = NonNullable<BashCallContext['state']> & {
+  callComponent?: Text;
+  callText?: string;
+};
 
 const BASH_OUTPUT_LINE_LIMIT = 80;
 const TOOL_TEXT_PADDING_X = 0;
@@ -178,83 +206,47 @@ export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashTo
     parameters: bashToolParams,
     renderCall(args: BashCallArgs, theme: ToolTheme, context: BashCallContext) {
       const state = syncBashRenderState(context, context.isPartial);
-      const description = typeof args.description === "string" ? args.description.trim() : "";
-      const command = typeof args.command === "string" ? args.command.trim() : "";
-      const timeout = typeof args.timeout === "number" ? args.timeout : undefined;
-      const elapsed = getBashElapsed(state);
-      const suffix = context.isPartial
-        ? timeout !== undefined
-          ? theme.fg("muted", ` (${formatDurationHuman(timeout * 1000)})`)
-          : ""
-        : elapsed !== undefined
-          ? theme.fg("muted", ` ${formatDurationHuman(elapsed)}`)
-          : "";
-      if (context.expanded && command) {
-        const commandLines = command.split("\n").map((line, i) =>
-          i === 0
-            ? `${formatBashStatus(theme, context)} ${theme.fg("toolOutput", line)}`
-            : theme.fg("toolOutput", line)
-        ).join("\n");
-        return createTextComponent(context.lastComponent, `${commandLines}${suffix}`);
+      const metadata = getBashCallMetadata(args, state);
+
+      if (context.expanded && metadata.command) {
+        return setBashCallComponent(
+          state,
+          context.lastComponent,
+          renderExpandedBashCall(metadata.command, theme, context, formatBashCallSuffix(theme, context, metadata)),
+        );
       }
-      const label = description || command || "...";
-      const text = `${formatBashStatus(theme, context)} ${theme.fg("text", label)}${suffix}`;
-      return createTextComponent(context.lastComponent, text);
+
+      return setBashCallComponent(
+        state,
+        context.lastComponent,
+        `${formatBashStatus(theme, context)} ${theme.fg("text", metadata.label)}${formatBashCallSuffix(theme, context, metadata)}`,
+      );
     },
     renderResult(result: BashResult, options: BashResultOptions, theme: ToolTheme, context: BashResultContext) {
       const state = syncBashRenderState(context, options.isPartial);
       const elapsedMs = getBashElapsed(state);
+
       if (options.isPartial) {
-        const output = getTextContent(result);
-        const bashOutput = summarizeBashOutput(output, theme);
-        return renderStreamingPreview(
-          bashOutput.renderedText,
-          theme,
-          context.lastComponent,
-          {
-            expanded: options.expanded,
-            footer: `${summarizeLineCount(bashOutput.lineCount)} so far${elapsedMs !== undefined ? ` (${formatDurationHuman(elapsedMs)})` : ""}`,
-          },
-        );
+        return renderPartialBashResult(result, options, theme, context, elapsedMs);
       }
 
-      const summary = summarizeBashResult(result, false, theme, elapsedMs, context.isError);
       const output = getTextContent(result);
 
       if (context.isError) {
         if (options.expanded) {
-          const bashOutput = summarizeBashOutput(output, theme);
-          return renderStreamingPreview(
-            bashOutput.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT),
-            theme,
-            context.lastComponent,
-            {
-              expanded: true,
-              footer: summarizeBashFooter(result, theme, context.isError),
-            },
-          );
+          return renderExpandedBashResult(output, theme, context, summarizeBashFooter(result, theme, context.isError));
         }
-        return createTextComponent(context.lastComponent, summary);
-      }
 
-      if (options.expanded) {
-        const bashOutput = summarizeBashOutput(output, theme);
-        return renderStreamingPreview(
-          bashOutput.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT),
-          theme,
-          context.lastComponent,
-          {
-            expanded: true,
-            footer: elapsedMs !== undefined ? `Took ${formatDurationHuman(elapsedMs)}` : undefined,
-          },
-        );
-      }
-
-      if (!summary) {
+        applyCollapsedBashSummaryToCall(state, summarizeBashResult(result, theme, context.isError, elapsedMs));
         return createTextComponent(context.lastComponent, "");
       }
 
-      return createTextComponent(context.lastComponent, summary);
+      if (options.expanded) {
+        return renderExpandedBashResult(output, theme, context, formatElapsedFooter(elapsedMs));
+      }
+
+      applyCollapsedBashSummaryToCall(state, summarizeBashResult(result, theme, context.isError, elapsedMs));
+      return createTextComponent(context.lastComponent, "");
     },
   };
 }
@@ -282,29 +274,22 @@ export function createEditToolOverrideDefinition() {
 
       if (options.isPartial) {
         const diff = getDiffText(result.details);
-        const stats = diff ? summarizeDiff(diff) : undefined;
+        const stats = getDiffStats(diff);
         return renderStreamingPreview(
-          diff ? renderDiff(diff, { filePath: readPathArg(context.args) || undefined }) : styleToolOutput(getTextContent(result), theme),
+          renderEditStreamingContent(diff, getTextContent(result), theme, readPathArg(context.args)),
           theme,
           context.lastComponent,
           {
             expanded: options.expanded,
-            footer: stats ? formatDiffStats(theme, stats.additions, stats.deletions) : summarizeEditProgress(context.args),
+            footer: formatEditStreamingFooter(theme, stats, context.args),
           },
         );
       }
 
       if (!options.expanded) {
         const diff = getDiffText(result.details);
-        const stats = diff ? summarizeDiff(diff) : undefined;
-        const filePath = shortenPathForTool(readPathArg(context.args), context.cwd) || "...";
-        const basename = path.basename(filePath);
-        const dirname = path.dirname(filePath);
-        const dirSuffix = dirname === "." ? "./" : `${dirname}/`;
-        const summary = stats && stats.changes > 0
-          ? `${theme.fg("muted", " · ")}${formatDiffStats(theme, stats.additions, stats.deletions)}`
-          : "";
-        return createTextComponent(context.lastComponent, `${theme.bold(theme.fg("dim", "edited"))} ${theme.fg("text", basename)}${dirSuffix ? theme.fg("muted", ` ${dirSuffix}`) : ""}${summary}`);
+        const stats = getDiffStats(diff);
+        return createTextComponent(context.lastComponent, formatCollapsedEditSummary(theme, context, readPathArg(context.args), stats));
       }
 
       const diff = getDiffText(result.details);
@@ -376,11 +361,8 @@ function renderStatusPathToolCall(
   context: BaseRenderContext,
   detail = "",
 ): Text {
-  const filePath = shortenPathForTool(rawPath, context.cwd) || "...";
-  const basename = path.basename(filePath);
-  const dirname = path.dirname(filePath);
-  const dirSuffix = dirname === "." ? "./" : `${dirname}/`;
-  return renderStatusLine(verbs, basename, detail, theme, context, dirSuffix);
+  const pathDisplay = getToolPathDisplay(rawPath, context.cwd);
+  return renderStatusLine(verbs, pathDisplay.basename, detail, theme, context, pathDisplay.dirSuffix);
 }
 
 function renderStatusLine(
@@ -393,7 +375,7 @@ function renderStatusLine(
 ): Text {
   const phase = getToolPhase(context);
   const status = formatToolStatus(theme, phase, verbs);
-  const text = `${status} ${theme.fg("text", subject)}${subjectDir ? theme.fg("muted", ` ${subjectDir}`) : ""}${detail}`;
+  const text = `${status} ${theme.fg("text", subject)}${formatMutedDirSuffix(theme, subjectDir)}${detail}`;
 
   return createTextComponent(context.lastComponent, text);
 }
@@ -435,12 +417,10 @@ function renderStreamingPreview(
   },
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
-  const tailSize = options.tailLines ?? 5;
+  const tailSize = getTailSize(options.tailLines);
 
   if (options.expanded) {
-    const footerLines = [options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : ""]
-      .filter(Boolean)
-      .join("\n");
+    const footerLines = formatStreamingFooterLine(theme, options.footer);
     const text = [renderedText, footerLines].filter(Boolean).join("\n");
     return createTextComponent(lastComponent, text);
   }
@@ -458,7 +438,7 @@ function renderStreamingPreview(
   }
 
   if (options.footer) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
+    blocks.push(formatStreamingFooterLine(theme, options.footer));
   }
 
   return createTextComponent(lastComponent, blocks.join("\n"));
@@ -488,10 +468,10 @@ function formatToolStatus(theme: ToolTheme, phase: ToolPhase, verbs: ToolVerbs):
   }
 
   if (phase === "success") {
-    return theme.bold(theme.fg("dim", verbs.success));
+    return theme.bold(theme.fg("muted", verbs.success));
   }
 
-  return theme.bold(theme.fg("dim", verbs.pending));
+  return theme.italic(theme.fg("muted", verbs.pending));
 }
 
 function formatBashStatus(theme: ToolTheme, context: BaseRenderContext): string {
@@ -499,11 +479,11 @@ function formatBashStatus(theme: ToolTheme, context: BaseRenderContext): string 
     return theme.bold(theme.fg("error", "$"));
   }
 
-  if (!context.isPartial) {
-    return theme.bold(theme.fg("dim", "$"));
+  if (context.isPartial) {
+    return theme.italic(theme.fg("muted", "$"));
   }
 
-  return theme.bold(theme.fg("dim", "$"));
+  return theme.bold(theme.fg("muted", "$"));
 }
 
 function getTextContent(result: ToolResult): string {
@@ -529,31 +509,26 @@ function summarizeReadResult(result: ToolResult, partial: boolean): string {
   return partial ? `${lineSummary} so far` : lineSummary;
 }
 
-function summarizeBashResult(result: ToolResult, partial: boolean, theme: ToolTheme, elapsedMs?: number, isError?: boolean): string {
+function summarizeBashResult(result: ToolResult, theme: ToolTheme, isError?: boolean, elapsedMs?: number): string {
   const output = getTextContent(result);
-  const { lineCount, exitCode } = summarizeBashOutput(output, theme);
-
-  if (partial) {
-    return `${theme.fg("muted", `${summarizeLineCount(lineCount)} so far`)}${elapsedMs !== undefined ? theme.fg("muted", ` (${formatDurationHuman(elapsedMs)})`) : ""}`;
-  }
-
-  const isOk = !isError && (exitCode === undefined || exitCode === "0");
-  const exitStatus = isOk
-    ? theme.fg("toolDiffAdded", "ok")
-    : theme.fg("error", `exit ${exitCode ?? "1"}`);
-  return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
+  const summary = summarizeBashOutput(output, theme);
+  return formatCollapsedBashResultSummary(theme, summary.lineCount, summary.exitCode, isError, elapsedMs);
 }
 
 function summarizeBashFooter(result: ToolResult, theme: ToolTheme, isError?: boolean): string {
-  const { lineCount, exitCode } = summarizeBashOutput(getTextContent(result), theme);
-  const isOk = !isError && (exitCode === undefined || exitCode === "0");
-  const exitStatus = isOk
-    ? theme.fg("toolDiffAdded", "ok")
-    : theme.fg("error", `exit ${exitCode ?? "1"}`);
-  return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
+  const summary = summarizeBashOutput(getTextContent(result), theme);
+  return formatBashResultSummary(theme, summary.lineCount, summary.exitCode, isError, true);
 }
 
-function summarizeBashOutput(output: string, theme: ToolTheme): { lineCount: number; exitCode?: string; renderedText: string } {
+function applyCollapsedBashSummaryToCall(state: BashRenderState, summary: string): void {
+  if (!(state.callComponent instanceof Text) || !summary || !state.callText) {
+    return;
+  }
+
+  state.callComponent.setText(`${state.callText}${summary}`);
+}
+
+function summarizeBashOutput(output: string, theme: ToolTheme): BashOutputSummary {
   if (!output) {
     return { lineCount: 0, renderedText: "" };
   }
@@ -564,7 +539,9 @@ function summarizeBashOutput(output: string, theme: ToolTheme): { lineCount: num
   const bodyLines = lines.filter(
     (line) => line.trim().length > 0 && line !== exitLine && !line.trimStart().startsWith("> "),
   );
-  const visibleLines = bodyLines.length > 0 ? bodyLines : lines.filter((line) => line.trim().length > 0 && line !== exitLine);
+  const visibleLines = bodyLines.length > 0
+    ? bodyLines
+    : lines.filter((line) => line.trim().length > 0 && line !== exitLine);
   return {
     lineCount: visibleLines.length,
     exitCode,
@@ -629,7 +606,7 @@ function formatReadRangeSuffix(theme: ToolTheme, offset: unknown, limit: unknown
 
   const start = startLine ?? 1;
   const end = maxLines !== undefined ? start + maxLines - 1 : undefined;
-  return theme.fg("muted", ` (${start}${end ? `-${end}` : ""})`);
+  return theme.fg("dim", ` (${formatReadRange(start, end)})`);
 }
 
 function formatLineCountSuffix(content: unknown, theme: ToolTheme): string {
@@ -638,7 +615,7 @@ function formatLineCountSuffix(content: unknown, theme: ToolTheme): string {
     return "";
   }
 
-  return theme.fg("muted", ` · ± ${summarizeLineCount(lineCount)}`);
+  return theme.fg("dim", ` · ± ${summarizeLineCount(lineCount)}`);
 }
 
 function countTextLines(content: unknown): number {
@@ -736,4 +713,306 @@ function formatDurationHuman(ms: number): string {
 
 function formatDiffStats(theme: ToolTheme, additions: number, deletions: number): string {
   return `${theme.fg("toolDiffAdded", `+${additions}`)} ${theme.fg("toolDiffRemoved", `-${deletions}`)}`;
+}
+
+function getToolPathDisplay(rawPath: string, cwd: string): ToolPathDisplay {
+  const filePath = shortenPathForTool(rawPath, cwd) || "...";
+  return {
+    basename: path.basename(filePath),
+    dirSuffix: toDirSuffix(path.dirname(filePath)),
+  };
+}
+
+function toDirSuffix(dirname: string): string {
+  if (dirname === ".") {
+    return "./";
+  }
+
+  return `${dirname}/`;
+}
+
+function formatMutedDirSuffix(theme: ToolTheme, dirSuffix: string): string {
+  if (!dirSuffix) {
+    return "";
+  }
+
+  return theme.fg("muted", ` ${dirSuffix}`);
+}
+
+function getBashCallMetadata(args: BashCallArgs, state: BashRenderState): BashCallMetadata {
+  const description = readTrimmedString(args.description);
+  const command = readTrimmedString(args.command);
+
+  return {
+    description,
+    command,
+    timeout: readNumberArg(args.timeout),
+    elapsed: getBashElapsed(state),
+    label: description || command || "...",
+  };
+}
+
+function renderExpandedBashCall(
+  command: string,
+  theme: ToolTheme,
+  context: BaseRenderContext,
+  suffix: string,
+): string {
+  const commandLines = command
+    .split("\n")
+    .map((line, index) => formatExpandedBashCommandLine(line, index === 0, theme, context))
+    .join("\n");
+
+  return `${commandLines}${suffix}`;
+}
+
+function formatExpandedBashCommandLine(
+  line: string,
+  isFirstLine: boolean,
+  theme: ToolTheme,
+  context: BaseRenderContext,
+): string {
+  if (!isFirstLine) {
+    return theme.fg("toolOutput", line);
+  }
+
+  return `${formatBashStatus(theme, context)} ${theme.fg("toolOutput", line)}`;
+}
+
+function formatBashCallSuffix(
+  theme: ToolTheme,
+  context: Pick<BashCallContext, "isPartial" | "expanded">,
+  metadata: BashCallMetadata,
+): string {
+  if (context.isPartial) {
+    return formatBashTimeoutSuffix(theme, metadata.timeout);
+  }
+
+  if (!context.expanded) {
+    return "";
+  }
+
+  return formatElapsedSuffix(theme, metadata.elapsed);
+}
+
+function formatBashTimeoutSuffix(theme: ToolTheme, timeout?: number): string {
+  if (timeout === undefined) {
+    return "";
+  }
+
+  return theme.fg("dim", ` (${formatDurationHuman(timeout * 1000)})`);
+}
+
+function formatElapsedSuffix(theme: ToolTheme, elapsedMs?: number): string {
+  if (elapsedMs === undefined) {
+    return "";
+  }
+
+  return theme.fg("dim", ` ${formatDurationHuman(elapsedMs)}`);
+}
+
+function formatElapsedFooter(elapsedMs?: number): string | undefined {
+  if (elapsedMs === undefined) {
+    return undefined;
+  }
+
+  return `Took ${formatDurationHuman(elapsedMs)}`;
+}
+
+function setBashCallComponent(state: BashRenderState, lastComponent: unknown, text: string): Text {
+  const existingComponent = state.callComponent instanceof Text ? state.callComponent : undefined;
+  const component = createTextComponent(existingComponent ?? lastComponent, text);
+  state.callComponent = component;
+  state.callText = text;
+  return component;
+}
+
+function renderPartialBashResult(
+  result: BashResult,
+  options: BashResultOptions,
+  theme: ToolTheme,
+  context: BashResultContext,
+  elapsedMs?: number,
+): Text {
+  const output = getTextContent(result);
+  const summary = summarizeBashOutput(output, theme);
+  return renderStreamingPreview(
+    summary.renderedText,
+    theme,
+    context.lastComponent,
+    {
+      expanded: options.expanded,
+      footer: formatPartialBashFooter(summary.lineCount, elapsedMs),
+    },
+  );
+}
+
+function renderExpandedBashResult(
+  output: string,
+  theme: ToolTheme,
+  context: BashResultContext,
+  footer?: string,
+): Text {
+  const summary = summarizeBashOutput(output, theme);
+  const renderedText = summary.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT);
+
+  return renderStreamingPreview(
+    renderedText,
+    theme,
+    context.lastComponent,
+    {
+      expanded: true,
+      footer,
+    },
+  );
+}
+
+function formatPartialBashFooter(lineCount: number, elapsedMs?: number): string {
+  const lineSummary = `${summarizeLineCount(lineCount)} so far`;
+  if (elapsedMs === undefined) {
+    return lineSummary;
+  }
+
+  return `${lineSummary} (${formatDurationHuman(elapsedMs)})`;
+}
+
+function formatBashResultSummary(
+  theme: ToolTheme,
+  lineCount: number,
+  exitCode: string | undefined,
+  isError: boolean | undefined,
+  lineCountFirst: boolean,
+): string {
+  const lineSummary = theme.fg("dim", summarizeLineCount(lineCount));
+  const exitStatus = formatBashExitStatus(theme, exitCode, isError);
+  const separator = theme.fg("dim", " · ");
+
+  if (lineCountFirst) {
+    return `${lineSummary}${separator}${exitStatus}`;
+  }
+
+  return `${separator}${exitStatus} ${lineSummary}`;
+}
+
+function formatCollapsedBashResultSummary(
+  theme: ToolTheme,
+  lineCount: number,
+  exitCode: string | undefined,
+  isError: boolean | undefined,
+  elapsedMs?: number,
+): string {
+  const exitStatus = formatBashExitStatus(theme, exitCode, isError);
+  const elapsedSummary = formatCollapsedElapsedSummary(theme, elapsedMs);
+  const lineSummary = theme.fg("dim", ` (${summarizeLineCount(lineCount)})`);
+
+  return `${theme.fg("dim", " · ")}${exitStatus}${elapsedSummary}${lineSummary}`;
+}
+
+function formatCollapsedElapsedSummary(theme: ToolTheme, elapsedMs?: number): string {
+  if (!hasVisibleDuration(elapsedMs)) {
+    return "";
+  }
+
+  return theme.fg("dim", ` took ${formatDurationHuman(elapsedMs)}`);
+}
+
+function hasVisibleDuration(elapsedMs?: number): elapsedMs is number {
+  if (elapsedMs === undefined) {
+    return false;
+  }
+
+  return Math.floor(elapsedMs / 1000) > 0;
+}
+
+function formatBashExitStatus(theme: ToolTheme, exitCode?: string, isError?: boolean): string {
+  if (!isError && (exitCode === undefined || exitCode === "0")) {
+    return theme.fg("toolDiffAdded", "ok");
+  }
+
+  return theme.fg("error", `exit ${exitCode ?? "1"}`);
+}
+
+function getDiffStats(diff: string): DiffStats | undefined {
+  if (!diff) {
+    return undefined;
+  }
+
+  return summarizeDiff(diff);
+}
+
+function renderEditStreamingContent(diff: string, output: string, theme: ToolTheme, filePath: string): string {
+  if (diff) {
+    return renderDiff(diff, { filePath: filePath || undefined });
+  }
+
+  return styleToolOutput(output, theme);
+}
+
+function formatEditStreamingFooter(theme: ToolTheme, stats: DiffStats | undefined, args: ToolPathArgs): string {
+  if (!stats) {
+    return summarizeEditProgress(args);
+  }
+
+  return formatDiffStats(theme, stats.additions, stats.deletions);
+}
+
+function formatCollapsedEditSummary(
+  theme: ToolTheme,
+  context: BaseRenderContext,
+  rawPath: string,
+  stats: DiffStats | undefined,
+): string {
+  const pathDisplay = getToolPathDisplay(rawPath, context.cwd);
+  const status = theme.bold(theme.fg("dim", "edited"));
+  const summary = formatOptionalDiffStats(theme, stats);
+
+  return `${status} ${theme.fg("text", pathDisplay.basename)}${formatMutedDirSuffix(theme, pathDisplay.dirSuffix)}${summary}`;
+}
+
+function formatOptionalDiffStats(theme: ToolTheme, stats: DiffStats | undefined): string {
+  if (!stats || stats.changes === 0) {
+    return "";
+  }
+
+  return `${theme.fg("muted", " · ")}${formatDiffStats(theme, stats.additions, stats.deletions)}`;
+}
+
+function getTailSize(tailLines?: number): number {
+  if (tailLines === undefined) {
+    return 5;
+  }
+
+  return tailLines;
+}
+
+function formatStreamingFooterLine(theme: ToolTheme, footer?: string): string {
+  if (!footer) {
+    return "";
+  }
+
+  return `${theme.fg("dim", "↳ ")}${theme.fg("dim", footer)}`;
+}
+
+function readTrimmedString(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim();
+}
+
+function readNumberArg(value: unknown): number | undefined {
+  if (typeof value !== "number") {
+    return undefined;
+  }
+
+  return value;
+}
+
+function formatReadRange(start: number, end?: number): string {
+  if (end === undefined) {
+    return `${start}`;
+  }
+
+  return `${start}-${end}`;
 }

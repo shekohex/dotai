@@ -135,13 +135,18 @@ timedTest("compact bash preview renders condensed collapsed result", () => {
   assert.ok(expanded);
 
   const collapsedText = renderPreviewText(scenario, collapsed, 120);
+  const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter((line) => stripAnsi(line).trim().length > 0);
   const errorText = renderPreviewText(scenario, error, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
+  assert.equal(collapsedLines.length, 1);
   assert.match(stripAnsi(collapsedText), /Runs tool preview tests/);
-  assert.match(stripAnsi(collapsedText), /2 lines · ok/);
+  assert.match(stripAnsi(collapsedText), /Runs tool preview tests · ok took 2s \(2 lines\)/);
+  assert.doesNotMatch(stripAnsi(collapsedText), /\n.*ok took 2s/);
   assert.match(stripAnsi(errorText), /exit 1/);
+  assert.match(stripAnsi(errorText), /Runs tool preview tests · exit 1 took 2s \(4 lines\)/);
   assert.doesNotMatch(stripAnsi(collapsedText), /apply_patch preview renders collapsed/);
+  assert.match(stripAnsi(expandedText), /npm run test:tool-preview/);
   assert.match(stripAnsi(expandedText), /apply_patch preview renders collapsed and expanded states/);
 });
 

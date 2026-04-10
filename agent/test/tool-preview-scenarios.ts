@@ -838,6 +838,9 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             ].join("\n"),
           },
         ],
+        details: {
+          durationMs: 2000,
+        },
       },
       errorResult: {
         content: [
@@ -852,6 +855,9 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             ].join("\n"),
           },
         ],
+        details: {
+          durationMs: 2000,
+        },
       },
     },
     {

@@ -502,7 +502,7 @@ function formatApplyPatchCall(
       footer: streamedTargets.length > 0 ? formatPatchTargetList(streamedTargets, theme, context.expanded) : undefined,
       tailLines: 6,
     });
-    return [`${theme.bold(theme.fg("dim", "patching"))} ${theme.fg("muted", headline)}`, preview].filter(Boolean).join("\n");
+    return [`${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", headline)}`, preview].filter(Boolean).join("\n");
   }
 
   const details = getApplyPatchDetails(context.state.applyPatchDetails, patchText);
@@ -515,13 +515,13 @@ function formatApplyPatchCall(
   }
 
   if (context.isPartial) {
-    return `${theme.bold(theme.fg("dim", "patching"))} ${theme.fg("muted", formatPatchHeadline(details, true))}${progress}`;
+    return `${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", formatPatchHeadline(details, true))}${progress}`;
   }
 
   const totalSummary = totalChanges.additions + totalChanges.deletions > 0
     ? `${theme.fg("muted", " · ")}${formatPatchChangeSummary(theme, totalChanges.additions, totalChanges.deletions)}`
     : "";
-  return `${theme.bold(theme.fg("dim", "patched"))} ${theme.fg("muted", formatPatchHeadline(details, false))}${totalSummary}`;
+  return `${theme.bold(theme.fg("muted", "patched"))} ${theme.fg("muted", formatPatchHeadline(details, false))}${totalSummary}`;
 }
 
 function renderApplyPatchProgress(

@@ -116,9 +116,20 @@ export function createReadToolOverrideDefinition() {
   return {
     ...readToolDefinition,
     renderCall(args: ReadCallArgs, theme: ToolTheme, context: ReadCallContext) {
+      const rawPath = readPathArg(args);
+      const skillMatch = rawPath.match(/(?:^|[\\/])([^\\/]+)[\\/]SKILL\.md$/);
+      if (skillMatch) {
+        return renderStatusLine(
+          { pending: "reading", success: "skill", error: "skill" },
+          skillMatch[1],
+          "",
+          theme,
+          context,
+        );
+      }
       return renderStatusPathToolCall(
         { pending: "reading", success: "read", error: "read" },
-        readPathArg(args),
+        rawPath,
         theme,
         context,
         formatReadRangeSuffix(theme, args.offset, args.limit),
@@ -519,7 +530,7 @@ function summarizeBashResult(result: ToolResult, partial: boolean, theme: ToolTh
 
   const isOk = !isError && (exitCode === undefined || exitCode === "0");
   const exitStatus = isOk
-    ? theme.fg("toolDiffAdded", "exit ok")
+    ? theme.fg("toolDiffAdded", "ok")
     : theme.fg("error", `exit ${exitCode ?? "1"}`);
   return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
 }
@@ -528,7 +539,7 @@ function summarizeBashFooter(result: ToolResult, theme: ToolTheme, isError?: boo
   const { lineCount, exitCode } = summarizeBashOutput(getTextContent(result), theme);
   const isOk = !isError && (exitCode === undefined || exitCode === "0");
   const exitStatus = isOk
-    ? theme.fg("toolDiffAdded", "exit ok")
+    ? theme.fg("toolDiffAdded", "ok")
     : theme.fg("error", `exit ${exitCode ?? "1"}`);
   return `${theme.fg("muted", summarizeLineCount(lineCount))}${theme.fg("muted", " · ")}${exitStatus}`;
 }

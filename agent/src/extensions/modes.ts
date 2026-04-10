@@ -5,8 +5,12 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { getModesProjectPath, loadModesFile, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
+export const MODE_ACTIVATE_EVENT = "modes:activate";
+export const MODE_SELECTION_APPLY_EVENT = "modes:apply-selection";
 const MODE_STATUS_KEY = "mode";
 const CUSTOM_MODE_LABEL = "custom";
+
+type SessionModel = NonNullable<ExtensionContext["model"]>;
 
 type ModeRuntime = {
   path: string;
@@ -14,8 +18,29 @@ type ModeRuntime = {
   data: ModesFile;
   activeMode: string | undefined;
   applying: boolean;
+  needsResyncAfterApply: boolean;
   error?: string;
   lastReportedError?: string;
+};
+
+type ModeActivateEvent = {
+  ctx: ExtensionContext;
+  mode: string;
+  spec?: ModeSpec;
+  reason: ModeChangedEvent["reason"];
+  source: ModeChangedEvent["source"];
+};
+
+type ModeSelectionApplyEvent = {
+  ctx: ExtensionContext;
+  targetModel?: SessionModel;
+  thinkingLevel?: ModeSpec["thinkingLevel"];
+  reason: ModeChangedEvent["reason"];
+  source: ModeChangedEvent["source"];
+  done?: {
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  };
 };
 
 export type ModeChangedEvent = {
@@ -33,6 +58,7 @@ const runtime: ModeRuntime = {
   data: { version: 1, currentMode: undefined, modes: {} },
   activeMode: undefined,
   applying: false,
+  needsResyncAfterApply: false,
   error: undefined,
   lastReportedError: undefined,
 };
@@ -217,6 +243,8 @@ function appendModeState(pi: ExtensionAPI, activeMode: string | undefined): void
 }
 
 async function ensureRuntime(ctx: ExtensionContext): Promise<void> {
+  const previousPath = runtime.path;
+  const previousActiveMode = runtime.activeMode;
   const loaded = await loadModesFile(ctx.cwd);
   runtime.source = loaded.source;
   runtime.data = loaded.data;
@@ -224,6 +252,16 @@ async function ensureRuntime(ctx: ExtensionContext): Promise<void> {
   runtime.error = loaded.error;
   if (!runtime.error) {
     runtime.lastReportedError = undefined;
+  }
+
+  if (previousActiveMode !== undefined && runtime.data.modes[previousActiveMode]) {
+    runtime.activeMode = previousActiveMode;
+    return;
+  }
+
+  if (previousActiveMode === undefined && previousPath === runtime.path) {
+    runtime.activeMode = undefined;
+    return;
   }
 
   if (runtime.data.currentMode && runtime.data.modes[runtime.data.currentMode]) {
@@ -263,14 +301,21 @@ async function saveRuntime(_ctx: ExtensionContext): Promise<void> {
   await saveModesFile(runtime.path, runtime.data);
 }
 
-async function syncFromSelection(pi: ExtensionAPI, ctx: ExtensionContext, source: ModeChangedEvent["source"]): Promise<void> {
+async function syncFromSelection(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  source: ModeChangedEvent["source"],
+  options: { notifyModeSwitch?: boolean; emitChangedEvent?: boolean } = {},
+): Promise<void> {
+  const notifyModeSwitchOnSync = options.notifyModeSwitch ?? true;
+  const emitChangedEvent = options.emitChangedEvent ?? true;
   await ensureRuntime(ctx);
   syncErrorUI(ctx);
   if (runtime.error) {
     const previousMode = runtime.activeMode;
     runtime.activeMode = undefined;
     setStatus(ctx, undefined);
-    if (previousMode !== undefined) {
+    if (emitChangedEvent && previousMode !== undefined) {
       emitModeChanged(pi, ctx, {
         mode: undefined,
         previousMode,
@@ -288,8 +333,8 @@ async function syncFromSelection(pi: ExtensionAPI, ctx: ExtensionContext, source
   runtime.activeMode = nextMode;
   setStatus(ctx, nextMode);
 
-  if (previousMode !== nextMode) {
-    if (source === "model_select") {
+  if (emitChangedEvent && previousMode !== nextMode) {
+    if (source === "model_select" && notifyModeSwitchOnSync) {
       notifyModeSwitch(ctx, nextMode, nextMode ? getModeSpec(runtime.data, nextMode) : undefined);
     }
 
@@ -366,6 +411,64 @@ async function applyMode(
     }
   } finally {
     runtime.applying = false;
+
+    const needsResyncAfterApply = runtime.needsResyncAfterApply;
+    runtime.needsResyncAfterApply = false;
+    if (needsResyncAfterApply) {
+      await syncFromSelection(pi, ctx, "before_agent_start", { notifyModeSwitch: false, emitChangedEvent: false });
+    }
+  }
+}
+
+async function applySelection(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  event: ModeSelectionApplyEvent,
+): Promise<void> {
+  await ensureRuntime(ctx);
+  syncErrorUI(ctx);
+  if (runtime.error) {
+    notifyConfigError(ctx);
+    return;
+  }
+
+  runtime.applying = true;
+  const previousMode = runtime.activeMode;
+  try {
+    if (event.targetModel) {
+      const modelApplied = await pi.setModel(event.targetModel);
+      if (!modelApplied) {
+        if (ctx.hasUI) {
+          ctx.ui.notify(`No API key available for ${event.targetModel.provider}/${event.targetModel.id}`, "warning");
+        }
+        return;
+      }
+    }
+
+    if (event.thinkingLevel) {
+      pi.setThinkingLevel(event.thinkingLevel);
+    }
+
+    const nextMode = inferActiveMode(pi, ctx);
+    runtime.activeMode = nextMode;
+    setStatus(ctx, nextMode);
+    appendModeState(pi, nextMode);
+    emitModeChanged(pi, ctx, {
+      mode: nextMode,
+      previousMode,
+      spec: nextMode ? getModeSpec(runtime.data, nextMode) : undefined,
+      reason: event.reason,
+      source: event.source,
+      cwd: ctx.cwd,
+    });
+  } finally {
+    runtime.applying = false;
+
+    const needsResyncAfterApply = runtime.needsResyncAfterApply;
+    runtime.needsResyncAfterApply = false;
+    if (needsResyncAfterApply) {
+      await syncFromSelection(pi, ctx, "before_agent_start", { notifyModeSwitch: false, emitChangedEvent: false });
+    }
   }
 }
 
@@ -507,7 +610,7 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
   }
 
   if (hasExplicitSessionSelection) {
-    await syncFromSelection(pi, ctx, "session_start");
+    await syncFromSelection(pi, ctx, "session_start", { emitChangedEvent: false });
     emitModeChanged(pi, ctx, {
       mode: runtime.activeMode,
       previousMode: undefined,
@@ -524,13 +627,30 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
     return;
   }
 
-  await syncFromSelection(pi, ctx, "session_start");
+  await syncFromSelection(pi, ctx, "session_start", { emitChangedEvent: false });
   emitModeChanged(pi, ctx, {
     mode: runtime.activeMode,
     previousMode: undefined,
     spec: runtime.activeMode ? getModeSpec(runtime.data, runtime.activeMode) : undefined,
     reason: "restore",
     source: "session_start",
+    cwd: ctx.cwd,
+  });
+}
+
+async function activateMode(pi: ExtensionAPI, ctx: ExtensionContext, event: ModeActivateEvent): Promise<void> {
+  await ensureRuntime(ctx);
+  syncErrorUI(ctx);
+
+  const previousMode = runtime.activeMode;
+  runtime.activeMode = event.mode;
+  setStatus(ctx, event.mode);
+  emitModeChanged(pi, ctx, {
+    mode: event.mode,
+    previousMode,
+    spec: event.spec ?? getModeSpec(runtime.data, event.mode),
+    reason: event.reason,
+    source: event.source,
     cwd: ctx.cwd,
   });
 }
@@ -578,21 +698,45 @@ export default function modesExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     runtime.path = "";
+    runtime.activeMode = undefined;
     await restoreMode(pi, ctx);
   });
 
   pi.on("model_select", async (_event, ctx) => {
-    if (runtime.applying) return;
+    if (runtime.applying) {
+      runtime.needsResyncAfterApply = true;
+      return;
+    }
+
     await syncFromSelection(pi, ctx, "model_select");
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
-    if (runtime.applying) return;
+    if (runtime.applying) {
+      runtime.needsResyncAfterApply = true;
+      return;
+    }
+
     await syncFromSelection(pi, ctx, "before_agent_start");
   });
 
   pi.on("turn_start", async (_event, ctx) => {
     appendModeState(pi, runtime.activeMode);
     setStatus(ctx, runtime.activeMode);
+  });
+
+  pi.events.on(MODE_ACTIVATE_EVENT, async (data) => {
+    const event = data as ModeActivateEvent;
+    await activateMode(pi, event.ctx, event);
+  });
+
+  pi.events.on(MODE_SELECTION_APPLY_EVENT, async (data) => {
+    const event = data as ModeSelectionApplyEvent;
+    try {
+      await applySelection(pi, event.ctx, event);
+      event.done?.resolve();
+    } catch (error) {
+      event.done?.reject(error);
+    }
   });
 }

@@ -14,7 +14,7 @@ import { Text, fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import { loadModesFile, resolveModeSpec, type ModeSpec, type ThinkingLevel } from "../mode-utils.js";
-import { MODE_STATE_ENTRY } from "./modes.js";
+import { MODE_SELECTION_APPLY_EVENT } from "./modes.js";
 
 const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
@@ -41,7 +41,6 @@ Files involved:
 const HANDOFF_PROVIDER = "codex-openai" as const;
 const HANDOFF_MODEL = "gpt-5.4-mini" as const;
 const EXPLICIT_HANDOFF_REQUEST = /\b(handoff|hand\s+off|new\s+(session|thread)|another\s+(session|thread)|start\s+a\s+new\s+(session|thread)|continue\s+in\s+(a\s+)?new\s+(session|thread)|switch\s+to\s+(a\s+)?new\s+(session|thread)|transfer\s+(the\s+)?context)\b/i;
-const HANDOFF_COMMAND_GLOBAL_KEY = Symbol.for("dotai-handoff-pending-command");
 
 type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -70,10 +69,15 @@ type HandoffGenerationConfig = {
   warning?: string;
 };
 
-type PendingCommandHandoff = {
+type PendingSessionHandoff = {
   prompt: string;
+  autoSend: boolean;
   overrides?: ResolvedHandoffOptions;
 };
+
+declare global {
+  var __shekohexPendingSessionHandoff: PendingSessionHandoff | undefined;
+}
 
 type HandoffFlagName = "-mode" | "-model";
 
@@ -87,6 +91,10 @@ type HandoffAutocompleteContext = {
 type HandoffRuntimeState = {
   ctx?: ExtensionContext;
   toolPromptSignature?: string;
+  pendingNewSessionCtx?: {
+    promise: Promise<ExtensionContext>;
+    resolve: (ctx: ExtensionContext) => void;
+  };
 };
 
 const pendingToolHandoffState: {
@@ -102,17 +110,73 @@ const HANDOFF_FLAG_OPTIONS: Array<{ name: HandoffFlagName; description: string }
   { name: "-model", description: "Override the new session model (provider/modelId)" },
 ];
 
-function getPendingCommandHandoff(): PendingCommandHandoff | undefined {
-  return (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY];
+function getPendingCommandHandoff(): PendingSessionHandoff | undefined {
+  return globalThis.__shekohexPendingSessionHandoff;
 }
 
-function setPendingCommandHandoff(pending: PendingCommandHandoff | undefined): void {
-  if (pending) {
-    (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY] = pending;
+function setPendingCommandHandoff(pending: PendingSessionHandoff | undefined): void {
+  globalThis.__shekohexPendingSessionHandoff = pending;
+}
+
+function createPendingNewSessionContext(state: HandoffRuntimeState): Promise<ExtensionContext> {
+  if (state.pendingNewSessionCtx) {
+    return state.pendingNewSessionCtx.promise;
+  }
+
+  let resolvePromise: ((ctx: ExtensionContext) => void) | undefined;
+  const promise = new Promise<ExtensionContext>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  state.pendingNewSessionCtx = {
+    promise,
+    resolve: (ctx) => {
+      resolvePromise?.(ctx);
+      state.pendingNewSessionCtx = undefined;
+    },
+  };
+
+  return promise;
+}
+
+async function waitForPendingNewSessionContext(
+  state: HandoffRuntimeState,
+  fallbackCtx: ExtensionContext,
+): Promise<ExtensionContext> {
+  const pending = state.pendingNewSessionCtx;
+  if (!pending) {
+    return state.ctx ?? fallbackCtx;
+  }
+
+  return await Promise.race([
+    pending.promise,
+    new Promise<ExtensionContext>((resolve) => {
+      setTimeout(() => {
+        resolve(state.ctx ?? fallbackCtx);
+      }, 0);
+    }),
+  ]);
+}
+
+async function applyPendingSelection(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  overrides?: ResolvedHandoffOptions,
+): Promise<void> {
+  if (!overrides) {
     return;
   }
 
-  delete (globalThis as Record<symbol, PendingCommandHandoff | undefined>)[HANDOFF_COMMAND_GLOBAL_KEY];
+  await new Promise<void>((resolve, reject) => {
+    pi.events.emit(MODE_SELECTION_APPLY_EVENT, {
+      ctx,
+      targetModel: overrides.targetModel,
+      thinkingLevel: overrides.thinkingLevel,
+      reason: "restore",
+      source: "session_start",
+      done: { resolve, reject },
+    });
+  });
 }
 
 function getConversationMessages(ctx: ExtensionContext) {
@@ -675,62 +739,6 @@ function buildHandoffPrompt(summary: string, parentSession?: string): string {
   return `${summary.trim()}\n\n## Parent Session\nParent session: ${parentSession}\nIf you need additional detail from the parent session, use \`session_query\` with \`sessionPath\` set to the path above and a focused \`question\`.`;
 }
 
-async function applyHandoffOverrides(pi: ExtensionAPI, ctx: ExtensionContext, overrides?: ResolvedHandoffOptions): Promise<void> {
-  if (!overrides) {
-    return;
-  }
-
-  let modelApplied = true;
-
-  if (overrides.thinkingLevel && overrides.targetModel) {
-    const previousThinkingLevel = pi.getThinkingLevel();
-    pi.setThinkingLevel(overrides.thinkingLevel);
-
-    modelApplied = await pi.setModel(overrides.targetModel);
-    if (!modelApplied) {
-      pi.setThinkingLevel(previousThinkingLevel);
-      if (ctx.hasUI) {
-        ctx.ui.notify(
-          `No API key available for ${overrides.targetModel.provider}/${overrides.targetModel.id}; keeping current model.`,
-          "warning",
-        );
-      }
-      return;
-    }
-
-    pi.setThinkingLevel(overrides.thinkingLevel);
-
-    return;
-  }
-
-  if (overrides.targetModel) {
-    modelApplied = await pi.setModel(overrides.targetModel);
-    if (!modelApplied && ctx.hasUI) {
-      ctx.ui.notify(
-        `No API key available for ${overrides.targetModel.provider}/${overrides.targetModel.id}; keeping current model.`,
-        "warning",
-      );
-    }
-  }
-
-  if (overrides.thinkingLevel && (modelApplied || !overrides.targetModel)) {
-    pi.setThinkingLevel(overrides.thinkingLevel);
-  }
-}
-
-function persistHandoffModeState(
-  pi: ExtensionAPI,
-  overrides?: ResolvedHandoffOptions,
-): void {
-  if (!overrides) {
-    return;
-  }
-
-  if (overrides.mode && !overrides.model) {
-    pi.appendEntry(MODE_STATE_ENTRY, { activeMode: overrides.mode });
-  }
-}
-
 async function prepareHandoff(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -761,7 +769,10 @@ async function prepareHandoff(
     });
   }
 
-  const generation = reviewPrompt ? await generateSummaryWithLoader(ctx, goal, messages) : await generateSummary(ctx, goal, messages, signal);
+  const shouldUseLoader = ctx.hasUI && !onUpdate;
+  const generation = shouldUseLoader
+    ? await generateSummaryWithLoader(ctx, goal, messages)
+    : await generateSummary(ctx, goal, messages, signal);
   if (generation.error) {
     return { prompt: "", error: generation.error };
   }
@@ -813,7 +824,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const result = await prepareHandoff(pi, ctx, parsed.goal, parsed.options, true);
+      const result = await prepareHandoff(pi, ctx, parsed.goal, parsed.options, false);
       if (result.error) {
         ctx.ui.notify(result.error, result.error === "Cancelled" ? "info" : "error");
         return;
@@ -825,26 +836,37 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
       setPendingCommandHandoff({
         prompt: result.prompt,
+        autoSend: true,
         overrides: result.overrides,
       });
+      createPendingNewSessionContext(state);
 
       const newSessionResult = await (ctx as ExtensionCommandContext).newSession({
         parentSession: result.parentSession,
       });
 
       if (newSessionResult.cancelled) {
+        state.pendingNewSessionCtx = undefined;
         setPendingCommandHandoff(undefined);
         ctx.ui.notify("New session cancelled", "info");
         return;
       }
 
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
       const pendingCommandHandoff = getPendingCommandHandoff();
-      if (pendingCommandHandoff) {
-        setPendingCommandHandoff(undefined);
-        await applyHandoffOverrides(pi, ctx, pendingCommandHandoff.overrides);
-        persistHandoffModeState(pi, pendingCommandHandoff.overrides);
-        ctx.ui.setEditorText(pendingCommandHandoff.prompt);
-        ctx.ui.notify("Handoff ready. Submit when ready.", "info");
+      if (!pendingCommandHandoff) {
+        return;
+      }
+
+      const targetCtx = await waitForPendingNewSessionContext(state, ctx);
+      await applyPendingSelection(pi, targetCtx, pendingCommandHandoff.overrides);
+      setPendingCommandHandoff(undefined);
+
+      if (pendingCommandHandoff.autoSend) {
+        setTimeout(() => {
+          void pi.sendUserMessage(pendingCommandHandoff.prompt);
+        }, 0);
       }
     },
   });
@@ -870,8 +892,8 @@ export default function handoffExtension(pi: ExtensionAPI) {
     (ctx.sessionManager as unknown as { newSession: (options?: { parentSession?: string }) => string | undefined }).newSession({
       parentSession: pending.parentSession,
     });
-    await applyHandoffOverrides(pi, ctx, pending.overrides);
-    persistHandoffModeState(pi, pending.overrides);
+
+    await applyPendingSelection(pi, ctx, pending.overrides);
 
     setTimeout(() => {
       void pi.sendUserMessage(pending.prompt);
@@ -893,6 +915,8 @@ export default function handoffExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (event, ctx) => {
+    state.ctx = ctx;
+    state.pendingNewSessionCtx?.resolve(ctx);
     pendingToolHandoffState.contextCutoffTimestamp = undefined;
     pendingToolHandoffState.pending = undefined;
     await syncHandoffToolRegistration(pi, handoffTool, state, ctx);
@@ -906,9 +930,15 @@ export default function handoffExtension(pi: ExtensionAPI) {
       return;
     }
 
+    await applyPendingSelection(pi, ctx, pendingCommandHandoff.overrides);
     setPendingCommandHandoff(undefined);
-    await applyHandoffOverrides(pi, ctx, pendingCommandHandoff.overrides);
-    persistHandoffModeState(pi, pendingCommandHandoff.overrides);
+
+    if (pendingCommandHandoff.autoSend) {
+      setTimeout(() => {
+        void pi.sendUserMessage(pendingCommandHandoff.prompt);
+      }, 0);
+      return;
+    }
 
     if (!ctx.hasUI) {
       return;
@@ -923,6 +953,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
+    state.ctx = ctx;
     await syncHandoffToolRegistration(pi, handoffTool, state, ctx);
   });
 }

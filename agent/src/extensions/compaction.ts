@@ -11,8 +11,8 @@ import { complete } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 
-const COMPACTION_PROVIDER = "codex-openai" as const;
-const COMPACTION_MODEL = "gpt-5.4-mini" as const;
+const COMPACTION_PROVIDER = "gemini" as const;
+const COMPACTION_MODEL = "gemini-3.1-flash-lite-preview" as const;
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_before_compact", async (event, ctx) => {

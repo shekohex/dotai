@@ -60,6 +60,12 @@ export const defaultModes = defineModesFile({
       modelId: "gpt-5.4",
       thinkingLevel: "high",
       color: "muted"
+    },
+    search: {
+      provider: "gemini",
+      modelId: "gemini-3-flash-preview",
+      thinkingLevel: "high",
+      color: "borderMuted"
     }
   }
 }) satisfies DefaultModes;

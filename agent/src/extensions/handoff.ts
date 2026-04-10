@@ -38,8 +38,8 @@ Files involved:
 ## Task
 [Clear description of what to do next based on user's goal]`;
 
-const HANDOFF_PROVIDER = "codex-openai" as const;
-const HANDOFF_MODEL = "gpt-5.4-mini" as const;
+const HANDOFF_PROVIDER = "gemini" as const;
+const HANDOFF_MODEL = "gemini-3.1-flash-lite-preview" as const;
 const EXPLICIT_HANDOFF_REQUEST = /\b(handoff|hand\s+off|new\s+(session|thread)|another\s+(session|thread)|start\s+a\s+new\s+(session|thread)|continue\s+in\s+(a\s+)?new\s+(session|thread)|switch\s+to\s+(a\s+)?new\s+(session|thread)|transfer\s+(the\s+)?context)\b/i;
 
 type SessionModel = NonNullable<ExtensionContext["model"]>;

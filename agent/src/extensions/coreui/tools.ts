@@ -9,6 +9,7 @@ import {
   type ExtensionAPI,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+import path from "node:path";
 import { shortenPathForTool } from "./path.js";
 
 type ToolPathArgs = {
@@ -276,11 +277,14 @@ export function createEditToolOverrideDefinition() {
       if (!options.expanded) {
         const diff = getDiffText(result.details);
         const stats = diff ? summarizeDiff(diff) : undefined;
-        const path = shortenPathForTool(readPathArg(context.args), context.cwd) || "...";
+        const filePath = shortenPathForTool(readPathArg(context.args), context.cwd) || "...";
+        const basename = path.basename(filePath);
+        const dirname = path.dirname(filePath);
+        const dirSuffix = dirname === "." ? "./" : `${dirname}/`;
         const summary = stats && stats.changes > 0
           ? `${theme.fg("muted", " · ")}${formatDiffStats(theme, stats.additions, stats.deletions)}`
           : "";
-        return createTextComponent(context.lastComponent, `${theme.bold(theme.fg("dim", "edited"))} ${theme.fg("muted", path)}${summary}`);
+        return createTextComponent(context.lastComponent, `${theme.bold(theme.fg("dim", "edited"))} ${theme.fg("text", basename)}${dirSuffix ? theme.fg("muted", ` · ${dirSuffix}`) : ""}${summary}`);
       }
 
       const diff = getDiffText(result.details);
@@ -352,8 +356,11 @@ function renderStatusPathToolCall(
   context: BaseRenderContext,
   detail = "",
 ): Text {
-  const path = shortenPathForTool(rawPath, context.cwd);
-  return renderStatusLine(verbs, path || "...", detail, theme, context);
+  const filePath = shortenPathForTool(rawPath, context.cwd) || "...";
+  const basename = path.basename(filePath);
+  const dirname = path.dirname(filePath);
+  const dirSuffix = dirname === "." ? "./" : `${dirname}/`;
+  return renderStatusLine(verbs, basename, detail, theme, context, dirSuffix);
 }
 
 function renderStatusLine(
@@ -362,11 +369,11 @@ function renderStatusLine(
   detail: string,
   theme: ToolTheme,
   context: BaseRenderContext,
+  subjectDir = "",
 ): Text {
   const phase = getToolPhase(context);
   const status = formatToolStatus(theme, phase, verbs);
-  const subjectColor = "muted" as const;
-  const text = `${status} ${theme.fg(subjectColor, subject)}${detail}`;
+  const text = `${status} ${theme.fg("text", subject)}${subjectDir ? theme.fg("muted", ` · ${subjectDir}`) : ""}${detail}`;
 
   return createTextComponent(context.lastComponent, text);
 }

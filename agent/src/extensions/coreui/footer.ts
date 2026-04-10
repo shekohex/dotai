@@ -41,6 +41,7 @@ export function bindCoreUI(
           state,
           ctx,
         );
+        const leftBottom = buildTPSStatus(theme, state);
         const rightTop = buildModelStatus(theme, ctx, pi, state);
         const rightBottom = buildUsageStatus(
           theme,
@@ -52,11 +53,32 @@ export function bindCoreUI(
         return [
           ...Array.from({ length: FOOTER_TOP_PADDING }, () => " ".repeat(Math.max(0, width))),
           composeFooterLine(left, rightTop, width),
-          composeFooterLine("", rightBottom, width),
+          composeFooterLine(leftBottom, rightBottom, width),
         ];
       },
     };
   });
+}
+
+function buildTPSStatus(theme: Theme, state: CoreUIState): string {
+  if (!state.tpsVisible || !state.tps) {
+    return "";
+  }
+
+  const current = `${theme.fg("dim", "tps ")}${theme.fg("accent", state.tps.current.toFixed(1))}`;
+  if (state.tps.sampleCount < state.tps.bufferSize) {
+    return current;
+  }
+
+  return (
+    current +
+    `${theme.fg("dim", " · ")}` +
+    `${theme.fg("success", state.tps.max.toFixed(1))}` +
+    `${theme.fg("dim", "/")}` +
+    `${theme.fg("warning", state.tps.median.toFixed(1))}` +
+    `${theme.fg("dim", "/")}` +
+    `${theme.fg("error", state.tps.min.toFixed(1))}`
+  );
 }
 
 function buildProjectStatus(

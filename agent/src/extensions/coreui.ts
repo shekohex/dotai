@@ -83,7 +83,7 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     requestRender = undefined;
   });
 
-
-  // Expermintal
-  registerTPSExtension(pi);
+  registerTPSExtension(pi, state, () => {
+    requestRender?.();
+  });
 }

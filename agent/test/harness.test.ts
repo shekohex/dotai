@@ -27,6 +27,10 @@ import {
 
 process.env.OPENAI_API_KEY ??= "test-key";
 
+const TEST_TIMEOUT_MS = 15_000;
+
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+
 function forceApplyPatchExtension(pi: ExtensionAPI) {
   const enablePatchTool = () => {
     const nextTools = new Set(pi.getActiveTools().filter((toolName) => toolName !== "edit" && toolName !== "write"));
@@ -74,6 +78,14 @@ function createHandoffTestProviders(summaryText: string): {
   ];
 
   registrations[0].setResponses([fauxAssistantMessage(summaryText)]);
+  registrations[1].setResponses([
+    fauxAssistantMessage("mode-provider response"),
+    fauxAssistantMessage("mode-provider response"),
+  ]);
+  registrations[2].setResponses([
+    fauxAssistantMessage("override-provider response"),
+    fauxAssistantMessage("override-provider response"),
+  ]);
 
   return {
     extensionFactory(pi: ExtensionAPI) {
@@ -252,11 +264,16 @@ function setFakeParentSessionPath(testSession: TestSession, sessionPath: string)
 function setMockCustomLoaderResult(
   testSession: TestSession,
   result: { summary?: string; warning?: string; error?: string; aborted?: boolean },
-): void {
+): { calls: { count: number } } {
   const uiContext = ((testSession.session as { extensionRunner: { uiContext: { custom: <T>() => Promise<T> } } }).extensionRunner as {
     uiContext: { custom: <T>() => Promise<T> };
   }).uiContext;
-  uiContext.custom = async <T>() => result as T;
+  const calls = { count: 0 };
+  uiContext.custom = async <T>() => {
+    calls.count += 1;
+    return result as T;
+  };
+  return { calls };
 }
 
 function getBranchTextMessages(testSession: TestSession): Array<{ role: string; text: string }> {
@@ -303,7 +320,32 @@ function getCurrentSystemPrompt(testSession: TestSession): string {
   return ((testSession.session as { agent: { state: { systemPrompt: string } } }).agent.state.systemPrompt);
 }
 
-test("pi-test-harness runs apply_patch against the real tool implementation", async () => {
+type CapturedModeChange = {
+  mode?: string;
+  previousMode?: string;
+  source?: string;
+  reason?: string;
+  spec?: {
+    provider?: string;
+    modelId?: string;
+    thinkingLevel?: string;
+  };
+};
+
+function createModeChangeCaptureExtension(observedEvents: CapturedModeChange[]): (pi: ExtensionAPI) => void {
+  return (pi) => {
+    const emit = pi.events.emit.bind(pi.events) as (eventName: string, data: unknown) => void;
+    (pi.events as { emit: (eventName: string, data: unknown) => void }).emit = (eventName, data) => {
+      if (eventName === "modes:changed") {
+        observedEvents.push(data as CapturedModeChange);
+      }
+
+      emit(eventName, data);
+    };
+  };
+}
+
+timedTest("pi-test-harness runs apply_patch against the real tool implementation", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-harness-"));
   const filePath = join(cwd, "sample.ts");
   let session: TestSession | undefined;
@@ -346,7 +388,7 @@ test("pi-test-harness runs apply_patch against the real tool implementation", as
   }
 });
 
-test("pi-test-harness captures mocked built-in tool events", async () => {
+timedTest("pi-test-harness captures mocked built-in tool events", async () => {
   let session: TestSession | undefined;
 
   try {
@@ -372,7 +414,7 @@ test("pi-test-harness captures mocked built-in tool events", async () => {
   }
 });
 
-test("pi-test-harness runs webfetch against the real tool implementation", async () => {
+timedTest("pi-test-harness runs webfetch against the real tool implementation", async () => {
   let session: TestSession | undefined;
   const server = createServer(async (req, res) => {
     if (req.method !== "POST" || req.url !== "/v2/scrape") {
@@ -458,7 +500,7 @@ test("pi-test-harness runs webfetch against the real tool implementation", async
   }
 });
 
-test("websearch emits streaming updates before the final result", async () => {
+timedTest("websearch emits streaming updates before the final result", async () => {
   const originalFetch = globalThis.fetch;
   const encoder = new TextEncoder();
   const updates: Array<{ content?: Array<{ type: string; text?: string }>; details?: { answer?: string } }> = [];
@@ -581,7 +623,7 @@ test("websearch emits streaming updates before the final result", async () => {
   }
 });
 
-test("websearch uses the LiteLLM api key with the gemini model provider", async () => {
+timedTest("websearch uses the LiteLLM api key with the gemini model provider", async () => {
   const originalFetch = globalThis.fetch;
   const originalLiteLLMApiKey = process.env.LITELLM_API_KEY;
   let session: TestSession | undefined;
@@ -655,7 +697,7 @@ test("websearch uses the LiteLLM api key with the gemini model provider", async 
   }
 });
 
-test("bundled themes are available before reload", async () => {
+timedTest("bundled themes are available before reload", async () => {
   installBundledResourcePaths();
 
   let session: TestSession | undefined;
@@ -675,9 +717,10 @@ test("bundled themes are available before reload", async () => {
   }
 });
 
-test("handoff command starts the new session in the requested mode", async () => {
+timedTest("handoff command starts the new session in the requested mode", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-command-"));
   let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
   const providers = createHandoffTestProviders("## Context\nPrior decisions captured.\n\n## Task\nFinish the implementation.");
 
   await writeHandoffModesFile(cwd);
@@ -685,7 +728,7 @@ test("handoff command starts the new session in the requested mode", async () =>
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+      extensionFactories: [modesExtension, handoffExtension, createModeChangeCaptureExtension(observedModeChanges), providers.extensionFactory],
       mockUI: {
         editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
       },
@@ -693,7 +736,7 @@ test("handoff command starts the new session in the requested mode", async () =>
     patchHarnessAgent(session);
 
     setFakeParentSessionPath(session, "/tmp/parent-session.jsonl");
-    setMockCustomLoaderResult(session, {
+    const loader = setMockCustomLoaderResult(session, {
       summary: "## Context\nPrior decisions captured.\n\n## Task\nFinish the implementation.",
     });
 
@@ -704,27 +747,33 @@ test("handoff command starts the new session in the requested mode", async () =>
     );
 
     const consumedBeforeCommand = session.playbook.consumed;
+    observedModeChanges.length = 0;
 
     await session.session.prompt("/handoff -mode rush finish the implementation");
     await session.session.agent.waitForIdle();
+    await new Promise((resolve) => setTimeout(resolve, 25));
 
     assert.equal(session.playbook.consumed, consumedBeforeCommand);
-
-    const editorCall = session.events.uiCallsFor("editor").at(-1);
-    assert.ok(editorCall);
-    assert.equal(editorCall.args[0], "Edit handoff prompt");
-    assert.match(String(editorCall.args[1]), /Parent session: \/tmp\/parent-session\.jsonl/);
-    assert.match(String(editorCall.args[1]), /session_query/);
-
-    const setEditorTextCall = session.events.uiCallsFor("setEditorText").at(-1);
-    assert.ok(setEditorTextCall);
-    assert.match(String(setEditorTextCall.args[0]), /Reviewed by user/);
+    assert.equal(session.events.uiCallsFor("editor").length, 0);
+    assert.equal(session.events.uiCallsFor("setEditorText").length, 0);
 
     const model = (session.session as { model: { provider: string; id: string }; thinkingLevel: string });
     assert.equal(model.model.provider, "mode-provider");
     assert.equal(model.model.id, "mode-model");
     assert.equal(model.thinkingLevel, "high");
     assert.equal(getLatestModeState(session), "rush");
+    assert.equal(loader.calls.count, 1);
+
+    const userMessages = getBranchTextMessages(session).filter((entry) => entry.role === "user");
+    assert.ok(userMessages.some((entry) => entry.text.includes("Parent session: /tmp/parent-session.jsonl")));
+
+    assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
+    assert.equal(observedModeChanges[0]?.mode, "rush");
+    assert.equal(observedModeChanges[0]?.reason, "restore");
+    assert.equal(observedModeChanges[0]?.source, "session_start");
+    assert.equal(observedModeChanges[0]?.spec?.provider, "mode-provider");
+    assert.equal(observedModeChanges[0]?.spec?.modelId, "mode-model");
+    assert.equal(observedModeChanges[0]?.spec?.thinkingLevel, "high");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -732,7 +781,60 @@ test("handoff command starts the new session in the requested mode", async () =>
   }
 });
 
-test("handoff command autocompletes flags, modes, and models", async () => {
+timedTest("handoff command with mode and model applies the startup selection once", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-command-mixed-"));
+  let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
+  const providers = createHandoffTestProviders("## Context\nPrior decisions captured.\n\n## Task\nFinish the implementation.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, handoffExtension, createModeChangeCaptureExtension(observedModeChanges), providers.extensionFactory],
+      mockUI: {
+        editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
+      },
+    });
+    patchHarnessAgent(session);
+
+    setFakeParentSessionPath(session, "/tmp/parent-session.jsonl");
+    const loader = setMockCustomLoaderResult(session, {
+      summary: "## Context\nPrior decisions captured.\n\n## Task\nFinish the implementation.",
+    });
+
+    await session.run(
+      when("We traced the regression to the handoff extension", [
+        says("Captured."),
+      ]),
+    );
+
+    observedModeChanges.length = 0;
+
+    await session.session.prompt("/handoff -mode rush -model override-provider/override-model finish the implementation");
+    await session.session.agent.waitForIdle();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    const model = (session.session as { model: { provider: string; id: string }; thinkingLevel: string });
+    assert.equal(model.model.provider, "override-provider");
+    assert.equal(model.model.id, "override-model");
+    assert.equal(model.thinkingLevel, "high");
+    assert.equal(getLatestModeState(session), undefined);
+    assert.equal(loader.calls.count, 1);
+
+    assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
+    assert.equal(observedModeChanges[0]?.mode, undefined);
+    assert.equal(observedModeChanges[0]?.reason, "restore");
+    assert.equal(observedModeChanges[0]?.source, "session_start");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("handoff command autocompletes flags, modes, and models", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-autocomplete-"));
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -769,7 +871,7 @@ test("handoff command autocompletes flags, modes, and models", async () => {
   }
 });
 
-test("handoff tool prompt includes available modes and refreshes after mode changes", async () => {
+timedTest("handoff tool prompt includes available modes and refreshes after mode changes", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-modes-prompt-"));
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -800,9 +902,10 @@ test("handoff tool prompt includes available modes and refreshes after mode chan
   }
 });
 
-test("handoff tool switches session and auto-sends generated prompt with parent session hint", async () => {
+timedTest("handoff tool switches session and auto-sends generated prompt with parent session hint", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-tool-"));
   let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
   const providers = createHandoffTestProviders("## Context\nWe fixed the root cause.\n\n## Task\nShip the follow-up changes.");
 
   await writeHandoffModesFile(cwd);
@@ -810,7 +913,7 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+      extensionFactories: [modesExtension, handoffExtension, createModeChangeCaptureExtension(observedModeChanges), providers.extensionFactory],
     });
     patchHarnessAgent(session);
 
@@ -837,9 +940,12 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
     await session.session.prompt("We fixed the root cause");
     await session.session.agent.waitForIdle();
 
+    observedModeChanges.length = 0;
+
     await session.session.prompt("Please handoff this work to a new session");
     await new Promise((resolve) => setTimeout(resolve, 0));
     await session.session.agent.waitForIdle();
+    await new Promise((resolve) => setTimeout(resolve, 25));
 
     const toolExecutionEnd = session.events.all.find(
       (event) => event.type === "tool_execution_end" && event.toolName === "handoff",
@@ -850,7 +956,12 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
     const model = (session.session as { model: { provider: string; id: string }; thinkingLevel: string });
     assert.equal(model.model.provider, "override-provider");
     assert.equal(model.model.id, "override-model");
-    assert.equal(playbook.state.consumed, 3);
+    assert.equal(model.thinkingLevel, "high");
+    assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
+    assert.equal(observedModeChanges[0]?.mode, undefined);
+    assert.equal(observedModeChanges[0]?.reason, "restore");
+    assert.equal(observedModeChanges[0]?.source, "session_start");
+    assert.equal(playbook.state.consumed, 4);
   } finally {
     session?.dispose();
     providers.dispose();
@@ -858,7 +969,7 @@ test("handoff tool switches session and auto-sends generated prompt with parent 
   }
 });
 
-test("LiteLLM provider registrations add the gemini provider via v1beta", () => {
+timedTest("LiteLLM provider registrations add the gemini provider via v1beta", () => {
   const registrations = createLiteLLMProviderRegistrations(
     {
       healthy: true,
@@ -879,7 +990,7 @@ test("LiteLLM provider registrations add the gemini provider via v1beta", () => 
   assert.ok(geminiRegistration.config.models!.some((model) => model.id === "gemini-2.5-flash"));
 });
 
-test("model family system prompt updates immediately on model switching and preserves the pi tail", async () => {
+timedTest("model family system prompt updates immediately on model switching and preserves the pi tail", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-"));
   let session: TestSession | undefined;
   const providers = createModelFamilyTestProviders();
@@ -923,7 +1034,7 @@ test("model family system prompt updates immediately on model switching and pres
   }
 });
 
-test("model family system prompt is used for provider requests after switching models", async () => {
+timedTest("model family system prompt is used for provider requests after switching models", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-provider-"));
   let session: TestSession | undefined;
   const providers = createModelFamilyTestProviders();
@@ -961,7 +1072,7 @@ test("model family system prompt is used for provider requests after switching m
   }
 });
 
-test("mode changes switch the system prompt when the selected mode changes model family", async () => {
+timedTest("mode changes switch the system prompt when the selected mode changes model family", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-modes-"));
   let session: TestSession | undefined;
   const providers = createModelFamilyTestProviders();

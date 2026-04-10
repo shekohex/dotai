@@ -18,7 +18,11 @@ import {
 initTheme("dark");
 setKeybindings(KeybindingsManager.create());
 
-test("apply_patch preview renders collapsed and expanded states", () => {
+const TEST_TIMEOUT_MS = 15_000;
+
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+
+timedTest("apply_patch preview renders collapsed and expanded states", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:multi-file");
   assert.ok(scenario);
 
@@ -52,7 +56,7 @@ test("apply_patch preview renders collapsed and expanded states", () => {
   assert.doesNotMatch(stripAnsi(expandedText), /\*\*\* Update File:/);
 });
 
-test("single-file patch collapsed success avoids duplicate summary line", () => {
+timedTest("single-file patch collapsed success avoids duplicate summary line", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:single-file");
   assert.ok(scenario);
 
@@ -64,7 +68,7 @@ test("single-file patch collapsed success avoids duplicate summary line", () => 
   assert.doesNotMatch(text, /↳/);
 });
 
-test("streaming apply_patch call shows incoming patch lines", () => {
+timedTest("streaming apply_patch call shows incoming patch lines", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:streaming-call");
   assert.ok(scenario);
 
@@ -77,7 +81,7 @@ test("streaming apply_patch call shows incoming patch lines", () => {
   assert.match(text, /\+export const preview = true;/);
 });
 
-test("rehydrated apply_patch result stays collapsed", () => {
+timedTest("rehydrated apply_patch result stays collapsed", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:single-file");
   assert.ok(scenario);
   assert.ok(scenario.successResult);
@@ -109,7 +113,7 @@ test("rehydrated apply_patch result stays collapsed", () => {
   assert.doesNotMatch(text, /\*\*\* Update File:/);
 });
 
-test("all preview scenarios render within width 120", () => {
+timedTest("all preview scenarios render within width 120", () => {
   for (const scenario of getToolPreviewScenarios()) {
     for (const panel of getToolPreviewPanels(scenario)) {
       const lines = renderPreviewLines(scenario, panel, 120);
@@ -118,7 +122,7 @@ test("all preview scenarios render within width 120", () => {
   }
 });
 
-test("compact bash preview renders condensed collapsed result", () => {
+timedTest("compact bash preview renders condensed collapsed result", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:compact");
   assert.ok(scenario);
 
@@ -143,7 +147,7 @@ test("compact bash preview renders condensed collapsed result", () => {
   assert.match(stripAnsi(expandedText), /apply_patch preview renders collapsed and expanded states/);
 });
 
-test("webfetch preview renders pending, collapsed status, and expanded body", () => {
+timedTest("webfetch preview renders pending, collapsed status, and expanded body", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "webfetch:compact");
   assert.ok(scenario);
 
@@ -178,7 +182,7 @@ test("webfetch preview renders pending, collapsed status, and expanded body", ()
   assert.match(errorText, /Request timed out after 10s/);
 });
 
-test("websearch preview renders call, collapsed grounded summary, expanded sources, and error", () => {
+timedTest("websearch preview renders call, collapsed grounded summary, expanded sources, and error", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "websearch:grounded-answer");
   assert.ok(scenario);
 
@@ -230,7 +234,7 @@ test("websearch preview renders call, collapsed grounded summary, expanded sourc
   assert.match(errorText, /503 Service Unavailable/);
 });
 
-test("websearch minimal preview omits source and query counts", () => {
+timedTest("websearch minimal preview omits source and query counts", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "websearch:minimal-answer");
   assert.ok(scenario);
 
@@ -244,7 +248,7 @@ test("websearch minimal preview omits source and query counts", () => {
   assert.match(text, /answered · 0 grounded results · took 3s/);
 });
 
-test("multiline bash call preview truncates middle lines in collapsed mode", () => {
+timedTest("multiline bash call preview truncates middle lines in collapsed mode", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
   assert.ok(scenario);
 
@@ -265,7 +269,7 @@ test("multiline bash call preview truncates middle lines in collapsed mode", () 
   assert.match(expandedText, /const files = \['src\/a.ts', 'src\/b.ts', 'src\/c.ts'\];/);
 });
 
-test("failed multiline bash preview keeps a single expand hint and truncates long lines", () => {
+timedTest("failed multiline bash preview keeps a single expand hint and truncates long lines", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
   assert.ok(scenario);
 
@@ -279,7 +283,7 @@ test("failed multiline bash preview keeps a single expand hint and truncates lon
   assert.equal(expandHintCount, 1);
 });
 
-test("tool previews render a bare left rail instead of a box wrapper", () => {
+timedTest("tool previews render a bare left rail instead of a box wrapper", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:compact");
   assert.ok(scenario);
 
@@ -291,7 +295,7 @@ test("tool previews render a bare left rail instead of a box wrapper", () => {
   assert.match(text, /^\s*▏\s*\$/m);
 });
 
-test("interactive mode only spaces tool calls when a visible non-tool item interrupts them", () => {
+timedTest("interactive mode only spaces tool calls when a visible non-tool item interrupts them", () => {
   const cwd = process.cwd().replace(/\\/g, "/");
   const mode = createInteractiveModePreview(cwd);
 
@@ -324,7 +328,7 @@ test("interactive mode only spaces tool calls when a visible non-tool item inter
   }
 });
 
-test("compact tool previews use verb-first muted statuses", () => {
+timedTest("compact tool previews use verb-first muted statuses", () => {
   const expectations = [
     ["read:compact", "call-collapsed", /reading/],
     ["read:compact", "success-collapsed", /✓ read/],
@@ -341,7 +345,7 @@ test("compact tool previews use verb-first muted statuses", () => {
   }
 });
 
-test("grouped read batch preview renders collapsed and expanded summaries", () => {
+timedTest("grouped read batch preview renders collapsed and expanded summaries", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "read:batch");
   assert.ok(scenario);
 

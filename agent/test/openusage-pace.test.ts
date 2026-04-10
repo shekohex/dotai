@@ -13,6 +13,9 @@ import type { UsageMetric } from "../src/extensions/openusage/types.ts";
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const RESETS_AT_MS = Date.parse("2026-04-09T10:00:00.000Z");
 const MID_PERIOD_NOW_MS = RESETS_AT_MS - FIVE_HOURS_MS / 2;
+const TEST_TIMEOUT_MS = 15_000;
+
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
 function createMetric(used: number): UsageMetric {
   return {
@@ -23,7 +26,7 @@ function createMetric(used: number): UsageMetric {
   };
 }
 
-test("pace classification covers ahead, on-track, and behind", () => {
+timedTest("pace classification covers ahead, on-track, and behind", () => {
   assert.deepEqual(calculatePaceStatus(30, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS), {
     status: "ahead",
     projectedUsage: 60,
@@ -38,24 +41,24 @@ test("pace classification covers ahead, on-track, and behind", () => {
   });
 });
 
-test("pace status labels match upstream copy", () => {
+timedTest("pace status labels match upstream copy", () => {
   assert.equal(getPaceStatusText("ahead"), "Plenty of room");
   assert.equal(getPaceStatusText("on-track"), "Right on target");
   assert.equal(getPaceStatusText("behind"), "Will run out");
 });
 
-test("projected reset text respects display mode", () => {
+timedTest("projected reset text respects display mode", () => {
   const paceResult: PaceResult = { status: "on-track", projectedUsage: 90 };
   assert.equal(formatProjectedResetText(paceResult, 100, "used"), "90% used at reset");
   assert.equal(formatProjectedResetText(paceResult, 100, "left"), "10% left at reset");
 });
 
-test("behind pace ETA uses runs-out wording", () => {
+timedTest("behind pace ETA uses runs-out wording", () => {
   const paceResult: PaceResult = { status: "behind", projectedUsage: 120 };
   assert.equal(formatRunsOutText(paceResult, createMetric(60), MID_PERIOD_NOW_MS), "Runs out in 1h 40m");
 });
 
-test("metric pace details expose projection, eta, and elapsed marker position", () => {
+timedTest("metric pace details expose projection, eta, and elapsed marker position", () => {
   const details = getMetricPaceDetails(createMetric(60), "used", MID_PERIOD_NOW_MS);
   assert.equal(details.statusText, "Will run out");
   assert.equal(details.projectedText, "100% used at reset");
@@ -63,7 +66,7 @@ test("metric pace details expose projection, eta, and elapsed marker position", 
   assert.equal(details.elapsedPercent, 50);
 });
 
-test("early period pace details suppress classification until enough time elapsed", () => {
+timedTest("early period pace details suppress classification until enough time elapsed", () => {
   const earlyNowMs = RESETS_AT_MS - FIVE_HOURS_MS + Math.floor(FIVE_HOURS_MS * 0.04);
   const details = getMetricPaceDetails(createMetric(10), "left", earlyNowMs);
   assert.equal(details.statusText, null);

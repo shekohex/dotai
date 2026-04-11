@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { calls, createTestSession, says, when, type TestSession } from "@marcfargas/pi-test-harness";
-import { initTheme, InteractiveMode } from "@mariozechner/pi-coding-agent";
+import { DefaultResourceLoader, initTheme, InteractiveMode } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { setKeybindings } from "@mariozechner/pi-tui";
 import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
@@ -243,6 +243,45 @@ async function writeHandoffModesFile(cwd: string): Promise<void> {
           thinkingLevel: "low",
         },
         rush: {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+        },
+      },
+    }, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function withProcessCwd<T>(cwd: string, callback: () => Promise<T>): Promise<T> {
+  const previousCwd = process.cwd();
+  process.chdir(cwd);
+  try {
+    return await callback();
+  } finally {
+    process.chdir(previousCwd);
+  }
+}
+
+async function writeCliFlagModesFile(cwd: string): Promise<void> {
+  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await writeFile(
+    join(cwd, ".pi", "modes.json"),
+    `${JSON.stringify({
+      version: 1,
+      currentMode: "Deep Work",
+      modes: {
+        "Deep Work": {
+          provider: "mode-provider",
+          modelId: "smart-model",
+          thinkingLevel: "low",
+        },
+        "Mini Max": {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+        },
+        "Rush Fast": {
           provider: "mode-provider",
           modelId: "mode-model",
           thinkingLevel: "high",
@@ -924,6 +963,79 @@ timedTest("handoff tool prompt includes available modes and refreshes after mode
 
     const updatedPrompt = getCurrentSystemPrompt(session);
     assert.match(updatedPrompt, /<mode name="deep"/);
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("modes extension registers CLI flags from discovered modes", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-"));
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeCliFlagModesFile(cwd);
+
+  try {
+    await withProcessCwd(cwd, async () => {
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir: cwd,
+        extensionFactories: [modesExtension, providers.extensionFactory],
+      });
+      await loader.reload();
+
+      const flags = loader
+        .getExtensions()
+        .extensions
+        .flatMap((extension) => Array.from(extension.flags.keys()));
+
+      assert.ok(flags.includes("mode-deep-work"));
+      assert.ok(flags.includes("mode-mini-max"));
+      assert.ok(flags.includes("mode-rush-fast"));
+    });
+  } finally {
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("mode CLI flags apply the selected mode on reload startup", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-reload-"));
+  let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    await withProcessCwd(cwd, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, createModeChangeCaptureExtension(observedModeChanges), providers.extensionFactory],
+      });
+
+      observedModeChanges.length = 0;
+      ((session!.session as { extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void } }).extensionRunner)
+        .setFlagValue("mode-rush", true);
+
+      await session!.session.reload();
+
+      const model = (session!.session as { model: { provider: string; id: string }; thinkingLevel: string });
+      assert.equal(model.model.provider, "mode-provider");
+      assert.equal(model.model.id, "mode-model");
+      assert.equal(model.thinkingLevel, "high");
+      assert.equal(getLatestModeState(session!), "rush");
+
+      assert.ok(observedModeChanges.length >= 1, JSON.stringify(observedModeChanges));
+      const latestModeChange = observedModeChanges.at(-1);
+      assert.equal(latestModeChange?.mode, "rush");
+      assert.equal(latestModeChange?.reason, "restore");
+      assert.equal(latestModeChange?.source, "session_start");
+      assert.equal(latestModeChange?.spec?.provider, "mode-provider");
+      assert.equal(latestModeChange?.spec?.modelId, "mode-model");
+      assert.equal(latestModeChange?.spec?.thinkingLevel, "high");
+    });
   } finally {
     session?.dispose();
     providers.dispose();

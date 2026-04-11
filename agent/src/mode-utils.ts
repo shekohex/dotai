@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -145,6 +146,15 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function fileExistsSync(filePath: string): boolean {
+  try {
+    fsSync.accessSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseModesFile(value: unknown): ModesFile {
   return assertModesFileConsistency(Value.Parse(ModesFileSchema, value));
 }
@@ -209,14 +219,33 @@ async function loadModesSource(filePath: string): Promise<LoadedModesSource> {
   }
 }
 
-export async function loadModesFile(cwd: string): Promise<LoadedModesFile> {
-  const projectPath = getModesProjectPath(cwd);
-  const globalPath = getModesGlobalPath();
-  const [projectSource, globalSource] = await Promise.all([
-    loadModesSource(projectPath),
-    loadModesSource(globalPath),
-  ]);
+function loadModesSourceSync(filePath: string): LoadedModesSource {
+  if (!fileExistsSync(filePath)) {
+    return { path: filePath, exists: false };
+  }
 
+  try {
+    const raw = JSON.parse(fsSync.readFileSync(filePath, "utf8"));
+    return {
+      path: filePath,
+      exists: true,
+      data: parseModesFile(raw),
+    };
+  } catch (error) {
+    return {
+      path: filePath,
+      exists: true,
+      error: formatModesFileError(error),
+    };
+  }
+}
+
+function buildLoadedModesFile(
+  projectPath: string,
+  globalPath: string,
+  projectSource: LoadedModesSource,
+  globalSource: LoadedModesSource,
+): LoadedModesFile {
   const hasProject = projectSource.exists;
   const hasGlobal = globalSource.exists;
   const source = hasProject ? "project" : hasGlobal ? "global" : "missing";
@@ -239,6 +268,26 @@ export async function loadModesFile(cwd: string): Promise<LoadedModesFile> {
       error: error ? `${error}\n${mergedError}` : mergedError,
     };
   }
+}
+
+export async function loadModesFile(cwd: string): Promise<LoadedModesFile> {
+  const projectPath = getModesProjectPath(cwd);
+  const globalPath = getModesGlobalPath();
+  const [projectSource, globalSource] = await Promise.all([
+    loadModesSource(projectPath),
+    loadModesSource(globalPath),
+  ]);
+
+  return buildLoadedModesFile(projectPath, globalPath, projectSource, globalSource);
+}
+
+export function loadModesFileSync(cwd: string): LoadedModesFile {
+  const projectPath = getModesProjectPath(cwd);
+  const globalPath = getModesGlobalPath();
+  const projectSource = loadModesSourceSync(projectPath);
+  const globalSource = loadModesSourceSync(globalPath);
+
+  return buildLoadedModesFile(projectPath, globalPath, projectSource, globalSource);
 }
 
 async function ensureParentDir(filePath: string): Promise<void> {

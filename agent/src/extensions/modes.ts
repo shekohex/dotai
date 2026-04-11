@@ -2,13 +2,16 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Key } from "@mariozechner/pi-tui";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 
-import { getModesProjectPath, loadModesFile, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
+import { getModesProjectPath, loadModesFile, loadModesFileSync, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
 export const MODE_ACTIVATE_EVENT = "modes:activate";
 export const MODE_SELECTION_APPLY_EVENT = "modes:apply-selection";
 const MODE_STATUS_KEY = "mode";
 const CUSTOM_MODE_LABEL = "custom";
+const MODE_FLAG_PREFIX = "mode-";
+
+const registeredModeFlags = new Map<string, string>();
 
 type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -69,6 +72,18 @@ function orderedModeNames(data: ModesFile): string[] {
   return Object.keys(data.modes).sort((left, right) => left.localeCompare(right));
 }
 
+function toModeFlagName(modeName: string): string | undefined {
+  const normalized = modeName
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized ? `${MODE_FLAG_PREFIX}${normalized}` : undefined;
+}
+
 function getModeSpec(data: ModesFile, modeName: string): ModeSpec | undefined {
   return data.modes[modeName];
 }
@@ -99,6 +114,70 @@ function describeModeAutocomplete(modeName: string, spec: ModeSpec | undefined):
   }
 
   return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function describeModeFlag(modeName: string, spec: ModeSpec | undefined): string {
+  const details = describeModeSpec(spec);
+  return details ? `Start in \"${modeName}\" mode (${details})` : `Start in \"${modeName}\" mode`;
+}
+
+function registerModeFlags(pi: ExtensionAPI): void {
+  registeredModeFlags.clear();
+
+  const loaded = loadModesFileSync(process.cwd());
+  const collisions = new Set<string>();
+
+  for (const modeName of orderedModeNames(loaded.data)) {
+    const flagName = toModeFlagName(modeName);
+    if (!flagName) {
+      continue;
+    }
+
+    const existingModeName = registeredModeFlags.get(flagName);
+    if (existingModeName && existingModeName !== modeName) {
+      collisions.add(flagName);
+      continue;
+    }
+
+    registeredModeFlags.set(flagName, modeName);
+  }
+
+  for (const flagName of collisions) {
+    registeredModeFlags.delete(flagName);
+  }
+
+  for (const [flagName, modeName] of registeredModeFlags) {
+    pi.registerFlag(flagName, {
+      description: describeModeFlag(modeName, loaded.data.modes[modeName]),
+      type: "boolean",
+    });
+  }
+}
+
+function getStartupModeSelection(pi: ExtensionAPI): { selectedMode?: string; requestedModes: string[] } {
+  const requestedModes: string[] = [];
+
+  for (const [flagName, modeName] of registeredModeFlags) {
+    if (pi.getFlag(flagName) === true) {
+      requestedModes.push(modeName);
+    }
+  }
+
+  return { selectedMode: requestedModes[0], requestedModes };
+}
+
+function notifyStartupModeConflict(ctx: ExtensionContext, requestedModes: string[]): void {
+  if (requestedModes.length < 2) {
+    return;
+  }
+
+  const message = `Multiple mode flags specified (${requestedModes.join(", ")}). Using \"${requestedModes[0]}\"`;
+  if (ctx.hasUI) {
+    ctx.ui.notify(message, "warning");
+    return;
+  }
+
+  console.warn(message);
 }
 
 function filterAutocompleteItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
@@ -356,18 +435,18 @@ async function applyMode(
   source: ModeChangedEvent["source"],
   reason: ModeChangedEvent["reason"] = "apply",
   options: { persist?: boolean } = {},
-): Promise<void> {
+): Promise<boolean> {
   await ensureRuntime(ctx);
   syncErrorUI(ctx);
   if (runtime.error) {
     notifyConfigError(ctx);
-    return;
+    return false;
   }
 
   const spec = getModeSpec(runtime.data, modeName);
   if (!spec) {
     ctx.ui.notify(`Unknown mode "${modeName}"`, "warning");
-    return;
+    return false;
   }
 
   runtime.applying = true;
@@ -377,13 +456,13 @@ async function applyMode(
       const model = ctx.modelRegistry.find(spec.provider, spec.modelId);
       if (!model) {
         ctx.ui.notify(`Mode "${modeName}" references missing model ${spec.provider}/${spec.modelId}`, "warning");
-        return;
+        return false;
       }
 
       const modelApplied = await pi.setModel(model);
       if (!modelApplied) {
         ctx.ui.notify(`No API key available for ${spec.provider}/${spec.modelId}`, "warning");
-        return;
+        return false;
       }
     }
 
@@ -409,6 +488,8 @@ async function applyMode(
     if (previousMode !== modeName && (source === "command" || source === "shortcut")) {
       notifyModeSwitch(ctx, modeName, spec);
     }
+
+    return true;
   } finally {
     runtime.applying = false;
 
@@ -596,6 +677,15 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
     return;
   }
 
+  const startupModeSelection = getStartupModeSelection(pi);
+  notifyStartupModeConflict(ctx, startupModeSelection.requestedModes);
+  if (startupModeSelection.selectedMode) {
+    const applied = await applyMode(pi, ctx, startupModeSelection.selectedMode, "session_start", "restore", { persist: false });
+    if (applied) {
+      return;
+    }
+  }
+
   const entries = ctx.sessionManager.getEntries();
   const modeEntries = entries.filter((entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY);
   const lastEntry = modeEntries[modeEntries.length - 1] as { data?: { activeMode?: string } } | undefined;
@@ -656,6 +746,8 @@ async function activateMode(pi: ExtensionAPI, ctx: ExtensionContext, event: Mode
 }
 
 export default function modesExtension(pi: ExtensionAPI): void {
+  registerModeFlags(pi);
+
   pi.registerCommand("mode", {
     description: "Select and store prompt modes: /mode, /mode <name>, /mode store <name>, /mode reload",
     getArgumentCompletions: (prefix) => getModeArgumentCompletions(prefix),

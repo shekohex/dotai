@@ -5,11 +5,15 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { calls, createTestSession, says, when, type TestSession } from "@marcfargas/pi-test-harness";
-import { initTheme } from "@mariozechner/pi-coding-agent";
+import { initTheme, InteractiveMode } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { setKeybindings } from "@mariozechner/pi-tui";
 import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
+import stripAnsi from "strip-ansi";
 import { createPlaybookStreamFn } from "../node_modules/@marcfargas/pi-test-harness/src/playbook.ts";
+import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
 import webFetchExtension from "../src/extensions/fetch.ts";
+import mermaidExtension, { extractMermaidBlocks } from "../src/extensions/mermaid.ts";
 import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.ts";
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
@@ -30,6 +34,9 @@ process.env.OPENAI_API_KEY ??= "test-key";
 const TEST_TIMEOUT_MS = 15_000;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+
+initTheme("dark");
+setKeybindings(KeybindingsManager.create());
 
 function forceApplyPatchExtension(pi: ExtensionAPI) {
   const enablePatchTool = () => {
@@ -323,6 +330,23 @@ async function getCommandArgumentCompletions(
 
 function getCurrentSystemPrompt(testSession: TestSession): string {
   return ((testSession.session as { agent: { state: { systemPrompt: string } } }).agent.state.systemPrompt);
+}
+
+function renderSessionChatLines(testSession: TestSession, width = 120): string[] {
+  const mode = new InteractiveMode({ session: testSession.session, dispose: async () => {} } as never);
+
+  try {
+    const sessionContext = ((testSession.session as {
+      sessionManager: {
+        buildSessionContext: () => { messages: Array<{ role: string; content: unknown }> };
+      };
+    }).sessionManager.buildSessionContext());
+
+    (mode as any).renderSessionContext(sessionContext);
+    return (mode as any).chatContainer.render(width).map((line: string) => stripAnsi(line).trimEnd());
+  } finally {
+    ((mode as any).footerDataProvider as { dispose: () => void }).dispose();
+  }
 }
 
 type CapturedModeChange = {
@@ -1101,4 +1125,165 @@ timedTest("mode changes switch the system prompt when the selected mode changes 
     providers.dispose();
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+timedTest("mermaid extension renders assistant diagrams inline without emitting extra custom messages", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [mermaidExtension],
+    });
+    patchHarnessAgent(session);
+
+    const playbook = createPlaybookStreamFn([
+      when("Show me the release flow", [
+        says([
+          "Release flow:",
+          "",
+          "```mermaid",
+          "graph TD",
+          "  Start --> Validate",
+          "  Validate --> Build",
+          "  Build --> Ship",
+          "```",
+          "",
+          "Done.",
+        ].join("\n")),
+      ]),
+    ]);
+
+    (session.session.agent as { streamFn: unknown }).streamFn = playbook.streamFn;
+
+    await session.session.prompt("Show me the release flow");
+    await session.session.agent.waitForIdle();
+
+    const branchEntries = ((session.session as {
+      sessionManager: {
+        getBranch: () => Array<{ type: string; message?: { role: string; customType?: string }; customType?: string }>;
+      };
+    }).sessionManager.getBranch());
+
+    const customMermaidMessages = branchEntries.filter(
+      (entry) => entry.type === "custom_message" && entry.customType === "pi-mermaid",
+    );
+    assert.equal(customMermaidMessages.length, 0);
+
+    const renderedText = renderSessionChatLines(session).join("\n");
+    assert.match(renderedText, /Release flow:/);
+    assert.match(renderedText, /Done\./);
+    assert.match(renderedText, /Start/);
+    assert.match(renderedText, /Validate/);
+    assert.doesNotMatch(renderedText, /```mermaid/);
+    assert.doesNotMatch(renderedText, /graph TD/);
+    assert.doesNotMatch(renderedText, /parser validation isn.?t usable/i);
+    assert.doesNotMatch(renderedText, /more lines, to expand/i);
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("mermaid command still emits a standalone preview message", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [mermaidExtension],
+    });
+    patchHarnessAgent(session);
+
+    const playbook = createPlaybookStreamFn([
+      when("Render the system flow", [
+        says([
+          "```mermaid",
+          "sequenceDiagram",
+          "  Alice->>Bob: ping",
+          "  Bob-->>Alice: pong",
+          "```",
+        ].join("\n")),
+      ]),
+    ]);
+
+    (session.session.agent as { streamFn: unknown }).streamFn = playbook.streamFn;
+
+    await session.session.prompt("Render the system flow");
+    await session.session.agent.waitForIdle();
+
+    await session.session.prompt("/mermaid");
+    await session.session.agent.waitForIdle();
+
+    const branchEntries = ((session.session as {
+      sessionManager: {
+        getBranch: () => Array<{ type: string; customType?: string; details?: { source?: string } }>;
+      };
+    }).sessionManager.getBranch());
+
+    const customMermaidMessages = branchEntries.filter(
+      (entry) => entry.type === "custom_message" && entry.customType === "pi-mermaid",
+    );
+
+    assert.equal(customMermaidMessages.length, 1);
+    assert.match(customMermaidMessages[0]?.details?.source ?? "", /sequenceDiagram/);
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("mermaid fence parser ignores nested mermaid fences inside other code blocks and labels", () => {
+  const content = [
+    "Here’s the difference, using Mermaid itself.",
+    "",
+    "**Old additive approach**",
+    "```mermaid",
+    "flowchart LR",
+    "  A[Assistant message contains ```mermaid``` fence] --> B[Extension parses it]",
+    "  B --> C[Extension sends a separate custom message]",
+    "  A --> D[Raw fence still stays visible]",
+    "  C --> E[ASCII diagram appears again]",
+    "```",
+    "",
+    "**New inline patching approach**",
+    "```mermaid",
+    "flowchart LR",
+    "  A[AssistantMessageComponent.updateContent] --> B[Detect mermaid fence]",
+    "  B --> C[Replace fence with inline ASCII component]",
+    "  C --> D[Single message renders cleanly]",
+    "  D --> E[No duplicate custom message]",
+    "```",
+    "",
+    "**Example assistant content**",
+    "```text",
+    "Release flow:",
+    "",
+    "```mermaid",
+    "graph TD",
+    "  Start --> Validate",
+    "  Validate --> Build",
+    "  Build --> Ship",
+    "```",
+    "",
+    "Done.",
+    "```",
+    "",
+    "**Why this feels better**",
+    "```mermaid",
+    "sequenceDiagram",
+    "  participant U as User",
+    "  participant A as Assistant message",
+    "  participant R as Renderer",
+    "",
+    "  U->>A: Sends text with mermaid block",
+    "  R->>A: Patches content in place",
+    "  A-->>U: One coherent message with diagram inline",
+    "```",
+  ].join("\n");
+
+  const blocks = extractMermaidBlocks(content);
+
+  assert.equal(blocks.length, 3);
+  assert.match(blocks[0] ?? "", /flowchart LR/);
+  assert.match(blocks[0] ?? "", /contains ```mermaid``` fence/);
+  assert.match(blocks[1] ?? "", /flowchart LR/);
+  assert.match(blocks[2] ?? "", /sequenceDiagram/);
+  assert.ok(blocks.every((block) => !block.includes("Start --> Validate")));
 });

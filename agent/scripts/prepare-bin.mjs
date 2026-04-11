@@ -10,7 +10,9 @@ const unixBinPath = join(binDir, "pi.js");
 const windowsBinPath = join(binDir, "pi.cmd");
 
 const unixBinContents = `#!/usr/bin/env node
-import "../dist/cli.js";
+import { ensureDependencyPatches } from "../scripts/postinstall.mjs";
+await ensureDependencyPatches();
+await import("../dist/cli.js");
 `;
 
 const windowsBinContents = `@ECHO off

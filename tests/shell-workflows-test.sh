@@ -78,7 +78,7 @@ test_install_supports_noninteractive_env() {
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
   assert_contains 'ci --ignore-scripts' "$npm_log"
   assert_contains 'uninstall -g @shekohex/agent' "$npm_log"
-  assert_contains "install -g $ROOT_DIR/agent" "$npm_log"
+  assert_contains "install -g --install-links $ROOT_DIR/agent" "$npm_log"
 }
 
 test_install_refuses_implicit_noninteractive_without_opt_in() {
@@ -107,7 +107,7 @@ test_install_supports_noninteractive_flag() {
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
   assert_contains 'ci --ignore-scripts' "$npm_log"
   assert_contains 'uninstall -g @shekohex/agent' "$npm_log"
-  assert_contains "install -g $ROOT_DIR/agent" "$npm_log"
+  assert_contains "install -g --install-links $ROOT_DIR/agent" "$npm_log"
 }
 
 test_sync_coder_workspaces_builds_expected_remote_flow() {

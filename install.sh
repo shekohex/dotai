@@ -420,7 +420,7 @@ install_global_agent() {
   npm uninstall -g @shekohex/agent || true
 
   log_info "Installing global @shekohex/agent from $AGENT_DIR"
-  npm install -g "$AGENT_DIR"
+  npm install -g --install-links "$AGENT_DIR"
 }
 
 main() {

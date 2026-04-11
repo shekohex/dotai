@@ -37,6 +37,7 @@ timedTest("apply_patch preview renders collapsed and expanded states", () => {
   assert.ok(expanded);
 
   const collapsedText = renderPreviewText(scenario, collapsed, 120);
+  const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter((line) => stripAnsi(line).trim().length > 0);
   const partialText = renderPreviewText(scenario, partial, 120);
   const errorText = renderPreviewText(scenario, error, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
@@ -44,10 +45,12 @@ timedTest("apply_patch preview renders collapsed and expanded states", () => {
   assert.match(stripAnsi(partialText), /patching 4 files/);
   assert.match(stripAnsi(partialText), /0\/4/);
   assert.match(stripAnsi(partialText), /src\/extensions\/patch.ts/);
+  assert.equal(collapsedLines.length, 1);
   assert.match(stripAnsi(collapsedText), /patched 4 files/);
   assert.match(stripAnsi(collapsedText), /\+\d+ -\d+/);
-  assert.match(stripAnsi(collapsedText), /A src\/tool-preview-demo.ts/);
-  assert.match(stripAnsi(collapsedText), /D src\/tool-preview-old.ts/);
+  assert.doesNotMatch(stripAnsi(collapsedText), /↳/);
+  assert.doesNotMatch(stripAnsi(collapsedText), /A src\/tool-preview-demo.ts/);
+  assert.doesNotMatch(stripAnsi(collapsedText), /D src\/tool-preview-old.ts/);
   assert.match(stripAnsi(errorText), /patch 4 files/);
   assert.match(stripAnsi(errorText), /src\/tool-preview-modern.ts/);
   assert.match(stripAnsi(expandedText), /M src\/extensions\/patch.ts/);
@@ -64,7 +67,7 @@ timedTest("single-file patch collapsed success avoids duplicate summary line", (
   assert.ok(collapsed);
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
-  assert.match(text, /patched src\/extensions\/patch.ts/);
+  assert.match(text, /patched patch\.ts \.\/src\/extensions\/ · \+\d+ -\d+/);
   assert.doesNotMatch(text, /↳/);
 });
 
@@ -108,9 +111,36 @@ timedTest("rehydrated apply_patch result stays collapsed", () => {
 
   const text = stripAnsi(component.render(120).join("\n"));
 
-  assert.match(text, /patched src\/extensions\/patch\.ts/);
+  assert.match(text, /patched patch\.ts \.\/src\/extensions\/ · \+\d+ -\d+/);
   assert.doesNotMatch(text, /\bpatching\b/);
   assert.doesNotMatch(text, /\*\*\* Update File:/);
+});
+
+timedTest("session_query preview appends collapsed result inline", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "session_query:compact");
+  assert.ok(scenario);
+
+  const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  const partial = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-collapsed");
+  const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
+
+  assert.ok(collapsed);
+  assert.ok(partial);
+  assert.ok(expanded);
+
+  const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
+  const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter((line) => stripAnsi(line).trim().length > 0);
+  const partialText = stripAnsi(renderPreviewText(scenario, partial, 120));
+  const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
+
+  assert.equal(collapsedLines.length, 1);
+  assert.match(collapsedText, /queried 0e990a27 → What files were modified in the parent session\?/);
+  assert.match(collapsedText, /answered · took \d+s/);
+  assert.doesNotMatch(collapsedText, /↳/);
+  assert.match(partialText, /Modified files included src\/extensions\/coreui\/tools.ts/);
+  assert.match(partialText, /1 line so far \(0s\)/);
+  assert.match(expandedText, /Question:/);
+  assert.match(expandedText, /test\/tool-preview.test.ts/);
 });
 
 timedTest("all preview scenarios render within width 120", () => {

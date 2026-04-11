@@ -11,8 +11,7 @@ import {
   ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import path from "node:path";
-import { shortenPathForTool } from "./path.js";
+import { splitToolPath, type ToolPathDisplay } from "./path.js";
 import { Type } from "@sinclair/typebox";
 import { Static } from "@sinclair/typebox";
 
@@ -63,11 +62,6 @@ type ToolResult = {
   details?: unknown;
 };
 
-type ToolPathDisplay = {
-  basename: string;
-  dirSuffix: string;
-};
-
 type DiffStats = {
   additions: number;
   deletions: number;
@@ -91,6 +85,14 @@ type BashOutputSummary = {
 type BashRenderState = NonNullable<BashCallContext['state']> & {
   callComponent?: Text;
   callText?: string;
+};
+
+export type CoreUIToolTheme = ToolTheme;
+
+export type StreamingPreviewOptions = {
+  expanded: boolean;
+  footer?: string;
+  tailLines?: number;
 };
 
 const BASH_OUTPUT_LINE_LIMIT = 80;
@@ -397,7 +399,7 @@ function delegateReadResult(
   return new Text(`\n${theme.fg("toolOutput", fallbackText)}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
 }
 
-function createTextComponent(lastComponent: unknown, text: string): Text {
+export function createTextComponent(lastComponent: unknown, text: string): Text {
   const component = lastComponent instanceof Text
     ? lastComponent
     : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
@@ -406,15 +408,11 @@ function createTextComponent(lastComponent: unknown, text: string): Text {
 }
 
 
-function renderStreamingPreview(
+export function renderStreamingPreview(
   renderedText: string,
-  theme: ToolTheme,
+  theme: CoreUIToolTheme,
   lastComponent: unknown,
-  options: {
-    expanded: boolean;
-    footer?: string;
-    tailLines?: number;
-  },
+  options: StreamingPreviewOptions,
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
   const tailSize = getTailSize(options.tailLines);
@@ -444,7 +442,7 @@ function renderStreamingPreview(
   return createTextComponent(lastComponent, blocks.join("\n"));
 }
 
-function renderToolError(message: string, theme: ToolTheme, lastComponent: unknown): Text {
+export function renderToolError(message: string, theme: CoreUIToolTheme, lastComponent: unknown): Text {
   return createTextComponent(lastComponent, message ? theme.fg("error", `↳ ${message.trim()}`) : "");
 }
 
@@ -486,7 +484,7 @@ function formatBashStatus(theme: ToolTheme, context: BaseRenderContext): string 
   return theme.bold(theme.fg("muted", "$"));
 }
 
-function getTextContent(result: ToolResult): string {
+export function getTextContent(result: ToolResult): string {
   return result.content
     .filter((part) => part.type === "text")
     .map((part) => part.text ?? "")
@@ -618,7 +616,7 @@ function formatLineCountSuffix(content: unknown, theme: ToolTheme): string {
   return theme.fg("dim", ` · ± ${summarizeLineCount(lineCount)}`);
 }
 
-function countTextLines(content: unknown): number {
+export function countTextLines(content: unknown): number {
   if (typeof content !== "string" || content.length === 0) {
     return 0;
   }
@@ -634,11 +632,11 @@ function summarizeTextLineCount(text: string): string {
   return summarizeLineCount(text.split("\n").filter((line) => line.length > 0 || text.includes("\n")).length || 1);
 }
 
-function summarizeLineCount(lineCount: number): string {
+export function summarizeLineCount(lineCount: number): string {
   return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
 }
 
-function styleToolOutput(text: string, theme: ToolTheme, maxLineLength?: number): string {
+export function styleToolOutput(text: string, theme: CoreUIToolTheme, maxLineLength?: number): string {
   if (!text) {
     return "";
   }
@@ -694,7 +692,7 @@ function getBashElapsed(state: BashRenderState): number | undefined {
   return (state.endedAt ?? Date.now()) - state.startedAt;
 }
 
-function formatDurationHuman(ms: number): string {
+export function formatDurationHuman(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -715,23 +713,11 @@ function formatDiffStats(theme: ToolTheme, additions: number, deletions: number)
   return `${theme.fg("toolDiffAdded", `+${additions}`)} ${theme.fg("toolDiffRemoved", `-${deletions}`)}`;
 }
 
-function getToolPathDisplay(rawPath: string, cwd: string): ToolPathDisplay {
-  const filePath = shortenPathForTool(rawPath, cwd) || "...";
-  return {
-    basename: path.basename(filePath),
-    dirSuffix: toDirSuffix(path.dirname(filePath)),
-  };
+export function getToolPathDisplay(rawPath: string, cwd: string): ToolPathDisplay {
+  return splitToolPath(rawPath, cwd);
 }
 
-function toDirSuffix(dirname: string): string {
-  if (dirname === ".") {
-    return "./";
-  }
-
-  return `${dirname}/`;
-}
-
-function formatMutedDirSuffix(theme: ToolTheme, dirSuffix: string): string {
+export function formatMutedDirSuffix(theme: CoreUIToolTheme, dirSuffix: string): string {
   if (!dirSuffix) {
     return "";
   }

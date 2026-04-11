@@ -1,5 +1,6 @@
 import { stream, type Message } from "@mariozechner/pi-ai";
 import {
+  defineTool,
   type ExtensionAPI,
   SessionManager,
   convertToLlm,
@@ -10,6 +11,14 @@ import {
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import path from "node:path";
+import {
+  createTextComponent,
+  formatDurationHuman,
+  getTextContent,
+  renderStreamingPreview,
+  styleToolOutput,
+  summarizeLineCount,
+} from "./coreui/tools.js";
 
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
@@ -26,10 +35,18 @@ type SessionQueryDetails = {
   answer: string;
 };
 
+type SessionQueryToolDetails =
+  | SessionQueryDetails
+  | { error: true; sessionPath: string; sessionUuid: string; question: string }
+  | { empty: true; sessionPath: string; sessionUuid: string; question: string; messageCount: number; answer: string }
+  | { cancelled: true; sessionPath: string; sessionUuid: string; question: string; messageCount: number; answer: string };
+
 type SessionQueryRenderState = {
   startedAt?: number;
   endedAt?: number;
   interval?: ReturnType<typeof setInterval>;
+  callComponent?: Text;
+  callText?: string;
 };
 
 const QUERY_SYSTEM_PROMPT = `You are a session context assistant. Given the conversation history from a pi coding session and a question, provide a concise answer based on the session contents.
@@ -41,8 +58,7 @@ Focus on:
 
 Be concise and direct. If the information isn't in the session, say so.`;
 
-export default function (pi: ExtensionAPI) {
-  pi.registerTool({
+export const sessionQueryTool = defineTool({
     name: "session_query",
     label: "query",
     description:
@@ -56,7 +72,7 @@ export default function (pi: ExtensionAPI) {
       }),
     }),
     renderCall(args, theme, context) {
-      syncRenderState(context, context.isPartial);
+      const state = syncRenderState(context, context.isPartial);
 
       const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
       const status = phase === "error"
@@ -70,12 +86,12 @@ export default function (pi: ExtensionAPI) {
         : "...";
 
       const text = `${status} ${theme.fg("muted", sessionLabel)}${theme.fg("dim", " → ")}${theme.fg("muted", truncateQuestion(question))}`;
-      return createTextComponent(context.lastComponent, text);
+      return setCallComponent(state, context.lastComponent, text);
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
       const state = syncRenderState(context, isPartial);
       const textContent = getTextContent(result);
-      const details = result.details as SessionQueryDetails | undefined;
+      const details = result.details as SessionQueryToolDetails | undefined;
       const elapsedMs = getElapsedMs(state);
 
       if (context.isError) {
@@ -89,17 +105,14 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (isPartial) {
-        const renderedText = textContent
-          .split("\n")
-          .filter((line) => line.length > 0)
-          .map((line) => theme.fg("toolOutput", line))
-          .join("\n");
+        const renderedText = styleToolOutput(textContent, theme);
         const footer = elapsedMs !== undefined ? formatDurationHuman(elapsedMs) : "0s";
 
         if (renderedText) {
           return renderStreamingPreview(renderedText, theme, context.lastComponent, {
             expanded,
-            footer,
+            footer: expanded ? footer : `${summarizeLineCount(countRenderedLines(textContent))} so far (${footer})`,
+            tailLines: STREAM_PREVIEW_LINE_LIMIT,
           });
         }
 
@@ -116,13 +129,11 @@ export default function (pi: ExtensionAPI) {
       ].filter(Boolean).join(`${theme.fg("muted", " · ")}`);
 
       if (!expanded) {
-        return createTextComponent(
-          context.lastComponent,
-          `${theme.fg("dim", "↳ ")}${summary}`,
-        );
+        applyCollapsedSummaryToCall(state, `${theme.fg("muted", " · ")}${summary}`);
+        return createTextComponent(context.lastComponent, "");
       }
 
-      const question = details?.question ?? context.args?.question ?? "";
+      const question = details && "question" in details ? details.question : context.args?.question ?? "";
       const container = context.lastComponent instanceof Container ? context.lastComponent : new Container();
       container.clear();
       container.addChild(new Text(`${theme.fg("muted", "Question:")} ${theme.fg("accent", question)}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
@@ -262,6 +273,8 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+export default function (pi: ExtensionAPI) {
+  pi.registerTool(sessionQueryTool);
 }
 
 function syncRenderState(
@@ -295,22 +308,6 @@ function getElapsedMs(state: SessionQueryRenderState): number | undefined {
   return state.startedAt === undefined ? undefined : (state.endedAt ?? Date.now()) - state.startedAt;
 }
 
-function createTextComponent(lastComponent: unknown, text: string): Text {
-  const component = lastComponent instanceof Text
-    ? lastComponent
-    : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
-  component.setText(text);
-  return component;
-}
-
-function getTextContent(result: { content: Array<{ type: string; text?: string }> }): string {
-  return result.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text ?? "")
-    .join("\n")
-    .trim();
-}
-
 function getAssistantText(content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>): string {
   return content
     .flatMap((item) => (item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : []))
@@ -327,49 +324,30 @@ function extractSessionUuid(sessionPath: string): string {
   return uuid;
 }
 
-function renderStreamingPreview(
-  renderedText: string,
-  theme: { fg: (color: "dim" | "muted" | "toolOutput", text: string) => string },
-  lastComponent: unknown,
-  options: { expanded: boolean; footer?: string },
-): Text {
-  const lines = renderedText.split("\n").filter((line) => line.length > 0);
-
-  if (options.expanded) {
-    const footer = options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "";
-    return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
-  }
-
-  const visibleLines = lines.slice(-STREAM_PREVIEW_LINE_LIMIT);
-  const blocks: string[] = [];
-
-  if (lines.length > visibleLines.length) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${lines.length - visibleLines.length} earlier lines)`)}`);
-  }
-
-  if (visibleLines.length > 0) {
-    blocks.push(visibleLines.join("\n"));
-  }
-
-  if (options.footer) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`);
-  }
-
-  return createTextComponent(lastComponent, blocks.join("\n"));
-}
-
 function truncateQuestion(question: string, maxLength = 60): string {
   if (question.length <= maxLength) return question;
   return `${question.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-function formatDurationHuman(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+function setCallComponent(state: SessionQueryRenderState, lastComponent: unknown, text: string): Text {
+  const component = createTextComponent(state.callComponent ?? lastComponent, text);
+  state.callComponent = component;
+  state.callText = text;
+  return component;
 }
 
-function summarizeLineCount(lineCount: number): string {
-  return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
+function applyCollapsedSummaryToCall(state: SessionQueryRenderState, summary: string): void {
+  if (!(state.callComponent instanceof Text) || !state.callText || !summary) {
+    return;
+  }
+
+  state.callComponent.setText(`${state.callText}${summary}`);
+}
+
+function countRenderedLines(text: string): number {
+  if (!text) {
+    return 0;
+  }
+
+  return text.split("\n").filter((line) => line.length > 0).length;
 }

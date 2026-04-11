@@ -4,6 +4,7 @@ import { Text, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
 import { webFetchTool } from "../src/extensions/fetch.js";
+import { sessionQueryTool } from "../src/extensions/session-query.js";
 import { webSearchTool } from "../src/extensions/websearch.js";
 import {
   createBashToolOverrideDefinition,
@@ -68,6 +69,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const readFile = joinPath(cwd, "README.md");
   const editFile = joinPath(cwd, "src/extensions/coreui/tools.ts");
   const writeFile = joinPath(cwd, "src/extensions/preview-look.ts");
+  const sessionPath = joinPath(cwd, ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl");
   const bashDefinition = createBashToolOverrideDefinition();
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
   const webSearchAnswer = [
@@ -475,6 +477,89 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       },
       errorResult: {
         content: [{ type: "text", text: "LiteLLM API key not configured." }],
+      },
+    },
+    {
+      id: "session_query:compact",
+      title: "session_query compact preview",
+      toolName: sessionQueryTool.name,
+      toolDefinition: sessionQueryTool,
+      cwd,
+      args: {
+        sessionPath,
+        question: "What files were modified in the parent session?",
+      },
+      partialResult: {
+        content: [{
+          type: "text",
+          text: [
+            "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+            "The tests in test/tool-preview.test.ts were updated too.",
+          ].join("\n"),
+        }],
+        details: {
+          sessionPath,
+          sessionUuid: "0e990a27",
+          question: "What files were modified in the parent session?",
+          messageCount: 42,
+          answer: [
+            "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+            "The tests in test/tool-preview.test.ts were updated too.",
+          ].join("\n"),
+        },
+      },
+      previewAnimation: {
+        frameDurationMs: 1000,
+        partialFrames: [
+          {
+            content: [{
+              type: "text",
+              text: "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+            }],
+            details: {
+              sessionPath,
+              sessionUuid: "0e990a27",
+              question: "What files were modified in the parent session?",
+              messageCount: 42,
+              answer: "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+            },
+          },
+          {
+            content: [{
+              type: "text",
+              text: [
+                "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+                "The tests in test/tool-preview.test.ts were updated too.",
+              ].join("\n"),
+            }],
+            details: {
+              sessionPath,
+              sessionUuid: "0e990a27",
+              question: "What files were modified in the parent session?",
+              messageCount: 42,
+              answer: [
+                "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+                "The tests in test/tool-preview.test.ts were updated too.",
+              ].join("\n"),
+            },
+          },
+        ],
+      },
+      successResult: {
+        content: [{
+          type: "text",
+          text: "Modified files included src/extensions/coreui/tools.ts, src/extensions/patch.ts, and test/tool-preview.test.ts.",
+        }],
+        details: {
+          sessionPath,
+          sessionUuid: "0e990a27",
+          question: "What files were modified in the parent session?",
+          messageCount: 42,
+          answer: "Modified files included src/extensions/coreui/tools.ts, src/extensions/patch.ts, and test/tool-preview.test.ts.",
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "Session file not found" }],
       },
     },
     {

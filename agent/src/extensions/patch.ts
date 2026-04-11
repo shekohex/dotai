@@ -7,11 +7,15 @@ import {
   type ExtensionContext,
   withFileMutationQueue,
 } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import {
+  createTextComponent,
+  formatMutedDirSuffix,
+  getToolPathDisplay,
+} from "./coreui/tools.js";
 
 type Hunk =
   | { type: "add"; path: string; contents: string }
@@ -63,8 +67,12 @@ type ApplyPatchDetails = {
   completedFiles: number;
 };
 
-const TOOL_TEXT_PADDING_X = 0;
-const TOOL_TEXT_PADDING_Y = 0;
+type ApplyPatchRenderState = {
+  applyPatchDetails?: ApplyPatchDetails;
+  applyPatchSignature?: string;
+  callComponent?: unknown;
+  callText?: string;
+};
 
 const APPLY_PATCH_DESCRIPTION = `Use the \`apply_patch\` tool to edit files. Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
 
@@ -314,39 +322,31 @@ export const applyPatchTool = defineTool({
     });
   },
   renderCall(args, theme, context) {
-    const text = createTextComponent(context.lastComponent);
-    text.setText(formatApplyPatchCall(args.patchText, theme, context));
-    return text;
+    return setPatchCallComponent(context.state as ApplyPatchRenderState, context.lastComponent, formatApplyPatchCall(args.patchText, theme, context));
   },
   renderResult(result, options, theme, context) {
     syncPatchRenderState(context, result.details as ApplyPatchDetails | undefined, getResultText(result.content));
     const output = getResultText(result.content);
     const details = getApplyPatchDetails(result.details, context.args.patchText);
+    const state = context.state as ApplyPatchRenderState;
 
     if (context.isError) {
       if (options.expanded) {
-        const text = createTextComponent(context.lastComponent);
-        text.setText(renderApplyPatchError(details.targets, output, theme, true));
-        return text;
+        return createTextComponent(context.lastComponent, renderApplyPatchError(details.targets, output, theme, true));
       }
-      return createTextComponent(context.lastComponent);
+      return createTextComponent(context.lastComponent, "");
     }
 
     if (options.isPartial) {
-      const text = createTextComponent(context.lastComponent);
-      text.setText(renderApplyPatchProgress(details, theme, options.expanded));
-      return text;
+      return createTextComponent(context.lastComponent, renderApplyPatchProgress(details, theme, options.expanded));
     }
 
     if (!options.expanded) {
-      const text = createTextComponent(context.lastComponent);
-      text.setText(renderApplyPatchCollapsedSuccess(details, theme));
-      return text;
+      applyCollapsedPatchSummaryToCall(state, formatApplyPatchSuccess(details, theme, context.cwd));
+      return createTextComponent(context.lastComponent, renderApplyPatchCollapsedSuccess(details, theme));
     }
 
-    const text = createTextComponent(context.lastComponent);
-    text.setText(renderApplyPatchExpandedSuccess(details, theme, context.args.patchText));
-    return text;
+    return createTextComponent(context.lastComponent, renderApplyPatchExpandedSuccess(details, theme, context.args.patchText));
   },
 });
 
@@ -489,8 +489,8 @@ async function withFileMutationQueues<T>(paths: string[], fn: () => Promise<T>):
 
 function formatApplyPatchCall(
   patchText: string,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[1],
-  context: Parameters<NonNullable<typeof applyPatchTool.renderCall>>[2],
+  theme: any,
+  context: any,
 ): string {
   if (context.isPartial && !context.argsComplete && patchText.trim().length > 0) {
     const streamedTargets = summarizePartialPatchText(patchText);
@@ -506,7 +506,6 @@ function formatApplyPatchCall(
   }
 
   const details = getApplyPatchDetails(context.state.applyPatchDetails, patchText);
-  const totalChanges = countPatchChanges(details.files);
   const progress =
     context.isPartial && details.totalFiles > 1 ? theme.fg("muted", ` · ${details.completedFiles}/${details.totalFiles}`) : "";
 
@@ -518,15 +517,29 @@ function formatApplyPatchCall(
     return `${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", formatPatchHeadline(details, true))}${progress}`;
   }
 
+  return formatApplyPatchSuccess(details, theme, context.cwd);
+}
+
+function formatApplyPatchSuccess(
+  details: ApplyPatchDetails,
+  theme: any,
+  cwd: string,
+): string {
+  const totalChanges = countPatchChanges(details.files);
   const totalSummary = totalChanges.additions + totalChanges.deletions > 0
     ? `${theme.fg("muted", " · ")}${formatPatchChangeSummary(theme, totalChanges.additions, totalChanges.deletions)}`
     : "";
+  const singleFileHeadline = formatSinglePatchHeadline(details, theme, cwd);
+  if (singleFileHeadline) {
+    return `${theme.bold(theme.fg("muted", "patched"))} ${singleFileHeadline}${totalSummary}`;
+  }
+
   return `${theme.bold(theme.fg("muted", "patched"))} ${theme.fg("muted", formatPatchHeadline(details, false))}${totalSummary}`;
 }
 
 function renderApplyPatchProgress(
   details: ApplyPatchDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
   expanded: boolean,
 ): string {
   const diffText = details.files
@@ -558,7 +571,7 @@ function renderApplyPatchProgress(
 
 function renderStreamingPatchPreview(
   renderedText: string,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
   options: { expanded: boolean; footer?: string; tailLines?: number },
 ): string {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
@@ -591,23 +604,30 @@ function renderStreamingPatchPreview(
 }
 
 function renderApplyPatchCollapsedSuccess(
-  details: ApplyPatchDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  _details: ApplyPatchDetails,
+  _theme: any,
 ): string {
-  if (!details.files.length) {
+  return "";
+}
+
+function formatSinglePatchHeadline(
+  details: ApplyPatchDetails,
+  theme: any,
+  cwd: string,
+): string {
+  if (details.files.length !== 1) {
     return "";
   }
 
-  if (details.files.length === 1) {
-    return "";
-  }
-
-  return `${theme.fg("dim", "↳ ")}${formatCollapsedPatchFileSummary(details.files, theme, false)}`;
+  const [file] = details.files;
+  const targetPath = file.movePath ?? file.filePath;
+  const pathDisplay = getToolPathDisplay(targetPath, cwd);
+  return `${theme.fg("text", pathDisplay.basename)}${formatMutedDirSuffix(theme, pathDisplay.dirSuffix)}`;
 }
 
 function renderApplyPatchExpandedSuccess(
   details: ApplyPatchDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
   _patchText: string,
 ): string {
   if (details.files.length === 0) {
@@ -624,7 +644,7 @@ function renderApplyPatchExpandedSuccess(
 function renderApplyPatchError(
   targets: PatchTargetDetails[],
   output: string,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
   expanded: boolean,
 ): string {
   const lines: string[] = [];
@@ -654,7 +674,7 @@ function formatPatchHeadline(details: ApplyPatchDetails, partial: boolean): stri
 
 function formatPatchTargetList(
   targets: PatchTargetDetails[],
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
   expanded: boolean,
   options: { prefix?: string } = {},
 ): string {
@@ -678,42 +698,9 @@ function formatPatchTargetLabel(target: PatchTargetDetails, partial: boolean): s
   return target.relativePath;
 }
 
-function formatCollapsedPatchFileSummary(
-  files: PatchFileDetails[],
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
-  expanded: boolean,
-): string {
-  const visibleFiles = expanded ? files : files.slice(0, 3);
-  const items = visibleFiles.map((file) => formatCollapsedPatchFileItem(file, theme));
-  const remaining = files.length - visibleFiles.length;
-  if (remaining > 0) {
-    items.push(`+${remaining} more`);
-  }
-  return items.join(" · ");
-}
-
-function formatCollapsedPatchFileItem(
-  file: PatchFileDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
-): string {
-  if (file.type === "add") {
-    return `A ${file.relativePath}`;
-  }
-
-  if (file.type === "delete") {
-    return `D ${file.relativePath}`;
-  }
-
-  if (file.type === "move") {
-    return `R ${file.sourceRelativePath ?? file.relativePath} → ${file.relativePath}`;
-  }
-
-  return `${formatPatchChangeSummary(theme, file.additions, file.deletions)} ${file.relativePath}`;
-}
-
 function formatExpandedPatchFileLabel(
   file: PatchFileDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
 ): string {
   if (file.type === "add") {
     return theme.fg("muted", `A ${file.relativePath}`);
@@ -732,14 +719,14 @@ function formatExpandedPatchFileLabel(
 
 function renderPatchFileDiff(
   file: PatchFileDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
 ): string {
   return renderGitStyleDiff(file, theme);
 }
 
 function renderGitStyleDiff(
   file: PatchFileDetails,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
 ): string {
   const sourcePath = file.type === "add" ? "/dev/null" : `a/${file.sourceRelativePath ?? file.relativePath}`;
   const targetPath = file.type === "delete" ? "/dev/null" : `b/${file.relativePath}`;
@@ -865,7 +852,7 @@ function summarizePartialPatchText(patchText: string): PatchTargetDetails[] {
 
 function stylePatchInputPreview(
   patchText: string,
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
 ): string {
   return patchText
     .split("\n")
@@ -922,7 +909,7 @@ function countPatchChanges(files: PatchFileDetails[]): { additions: number; dele
 }
 
 function formatPatchChangeSummary(
-  theme: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[2],
+  theme: any,
   additions: number,
   deletions: number,
 ): string {
@@ -941,7 +928,7 @@ function emitApplyPatchUpdate(onUpdate: AgentToolUpdateCallback<ApplyPatchDetail
 }
 
 function syncPatchRenderState(
-  context: Parameters<NonNullable<typeof applyPatchTool.renderResult>>[3],
+  context: any,
   details: ApplyPatchDetails | undefined,
   output: string,
 ): void {
@@ -964,8 +951,20 @@ function syncPatchRenderState(
   });
 }
 
-function createTextComponent(lastComponent: unknown): Text {
-  return (lastComponent as Text | undefined) ?? new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+function setPatchCallComponent(state: ApplyPatchRenderState, lastComponent: unknown, text: string) {
+  const component = createTextComponent(state.callComponent ?? lastComponent, text);
+  state.callComponent = component;
+  state.callText = text;
+  return component;
+}
+
+function applyCollapsedPatchSummaryToCall(state: ApplyPatchRenderState, text: string): void {
+  if (!state.callText || !state.callComponent) {
+    return;
+  }
+
+  createTextComponent(state.callComponent, text);
+  state.callText = text;
 }
 
 function getResultText(content: Array<{ type: string; text?: string }>): string {

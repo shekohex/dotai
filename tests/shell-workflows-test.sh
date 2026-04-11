@@ -44,11 +44,31 @@ make_temp_home() {
   printf '%s\n' "$temp_home"
 }
 
-test_install_supports_noninteractive_env() {
-  local temp_home
-  temp_home="$(make_temp_home)"
+setup_fake_npm() {
+  local temp_dir fake_bin log_file
+  temp_dir="$(mktemp -d)"
+  fake_bin="$temp_dir/bin"
+  log_file="$temp_dir/npm.log"
+  mkdir -p "$fake_bin"
 
-  HOME="$temp_home" DOTAI_NONINTERACTIVE=1 bash "$ROOT_DIR/install.sh" >"$temp_home/install-env.log" 2>&1 < /dev/null || \
+  cat > "$fake_bin/npm" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$*" >> "$log_file"
+EOF
+  chmod +x "$fake_bin/npm"
+
+  printf '%s\n%s\n' "$fake_bin" "$log_file"
+}
+
+test_install_supports_noninteractive_env() {
+  local temp_home fake_npm fake_bin npm_log
+  temp_home="$(make_temp_home)"
+  mapfile -t fake_npm < <(setup_fake_npm)
+  fake_bin="${fake_npm[0]}"
+  npm_log="${fake_npm[1]}"
+
+  HOME="$temp_home" PATH="$fake_bin:$PATH" DOTAI_NONINTERACTIVE=1 bash "$ROOT_DIR/install.sh" >"$temp_home/install-env.log" 2>&1 < /dev/null || \
     fail "install.sh should succeed with DOTAI_NONINTERACTIVE=1"
 
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.claude/CLAUDE.md"
@@ -56,6 +76,9 @@ test_install_supports_noninteractive_env() {
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.codex/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.gemini/GEMINI.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
+  assert_contains 'ci --ignore-scripts' "$npm_log"
+  assert_contains 'uninstall -g @shekohex/agent' "$npm_log"
+  assert_contains "install -g $ROOT_DIR/agent" "$npm_log"
 }
 
 test_install_refuses_implicit_noninteractive_without_opt_in() {
@@ -70,15 +93,21 @@ test_install_refuses_implicit_noninteractive_without_opt_in() {
 }
 
 test_install_supports_noninteractive_flag() {
-  local temp_home
+  local temp_home fake_npm fake_bin npm_log
   temp_home="$(make_temp_home)"
+  mapfile -t fake_npm < <(setup_fake_npm)
+  fake_bin="${fake_npm[0]}"
+  npm_log="${fake_npm[1]}"
 
-  HOME="$temp_home" bash "$ROOT_DIR/install.sh" --non-interactive >"$temp_home/install-flag.log" 2>&1 < /dev/null || \
+  HOME="$temp_home" PATH="$fake_bin:$PATH" bash "$ROOT_DIR/install.sh" --non-interactive >"$temp_home/install-flag.log" 2>&1 < /dev/null || \
     fail "install.sh should succeed with --non-interactive"
 
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.claude/CLAUDE.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.config/opencode/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
+  assert_contains 'ci --ignore-scripts' "$npm_log"
+  assert_contains 'uninstall -g @shekohex/agent' "$npm_log"
+  assert_contains "install -g $ROOT_DIR/agent" "$npm_log"
 }
 
 test_sync_coder_workspaces_builds_expected_remote_flow() {
@@ -104,8 +133,13 @@ case "$1" in
 JSON
     ;;
   ssh)
-    workspace="$2"
-    command="$3"
+    if [[ "$2" == "--wait=no" ]]; then
+      workspace="$3"
+      command="$4"
+    else
+      workspace="$2"
+      command="$3"
+    fi
     printf 'ssh %s %s\n' "$workspace" "$command" >> "$log_file"
     ;;
   restart)
@@ -162,8 +196,13 @@ case "$1" in
 JSON
     ;;
   ssh)
-    workspace="$2"
-    command="$3"
+    if [[ "$2" == "--wait=no" ]]; then
+      workspace="$3"
+      command="$4"
+    else
+      workspace="$2"
+      command="$3"
+    fi
     printf 'ssh %s %s\n' "$workspace" "$command" >> "$log_file"
     ;;
   restart)
@@ -196,7 +235,7 @@ test_sync_coder_workspaces_executes_remote_flow_without_timeout_binary() {
   actual_jq="$(command -v jq)"
   actual_python3="$(command -v python3)"
 
-  mkdir -p "$fake_bin" "$remote_home/dotai" "$remote_home/.config/opencode" "$remote_bin"
+  mkdir -p "$fake_bin" "$remote_home/dotai/.git" "$remote_home/.config/opencode" "$remote_bin"
   printf 'api=http://100.100.1.116:4000\n' > "$remote_home/.config/opencode/opencode.jsonc"
   printf 'stale\n' > "$remote_home/.config/opencode/stale.txt"
   opencode_pid_file="$temp_dir/opencode.pid"
@@ -329,8 +368,13 @@ case "\$1" in
 JSON
     ;;
   ssh)
-    workspace="\$2"
-    command="\$3"
+    if [[ "\$2" == "--wait=no" ]]; then
+      workspace="\$3"
+      command="\$4"
+    else
+      workspace="\$2"
+      command="\$3"
+    fi
     printf 'ssh %s\n' "\$workspace" >> "$remote_log"
     HOME="$remote_home" PATH="$remote_bin:/usr/bin:/bin" FAKE_REMOTE_LOG="$remote_log" FAKE_OPENCODE_PID_FILE="$opencode_pid_file" FAKE_OPENCHAMBER_PID_FILE="$openchamber_pid_file" /bin/bash -c "\$command"
     ;;

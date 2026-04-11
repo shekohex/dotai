@@ -8,6 +8,7 @@ OPENCODE_CONFIG="$HOME/.config/opencode"
 CODEX_CONFIG="$HOME/.codex"
 GEMINI_CONFIG="$HOME/.gemini"
 PI_CONFIG="$HOME/.pi/agent"
+AGENT_DIR="$REPO_DIR/agent"
 DOTAI_NONINTERACTIVE="${DOTAI_NONINTERACTIVE:-}"
 PROMPT_BLOCKED=0
 
@@ -388,6 +389,40 @@ sync_mcp_configs() {
   fi
 }
 
+install_global_agent() {
+  if [[ ! -d "$AGENT_DIR" ]]; then
+    log_error "Agent package directory not found: $AGENT_DIR"
+    return 1
+  fi
+
+  if ! command -v npm &>/dev/null; then
+    log_error "npm is required to install @shekohex/agent globally"
+    return 1
+  fi
+
+  log_title "Installing Global Pi Agent"
+
+  if [[ -f "$AGENT_DIR/package-lock.json" ]]; then
+    log_info "Installing agent dependencies with npm ci --ignore-scripts"
+    (
+      cd "$AGENT_DIR"
+      npm ci --ignore-scripts
+    )
+  else
+    log_info "Installing agent dependencies with npm install --ignore-scripts"
+    (
+      cd "$AGENT_DIR"
+      npm install --ignore-scripts
+    )
+  fi
+
+  log_info "Removing existing global @shekohex/agent"
+  npm uninstall -g @shekohex/agent || true
+
+  log_info "Installing global @shekohex/agent from $AGENT_DIR"
+  npm install -g "$AGENT_DIR"
+}
+
 main() {
   parse_args "$@"
 
@@ -447,6 +482,8 @@ main() {
   # Sync MCP configurations
   sync_mcp_configs
 
+  install_global_agent
+
   log_info "Installation complete!"
   log_info "Claude config: $CLAUDE_CONFIG"
   log_info "OpenCode config: $OPENCODE_CONFIG"
@@ -475,6 +512,7 @@ main() {
   if [[ -d "$REPO_DIR/.codex" ]]; then
     echo "  - .codex/ → $CODEX_CONFIG/"
   fi
+  echo "  - agent/ → global npm package @shekohex/agent"
 
   if (( PROMPT_BLOCKED )); then
     log_error "Installation requires explicit non-interactive opt-in when no TTY is available"

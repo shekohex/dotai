@@ -24,6 +24,8 @@ import modelFamilySystemPromptExtension, {
 } from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
+import { createSubagentExtension } from "../src/extensions/subagent.ts";
+import type { MuxAdapter, PaneSubmitMode } from "../src/extensions/subagent/mux.ts";
 import {
   setRegisteredThemes,
   theme as activeTheme,
@@ -60,6 +62,42 @@ function patchHarnessAgent(testSession: TestSession): void {
   agent.setTools ??= (tools: unknown[]) => {
     agent.state.tools = tools;
   };
+}
+
+class HarnessMuxAdapter implements MuxAdapter {
+  readonly backend = "tmux";
+  readonly created: Array<{ cwd: string; title: string; command: string; target: "pane" | "window"; paneId: string }> = [];
+  readonly sent: Array<{ paneId: string; text: string; submitMode?: PaneSubmitMode }> = [];
+  readonly killed: string[] = [];
+  readonly existingPanes = new Set<string>();
+
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+
+  async createPane(options: { cwd: string; title: string; command: string; target: "pane" | "window" }): Promise<{ paneId: string }> {
+    const paneId = `%${this.created.length + 1}`;
+    this.created.push({ ...options, paneId });
+    this.existingPanes.add(paneId);
+    return { paneId };
+  }
+
+  async sendText(paneId: string, text: string, submitMode?: PaneSubmitMode): Promise<void> {
+    this.sent.push({ paneId, text, submitMode });
+  }
+
+  async paneExists(paneId: string): Promise<boolean> {
+    return this.existingPanes.has(paneId);
+  }
+
+  async killPane(paneId: string): Promise<void> {
+    this.killed.push(paneId);
+    this.existingPanes.delete(paneId);
+  }
+
+  async capturePane(): Promise<{ text: string }> {
+    return { text: "" };
+  }
 }
 
 function createHandoffTestProviders(summaryText: string): {
@@ -246,6 +284,34 @@ async function writeHandoffModesFile(cwd: string): Promise<void> {
           provider: "mode-provider",
           modelId: "mode-model",
           thinkingLevel: "high",
+        },
+      },
+    }, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function writeSharedSelectionModesFile(cwd: string): Promise<void> {
+  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await writeFile(
+    join(cwd, ".pi", "modes.json"),
+    `${JSON.stringify({
+      version: 1,
+      currentMode: "deep",
+      modes: {
+        deep: {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+          tools: ["read", "bash"],
+          systemPrompt: "Deep mode",
+        },
+        review: {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+          tools: ["read"],
+          systemPrompt: "Review mode",
         },
       },
     }, null, 2)}\n`,
@@ -1043,6 +1109,48 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
   }
 });
 
+timedTest("mode CLI flags preserve the explicit startup mode when modes share a selection", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-"));
+  let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeSharedSelectionModesFile(cwd);
+
+  try {
+    await withProcessCwd(cwd, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, createModeChangeCaptureExtension(observedModeChanges), providers.extensionFactory],
+      });
+
+      ((session!.session as { extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void } }).extensionRunner)
+        .setFlagValue("mode-review", true);
+
+      await session!.session.reload();
+
+      const model = (session!.session as { model: { provider: string; id: string }; thinkingLevel: string });
+      assert.equal(model.model.provider, "mode-provider");
+      assert.equal(model.model.id, "mode-model");
+      assert.equal(model.thinkingLevel, "high");
+      assert.equal(getLatestModeState(session!), "review");
+
+      observedModeChanges.length = 0;
+
+      await session!.session.prompt("hello");
+      await session!.session.agent.waitForIdle();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      assert.equal(getLatestModeState(session!), "review");
+      assert.equal(observedModeChanges.length, 0, JSON.stringify(observedModeChanges));
+    });
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("handoff tool switches session and auto-sends generated prompt with parent session hint", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-tool-"));
   let session: TestSession | undefined;
@@ -1290,6 +1398,238 @@ timedTest("mermaid extension renders assistant diagrams inline without emitting 
     assert.doesNotMatch(renderedText, /graph TD/);
     assert.doesNotMatch(renderedText, /parser validation isn.?t usable/i);
     assert.doesNotMatch(renderedText, /more lines, to expand/i);
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("subagent extension runs start, list, message, cancel, and resume through the harness playbook", async () => {
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Start a delegated worker", [
+        calls("subagent", {
+          action: "start",
+          name: "worker-one",
+          task: "Inspect failing tests",
+        }),
+        says("Started."),
+      ]),
+      when("List delegated workers", [
+        calls("subagent", { action: "list" }),
+        says("Listed."),
+      ]),
+      when("Send follow-up to delegated worker", [
+        calls("subagent", () => {
+          const startEvent = session!.events.all.find(
+            (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+          ) as { result?: { details?: { state?: { sessionId?: string } } } } | undefined;
+          const sessionId = startEvent?.result?.details?.state?.sessionId ?? "";
+          return {
+          action: "message",
+          sessionId,
+          message: "Focus on src/extensions first",
+          delivery: "steer",
+        }; }),
+        says("Messaged."),
+      ]),
+      when("Cancel delegated worker", [
+        calls("subagent", () => {
+          const startEvent = session!.events.all.find(
+            (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+          ) as { result?: { details?: { state?: { sessionId?: string } } } } | undefined;
+          const sessionId = startEvent?.result?.details?.state?.sessionId ?? "";
+          return {
+          action: "cancel",
+          sessionId,
+        }; }),
+        says("Cancelled."),
+      ]),
+      when("Resume delegated worker", [
+        calls("subagent", () => {
+          const startEvent = session!.events.all.find(
+            (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+          ) as { result?: { details?: { state?: { sessionId?: string } } } } | undefined;
+          const sessionId = startEvent?.result?.details?.state?.sessionId ?? "";
+          return {
+          action: "resume",
+          sessionId,
+          task: "Address review feedback",
+        }; }),
+        says("Resumed."),
+      ]),
+    );
+
+    const executionEnds = session.events.all.filter(
+      (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+    ) as Array<{ result?: { content?: Array<{ type: string; text?: string }>; details?: { state?: { sessionId?: string; sessionPath?: string } } }; isError?: boolean }>;
+    const startedState = executionEnds[0]?.result?.details?.state;
+    const sessionId = startedState?.sessionId ?? "";
+    const sessionPath = startedState?.sessionPath ?? "";
+
+    assert.match(sessionId, /^[0-9a-f-]{36}$/i);
+    assert.equal(executionEnds.length, 5);
+    assert.ok(executionEnds.every((event) => event.isError === false));
+    assert.ok(executionEnds.every((event) => event.result?.content?.[0]?.text === "ok"));
+
+    assert.equal(mux.created.length, 2);
+    assert.equal(mux.sent.length, 1);
+    assert.equal(mux.killed.length, 1);
+    assert.match(mux.created[0]?.command ?? "", /--session/);
+    assert.match(mux.created[1]?.command ?? "", /--session/);
+    assert.ok((mux.created[1]?.command ?? "").includes(sessionPath));
+    assert.match(mux.created[0]?.command ?? "", /Inspect failing tests/);
+    assert.match(mux.created[1]?.command ?? "", /Address review feedback/);
+    {
+      const command = mux.created[0]?.command ?? "";
+      const promptIndex = command.indexOf("Inspect failing tests");
+      const modeFlagIndex = command.indexOf("--mode-worker");
+      assert.ok(modeFlagIndex === -1 || promptIndex < modeFlagIndex);
+    }
+    assert.equal(mux.sent[0]?.text, "Focus on src/extensions first");
+    assert.equal(mux.sent[0]?.submitMode, "steer");
+    assert.ok(session.events.uiCallsFor("setWidget").length > 0);
+
+    const renderedText = renderSessionChatLines(session).join("\n");
+    assert.match(renderedText, /π start · worker-one · worker · Inspect failing tests · worker-one · running/);
+    assert.match(renderedText, /π list · 1 agent · 1 running/);
+    assert.match(renderedText, /π message · [0-9a-f]{8} · steer · Focus on src\/extensions first/i);
+    assert.match(renderedText, /worker-one · running · steer · Focus on src\/extensions[\s\S]*first/i);
+    assert.match(renderedText, /π cancel · [0-9a-f]{8} · worker-one · cancelled/i);
+    assert.match(renderedText, /π resume · [0-9a-f]{8} · Address review feedback · worker-one · running/i);
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("subagent extension launches into a tmux window when the mode requests it", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-subagent-window-mode-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await writeFile(
+    join(cwd, ".pi", "modes.json"),
+    `${JSON.stringify({
+      version: 1,
+      modes: {
+        reviewer: {
+          tools: ["read"],
+          autoExit: true,
+          tmuxTarget: "window",
+        },
+      },
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Start a delegated reviewer in a new tmux window", [
+        calls("subagent", {
+          action: "start",
+          name: "worker-window",
+          mode: "reviewer",
+          task: "Inspect failing tests",
+        }),
+        says("Started."),
+      ]),
+    );
+
+    assert.equal(mux.created.length, 1);
+    assert.equal(mux.created[0]?.target, "window");
+    assert.match(mux.created[0]?.command ?? "", /Inspect failing tests/);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("subagent extension uses shared handoff summarization when handoff is enabled", async () => {
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+  const summaryText = "## Context\nShared summary from handoff helper\n\n## Task\nContinue the delegated work";
+  const providers = createHandoffTestProviders(summaryText);
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [providers.extensionFactory, createSubagentExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+    setFakeParentSessionPath(session, "/tmp/parent-handoff-session.jsonl");
+
+    await session.run(
+      when("We traced the failure to the tmux adapter", [
+        says("Captured baseline context."),
+      ]),
+      when("Start a delegated worker with a handoff", [
+        calls("subagent", {
+          action: "start",
+          name: "worker-two",
+          task: "Continue the delegated work",
+          handoff: true,
+        }),
+        says("Started with handoff."),
+      ]),
+    );
+
+    assert.equal(mux.created.length, 1);
+    assert.match(mux.created[0]?.command ?? "", /Shared summary from handoff helper/);
+    assert.match(mux.created[0]?.command ?? "", /Parent session/);
+    assert.doesNotMatch(mux.created[0]?.command ?? "", /--mode-worker .*Shared summary from handoff helper/);
+    const toolExecutionEnd = session.events.all.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+    ) as { result?: { content?: Array<{ type: string; text?: string }> } } | undefined;
+    assert.equal(toolExecutionEnd?.result?.content?.[0]?.text ?? "", "ok");
+  } finally {
+    providers.dispose();
+    session?.dispose();
+  }
+});
+
+timedTest("subagent extension reports standard tool errors for invalid operations", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [createSubagentExtension({ adapterFactory: () => new HarnessMuxAdapter() })],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Message a missing delegated worker", [
+        calls("subagent", {
+          action: "message",
+          sessionId: "missing-session",
+          message: "hello",
+        }),
+        says("Handled."),
+      ]),
+    );
+
+    const toolExecutionEnd = session.events.all.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+    );
+    assert.ok(toolExecutionEnd);
+    assert.equal(toolExecutionEnd.isError, true);
+    const errorText = toolExecutionEnd.result?.content
+      ?.filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join("\n") ?? "";
+    assert.match(errorText, /Unknown active subagent missing-session/);
   } finally {
     session?.dispose();
   }

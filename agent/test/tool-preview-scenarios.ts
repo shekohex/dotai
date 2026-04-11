@@ -5,6 +5,8 @@ import { Type } from "@sinclair/typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
 import { webFetchTool } from "../src/extensions/fetch.js";
 import { sessionQueryTool } from "../src/extensions/session-query.js";
+import { createSubagentExtension } from "../src/extensions/subagent.js";
+import type { RuntimeSubagent } from "../src/extensions/subagent/types.js";
 import { webSearchTool } from "../src/extensions/websearch.js";
 import {
   createBashToolOverrideDefinition,
@@ -59,6 +61,7 @@ const fakeTui: PreviewTui = {
 
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
+let subagentPreviewDefinition: ToolDefinition<any, any> | undefined;
 
 export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenario[] {
   const patchFile = joinPath(cwd, "src/extensions/patch.ts");
@@ -72,6 +75,167 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const sessionPath = joinPath(cwd, ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl");
   const bashDefinition = createBashToolOverrideDefinition();
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
+  const subagentDefinition = getSubagentPreviewDefinition();
+  const parentSessionPath = joinPath(cwd, ".pi/agent/sessions/parent/2026-04-11T17-45-51-124Z_parent.jsonl");
+  const subagentStartTask = "Review preview renderer and note UI gaps";
+  const subagentResumeTask = "Continue preview CLI work";
+  const subagentMessageBody = [
+    "Ping",
+    "Spacing?",
+  ].join("\n");
+  const subagentHandoffPreviewLines = [
+    "## Context",
+    "We implemented tmux-backed subagents with session-backed persistence.",
+    "Key decisions:",
+    "- Keep tool call previews compact and stream the latest progress into expanded mode.",
+    "- Reuse session-launch-utils handoff helpers for parent-to-child context transfer.",
+    "Files involved:",
+    "- src/extensions/subagent.ts, src/extensions/subagent/state.ts, src/extensions/session-launch-utils.ts, test/tool-preview.test.ts, and keep SUBAGENT-TAIL-MARKER visible.",
+  ];
+  const subagentHandoffPreview = subagentHandoffPreviewLines.join("\n");
+  const subagentHandoffPrompt = [
+    "## Context",
+    "We've been iterating on tool preview rendering for subagents.",
+    "",
+    "Files involved:",
+    "- src/extensions/subagent.ts",
+    "- src/extensions/subagent/state.ts",
+    "- src/extensions/session-launch-utils.ts",
+    "- test/tool-preview.test.ts",
+    "",
+    "## Task",
+    subagentStartTask,
+  ].join("\n");
+  const subagentStartState = createPreviewSubagent({
+    event: "started",
+    sessionId: "2d2c7b0c-7b8f-4a31-bcbb-37a28ff2f001",
+    sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/2d2c7b0c.jsonl"),
+    parentSessionPath,
+    name: "reviewer-two",
+    mode: "review",
+    modeLabel: "review",
+    cwd: joinPath(cwd, "packages/agent"),
+    paneId: "%9",
+    task: subagentStartTask,
+    handoff: true,
+    autoExit: false,
+    status: "running",
+    startedAt: Date.parse("2026-04-11T18:12:00.000Z"),
+    updatedAt: Date.parse("2026-04-11T18:12:05.000Z"),
+  });
+  const subagentResumeState = createPreviewSubagent({
+    event: "resumed",
+    sessionId: "8a4f98e4-16fc-49db-bb2d-8ad61db98777",
+    sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/8a4f98e4.jsonl"),
+    parentSessionPath,
+    name: "fix-worker",
+    mode: "worker",
+    modeLabel: "worker",
+    cwd: joinPath(cwd, "packages/core"),
+    paneId: "%11",
+    task: subagentResumeTask,
+    autoExit: true,
+    status: "idle",
+    summary: "Collapsed row confirmed",
+    startedAt: Date.parse("2026-04-11T17:20:00.000Z"),
+    updatedAt: Date.parse("2026-04-11T18:14:00.000Z"),
+  });
+  const subagentMessageState = createPreviewSubagent({
+    event: "updated",
+    sessionId: "92ad1c07-f550-4f8a-9c84-8992c1d6a132",
+    sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/92ad1c07.jsonl"),
+    parentSessionPath,
+    name: "doc-writer",
+    mode: "worker",
+    modeLabel: "worker",
+    cwd: joinPath(cwd, "docs"),
+    paneId: "%14",
+    task: "Draft preview notes",
+    status: "running",
+    startedAt: Date.parse("2026-04-11T18:05:00.000Z"),
+    updatedAt: Date.parse("2026-04-11T18:15:00.000Z"),
+  });
+  const subagentCancelState = createPreviewSubagent({
+    event: "cancelled",
+    sessionId: "c91e7f44-4308-47fb-a0cd-fc0bc3452205",
+    sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/c91e7f44.jsonl"),
+    parentSessionPath,
+    name: "stuck-worker",
+    mode: "worker",
+    modeLabel: "worker",
+    cwd: joinPath(cwd, "packages/ui"),
+    paneId: "%15",
+    task: "Stop the stale preview session",
+    status: "cancelled",
+    summary: "Cancelled by parent",
+    startedAt: Date.parse("2026-04-11T17:58:00.000Z"),
+    updatedAt: Date.parse("2026-04-11T18:16:00.000Z"),
+    completedAt: Date.parse("2026-04-11T18:16:00.000Z"),
+  });
+  const subagentListStates = [
+    createPreviewSubagent({
+      event: "started",
+      sessionId: "aa000001-0000-4000-8000-000000000001",
+      sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/aa000001.jsonl"),
+      parentSessionPath,
+      name: "worker-alpha",
+      task: "Run preview snapshots",
+      status: "running",
+      paneId: "%21",
+      updatedAt: Date.parse("2026-04-11T18:18:00.000Z"),
+    }),
+    createPreviewSubagent({
+      event: "restored",
+      sessionId: "aa000002-0000-4000-8000-000000000002",
+      sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/aa000002.jsonl"),
+      parentSessionPath,
+      name: "worker-beta",
+      task: "Check width constraints",
+      status: "idle",
+      paneId: "%22",
+      updatedAt: Date.parse("2026-04-11T18:17:00.000Z"),
+    }),
+    createPreviewSubagent({
+      event: "completed",
+      sessionId: "aa000003-0000-4000-8000-000000000003",
+      sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/aa000003.jsonl"),
+      parentSessionPath,
+      name: "worker-gamma",
+      task: "Audit collapsed rows",
+      status: "completed",
+      paneId: "%23",
+      summary: "No width regressions",
+      updatedAt: Date.parse("2026-04-11T18:10:00.000Z"),
+      completedAt: Date.parse("2026-04-11T18:10:00.000Z"),
+    }),
+    createPreviewSubagent({
+      event: "cancelled",
+      sessionId: "aa000004-0000-4000-8000-000000000004",
+      sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/aa000004.jsonl"),
+      parentSessionPath,
+      name: "worker-delta",
+      task: "Abort duplicate preview run",
+      status: "cancelled",
+      paneId: "%24",
+      summary: "Cancelled after duplicate detection",
+      updatedAt: Date.parse("2026-04-11T18:08:00.000Z"),
+      completedAt: Date.parse("2026-04-11T18:08:00.000Z"),
+    }),
+    createPreviewSubagent({
+      event: "failed",
+      sessionId: "aa000005-0000-4000-8000-000000000005",
+      sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/aa000005.jsonl"),
+      parentSessionPath,
+      name: "worker-epsilon",
+      task: "Run tmux smoke test",
+      status: "failed",
+      paneId: "%25",
+      exitCode: 1,
+      summary: "tmux attach failed",
+      updatedAt: Date.parse("2026-04-11T18:06:00.000Z"),
+      completedAt: Date.parse("2026-04-11T18:06:00.000Z"),
+    }),
+  ];
   const webSearchAnswer = [
     "Next.js 16 is the current major release, published in October 2025.",
     "The official release post highlights a stable Turbopack for builds, improved caching defaults, and React 19.2 alignment.",
@@ -560,6 +724,237 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       },
       errorResult: {
         content: [{ type: "text", text: "Session file not found" }],
+      },
+    },
+    {
+      id: "subagent:start",
+      title: "subagent start preview",
+      toolName: subagentDefinition.name,
+      toolDefinition: subagentDefinition,
+      cwd,
+      args: {
+        action: "start",
+        name: subagentStartState.name,
+        mode: subagentStartState.mode,
+        cwd: subagentStartState.cwd,
+        handoff: subagentStartState.handoff,
+        autoExit: subagentStartState.autoExit,
+        task: subagentStartTask,
+      },
+      partialResult: {
+        content: [{ type: "text", text: subagentHandoffPreview }],
+        details: {
+          action: "start",
+          phase: "handoff",
+          statusText: `Generating handoff prompt for ${subagentStartState.name}`,
+          preview: subagentHandoffPreview,
+          durationMs: 2000,
+        },
+      },
+      previewAnimation: {
+        frameDurationMs: 1000,
+        partialFrames: [
+          {
+            content: [],
+            details: {
+              action: "start",
+              phase: "handoff",
+              statusText: `Preparing handoff for ${subagentStartState.name}`,
+              durationMs: 0,
+            },
+          },
+          {
+            content: [{ type: "text", text: subagentHandoffPreviewLines.slice(0, 3).join("\n") }],
+            details: {
+              action: "start",
+              phase: "handoff",
+              statusText: `Generating handoff prompt for ${subagentStartState.name}`,
+              preview: subagentHandoffPreviewLines.slice(0, 3).join("\n"),
+              durationMs: 1000,
+            },
+          },
+          {
+            content: [{ type: "text", text: subagentHandoffPreview }],
+            details: {
+              action: "start",
+              phase: "handoff",
+              statusText: `Generating handoff prompt for ${subagentStartState.name}`,
+              preview: subagentHandoffPreview,
+              durationMs: 2000,
+            },
+          },
+        ],
+      },
+      successResult: {
+        content: [{ type: "text", text: "ok" }],
+        details: {
+          action: "start",
+          args: {
+            action: "start",
+            name: subagentStartState.name,
+            mode: subagentStartState.mode,
+            cwd: subagentStartState.cwd,
+            handoff: subagentStartState.handoff,
+            autoExit: subagentStartState.autoExit,
+            task: subagentStartTask,
+          },
+          prompt: subagentHandoffPrompt,
+          state: subagentStartState,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "tmux is not available in the current session" }],
+      },
+    },
+    {
+      id: "subagent:resume",
+      title: "subagent resume preview",
+      toolName: subagentDefinition.name,
+      toolDefinition: subagentDefinition,
+      cwd,
+      args: {
+        action: "resume",
+        sessionId: subagentResumeState.sessionId,
+        mode: subagentResumeState.mode,
+        cwd: subagentResumeState.cwd,
+        autoExit: subagentResumeState.autoExit,
+        task: subagentResumeTask,
+      },
+      successResult: {
+        content: [{ type: "text", text: "ok" }],
+        details: {
+          action: "resume",
+          args: {
+            action: "resume",
+            sessionId: subagentResumeState.sessionId,
+            mode: subagentResumeState.mode,
+            cwd: subagentResumeState.cwd,
+            autoExit: subagentResumeState.autoExit,
+            task: subagentResumeTask,
+          },
+          prompt: subagentResumeTask,
+          state: subagentResumeState,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "subagent 8a4f98e4 not found" }],
+      },
+    },
+    {
+      id: "subagent:message",
+      title: "subagent message preview",
+      toolName: subagentDefinition.name,
+      toolDefinition: subagentDefinition,
+      cwd,
+      args: {
+        action: "message",
+        sessionId: subagentMessageState.sessionId,
+        delivery: "followUp",
+        message: subagentMessageBody,
+      },
+      partialResult: {
+        content: [{ type: "text", text: subagentMessageBody }],
+        details: {
+          action: "message",
+          phase: "message",
+          statusText: `Sending followUp to ${subagentMessageState.name}`,
+          preview: subagentMessageBody,
+          delivery: "followUp",
+          durationMs: 1000,
+        },
+      },
+      previewAnimation: {
+        frameDurationMs: 1000,
+        partialFrames: [
+          {
+            content: [{ type: "text", text: "Ping" }],
+            details: {
+              action: "message",
+              phase: "message",
+              statusText: `Sending followUp to ${subagentMessageState.name}`,
+              preview: "Ping",
+              delivery: "followUp",
+              durationMs: 0,
+            },
+          },
+          {
+            content: [{ type: "text", text: subagentMessageBody }],
+            details: {
+              action: "message",
+              phase: "message",
+              statusText: `Sending followUp to ${subagentMessageState.name}`,
+              preview: subagentMessageBody,
+              delivery: "followUp",
+              durationMs: 1000,
+            },
+          },
+        ],
+      },
+      successResult: {
+        content: [{ type: "text", text: "ok" }],
+        details: {
+          action: "message",
+          args: {
+            action: "message",
+            sessionId: subagentMessageState.sessionId,
+            delivery: "followUp",
+            message: subagentMessageBody,
+          },
+          message: subagentMessageBody,
+          delivery: "followUp",
+          state: subagentMessageState,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "subagent 92ad1c07 is not accepting input" }],
+      },
+    },
+    {
+      id: "subagent:list",
+      title: "subagent list preview",
+      toolName: subagentDefinition.name,
+      toolDefinition: subagentDefinition,
+      cwd,
+      args: {
+        action: "list",
+      },
+      successResult: {
+        content: [{ type: "text", text: "ok" }],
+        details: {
+          action: "list",
+          args: {
+            action: "list",
+          },
+          subagents: subagentListStates,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "failed to restore subagent state" }],
+      },
+    },
+    {
+      id: "subagent:cancel",
+      title: "subagent cancel preview",
+      toolName: subagentDefinition.name,
+      toolDefinition: subagentDefinition,
+      cwd,
+      args: {
+        action: "cancel",
+        sessionId: subagentCancelState.sessionId,
+      },
+      successResult: {
+        content: [{ type: "text", text: "ok" }],
+        details: {
+          action: "cancel",
+          args: {
+            action: "cancel",
+            sessionId: subagentCancelState.sessionId,
+          },
+          state: subagentCancelState,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "tmux kill-pane failed: no such pane: %15" }],
       },
     },
     {
@@ -1357,6 +1752,88 @@ export function resolvePreviewResult(
   const { frameDurationMs, partialFrames } = scenario.previewAnimation;
   const frameIndex = Math.floor(animationMs / frameDurationMs) % partialFrames.length;
   return partialFrames[frameIndex] ?? panel.result;
+}
+
+function getSubagentPreviewDefinition(): ToolDefinition<any, any> {
+  if (subagentPreviewDefinition) {
+    return subagentPreviewDefinition;
+  }
+
+  const registeredTools = new Map<string, ToolDefinition<any, any>>();
+  let activeTools = ["bash", "read", "session_query", "subagent"];
+  const fakePi = {
+    registerTool(tool: ToolDefinition<any, any>) {
+      registeredTools.set(tool.name, tool);
+    },
+    on() {},
+    appendEntry() {},
+    sendMessage() {},
+    async exec() {
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    getActiveTools() {
+      return [...activeTools];
+    },
+    getAllTools() {
+      return activeTools.map((name) => ({ name }));
+    },
+    setActiveTools(toolNames: string[]) {
+      activeTools = [...toolNames];
+    },
+    setSessionName() {},
+  };
+
+  createSubagentExtension({
+    adapterFactory: () => ({
+      backend: "tmux",
+      async isAvailable() {
+        return true;
+      },
+      async createPane() {
+        return { paneId: "%1" };
+      },
+      async sendText() {},
+      async paneExists() {
+        return true;
+      },
+      async killPane() {},
+      async capturePane() {
+        return { text: "" };
+      },
+    }),
+  })(fakePi as never);
+
+  const tool = registeredTools.get("subagent");
+  if (!tool) {
+    throw new Error("subagent preview definition not registered");
+  }
+
+  subagentPreviewDefinition = tool;
+  return tool;
+}
+
+function createPreviewSubagent(input: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "sessionId" | "sessionPath" | "name" | "task" | "status">): RuntimeSubagent {
+  return {
+    event: "started",
+    sessionId: input.sessionId,
+    sessionPath: input.sessionPath,
+    parentSessionId: input.parentSessionId ?? "parent-session-id",
+    parentSessionPath: input.parentSessionPath ?? "/tmp/parent.jsonl",
+    name: input.name,
+    mode: input.mode ?? "worker",
+    modeLabel: input.modeLabel ?? input.mode ?? "worker",
+    cwd: input.cwd ?? "/tmp/project",
+    paneId: input.paneId ?? "%1",
+    task: input.task,
+    handoff: input.handoff ?? false,
+    autoExit: input.autoExit ?? true,
+    status: input.status,
+    exitCode: input.exitCode,
+    summary: input.summary,
+    startedAt: input.startedAt ?? Date.parse("2026-04-11T18:00:00.000Z"),
+    updatedAt: input.updatedAt ?? Date.parse("2026-04-11T18:01:00.000Z"),
+    completedAt: input.completedAt,
+  };
 }
 
 function createReadBatchPreviewDefinition(cwd: string): ToolDefinition<any, any> {

@@ -1,72 +1,37 @@
-import { complete, type Message } from "@mariozechner/pi-ai";
 import {
-  BorderedLoader,
-  convertToLlm,
   defineTool,
-  serializeConversation,
   type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
-  type SessionEntry,
+  SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import { Text, fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { loadModesFile, resolveModeSpec, type ModeSpec, type ThinkingLevel } from "../mode-utils.js";
+import { loadModesFile, type ModeSpec } from "../mode-utils.js";
+import {
+  buildContextTransferPrompt,
+  extractMessageText,
+  generateContextTransferSummary,
+  generateContextTransferSummaryWithLoader,
+  getConversationMessages,
+  resolveSessionLaunchOptions,
+  type ResolvedSessionLaunchOptions,
+  type SessionLaunchOptions,
+  type SessionModel,
+} from "./session-launch-utils.js";
 import { MODE_SELECTION_APPLY_EVENT } from "./modes.js";
-
-const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
-
-1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)
-2. Lists any relevant files that were discussed or modified
-3. Clearly states the next task based on the user's goal
-4. Is self-contained - the new thread should be able to proceed without the old conversation
-
-Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here's the prompt" - just output the prompt itself.
-
-Example output format:
-## Context
-We've been working on X. Key decisions:
-- Decision 1
-- Decision 2
-
-Files involved:
-- path/to/file1.ts
-- path/to/file2.ts
-
-## Task
-[Clear description of what to do next based on user's goal]`;
-
-const HANDOFF_PROVIDER = "gemini" as const;
-const HANDOFF_MODEL = "gemini-3.1-flash-lite-preview" as const;
 const EXPLICIT_HANDOFF_REQUEST = /\b(handoff|hand\s+off|new\s+(session|thread)|another\s+(session|thread)|start\s+a\s+new\s+(session|thread)|continue\s+in\s+(a\s+)?new\s+(session|thread)|switch\s+to\s+(a\s+)?new\s+(session|thread)|transfer\s+(the\s+)?context)\b/i;
 
-type SessionModel = NonNullable<ExtensionContext["model"]>;
+type HandoffOptions = SessionLaunchOptions;
 
-type HandoffOptions = {
-  mode?: string;
-  model?: string;
-};
-
-type ResolvedHandoffOptions = {
-  mode?: string;
-  model?: string;
-  targetModel?: SessionModel;
-  thinkingLevel?: ThinkingLevel;
-};
+type ResolvedHandoffOptions = ResolvedSessionLaunchOptions;
 
 type PendingToolHandoff = {
   prompt: string;
   parentSession?: string;
   overrides?: ResolvedHandoffOptions;
-};
-
-type HandoffGenerationConfig = {
-  model: SessionModel;
-  apiKey: string;
-  headers?: Record<string, string>;
-  warning?: string;
 };
 
 type PendingSessionHandoff = {
@@ -110,12 +75,23 @@ const HANDOFF_FLAG_OPTIONS: Array<{ name: HandoffFlagName; description: string }
   { name: "-model", description: "Override the new session model (provider/modelId)" },
 ];
 
+type MutableSessionManager = Pick<SessionManager, "newSession">;
+
 function getPendingCommandHandoff(): PendingSessionHandoff | undefined {
   return globalThis.__shekohexPendingSessionHandoff;
 }
 
 function setPendingCommandHandoff(pending: PendingSessionHandoff | undefined): void {
   globalThis.__shekohexPendingSessionHandoff = pending;
+}
+
+function startNewSessionInPlace(ctx: ExtensionContext, parentSession?: string): string | undefined {
+  const writablePrototype = SessionManager.prototype as unknown as Partial<MutableSessionManager>;
+  if (typeof writablePrototype.newSession !== "function") {
+    throw new Error("SessionManager newSession is unavailable");
+  }
+
+  return writablePrototype.newSession.call(ctx.sessionManager as unknown as SessionManager, { parentSession });
 }
 
 function createPendingNewSessionContext(state: HandoffRuntimeState): Promise<ExtensionContext> {
@@ -179,13 +155,6 @@ async function applyPendingSelection(
   });
 }
 
-function getConversationMessages(ctx: ExtensionContext) {
-  return ctx.sessionManager
-    .getBranch()
-    .filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message")
-    .map((entry) => entry.message);
-}
-
 function getLatestUserText(ctx: ExtensionContext): string {
   const latestUserMessage = getConversationMessages(ctx)
     .filter((message) => message.role === "user")
@@ -200,18 +169,6 @@ function getLatestUserText(ctx: ExtensionContext): string {
 
 function didUserExplicitlyRequestHandoff(ctx: ExtensionContext): boolean {
   return EXPLICIT_HANDOFF_REQUEST.test(getLatestUserText(ctx));
-}
-
-function extractMessageText(content: string | Array<{ type: string; text?: string }>): string {
-  if (typeof content === "string") {
-    return content.trim();
-  }
-
-  return content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
 }
 
 function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
@@ -254,13 +211,13 @@ function formatAvailableModesXml(modes: Array<{ name: string; spec: ModeSpec }>)
   return [
     "<available_modes>",
     ...modes.map(({ name, spec }) => {
-      const attrs = [`name=\"${escapeXmlAttribute(name)}\"`];
+      const attrs = [`name="${escapeXmlAttribute(name)}"`];
       if (spec.provider && spec.modelId) {
         const model = `${spec.provider}/${spec.modelId}`;
-        attrs.push(`model=\"${escapeXmlAttribute(model)}\"`);
+        attrs.push(`model="${escapeXmlAttribute(model)}"`);
       }
       if (spec.thinkingLevel) {
-        attrs.push(`thinkingLevel=\"${escapeXmlAttribute(spec.thinkingLevel)}\"`);
+        attrs.push(`thinkingLevel="${escapeXmlAttribute(spec.thinkingLevel)}"`);
       }
       return `  <mode ${attrs.join(" ")} />`;
     }),
@@ -539,18 +496,6 @@ function createHandoffTool(pi: ExtensionAPI) {
   });
 }
 
-function parseModelOverride(value: string): { provider: string; modelId: string } | undefined {
-  const separatorIndex = value.indexOf("/");
-  if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
-    return undefined;
-  }
-
-  return {
-    provider: value.slice(0, separatorIndex),
-    modelId: value.slice(separatorIndex + 1),
-  };
-}
-
 function parseCommandArgs(args: string): { goal: string; options: HandoffOptions; error?: string } {
   let remaining = args.trim();
   const options: HandoffOptions = {};
@@ -587,156 +532,7 @@ async function resolveHandoffOptions(
   ctx: ExtensionContext,
   options: HandoffOptions,
 ): Promise<{ overrides?: ResolvedHandoffOptions; error?: string }> {
-  let targetModel: SessionModel | undefined;
-  let thinkingLevel: ThinkingLevel | undefined;
-
-  if (options.mode) {
-    const modeSpec = await resolveModeSpec(ctx.cwd, options.mode);
-    if (!modeSpec) {
-      return { error: `Unknown mode \"${options.mode}\"` };
-    }
-
-    if (modeSpec.provider && modeSpec.modelId) {
-      const modeModel = ctx.modelRegistry.find(modeSpec.provider, modeSpec.modelId);
-      if (!modeModel) {
-        return { error: `Mode \"${options.mode}\" references unknown model ${modeSpec.provider}/${modeSpec.modelId}` };
-      }
-      targetModel = modeModel;
-    }
-
-    thinkingLevel = modeSpec.thinkingLevel;
-  }
-
-  if (options.model) {
-    const parsedModel = parseModelOverride(options.model);
-    if (!parsedModel) {
-      return { error: `Invalid model override \"${options.model}\". Expected provider/modelId.` };
-    }
-
-    const model = ctx.modelRegistry.find(parsedModel.provider, parsedModel.modelId);
-    if (!model) {
-      return { error: `Unknown model ${options.model}` };
-    }
-
-    targetModel = model;
-  }
-
-  if (!targetModel && !thinkingLevel) {
-    return {};
-  }
-
-  return {
-    overrides: {
-      mode: options.mode,
-      model: options.model,
-      targetModel,
-      thinkingLevel,
-    },
-  };
-}
-
-async function getGenerationConfig(ctx: ExtensionContext): Promise<{ config?: HandoffGenerationConfig; error?: string }> {
-  if (!ctx.model) {
-    return { error: "No model selected" };
-  }
-
-  const preferredModel = ctx.modelRegistry.find(HANDOFF_PROVIDER, HANDOFF_MODEL);
-  const generationModel = preferredModel ?? ctx.model;
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(generationModel);
-  if (!auth.ok) {
-    return { error: `Handoff auth failed: ${auth.error}` };
-  }
-
-  if (!auth.apiKey) {
-    return { error: `No API key for ${generationModel.provider}/${generationModel.id}` };
-  }
-
-  return {
-    config: {
-      model: generationModel,
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      warning: preferredModel ? undefined : `Could not find ${HANDOFF_PROVIDER}/${HANDOFF_MODEL}; using current session model.`,
-    },
-  };
-}
-
-async function generateSummary(
-  ctx: ExtensionContext,
-  goal: string,
-  messages: ReturnType<typeof getConversationMessages>,
-  signal?: AbortSignal,
-): Promise<{ summary?: string; warning?: string; error?: string; aborted?: boolean }> {
-  const generation = await getGenerationConfig(ctx);
-  if (!generation.config) {
-    return { error: generation.error };
-  }
-
-  const conversationText = serializeConversation(convertToLlm(messages));
-  const userMessage: Message = {
-    role: "user",
-    content: [
-      {
-        type: "text",
-        text: `## Conversation History\n\n${conversationText}\n\n## User's Goal for New Thread\n\n${goal}`,
-      },
-    ],
-    timestamp: Date.now(),
-  };
-
-  try {
-    const response = await complete(
-      generation.config.model,
-      { systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-      { apiKey: generation.config.apiKey, headers: generation.config.headers, signal },
-    );
-
-    if (response.stopReason === "aborted") {
-      return { aborted: true };
-    }
-
-    return {
-      summary: response.content
-        .filter((part): part is { type: "text"; text: string } => part.type === "text")
-        .map((part) => part.text)
-        .join("\n")
-        .trim(),
-      warning: generation.config.warning,
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function generateSummaryWithLoader(
-  ctx: ExtensionContext,
-  goal: string,
-  messages: ReturnType<typeof getConversationMessages>,
-): Promise<{ summary?: string; warning?: string; error?: string; aborted?: boolean }> {
-  if (!ctx.hasUI) {
-    return generateSummary(ctx, goal, messages);
-  }
-
-  return ctx.ui.custom<{ summary?: string; warning?: string; error?: string; aborted?: boolean }>((tui, theme, _kb, done) => {
-    const loader = new BorderedLoader(tui, theme, "Generating handoff prompt...");
-    loader.onAbort = () => done({ aborted: true });
-
-    generateSummary(ctx, goal, messages, loader.signal)
-      .then(done)
-      .catch((error) => {
-        done({ error: error instanceof Error ? error.message : String(error) });
-      });
-
-    return loader;
-  });
-}
-
-function buildHandoffPrompt(summary: string, parentSession?: string): string {
-  if (!parentSession) {
-    return summary.trim();
-  }
-
-  return `${summary.trim()}\n\n## Parent Session\nParent session: ${parentSession}\nIf you need additional detail from the parent session, use \`session_query\` with \`sessionPath\` set to the path above and a focused \`question\`.`;
+  return resolveSessionLaunchOptions(ctx, options);
 }
 
 async function prepareHandoff(
@@ -771,8 +567,8 @@ async function prepareHandoff(
 
   const shouldUseLoader = ctx.hasUI && !onUpdate;
   const generation = shouldUseLoader
-    ? await generateSummaryWithLoader(ctx, goal, messages)
-    : await generateSummary(ctx, goal, messages, signal);
+    ? await generateContextTransferSummaryWithLoader(ctx, goal, messages)
+    : await generateContextTransferSummary(ctx, goal, messages, signal);
   if (generation.error) {
     return { prompt: "", error: generation.error };
   }
@@ -782,7 +578,7 @@ async function prepareHandoff(
   }
 
   const parentSession = ctx.sessionManager.getSessionFile();
-  let prompt = buildHandoffPrompt(generation.summary, parentSession);
+  let prompt = buildContextTransferPrompt(generation.summary, parentSession);
 
   if (reviewPrompt) {
     const editedPrompt = await ctx.ui.editor("Edit handoff prompt", prompt);
@@ -889,9 +685,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
     pendingToolHandoffState.pending = undefined;
     pendingToolHandoffState.contextCutoffTimestamp = Date.now();
-    (ctx.sessionManager as unknown as { newSession: (options?: { parentSession?: string }) => string | undefined }).newSession({
-      parentSession: pending.parentSession,
-    });
+    startNewSessionInPlace(ctx, pending.parentSession);
 
     await applyPendingSelection(pi, ctx, pending.overrides);
 

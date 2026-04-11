@@ -4,7 +4,6 @@ import coreUIExtension from "./coreui.js";
 import litellmGatewayExtension from "./litellm.js";
 import openUsageExtension from "./openusage/index.js";
 import patchExtension from "./patch.js";
-import webFetchExtension from "./fetch.js";
 import webSearchExtension from "./websearch.js";
 import compactionExtension from "./compaction.js";
 import handoffExtension from "./handoff.js";
@@ -17,6 +16,7 @@ import contextExtension from "./context.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
 import filesExtension from "./files.js";
 import terminalNotifyExtension from "./terminal-notify.js";
+import subagentExtension from "./subagent.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
   modelFamilySystemPromptExtension,
@@ -38,4 +38,5 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   sessionBreakdownExtension,
   filesExtension,
   terminalNotifyExtension,
+  subagentExtension,
 ];

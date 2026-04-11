@@ -72,7 +72,7 @@ function orderedModeNames(data: ModesFile): string[] {
   return Object.keys(data.modes).sort((left, right) => left.localeCompare(right));
 }
 
-function toModeFlagName(modeName: string): string | undefined {
+export function toModeFlagName(modeName: string): string | undefined {
   const normalized = modeName
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -296,8 +296,29 @@ function matchesMode(spec: ModeSpec, selection: { provider?: string; modelId?: s
   return Boolean(spec.provider && spec.modelId) || Boolean(spec.thinkingLevel);
 }
 
+function selectionSatisfiesMode(spec: ModeSpec, selection: { provider?: string; modelId?: string; thinkingLevel: string }): boolean {
+  if (spec.provider && spec.modelId) {
+    if (spec.provider !== selection.provider || spec.modelId !== selection.modelId) {
+      return false;
+    }
+  }
+
+  if (spec.thinkingLevel && spec.thinkingLevel !== selection.thinkingLevel) {
+    return false;
+  }
+
+  return true;
+}
+
 function inferActiveMode(pi: ExtensionAPI, ctx: ExtensionContext): string | undefined {
   const selection = currentSelection(ctx, pi);
+  if (runtime.activeMode) {
+    const activeSpec = getModeSpec(runtime.data, runtime.activeMode);
+    if (activeSpec && selectionSatisfiesMode(activeSpec, selection)) {
+      return runtime.activeMode;
+    }
+  }
+
   for (const modeName of orderedModeNames(runtime.data)) {
     const spec = getModeSpec(runtime.data, modeName);
     if (spec && matchesMode(spec, selection)) {

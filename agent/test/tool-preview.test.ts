@@ -143,6 +143,138 @@ timedTest("session_query preview appends collapsed result inline", () => {
   assert.match(expandedText, /test\/tool-preview.test.ts/);
 });
 
+timedTest("subagent previews render representative action summaries and expanded metadata", () => {
+  const startScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:start");
+  const resumeScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:resume");
+  const messageScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:message");
+  const listScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:list");
+  const cancelScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:cancel");
+
+  assert.ok(startScenario);
+  assert.ok(resumeScenario);
+  assert.ok(messageScenario);
+  assert.ok(listScenario);
+  assert.ok(cancelScenario);
+
+  const startCollapsed = getToolPreviewPanels(startScenario).find((panel) => panel.id === "success-collapsed");
+  const startExpanded = getToolPreviewPanels(startScenario).find((panel) => panel.id === "success-expanded");
+  const startPartialCollapsed = getToolPreviewPanels(startScenario).find((panel) => panel.id === "partial-collapsed");
+  const startPartialExpanded = getToolPreviewPanels(startScenario).find((panel) => panel.id === "partial-expanded");
+  const resumeCollapsed = getToolPreviewPanels(resumeScenario).find((panel) => panel.id === "success-collapsed");
+  const resumeExpanded = getToolPreviewPanels(resumeScenario).find((panel) => panel.id === "success-expanded");
+  const messagePartialCollapsed = getToolPreviewPanels(messageScenario).find((panel) => panel.id === "partial-collapsed");
+  const messagePartialExpanded = getToolPreviewPanels(messageScenario).find((panel) => panel.id === "partial-expanded");
+  const messageCollapsed = getToolPreviewPanels(messageScenario).find((panel) => panel.id === "success-collapsed");
+  const messageExpanded = getToolPreviewPanels(messageScenario).find((panel) => panel.id === "success-expanded");
+  const listCollapsed = getToolPreviewPanels(listScenario).find((panel) => panel.id === "success-collapsed");
+  const listExpanded = getToolPreviewPanels(listScenario).find((panel) => panel.id === "success-expanded");
+  const cancelCollapsed = getToolPreviewPanels(cancelScenario).find((panel) => panel.id === "success-collapsed");
+  const cancelExpanded = getToolPreviewPanels(cancelScenario).find((panel) => panel.id === "success-expanded");
+
+  assert.ok(startCollapsed);
+  assert.ok(startExpanded);
+  assert.ok(startPartialCollapsed);
+  assert.ok(startPartialExpanded);
+  assert.ok(resumeCollapsed);
+  assert.ok(resumeExpanded);
+  assert.ok(messagePartialCollapsed);
+  assert.ok(messagePartialExpanded);
+  assert.ok(messageCollapsed);
+  assert.ok(messageExpanded);
+  assert.ok(listCollapsed);
+  assert.ok(listExpanded);
+  assert.ok(cancelCollapsed);
+  assert.ok(cancelExpanded);
+
+  const startCollapsedText = stripAnsi(renderPreviewText(startScenario, startCollapsed, 120));
+  const startExpandedText = stripAnsi(renderPreviewText(startScenario, startExpanded, 120));
+  const startPartialCollapsedText = stripAnsi(renderPreviewText(startScenario, startPartialCollapsed, 120));
+  const startPartialExpandedText = stripAnsi(renderPreviewText(startScenario, startPartialExpanded, 120));
+  const animatedStartPartialCollapsedText = stripAnsi(createPreviewComponent(startScenario, startPartialCollapsed, undefined, 2000).render(120).join("\n"));
+  const animatedStartPartialExpandedText = stripAnsi(createPreviewComponent(startScenario, startPartialExpanded, undefined, 2000).render(120).join("\n"));
+  const resumeCollapsedText = stripAnsi(renderPreviewText(resumeScenario, resumeCollapsed, 120));
+  const resumeExpandedText = stripAnsi(renderPreviewText(resumeScenario, resumeExpanded, 120));
+  const messagePartialCollapsedText = stripAnsi(renderPreviewText(messageScenario, messagePartialCollapsed, 120));
+  const messagePartialExpandedText = stripAnsi(renderPreviewText(messageScenario, messagePartialExpanded, 120));
+  const animatedMessagePartialCollapsedText = stripAnsi(createPreviewComponent(messageScenario, messagePartialCollapsed, undefined, 1000).render(120).join("\n"));
+  const animatedMessagePartialExpandedText = stripAnsi(createPreviewComponent(messageScenario, messagePartialExpanded, undefined, 1000).render(120).join("\n"));
+  const messageCollapsedText = stripAnsi(renderPreviewText(messageScenario, messageCollapsed, 120));
+  const messageExpandedText = stripAnsi(renderPreviewText(messageScenario, messageExpanded, 120));
+  const listCollapsedText = stripAnsi(renderPreviewText(listScenario, listCollapsed, 120));
+  const listExpandedText = stripAnsi(renderPreviewText(listScenario, listExpanded, 120));
+  const cancelCollapsedText = stripAnsi(renderPreviewText(cancelScenario, cancelCollapsed, 120));
+  const cancelExpandedText = stripAnsi(renderPreviewText(cancelScenario, cancelExpanded, 120));
+
+  assert.match(startCollapsedText, /π start · reviewer-two · review · Review preview renderer and note UI gaps · reviewer-two · running/);
+  assert.match(startPartialCollapsedText, /π start .* · handoff/s);
+  assert.match(startPartialExpandedText, /Preparing handoff for reviewer-two/);
+  assert.match(startPartialExpandedText, /0s/);
+  assert.match(animatedStartPartialCollapsedText, /\.\.\. \(2 earlier lines\)/);
+  assert.match(animatedStartPartialCollapsedText, /7 lines so far \(2s\) · handoff/);
+  assert.match(animatedStartPartialCollapsedText, /SUBAGENT-TAIL-MARKER/);
+  assert.match(animatedStartPartialCollapsedText, /visible\./);
+  assert.doesNotMatch(animatedStartPartialCollapsedText, /We implemented tmux-backed subagents with session-backed persistence\./);
+  assert.match(animatedStartPartialExpandedText, /## Context/);
+  assert.match(animatedStartPartialExpandedText, /We implemented tmux-backed subagents with session-backed persistence\./);
+  assert.match(animatedStartPartialExpandedText, /handoff · 2s/);
+  assert.match(animatedStartPartialExpandedText, /keep SUBAGENT-TAIL-MARKER/);
+  assert.match(animatedStartPartialExpandedText, /visible\./);
+  assert.match(startExpandedText, /name: reviewer-two/);
+  assert.match(startExpandedText, /handoff: true/);
+  assert.match(startExpandedText, /prompt:/);
+  assert.match(startExpandedText, /sessionPath: .*2d2c7b0c\.jsonl/);
+
+  assert.match(resumeCollapsedText, /π resume · 8a4f98e4 · Continue preview CLI work · fix-worker · idle/);
+  assert.match(resumeExpandedText, /sessionId: 8a4f98e4-16fc-49db-bb2d-8ad61db98777/);
+  assert.match(resumeExpandedText, /status: idle/);
+  assert.match(resumeExpandedText, /prompt:/);
+
+  assert.match(messagePartialCollapsedText, /1 line so far \(0s\) · message followUp/);
+  assert.match(messagePartialExpandedText, /Ping/);
+  assert.match(animatedMessagePartialCollapsedText, /2 lines so far \(1s\) · message followUp/);
+  assert.match(animatedMessagePartialExpandedText, /Ping/);
+  assert.match(animatedMessagePartialExpandedText, /Spacing\?/);
+  assert.match(animatedMessagePartialExpandedText, /message followUp · 1s/);
+  const messageCollapsedLines = renderPreviewLines(messageScenario, messageCollapsed, 120).filter((line) => stripAnsi(line).trim().length > 0);
+  assert.equal(messageCollapsedLines.length, 1);
+  assert.match(messageCollapsedText, /π message · 92ad1c07 · followUp · Ping Spacing\?/);
+  assert.match(messageCollapsedText, /doc-writer · running · followUp · Ping Spacing\?/);
+  assert.match(messageExpandedText, /delivery: followUp/);
+  assert.match(messageExpandedText, /message:/);
+  assert.match(messageExpandedText, /Ping/);
+  assert.match(messageExpandedText, /Spacing\?/);
+
+  assert.match(listCollapsedText, /π list · 5 agents · 1 running · 1 idle · 1 completed · 1 cancelled · 1 failed/);
+  assert.match(listExpandedText, /count: 5/);
+  assert.match(listExpandedText, /subagent 1:/);
+  assert.match(listExpandedText, /name: worker-epsilon/);
+  assert.match(listExpandedText, /exitCode: 1/);
+
+  assert.match(cancelCollapsedText, /π cancel · c91e7f44 · stuck-worker · cancelled/);
+  assert.match(cancelExpandedText, /status: cancelled/);
+  assert.match(cancelExpandedText, /completedAt: 2026-04-11T18:16:00.000Z/);
+});
+
+timedTest("subagent preview error panels render action context and failure text", () => {
+  const expectations = [
+    ["subagent:start", /π start .* · error/s, /tmux is not available in the current session/],
+    ["subagent:resume", /π resume .* · error/s, /subagent 8a4f98e4 not found/],
+    ["subagent:message", /π message .* · error/s, /subagent 92ad1c07 is not accepting input/],
+    ["subagent:list", /π list · error/, /failed to restore subagent state/],
+    ["subagent:cancel", /π cancel .* · error/s, /tmux kill-pane failed: no such pane: %15/],
+  ] as const;
+
+  for (const [scenarioId, headerPattern, bodyPattern] of expectations) {
+    const scenario = getToolPreviewScenarios().find((item) => item.id === scenarioId);
+    assert.ok(scenario);
+    const panel = getToolPreviewPanels(scenario).find((item) => item.id === "error-collapsed");
+    assert.ok(panel);
+    const text = stripAnsi(renderPreviewText(scenario, panel, 120));
+    assert.match(text, headerPattern);
+    assert.match(text, bodyPattern);
+  }
+});
+
 timedTest("all preview scenarios render within width 120", () => {
   for (const scenario of getToolPreviewScenarios()) {
     for (const panel of getToolPreviewPanels(scenario)) {

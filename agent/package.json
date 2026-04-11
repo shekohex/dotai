@@ -14,7 +14,7 @@
   "scripts": {
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "test": "npm run test:tool-preview && npm run test:harness",
+    "test": "npm run test:tool-preview && npm run test:harness && npm run test:subagent",
     "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
     "prepare": "npm run build",
     "postinstall": "node ./scripts/postinstall.mjs",
@@ -25,7 +25,8 @@
     "preview:tools:watch": "node --import tsx ./scripts/preview-tools.ts --watch",
     "patch:deps": "patch-package",
     "test:tool-preview": "node --import tsx --test ./test/tool-preview.test.ts",
-    "test:harness": "node --import tsx --test ./test/harness.test.ts"
+    "test:harness": "node --import tsx --test ./test/harness.test.ts",
+    "test:subagent": "node --import tsx --test ./test/subagent.test.ts"
   },
   "files": [
     "bin",

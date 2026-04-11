@@ -95,6 +95,10 @@ export type StreamingPreviewOptions = {
   tailLines?: number;
 };
 
+export type ToolOutputStyleOptions = {
+  truncateFrom?: "head" | "tail";
+};
+
 const BASH_OUTPUT_LINE_LIMIT = 80;
 const TOOL_TEXT_PADDING_X = 0;
 const TOOL_TEXT_PADDING_Y = 0;
@@ -636,23 +640,38 @@ export function summarizeLineCount(lineCount: number): string {
   return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
 }
 
-export function styleToolOutput(text: string, theme: CoreUIToolTheme, maxLineLength?: number): string {
+export function styleToolOutput(
+  text: string,
+  theme: CoreUIToolTheme,
+  maxLineLength?: number,
+  options: ToolOutputStyleOptions = {},
+): string {
   if (!text) {
     return "";
   }
 
   return text
     .split("\n")
-    .map((line) => styleToolOutputLine(line, theme, maxLineLength))
+    .map((line) => styleToolOutputLine(line, theme, maxLineLength, options))
     .join("\n");
 }
 
-function styleToolOutputLine(line: string, theme: ToolTheme, maxLineLength?: number): string {
+function styleToolOutputLine(
+  line: string,
+  theme: ToolTheme,
+  maxLineLength?: number,
+  options: ToolOutputStyleOptions = {},
+): string {
   if (maxLineLength === undefined || line.length <= maxLineLength) {
     return theme.fg("toolOutput", line);
   }
 
   const truncatedChars = line.length - maxLineLength;
+  if (options.truncateFrom === "tail") {
+    const visibleText = line.slice(-maxLineLength);
+    return `${theme.fg("muted", `…(truncated ${truncatedChars} chars)…`)}${theme.fg("toolOutput", visibleText)}`;
+  }
+
   const visibleText = line.slice(0, maxLineLength);
   return `${theme.fg("toolOutput", visibleText)}${theme.fg("muted", ` …(truncated ${truncatedChars} chars)…`)}`;
 }

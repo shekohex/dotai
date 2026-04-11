@@ -69,11 +69,18 @@ export const ThinkingLevelSchema = Type.Union([
   Type.Literal("xhigh"),
 ]);
 
+export const TmuxTargetSchema = Type.Union([Type.Literal("pane"), Type.Literal("window")]);
+
 export const ModeSpecSchema = Type.Object({
   provider: Type.Optional(Type.String()),
   modelId: Type.Optional(Type.String()),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
   color: Type.Optional(ThemeColorSchema),
+  tools: Type.Optional(Type.Array(Type.String())),
+  systemPrompt: Type.Optional(Type.String()),
+  systemPromptMode: Type.Optional(Type.Union([Type.Literal("append"), Type.Literal("replace")])),
+  autoExit: Type.Optional(Type.Boolean()),
+  tmuxTarget: Type.Optional(TmuxTargetSchema),
 });
 
 export const ModesFileSchema = Type.Object({
@@ -83,6 +90,7 @@ export const ModesFileSchema = Type.Object({
 });
 
 export type ThinkingLevel = Static<typeof ThinkingLevelSchema>;
+export type TmuxTarget = Static<typeof TmuxTargetSchema>;
 export type ModeSpec = Static<typeof ModeSpecSchema>;
 export type ModesFile = Static<typeof ModesFileSchema>;
 export type ModeMap = Record<string, ModeSpec>;
@@ -169,8 +177,8 @@ function formatModesFileError(error: unknown): string {
 
 function mergeModesFiles(globalData: ModesFile | undefined, projectData: ModesFile | undefined): ModesFile {
   const mergedModes = {
-    ...(globalData?.modes ?? {}),
-    ...(projectData?.modes ?? {}),
+    ...(globalData?.modes),
+    ...(projectData?.modes),
   };
 
   const currentMode = projectData?.currentMode ?? globalData?.currentMode;

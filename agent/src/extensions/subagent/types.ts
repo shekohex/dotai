@@ -9,16 +9,15 @@ export const SUBAGENT_STATUS_MESSAGE = "subagent-status";
 
 export const SubagentActionSchema = Type.Union([
   Type.Literal("start"),
-  Type.Literal("resume"),
   Type.Literal("message"),
   Type.Literal("cancel"),
   Type.Literal("list"),
-], { description: "The action to preform" });
+], { description: "The subagent action to run. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect tmux pane/window output directly from the parent session." });
 export const SubagentDeliverySchema = Type.Union([
-  Type.Literal("steer"),
-  Type.Literal("followUp"),
+  Type.Literal("steer", { description: "Steers the subagent in real-time" }),
+  Type.Literal("followUp", { description: "waits until the agent finish its turn and then sends this message (queue)" }),
   Type.Literal("nextTurn"),
-]);
+], { description: "Optional message delivery mode for message." });
 export const SubagentStateEventSchema = Type.Union([
   Type.Literal("started"),
   Type.Literal("resumed"),
@@ -38,14 +37,14 @@ export const SubagentStatusSchema = Type.Union([
 
 export const SubagentToolParamsSchema = Type.Object({
   action: SubagentActionSchema,
-  name: Type.Optional(Type.String({ description: "Display name for the subagent" })),
-  task: Type.Optional(Type.String({ description: "Task or prompt for the subagent" })),
-  mode: Type.Optional(Type.String({ description: "Optional mode name for the child session" })),
-  handoff: Type.Optional(Type.Boolean({ description: "Reuse handoff summarization for the initial prompt" })),
-  cwd: Type.Optional(Type.String({ description: "Optional working directory for the child session" })),
-  autoExit: Type.Optional(Type.Boolean({ description: "Override the mode autoExit behavior" })),
-  sessionId: Type.Optional(Type.String({ description: "Target child session UUID" })),
-  message: Type.Optional(Type.String({ description: "Follow-up message for the child session" })),
+  name: Type.Optional(Type.String({ description: "Required for start. Display name for the child session and the tmux pane/window title shown immediately on launch." })),
+  task: Type.Optional(Type.String({ description: "Required for start. Initial instruction for the child session. There is no subagent read action later, so inspect tmux pane/window output directly from the parent session for progress." })),
+  mode: Type.Optional(Type.String({ description: "Optional mode name for the child session." })),
+  handoff: Type.Optional(Type.Boolean({ description: "Optional for start. Reuse handoff summarization for the initial prompt." })),
+  cwd: Type.Optional(Type.String({ description: "Optional working directory for the child session." })),
+  autoExit: Type.Optional(Type.Boolean({ description: "Optional override for the mode autoExit behavior." })),
+  sessionId: Type.Optional(Type.String({ description: "Required for message and cancel. Use a prior subagent result or subagent list to get it." })),
+  message: Type.Optional(Type.String({ description: "Required for message. Sends follow-up text into the child tmux pane/window, auto-resuming the child first when its pane/window is gone. To inspect the reply, read the tmux output directly from the parent session." })),
   delivery: Type.Optional(SubagentDeliverySchema),
 });
 
@@ -62,6 +61,9 @@ export const SubagentStateEntrySchema = Type.Object({
   task: Type.String(),
   handoff: Type.Boolean(),
   autoExit: Type.Boolean(),
+  autoExitTimeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  autoExitTimeoutActive: Type.Optional(Type.Boolean()),
+  autoExitDeadlineAt: Type.Optional(Type.Integer({ minimum: 0 })),
   status: SubagentStatusSchema,
   exitCode: Type.Optional(Type.Number()),
   summary: Type.Optional(Type.String()),
@@ -120,6 +122,12 @@ export type MessageSubagentParams = {
   delivery: SubagentDelivery;
 };
 
+export type MessageSubagentResult = {
+  state: RuntimeSubagent;
+  autoResumed: boolean;
+  resumePrompt?: string;
+};
+
 export type CancelSubagentParams = {
   sessionId: string;
 };
@@ -132,8 +140,10 @@ export type ChildBootstrapState = {
   parentSessionId: string;
   parentSessionPath?: string;
   name: string;
+  prompt: string;
   mode?: string;
   autoExit: boolean;
+  autoExitTimeoutMs?: number;
   handoff: boolean;
   tools: string[];
   startedAt: number;
@@ -149,8 +159,8 @@ export type ResumeSubagentResult = {
   prompt: string;
 };
 
-export type SubagentStartOrResumeResultDetails = {
-  action: "start" | "resume";
+export type SubagentStartResultDetails = {
+  action: "start";
   args: SubagentToolParams;
   prompt: string;
   state: RuntimeSubagent;
@@ -162,6 +172,8 @@ export type SubagentMessageResultDetails = {
   message: string;
   delivery: SubagentDelivery;
   state: RuntimeSubagent;
+  autoResumed?: boolean;
+  resumePrompt?: string;
 };
 
 export type SubagentCancelResultDetails = {
@@ -177,7 +189,7 @@ export type SubagentListResultDetails = {
 };
 
 export type SubagentToolResultDetails =
-  | SubagentStartOrResumeResultDetails
+  | SubagentStartResultDetails
   | SubagentMessageResultDetails
   | SubagentCancelResultDetails
   | SubagentListResultDetails;
@@ -185,7 +197,7 @@ export type SubagentToolResultDetails =
 export type SubagentToolProgressPhase = "handoff" | "launch" | "message";
 
 export type SubagentToolProgressDetails = {
-  action: "start" | "resume" | "message";
+  action: "start" | "message";
   phase: SubagentToolProgressPhase;
   statusText: string;
   preview?: string;

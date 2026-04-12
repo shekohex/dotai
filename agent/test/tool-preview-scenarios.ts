@@ -78,7 +78,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const subagentDefinition = getSubagentPreviewDefinition();
   const parentSessionPath = joinPath(cwd, ".pi/agent/sessions/parent/2026-04-11T17-45-51-124Z_parent.jsonl");
   const subagentStartTask = "Review preview renderer and note UI gaps";
-  const subagentResumeTask = "Continue preview CLI work";
   const subagentMessageBody = [
     "Ping",
     "Spacing?",
@@ -122,23 +121,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
     status: "running",
     startedAt: Date.parse("2026-04-11T18:12:00.000Z"),
     updatedAt: Date.parse("2026-04-11T18:12:05.000Z"),
-  });
-  const subagentResumeState = createPreviewSubagent({
-    event: "resumed",
-    sessionId: "8a4f98e4-16fc-49db-bb2d-8ad61db98777",
-    sessionPath: joinPath(cwd, ".pi/agent/sessions/subagents/8a4f98e4.jsonl"),
-    parentSessionPath,
-    name: "fix-worker",
-    mode: "worker",
-    modeLabel: "worker",
-    cwd: joinPath(cwd, "packages/core"),
-    paneId: "%11",
-    task: subagentResumeTask,
-    autoExit: true,
-    status: "idle",
-    summary: "Collapsed row confirmed",
-    startedAt: Date.parse("2026-04-11T17:20:00.000Z"),
-    updatedAt: Date.parse("2026-04-11T18:14:00.000Z"),
   });
   const subagentMessageState = createPreviewSubagent({
     event: "updated",
@@ -786,7 +768,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
       },
       successResult: {
-        content: [{ type: "text", text: "ok" }],
+        content: [{ type: "text", text: "Subagent reviewer-two (2d2c7b0c) started. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output." }],
         details: {
           action: "start",
           args: {
@@ -803,41 +785,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "tmux is not available in the current session" }],
-      },
-    },
-    {
-      id: "subagent:resume",
-      title: "subagent resume preview",
-      toolName: subagentDefinition.name,
-      toolDefinition: subagentDefinition,
-      cwd,
-      args: {
-        action: "resume",
-        sessionId: subagentResumeState.sessionId,
-        mode: subagentResumeState.mode,
-        cwd: subagentResumeState.cwd,
-        autoExit: subagentResumeState.autoExit,
-        task: subagentResumeTask,
-      },
-      successResult: {
-        content: [{ type: "text", text: "ok" }],
-        details: {
-          action: "resume",
-          args: {
-            action: "resume",
-            sessionId: subagentResumeState.sessionId,
-            mode: subagentResumeState.mode,
-            cwd: subagentResumeState.cwd,
-            autoExit: subagentResumeState.autoExit,
-            task: subagentResumeTask,
-          },
-          prompt: subagentResumeTask,
-          state: subagentResumeState,
-        },
-      },
-      errorResult: {
-        content: [{ type: "text", text: "subagent 8a4f98e4 not found" }],
+        content: [{ type: "text", text: "subagent start failed: tmux is not available in the current session. Run the parent pi session inside tmux before starting a subagent." }],
       },
     },
     {
@@ -906,7 +854,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "subagent 92ad1c07 is not accepting input" }],
+        content: [{ type: "text", text: "subagent message failed: sessionId 92ad1c07-f550-4f8a-9c84-8992c1d6a132 was not found in this parent session. Use subagent list to inspect known child sessions or start a new subagent." }],
       },
     },
     {
@@ -954,7 +902,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "tmux kill-pane failed: no such pane: %15" }],
+        content: [{ type: "text", text: "subagent cancel failed: tmux kill-pane failed: no such pane: %15" }],
       },
     },
     {
@@ -1766,6 +1714,11 @@ function getSubagentPreviewDefinition(): ToolDefinition<any, any> {
       registeredTools.set(tool.name, tool);
     },
     on() {},
+    events: {
+      on() {
+        return () => {};
+      },
+    },
     appendEntry() {},
     sendMessage() {},
     async exec() {

@@ -1,7 +1,7 @@
-import fsSync from "node:fs";
-
 import { defineTool, type ExtensionAPI, type ExtensionContext, type Theme } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+
+import { buildAvailableModesPromptGuideline } from "./available-modes.js";
 
 import {
   countTextLines,
@@ -16,7 +16,11 @@ import {
 import { toModeFlagName } from "./modes.js";
 import type { TmuxTarget } from "../mode-utils.js";
 import type { MuxAdapter } from "./subagent/mux.js";
-import { getParentInjectedInputMarkerPath } from "./subagent/session.js";
+import {
+  activateAutoExitTimeoutMode,
+  consumeParentInjectedInputMarker,
+  isAutoExitTimeoutModeActive,
+} from "./subagent/session.js";
 import { SubagentManager } from "./subagent/state.js";
 import { TmuxAdapter } from "./subagent/tmux.js";
 import {
@@ -31,6 +35,11 @@ import {
 
 type CreateSubagentExtensionOptions = {
   adapterFactory?: (pi: ExtensionAPI) => MuxAdapter;
+};
+
+type SubagentRuntimeState = {
+  ctx?: ExtensionContext;
+  toolPromptSignature?: string;
 };
 
 type LaunchTarget =
@@ -49,6 +58,15 @@ const CHILD_STATE_ENV = "PI_SUBAGENT_CHILD_STATE";
 const PI_COMMAND_ENV = "PI_SUBAGENT_PI_COMMAND";
 const SUBAGENT_STREAM_PREVIEW_LINE_LIMIT = 5;
 const SUBAGENT_STREAM_PREVIEW_WIDTH = 96;
+
+function normalizeSingleLine(value: string): string {
+  return value.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function formatChildSessionDisplayName(name: string, prompt: string): string {
+  const normalizedPrompt = normalizeSingleLine(prompt);
+  return normalizedPrompt ? `[${name}] ${normalizedPrompt}` : `[${name}]`;
+}
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -141,26 +159,6 @@ function applyChildToolState(pi: ExtensionAPI, childState: ChildBootstrapState |
   pi.setActiveTools(Array.from(activeTools).sort((left, right) => left.localeCompare(right)));
 }
 
-function hasActiveParentInjectedInput(childState: ChildBootstrapState | undefined): boolean {
-  if (!childState) {
-    return false;
-  }
-
-  try {
-    const markerPath = getParentInjectedInputMarkerPath(childState.sessionId);
-    const raw = fsSync.readFileSync(markerPath, "utf8");
-    const parsed = JSON.parse(raw) as { expiresAt?: unknown };
-    if (typeof parsed.expiresAt !== "number" || parsed.expiresAt <= Date.now()) {
-      fsSync.rmSync(markerPath, { force: true });
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function isChildSession(childState: ChildBootstrapState | undefined, ctx: ExtensionContext): childState is ChildBootstrapState {
   if (!childState) {
     return false;
@@ -172,8 +170,37 @@ function isChildSession(childState: ChildBootstrapState | undefined, ctx: Extens
 
 function installChildBootstrap(pi: ExtensionAPI): void {
   const childState = readChildState();
-  let autoExitEnabled = Boolean(childState?.autoExit);
-  let lastInputTimestamp = 0;
+  const autoExitEnabled = Boolean(childState?.autoExit);
+  let pendingIdleShutdown: ReturnType<typeof setTimeout> | undefined;
+  let timeoutModeActive = childState ? isAutoExitTimeoutModeActive(childState.sessionId) : false;
+
+  const cancelIdleShutdown = () => {
+    if (!pendingIdleShutdown) {
+      return;
+    }
+
+    clearTimeout(pendingIdleShutdown);
+    pendingIdleShutdown = undefined;
+  };
+
+  const scheduleIdleShutdown = (ctx: ExtensionContext, currentChildState: ChildBootstrapState) => {
+    cancelIdleShutdown();
+
+    if (!timeoutModeActive) {
+      ctx.shutdown();
+      return;
+    }
+
+    pendingIdleShutdown = setTimeout(() => {
+      pendingIdleShutdown = undefined;
+      if (!autoExitEnabled || !isChildSession(currentChildState, ctx)) {
+        return;
+      }
+
+      ctx.shutdown();
+    }, currentChildState.autoExitTimeoutMs ?? 30_000);
+    pendingIdleShutdown.unref?.();
+  };
 
   pi.on("session_start", async (_event, ctx) => {
     const currentChildState = childState;
@@ -181,8 +208,10 @@ function installChildBootstrap(pi: ExtensionAPI): void {
       return;
     }
 
+    timeoutModeActive = isAutoExitTimeoutModeActive(currentChildState.sessionId);
+
     applyChildToolState(pi, currentChildState);
-    pi.setSessionName(currentChildState.name);
+    pi.setSessionName(formatChildSessionDisplayName(currentChildState.name, currentChildState.prompt));
 
     if (!ctx.hasUI) {
       return;
@@ -192,13 +221,14 @@ function installChildBootstrap(pi: ExtensionAPI): void {
       if (!autoExitEnabled || !data.trim()) {
         return undefined;
       }
-      if (hasActiveParentInjectedInput(currentChildState)) {
+
+      if (consumeParentInjectedInputMarker(currentChildState.sessionId)) {
         return undefined;
       }
 
-      lastInputTimestamp = Date.now();
-      autoExitEnabled = false;
-      ctx.ui.notify(`Subagent ${currentChildState.name} auto-exit disabled`, "info");
+      timeoutModeActive = true;
+      activateAutoExitTimeoutMode(currentChildState.sessionId);
+      cancelIdleShutdown();
       return undefined;
     });
   });
@@ -209,19 +239,22 @@ function installChildBootstrap(pi: ExtensionAPI): void {
       return undefined;
     }
 
+    cancelIdleShutdown();
     applyChildToolState(pi, currentChildState);
     return undefined;
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    if (!isChildSession(childState, ctx) || !autoExitEnabled) {
-      return;
-    }
-    if (Date.now() - lastInputTimestamp < 250) {
+    const currentChildState = childState;
+    if (!isChildSession(currentChildState, ctx) || !autoExitEnabled) {
       return;
     }
 
-    ctx.shutdown();
+    scheduleIdleShutdown(ctx, currentChildState);
+  });
+
+  pi.on("session_shutdown", async () => {
+    cancelIdleShutdown();
   });
 }
 
@@ -248,34 +281,47 @@ function scheduleParentSubagentToolActivation(pi: ExtensionAPI): void {
 function validateToolParams(params: SubagentToolParams): void {
   if (params.action === "start") {
     if (!params.name?.trim()) {
-      throw new Error("subagent start requires name");
+      throw new Error("Invalid subagent start params: `name` is required. It becomes the tmux pane/window title shown when the child launches.");
     }
     if (!params.task?.trim()) {
-      throw new Error("subagent start requires task");
-    }
-  }
-
-  if (params.action === "resume") {
-    if (!params.sessionId?.trim()) {
-      throw new Error("subagent resume requires sessionId");
-    }
-    if (!params.task?.trim()) {
-      throw new Error("subagent resume requires task");
+      throw new Error("Invalid subagent start params: `task` is required. There is no subagent read action later, so provide the delegated work up front and inspect tmux output from the parent session only when needed.");
     }
   }
 
   if (params.action === "message") {
     if (!params.sessionId?.trim()) {
-      throw new Error("subagent message requires sessionId");
+      throw new Error("Invalid subagent message params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the child session.");
     }
     if (!params.message?.trim()) {
-      throw new Error("subagent message requires message");
+      throw new Error("Invalid subagent message params: `message` is required. This text is sent into the child tmux pane/window.");
     }
   }
 
   if (params.action === "cancel" && !params.sessionId?.trim()) {
-    throw new Error("subagent cancel requires sessionId");
+    throw new Error("Invalid subagent cancel params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the child session.");
   }
+}
+
+function normalizeSubagentExecutionError(action: SubagentToolParams["action"], error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.startsWith("Invalid subagent ") || message.startsWith(`subagent ${action} failed:`)) {
+    return error instanceof Error ? error : new Error(message);
+  }
+
+  return new Error(`subagent ${action} failed: ${message}`);
+}
+
+function getStartGuidanceText(): string {
+  return "This is the prompt sent to the child session. The subagent will return with a summary automatically when it finishes, so usually continue doing your work that needs to be done or wait for completion instead of polling with list or checking repeatedly for the final result. Use message only to steer the work, cancel to stop it, and inspect the tmux pane/window directly from the parent session only when you need live output.";
+}
+
+function formatStartResultText(state: RuntimeSubagent): string {
+  return `Subagent ${state.name} (${shortSessionId(state.sessionId)}) started. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.`;
+}
+
+function formatAutoResumedMessageResultText(state: RuntimeSubagent, delivery: string): string {
+  return `Subagent ${state.name} (${shortSessionId(state.sessionId)}) resumed using its previous task and ${delivery} message delivered.`;
 }
 
 function summarizeTask(task?: string, maxLength = 56): string {
@@ -439,9 +485,6 @@ function formatCollapsedCallText(args: SubagentToolParams, theme: Theme): string
   if (args.action === "start") {
     return `${prefix} ${action}${separator}${theme.fg("muted", `${args.name ?? "..."} · ${args.mode ?? "worker"} · ${summarizeTask(args.task)}`)}`;
   }
-  if (args.action === "resume") {
-    return `${prefix} ${action}${separator}${theme.fg("muted", `${shortSessionId(args.sessionId)} · ${summarizeTask(args.task)}`)}`;
-  }
   if (args.action === "message") {
     return `${prefix} ${action}${separator}${theme.fg("muted", `${shortSessionId(args.sessionId)} · ${args.delivery ?? "steer"} · ${summarizeTask(args.message, 40)}`)}`;
   }
@@ -490,15 +533,6 @@ function formatExpandedCallText(args: SubagentToolParams, theme: Theme): string 
     return lines.join("\n");
   }
 
-  if (args.action === "resume") {
-    lines.push(...formatField("sessionId", args.sessionId));
-    lines.push(...formatField("mode", args.mode));
-    lines.push(...formatField("cwd", args.cwd));
-    lines.push(...formatField("autoExit", args.autoExit));
-    lines.push(...formatField("task", args.task, true));
-    return lines.join("\n");
-  }
-
   if (args.action === "message") {
     lines.push(...formatField("sessionId", args.sessionId));
     lines.push(...formatField("delivery", args.delivery ?? "steer"));
@@ -528,6 +562,9 @@ function formatSubagentStateDetails(state: RuntimeSubagent): string {
     ...formatField("sessionPath", state.sessionPath),
     ...formatField("handoff", state.handoff),
     ...formatField("autoExit", state.autoExit),
+    ...formatField("autoExitTimeoutMs", state.autoExitTimeoutMs),
+    ...formatField("autoExitTimeoutActive", state.autoExitTimeoutActive),
+    ...formatField("autoExitDeadlineAt", formatTimestamp(state.autoExitDeadlineAt)),
     ...formatField("task", state.task, true),
     ...formatField("summary", state.summary, true),
     ...formatField("exitCode", state.exitCode),
@@ -563,12 +600,17 @@ function formatExpandedResult(details: SubagentToolResultDetails | undefined): s
 
   const resultLines = [formatSubagentStateDetails(details.state)];
 
-  if (details.action === "start" || details.action === "resume") {
+  if (details.action === "start") {
     resultLines.push(...formatField("prompt", details.prompt, true));
+    resultLines.push(...formatField("promptGuidance", getStartGuidanceText(), true));
     return resultLines.join("\n");
   }
 
   if (details.action === "message") {
+    if (details.autoResumed) {
+      resultLines.push(...formatField("autoResumed", details.autoResumed));
+      resultLines.push(...formatField("resumePrompt", details.resumePrompt, true));
+    }
     resultLines.push(...formatField("delivery", details.delivery));
     resultLines.push(...formatField("message", details.message, true));
   }
@@ -614,6 +656,7 @@ function formatMessageCollapsedSummary(details: Extract<SubagentToolResultDetail
   return [
     theme.fg("success", details.state.name),
     theme.fg("muted", details.state.status),
+    ...(details.autoResumed ? [theme.fg("muted", "resumed")] : []),
     theme.fg("muted", details.delivery),
     theme.fg("muted", summarizeWhitespace(details.message, 36)),
   ].join(theme.fg("dim", " · "));
@@ -635,83 +678,115 @@ function formatCollapsedResultSummary(details: SubagentToolResultDetails | undef
   return formatStateCollapsedSummary(details.state, theme);
 }
 
+const SUBAGENT_BASE_PROMPT_GUIDELINES = [
+  "Use `subagent` when the user wants parallel or delegated work in another tmux-backed pi session.",
+  "Use `start` to launch a child session, `message` for follow-up or to auto-resume a dead child session before delivery, `cancel` to stop it, and `list` to inspect child status.",
+  "There is no subagent read tool. To inspect a child session, look at its tmux pane/window output directly from the parent session.",
+  "Do not poll with `list` just to get the final result. By default, wait for the automatic completion summary and only use `message` or `cancel` when you need to steer or stop the child.",
+] as const;
+
+const SUBAGENT_AVAILABLE_MODES_HEADING = "Available subagent modes. When the user asks for a mode, use one of these exact names:";
+
+async function buildSubagentPromptGuidelines(ctx: ExtensionContext): Promise<string[]> {
+  return [
+    ...SUBAGENT_BASE_PROMPT_GUIDELINES,
+    await buildAvailableModesPromptGuideline(ctx.cwd, SUBAGENT_AVAILABLE_MODES_HEADING),
+  ];
+}
+
 export function createSubagentExtension(options: CreateSubagentExtensionOptions = {}) {
   return function subagentExtension(pi: ExtensionAPI): void {
     installChildBootstrap(pi);
     const adapter = options.adapterFactory?.(pi) ?? new TmuxAdapter((command, args, execOptions) => pi.exec(command, args, execOptions), process.cwd());
     const manager = new SubagentManager(pi, adapter, buildLaunchCommand);
+    const state: SubagentRuntimeState = {};
 
-    pi.registerTool(defineTool<typeof SubagentToolParamsSchema, SubagentToolResultDetails>({
+    const syncSubagentToolRegistration = async (ctx: ExtensionContext): Promise<void> => {
+      state.ctx = ctx;
+      const promptGuidelines = await buildSubagentPromptGuidelines(ctx);
+      const signature = promptGuidelines.join("\n\n");
+      if (state.toolPromptSignature === signature) {
+        return;
+      }
+
+      subagentTool.promptGuidelines = promptGuidelines;
+      state.toolPromptSignature = signature;
+      pi.registerTool(subagentTool);
+    };
+
+    const subagentTool = defineTool<typeof SubagentToolParamsSchema, SubagentToolResultDetails>({
       name: "subagent",
       label: "π",
-      description: "Manage tmux-backed child pi sessions. Actions: start, resume, message, cancel, list.",
-      promptSnippet: "use `subagent` to start, resume, message, cancel, or list tmux-backed child pi sessions",
+      description: "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling.",
+      promptSnippet: "use `subagent` to start, message, cancel, or list tmux-backed child pi sessions; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary",
       promptGuidelines: [
-        "Use `subagent` when the user wants parallel or delegated work in another tmux-backed pi session.",
-        "Use `start` to launch a child session, `resume` to reattach a finished child session, `message` for follow-up, `cancel` to stop it, and `list` to inspect child status.",
+        ...SUBAGENT_BASE_PROMPT_GUIDELINES,
+        SUBAGENT_AVAILABLE_MODES_HEADING,
       ],
       parameters: SubagentToolParamsSchema,
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
-        manager.setContext(ctx);
-        validateToolParams(params);
+        try {
+          manager.setContext(ctx);
+          validateToolParams(params);
 
-        if (params.action === "start") {
-          const started = await manager.start({
-            name: params.name!,
-            task: params.task!,
-            mode: params.mode,
-            handoff: params.handoff,
-            cwd: params.cwd,
-            autoExit: params.autoExit,
-          }, ctx, onUpdate, signal);
+          if (params.action === "start") {
+            const started = await manager.start({
+              name: params.name!,
+              task: params.task!,
+              mode: params.mode,
+              handoff: params.handoff,
+              cwd: params.cwd,
+              autoExit: params.autoExit,
+            }, ctx, onUpdate, signal);
 
+            return {
+              content: [{ type: "text", text: formatStartResultText(started.state) }],
+              details: { action: "start", args: params, prompt: started.prompt, state: started.state },
+            };
+          }
+
+          if (params.action === "message") {
+            const result = await manager.message({
+              sessionId: params.sessionId!,
+              message: params.message!,
+              delivery: params.delivery ?? "steer",
+            }, ctx, onUpdate);
+
+            return {
+              content: [{
+                type: "text",
+                text: result.autoResumed
+                  ? formatAutoResumedMessageResultText(result.state, params.delivery ?? "steer")
+                  : "ok",
+              }],
+              details: {
+                action: "message",
+                args: params,
+                message: params.message!,
+                delivery: params.delivery ?? "steer",
+                state: result.state,
+                autoResumed: result.autoResumed,
+                resumePrompt: result.resumePrompt,
+              },
+            };
+          }
+
+          if (params.action === "cancel") {
+            const result = await manager.cancel({ sessionId: params.sessionId! });
+            return {
+              content: [{ type: "text", text: "ok" }],
+              details: { action: "cancel", args: params, state: result },
+            };
+          }
+
+          const subagents = manager.list();
           return {
             content: [{ type: "text", text: "ok" }],
-            details: { action: "start", args: params, prompt: started.prompt, state: started.state },
+            details: { action: "list", args: params, subagents },
           };
+        } catch (error) {
+          throw normalizeSubagentExecutionError(params.action, error);
         }
-
-        if (params.action === "resume") {
-          const resumed = await manager.resume({
-            sessionId: params.sessionId!,
-            task: params.task!,
-            mode: params.mode,
-            cwd: params.cwd,
-            autoExit: params.autoExit,
-          }, ctx, onUpdate);
-
-          return {
-            content: [{ type: "text", text: "ok" }],
-            details: { action: "resume", args: params, prompt: resumed.prompt, state: resumed.state },
-          };
-        }
-
-        if (params.action === "message") {
-          const result = await manager.message({
-            sessionId: params.sessionId!,
-            message: params.message!,
-            delivery: params.delivery ?? "steer",
-          }, onUpdate);
-
-          return {
-            content: [{ type: "text", text: "ok" }],
-            details: { action: "message", args: params, message: params.message!, delivery: params.delivery ?? "steer", state: result },
-          };
-        }
-
-        if (params.action === "cancel") {
-          const result = await manager.cancel({ sessionId: params.sessionId! });
-          return {
-            content: [{ type: "text", text: "ok" }],
-            details: { action: "cancel", args: params, state: result },
-          };
-        }
-
-        const subagents = manager.list();
-        return {
-          content: [{ type: "text", text: "ok" }],
-          details: { action: "list", args: params, subagents },
-        };
       },
       renderCall(args, theme, context) {
         const state = syncRenderState(context);
@@ -745,11 +820,23 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
           formatExpandedResult(details as SubagentToolResultDetails | undefined),
         );
       },
-    }));
+    });
+
+    pi.registerTool(subagentTool);
+
+    const modesChangedEvents = (pi as ExtensionAPI & { events?: { on?: (eventName: string, handler: (...args: any[]) => any) => unknown } }).events;
+    modesChangedEvents?.on?.("modes:changed", async () => {
+      if (!state.ctx) {
+        return;
+      }
+
+      await syncSubagentToolRegistration(state.ctx);
+    });
 
     scheduleParentSubagentToolActivation(pi);
 
     pi.on("session_start", async (_event, ctx) => {
+      await syncSubagentToolRegistration(ctx);
       manager.setContext(ctx);
       if (isChildSession(readChildState(), ctx)) {
         return;
@@ -760,6 +847,7 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
     });
 
     pi.on("before_agent_start", async (_event, ctx) => {
+      await syncSubagentToolRegistration(ctx);
       if (!isChildSession(readChildState(), ctx)) {
         ensureParentSubagentToolActive(pi);
       }

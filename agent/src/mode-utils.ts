@@ -72,6 +72,7 @@ export const ThinkingLevelSchema = Type.Union([
 export const TmuxTargetSchema = Type.Union([Type.Literal("pane"), Type.Literal("window")]);
 
 export const ModeSpecSchema = Type.Object({
+  description: Type.Optional(Type.String()),
   provider: Type.Optional(Type.String()),
   modelId: Type.Optional(Type.String()),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
@@ -80,6 +81,7 @@ export const ModeSpecSchema = Type.Object({
   systemPrompt: Type.Optional(Type.String()),
   systemPromptMode: Type.Optional(Type.Union([Type.Literal("append"), Type.Literal("replace")])),
   autoExit: Type.Optional(Type.Boolean()),
+  autoExitTimeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
   tmuxTarget: Type.Optional(TmuxTargetSchema),
 });
 
@@ -104,6 +106,7 @@ export type LoadedModesFile = {
   path: string;
   source: "project" | "global" | "missing";
   data: ModesFile;
+  resolvedData: ModesFile;
   error?: string;
 };
 
@@ -111,8 +114,11 @@ type LoadedModesSource = {
   path: string;
   exists: boolean;
   data?: ModesFile;
+  resolvedData?: ModesFile;
   error?: string;
 };
+
+const systemPromptFileReferencePattern = /^\{file:(.+)\}$/s;
 
 export function defineModesFile<const TModes extends ModeMap>(data: ModesFileFor<TModes>): ModesFileFor<TModes> {
   return data;
@@ -167,6 +173,78 @@ function parseModesFile(value: unknown): ModesFile {
   return assertModesFileConsistency(Value.Parse(ModesFileSchema, value));
 }
 
+function getReferencedSystemPromptPath(systemPrompt: string, modesFilePath: string): string | undefined {
+  const match = systemPrompt.match(systemPromptFileReferencePattern);
+  if (!match) {
+    return undefined;
+  }
+
+  const referencedPath = match[1]?.trim();
+  if (!referencedPath) {
+    throw new Error("Invalid modes.json: systemPrompt file reference cannot be empty");
+  }
+
+  return path.resolve(path.dirname(modesFilePath), referencedPath);
+}
+
+function normalizeModeSpec(spec: ModeSpec, resolvedSystemPrompt = spec.systemPrompt): ModeSpec {
+  return {
+    ...spec,
+    ...(resolvedSystemPrompt !== undefined ? { systemPrompt: resolvedSystemPrompt } : {}),
+    ...(resolvedSystemPrompt !== undefined && spec.systemPromptMode === undefined ? { systemPromptMode: "append" as const } : {}),
+  };
+}
+
+async function resolveModeSpecAssets(spec: ModeSpec, modesFilePath: string): Promise<ModeSpec> {
+  const referencedSystemPromptPath = spec.systemPrompt
+    ? getReferencedSystemPromptPath(spec.systemPrompt, modesFilePath)
+    : undefined;
+
+  if (!referencedSystemPromptPath) {
+    return normalizeModeSpec(spec);
+  }
+
+  const systemPrompt = await fs.readFile(referencedSystemPromptPath, "utf8");
+  return normalizeModeSpec(spec, systemPrompt);
+}
+
+function resolveModeSpecAssetsSync(spec: ModeSpec, modesFilePath: string): ModeSpec {
+  const referencedSystemPromptPath = spec.systemPrompt
+    ? getReferencedSystemPromptPath(spec.systemPrompt, modesFilePath)
+    : undefined;
+
+  if (!referencedSystemPromptPath) {
+    return normalizeModeSpec(spec);
+  }
+
+  const systemPrompt = fsSync.readFileSync(referencedSystemPromptPath, "utf8");
+  return normalizeModeSpec(spec, systemPrompt);
+}
+
+async function resolveModesFileAssets(data: ModesFile, modesFilePath: string): Promise<ModesFile> {
+  const modes = Object.fromEntries(
+    await Promise.all(
+      Object.entries(data.modes).map(async ([modeName, spec]) => [modeName, await resolveModeSpecAssets(spec, modesFilePath)] as const),
+    ),
+  );
+
+  return assertModesFileConsistency({
+    ...data,
+    modes,
+  });
+}
+
+function resolveModesFileAssetsSync(data: ModesFile, modesFilePath: string): ModesFile {
+  const modes = Object.fromEntries(
+    Object.entries(data.modes).map(([modeName, spec]) => [modeName, resolveModeSpecAssetsSync(spec, modesFilePath)] as const),
+  );
+
+  return assertModesFileConsistency({
+    ...data,
+    modes,
+  });
+}
+
 function formatModesFileError(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -188,6 +266,17 @@ function mergeModesFiles(globalData: ModesFile | undefined, projectData: ModesFi
     currentMode,
     modes: mergedModes,
   });
+}
+
+function tryMergeModesFiles(globalData: ModesFile | undefined, projectData: ModesFile | undefined): {
+  data?: ModesFile;
+  error?: string;
+} {
+  try {
+    return { data: mergeModesFiles(globalData, projectData) };
+  } catch (error) {
+    return { error: formatModesFileError(error) };
+  }
 }
 
 function formatSourceError(path: string, error: string): string {
@@ -213,10 +302,12 @@ async function loadModesSource(filePath: string): Promise<LoadedModesSource> {
 
   try {
     const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
+    const data = parseModesFile(raw);
     return {
       path: filePath,
       exists: true,
-      data: parseModesFile(raw),
+      data,
+      resolvedData: await resolveModesFileAssets(data, filePath),
     };
   } catch (error) {
     return {
@@ -234,10 +325,12 @@ function loadModesSourceSync(filePath: string): LoadedModesSource {
 
   try {
     const raw = JSON.parse(fsSync.readFileSync(filePath, "utf8"));
+    const data = parseModesFile(raw);
     return {
       path: filePath,
       exists: true,
-      data: parseModesFile(raw),
+      data,
+      resolvedData: resolveModesFileAssetsSync(data, filePath),
     };
   } catch (error) {
     return {
@@ -258,24 +351,18 @@ function buildLoadedModesFile(
   const hasGlobal = globalSource.exists;
   const source = hasProject ? "project" : hasGlobal ? "global" : "missing";
   const path = hasProject ? projectPath : hasGlobal ? globalPath : projectPath;
-  const error = formatMergedErrors([projectSource, globalSource]);
+  const sourceError = formatMergedErrors([projectSource, globalSource]);
+  const merged = tryMergeModesFiles(globalSource.data, projectSource.data);
+  const resolved = tryMergeModesFiles(globalSource.resolvedData, projectSource.resolvedData);
+  const errors = Array.from(new Set([sourceError, merged.error, resolved.error].filter((value): value is string => Boolean(value))));
 
-  try {
-    return {
-      path,
-      source,
-      data: mergeModesFiles(globalSource.data, projectSource.data),
-      error,
-    };
-  } catch (mergeError) {
-    const mergedError = formatModesFileError(mergeError);
-    return {
-      path,
-      source,
-      data: createEmptyModesFile(),
-      error: error ? `${error}\n${mergedError}` : mergedError,
-    };
-  }
+  return {
+    path,
+    source,
+    data: merged.data ?? createEmptyModesFile(),
+    resolvedData: resolved.data ?? createEmptyModesFile(),
+    error: errors.length > 0 ? errors.join("\n") : undefined,
+  };
 }
 
 export async function loadModesFile(cwd: string): Promise<LoadedModesFile> {
@@ -320,5 +407,5 @@ export async function saveModesFile(filePath: string, data: ModesFile): Promise<
 
 export async function resolveModeSpec(cwd: string, modeName: string): Promise<ModeSpec | undefined> {
   const loaded = await loadModesFile(cwd);
-  return loaded.data.modes[modeName];
+  return loaded.resolvedData.modes[modeName];
 }

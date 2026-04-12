@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -27,7 +28,20 @@ type ChildSessionOutcome = {
 
 export type ChildSessionStatus = "running" | "idle";
 
+export type ChildSessionStatusDetails = {
+  status: ChildSessionStatus;
+  idleSinceAt?: number;
+};
+
 export const SUBAGENT_PARENT_INPUT_GRACE_MS = 1500;
+
+type ExpiringMarker = {
+  expiresAt?: number;
+};
+
+type TimeoutModeMarker = {
+  activatedAt?: number;
+};
 
 type AssistantOutcomeMessage = SessionMessageEntry["message"] & {
   role: "assistant";
@@ -41,6 +55,49 @@ export function getDefaultSessionDir(cwd: string): string {
 
 export function getParentInjectedInputMarkerPath(sessionId: string): string {
   return path.join(os.tmpdir(), "pi-subagent-input", `${sessionId}.json`);
+}
+
+export function getAutoExitTimeoutModeMarkerPath(sessionId: string): string {
+  return path.join(os.tmpdir(), "pi-subagent-timeout-mode", `${sessionId}.json`);
+}
+
+export function consumeParentInjectedInputMarker(sessionId: string): boolean {
+  const markerPath = getParentInjectedInputMarkerPath(sessionId);
+  let marker: ExpiringMarker | undefined;
+
+  try {
+    marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as ExpiringMarker;
+  } catch {
+    return false;
+  }
+
+  try {
+    fs.unlinkSync(markerPath);
+  } catch {
+    return typeof marker.expiresAt === "number" && marker.expiresAt > Date.now();
+  }
+
+  return typeof marker.expiresAt === "number" && marker.expiresAt > Date.now();
+}
+
+export function activateAutoExitTimeoutMode(sessionId: string): void {
+  const markerPath = getAutoExitTimeoutModeMarkerPath(sessionId);
+
+  try {
+    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+    fs.writeFileSync(markerPath, JSON.stringify({ activatedAt: Date.now() } satisfies TimeoutModeMarker), "utf8");
+  } catch {
+    return;
+  }
+}
+
+export function isAutoExitTimeoutModeActive(sessionId: string): boolean {
+  try {
+    const marker = JSON.parse(fs.readFileSync(getAutoExitTimeoutModeMarkerPath(sessionId), "utf8")) as TimeoutModeMarker;
+    return typeof marker.activatedAt === "number";
+  } catch {
+    return false;
+  }
 }
 
 export async function createChildSessionFile(options: {
@@ -88,22 +145,42 @@ export async function readChildSessionOutcome(sessionPath: string): Promise<Chil
 }
 
 export async function readChildSessionStatus(sessionPath: string): Promise<ChildSessionStatus> {
+  return (await readChildSessionStatusDetails(sessionPath)).status;
+}
+
+function parseTimestampMs(value: unknown): number | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export async function readChildSessionStatusDetails(sessionPath: string): Promise<ChildSessionStatusDetails> {
   try {
     const sessionManager = SessionManager.open(sessionPath);
     let entry = sessionManager.getLeafEntry();
 
     while (entry) {
       if (entry.type === "message") {
-        return entry.message.role === "assistant" ? "idle" : "running";
+        if (entry.message.role === "assistant") {
+          return {
+            status: "idle",
+            idleSinceAt: parseTimestampMs((entry as SessionEntry & { timestamp?: unknown }).timestamp),
+          };
+        }
+
+        return { status: "running" };
       }
 
       entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
     }
   } catch {
-    return "running";
+    return { status: "running" };
   }
 
-  return "running";
+  return { status: "running" };
 }
 
 export function reduceRuntimeSubagents(entries: SessionEntry[], parentSessionId: string): Map<string, RuntimeSubagent> {

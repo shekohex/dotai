@@ -1,15 +1,14 @@
 import {
-  defineTool,
   type AgentToolUpdateCallback,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
-import { Text, fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 
 import { loadModesFile, type ModeSpec } from "../mode-utils.js";
+import { loadAvailableModes } from "./available-modes.js";
 import {
   buildContextTransferPrompt,
   extractMessageText,
@@ -55,7 +54,6 @@ type HandoffAutocompleteContext = {
 
 type HandoffRuntimeState = {
   ctx?: ExtensionContext;
-  toolPromptSignature?: string;
   pendingNewSessionCtx?: {
     promise: Promise<ExtensionContext>;
     resolve: (ctx: ExtensionContext) => void;
@@ -185,71 +183,6 @@ function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
   }
 
   return parts.length > 0 ? parts.join(" · ") : undefined;
-}
-
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("'", "&apos;");
-}
-
-async function loadAvailableModes(cwd: string): Promise<Array<{ name: string; spec: ModeSpec }>> {
-  const loaded = await loadModesFile(cwd);
-  return Object.entries(loaded.data.modes)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, spec]) => ({ name, spec }));
-}
-
-function formatAvailableModesXml(modes: Array<{ name: string; spec: ModeSpec }>): string {
-  if (modes.length === 0) {
-    return "<available_modes>\n</available_modes>";
-  }
-
-  return [
-    "<available_modes>",
-    ...modes.map(({ name, spec }) => {
-      const attrs = [`name="${escapeXmlAttribute(name)}"`];
-      if (spec.provider && spec.modelId) {
-        const model = `${spec.provider}/${spec.modelId}`;
-        attrs.push(`model="${escapeXmlAttribute(model)}"`);
-      }
-      if (spec.thinkingLevel) {
-        attrs.push(`thinkingLevel="${escapeXmlAttribute(spec.thinkingLevel)}"`);
-      }
-      return `  <mode ${attrs.join(" ")} />`;
-    }),
-    "</available_modes>",
-  ].join("\n");
-}
-
-async function buildHandoffPromptGuidelines(ctx: ExtensionContext): Promise<string[]> {
-  const modesXml = formatAvailableModesXml(await loadAvailableModes(ctx.cwd));
-  return [
-    "Only use this tool when the user explicitly asks to hand off the current work into a new session or thread.",
-    "Provide a concrete goal for the new session. Use mode/model overrides only when the user asks for them.",
-    `Available handoff modes. When the user asks for a mode, use one of these exact names:\n${modesXml}`,
-  ];
-}
-
-async function syncHandoffToolRegistration(
-  pi: ExtensionAPI,
-  handoffTool: ReturnType<typeof createHandoffTool>,
-  state: HandoffRuntimeState,
-  ctx: ExtensionContext,
-): Promise<void> {
-  state.ctx = ctx;
-  const promptGuidelines = await buildHandoffPromptGuidelines(ctx);
-  const signature = promptGuidelines.join("\n\n");
-  if (state.toolPromptSignature === signature) {
-    return;
-  }
-
-  handoffTool.promptGuidelines = promptGuidelines;
-  state.toolPromptSignature = signature;
-  pi.registerTool(handoffTool);
 }
 
 function getAvailableModelsForAutocomplete(ctx: ExtensionContext | undefined): SessionModel[] {
@@ -420,82 +353,6 @@ async function getHandoffArgumentCompletions(
   return getHandoffModelCompletions(parsed.prefixBase, parsed.query, state.ctx);
 }
 
-function createHandoffTool(pi: ExtensionAPI) {
-  return defineTool({
-    name: "handoff",
-    label: "handoff",
-    description:
-      "Transfer context into a new focused session. Only use this when the user explicitly asks for a handoff, new session, or new thread.",
-    promptSnippet:
-      "use `handoff` to transfer context into a new focused session, but only when the user explicitly asks for a handoff/new session",
-    promptGuidelines: [
-      "Only use this tool when the user explicitly asks to hand off the current work into a new session or thread.",
-      "Provide a concrete goal for the new session. Use mode/model overrides only when the user asks for them.",
-    ],
-    parameters: Type.Object({
-      goal: Type.String({ description: "Goal or task for the new session" }),
-      mode: Type.Optional(Type.String({ description: "Optional mode name to apply to the new session" })),
-      model: Type.Optional(Type.String({ description: "Optional model override in provider/modelId form" })),
-    }),
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const goal = params.goal.trim();
-      if (!goal) {
-        return { content: [{ type: "text", text: "Error: handoff goal cannot be empty." }], details: {} };
-      }
-
-      if (!didUserExplicitlyRequestHandoff(ctx)) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Error: the handoff tool may only be used when the user explicitly asks for a handoff or new session.",
-            },
-          ],
-          details: {},
-        };
-      }
-
-      const result = await prepareHandoff(pi, ctx, goal, { mode: params.mode, model: params.model }, false, undefined, onUpdate);
-      if (result.error) {
-        return { content: [{ type: "text", text: `Error: ${result.error}` }], details: {} };
-      }
-
-      pendingToolHandoffState.pending = {
-        prompt: result.prompt,
-        parentSession: result.parentSession,
-        overrides: result.overrides,
-      };
-
-      const content = result.warning
-        ? `Handoff prepared. ${result.warning} A new session will be created after this turn, and the generated prompt will be sent automatically.`
-        : "Handoff prepared. A new session will be created after this turn, and the generated prompt will be sent automatically.";
-
-      return {
-        content: [{ type: "text", text: content }],
-        details: {
-          parentSession: result.parentSession,
-          mode: params.mode,
-          model: params.model,
-        },
-      };
-    },
-    renderCall(args, theme) {
-      const segments = [theme.fg("toolTitle", theme.bold("handoff "))];
-
-      if (args.mode) {
-        segments.push(theme.fg("accent", `-mode ${args.mode} `));
-      }
-
-      if (args.model) {
-        segments.push(theme.fg("accent", `-model ${args.model} `));
-      }
-
-      segments.push(theme.fg("muted", args.goal));
-      return new Text(segments.join(""), 0, 0);
-    },
-  });
-}
-
 function parseCommandArgs(args: string): { goal: string; options: HandoffOptions; error?: string } {
   let remaining = args.trim();
   const options: HandoffOptions = {};
@@ -597,7 +454,6 @@ async function prepareHandoff(
 }
 
 export default function handoffExtension(pi: ExtensionAPI) {
-  const handoffTool = createHandoffTool(pi);
   const state: HandoffRuntimeState = {};
 
   pi.registerCommand("handoff", {
@@ -667,16 +523,6 @@ export default function handoffExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool(handoffTool);
-
-  pi.events.on("modes:changed", async () => {
-    if (!state.ctx) {
-      return;
-    }
-
-    await syncHandoffToolRegistration(pi, handoffTool, state, state.ctx);
-  });
-
   pi.on("agent_end", async (_event, ctx) => {
     const pending = pendingToolHandoffState.pending;
     if (!pending) {
@@ -713,7 +559,6 @@ export default function handoffExtension(pi: ExtensionAPI) {
     state.pendingNewSessionCtx?.resolve(ctx);
     pendingToolHandoffState.contextCutoffTimestamp = undefined;
     pendingToolHandoffState.pending = undefined;
-    await syncHandoffToolRegistration(pi, handoffTool, state, ctx);
 
     if (event.reason !== "new") {
       return;
@@ -748,6 +593,5 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async (_event, ctx) => {
     state.ctx = ctx;
-    await syncHandoffToolRegistration(pi, handoffTool, state, ctx);
   });
 }

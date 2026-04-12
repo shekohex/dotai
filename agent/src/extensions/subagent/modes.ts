@@ -9,6 +9,7 @@ export type ResolvedSubagentMode = {
   spec: ModeSpec;
   tools: string[];
   autoExit: boolean;
+  autoExitTimeoutMs?: number;
   tmuxTarget: NonNullable<ModeSpec["tmuxTarget"]>;
   model?: string;
   thinkingLevel?: NonNullable<ModeSpec["thinkingLevel"]>;
@@ -43,13 +44,15 @@ export async function resolveSubagentMode(
 
   const tools = resolveModeTools(spec.tools, parentActiveTools, availableToolNames);
   const model = spec.provider && spec.modelId ? `${spec.provider}/${spec.modelId}` : undefined;
+  const autoExit = options.autoExit ?? spec.autoExit ?? true;
 
   return {
     value: {
       modeName,
       spec,
       tools,
-      autoExit: options.autoExit ?? spec.autoExit ?? true,
+      autoExit,
+      autoExitTimeoutMs: autoExit ? (spec.autoExitTimeoutMs ?? 30_000) : undefined,
       tmuxTarget: spec.tmuxTarget ?? "pane",
       model,
       thinkingLevel: spec.thinkingLevel,

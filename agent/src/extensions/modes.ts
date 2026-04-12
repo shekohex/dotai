@@ -3,6 +3,7 @@ import { Key } from "@mariozechner/pi-tui";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 
 import { getModesProjectPath, loadModesFile, loadModesFileSync, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
+import { shouldUsePatch } from "./patch.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
 export const MODE_ACTIVATE_EVENT = "modes:activate";
@@ -119,6 +120,87 @@ function describeModeAutocomplete(modeName: string, spec: ModeSpec | undefined):
 function describeModeFlag(modeName: string, spec: ModeSpec | undefined): string {
   const details = describeModeSpec(spec);
   return details ? `Start in \"${modeName}\" mode (${details})` : `Start in \"${modeName}\" mode`;
+}
+
+function compareToolNames(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function sameToolSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getAvailableToolNames(pi: ExtensionAPI): string[] {
+  return pi.getAllTools()
+    .map((tool) => tool.name)
+    .filter((toolName) => !["grep", "find", "ls"].includes(toolName))
+    .sort(compareToolNames);
+}
+
+function getDefaultToolNames(pi: ExtensionAPI, ctx: ExtensionContext, availableToolNames: string[]): string[] {
+  const tools = new Set(availableToolNames);
+
+  if (shouldUsePatch(ctx.model?.id)) {
+    tools.delete("edit");
+    tools.delete("write");
+    if (tools.has("apply_patch")) {
+      tools.add("apply_patch");
+    }
+  } else {
+    tools.delete("apply_patch");
+  }
+
+  return Array.from(tools).sort(compareToolNames);
+}
+
+function resolveModeToolNames(toolRules: string[] | undefined, defaultToolNames: string[], availableToolNames: string[]): string[] {
+  if (toolRules === undefined) {
+    return defaultToolNames;
+  }
+
+  const available = new Set(availableToolNames);
+  const resolved = new Set<string>();
+
+  for (const rule of toolRules) {
+    if (rule === "*") {
+      for (const toolName of defaultToolNames) {
+        resolved.add(toolName);
+      }
+      continue;
+    }
+
+    if (rule.startsWith("!")) {
+      resolved.delete(rule.slice(1));
+      continue;
+    }
+
+    if (available.has(rule)) {
+      resolved.add(rule);
+    }
+  }
+
+  return Array.from(resolved).sort(compareToolNames);
+}
+
+function syncModeTools(pi: ExtensionAPI, ctx: ExtensionContext, spec: ModeSpec | undefined): void {
+  const availableToolNames = getAvailableToolNames(pi);
+  const defaultToolNames = getDefaultToolNames(pi, ctx, availableToolNames);
+  const nextTools = resolveModeToolNames(spec?.tools, defaultToolNames, availableToolNames);
+  const activeTools = pi.getActiveTools().slice().sort(compareToolNames);
+
+  if (!sameToolSet(activeTools, nextTools)) {
+    pi.setActiveTools(nextTools);
+  }
 }
 
 function registerModeFlags(pi: ExtensionAPI): void {
@@ -430,18 +512,20 @@ async function syncFromSelection(
 
   const previousMode = runtime.activeMode;
   const nextMode = inferActiveMode(pi, ctx);
+  const nextSpec = nextMode ? getModeSpec(runtime.data, nextMode) : undefined;
   runtime.activeMode = nextMode;
+  syncModeTools(pi, ctx, nextSpec);
   setStatus(ctx, nextMode);
 
   if (emitChangedEvent && previousMode !== nextMode) {
     if (source === "model_select" && notifyModeSwitchOnSync) {
-      notifyModeSwitch(ctx, nextMode, nextMode ? getModeSpec(runtime.data, nextMode) : undefined);
+      notifyModeSwitch(ctx, nextMode, nextSpec);
     }
 
     emitModeChanged(pi, ctx, {
       mode: nextMode,
       previousMode,
-      spec: nextMode ? getModeSpec(runtime.data, nextMode) : undefined,
+      spec: nextSpec,
       reason: "sync",
       source,
       cwd: ctx.cwd,
@@ -491,6 +575,7 @@ async function applyMode(
       pi.setThinkingLevel(spec.thinkingLevel);
     }
 
+    syncModeTools(pi, ctx, spec);
     runtime.activeMode = modeName;
     runtime.data.currentMode = modeName;
     if (options.persist !== false) {
@@ -552,13 +637,15 @@ async function applySelection(
     }
 
     const nextMode = inferActiveMode(pi, ctx);
+    const nextSpec = nextMode ? getModeSpec(runtime.data, nextMode) : undefined;
     runtime.activeMode = nextMode;
+    syncModeTools(pi, ctx, nextSpec);
     setStatus(ctx, nextMode);
     appendModeState(pi, nextMode);
     emitModeChanged(pi, ctx, {
       mode: nextMode,
       previousMode,
-      spec: nextMode ? getModeSpec(runtime.data, nextMode) : undefined,
+      spec: nextSpec,
       reason: event.reason,
       source: event.source,
       cwd: ctx.cwd,
@@ -755,6 +842,7 @@ async function activateMode(pi: ExtensionAPI, ctx: ExtensionContext, event: Mode
 
   const previousMode = runtime.activeMode;
   runtime.activeMode = event.mode;
+  syncModeTools(pi, ctx, event.spec ?? getModeSpec(runtime.data, event.mode));
   setStatus(ctx, event.mode);
   emitModeChanged(pi, ctx, {
     mode: event.mode,

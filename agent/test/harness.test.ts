@@ -102,6 +102,7 @@ class HarnessMuxAdapter implements MuxAdapter {
 
 function createHandoffTestProviders(summaryText: string): {
   extensionFactory: (pi: ExtensionAPI) => void;
+  getModel: (id: string) => { provider: string; id: string } & Record<string, unknown>;
   dispose: () => void;
 } {
   const registrations = [
@@ -136,6 +137,17 @@ function createHandoffTestProviders(summaryText: string): {
     fauxAssistantMessage("override-provider response"),
     fauxAssistantMessage("override-provider response"),
   ]);
+  const modelById = new Map(registrations.flatMap((registration) => {
+    const providerModel = registration.getModel();
+    return registration.models.map((registeredModel) => [
+      registeredModel.id,
+      {
+        ...providerModel,
+        id: registeredModel.id,
+        name: registeredModel.name,
+      },
+    ] as const);
+  }));
 
   return {
     extensionFactory(pi: ExtensionAPI) {
@@ -156,6 +168,11 @@ function createHandoffTestProviders(summaryText: string): {
           })),
         });
       }
+    },
+    getModel(id: string) {
+      const model = modelById.get(id);
+      assert.ok(model, `Missing model ${id}`);
+      return model as { provider: string; id: string } & Record<string, unknown>;
     },
     dispose() {
       for (const registration of registrations) {
@@ -280,7 +297,8 @@ async function writeHandoffModesFile(cwd: string): Promise<void> {
           modelId: "smart-model",
           thinkingLevel: "low",
         },
-        rush: {
+        docs: {
+          description: "Fast technical writing",
           provider: "mode-provider",
           modelId: "mode-model",
           thinkingLevel: "high",
@@ -347,7 +365,7 @@ async function writeCliFlagModesFile(cwd: string): Promise<void> {
           modelId: "mode-model",
           thinkingLevel: "high",
         },
-        "Rush Fast": {
+        "Docs Fast": {
           provider: "mode-provider",
           modelId: "mode-model",
           thinkingLevel: "high",
@@ -369,6 +387,16 @@ function getLatestModeState(testSession: TestSession): string | undefined {
     .filter((entry) => entry.type === "custom" && entry.customType === "mode-state")
     .at(-1)
     ?.data?.activeMode;
+}
+
+function createActiveToolsCaptureExtension(capturedToolSets: string[][]) {
+  return (pi: ExtensionAPI) => {
+    pi.events.on("modes:changed", () => {
+      queueMicrotask(() => {
+        capturedToolSets.push(pi.getActiveTools().slice().sort((left, right) => left.localeCompare(right)));
+      });
+    });
+  };
 }
 
 function setFakeParentSessionPath(testSession: TestSession, sessionPath: string): void {
@@ -883,7 +911,7 @@ timedTest("handoff command starts the new session in the requested mode", async 
     const consumedBeforeCommand = session.playbook.consumed;
     observedModeChanges.length = 0;
 
-    await session.session.prompt("/handoff -mode rush finish the implementation");
+    await session.session.prompt("/handoff -mode docs finish the implementation");
     await session.session.agent.waitForIdle();
     await new Promise((resolve) => setTimeout(resolve, 25));
 
@@ -895,14 +923,14 @@ timedTest("handoff command starts the new session in the requested mode", async 
     assert.equal(model.model.provider, "mode-provider");
     assert.equal(model.model.id, "mode-model");
     assert.equal(model.thinkingLevel, "high");
-    assert.equal(getLatestModeState(session), "rush");
+    assert.equal(getLatestModeState(session), "docs");
     assert.equal(loader.calls.count, 1);
 
     const userMessages = getBranchTextMessages(session).filter((entry) => entry.role === "user");
     assert.ok(userMessages.some((entry) => entry.text.includes("Parent session: /tmp/parent-session.jsonl")));
 
     assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
-    assert.equal(observedModeChanges[0]?.mode, "rush");
+    assert.equal(observedModeChanges[0]?.mode, "docs");
     assert.equal(observedModeChanges[0]?.reason, "restore");
     assert.equal(observedModeChanges[0]?.source, "session_start");
     assert.equal(observedModeChanges[0]?.spec?.provider, "mode-provider");
@@ -946,7 +974,7 @@ timedTest("handoff command with mode and model applies the startup selection onc
 
     observedModeChanges.length = 0;
 
-    await session.session.prompt("/handoff -mode rush -model override-provider/override-model finish the implementation");
+    await session.session.prompt("/handoff -mode docs -model override-provider/override-model finish the implementation");
     await session.session.agent.waitForIdle();
     await new Promise((resolve) => setTimeout(resolve, 25));
 
@@ -986,12 +1014,12 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
     assert.deepEqual(flagCompletions?.map((item) => item.label), ["-mode", "-model"]);
 
     const modeCompletions = await getCommandArgumentCompletions(session, "handoff", "-mode ");
-    assert.ok(modeCompletions?.some((item) => item.label === "rush"));
+    assert.ok(modeCompletions?.some((item) => item.label === "docs"));
     assert.ok(modeCompletions?.some((item) => item.label === "smart"));
-    assert.match(modeCompletions?.find((item) => item.label === "rush")?.description ?? "", /mode-provider\/mode-model/);
-    assert.match(modeCompletions?.find((item) => item.label === "rush")?.description ?? "", /thinking:high/);
+    assert.match(modeCompletions?.find((item) => item.label === "docs")?.description ?? "", /mode-provider\/mode-model/);
+    assert.match(modeCompletions?.find((item) => item.label === "docs")?.description ?? "", /thinking:high/);
 
-    const remainingFlagCompletions = await getCommandArgumentCompletions(session, "handoff", "-mode rush -");
+    const remainingFlagCompletions = await getCommandArgumentCompletions(session, "handoff", "-mode docs -");
     assert.deepEqual(remainingFlagCompletions?.map((item) => item.label), ["-model"]);
 
     const modelCompletions = await getCommandArgumentCompletions(session, "handoff", "-model override");
@@ -1005,7 +1033,7 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
   }
 });
 
-timedTest("handoff tool prompt includes available modes and refreshes after mode changes", async () => {
+timedTest("subagent tool prompt includes available modes and refreshes after mode changes", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-modes-prompt-"));
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1015,13 +1043,13 @@ timedTest("handoff tool prompt includes available modes and refreshes after mode
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+      extensionFactories: [modesExtension, createSubagentExtension(), providers.extensionFactory],
     });
     patchHarnessAgent(session);
 
     const initialPrompt = getCurrentSystemPrompt(session);
     assert.match(initialPrompt, /<available_modes>/);
-    assert.match(initialPrompt, /<mode name="rush" model="mode-provider\/mode-model" thinkingLevel="high" \/>/);
+    assert.match(initialPrompt, /<mode name="docs" model="mode-provider\/mode-model" thinkingLevel="high" description="Fast technical writing" \/>/);
     assert.match(initialPrompt, /<mode name="smart" model="mode-provider\/smart-model" thinkingLevel="low" \/>/);
 
     await session.session.prompt("/mode store deep");
@@ -1058,7 +1086,7 @@ timedTest("modes extension registers CLI flags from discovered modes", async () 
 
       assert.ok(flags.includes("mode-deep-work"));
       assert.ok(flags.includes("mode-mini-max"));
-      assert.ok(flags.includes("mode-rush-fast"));
+      assert.ok(flags.includes("mode-docs-fast"));
     });
   } finally {
     providers.dispose();
@@ -1083,7 +1111,7 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
 
       observedModeChanges.length = 0;
       ((session!.session as { extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void } }).extensionRunner)
-        .setFlagValue("mode-rush", true);
+        .setFlagValue("mode-docs", true);
 
       await session!.session.reload();
 
@@ -1091,11 +1119,11 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
       assert.equal(model.model.provider, "mode-provider");
       assert.equal(model.model.id, "mode-model");
       assert.equal(model.thinkingLevel, "high");
-      assert.equal(getLatestModeState(session!), "rush");
+      assert.equal(getLatestModeState(session!), "docs");
 
       assert.ok(observedModeChanges.length >= 1, JSON.stringify(observedModeChanges));
       const latestModeChange = observedModeChanges.at(-1);
-      assert.equal(latestModeChange?.mode, "rush");
+      assert.equal(latestModeChange?.mode, "docs");
       assert.equal(latestModeChange?.reason, "restore");
       assert.equal(latestModeChange?.source, "session_start");
       assert.equal(latestModeChange?.spec?.provider, "mode-provider");
@@ -1144,73 +1172,6 @@ timedTest("mode CLI flags preserve the explicit startup mode when modes share a 
       assert.equal(getLatestModeState(session!), "review");
       assert.equal(observedModeChanges.length, 0, JSON.stringify(observedModeChanges));
     });
-  } finally {
-    session?.dispose();
-    providers.dispose();
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
-
-timedTest("handoff tool switches session and auto-sends generated prompt with parent session hint", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-tool-"));
-  let session: TestSession | undefined;
-  const observedModeChanges: CapturedModeChange[] = [];
-  const providers = createHandoffTestProviders("## Context\nWe fixed the root cause.\n\n## Task\nShip the follow-up changes.");
-
-  await writeHandoffModesFile(cwd);
-
-  try {
-    session = await createTestSession({
-      cwd,
-      extensionFactories: [modesExtension, handoffExtension, createModeChangeCaptureExtension(observedModeChanges), providers.extensionFactory],
-    });
-    patchHarnessAgent(session);
-
-    setFakeParentSessionPath(session, "/tmp/tool-parent-session.jsonl");
-
-    const playbook = createPlaybookStreamFn([
-      when("We fixed the root cause", [
-        says("Good."),
-      ]),
-      when("Please handoff this work to a new session", [
-        calls("handoff", {
-          goal: "Ship the follow-up changes.",
-          mode: "rush",
-          model: "override-provider/override-model",
-        }),
-        says("Original turn complete."),
-      ]),
-      when("Ship the follow-up changes.", [
-        says("New session response."),
-      ]),
-    ]);
-    (session.session.agent as { streamFn: unknown }).streamFn = playbook.streamFn;
-
-    await session.session.prompt("We fixed the root cause");
-    await session.session.agent.waitForIdle();
-
-    observedModeChanges.length = 0;
-
-    await session.session.prompt("Please handoff this work to a new session");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await session.session.agent.waitForIdle();
-    await new Promise((resolve) => setTimeout(resolve, 25));
-
-    const toolExecutionEnd = session.events.all.find(
-      (event) => event.type === "tool_execution_end" && event.toolName === "handoff",
-    );
-    assert.ok(toolExecutionEnd);
-    assert.equal(toolExecutionEnd.isError, false);
-
-    const model = (session.session as { model: { provider: string; id: string }; thinkingLevel: string });
-    assert.equal(model.model.provider, "override-provider");
-    assert.equal(model.model.id, "override-model");
-    assert.equal(model.thinkingLevel, "high");
-    assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
-    assert.equal(observedModeChanges[0]?.mode, undefined);
-    assert.equal(observedModeChanges[0]?.reason, "restore");
-    assert.equal(observedModeChanges[0]?.source, "session_start");
-    assert.equal(playbook.state.consumed, 4);
   } finally {
     session?.dispose();
     providers.dispose();
@@ -1347,6 +1308,47 @@ timedTest("mode changes switch the system prompt when the selected mode changes 
   }
 });
 
+timedTest("modes extension scopes tools and restores the default toolset when leaving a scoped mode", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-tools-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+  const capturedToolSets: string[][] = [];
+
+  await writeSharedSelectionModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, createActiveToolsCaptureExtension(capturedToolSets), providers.extensionFactory],
+    });
+    await session.session.prompt("/mode deep");
+    await session.session.agent.waitForIdle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(capturedToolSets.at(-1), ["bash", "read"]);
+
+    await session.session.prompt("/mode review");
+    await session.session.agent.waitForIdle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(capturedToolSets.at(-1), ["read"]);
+
+    await session.session.setModel(providers.getModel("smart-model") as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const restoredToolNames = capturedToolSets.at(-1) ?? [];
+    assert.ok(restoredToolNames.includes("bash"));
+    assert.ok(restoredToolNames.includes("read"));
+    assert.ok(restoredToolNames.includes("edit"));
+    assert.ok(restoredToolNames.includes("write"));
+    assert.ok(!restoredToolNames.includes("apply_patch"));
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("mermaid extension renders assistant diagrams inline without emitting extra custom messages", async () => {
   let session: TestSession | undefined;
 
@@ -1403,7 +1405,7 @@ timedTest("mermaid extension renders assistant diagrams inline without emitting 
   }
 });
 
-timedTest("subagent extension runs start, list, message, cancel, and resume through the harness playbook", async () => {
+timedTest("subagent extension runs start, list, message, cancel, and auto-resume through the harness playbook", async () => {
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -1452,18 +1454,19 @@ timedTest("subagent extension runs start, list, message, cancel, and resume thro
         }; }),
         says("Cancelled."),
       ]),
-      when("Resume delegated worker", [
+      when("Message delegated worker after cancel", [
         calls("subagent", () => {
           const startEvent = session!.events.all.find(
             (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
           ) as { result?: { details?: { state?: { sessionId?: string } } } } | undefined;
           const sessionId = startEvent?.result?.details?.state?.sessionId ?? "";
           return {
-          action: "resume",
+          action: "message",
           sessionId,
-          task: "Address review feedback",
+          message: "Address review feedback",
+          delivery: "followUp",
         }; }),
-        says("Resumed."),
+        says("Messaged again."),
       ]),
     );
 
@@ -1477,16 +1480,26 @@ timedTest("subagent extension runs start, list, message, cancel, and resume thro
     assert.match(sessionId, /^[0-9a-f-]{36}$/i);
     assert.equal(executionEnds.length, 5);
     assert.ok(executionEnds.every((event) => event.isError === false));
-    assert.ok(executionEnds.every((event) => event.result?.content?.[0]?.text === "ok"));
+    assert.match(executionEnds[0]?.result?.content?.[0]?.text ?? "", /The subagent will return with a summary automatically when it finishes/i);
+    assert.equal(executionEnds[1]?.result?.content?.[0]?.text, "ok");
+    assert.equal(executionEnds[2]?.result?.content?.[0]?.text, "ok");
+    assert.equal(executionEnds[3]?.result?.content?.[0]?.text, "ok");
+    assert.match(executionEnds[4]?.result?.content?.[0]?.text ?? "", /resumed using its previous task and followUp message delivered/i);
 
     assert.equal(mux.created.length, 2);
-    assert.equal(mux.sent.length, 1);
+    assert.equal(mux.sent.length, 2);
     assert.equal(mux.killed.length, 1);
+    assert.equal(mux.created[0]?.title, "worker-one");
+    assert.equal(mux.created[1]?.title, "worker-one");
     assert.match(mux.created[0]?.command ?? "", /--session/);
     assert.match(mux.created[1]?.command ?? "", /--session/);
     assert.ok((mux.created[1]?.command ?? "").includes(sessionPath));
     assert.match(mux.created[0]?.command ?? "", /Inspect failing tests/);
-    assert.match(mux.created[1]?.command ?? "", /Address review feedback/);
+    assert.match(mux.created[1]?.command ?? "", /Inspect failing tests/);
+    assert.match(mux.created[0]?.command ?? "", /"prompt":"Inspect failing tests"/);
+    assert.match(mux.created[1]?.command ?? "", /"prompt":"Inspect failing tests"/);
+    assert.match(mux.created[0]?.command ?? "", /"autoExitTimeoutMs":30000/);
+    assert.match(mux.created[1]?.command ?? "", /"autoExitTimeoutMs":30000/);
     {
       const command = mux.created[0]?.command ?? "";
       const promptIndex = command.indexOf("Inspect failing tests");
@@ -1495,6 +1508,8 @@ timedTest("subagent extension runs start, list, message, cancel, and resume thro
     }
     assert.equal(mux.sent[0]?.text, "Focus on src/extensions first");
     assert.equal(mux.sent[0]?.submitMode, "steer");
+    assert.equal(mux.sent[1]?.text, "Address review feedback");
+    assert.equal(mux.sent[1]?.submitMode, "followUp");
     assert.ok(session.events.uiCallsFor("setWidget").length > 0);
 
     const renderedText = renderSessionChatLines(session).join("\n");
@@ -1503,7 +1518,8 @@ timedTest("subagent extension runs start, list, message, cancel, and resume thro
     assert.match(renderedText, /π message · [0-9a-f]{8} · steer · Focus on src\/extensions first/i);
     assert.match(renderedText, /worker-one · running · steer · Focus on src\/extensions[\s\S]*first/i);
     assert.match(renderedText, /π cancel · [0-9a-f]{8} · worker-one · cancelled/i);
-    assert.match(renderedText, /π resume · [0-9a-f]{8} · Address review feedback · worker-one · running/i);
+    assert.match(renderedText, /π message · [0-9a-f]{8} · followUp · Address review feedback/i);
+    assert.match(renderedText, /worker-one · running · resumed · followUp · Address[\s\S]*review feedback/i);
   } finally {
     session?.dispose();
   }
@@ -1551,7 +1567,58 @@ timedTest("subagent extension launches into a tmux window when the mode requests
 
     assert.equal(mux.created.length, 1);
     assert.equal(mux.created[0]?.target, "window");
+    assert.equal(mux.created[0]?.title, "worker-window");
     assert.match(mux.created[0]?.command ?? "", /Inspect failing tests/);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("subagent extension propagates mode-specific idle timeout into the child bootstrap state", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-subagent-timeout-mode-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await writeFile(
+    join(cwd, ".pi", "modes.json"),
+    `${JSON.stringify({
+      version: 1,
+      modes: {
+        reviewer: {
+          tools: ["read"],
+          autoExit: true,
+          autoExitTimeoutMs: 45,
+        },
+      },
+    }, null, 2)}\n`,
+    "utf8",
+  );
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Start a delegated reviewer with a custom idle timeout", [
+        calls("subagent", {
+          action: "start",
+          name: "worker-timeout",
+          mode: "reviewer",
+          task: "Inspect failing tests",
+        }),
+        says("Started."),
+      ]),
+    );
+
+    assert.equal(mux.created.length, 1);
+    assert.equal(mux.created[0]?.title, "worker-timeout");
+    assert.match(mux.created[0]?.command ?? "", /"prompt":"Inspect failing tests"/);
+    assert.match(mux.created[0]?.command ?? "", /"autoExitTimeoutMs":45/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -1593,7 +1660,7 @@ timedTest("subagent extension uses shared handoff summarization when handoff is 
     const toolExecutionEnd = session.events.all.find(
       (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
     ) as { result?: { content?: Array<{ type: string; text?: string }> } } | undefined;
-    assert.equal(toolExecutionEnd?.result?.content?.[0]?.text ?? "", "ok");
+    assert.match(toolExecutionEnd?.result?.content?.[0]?.text ?? "", /will return with a summary automatically when it finishes/i);
   } finally {
     providers.dispose();
     session?.dispose();
@@ -1629,7 +1696,42 @@ timedTest("subagent extension reports standard tool errors for invalid operation
       ?.filter((part) => part.type === "text")
       .map((part) => part.text ?? "")
       .join("\n") ?? "";
-    assert.match(errorText, /Unknown active subagent missing-session/);
+    assert.match(errorText, /subagent message failed: sessionId missing-session was not found in this parent session/);
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("subagent extension reports actionable invalid param errors", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [createSubagentExtension({ adapterFactory: () => new HarnessMuxAdapter() })],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Start a delegated worker without a task", [
+        calls("subagent", {
+          action: "start",
+          name: "worker-one",
+        }),
+        says("Handled."),
+      ]),
+    );
+
+    const toolExecutionEnd = session.events.all.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
+    );
+    assert.ok(toolExecutionEnd);
+    assert.equal(toolExecutionEnd.isError, true);
+    const errorText = toolExecutionEnd.result?.content
+      ?.filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join("\n") ?? "";
+    assert.match(errorText, /Invalid subagent start params: `task` is required/);
+    assert.match(errorText, /There is no subagent read action later/i);
   } finally {
     session?.dispose();
   }

@@ -32,9 +32,11 @@ export class TmuxAdapter implements MuxAdapter {
         "-d",
         "-c",
         options.cwd,
+        "-n",
+        options.title,
         "-P",
         "-F",
-        "#{pane_id}\t#{window_id}",
+        "#{pane_id}",
         options.command,
       ]
       : [
@@ -51,14 +53,11 @@ export class TmuxAdapter implements MuxAdapter {
     const result = await this.exec("tmux", createArgs, { cwd: this.cwd });
     this.assertOk(result, options.target === "window" ? "create window" : "create pane");
 
-    const [paneId, windowId] = result.stdout.trim().split("\t");
+    const [paneId] = result.stdout.trim().split("\t");
     if (!paneId) {
       throw new Error("tmux did not return a pane id");
     }
 
-    if (options.target === "window" && windowId) {
-      await this.exec("tmux", ["rename-window", "-t", windowId, options.title], { cwd: this.cwd });
-    }
     await this.exec("tmux", ["select-pane", "-t", paneId, "-T", options.title], { cwd: this.cwd });
     return { paneId };
   }

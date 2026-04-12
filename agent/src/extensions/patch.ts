@@ -432,7 +432,7 @@ export default function patchExtension(pi: ExtensionAPI) {
   });
 }
 
-function shouldUsePatch(modelId: string | undefined): boolean {
+export function shouldUsePatch(modelId: string | undefined): boolean {
   if (!modelId) {
     return false;
   }

@@ -37,41 +37,110 @@ export const defaultModes = defineModesFile({
   version: 1,
   currentMode: "deep",
   modes: {
-    mini: {
+    rush: {
       provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
-      color: "accent"
+      color: "warning",
+      tmuxTarget: "window",
+      tools: [
+        "*"
+      ],
+      description: "Use me when you want a cheap, fast agent for exploration, rough implementation, and trying ideas quickly and you’re willing to review the output carefully using the review mode."
     },
-    rush: {
+    docs: {
       provider: "opencode-go",
       modelId: "kimi-k2.5",
       thinkingLevel: "high",
-      color: "success"
+      color: "success",
+      tmuxTarget: "window",
+      tools: [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "websearch"
+      ],
+      description: "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes."
     },
     deep: {
       provider: "codex-openai",
       modelId: "gpt-5.4",
       thinkingLevel: "high",
-      color: "warning"
+      color: "warning",
+      tmuxTarget: "window",
+      tools: [
+        "*"
+      ],
+      description: "Use me when you want the highest-quality help for complex implementation, debugging, and code review; I’m the default mode."
     },
     review: {
       provider: "codex-openai",
       modelId: "gpt-5.4",
       thinkingLevel: "high",
-      color: "muted"
+      color: "muted",
+      tmuxTarget: "window",
+      tools: [
+        "read",
+        "bash",
+        "websearch"
+      ],
+      autoExit: true,
+      description: "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
+      systemPrompt: readFileSync(join(cwd, "resources", "modes", "review.md"), { encoding: "utf-8" }),
+      systemPromptMode: "append"
+    },
+    librarian: {
+      provider: "codex-openai",
+      modelId: "gpt-5.4-mini",
+      thinkingLevel: "high",
+      color: "mdLink",
+      tmuxTarget: "window",
+      tools: [
+        "read",
+        "bash"
+      ],
+      autoExit: true,
+      autoExitTimeoutMs: 5000,
+      description: "GitHub research scout for coding and personal-assistant tasks. Use when the answer likely lives in GitHub repos, exact repo/path locations are unknown, or you'd otherwise do exploratory gh search/tree probes plus ls/rg/fd/find/grep/read on fetched files. Librarian performs targeted reconnaissance in an isolated workspace and returns concise, path-first findings with line-ranged evidence.",
+      systemPrompt: readFileSync(join(cwd, "resources", "modes", "librarian.md"), { encoding: "utf-8" }),
+      systemPromptMode: "append"
     },
     search: {
       provider: "gemini",
       modelId: "gemini-3-flash-preview",
       thinkingLevel: "high",
-      color: "borderMuted"
+      color: "borderMuted",
+      tmuxTarget: "window",
+      tools: [
+        "read",
+        "bash"
+      ],
+      autoExit: true,
+      description: "Use me when you want a quick answer from the current codebase or local files, especially for fast exploration."
     },
     painter: {
       provider: "opencode-go",
       modelId: "glm-5.1",
       thinkingLevel: "high",
-      color: "bashMode"
+      color: "bashMode",
+      tmuxTarget: "window",
+      tools: [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "websearch"
+      ],
+      description: "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use."
+    },
+    worker: {
+      tools: [
+        "*",
+        "!subagent"
+      ],
+      autoExit: true,
+      description: "Use me when you want a general-purpose worker for a focused task."
     }
   }
 }) satisfies DefaultModes;

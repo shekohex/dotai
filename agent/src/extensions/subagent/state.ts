@@ -16,8 +16,9 @@ import { renderSubagentWidget } from "./render.js";
 import {
   createChildSessionFile,
   getParentInjectedInputMarkerPath,
+  isAutoExitTimeoutModeActive,
   readChildSessionOutcome,
-  readChildSessionStatus,
+  readChildSessionStatusDetails,
   reduceRuntimeSubagents,
   SUBAGENT_PARENT_INPUT_GRACE_MS,
 } from "./session.js";
@@ -31,6 +32,7 @@ import {
   type CancelSubagentParams,
   type ChildBootstrapState,
   type MessageSubagentParams,
+  type MessageSubagentResult,
   type ResumeSubagentParams,
   type ResumeSubagentResult,
   type RuntimeSubagent,
@@ -56,6 +58,22 @@ type LaunchCommandBuilder = (state: RuntimeSubagent, childState: ChildBootstrapS
   systemPromptMode: "append" | "replace";
 }) => string;
 
+function runtimeSubagentError(action: "start" | "resume" | "message" | "cancel", detail: string): Error {
+  return new Error(`subagent ${action} failed: ${detail}`);
+}
+
+function unknownSessionError(action: "message" | "cancel" | "resume", sessionId: string): Error {
+  return runtimeSubagentError(
+    action,
+    `sessionId ${sessionId} was not found in this parent session. Use subagent list to inspect known child sessions or start a new subagent.`,
+  );
+}
+
+type ResumeExecutionOptions = {
+  progressAction?: "message" | "start";
+  errorAction?: "resume" | "message";
+};
+
 function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
   return status === "completed" || status === "cancelled" || status === "failed";
 }
@@ -76,6 +94,7 @@ export class SubagentManager {
   private states = new Map<string, RuntimeSubagent>();
   private activeSessionIds = new Set<string>();
   private pollTimer?: NodeJS.Timeout;
+  private widgetTimer?: NodeJS.Timeout;
   private restoring = false;
 
   constructor(
@@ -93,10 +112,28 @@ export class SubagentManager {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
     }
+
+    if (this.widgetTimer) {
+      clearInterval(this.widgetTimer);
+      this.widgetTimer = undefined;
+    }
   }
 
   list(): RuntimeSubagent[] {
     return Array.from(this.states.values()).sort((left, right) => left.startedAt - right.startedAt);
+  }
+
+  private getStateOrThrow(action: "resume" | "message" | "cancel", sessionId: string): RuntimeSubagent {
+    const state = this.states.get(sessionId);
+    if (!state) {
+      throw unknownSessionError(action, sessionId);
+    }
+
+    return state;
+  }
+
+  private async hasLivePane(state: RuntimeSubagent): Promise<boolean> {
+    return state.paneId ? await this.adapter.paneExists(state.paneId).catch(() => false) : false;
   }
 
   async restore(ctx: ExtensionContext): Promise<void> {
@@ -115,7 +152,7 @@ export class SubagentManager {
           continue;
         }
 
-        const paneAlive = await this.adapter.paneExists(state.paneId).catch(() => false);
+        const paneAlive = await this.hasLivePane(state);
         if (paneAlive) {
           this.activeSessionIds.add(state.sessionId);
           await this.syncLiveState(state, "restored");
@@ -140,7 +177,7 @@ export class SubagentManager {
   ): Promise<StartSubagentResult> {
     const availability = await this.adapter.isAvailable();
     if (!availability) {
-      throw new Error("tmux is not available in the current session");
+      throw runtimeSubagentError("start", "tmux is not available in the current session. Run the parent pi session inside tmux before starting a subagent.");
     }
 
     const mode = await resolveSubagentMode(this.pi, ctx, {
@@ -211,8 +248,10 @@ export class SubagentManager {
       parentSessionId,
       parentSessionPath,
       name: params.name,
+      prompt,
       mode: mode.value.modeName,
       autoExit: mode.value.autoExit,
+      autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
       handoff: params.handoff ?? false,
       tools: mode.value.tools,
       startedAt,
@@ -232,6 +271,8 @@ export class SubagentManager {
       task: params.task,
       handoff: params.handoff ?? false,
       autoExit: mode.value.autoExit,
+      autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
+      autoExitTimeoutActive: false,
       status: "running",
       startedAt,
       updatedAt: startedAt,
@@ -271,23 +312,26 @@ export class SubagentManager {
     params: ResumeSubagentParams,
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback<any>,
+    options: ResumeExecutionOptions = {},
   ): Promise<ResumeSubagentResult> {
-    const existing = this.states.get(params.sessionId);
-    if (!existing) {
-      throw new Error(`Unknown subagent ${params.sessionId}`);
-    }
+    const errorAction = options.errorAction ?? "resume";
+    const progressAction = options.progressAction ?? (errorAction === "message" ? "message" : "start");
+    const existing = this.getStateOrThrow(errorAction, params.sessionId);
 
-    const paneAlive = existing.paneId ? await this.adapter.paneExists(existing.paneId).catch(() => false) : false;
+    const paneAlive = await this.hasLivePane(existing);
     if (paneAlive) {
       this.activeSessionIds.add(existing.sessionId);
-      throw new Error(`Subagent ${existing.name} (${existing.sessionId}) is already active; use message instead`);
+      throw runtimeSubagentError(
+        errorAction,
+        `${existing.name} (${existing.sessionId}) already has a live tmux pane/window. Inspect that tmux output directly from the parent session or use subagent message instead.`,
+      );
     }
 
     this.activeSessionIds.delete(existing.sessionId);
 
     const availability = await this.adapter.isAvailable();
     if (!availability) {
-      throw new Error("tmux is not available in the current session");
+      throw runtimeSubagentError(errorAction, "tmux is not available in the current session. Run the parent pi session inside tmux before resuming a subagent.");
     }
 
     const mode = await resolveSubagentMode(this.pi, ctx, {
@@ -306,7 +350,7 @@ export class SubagentManager {
     const resumedAt = Date.now();
 
     emitProgressUpdate(onUpdate, {
-      action: "resume",
+      action: progressAction,
       phase: "launch",
       statusText: `Launching ${existing.name}`,
       preview: params.task,
@@ -319,8 +363,10 @@ export class SubagentManager {
       parentSessionId,
       parentSessionPath,
       name: existing.name,
+      prompt: params.task,
       mode: mode.value.modeName,
       autoExit: mode.value.autoExit,
+      autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
       handoff: false,
       tools: mode.value.tools,
       startedAt: existing.startedAt,
@@ -338,6 +384,8 @@ export class SubagentManager {
       task: params.task,
       handoff: false,
       autoExit: mode.value.autoExit,
+      autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
+      autoExitTimeoutActive: existing.autoExitTimeoutActive ?? isAutoExitTimeoutModeActive(existing.sessionId),
       status: "running",
       summary: undefined,
       exitCode: undefined,
@@ -377,15 +425,52 @@ export class SubagentManager {
     return { state, prompt: params.task };
   }
 
-  async message(params: MessageSubagentParams, onUpdate?: AgentToolUpdateCallback<any>): Promise<RuntimeSubagent> {
-    const state = this.states.get(params.sessionId);
-    if (!state) {
-      throw new Error(`Unknown active subagent ${params.sessionId}`);
-    }
-    if (!this.activeSessionIds.has(params.sessionId)) {
-      throw new Error(`Subagent ${state.name} (${state.sessionId}) is not active; use resume instead`);
+  async message(
+    params: MessageSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<MessageSubagentResult> {
+    const { state, autoResumed, resumePrompt } = await this.resolveMessageTarget(params.sessionId, ctx, onUpdate);
+    const deliveredState = await this.deliverMessage(state, params, onUpdate);
+    return {
+      state: deliveredState,
+      autoResumed,
+      resumePrompt,
+    };
+  }
+
+  private async resolveMessageTarget(
+    sessionId: string,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<{ state: RuntimeSubagent; autoResumed: boolean; resumePrompt?: string }> {
+    const existing = this.getStateOrThrow("message", sessionId);
+
+    if (await this.hasLivePane(existing)) {
+      this.activeSessionIds.add(existing.sessionId);
+      return { state: existing, autoResumed: false };
     }
 
+    this.activeSessionIds.delete(existing.sessionId);
+    const resumed = await this.resume({
+      sessionId: existing.sessionId,
+      task: existing.task,
+      mode: existing.mode,
+      cwd: existing.cwd,
+      autoExit: existing.autoExit,
+    }, ctx, onUpdate, { progressAction: "message", errorAction: "message" });
+    return {
+      state: resumed.state,
+      autoResumed: true,
+      resumePrompt: resumed.prompt,
+    };
+  }
+
+  private async deliverMessage(
+    state: RuntimeSubagent,
+    params: MessageSubagentParams,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<RuntimeSubagent> {
     const startedAt = Date.now();
 
     emitProgressUpdate(onUpdate, {
@@ -429,6 +514,8 @@ export class SubagentManager {
         ...state,
         event: "updated",
         status: "running",
+        autoExitDeadlineAt: undefined,
+        autoExitTimeoutActive: state.autoExitTimeoutActive,
         updatedAt: Date.now(),
       };
 
@@ -449,19 +536,20 @@ export class SubagentManager {
   }
 
   async cancel(params: CancelSubagentParams): Promise<RuntimeSubagent> {
-    const state = this.states.get(params.sessionId);
-    if (!state) {
-      throw new Error(`Unknown active subagent ${params.sessionId}`);
-    }
+    const state = this.getStateOrThrow("cancel", params.sessionId);
     if (!this.activeSessionIds.has(params.sessionId)) {
-      throw new Error(`Subagent ${state.name} (${state.sessionId}) is not active`);
+      throw runtimeSubagentError(
+        "cancel",
+        `${state.name} (${state.sessionId}) does not have a live tmux pane/window right now. Inspect subagent list or the tmux state first.`,
+      );
     }
 
-    await this.adapter.killPane(state.paneId).catch(() => undefined);
+    await this.adapter.killPane(state.paneId);
     const cancelled: RuntimeSubagent = {
       ...state,
       event: "cancelled",
       status: "cancelled",
+      autoExitDeadlineAt: undefined,
       updatedAt: Date.now(),
       completedAt: Date.now(),
     };
@@ -490,6 +578,40 @@ export class SubagentManager {
     this.pollTimer.unref?.();
   }
 
+  private ensureWidgetTimer(): void {
+    if (!this.ctx?.hasUI) {
+      if (this.widgetTimer) {
+        clearInterval(this.widgetTimer);
+        this.widgetTimer = undefined;
+      }
+      return;
+    }
+
+    const needsCountdownRefresh = Array.from(this.activeSessionIds).some((sessionId) => {
+      const state = this.states.get(sessionId);
+      return state?.status === "idle"
+        && state.autoExit
+        && state.autoExitTimeoutActive === true
+        && state.autoExitTimeoutMs !== undefined
+        && state.autoExitDeadlineAt !== undefined;
+    });
+
+    if (needsCountdownRefresh) {
+      if (!this.widgetTimer) {
+        this.widgetTimer = setInterval(() => {
+          this.refreshWidget();
+        }, 1000);
+        this.widgetTimer.unref?.();
+      }
+      return;
+    }
+
+    if (this.widgetTimer) {
+      clearInterval(this.widgetTimer);
+      this.widgetTimer = undefined;
+    }
+  }
+
   private async poll(): Promise<void> {
     if (this.activeSessionIds.size === 0 || this.restoring) {
       this.stopPollingIfIdle();
@@ -504,7 +626,7 @@ export class SubagentManager {
         continue;
       }
 
-      const alive = await this.adapter.paneExists(state.paneId).catch(() => false);
+      const alive = await this.hasLivePane(state);
       if (alive) {
         await this.syncLiveState(state, "updated");
         continue;
@@ -525,6 +647,8 @@ export class SubagentManager {
       event: outcome.failed ? "failed" : "completed",
       status: outcome.failed ? "failed" : "completed",
       summary: outcome.summary,
+      autoExitDeadlineAt: undefined,
+      autoExitTimeoutActive: state.autoExitTimeoutActive,
       updatedAt: now,
       completedAt: now,
     };
@@ -572,6 +696,7 @@ export class SubagentManager {
 
   private refreshWidget(): void {
     if (!this.ctx?.hasUI) {
+      this.ensureWidgetTimer();
       return;
     }
 
@@ -581,19 +706,32 @@ export class SubagentManager {
       .sort((left, right) => left.startedAt - right.startedAt);
 
     this.ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, renderSubagentWidget(activeSubagents), { placement: "belowEditor" });
+    this.ensureWidgetTimer();
   }
 
   private async syncLiveState(state: RuntimeSubagent, event: RuntimeSubagent["event"]): Promise<RuntimeSubagent> {
-    const liveStatus = await readChildSessionStatus(state.sessionPath);
+    const liveStatus = await readChildSessionStatusDetails(state.sessionPath);
+    const autoExitTimeoutMs = state.autoExitTimeoutMs ?? 30_000;
+    const autoExitTimeoutActive = state.autoExit && isAutoExitTimeoutModeActive(state.sessionId);
     const nextState: RuntimeSubagent = {
       ...state,
       event,
-      status: liveStatus,
+      status: liveStatus.status,
+      autoExitTimeoutActive,
       updatedAt: Date.now(),
+      autoExitDeadlineAt:
+        liveStatus.status === "idle" && state.autoExit && autoExitTimeoutActive
+          ? state.autoExitDeadlineAt ?? (liveStatus.idleSinceAt ?? Date.now()) + autoExitTimeoutMs
+          : undefined,
     };
 
     this.states.set(nextState.sessionId, nextState);
-    if (nextState.status !== state.status || nextState.event !== state.event) {
+    if (
+      nextState.status !== state.status
+      || nextState.event !== state.event
+      || nextState.autoExitTimeoutActive !== state.autoExitTimeoutActive
+      || nextState.autoExitDeadlineAt !== state.autoExitDeadlineAt
+    ) {
       await this.persistState(nextState);
     }
 

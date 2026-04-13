@@ -43,7 +43,7 @@ export const SubagentToolParamsSchema = Type.Object({
   handoff: Type.Optional(Type.Boolean({ description: "Optional for start. Reuse handoff summarization for the initial prompt." })),
   cwd: Type.Optional(Type.String({ description: "Optional working directory for the child session." })),
   autoExit: Type.Optional(Type.Boolean({ description: "Optional override for the mode autoExit behavior." })),
-  sessionId: Type.Optional(Type.String({ description: "Required for message and cancel. Use a prior subagent result or subagent list to get it." })),
+  sessionId: Type.Optional(Type.String({ description: "Required for message and cancel. Use the full UUID v4 sessionId from a prior subagent result or subagent list output." })),
   message: Type.Optional(Type.String({ description: "Required for message. Sends follow-up text into the child tmux pane/window, auto-resuming the child first when its pane/window is gone. To inspect the reply, read the tmux output directly from the parent session." })),
   delivery: Type.Optional(SubagentDeliverySchema),
 });

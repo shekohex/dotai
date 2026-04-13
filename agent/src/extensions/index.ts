@@ -15,6 +15,7 @@ import modesExtension from "./modes.js";
 import contextExtension from "./context.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
 import filesExtension from "./files.js";
+import promptStashExtension from "./prompt-stash.js";
 import terminalNotifyExtension from "./terminal-notify.js";
 import subagentExtension from "./subagent.js";
 
@@ -37,6 +38,7 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   contextExtension,
   sessionBreakdownExtension,
   filesExtension,
+  promptStashExtension,
   terminalNotifyExtension,
   subagentExtension,
 ];

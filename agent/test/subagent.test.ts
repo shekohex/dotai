@@ -698,7 +698,7 @@ timedTest("subagent tool metadata explains tmux inspection and wait-for-summary 
   assert.match(parameterDescriptions.action?.description ?? "", /no subagent read action/i);
   assert.match(parameterDescriptions.name?.description ?? "", /title shown immediately on launch/i);
   assert.match(parameterDescriptions.task?.description ?? "", /inspect tmux pane\/window output directly/i);
-  assert.match(parameterDescriptions.sessionId?.description ?? "", /prior subagent result or subagent list/i);
+  assert.match(parameterDescriptions.sessionId?.description ?? "", /UUID v4/i);
   assert.match(parameterDescriptions.message?.description ?? "", /inspect the reply, read the tmux output directly/i);
 });
 
@@ -1255,8 +1255,19 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
     assert.match((started.content[0]?.text ?? ""), /will return with a summary automatically when it finishes/i);
     assert.match((started.content[0]?.text ?? ""), /Use subagent message only to steer the work/i);
     const startedDetails = started.details as { prompt: string; state: RuntimeSubagent };
+    assert.match((started.content[0]?.text ?? ""), new RegExp(`sessionId: ${startedDetails.state.sessionId}`));
     assert.equal(startedDetails.state.task, startTask);
     assert.match((started.content[0]?.text ?? ""), /subagent cancel to stop it/i);
+
+    const listed = await tool.execute(
+      "tool-call-list",
+      { action: "list" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    assert.match((listed.content[0]?.text ?? ""), /count: 1/);
+    assert.match((listed.content[0]?.text ?? ""), new RegExp(`sessionId: ${startedDetails.state.sessionId}`));
 
     const expanded = renderToolText(
       tool,
@@ -1524,7 +1535,8 @@ timedTest("subagent tool execute auto-resumes dead child sessions before deliver
       ctx,
     );
 
-    assert.match((messaged.content[0]?.text ?? ""), /resumed using its previous task and followUp message delivered/i);
+    assert.match((messaged.content[0]?.text ?? ""), /sessionId: /);
+    assert.match((messaged.content[0]?.text ?? ""), /Previous task resumed and followUp message delivered/i);
     const details = messaged.details as {
       state: RuntimeSubagent;
       autoResumed?: boolean;
@@ -1587,6 +1599,6 @@ timedTest("subagent tool execute reports unknown message sessions clearly", asyn
       undefined,
       createFakeContext({ cwd: process.cwd() }),
     ),
-    /subagent message failed: sessionId missing-child was not found in this parent session\. Use subagent list to inspect known child sessions or start a new subagent\./i,
+    /subagent message failed: sessionId missing-child was not found in this parent session\. Use subagent list or a prior result to get the full UUID v4 sessionId\./i,
   );
 });

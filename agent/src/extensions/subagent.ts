@@ -290,7 +290,7 @@ function validateToolParams(params: SubagentToolParams): void {
 
   if (params.action === "message") {
     if (!params.sessionId?.trim()) {
-      throw new Error("Invalid subagent message params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the child session.");
+      throw new Error("Invalid subagent message params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.");
     }
     if (!params.message?.trim()) {
       throw new Error("Invalid subagent message params: `message` is required. This text is sent into the child tmux pane/window.");
@@ -298,7 +298,7 @@ function validateToolParams(params: SubagentToolParams): void {
   }
 
   if (params.action === "cancel" && !params.sessionId?.trim()) {
-    throw new Error("Invalid subagent cancel params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the child session.");
+    throw new Error("Invalid subagent cancel params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.");
   }
 }
 
@@ -317,11 +317,30 @@ function getStartGuidanceText(): string {
 }
 
 function formatStartResultText(state: RuntimeSubagent): string {
-  return `Subagent ${state.name} (${shortSessionId(state.sessionId)}) started. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.`;
+  return `Subagent ${state.name} started. sessionId: ${state.sessionId}. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.`;
 }
 
 function formatAutoResumedMessageResultText(state: RuntimeSubagent, delivery: string): string {
-  return `Subagent ${state.name} (${shortSessionId(state.sessionId)}) resumed using its previous task and ${delivery} message delivered.`;
+  return `Subagent ${state.name} resumed. sessionId: ${state.sessionId}. Previous task resumed and ${delivery} message delivered.`;
+}
+
+function formatMessageResultText(state: RuntimeSubagent, delivery: string): string {
+  return `Subagent ${state.name} message delivered. sessionId: ${state.sessionId}. delivery: ${delivery}.`;
+}
+
+function formatCancelResultText(state: RuntimeSubagent): string {
+  return `Subagent ${state.name} cancelled. sessionId: ${state.sessionId}.`;
+}
+
+function formatListResultText(subagents: RuntimeSubagent[]): string {
+  if (subagents.length === 0) {
+    return "No subagents.";
+  }
+
+  return [
+    `count: ${subagents.length}`,
+    ...subagents.map((subagent, index) => `${index + 1}. ${subagent.name} · ${subagent.status} · sessionId: ${subagent.sessionId} · ${summarizeWhitespace(subagent.task, 48)}`),
+  ].join("\n");
 }
 
 function summarizeTask(task?: string, maxLength = 56): string {
@@ -717,8 +736,8 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
     const subagentTool = defineTool<typeof SubagentToolParamsSchema, SubagentToolResultDetails>({
       name: "subagent",
       label: "π",
-      description: "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling.",
-      promptSnippet: "use `subagent` to start, message, cancel, or list tmux-backed child pi sessions; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary",
+      description: "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. Session ids are UUID v4. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling.",
+      promptSnippet: "use `subagent` to start, message, cancel, or list tmux-backed child pi sessions; session ids are UUID v4; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary",
       promptGuidelines: [
         ...SUBAGENT_BASE_PROMPT_GUIDELINES,
         SUBAGENT_AVAILABLE_MODES_HEADING,
@@ -757,7 +776,7 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
                 type: "text",
                 text: result.autoResumed
                   ? formatAutoResumedMessageResultText(result.state, params.delivery ?? "steer")
-                  : "ok",
+                  : formatMessageResultText(result.state, params.delivery ?? "steer"),
               }],
               details: {
                 action: "message",
@@ -774,14 +793,14 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
           if (params.action === "cancel") {
             const result = await manager.cancel({ sessionId: params.sessionId! });
             return {
-              content: [{ type: "text", text: "ok" }],
+              content: [{ type: "text", text: formatCancelResultText(result) }],
               details: { action: "cancel", args: params, state: result },
             };
           }
 
           const subagents = manager.list();
           return {
-            content: [{ type: "text", text: "ok" }],
+            content: [{ type: "text", text: formatListResultText(subagents) }],
             details: { action: "list", args: params, subagents },
           };
         } catch (error) {

@@ -65,7 +65,7 @@ function runtimeSubagentError(action: "start" | "resume" | "message" | "cancel",
 function unknownSessionError(action: "message" | "cancel" | "resume", sessionId: string): Error {
   return runtimeSubagentError(
     action,
-    `sessionId ${sessionId} was not found in this parent session. Use subagent list to inspect known child sessions or start a new subagent.`,
+    `sessionId ${sessionId} was not found in this parent session. Use subagent list or a prior result to get the full UUID v4 sessionId.`,
   );
 }
 

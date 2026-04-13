@@ -24,6 +24,12 @@ import modelFamilySystemPromptExtension, {
 } from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
+import promptStashExtension, {
+  getStashFilePath,
+  loadStashEntries,
+  saveStashEntries,
+  type PromptStashEntry,
+} from "../src/extensions/prompt-stash.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/extensions/subagent/mux.ts";
 import {
@@ -62,6 +68,21 @@ function patchHarnessAgent(testSession: TestSession): void {
   agent.setTools ??= (tools: unknown[]) => {
     agent.state.tools = tools;
   };
+}
+
+async function withTempAgentDir<T>(agentDir: string, fn: () => Promise<T>): Promise<T> {
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  try {
+    return await fn();
+  } finally {
+    if (previousAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+  }
 }
 
 class HarnessMuxAdapter implements MuxAdapter {
@@ -504,6 +525,15 @@ function createModeChangeCaptureExtension(observedEvents: CapturedModeChange[]):
 
       emit(eventName, data);
     };
+  };
+}
+
+function createPromptStashEntry(id: string, text: string, createdAt: number): PromptStashEntry {
+  return {
+    version: 1,
+    id,
+    text,
+    createdAt,
   };
 }
 
@@ -1481,10 +1511,14 @@ timedTest("subagent extension runs start, list, message, cancel, and auto-resume
     assert.equal(executionEnds.length, 5);
     assert.ok(executionEnds.every((event) => event.isError === false));
     assert.match(executionEnds[0]?.result?.content?.[0]?.text ?? "", /The subagent will return with a summary automatically when it finishes/i);
-    assert.equal(executionEnds[1]?.result?.content?.[0]?.text, "ok");
-    assert.equal(executionEnds[2]?.result?.content?.[0]?.text, "ok");
-    assert.equal(executionEnds[3]?.result?.content?.[0]?.text, "ok");
-    assert.match(executionEnds[4]?.result?.content?.[0]?.text ?? "", /resumed using its previous task and followUp message delivered/i);
+    assert.match(executionEnds[1]?.result?.content?.[0]?.text ?? "", /count: 1/);
+    assert.match(executionEnds[1]?.result?.content?.[0]?.text ?? "", new RegExp(`sessionId: ${sessionId}`));
+    assert.match(executionEnds[2]?.result?.content?.[0]?.text ?? "", new RegExp(`sessionId: ${sessionId}`));
+    assert.match(executionEnds[2]?.result?.content?.[0]?.text ?? "", /delivery: steer/);
+    assert.match(executionEnds[3]?.result?.content?.[0]?.text ?? "", new RegExp(`sessionId: ${sessionId}`));
+    assert.match(executionEnds[3]?.result?.content?.[0]?.text ?? "", /cancelled/i);
+    assert.match(executionEnds[4]?.result?.content?.[0]?.text ?? "", new RegExp(`sessionId: ${sessionId}`));
+    assert.match(executionEnds[4]?.result?.content?.[0]?.text ?? "", /Previous task resumed and followUp message delivered/i);
 
     assert.equal(mux.created.length, 2);
     assert.equal(mux.sent.length, 2);
@@ -1840,4 +1874,195 @@ timedTest("mermaid fence parser ignores nested mermaid fences inside other code 
   assert.match(blocks[1] ?? "", /flowchart LR/);
   assert.match(blocks[2] ?? "", /sequenceDiagram/);
   assert.ok(blocks.every((block) => !block.includes("Start --> Validate")));
+});
+
+timedTest("prompt stash persistence round-trips clean JSONL entries", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-happy-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const entries = [
+    createPromptStashEntry("entry-1", "First draft", 1_000),
+    createPromptStashEntry("entry-2", "Second draft\nWith two lines", 2_000),
+  ];
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      await saveStashEntries(cwd, entries);
+
+      assert.equal(
+        await readFile(getStashFilePath(), "utf8"),
+        entries.map((entry) => JSON.stringify(entry)).join("\n"),
+      );
+
+      assert.deepEqual(await loadStashEntries(cwd), entries);
+    });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+timedTest("prompt stash load self-heals malformed JSONL lines", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-heal-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const entries = [
+    createPromptStashEntry("entry-1", "Keep me", 1_000),
+    createPromptStashEntry("entry-2", "Keep me too", 2_000),
+  ];
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      await writeFile(
+        getStashFilePath(),
+        [
+          JSON.stringify(entries[0]),
+          "{not json}",
+          "   ",
+          JSON.stringify({ ...entries[1], extra: true }),
+          `${JSON.stringify(entries[1])}  `,
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      assert.deepEqual(await loadStashEntries(cwd), [entries[0], entries[1]]);
+      assert.equal(
+        await readFile(getStashFilePath(), "utf8"),
+        [JSON.stringify(entries[0]), JSON.stringify(entries[1])].join("\n"),
+      );
+    });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+timedTest("prompt stash normalizes oversized JSONL files on load", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-load-cap-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const entries = Array.from({ length: 52 }, (_, index) =>
+    createPromptStashEntry(`entry-${index + 1}`, `Prompt ${index + 1}`, index + 1),
+  );
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      await writeFile(
+        getStashFilePath(),
+        entries.map((entry) => JSON.stringify(entry)).join("\n"),
+        "utf8",
+      );
+
+      const loaded = await loadStashEntries(cwd);
+      assert.equal(loaded.length, 50);
+      assert.deepEqual(
+        loaded.map((entry) => entry.id),
+        entries.slice(0, 50).map((entry) => entry.id),
+      );
+      assert.equal(
+        await readFile(getStashFilePath(), "utf8"),
+        entries.slice(0, 50).map((entry) => JSON.stringify(entry)).join("\n"),
+      );
+    });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+timedTest("prompt stash caps persisted entries at fifty", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-cap-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const entries = Array.from({ length: 51 }, (_, index) => createPromptStashEntry(`entry-${index + 1}`, `Prompt ${index + 1}`, index + 1));
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      await saveStashEntries(cwd, entries);
+
+      const loaded = await loadStashEntries(cwd);
+      assert.equal(loaded.length, 50);
+      assert.deepEqual(
+        loaded.map((entry) => entry.id),
+        entries.slice(0, 50).map((entry) => entry.id),
+      );
+      assert.equal((await readFile(getStashFilePath(), "utf8")).split("\n").length, 50);
+    });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+timedTest("prompt stash registers the stash command when loaded", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [promptStashExtension],
+    });
+
+    const registeredCommands = (session.session as {
+      extensionRunner: {
+        getRegisteredCommands: () => Array<{ invocationName: string; description?: string }>;
+      };
+    }).extensionRunner.getRegisteredCommands();
+
+    const stashCommand = registeredCommands.find((command) => command.invocationName === "stash");
+    assert.ok(stashCommand);
+    assert.equal(stashCommand?.description, "Manage stashed prompts");
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("prompt stash registers a non-conflicting shortcut", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [modesExtension, promptStashExtension],
+    });
+
+    const shortcuts = (session.session as {
+      extensionRunner: {
+        getShortcuts: (resolvedKeybindings: unknown) => Map<string, { description?: string; extensionPath: string }>;
+      };
+    }).extensionRunner.getShortcuts(KeybindingsManager.create().getEffectiveConfig());
+
+    assert.equal(shortcuts.get("ctrl+alt+s")?.description, "Stash current prompt");
+    assert.equal(shortcuts.get("ctrl+shift+s")?.description, "Select prompt mode");
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("/stash pop applies the latest entry and removes it from disk", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-pop-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const entries = [
+    createPromptStashEntry("entry-1", "Latest draft\nSecond line", 2_000),
+    createPromptStashEntry("entry-2", "Older draft", 1_000),
+  ];
+  let session: TestSession | undefined;
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      await saveStashEntries(cwd, entries);
+
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [promptStashExtension],
+      });
+      patchHarnessAgent(session);
+
+      await session.session.prompt("/stash pop");
+      await session.session.agent.waitForIdle();
+
+      assert.equal(session.events.uiCallsFor("setEditorText").at(-1)?.args[0], entries[0]?.text);
+      assert.equal(session.events.uiCallsFor("notify").at(-1)?.args[0], "Applied latest stash entry (2 lines)");
+      assert.deepEqual(await loadStashEntries(cwd), [entries[1]]);
+    });
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
 });

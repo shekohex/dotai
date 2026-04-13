@@ -90,22 +90,6 @@ export const defaultModes = defineModesFile({
       systemPrompt: readFileSync(join(cwd, "resources", "modes", "review.md"), { encoding: "utf-8" }),
       systemPromptMode: "append"
     },
-    librarian: {
-      provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
-      thinkingLevel: "high",
-      color: "mdLink",
-      tmuxTarget: "window",
-      tools: [
-        "read",
-        "bash"
-      ],
-      autoExit: true,
-      autoExitTimeoutMs: 5000,
-      description: "GitHub research scout for coding and personal-assistant tasks. Use when the answer likely lives in GitHub repos, exact repo/path locations are unknown, or you'd otherwise do exploratory gh search/tree probes plus ls/rg/fd/find/grep/read on fetched files. Librarian performs targeted reconnaissance in an isolated workspace and returns concise, path-first findings with line-ranged evidence.",
-      systemPrompt: readFileSync(join(cwd, "resources", "modes", "librarian.md"), { encoding: "utf-8" }),
-      systemPromptMode: "append"
-    },
     search: {
       provider: "gemini",
       modelId: "gemini-3-flash-preview",

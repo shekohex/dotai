@@ -1,6 +1,7 @@
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
+  ExtensionCommandContextActions,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
@@ -251,6 +252,16 @@ function setReviewWidget(
       },
     };
   });
+}
+
+function hasNavigateTree(
+  ctx: ExtensionContext,
+): ctx is ExtensionContext & Pick<ExtensionCommandContextActions, "navigateTree"> {
+  return "navigateTree" in ctx && typeof ctx.navigateTree === "function";
+}
+
+function isTerminalReviewStatus(status: string): status is "completed" | "failed" | "cancelled" {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function getReviewState(ctx: ExtensionContext): ReviewSessionState | undefined {
@@ -1144,6 +1155,11 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
         }
 
         try {
+          if (!hasNavigateTree(ctx)) {
+            ctx.ui.notify("Forking review fixes requires command context support.", "error");
+            return;
+          }
+
           const result = await ctx.navigateTree(branchFromId, {
             summarize: false,
             label: "review-fixes",
@@ -1205,7 +1221,7 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
 
         syncReviewWidget(ctx);
         if (
-          ["completed", "failed", "cancelled"].includes(event.state.status) &&
+          isTerminalReviewStatus(event.state.status) &&
           runtime.completionNotifiedSessionId !== event.state.sessionId
         ) {
           runtime.completionNotifiedSessionId = event.state.sessionId;
@@ -1333,7 +1349,7 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
         const terminalState = trackedReviewState();
         if (
           terminalState &&
-          ["completed", "failed", "cancelled"].includes(terminalState.status) &&
+          isTerminalReviewStatus(terminalState.status) &&
           runtime.completionNotifiedSessionId !== terminalState.sessionId
         ) {
           runtime.completionNotifiedSessionId = terminalState.sessionId;

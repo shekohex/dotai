@@ -12,17 +12,17 @@ const settingsOutPath = join(outDir, "settings.json");
 const modesOutPath = join(outDir, "modes.json");
 
 function stripUndefined(value) {
-	if (value === undefined) return undefined;
-	if (Array.isArray(value)) {
-		return value.map(stripUndefined).filter((item) => item !== undefined);
-	}
-	if (value && typeof value === "object") {
-		const entries = Object.entries(value)
-			.map(([key, nestedValue]) => [key, stripUndefined(nestedValue)])
-			.filter(([, nestedValue]) => nestedValue !== undefined);
-		return Object.fromEntries(entries);
-	}
-	return value;
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) {
+    return value.map(stripUndefined).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value)
+      .map(([key, nestedValue]) => [key, stripUndefined(nestedValue)])
+      .filter(([, nestedValue]) => nestedValue !== undefined);
+    return Object.fromEntries(entries);
+  }
+  return value;
 }
 
 const sanitizedSettings = stripUndefined(defaultSettings);

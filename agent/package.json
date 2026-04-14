@@ -7,13 +7,21 @@
     "email": "dev+npm@shadykhalifa.me",
     "url": "https://shadykhalifa.me"
   },
-  "type": "module",
   "bin": {
     "pi": "./bin/pi.js"
   },
+  "files": [
+    "bin",
+    "dist",
+    "patches",
+    "scripts"
+  ],
+  "type": "module",
   "scripts": {
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "test": "npm run test:keys && npm run test:tool-preview && npm run test:executor && npm run test:harness && npm run test:subagent",
     "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
     "prepare": "npm run build",
@@ -30,12 +38,6 @@
     "test:harness": "node --import tsx --test ./test/harness.test.ts",
     "test:subagent": "node --import tsx --test ./test/subagent.test.ts"
   },
-  "files": [
-    "bin",
-    "dist",
-    "patches",
-    "scripts"
-  ],
   "dependencies": {
     "@mariozechner/pi-coding-agent": "0.66.1",
     "@mendable/firecrawl-js": "^4.18.1",

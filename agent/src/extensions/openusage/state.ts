@@ -21,9 +21,7 @@ export function createRuntimeState(): OpenUsageRuntimeState {
   };
 }
 
-export function restorePersistedState(
-  entries: SessionEntry[],
-): PersistedOpenUsageState {
+export function restorePersistedState(entries: SessionEntry[]): PersistedOpenUsageState {
   let latest: PersistedOpenUsageState | undefined;
 
   for (const entry of entries) {
@@ -85,9 +83,7 @@ export function setResetTimeFormat(
   return state.persisted;
 }
 
-function normalizeSelectedAccounts(
-  value: unknown,
-): Partial<Record<SupportedProviderId, string>> {
+function normalizeSelectedAccounts(value: unknown): Partial<Record<SupportedProviderId, string>> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }

@@ -30,7 +30,9 @@ export const zaiUsageProvider: UsageProvider = {
     ]);
 
     if (quotaResponse.status === 401 || quotaResponse.status === 403) {
-      throw new Error("Z.ai auth unavailable. Configure provider 'zai' or choose a cliproxy account.");
+      throw new Error(
+        "Z.ai auth unavailable. Configure provider 'zai' or choose a cliproxy account.",
+      );
     }
 
     if (!quotaResponse.ok) {
@@ -115,7 +117,9 @@ async function resolveZaiCredential(
     return cliproxy;
   }
 
-  throw new Error("Z.ai auth unavailable. Configure provider 'zai' or 'zai-coding-plan', or configure cliproxy.");
+  throw new Error(
+    "Z.ai auth unavailable. Configure provider 'zai' or 'zai-coding-plan', or configure cliproxy.",
+  );
 }
 
 async function resolveHostZaiApiKey(ctx: ExtensionContext): Promise<string | undefined> {

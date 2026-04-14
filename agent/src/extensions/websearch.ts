@@ -54,8 +54,10 @@ type WebSearchRenderState = {
 export const webSearchTool = defineTool({
   name: "websearch",
   label: "google",
-  description: "Search the web with Google Search grounding via Gemini and return an answer with sources.",
-  promptSnippet: "Search the live web with Google grounding when the task needs fresh or external information",
+  description:
+    "Search the web with Google Search grounding via Gemini and return an answer with sources.",
+  promptSnippet:
+    "Search the live web with Google grounding when the task needs fresh or external information",
   promptGuidelines: [
     "Use this tool when the task needs fresh web data, release notes, official docs, or verification against external sources.",
     "Prefer primary sources and use returned citations in the final answer when the user asks for evidence or references.",
@@ -81,12 +83,14 @@ export const webSearchTool = defineTool({
     syncRenderState(context, context.isPartial);
 
     const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
-    const status = phase === "error"
-      ? theme.bold(theme.fg("error", "googled"))
-      : phase === "success"
-        ? theme.bold(theme.fg("dim", "googled"))
-        : theme.bold(theme.fg("dim", "googling"));
-    const query = typeof args.query === "string" && args.query.trim().length > 0 ? args.query.trim() : "...";
+    const status =
+      phase === "error"
+        ? theme.bold(theme.fg("error", "googled"))
+        : phase === "success"
+          ? theme.bold(theme.fg("dim", "googled"))
+          : theme.bold(theme.fg("dim", "googling"));
+    const query =
+      typeof args.query === "string" && args.query.trim().length > 0 ? args.query.trim() : "...";
 
     return createTextComponent(
       context.lastComponent,
@@ -115,28 +119,45 @@ export const webSearchTool = defineTool({
       const footer = durationMs !== undefined ? formatDurationHuman(durationMs) : "0s";
       return renderedText
         ? renderStreamingPreview(renderedText, theme, context.lastComponent, { expanded, footer })
-        : createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`);
+        : createTextComponent(
+            context.lastComponent,
+            `${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`,
+          );
     }
 
     const groundedResultCount = details?.sources.length ?? 0;
     const summary = [
       theme.fg("muted", answer ? "answered" : "no response"),
-      theme.fg("muted", `${groundedResultCount} grounded result${groundedResultCount === 1 ? "" : "s"}`),
+      theme.fg(
+        "muted",
+        `${groundedResultCount} grounded result${groundedResultCount === 1 ? "" : "s"}`,
+      ),
       durationMs !== undefined ? theme.fg("muted", `took ${formatDurationHuman(durationMs)}`) : "",
-    ].filter(Boolean).join(`${theme.fg("muted", " · ")}`);
+    ]
+      .filter(Boolean)
+      .join(`${theme.fg("muted", " · ")}`);
 
     if (!expanded) {
-      return createTextComponent(
-        context.lastComponent,
-        `${theme.fg("dim", "↳ ")}${summary}`,
-      );
+      return createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${summary}`);
     }
 
-    const container = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+    const container =
+      context.lastComponent instanceof Container ? context.lastComponent : new Container();
     container.clear();
-    container.addChild(new Markdown((details?.markdown ?? buildExpandedMarkdown(answer || "No answer returned.", details)).trim(), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y, getMarkdownTheme()));
+    container.addChild(
+      new Markdown(
+        (
+          details?.markdown ?? buildExpandedMarkdown(answer || "No answer returned.", details)
+        ).trim(),
+        TOOL_TEXT_PADDING_X,
+        TOOL_TEXT_PADDING_Y,
+        getMarkdownTheme(),
+      ),
+    );
     container.addChild(new Spacer(1));
-    container.addChild(new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
+    container.addChild(
+      new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y),
+    );
     return container;
   },
   async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -156,7 +177,9 @@ export const webSearchTool = defineTool({
 
     const model = ctx.modelRegistry.find(WEBSEARCH_PROVIDER, modelId);
     if (!model) {
-      throw new Error(`Gemini model ${modelId} is not available. Ensure the LiteLLM-backed provider \`${WEBSEARCH_PROVIDER}\` is loaded.`);
+      throw new Error(
+        `Gemini model ${modelId} is not available. Ensure the LiteLLM-backed provider \`${WEBSEARCH_PROVIDER}\` is loaded.`,
+      );
     }
 
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -233,7 +256,9 @@ export default function webSearchExtension(pi: ExtensionAPI) {
   pi.registerTool(webSearchTool);
 }
 
-function resolveModel(model: (typeof WEBSEARCH_MODELS)[number] | undefined): (typeof WEBSEARCH_MODELS)[number] {
+function resolveModel(
+  model: (typeof WEBSEARCH_MODELS)[number] | undefined,
+): (typeof WEBSEARCH_MODELS)[number] {
   return model ?? DEFAULT_MODEL;
 }
 
@@ -256,9 +281,10 @@ function configureGroundedSearchPayload(payload: unknown, includeThinking: boole
   }
 
   const request = { ...(payload as Record<string, unknown>) };
-  const config = request.config && typeof request.config === "object"
-    ? { ...(request.config as Record<string, unknown>) }
-    : {};
+  const config =
+    request.config && typeof request.config === "object"
+      ? { ...(request.config as Record<string, unknown>) }
+      : {};
 
   config.tools = [{ googleSearch: {} }];
 
@@ -344,14 +370,19 @@ function syncRenderState(
 }
 
 function getElapsedMs(state: WebSearchRenderState): number | undefined {
-  return state.startedAt === undefined ? undefined : (state.endedAt ?? Date.now()) - state.startedAt;
+  return state.startedAt === undefined
+    ? undefined
+    : (state.endedAt ?? Date.now()) - state.startedAt;
 }
 
 function emptyResult(): SearchResult {
   return { answer: "", sources: [], searchQueries: [] };
 }
 
-function renderToolOutput(text: string, theme: { fg: (color: "toolOutput", text: string) => string }): string {
+function renderToolOutput(
+  text: string,
+  theme: { fg: (color: "toolOutput", text: string) => string },
+): string {
   return text
     .split("\n")
     .filter((line) => line.length > 0)
@@ -368,7 +399,9 @@ function renderStreamingPreview(
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
   if (options.expanded) {
-    const footer = options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "";
+    const footer = options.footer
+      ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`
+      : "";
     return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
   }
 
@@ -376,7 +409,9 @@ function renderStreamingPreview(
   const blocks: string[] = [];
 
   if (lines.length > visibleLines.length) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${lines.length - visibleLines.length} earlier lines)`)}`);
+    blocks.push(
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${lines.length - visibleLines.length} earlier lines)`)}`,
+    );
   }
 
   if (visibleLines.length > 0) {
@@ -384,7 +419,9 @@ function renderStreamingPreview(
   }
 
   if (options.footer) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`);
+    blocks.push(
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `${summarizeLineCount(lines.length)} so far (${options.footer})`)}`,
+    );
   }
 
   return createTextComponent(lastComponent, blocks.join("\n"));
@@ -395,7 +432,10 @@ function summarizeLineCount(lineCount: number): string {
 }
 
 function createTextComponent(lastComponent: unknown, text: string): Text {
-  const component = lastComponent instanceof Text ? lastComponent : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  const component =
+    lastComponent instanceof Text
+      ? lastComponent
+      : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
   component.setText(text);
   return component;
 }
@@ -448,7 +488,9 @@ function parseSearchResponseText(text: string): SearchResult {
   }
 
   const structured = parseStructuredSearchJson(normalized);
-  return structured ?? { answer: stripWrappingCodeFence(normalized), sources: [], searchQueries: [] };
+  return (
+    structured ?? { answer: stripWrappingCodeFence(normalized), sources: [], searchQueries: [] }
+  );
 }
 
 function extractStreamingAnswerText(text: string): string {
@@ -457,7 +499,7 @@ function extractStreamingAnswerText(text: string): string {
     return "";
   }
 
-  if (normalized.startsWith("{") && !normalized.includes("\"answer\"")) {
+  if (normalized.startsWith("{") && !normalized.includes('"answer"')) {
     return "";
   }
 
@@ -475,9 +517,13 @@ function getTextContent(content: Array<{ type: string; text?: string }>): string
     .join("\n");
 }
 
-function getAssistantText(content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>): string {
+function getAssistantText(
+  content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>,
+): string {
   return content
-    .flatMap((item) => (item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : []))
+    .flatMap((item) =>
+      item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : [],
+    )
     .join("\n");
 }
 
@@ -490,7 +536,10 @@ function formatDurationHuman(ms: number): string {
 
 function buildExpandedMarkdown(
   answer: string,
-  details: Pick<WebSearchDetails, "sources" | "searchQueries"> | Pick<SearchResult, "sources" | "searchQueries"> | undefined,
+  details:
+    | Pick<WebSearchDetails, "sources" | "searchQueries">
+    | Pick<SearchResult, "sources" | "searchQueries">
+    | undefined,
 ): string {
   const lines = [answer.trim() || "No answer returned."];
 
@@ -564,13 +613,13 @@ function extractTopLevelJsonObjects(text: string): string[] {
         escaping = false;
       } else if (char === "\\") {
         escaping = true;
-      } else if (char === "\"") {
+      } else if (char === '"') {
         inString = false;
       }
       continue;
     }
 
-    if (char === "\"") {
+    if (char === '"') {
       inString = true;
       continue;
     }
@@ -599,10 +648,19 @@ function stripWrappingCodeFence(text: string): string {
   return text.replace(/^```\w*\n?|```$/g, "").trim();
 }
 
-function addSource(sources: Map<string, WebSearchSource>, title: string | undefined, url: string | undefined): void {
+function addSource(
+  sources: Map<string, WebSearchSource>,
+  title: string | undefined,
+  url: string | undefined,
+): void {
   const normalizedTitle = title?.trim();
   const normalizedUrl = url?.trim();
-  if (!normalizedTitle || !normalizedUrl || sources.has(normalizedUrl) || sources.size >= MAX_SOURCES) {
+  if (
+    !normalizedTitle ||
+    !normalizedUrl ||
+    sources.has(normalizedUrl) ||
+    sources.size >= MAX_SOURCES
+  ) {
     return;
   }
 
@@ -629,7 +687,7 @@ function extractPartialJsonStringValue(text: string, key: string): string | unde
 
   while (index < text.length) {
     const char = text[index];
-    if (char === "\"") {
+    if (char === '"') {
       return value;
     }
     if (char !== "\\") {
@@ -661,15 +719,24 @@ function extractPartialJsonStringValue(text: string, key: string): string | unde
 
 function decodeJsonEscape(value: string): string {
   switch (value) {
-    case "\"": return "\"";
-    case "\\": return "\\";
-    case "/": return "/";
-    case "b": return "\b";
-    case "f": return "\f";
-    case "n": return "\n";
-    case "r": return "\r";
-    case "t": return "\t";
-    default: return value;
+    case '"':
+      return '"';
+    case "\\":
+      return "\\";
+    case "/":
+      return "/";
+    case "b":
+      return "\b";
+    case "f":
+      return "\f";
+    case "n":
+      return "\n";
+    case "r":
+      return "\r";
+    case "t":
+      return "\t";
+    default:
+      return value;
   }
 }
 
@@ -678,9 +745,9 @@ function escapeRegex(text: string): string {
 }
 
 function escapeMarkdownLinkText(text: string): string {
-  return text.replace(/([\\\[\]])/g, "\\$1");
+  return text.replace(/([\\[\]])/g, "\\$1");
 }
 
 function escapeMarkdownText(text: string): string {
-  return text.replace(/([\\`*_{}\[\]()#+\-.!|>])/g, "\\$1");
+  return text.replace(/([\\`*_{}[\]()#+\-.!|>])/g, "\\$1");
 }

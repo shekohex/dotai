@@ -7,11 +7,10 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 
-import { loadModesFile, type ModeSpec } from "../mode-utils.js";
+import type { ModeSpec } from "../mode-utils.js";
 import { loadAvailableModes } from "./available-modes.js";
 import {
   buildContextTransferPrompt,
-  extractMessageText,
   generateContextTransferSummary,
   generateContextTransferSummaryWithLoader,
   getConversationMessages,
@@ -21,8 +20,6 @@ import {
   type SessionModel,
 } from "./session-launch-utils.js";
 import { MODE_SELECTION_APPLY_EVENT } from "./modes.js";
-const EXPLICIT_HANDOFF_REQUEST = /\b(handoff|hand\s+off|new\s+(session|thread)|another\s+(session|thread)|start\s+a\s+new\s+(session|thread)|continue\s+in\s+(a\s+)?new\s+(session|thread)|switch\s+to\s+(a\s+)?new\s+(session|thread)|transfer\s+(the\s+)?context)\b/i;
-
 type HandoffOptions = SessionLaunchOptions;
 
 type ResolvedHandoffOptions = ResolvedSessionLaunchOptions;
@@ -89,7 +86,9 @@ function startNewSessionInPlace(ctx: ExtensionContext, parentSession?: string): 
     throw new Error("SessionManager newSession is unavailable");
   }
 
-  return writablePrototype.newSession.call(ctx.sessionManager as unknown as SessionManager, { parentSession });
+  return writablePrototype.newSession.call(ctx.sessionManager as unknown as SessionManager, {
+    parentSession,
+  });
 }
 
 function createPendingNewSessionContext(state: HandoffRuntimeState): Promise<ExtensionContext> {
@@ -153,22 +152,6 @@ async function applyPendingSelection(
   });
 }
 
-function getLatestUserText(ctx: ExtensionContext): string {
-  const latestUserMessage = getConversationMessages(ctx)
-    .filter((message) => message.role === "user")
-    .at(-1);
-
-  if (!latestUserMessage) {
-    return "";
-  }
-
-  return extractMessageText(latestUserMessage.content);
-}
-
-function didUserExplicitlyRequestHandoff(ctx: ExtensionContext): boolean {
-  return EXPLICIT_HANDOFF_REQUEST.test(getLatestUserText(ctx));
-}
-
 function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
   if (!spec) {
     return undefined;
@@ -189,7 +172,10 @@ function getAvailableModelsForAutocomplete(ctx: ExtensionContext | undefined): S
   return (ctx?.modelRegistry.getAvailable() ?? []) as SessionModel[];
 }
 
-function filterAutocompleteItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
+function filterAutocompleteItems(
+  items: AutocompleteItem[],
+  query: string,
+): AutocompleteItem[] | null {
   if (items.length === 0) {
     return null;
   }
@@ -198,7 +184,11 @@ function filterAutocompleteItems(items: AutocompleteItem[], query: string): Auto
     return items;
   }
 
-  const filtered = fuzzyFilter(items, query, (item) => `${item.label} ${item.value} ${item.description ?? ""}`);
+  const filtered = fuzzyFilter(
+    items,
+    query,
+    (item) => `${item.label} ${item.value} ${item.description ?? ""}`,
+  );
   return filtered.length > 0 ? filtered : null;
 }
 
@@ -228,13 +218,28 @@ function parseHandoffAutocompleteContext(argumentPrefix: string): HandoffAutocom
     const flag = flagToken === "-mode" || flagToken === "-model" ? flagToken : undefined;
     if (!flag) {
       if (index >= argumentPrefix.length) {
-        return { kind: "flag", prefixBase: argumentPrefix.slice(0, flagStart), query: flagToken, usedFlags };
+        return {
+          kind: "flag",
+          prefixBase: argumentPrefix.slice(0, flagStart),
+          query: flagToken,
+          usedFlags,
+        };
       }
-      return { kind: "none", prefixBase: argumentPrefix.slice(0, flagStart), query: flagToken, usedFlags };
+      return {
+        kind: "none",
+        prefixBase: argumentPrefix.slice(0, flagStart),
+        query: flagToken,
+        usedFlags,
+      };
     }
 
     if (index >= argumentPrefix.length) {
-      return { kind: "flag", prefixBase: argumentPrefix.slice(0, flagStart), query: flagToken, usedFlags };
+      return {
+        kind: "flag",
+        prefixBase: argumentPrefix.slice(0, flagStart),
+        query: flagToken,
+        usedFlags,
+      };
     }
 
     while (index < argumentPrefix.length && /\s/.test(argumentPrefix[index]!)) {
@@ -284,14 +289,16 @@ function parseHandoffAutocompleteContext(argumentPrefix: string): HandoffAutocom
   return { kind: "flag", prefixBase: argumentPrefix, query: "", usedFlags };
 }
 
-function getHandoffFlagCompletions(prefixBase: string, query: string, usedFlags: Set<HandoffFlagName>): AutocompleteItem[] | null {
-  const items = HANDOFF_FLAG_OPTIONS
-    .filter((flag) => !usedFlags.has(flag.name))
-    .map((flag) => ({
-      value: `${prefixBase}${flag.name} `,
-      label: flag.name,
-      description: flag.description,
-    }));
+function getHandoffFlagCompletions(
+  prefixBase: string,
+  query: string,
+  usedFlags: Set<HandoffFlagName>,
+): AutocompleteItem[] | null {
+  const items = HANDOFF_FLAG_OPTIONS.filter((flag) => !usedFlags.has(flag.name)).map((flag) => ({
+    value: `${prefixBase}${flag.name} `,
+    label: flag.name,
+    description: flag.description,
+  }));
 
   return filterAutocompleteItems(items, query);
 }
@@ -400,7 +407,13 @@ async function prepareHandoff(
   reviewPrompt: boolean,
   signal?: AbortSignal,
   onUpdate?: AgentToolUpdateCallback<unknown>,
-): Promise<{ prompt: string; parentSession?: string; overrides?: ResolvedHandoffOptions; warning?: string; error?: string }> {
+): Promise<{
+  prompt: string;
+  parentSession?: string;
+  overrides?: ResolvedHandoffOptions;
+  warning?: string;
+  error?: string;
+}> {
   if (!ctx.model) {
     return { prompt: "", error: "No model selected" };
   }
@@ -457,7 +470,8 @@ export default function handoffExtension(pi: ExtensionAPI) {
   const state: HandoffRuntimeState = {};
 
   pi.registerCommand("handoff", {
-    description: "Transfer context to a new focused session (-mode <name>, -model <provider/modelId>)",
+    description:
+      "Transfer context to a new focused session (-mode <name>, -model <provider/modelId>)",
     getArgumentCompletions: (prefix) => getHandoffArgumentCompletions(prefix, state),
     handler: async (args, ctx) => {
       if (!ctx.hasUI) {

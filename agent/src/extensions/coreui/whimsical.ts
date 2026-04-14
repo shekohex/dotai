@@ -1,5 +1,3 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-
 const workingMessages = [
   // Short
   "Schlepping...",

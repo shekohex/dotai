@@ -196,7 +196,8 @@ const trimToUndefined = (value: string | undefined): string | undefined => {
   return trimmed ? trimmed : undefined;
 };
 
-const formatControlChar = (char: string): string => `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`;
+const formatControlChar = (char: string): string =>
+  `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`;
 
 const sanitizeDisplayText = (text: string): string => {
   const normalized = text.replace(/\r\n?/g, "\n");
@@ -213,7 +214,13 @@ const sanitizeDisplayText = (text: string): string => {
         continue;
       }
 
-      if ((char >= "\u0000" && char <= "\u0008") || char === "\u000b" || char === "\u000c" || (char >= "\u000e" && char <= "\u001f") || char === "\u007f") {
+      if (
+        (char >= "\u0000" && char <= "\u0008") ||
+        char === "\u000b" ||
+        char === "\u000c" ||
+        (char >= "\u000e" && char <= "\u001f") ||
+        char === "\u007f"
+      ) {
         const escaped = formatControlChar(char);
         output += escaped;
         column += escaped.length;
@@ -240,7 +247,9 @@ const readStatusValue = (value: JsonValue | undefined): string | undefined => {
 };
 
 const readExecutionId = (details: ExecuteToolDetails | undefined): string | undefined =>
-  typeof details?.executionId === "string" && details.executionId.length > 0 ? details.executionId : undefined;
+  typeof details?.executionId === "string" && details.executionId.length > 0
+    ? details.executionId
+    : undefined;
 
 const tryParseJsonValue = (text: string | undefined): JsonValue | undefined => {
   if (!text) {
@@ -287,7 +296,10 @@ const readTextContentBlocks = (value: JsonValue | undefined): string | undefined
   }
 
   const text = value.content
-    .filter((item): item is JsonObject => isJsonObject(item) && item.type === "text" && typeof item.text === "string")
+    .filter(
+      (item): item is JsonObject =>
+        isJsonObject(item) && item.type === "text" && typeof item.text === "string",
+    )
     .map((item) => item.text as string)
     .join("\n")
     .trim();
@@ -319,7 +331,10 @@ const unwrapExecutorPayload = (value: JsonValue | undefined): JsonValue | undefi
   return current;
 };
 
-const extractExecutorDisplayValue = (result: { content: Array<{ type: string; text?: string }>; details?: unknown }): {
+const extractExecutorDisplayValue = (result: {
+  content: Array<{ type: string; text?: string }>;
+  details?: unknown;
+}): {
   root?: JsonValue;
   structured?: JsonValue;
   text?: string;
@@ -340,7 +355,11 @@ const extractExecutorDisplayValue = (result: { content: Array<{ type: string; te
     if (contentText) {
       const parsedContent = tryParseNestedJsonValue(contentText);
       if (parsedContent !== undefined) {
-        return { root, structured: unwrapExecutorPayload(parsedContent) ?? parsedContent, text: contentText };
+        return {
+          root,
+          structured: unwrapExecutorPayload(parsedContent) ?? parsedContent,
+          text: contentText,
+        };
       }
       return { root, text: contentText };
     }
@@ -349,7 +368,11 @@ const extractExecutorDisplayValue = (result: { content: Array<{ type: string; te
     if (textField) {
       const parsedField = tryParseNestedJsonValue(textField);
       if (parsedField !== undefined) {
-        return { root, structured: unwrapExecutorPayload(parsedField) ?? parsedField, text: textField };
+        return {
+          root,
+          structured: unwrapExecutorPayload(parsedField) ?? parsedField,
+          text: textField,
+        };
       }
       return { root, text: textField };
     }
@@ -422,7 +445,9 @@ const summarizeCodeSnippet = (code: string): string => {
 };
 
 const readExecuteLabel = (args: Partial<ExecuteToolInput> | undefined): string => {
-  const description = trimToUndefined(typeof args?.description === "string" ? args.description : undefined);
+  const description = trimToUndefined(
+    typeof args?.description === "string" ? args.description : undefined,
+  );
   if (description) {
     return limitLabelLength(description);
   }
@@ -433,7 +458,10 @@ const readExecuteLabel = (args: Partial<ExecuteToolInput> | undefined): string =
 const readCode = (args: Partial<ExecuteToolInput> | undefined): string =>
   typeof args?.code === "string" ? args.code : "";
 
-const readDuration = (details: ExecuteToolDetails | undefined, state: ExecuteRenderState): number | undefined =>
+const readDuration = (
+  details: ExecuteToolDetails | undefined,
+  state: ExecuteRenderState,
+): number | undefined =>
   typeof details?.durationMs === "number"
     ? details.durationMs
     : state.startedAt === undefined
@@ -467,7 +495,11 @@ const syncExecuteRenderState = (
   return state;
 };
 
-const setExecuteCallComponent = (state: ExecuteRenderState, lastComponent: unknown, text: string): Text => {
+const setExecuteCallComponent = (
+  state: ExecuteRenderState,
+  lastComponent: unknown,
+  text: string,
+): Text => {
   const component = createTextComponent(state.callComponent ?? lastComponent, text);
   state.callComponent = component;
   state.callText = text;
@@ -482,8 +514,11 @@ const appendCollapsedExecuteSummary = (state: ExecuteRenderState, suffix: string
   state.callComponent.setText(`${state.callText}${suffix}`);
 };
 
-const renderHighlightedLines = (source: string, language: string, _theme: ExecutorRenderTheme): string[] =>
-  trimTrailingEmptyLines(highlightCode(sanitizeDisplayText(source), language));
+const renderHighlightedLines = (
+  source: string,
+  language: string,
+  _theme: ExecutorRenderTheme,
+): string[] => trimTrailingEmptyLines(highlightCode(sanitizeDisplayText(source), language));
 
 const formatCollapsedCodePreview = (
   lines: string[],
@@ -495,7 +530,9 @@ const formatCollapsedCodePreview = (
   const blocks: string[] = [];
 
   if (earlierLineCount > 0) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierLineCount} earlier lines)`)}`);
+    blocks.push(
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierLineCount} earlier lines)`)}`,
+    );
   }
 
   if (visibleLines.length > 0) {
@@ -511,11 +548,12 @@ const formatExecuteCallHeader = (
   theme: ExecutorRenderTheme,
   phase: "pending" | "success" | "error",
 ): string => {
-  const status = phase === "error"
-    ? theme.bold(theme.fg("error", "execute"))
-    : phase === "success"
-      ? theme.bold(theme.fg("muted", "executed"))
-      : theme.italic(theme.fg("muted", "executing"));
+  const status =
+    phase === "error"
+      ? theme.bold(theme.fg("error", "execute"))
+      : phase === "success"
+        ? theme.bold(theme.fg("muted", "executed"))
+        : theme.italic(theme.fg("muted", "executing"));
   const label = readExecuteLabel(args);
   const lineCount = countTextLines(readCode(args));
   const suffix = lineCount > 0 ? theme.fg("muted", ` · ${summarizeLineCount(lineCount)}`) : "";
@@ -536,11 +574,17 @@ const resolveStatusColor = (
     return (text) => theme.fg("muted", text);
   }
 
-  if (["completed", "complete", "success", "succeeded", "done", "ok", "accepted"].includes(normalized)) {
+  if (
+    ["completed", "complete", "success", "succeeded", "done", "ok", "accepted"].includes(normalized)
+  ) {
     return (text) => theme.fg("success", text);
   }
 
-  if (["executing", "running", "waiting", "waiting for interaction", "pending", "paused"].includes(normalized)) {
+  if (
+    ["executing", "running", "waiting", "waiting for interaction", "pending", "paused"].includes(
+      normalized,
+    )
+  ) {
     return (text) => theme.fg("warning", text);
   }
 
@@ -551,10 +595,14 @@ const resolveStatusColor = (
   return (text) => theme.fg("muted", text);
 };
 
-const isExecutorSearchResults = (value: JsonValue | undefined): value is ExecutorSearchResultItem[] =>
+const isExecutorSearchResults = (
+  value: JsonValue | undefined,
+): value is ExecutorSearchResultItem[] =>
   value !== undefined && Value.Check(ExecutorSearchResultsSchema, value);
 
-const parseExecutorSearchResults = (value: JsonValue | undefined): ExecutorSearchResultItem[] | undefined => {
+const parseExecutorSearchResults = (
+  value: JsonValue | undefined,
+): ExecutorSearchResultItem[] | undefined => {
   if (!isExecutorSearchResults(value)) {
     return undefined;
   }
@@ -563,19 +611,24 @@ const parseExecutorSearchResults = (value: JsonValue | undefined): ExecutorSearc
 };
 
 const formatExecutorSearchResultsMarkdown = (items: ExecutorSearchResultItem[]): string =>
-  items.map((item, index) => {
-    const section = [
-      `### ${index + 1}. ${item.name}`,
-      `- Path: \`${item.path}\``,
-      `- Source: \`${item.sourceId}\``,
-      `- Score: \`${item.score}\``,
-      "",
-      item.description.trim(),
-    ];
-    return section.join("\n");
-  }).join("\n\n---\n\n");
+  items
+    .map((item, index) => {
+      const section = [
+        `### ${index + 1}. ${item.name}`,
+        `- Path: \`${item.path}\``,
+        `- Source: \`${item.sourceId}\``,
+        `- Score: \`${item.score}\``,
+        "",
+        item.description.trim(),
+      ];
+      return section.join("\n");
+    })
+    .join("\n\n---\n\n");
 
-const readStructuredContent = (result: { content: Array<{ type: string; text?: string }>; details?: unknown }): JsonValue | undefined => {
+const readStructuredContent = (result: {
+  content: Array<{ type: string; text?: string }>;
+  details?: unknown;
+}): JsonValue | undefined => {
   const details = result.details as ExecuteToolDetails | undefined;
   if (details && "structuredContent" in details) {
     return details.structuredContent;
@@ -594,12 +647,11 @@ const readStructuredContent = (result: { content: Array<{ type: string; text?: s
 };
 
 const formatStructuredJson = (value: JsonValue, theme: ExecutorRenderTheme): string =>
-  renderHighlightedLines(sanitizeDisplayText(JSON.stringify(value, null, 2)), "json", theme).join("\n");
+  renderHighlightedLines(sanitizeDisplayText(JSON.stringify(value, null, 2)), "json", theme).join(
+    "\n",
+  );
 
-const formatExecutorTextOutput = (
-  text: string,
-  theme: ExecutorRenderTheme,
-): string => {
+const formatExecutorTextOutput = (text: string, theme: ExecutorRenderTheme): string => {
   if (!text) {
     return "";
   }
@@ -623,7 +675,9 @@ const buildExecuteSummary = (
   const displayText = displayValue.text ?? text;
   const status = isError
     ? "failed"
-    : readStatusValue(displayValue.root) ?? readStatusValue(structured) ?? (structured !== undefined ? "completed" : displayText ? "returned" : "done");
+    : (readStatusValue(displayValue.root) ??
+      readStatusValue(structured) ??
+      (structured !== undefined ? "completed" : displayText ? "returned" : "done"));
   const statusColor = resolveStatusColor(status, theme, isError);
   const parts = [statusColor(status)];
 
@@ -660,10 +714,13 @@ const renderExpandedExecuteResult = (
   container.clear();
 
   if (text) {
-    const plainJson = structured !== undefined ? JSON.stringify(structured, null, 2).trim() : undefined;
+    const plainJson =
+      structured !== undefined ? JSON.stringify(structured, null, 2).trim() : undefined;
     const shouldShowText = !plainJson || plainJson !== text.trim();
     if (shouldShowText) {
-      container.addChild(new Text(formatExecutorTextOutput(text, theme), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
+      container.addChild(
+        new Text(formatExecutorTextOutput(text, theme), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y),
+      );
     }
   }
 
@@ -673,19 +730,30 @@ const renderExpandedExecuteResult = (
       if (text) {
         container.addChild(new Spacer(1));
       }
-      container.addChild(new Markdown(formatExecutorSearchResultsMarkdown(searchResults), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y, getMarkdownTheme()));
+      container.addChild(
+        new Markdown(
+          formatExecutorSearchResultsMarkdown(searchResults),
+          TOOL_TEXT_PADDING_X,
+          TOOL_TEXT_PADDING_Y,
+          getMarkdownTheme(),
+        ),
+      );
     } else {
       if (text) {
         container.addChild(new Spacer(1));
       }
-      container.addChild(new Text(formatStructuredJson(structured, theme), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
+      container.addChild(
+        new Text(formatStructuredJson(structured, theme), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y),
+      );
     }
   }
 
   if (!text && structured === undefined) {
     container.addChild(
       new Text(
-        isError ? theme.fg("error", "Executor returned no output.") : theme.fg("muted", "Executor returned no output."),
+        isError
+          ? theme.fg("error", "Executor returned no output.")
+          : theme.fg("muted", "Executor returned no output."),
         TOOL_TEXT_PADDING_X,
         TOOL_TEXT_PADDING_Y,
       ),
@@ -705,7 +773,9 @@ const appendSummaryToExpandedContainer = (
   summary: string,
 ): Container => {
   container.addChild(new Spacer(1));
-  container.addChild(new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y));
+  container.addChild(
+    new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y),
+  );
   return container;
 };
 
@@ -774,12 +844,16 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
     promptGuidelines: [
       "Search inside execute before calling Executor tools directly in code.",
       "Use execute instead of top-level helper tools for Executor discovery and invocation.",
-      "load the `executor` skill first before using this tool, it will explain it in details and how to use it"
+      "load the `executor` skill first before using this tool, it will explain it in details and how to use it",
     ],
     parameters: executeToolParams,
     renderCall(args, theme, context) {
       const state = syncExecuteRenderState(context, context.isPartial);
-      const header = formatExecuteCallHeader(args, theme, context.isError ? "error" : context.isPartial ? "pending" : "success");
+      const header = formatExecuteCallHeader(
+        args,
+        theme,
+        context.isError ? "error" : context.isPartial ? "pending" : "success",
+      );
       const code = readCode(args);
 
       if (!context.argsComplete && code) {
@@ -793,7 +867,11 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
 
       if (context.expanded && code) {
         const highlightedCode = renderHighlightedLines(code, "typescript", theme).join("\n");
-        return setExecuteCallComponent(state, context.lastComponent, `${header}\n\n${highlightedCode}`);
+        return setExecuteCallComponent(
+          state,
+          context.lastComponent,
+          `${header}\n\n${highlightedCode}`,
+        );
       }
 
       return setExecuteCallComponent(state, context.lastComponent, header);
@@ -812,16 +890,24 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
           return createTextComponent(context.lastComponent, "");
         }
 
-        return renderExpandedExecuteResult(result, details, theme, context.lastComponent, summary, true);
+        return renderExpandedExecuteResult(
+          result,
+          details,
+          theme,
+          context.lastComponent,
+          summary,
+          true,
+        );
       }
 
       if (isPartial) {
         const structured = displayValue.structured;
-        const previewText = structured !== undefined
-          ? formatStructuredJson(structured, theme)
-          : text
-            ? formatExecutorTextOutput(text, theme)
-            : "";
+        const previewText =
+          structured !== undefined
+            ? formatStructuredJson(structured, theme)
+            : text
+              ? formatExecutorTextOutput(text, theme)
+              : "";
         const footer = summary;
 
         if (previewText) {
@@ -832,7 +918,10 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
           });
         }
 
-        return createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${theme.fg("muted", summary)}`);
+        return createTextComponent(
+          context.lastComponent,
+          `${theme.fg("dim", "↳ ")}${theme.fg("muted", summary)}`,
+        );
       }
 
       if (!expanded) {
@@ -840,7 +929,14 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
         return createTextComponent(context.lastComponent, "");
       }
 
-      return renderExpandedExecuteResult(result, details, theme, context.lastComponent, summary, false);
+      return renderExpandedExecuteResult(
+        result,
+        details,
+        theme,
+        context.lastComponent,
+        summary,
+        false,
+      );
     },
     async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<ExecuteToolResult> {
       const endpoint = await connectExecutor(pi, ctx);
@@ -852,20 +948,20 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
           hasUI: ctx.hasUI,
           onElicitation: ctx.hasUI
             ? (interaction) =>
-              promptForInteraction(
-                interaction.mode === "url"
-                  ? {
-                    mode: "url",
-                    message: interaction.message,
-                    url: interaction.url,
-                  }
-                  : {
-                    mode: "form",
-                    message: interaction.message,
-                    requestedSchema: interaction.requestedSchema,
-                  },
-                ctx,
-              )
+                promptForInteraction(
+                  interaction.mode === "url"
+                    ? {
+                        mode: "url",
+                        message: interaction.message,
+                        url: interaction.url,
+                      }
+                    : {
+                        mode: "form",
+                        message: interaction.message,
+                        requestedSchema: interaction.requestedSchema,
+                      },
+                  ctx,
+                )
             : undefined,
         },
         async (client) => client.execute(params.code),
@@ -889,11 +985,7 @@ const buildResumeTool = (pi: ExtensionAPI, description: string) =>
     promptGuidelines: ["Use the exact executionId returned by execute."],
     parameters: Type.Object({
       executionId: Type.String({ description: "The execution ID from the paused result" }),
-      action: Type.Union([
-        Type.Literal("accept"),
-        Type.Literal("decline"),
-        Type.Literal("cancel"),
-      ]),
+      action: Type.Union([Type.Literal("accept"), Type.Literal("decline"), Type.Literal("cancel")]),
       content: Type.Optional(jsonStringSchema),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<ExecuteToolResult> {

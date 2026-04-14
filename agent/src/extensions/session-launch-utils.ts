@@ -66,13 +66,18 @@ Files involved:
 const CONTEXT_TRANSFER_PROVIDER = "gemini" as const;
 const CONTEXT_TRANSFER_MODEL = "gemini-3.1-flash-lite-preview" as const;
 
-export function extractMessageText(content: string | Array<{ type: string; text?: string }>): string {
+export function extractMessageText(
+  content: string | Array<{ type: string; text?: string }>,
+): string {
   if (typeof content === "string") {
     return content.trim();
   }
 
   return content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        part.type === "text" && typeof part.text === "string",
+    )
     .map((part) => part.text)
     .join("\n")
     .trim();
@@ -85,7 +90,9 @@ export function getConversationMessages(ctx: ExtensionContext) {
     .map((entry) => entry.message);
 }
 
-export function parseModelOverride(value: string): { provider: string; modelId: string } | undefined {
+export function parseModelOverride(
+  value: string,
+): { provider: string; modelId: string } | undefined {
   const separatorIndex = value.indexOf("/");
   if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
     return undefined;
@@ -113,7 +120,9 @@ export async function resolveSessionLaunchOptions(
     if (modeSpec.provider && modeSpec.modelId) {
       const modeModel = ctx.modelRegistry.find(modeSpec.provider, modeSpec.modelId);
       if (!modeModel) {
-        return { error: `Mode "${options.mode}" references unknown model ${modeSpec.provider}/${modeSpec.modelId}` };
+        return {
+          error: `Mode "${options.mode}" references unknown model ${modeSpec.provider}/${modeSpec.modelId}`,
+        };
       }
       targetModel = modeModel;
     }
@@ -149,7 +158,9 @@ export async function resolveSessionLaunchOptions(
   };
 }
 
-async function getSummaryGenerationConfig(ctx: ExtensionContext): Promise<{ config?: SummaryGenerationConfig; error?: string }> {
+async function getSummaryGenerationConfig(
+  ctx: ExtensionContext,
+): Promise<{ config?: SummaryGenerationConfig; error?: string }> {
   if (!ctx.model) {
     return { error: "No model selected" };
   }
@@ -170,7 +181,9 @@ async function getSummaryGenerationConfig(ctx: ExtensionContext): Promise<{ conf
       model: generationModel,
       apiKey: auth.apiKey,
       headers: auth.headers,
-      warning: preferredModel ? undefined : `Could not find ${CONTEXT_TRANSFER_PROVIDER}/${CONTEXT_TRANSFER_MODEL}; using current session model.`,
+      warning: preferredModel
+        ? undefined
+        : `Could not find ${CONTEXT_TRANSFER_PROVIDER}/${CONTEXT_TRANSFER_MODEL}; using current session model.`,
     },
   };
 }
@@ -269,9 +282,13 @@ export async function generateContextTransferSummaryWithLoader(
   });
 }
 
-function getAssistantText(content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>): string {
+function getAssistantText(
+  content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>,
+): string {
   return content
-    .flatMap((item) => (item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : []))
+    .flatMap((item) =>
+      item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : [],
+    )
     .join("\n");
 }
 

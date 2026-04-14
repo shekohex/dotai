@@ -1,4 +1,9 @@
-import { defineTool, type ExtensionAPI, type ExtensionContext, type Theme } from "@mariozechner/pi-coding-agent";
+import {
+  defineTool,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type Theme,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import { buildAvailableModesPromptGuideline } from "./available-modes.js";
@@ -43,9 +48,7 @@ type SubagentRuntimeState = {
   toolPromptSignature?: string;
 };
 
-type LaunchTarget =
-  | { kind: "session"; sessionPath: string }
-  | { kind: "continue" };
+type LaunchTarget = { kind: "session"; sessionPath: string } | { kind: "continue" };
 
 type SubagentRenderState = {
   startedAt?: number;
@@ -61,7 +64,26 @@ const SUBAGENT_STREAM_PREVIEW_LINE_LIMIT = 5;
 const SUBAGENT_STREAM_PREVIEW_WIDTH = 96;
 
 function normalizeSingleLine(value: string): string {
-  return value.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+  let normalized = "";
+  let previousWasWhitespace = false;
+
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    const isControl = codePoint !== undefined && (codePoint < 32 || codePoint === 127);
+    const isWhitespace = isControl || /\s/.test(char);
+    if (isWhitespace) {
+      if (!previousWasWhitespace) {
+        normalized += " ";
+        previousWasWhitespace = true;
+      }
+      continue;
+    }
+
+    normalized += char;
+    previousWasWhitespace = false;
+  }
+
+  return normalized.trim();
 }
 
 function formatChildSessionDisplayName(name: string, prompt: string): string {
@@ -103,7 +125,10 @@ function buildLaunchCommand(
   },
 ): string {
   const commandParts = [...getPiCommandPrefix()];
-  const launchTarget: LaunchTarget = options.launchTarget ?? { kind: "session", sessionPath: state.sessionPath };
+  const launchTarget: LaunchTarget = options.launchTarget ?? {
+    kind: "session",
+    sessionPath: state.sessionPath,
+  };
 
   if (launchTarget.kind === "continue") {
     commandParts.push("--continue");
@@ -160,13 +185,18 @@ function applyChildToolState(pi: ExtensionAPI, childState: ChildBootstrapState |
   pi.setActiveTools(Array.from(activeTools).sort((left, right) => left.localeCompare(right)));
 }
 
-function isChildSession(childState: ChildBootstrapState | undefined, ctx: ExtensionContext): childState is ChildBootstrapState {
+function isChildSession(
+  childState: ChildBootstrapState | undefined,
+  ctx: ExtensionContext,
+): childState is ChildBootstrapState {
   if (!childState) {
     return false;
   }
 
-  return ctx.sessionManager.getSessionId() === childState.sessionId
-    || ctx.sessionManager.getSessionFile() === childState.sessionPath;
+  return (
+    ctx.sessionManager.getSessionId() === childState.sessionId ||
+    ctx.sessionManager.getSessionFile() === childState.sessionPath
+  );
 }
 
 function installChildBootstrap(pi: ExtensionAPI): void {
@@ -212,7 +242,9 @@ function installChildBootstrap(pi: ExtensionAPI): void {
     timeoutModeActive = isAutoExitTimeoutModeActive(currentChildState.sessionId);
 
     applyChildToolState(pi, currentChildState);
-    pi.setSessionName(formatChildSessionDisplayName(currentChildState.name, currentChildState.prompt));
+    pi.setSessionName(
+      formatChildSessionDisplayName(currentChildState.name, currentChildState.prompt),
+    );
 
     if (!ctx.hasUI) {
       return;
@@ -282,28 +314,41 @@ function scheduleParentSubagentToolActivation(pi: ExtensionAPI): void {
 function validateToolParams(params: SubagentToolParams): void {
   if (params.action === "start") {
     if (!params.name?.trim()) {
-      throw new Error("Invalid subagent start params: `name` is required. It becomes the tmux pane/window title shown when the child launches.");
+      throw new Error(
+        "Invalid subagent start params: `name` is required. It becomes the tmux pane/window title shown when the child launches.",
+      );
     }
     if (!params.task?.trim()) {
-      throw new Error("Invalid subagent start params: `task` is required. There is no subagent read action later, so provide the delegated work up front and inspect tmux output from the parent session only when needed.");
+      throw new Error(
+        "Invalid subagent start params: `task` is required. There is no subagent read action later, so provide the delegated work up front and inspect tmux output from the parent session only when needed.",
+      );
     }
   }
 
   if (params.action === "message") {
     if (!params.sessionId?.trim()) {
-      throw new Error("Invalid subagent message params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.");
+      throw new Error(
+        "Invalid subagent message params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.",
+      );
     }
     if (!params.message?.trim()) {
-      throw new Error("Invalid subagent message params: `message` is required. This text is sent into the child tmux pane/window.");
+      throw new Error(
+        "Invalid subagent message params: `message` is required. This text is sent into the child tmux pane/window.",
+      );
     }
   }
 
   if (params.action === "cancel" && !params.sessionId?.trim()) {
-    throw new Error("Invalid subagent cancel params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.");
+    throw new Error(
+      "Invalid subagent cancel params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.",
+    );
   }
 }
 
-function normalizeSubagentExecutionError(action: SubagentToolParams["action"], error: unknown): Error {
+function normalizeSubagentExecutionError(
+  action: SubagentToolParams["action"],
+  error: unknown,
+): Error {
   const message = error instanceof Error ? error.message : String(error);
 
   if (message.startsWith("Invalid subagent ") || message.startsWith(`subagent ${action} failed:`)) {
@@ -340,7 +385,10 @@ function formatListResultText(subagents: RuntimeSubagent[]): string {
 
   return [
     `count: ${subagents.length}`,
-    ...subagents.map((subagent, index) => `${index + 1}. ${subagent.name} · ${subagent.status} · sessionId: ${subagent.sessionId} · ${summarizeWhitespace(subagent.task, 48)}`),
+    ...subagents.map(
+      (subagent, index) =>
+        `${index + 1}. ${subagent.name} · ${subagent.status} · sessionId: ${subagent.sessionId} · ${summarizeWhitespace(subagent.task, 48)}`,
+    ),
   ].join("\n");
 }
 
@@ -400,7 +448,9 @@ function syncStreamingRenderState(
 }
 
 function getElapsedMs(state: SubagentRenderState): number | undefined {
-  return state.startedAt === undefined ? undefined : (state.endedAt ?? Date.now()) - state.startedAt;
+  return state.startedAt === undefined
+    ? undefined
+    : (state.endedAt ?? Date.now()) - state.startedAt;
 }
 
 function setCallComponent(state: SubagentRenderState, lastComponent: unknown, text: string): Text {
@@ -420,7 +470,9 @@ function applyCollapsedSummaryToCall(state: SubagentRenderState, summary: string
   state.callComponent.setText(lines.join("\n"));
 }
 
-function isProgressDetails(details: SubagentToolRenderDetails | undefined): details is SubagentToolProgressDetails {
+function isProgressDetails(
+  details: SubagentToolRenderDetails | undefined,
+): details is SubagentToolProgressDetails {
   if (!details || typeof details !== "object") {
     return false;
   }
@@ -482,7 +534,10 @@ function renderPartialSubagentResult(
   if (!previewText) {
     const label = progress?.statusText ?? `${args.action} in progress`;
     const duration = formatDurationHuman(elapsedMs ?? 0);
-    return createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${theme.fg("muted", `${label} (${duration})`)}`);
+    return createTextComponent(
+      context.lastComponent,
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `${label} (${duration})`)}`,
+    );
   }
 
   return renderStreamingPreview(
@@ -528,16 +583,17 @@ function formatTimestamp(value: number | undefined): string {
   return typeof value === "number" ? new Date(value).toISOString() : "-";
 }
 
-function formatField(label: string, value: string | number | boolean | undefined, multiline = false): string[] {
+function formatField(
+  label: string,
+  value: string | number | boolean | undefined,
+  multiline = false,
+): string[] {
   const text = formatScalarValue(value);
   if (!multiline && !text.includes("\n")) {
     return [`${label}: ${text}`];
   }
 
-  return [
-    `${label}:`,
-    ...text.split("\n").map((line) => `  ${line}`),
-  ];
+  return [`${label}:`, ...text.split("\n").map((line) => `  ${line}`)];
 }
 
 function formatExpandedCallText(args: SubagentToolParams, theme: Theme): string {
@@ -604,7 +660,9 @@ function formatListDetails(subagents: RuntimeSubagent[]): string {
     ...subagents.flatMap((subagent, index) => [
       "",
       `subagent ${index + 1}:`,
-      ...formatSubagentStateDetails(subagent).split("\n").map((line) => `  ${line}`),
+      ...formatSubagentStateDetails(subagent)
+        .split("\n")
+        .map((line) => `  ${line}`),
     ]),
   ].join("\n");
 }
@@ -638,7 +696,9 @@ function formatExpandedResult(details: SubagentToolResultDetails | undefined): s
   return resultLines.join("\n");
 }
 
-function countSubagentsByStatus(subagents: RuntimeSubagent[]): Map<RuntimeSubagent["status"], number> {
+function countSubagentsByStatus(
+  subagents: RuntimeSubagent[],
+): Map<RuntimeSubagent["status"], number> {
   const counts = new Map<RuntimeSubagent["status"], number>();
 
   for (const subagent of subagents) {
@@ -650,8 +710,16 @@ function countSubagentsByStatus(subagents: RuntimeSubagent[]): Map<RuntimeSubage
 
 function formatListCollapsedSummary(subagents: RuntimeSubagent[], theme: Theme): string {
   const counts = countSubagentsByStatus(subagents);
-  const segments = [theme.fg("success", `${subagents.length} agent${subagents.length === 1 ? "" : "s"}`)];
-  const orderedStatuses: Array<RuntimeSubagent["status"]> = ["running", "idle", "completed", "cancelled", "failed"];
+  const segments = [
+    theme.fg("success", `${subagents.length} agent${subagents.length === 1 ? "" : "s"}`),
+  ];
+  const orderedStatuses: Array<RuntimeSubagent["status"]> = [
+    "running",
+    "idle",
+    "completed",
+    "cancelled",
+    "failed",
+  ];
 
   for (const status of orderedStatuses) {
     const count = counts.get(status) ?? 0;
@@ -666,13 +734,15 @@ function formatListCollapsedSummary(subagents: RuntimeSubagent[], theme: Theme):
 }
 
 function formatStateCollapsedSummary(state: RuntimeSubagent, theme: Theme): string {
-  return [
-    theme.fg("success", state.name),
-    theme.fg("muted", state.status),
-  ].join(theme.fg("dim", " · "));
+  return [theme.fg("success", state.name), theme.fg("muted", state.status)].join(
+    theme.fg("dim", " · "),
+  );
 }
 
-function formatMessageCollapsedSummary(details: Extract<SubagentToolResultDetails, { action: "message" }>, theme: Theme): string {
+function formatMessageCollapsedSummary(
+  details: Extract<SubagentToolResultDetails, { action: "message" }>,
+  theme: Theme,
+): string {
   return [
     theme.fg("success", details.state.name),
     theme.fg("muted", details.state.status),
@@ -682,7 +752,10 @@ function formatMessageCollapsedSummary(details: Extract<SubagentToolResultDetail
   ].join(theme.fg("dim", " · "));
 }
 
-function formatCollapsedResultSummary(details: SubagentToolResultDetails | undefined, theme: Theme): string {
+function formatCollapsedResultSummary(
+  details: SubagentToolResultDetails | undefined,
+  theme: Theme,
+): string {
   if (!details) {
     return theme.fg("success", "ok");
   }
@@ -705,7 +778,8 @@ const SUBAGENT_BASE_PROMPT_GUIDELINES = [
   "Do not poll with `list` just to get the final result. By default, wait for the automatic completion summary and only use `message` or `cancel` when you need to steer or stop the child.",
 ] as const;
 
-const SUBAGENT_AVAILABLE_MODES_HEADING = "Available subagent modes. When the user asks for a mode, use one of these exact names:";
+const SUBAGENT_AVAILABLE_MODES_HEADING =
+  "Available subagent modes. When the user asks for a mode, use one of these exact names:";
 
 async function buildSubagentPromptGuidelines(ctx: ExtensionContext): Promise<string[]> {
   return [
@@ -714,13 +788,20 @@ async function buildSubagentPromptGuidelines(ctx: ExtensionContext): Promise<str
   ];
 }
 
-export function createSubagentExtension(options: CreateSubagentExtensionOptions = { enabled: true }) {
+export function createSubagentExtension(
+  options: CreateSubagentExtensionOptions = { enabled: true },
+) {
   return function subagentExtension(pi: ExtensionAPI): void {
     if (options.enabled === false) {
       return;
     }
     installChildBootstrap(pi);
-    const adapter = options.adapterFactory?.(pi) ?? new TmuxAdapter((command, args, execOptions) => pi.exec(command, args, execOptions), process.cwd());
+    const adapter =
+      options.adapterFactory?.(pi) ??
+      new TmuxAdapter(
+        (command, args, execOptions) => pi.exec(command, args, execOptions),
+        process.cwd(),
+      );
     const manager = new SubagentManager(pi, adapter, buildLaunchCommand);
     const state: SubagentRuntimeState = {};
 
@@ -740,12 +821,11 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
     const subagentTool = defineTool<typeof SubagentToolParamsSchema, SubagentToolResultDetails>({
       name: "subagent",
       label: "π",
-      description: "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. Session ids are UUID v4. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling.",
-      promptSnippet: "use `subagent` to start, message, cancel, or list tmux-backed child pi sessions; session ids are UUID v4; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary",
-      promptGuidelines: [
-        ...SUBAGENT_BASE_PROMPT_GUIDELINES,
-        SUBAGENT_AVAILABLE_MODES_HEADING,
-      ],
+      description:
+        "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. Session ids are UUID v4. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling.",
+      promptSnippet:
+        "use `subagent` to start, message, cancel, or list tmux-backed child pi sessions; session ids are UUID v4; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary",
+      promptGuidelines: [...SUBAGENT_BASE_PROMPT_GUIDELINES, SUBAGENT_AVAILABLE_MODES_HEADING],
       parameters: SubagentToolParamsSchema,
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         try {
@@ -753,35 +833,51 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
           validateToolParams(params);
 
           if (params.action === "start") {
-            const started = await manager.start({
-              name: params.name!,
-              task: params.task!,
-              mode: params.mode,
-              handoff: params.handoff,
-              cwd: params.cwd,
-              autoExit: params.autoExit,
-            }, ctx, onUpdate, signal);
+            const started = await manager.start(
+              {
+                name: params.name!,
+                task: params.task!,
+                mode: params.mode,
+                handoff: params.handoff,
+                cwd: params.cwd,
+                autoExit: params.autoExit,
+              },
+              ctx,
+              onUpdate,
+              signal,
+            );
 
             return {
               content: [{ type: "text", text: formatStartResultText(started.state) }],
-              details: { action: "start", args: params, prompt: started.prompt, state: started.state },
+              details: {
+                action: "start",
+                args: params,
+                prompt: started.prompt,
+                state: started.state,
+              },
             };
           }
 
           if (params.action === "message") {
-            const result = await manager.message({
-              sessionId: params.sessionId!,
-              message: params.message!,
-              delivery: params.delivery ?? "steer",
-            }, ctx, onUpdate);
+            const result = await manager.message(
+              {
+                sessionId: params.sessionId!,
+                message: params.message!,
+                delivery: params.delivery ?? "steer",
+              },
+              ctx,
+              onUpdate,
+            );
 
             return {
-              content: [{
-                type: "text",
-                text: result.autoResumed
-                  ? formatAutoResumedMessageResultText(result.state, params.delivery ?? "steer")
-                  : formatMessageResultText(result.state, params.delivery ?? "steer"),
-              }],
+              content: [
+                {
+                  type: "text",
+                  text: result.autoResumed
+                    ? formatAutoResumedMessageResultText(result.state, params.delivery ?? "steer")
+                    : formatMessageResultText(result.state, params.delivery ?? "steer"),
+                },
+              ],
               details: {
                 action: "message",
                 args: params,
@@ -816,7 +912,9 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
         return setCallComponent(
           state,
           context.lastComponent,
-          context.expanded ? formatExpandedCallText(args, theme) : formatCollapsedCallText(args, theme),
+          context.expanded
+            ? formatExpandedCallText(args, theme)
+            : formatCollapsedCallText(args, theme),
         );
       },
       renderResult(result, { expanded, isPartial }, theme, context) {
@@ -826,14 +924,28 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
 
         if (context.isError) {
           applyCollapsedSummaryToCall(state, `${separator}${theme.fg("error", "error")}`);
-          return renderToolError(getTextContent(result) || "subagent failed", theme, context.lastComponent);
+          return renderToolError(
+            getTextContent(result) || "subagent failed",
+            theme,
+            context.lastComponent,
+          );
         }
 
         if (isPartial) {
-          return renderPartialSubagentResult(context.args as SubagentToolParams, result, expanded, theme, context, state);
+          return renderPartialSubagentResult(
+            context.args as SubagentToolParams,
+            result,
+            expanded,
+            theme,
+            context,
+            state,
+          );
         }
 
-        applyCollapsedSummaryToCall(state, `${separator}${formatCollapsedResultSummary(details as SubagentToolResultDetails | undefined, theme)}`);
+        applyCollapsedSummaryToCall(
+          state,
+          `${separator}${formatCollapsedResultSummary(details as SubagentToolResultDetails | undefined, theme)}`,
+        );
         if (!expanded) {
           return createTextComponent(context.lastComponent, "");
         }
@@ -847,7 +959,11 @@ export function createSubagentExtension(options: CreateSubagentExtensionOptions 
 
     pi.registerTool(subagentTool);
 
-    const modesChangedEvents = (pi as ExtensionAPI & { events?: { on?: (eventName: string, handler: (...args: any[]) => any) => unknown } }).events;
+    const modesChangedEvents = (
+      pi as ExtensionAPI & {
+        events?: { on?: (eventName: string, handler: (...args: any[]) => any) => unknown };
+      }
+    ).events;
     modesChangedEvents?.on?.("modes:changed", async () => {
       if (!state.ctx) {
         return;

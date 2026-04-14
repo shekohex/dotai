@@ -3,14 +3,18 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@mariozechner/pi-coding-agent";
 import createExecutorExtension from "../src/extensions/executor/index.ts";
-import { getExecutorWebUrl, setExecutorSettingsForTests } from "../src/extensions/executor/settings.ts";
+import {
+  getExecutorWebUrl,
+  setExecutorSettingsForTests,
+} from "../src/extensions/executor/settings.ts";
 import { resolveExecutorEndpoint } from "../src/extensions/executor/connection.ts";
 import { formatExecutorStatus } from "../src/extensions/coreui/footer.ts";
 import { clearExecutorInspectionCache } from "../src/extensions/executor/tools.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 
-const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
+  test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
 test.afterEach(() => {
   setExecutorSettingsForTests(undefined);
@@ -39,7 +43,12 @@ class FakePi implements Partial<ExtensionAPI> {
   }
 }
 
-async function emitHandlers(fakePi: FakePi, eventName: string, event: unknown, ctx: ExtensionContext): Promise<void> {
+async function emitHandlers(
+  fakePi: FakePi,
+  eventName: string,
+  event: unknown,
+  ctx: ExtensionContext,
+): Promise<void> {
   for (const handler of fakePi.handlers.get(eventName) ?? []) {
     await handler(event, ctx);
   }
@@ -55,7 +64,9 @@ function createFakeContext(): ExtensionContext {
   } as unknown as ExtensionContext;
 }
 
-async function createExecutorProbeServer(scopeDir: string): Promise<{ url: string; close: () => Promise<void> }> {
+async function createExecutorProbeServer(
+  scopeDir: string,
+): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer((request, response) => {
     if (request.url === "/api/scope") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -76,7 +87,9 @@ async function createExecutorProbeServer(scopeDir: string): Promise<{ url: strin
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
     close: async () => {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     },
   };
 }

@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolResultEvent,
+} from "@mariozechner/pi-coding-agent";
 
 type TextContent = { type: "text"; text: string };
 
@@ -184,7 +188,10 @@ export default function agentsMdExtension(pi: ExtensionAPI) {
         });
 
         if (ctx.hasUI) {
-          ctx.ui.notify(`Loaded ${formatAgentsPath(agentsPath)} into context (${lineCount} ${lineCount === 1 ? "line" : "lines"})`, "info");
+          ctx.ui.notify(
+            `Loaded ${formatAgentsPath(agentsPath)} into context (${lineCount} ${lineCount === 1 ? "line" : "lines"})`,
+            "info",
+          );
         }
       } catch (error) {
         if (ctx.hasUI) {

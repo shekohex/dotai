@@ -12,7 +12,10 @@ const EXECUTOR_SUBCOMMANDS: Array<{ value: ExecutorSubcommand; description: stri
   { value: "web", description: "Open the active Executor web UI" },
 ];
 
-function filterAutocompleteItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
+function filterAutocompleteItems(
+  items: AutocompleteItem[],
+  query: string,
+): AutocompleteItem[] | null {
   if (items.length === 0) {
     return null;
   }
@@ -21,7 +24,11 @@ function filterAutocompleteItems(items: AutocompleteItem[], query: string): Auto
     return items;
   }
 
-  const filtered = fuzzyFilter(items, query, (item) => `${item.label} ${item.value} ${item.description ?? ""}`);
+  const filtered = fuzzyFilter(
+    items,
+    query,
+    (item) => `${item.label} ${item.value} ${item.description ?? ""}`,
+  );
   return filtered.length > 0 ? filtered : null;
 }
 

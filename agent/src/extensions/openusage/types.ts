@@ -14,9 +14,7 @@ export const SUPPORTED_PROVIDER_IDS = ["codex", "google", "zai"] as const;
 
 export type SupportedProviderId = (typeof SUPPORTED_PROVIDER_IDS)[number];
 
-export function isSupportedProviderId(
-  value: string,
-): value is SupportedProviderId {
+export function isSupportedProviderId(value: string): value is SupportedProviderId {
   return value === "codex" || value === "google" || value === "zai";
 }
 
@@ -80,9 +78,7 @@ export type CliproxyAccount = {
   file: CliproxyAuthFile;
 };
 
-export type CliproxyAccountsByProvider = Partial<
-  Record<SupportedProviderId, CliproxyAccount[]>
->;
+export type CliproxyAccountsByProvider = Partial<Record<SupportedProviderId, CliproxyAccount[]>>;
 
 export type OpenUsageUpdatedEvent = {
   providerId?: SupportedProviderId;
@@ -104,8 +100,5 @@ export type UsageProvider = {
   id: SupportedProviderId;
   displayName: string;
   matchesModel(provider: string, modelId: string): boolean;
-  fetchSnapshot(
-    ctx: ExtensionContext,
-    state: OpenUsageRuntimeState,
-  ): Promise<UsageSnapshot>;
+  fetchSnapshot(ctx: ExtensionContext, state: OpenUsageRuntimeState): Promise<UsageSnapshot>;
 };

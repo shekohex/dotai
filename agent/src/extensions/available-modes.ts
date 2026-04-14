@@ -39,16 +39,16 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
   return [
     "<available_modes>",
     ...sortedModes.map(({ name, spec }) => {
-      const attrs = [`name=\"${escapeXmlAttribute(name)}\"`];
+      const attrs = [`name="${escapeXmlAttribute(name)}"`];
       if (spec.provider && spec.modelId) {
         const model = `${spec.provider}/${spec.modelId}`;
-        attrs.push(`model=\"${escapeXmlAttribute(model)}\"`);
+        attrs.push(`model="${escapeXmlAttribute(model)}"`);
       }
       if (spec.thinkingLevel) {
-        attrs.push(`thinkingLevel=\"${escapeXmlAttribute(spec.thinkingLevel)}\"`);
+        attrs.push(`thinkingLevel="${escapeXmlAttribute(spec.thinkingLevel)}"`);
       }
       if (spec.description) {
-        attrs.push(`description=\"${escapeXmlAttribute(spec.description)}\"`);
+        attrs.push(`description="${escapeXmlAttribute(spec.description)}"`);
       }
       return `  <mode ${attrs.join(" ")} />`;
     }),
@@ -56,7 +56,10 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
   ].join("\n");
 }
 
-export async function buildAvailableModesPromptGuideline(cwd: string, heading: string): Promise<string> {
+export async function buildAvailableModesPromptGuideline(
+  cwd: string,
+  heading: string,
+): Promise<string> {
   return `${heading}\n${formatAvailableModesXml(await loadAvailableModes(cwd))}`;
 }
 

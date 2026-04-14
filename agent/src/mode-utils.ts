@@ -120,13 +120,17 @@ type LoadedModesSource = {
 
 const systemPromptFileReferencePattern = /^\{file:(.+)\}$/s;
 
-export function defineModesFile<const TModes extends ModeMap>(data: ModesFileFor<TModes>): ModesFileFor<TModes> {
+export function defineModesFile<const TModes extends ModeMap>(
+  data: ModesFileFor<TModes>,
+): ModesFileFor<TModes> {
   return data;
 }
 
 function assertModesFileConsistency(data: ModesFile): ModesFile {
   if (data.currentMode && !(data.currentMode in data.modes)) {
-    throw new Error(`Invalid modes.json: currentMode "${data.currentMode}" is not defined in modes`);
+    throw new Error(
+      `Invalid modes.json: currentMode "${data.currentMode}" is not defined in modes`,
+    );
   }
 
   return data;
@@ -147,7 +151,9 @@ export function getModesProjectPath(cwd: string): string {
 }
 
 export function getModesGlobalPath(): string {
-  const agentDir = process.env.PI_CODING_AGENT_DIR ? expandUserPath(process.env.PI_CODING_AGENT_DIR) : getAgentDir();
+  const agentDir = process.env.PI_CODING_AGENT_DIR
+    ? expandUserPath(process.env.PI_CODING_AGENT_DIR)
+    : getAgentDir();
   return path.join(agentDir, "modes.json");
 }
 
@@ -173,7 +179,10 @@ function parseModesFile(value: unknown): ModesFile {
   return assertModesFileConsistency(Value.Parse(ModesFileSchema, value));
 }
 
-function getReferencedSystemPromptPath(systemPrompt: string, modesFilePath: string): string | undefined {
+function getReferencedSystemPromptPath(
+  systemPrompt: string,
+  modesFilePath: string,
+): string | undefined {
   const match = systemPrompt.match(systemPromptFileReferencePattern);
   if (!match) {
     return undefined;
@@ -191,7 +200,9 @@ function normalizeModeSpec(spec: ModeSpec, resolvedSystemPrompt = spec.systemPro
   return {
     ...spec,
     ...(resolvedSystemPrompt !== undefined ? { systemPrompt: resolvedSystemPrompt } : {}),
-    ...(resolvedSystemPrompt !== undefined && spec.systemPromptMode === undefined ? { systemPromptMode: "append" as const } : {}),
+    ...(resolvedSystemPrompt !== undefined && spec.systemPromptMode === undefined
+      ? { systemPromptMode: "append" as const }
+      : {}),
   };
 }
 
@@ -224,7 +235,10 @@ function resolveModeSpecAssetsSync(spec: ModeSpec, modesFilePath: string): ModeS
 async function resolveModesFileAssets(data: ModesFile, modesFilePath: string): Promise<ModesFile> {
   const modes = Object.fromEntries(
     await Promise.all(
-      Object.entries(data.modes).map(async ([modeName, spec]) => [modeName, await resolveModeSpecAssets(spec, modesFilePath)] as const),
+      Object.entries(data.modes).map(
+        async ([modeName, spec]) =>
+          [modeName, await resolveModeSpecAssets(spec, modesFilePath)] as const,
+      ),
     ),
   );
 
@@ -236,7 +250,9 @@ async function resolveModesFileAssets(data: ModesFile, modesFilePath: string): P
 
 function resolveModesFileAssetsSync(data: ModesFile, modesFilePath: string): ModesFile {
   const modes = Object.fromEntries(
-    Object.entries(data.modes).map(([modeName, spec]) => [modeName, resolveModeSpecAssetsSync(spec, modesFilePath)] as const),
+    Object.entries(data.modes).map(
+      ([modeName, spec]) => [modeName, resolveModeSpecAssetsSync(spec, modesFilePath)] as const,
+    ),
   );
 
   return assertModesFileConsistency({
@@ -253,10 +269,13 @@ function formatModesFileError(error: unknown): string {
   return String(error);
 }
 
-function mergeModesFiles(globalData: ModesFile | undefined, projectData: ModesFile | undefined): ModesFile {
+function mergeModesFiles(
+  globalData: ModesFile | undefined,
+  projectData: ModesFile | undefined,
+): ModesFile {
   const mergedModes = {
-    ...(globalData?.modes),
-    ...(projectData?.modes),
+    ...globalData?.modes,
+    ...projectData?.modes,
   };
 
   const currentMode = projectData?.currentMode ?? globalData?.currentMode;
@@ -268,7 +287,10 @@ function mergeModesFiles(globalData: ModesFile | undefined, projectData: ModesFi
   });
 }
 
-function tryMergeModesFiles(globalData: ModesFile | undefined, projectData: ModesFile | undefined): {
+function tryMergeModesFiles(
+  globalData: ModesFile | undefined,
+  projectData: ModesFile | undefined,
+): {
   data?: ModesFile;
   error?: string;
 } {
@@ -354,7 +376,13 @@ function buildLoadedModesFile(
   const sourceError = formatMergedErrors([projectSource, globalSource]);
   const merged = tryMergeModesFiles(globalSource.data, projectSource.data);
   const resolved = tryMergeModesFiles(globalSource.resolvedData, projectSource.resolvedData);
-  const errors = Array.from(new Set([sourceError, merged.error, resolved.error].filter((value): value is string => Boolean(value))));
+  const errors = Array.from(
+    new Set(
+      [sourceError, merged.error, resolved.error].filter((value): value is string =>
+        Boolean(value),
+      ),
+    ),
+  );
 
   return {
     path,
@@ -391,21 +419,30 @@ async function ensureParentDir(filePath: string): Promise<void> {
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   await ensureParentDir(filePath);
-  const tmpPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`);
+  const tmpPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`,
+  );
   await fs.writeFile(tmpPath, content, "utf8");
   try {
     await fs.rename(tmpPath, filePath);
   } catch (error) {
-    await fs.unlink(tmpPath).catch(() => { });
+    await fs.unlink(tmpPath).catch(() => {});
     throw error;
   }
 }
 
 export async function saveModesFile(filePath: string, data: ModesFile): Promise<void> {
-  await atomicWrite(filePath, `${JSON.stringify(assertModesFileConsistency(Value.Parse(ModesFileSchema, data)), null, 2)}\n`);
+  await atomicWrite(
+    filePath,
+    `${JSON.stringify(assertModesFileConsistency(Value.Parse(ModesFileSchema, data)), null, 2)}\n`,
+  );
 }
 
-export async function resolveModeSpec(cwd: string, modeName: string): Promise<ModeSpec | undefined> {
+export async function resolveModeSpec(
+  cwd: string,
+  modeName: string,
+): Promise<ModeSpec | undefined> {
   const loaded = await loadModesFile(cwd);
   return loaded.resolvedData.modes[modeName];
 }

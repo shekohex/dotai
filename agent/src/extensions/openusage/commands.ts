@@ -1,5 +1,18 @@
-import { DynamicBorder, type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Container, Key, Text, matchesKey, truncateToWidth, visibleWidth, type Component, type TUI } from "@mariozechner/pi-tui";
+import {
+  DynamicBorder,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+} from "@mariozechner/pi-coding-agent";
+import {
+  Container,
+  Key,
+  Text,
+  matchesKey,
+  truncateToWidth,
+  visibleWidth,
+  type Component,
+  type TUI,
+} from "@mariozechner/pi-tui";
 import { listCliproxyAccounts, resolveCliproxyState } from "./cliproxy.js";
 import { resolveSupportedProviderId } from "./model-map.js";
 import {
@@ -23,11 +36,7 @@ import type {
   UsageMetric,
   UsageSnapshot,
 } from "./types.js";
-import {
-  isSupportedProviderId,
-  OPENUSAGE_STATE_ENTRY,
-  SUPPORTED_PROVIDER_IDS,
-} from "./types.js";
+import { isSupportedProviderId, OPENUSAGE_STATE_ENTRY, SUPPORTED_PROVIDER_IDS } from "./types.js";
 
 type OpenUsageViewData = {
   state: OpenUsageRuntimeState;
@@ -107,13 +116,15 @@ class OpenUsageView implements Component {
     };
 
     const resetTab = (mode: ResetTimeFormat): string => {
-      return mode === this.data.state.persisted.resetTimeFormat ? bold(`[${mode}]`) : dim(` ${mode} `);
+      return mode === this.data.state.persisted.resetTimeFormat
+        ? bold(`[${mode}]`)
+        : dim(` ${mode} `);
     };
 
     lines.push(
       `${muted("Providers ")}${this.data.providerIds.map(providerTab).join("")}` +
-      `${muted("  mode ")}${modeTab("left")}${modeTab("used")}` +
-      `${muted("  reset ")}${resetTab("relative")}${resetTab("absolute")}`,
+        `${muted("  mode ")}${modeTab("left")}${modeTab("used")}` +
+        `${muted("  reset ")}${resetTab("relative")}${resetTab("absolute")}`,
     );
     lines.push(muted("←/→ provider · tab used/left · a/A account · r reset · f refresh · q close"));
     lines.push("");
@@ -131,8 +142,8 @@ class OpenUsageView implements Component {
     if (account.option.label) {
       lines.push(
         muted("Account: ") +
-        text(maskAccountLabel(account.option.label) ?? account.option.label) +
-        muted(` (${account.index + 1}/${account.options.length})`),
+          text(maskAccountLabel(account.option.label) ?? account.option.label) +
+          muted(` (${account.index + 1}/${account.options.length})`),
       );
     }
 
@@ -211,7 +222,10 @@ class OpenUsageView implements Component {
     const options = this.getAccountOptions(providerId);
     const selectedValue = this.data.state.persisted.selectedAccounts[providerId]?.trim();
     const index = selectedValue
-      ? Math.max(0, options.findIndex((option) => option.value === selectedValue))
+      ? Math.max(
+          0,
+          options.findIndex((option) => option.value === selectedValue),
+        )
       : 0;
     return {
       options,
@@ -223,8 +237,9 @@ class OpenUsageView implements Component {
   private cycleProvider(direction: number): void {
     const index = this.data.providerIds.indexOf(this.selectedProviderId);
     this.selectedProviderId =
-      this.data.providerIds[(index + this.data.providerIds.length + direction) % this.data.providerIds.length] ??
-      this.selectedProviderId;
+      this.data.providerIds[
+        (index + this.data.providerIds.length + direction) % this.data.providerIds.length
+      ] ?? this.selectedProviderId;
     this.errorMessage = undefined;
     this.invalidate();
     this.tui.requestRender();
@@ -240,7 +255,8 @@ class OpenUsageView implements Component {
   }
 
   private toggleResetTimeFormat(): void {
-    const next: ResetTimeFormat = this.data.state.persisted.resetTimeFormat === "relative" ? "absolute" : "relative";
+    const next: ResetTimeFormat =
+      this.data.state.persisted.resetTimeFormat === "relative" ? "absolute" : "relative";
     setResetTimeFormat(this.data.state, next);
     this.data.persistState();
     this.invalidate();
@@ -448,9 +464,10 @@ function registerCommand(
     description: "Show/refresh usage, switch accounts, and manage display settings",
     getArgumentCompletions(argumentPrefix) {
       const prefix = argumentPrefix.trim().toLowerCase();
-      const items = ROOT_COMPLETIONS
-        .filter((value) => value.startsWith(prefix))
-        .map((value) => ({ value, label: value }));
+      const items = ROOT_COMPLETIONS.filter((value) => value.startsWith(prefix)).map((value) => ({
+        value,
+        label: value,
+      }));
       return items.length > 0 ? items : null;
     },
     handler: async (args, ctx) => {
@@ -518,16 +535,20 @@ async function handleStatus(
     return;
   }
 
-  const content = snapshot ? formatSnapshotSummary(snapshot, {
-    resetTimeFormat: state.persisted.resetTimeFormat,
-  }) : `No cached usage for ${providerId}. Run /openusage refresh`;
+  const content = snapshot
+    ? formatSnapshotSummary(snapshot, {
+        resetTimeFormat: state.persisted.resetTimeFormat,
+      })
+    : `No cached usage for ${providerId}. Run /openusage refresh`;
 
   if (!ctx.hasUI) {
     pi.sendMessage({ customType: "openusage", content, display: true }, { triggerTurn: false });
     return;
   }
 
-  const accountsByProvider: CliproxyAccountsByProvider = await listCliproxyAccounts(ctx).catch(() => ({}));
+  const accountsByProvider: CliproxyAccountsByProvider = await listCliproxyAccounts(ctx).catch(
+    () => ({}),
+  );
   const providerIds: SupportedProviderId[] = [...SUPPORTED_PROVIDER_IDS];
   const activeProviderId = resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
 
@@ -750,12 +771,14 @@ function renderMetricSection(
     ? `${muted(`${label} `)}${colorForPaceStatus(theme, pace.paceResult?.status, "●")} ${colorForPaceStatus(theme, pace.paceResult?.status, pace.statusText)}${pace.projectedText ? `${muted(" · ")}${text(pace.projectedText)}` : ""}`
     : muted(label);
 
-  const primaryText = displayMode === "used"
-    ? `${formatUsedPercent(metric)} used`
-    : `${formatRemainingPercent(metric)} left`;
-  const footerLeft = displayMode === "used"
-    ? colorUsed(theme, metric, primaryText)
-    : colorRemaining(theme, metric, primaryText);
+  const primaryText =
+    displayMode === "used"
+      ? `${formatUsedPercent(metric)} used`
+      : `${formatRemainingPercent(metric)} left`;
+  const footerLeft =
+    displayMode === "used"
+      ? colorUsed(theme, metric, primaryText)
+      : colorRemaining(theme, metric, primaryText);
   const footerRight = reset
     ? `${muted("resets ")}${text(reset)}`
     : text(`${formatUsedPercent(metric)} / ${formatRemainingPercent(metric)}`);
@@ -791,18 +814,24 @@ function renderMetricBar(
       ? Math.max(0, Math.min(1, metric.used / metric.limit))
       : 0;
   const usedCols = Math.max(0, Math.min(safeWidth, Math.round(usedRatio * safeWidth)));
-  const remainingCols = Math.max(0, safeWidth - usedCols);
-  const chars = new Array<string>(safeWidth);
+  const chars = Array.from<string>({ length: safeWidth });
   for (let i = 0; i < safeWidth; i++) {
     const isUsed = i < usedCols;
     chars[i] = isUsed
-      ? (displayMode === "used" ? colorUsed(theme, metric, "█") : theme.fg("dim", "█"))
-      : (displayMode === "used" ? theme.fg("dim", "█") : colorRemaining(theme, metric, "█"));
+      ? displayMode === "used"
+        ? colorUsed(theme, metric, "█")
+        : theme.fg("dim", "█")
+      : displayMode === "used"
+        ? theme.fg("dim", "█")
+        : colorRemaining(theme, metric, "█");
   }
 
   if (elapsedPercent !== null && Number.isFinite(elapsedPercent)) {
     const markerRatio = Math.max(0, Math.min(1, elapsedPercent / 100));
-    const markerIndex = Math.max(0, Math.min(safeWidth - 1, Math.round(markerRatio * (safeWidth - 1))));
+    const markerIndex = Math.max(
+      0,
+      Math.min(safeWidth - 1, Math.round(markerRatio * (safeWidth - 1))),
+    );
     chars[markerIndex] = theme.fg("accent", "▏");
   }
 

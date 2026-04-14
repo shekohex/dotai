@@ -29,7 +29,7 @@ const WEBFETCH_DESCRIPTION = [
   "  - IMPORTANT: if another tool is present that offers better web fetching capabilities, is more targeted to the task, or has fewer restrictions, prefer using that tool instead of this one.",
   "  - The URL must be a fully-formed valid URL",
   "  - HTTP URLs will be automatically upgraded to HTTPS",
-  "  - Format options: \"markdown\" (default), \"text\", or \"html\"",
+  '  - Format options: "markdown" (default), "text", or "html"',
   "  - This tool is read-only and does not modify any files",
   "  - Results may be summarized if the content is very large",
 ].join("\n");
@@ -73,20 +73,21 @@ type WebFetchRenderState = {
 };
 
 type ToolTheme = {
-  fg: (color: "accent" | "dim" | "error" | "muted" | "success" | "toolOutput" | "warning", text: string) => string;
+  fg: (
+    color: "accent" | "dim" | "error" | "muted" | "success" | "toolOutput" | "warning",
+    text: string,
+  ) => string;
   italic: (text: string) => string;
 };
 
 const webFetchSchema = Type.Object({
   url: Type.String({ description: "The URL to fetch content from" }),
   format: Type.Optional(
-    Type.Union(
-      [Type.Literal("text"), Type.Literal("markdown"), Type.Literal("html")],
-      {
-        default: "markdown",
-        description: "The format to return the content in (text, markdown, or html). Defaults to markdown.",
-      },
-    ),
+    Type.Union([Type.Literal("text"), Type.Literal("markdown"), Type.Literal("html")], {
+      default: "markdown",
+      description:
+        "The format to return the content in (text, markdown, or html). Defaults to markdown.",
+    }),
   ),
   timeout: Type.Optional(Type.Number({ description: "Optional timeout in seconds (max 120)" })),
 });
@@ -95,18 +96,24 @@ export const webFetchTool = defineTool({
   name: "webfetch",
   label: "fetch",
   description: WEBFETCH_DESCRIPTION,
-  promptSnippet: "use `webfetch` tool when you need to get the conent of a url or a website. could be useful to explore more information from the references output of the `websearch` tool.",
+  promptSnippet:
+    "use `webfetch` tool when you need to get the conent of a url or a website. could be useful to explore more information from the references output of the `websearch` tool.",
   parameters: webFetchSchema,
   renderCall(args, theme, context) {
     const state = syncRenderState(context, context.isPartial);
     const url = shortenUrl(typeof args.url === "string" ? upgradeToHttps(args.url.trim()) : "...");
-    const timeoutSeconds = clampTimeout(typeof args.timeout === "number" ? args.timeout : undefined);
+    const timeoutSeconds = clampTimeout(
+      typeof args.timeout === "number" ? args.timeout : undefined,
+    );
     const elapsedMs = getElapsedMs(state);
     const phase = context.isError ? "error" : context.isPartial ? "partial" : "success";
 
     switch (phase) {
       case "error": {
-        const suffix = elapsedMs !== undefined ? theme.fg("muted", ` after ${formatDurationHuman(elapsedMs)}`) : "";
+        const suffix =
+          elapsedMs !== undefined
+            ? theme.fg("muted", ` after ${formatDurationHuman(elapsedMs)}`)
+            : "";
         return createTextComponent(
           context.lastComponent,
           `${theme.bold(theme.fg("error", "fetch"))} ${theme.fg("muted", url)}${suffix}`,
@@ -118,7 +125,8 @@ export const webFetchTool = defineTool({
           `${theme.bold(theme.fg("dim", "fetching"))} ${theme.fg("muted", url)}${theme.fg("muted", ` (${timeoutSeconds}s)`)}`,
         );
       case "success": {
-        const suffix = elapsedMs !== undefined ? theme.fg("muted", ` in ${formatDurationHuman(elapsedMs)}`) : "";
+        const suffix =
+          elapsedMs !== undefined ? theme.fg("muted", ` in ${formatDurationHuman(elapsedMs)}`) : "";
         return createTextComponent(
           context.lastComponent,
           `${theme.bold(theme.fg("dim", "fetched"))} ${theme.fg("muted", url)}${suffix}`,
@@ -134,13 +142,17 @@ export const webFetchTool = defineTool({
     switch (phase) {
       case "error": {
         if (options.expanded) {
-          return createTextComponent(context.lastComponent, renderToolErrorLine(textContent || "webfetch failed", theme));
+          return createTextComponent(
+            context.lastComponent,
+            renderToolErrorLine(textContent || "webfetch failed", theme),
+          );
         }
         return createTextComponent(context.lastComponent, "");
       }
       case "partial": {
         const streamed = styleToolOutput(textContent, theme, STREAM_PREVIEW_LINE_LENGTH);
-        const elapsed = details?.durationMs !== undefined ? ` (${formatDurationHuman(details.durationMs)})` : "";
+        const elapsed =
+          details?.durationMs !== undefined ? ` (${formatDurationHuman(details.durationMs)})` : "";
         return renderStreamingPreview(streamed, theme, context.lastComponent, {
           expanded: options.expanded,
           footer: `${summarizeLineCount(countTextLines(textContent))} so far${elapsed}${details ? ` · ${renderStatusMeta(details, theme)}` : ""}`,
@@ -157,7 +169,10 @@ export const webFetchTool = defineTool({
 
         const body = details.body.trim();
         if (!body) {
-          return createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${renderStatusMeta(details, theme)}`);
+          return createTextComponent(
+            context.lastComponent,
+            `${theme.fg("dim", "↳ ")}${renderStatusMeta(details, theme)}`,
+          );
         }
 
         return createTextComponent(
@@ -259,7 +274,11 @@ function clampTimeout(timeout: number | undefined): number {
 }
 
 function getFirecrawlApiUrl(): string {
-  return (process.env.WEBFETCH_FIRECRAWL_API_URL ?? process.env.FIRECRAWL_API_URL ?? DEFAULT_FIRECRAWL_API_URL).replace(/\/$/, "");
+  return (
+    process.env.WEBFETCH_FIRECRAWL_API_URL ??
+    process.env.FIRECRAWL_API_URL ??
+    DEFAULT_FIRECRAWL_API_URL
+  ).replace(/\/$/, "");
 }
 
 async function createFirecrawlClient(timeoutMs: number): Promise<Firecrawl> {
@@ -272,25 +291,27 @@ async function createFirecrawlClient(timeoutMs: number): Promise<Firecrawl> {
 }
 
 export async function resolveFirecrawlApiKey(): Promise<string> {
-  return (await AuthStorage.create().getApiKey(FIRECRAWL_AUTH_PROVIDER, { includeFallback: false }))
-    ?? process.env[FIRECRAWL_API_KEY_ENV]
-    ?? DEFAULT_FIRECRAWL_API_KEY;
+  return (
+    (await AuthStorage.create().getApiKey(FIRECRAWL_AUTH_PROVIDER, { includeFallback: false })) ??
+    process.env[FIRECRAWL_API_KEY_ENV] ??
+    DEFAULT_FIRECRAWL_API_KEY
+  );
 }
 
 function buildScrapeOptions(format: WebFetchFormat): ScrapeOptions {
   return {
-    formats: format === "html"
-      ? ["html"]
-      : format === "text"
-        ? ["summary", "markdown"]
-        : ["markdown"],
+    formats:
+      format === "html" ? ["html"] : format === "text" ? ["summary", "markdown"] : ["markdown"],
     onlyMainContent: true,
     removeBase64Images: true,
     blockAds: true,
   };
 }
 
-function createAbortPromise<T>(signal: AbortSignal | undefined, timeoutMs: number): {
+function createAbortPromise<T>(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): {
   promise: Promise<T>;
   cleanup: () => void;
   didTimeout: () => boolean;
@@ -346,7 +367,9 @@ async function buildDetails(input: {
   const bytes = Buffer.byteLength(rawBody || body, "utf8");
 
   if (bytes > MAX_RESPONSE_BYTES) {
-    throw new Error(`Response too large (${formatSize(bytes)} > ${formatSize(MAX_RESPONSE_BYTES)})`);
+    throw new Error(
+      `Response too large (${formatSize(bytes)} > ${formatSize(MAX_RESPONSE_BYTES)})`,
+    );
   }
 
   const truncation = truncateHead(body, {
@@ -393,7 +416,10 @@ async function buildDetails(input: {
   };
 }
 
-function emitPartialUpdate(onUpdate: AgentToolUpdateCallback<unknown> | undefined, details: WebFetchDetails): void {
+function emitPartialUpdate(
+  onUpdate: AgentToolUpdateCallback<unknown> | undefined,
+  details: WebFetchDetails,
+): void {
   if (!onUpdate) {
     return;
   }
@@ -409,9 +435,21 @@ function resolveRawBody(document: Document, format: WebFetchFormat): string {
     case "html":
       return pickFirstString(document.html, document.rawHtml);
     case "markdown":
-      return pickFirstString(document.markdown, document.summary, document.answer, document.html, document.rawHtml);
+      return pickFirstString(
+        document.markdown,
+        document.summary,
+        document.answer,
+        document.html,
+        document.rawHtml,
+      );
     case "text":
-      return pickFirstString(document.summary, document.markdown, document.answer, document.html, document.rawHtml);
+      return pickFirstString(
+        document.summary,
+        document.markdown,
+        document.answer,
+        document.html,
+        document.rawHtml,
+      );
   }
 }
 
@@ -420,14 +458,29 @@ function resolveBody(document: Document, format: WebFetchFormat): string {
     case "html":
       return pickFirstString(document.html, document.rawHtml);
     case "markdown":
-      return pickFirstString(document.markdown, document.summary, document.answer, document.html, document.rawHtml);
+      return pickFirstString(
+        document.markdown,
+        document.summary,
+        document.answer,
+        document.html,
+        document.rawHtml,
+      );
     case "text":
-      return pickFirstString(document.summary, document.markdown, document.answer, document.html, document.rawHtml);
+      return pickFirstString(
+        document.summary,
+        document.markdown,
+        document.answer,
+        document.html,
+        document.rawHtml,
+      );
   }
 }
 
 function resolveFinalUrl(document: Document, fallbackUrl: string): string {
-  return pickFirstString(document.metadata?.url, document.metadata?.sourceURL, fallbackUrl) || fallbackUrl;
+  return (
+    pickFirstString(document.metadata?.url, document.metadata?.sourceURL, fallbackUrl) ||
+    fallbackUrl
+  );
 }
 
 function resolveStatus(document: Document, body: string): number {
@@ -498,17 +551,20 @@ function renderStatusMeta(
   details: Pick<WebFetchDetails, "status" | "statusText" | "contentType" | "bytes" | "truncation">,
   theme: ToolTheme,
 ): string {
-  const color = details.status >= 200 && details.status < 300
-    ? "success"
-    : details.status >= 300 && details.status < 400
-      ? "warning"
-      : details.status >= 400
-        ? "error"
-        : "muted";
+  const color =
+    details.status >= 200 && details.status < 300
+      ? "success"
+      : details.status >= 300 && details.status < 400
+        ? "warning"
+        : details.status >= 400
+          ? "error"
+          : "muted";
   const parts = [theme.fg(color, `${details.status} ${details.statusText}`.trim())];
 
   if (details.contentType) {
-    parts.push(theme.fg("muted", truncateMiddle(details.contentType, STATUS_CONTENT_TYPE_MAX_LENGTH)));
+    parts.push(
+      theme.fg("muted", truncateMiddle(details.contentType, STATUS_CONTENT_TYPE_MAX_LENGTH)),
+    );
   }
 
   parts.push(theme.fg("muted", formatSize(details.bytes)));
@@ -529,7 +585,9 @@ function renderStreamingPreview(
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
   if (options.expanded) {
-    const footer = options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "";
+    const footer = options.footer
+      ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`
+      : "";
     return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
   }
 
@@ -538,7 +596,9 @@ function renderStreamingPreview(
   const blocks: string[] = [];
 
   if (earlierCount > 0) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`);
+    blocks.push(
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`,
+    );
   }
 
   if (visibleLines.length > 0) {
@@ -612,11 +672,7 @@ function summarizeLineCount(lineCount: number): string {
   return `${lineCount} line${lineCount === 1 ? "" : "s"}`;
 }
 
-function styleToolOutput(
-  text: string,
-  theme: ToolTheme,
-  maxLineLength?: number,
-): string {
+function styleToolOutput(text: string, theme: ToolTheme, maxLineLength?: number): string {
   if (!text) {
     return "";
   }
@@ -643,7 +699,10 @@ function getTextContent(content: Array<{ type: string; text?: string }>): string
 }
 
 function createTextComponent(lastComponent: unknown, text: string): Text {
-  const component = lastComponent instanceof Text ? lastComponent : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  const component =
+    lastComponent instanceof Text
+      ? lastComponent
+      : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
   component.setText(text);
   return component;
 }

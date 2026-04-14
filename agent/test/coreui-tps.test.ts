@@ -12,7 +12,8 @@ import {
 
 const TEST_TIMEOUT_MS = 15_000;
 
-const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
+  test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
 function createAssistantMessage(overrides: Partial<AssistantMessage> = {}): AssistantMessage {
   return {
@@ -81,8 +82,12 @@ timedTest("estimateAssistantOutputTokens falls back to streamed content size", (
     ],
   });
 
-  const expectedCharacters = 4 + 8 + "read".length + JSON.stringify({ path: "src/index.ts" }).length;
-  assert.equal(estimateAssistantOutputTokens(message), Math.max(1, Math.round(expectedCharacters / 4)));
+  const expectedCharacters =
+    4 + 8 + "read".length + JSON.stringify({ path: "src/index.ts" }).length;
+  assert.equal(
+    estimateAssistantOutputTokens(message),
+    Math.max(1, Math.round(expectedCharacters / 4)),
+  );
 });
 
 timedTest("resolveAssistantOutputTokens prefers provider usage when available", () => {
@@ -127,7 +132,14 @@ timedTest("restoreTPSState rehydrates latest stats and visibility from custom en
       timestamp: new Date().toISOString(),
       customType: "coreui:tps",
       data: {
-        stats: { current: 42.1, max: 55.4, median: 45.4, min: 39.2, sampleCount: 50, bufferSize: 50 },
+        stats: {
+          current: 42.1,
+          max: 55.4,
+          median: 45.4,
+          min: 39.2,
+          sampleCount: 50,
+          bufferSize: 50,
+        },
         elapsedMs: 1000,
         input: 1,
         output: 2,

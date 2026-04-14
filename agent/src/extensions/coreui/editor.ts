@@ -1,9 +1,5 @@
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import type {
-  ExtensionContext,
-  KeybindingsManager,
-  Theme,
-} from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext, KeybindingsManager, Theme } from "@mariozechner/pi-coding-agent";
 import type { EditorTheme, TUI } from "@mariozechner/pi-tui";
 import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { pickRandomWelcomeMessage } from "./whimsical.js";
@@ -38,6 +34,10 @@ type EditorInternals = {
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 const CURSOR = "\x1b[7m \x1b[27m";
+const STRIP_ANSI_PATTERN = new RegExp(
+  `${String.fromCharCode(27)}(?:\\[[0-9;? ]*[ -/]*[@-~]|_pi:c${String.fromCharCode(7)})`,
+  "g",
+);
 const CURSOR_SHAPES: Record<CursorShape, string> = {
   "blinking-block": "\x1b[1 q",
   "steady-block": "\x1b[2 q",
@@ -153,10 +153,7 @@ class CorePromptEditor extends CustomEditor {
   }
 
   override render(width: number): string[] {
-    const lines = this.addVerticalPadding(
-      this.removeEditorChrome(super.render(width)),
-      width,
-    );
+    const lines = this.addVerticalPadding(this.removeEditorChrome(super.render(width)), width);
     const paddingX = Math.min(
       CORE_PROMPT_EDITOR_CONFIG.paddingX,
       Math.max(0, Math.floor((width - 1) / 2)),
@@ -180,10 +177,7 @@ class CorePromptEditor extends CustomEditor {
       return;
     }
 
-    const placeholderLineIndex = Math.min(
-      CORE_PROMPT_EDITOR_CONFIG.paddingY,
-      lines.length - 1,
-    );
+    const placeholderLineIndex = Math.min(CORE_PROMPT_EDITOR_CONFIG.paddingY, lines.length - 1);
 
     const contentWidth = Math.max(1, width - paddingX * 2);
     const cursorPrefix = this.focused ? `${CURSOR_MARKER}${CURSOR}` : "";
@@ -200,7 +194,8 @@ class CorePromptEditor extends CustomEditor {
       Math.max(0, contentWidth - cursorWidth - placeholderInsetWidth - placeholderWidth),
     );
 
-    lines[placeholderLineIndex] = `${" ".repeat(paddingX)}${cursorPrefix}${placeholderInset}${placeholder}${trailingSpaces}${" ".repeat(paddingX)}`;
+    lines[placeholderLineIndex] =
+      `${" ".repeat(paddingX)}${cursorPrefix}${placeholderInset}${placeholder}${trailingSpaces}${" ".repeat(paddingX)}`;
   }
 
   private applyBackground(line: string): string {
@@ -321,14 +316,11 @@ class CorePromptEditor extends CustomEditor {
   }
 
   private stripAnsi(text: string): string {
-    return text.replace(/\x1b(?:\[[0-9;? ]*[ -/]*[@-~]|_pi:c\x07)/g, "");
+    return text.replace(STRIP_ANSI_PATTERN, "");
   }
 
   private insertPastedText(text: string): void {
-    const normalized = text
-      .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n")
-      .replace(/\t/g, "    ");
+    const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\t/g, "    ");
     const filtered = normalized
       .split("")
       .filter((char) => char === "\n" || char.charCodeAt(0) >= 32)

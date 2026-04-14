@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { matchesKey, parseKey, setKittyProtocolActive } from "../node_modules/@mariozechner/pi-tui/dist/keys.js";
+import {
+  matchesKey,
+  parseKey,
+  setKittyProtocolActive,
+} from "../node_modules/@mariozechner/pi-tui/dist/keys.js";
 
 afterEach(() => {
   setKittyProtocolActive(false);

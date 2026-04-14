@@ -35,7 +35,13 @@ export function renderSubagentWidget(subagents: RuntimeSubagent[]): string[] | u
       .sort((left, right) => left.name.localeCompare(right.name))
       .map((subagent) => {
         const countdown = formatAutoExitCountdown(subagent);
-        const parts = [subagent.name, subagent.status, subagent.modeLabel, subagent.sessionId.slice(0, 8), summarizeTask(subagent.task, 48)];
+        const parts = [
+          subagent.name,
+          subagent.status,
+          subagent.modeLabel,
+          subagent.sessionId.slice(0, 8),
+          summarizeTask(subagent.task, 48),
+        ];
 
         if (countdown) {
           parts.push(countdown);

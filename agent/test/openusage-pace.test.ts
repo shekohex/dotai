@@ -15,7 +15,8 @@ const RESETS_AT_MS = Date.parse("2026-04-09T10:00:00.000Z");
 const MID_PERIOD_NOW_MS = RESETS_AT_MS - FIVE_HOURS_MS / 2;
 const TEST_TIMEOUT_MS = 15_000;
 
-const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
+  test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
 function createMetric(used: number): UsageMetric {
   return {
@@ -55,7 +56,10 @@ timedTest("projected reset text respects display mode", () => {
 
 timedTest("behind pace ETA uses runs-out wording", () => {
   const paceResult: PaceResult = { status: "behind", projectedUsage: 120 };
-  assert.equal(formatRunsOutText(paceResult, createMetric(60), MID_PERIOD_NOW_MS), "Runs out in 1h 40m");
+  assert.equal(
+    formatRunsOutText(paceResult, createMetric(60), MID_PERIOD_NOW_MS),
+    "Runs out in 1h 40m",
+  );
 });
 
 timedTest("metric pace details expose projection, eta, and elapsed marker position", () => {

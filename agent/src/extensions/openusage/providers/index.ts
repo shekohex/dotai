@@ -3,4 +3,8 @@ import { codexUsageProvider } from "./codex.js";
 import { googleUsageProvider } from "./google.js";
 import { zaiUsageProvider } from "./zai.js";
 
-export const usageProviders: UsageProvider[] = [codexUsageProvider, googleUsageProvider, zaiUsageProvider];
+export const usageProviders: UsageProvider[] = [
+  codexUsageProvider,
+  googleUsageProvider,
+  zaiUsageProvider,
+];

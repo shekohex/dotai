@@ -8,7 +8,12 @@
  * - current context window usage + session totals (tokens/cost)
  */
 
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  ToolResultEvent,
+} from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
 import os from "node:os";
@@ -65,7 +70,9 @@ function getAgentDir(): string {
   return path.join(os.homedir(), ".pi", "agent");
 }
 
-async function readFileIfExists(filePath: string): Promise<{ path: string; content: string; bytes: number } | null> {
+async function readFileIfExists(
+  filePath: string,
+): Promise<{ path: string; content: string; bytes: number } | null> {
   if (!existsSync(filePath)) return null;
   try {
     const buf = await fs.readFile(filePath);
@@ -75,7 +82,9 @@ async function readFileIfExists(filePath: string): Promise<{ path: string; conte
   }
 }
 
-async function loadProjectContextFiles(cwd: string): Promise<Array<{ path: string; tokens: number; bytes: number }>> {
+async function loadProjectContextFiles(
+  cwd: string,
+): Promise<Array<{ path: string; tokens: number; bytes: number }>> {
   const out: Array<{ path: string; tokens: number; bytes: number }> = [];
   const seen = new Set<string>();
 
@@ -245,13 +254,16 @@ function joinComma(items: string[]): string {
   return items.join(", ");
 }
 
-function joinCommaStyled(items: string[], renderItem: (item: string) => string, sep: string): string {
+function joinCommaStyled(
+  items: string[],
+  renderItem: (item: string) => string,
+  sep: string,
+): string {
   return items.map(renderItem).join(sep);
 }
 
 type ContextViewData = {
-  usage:
-  | {
+  usage: {
     // message-based context usage estimate from ctx.getContextUsage()
     messageTokens: number;
     contextWindow: number;
@@ -263,8 +275,7 @@ type ContextViewData = {
     agentTokens: number;
     toolsTokens: number;
     activeTools: number;
-  }
-  | null;
+  } | null;
   agentFiles: string[];
   extensions: string[];
   skills: string[];
@@ -319,8 +330,8 @@ class ContextView implements Component {
       const u = this.data.usage;
       lines.push(
         muted("Window: ") +
-        text(`~${u.effectiveTokens.toLocaleString()} / ${u.contextWindow.toLocaleString()}`) +
-        muted(`  (${u.percent.toFixed(1)}% used, ~${u.remainingTokens.toLocaleString()} left)`),
+          text(`~${u.effectiveTokens.toLocaleString()} / ${u.contextWindow.toLocaleString()}`) +
+          muted(`  (${u.percent.toFixed(1)}% used, ~${u.remainingTokens.toLocaleString()} left)`),
       );
 
       // bar width tries to fit within the viewport
@@ -363,35 +374,42 @@ class ContextView implements Component {
       const u = this.data.usage;
       lines.push(
         muted("System: ") +
-        text(`~${u.systemPromptTokens.toLocaleString()} tok`) +
-        muted(` (AGENTS ~${u.agentTokens.toLocaleString()})`),
+          text(`~${u.systemPromptTokens.toLocaleString()} tok`) +
+          muted(` (AGENTS ~${u.agentTokens.toLocaleString()})`),
       );
       lines.push(
         muted("Tools: ") +
-        text(`~${u.toolsTokens.toLocaleString()} tok`) +
-        muted(` (${u.activeTools} active)`),
+          text(`~${u.toolsTokens.toLocaleString()} tok`) +
+          muted(` (${u.activeTools} active)`),
       );
     }
 
-    lines.push(muted(`AGENTS (${this.data.agentFiles.length}): `) + text(this.data.agentFiles.length ? joinComma(this.data.agentFiles) : "(none)"));
+    lines.push(
+      muted(`AGENTS (${this.data.agentFiles.length}): `) +
+        text(this.data.agentFiles.length ? joinComma(this.data.agentFiles) : "(none)"),
+    );
     lines.push("");
-    lines.push(muted(`Extensions (${this.data.extensions.length}): `) + text(this.data.extensions.length ? joinComma(this.data.extensions) : "(none)"));
+    lines.push(
+      muted(`Extensions (${this.data.extensions.length}): `) +
+        text(this.data.extensions.length ? joinComma(this.data.extensions) : "(none)"),
+    );
 
     const loaded = new Set(this.data.loadedSkills);
     const skillsRendered = this.data.skills.length
       ? joinCommaStyled(
-        this.data.skills,
-        (name) => (loaded.has(name) ? this.theme.fg("success", name) : this.theme.fg("muted", name)),
-        this.theme.fg("muted", ", "),
-      )
+          this.data.skills,
+          (name) =>
+            loaded.has(name) ? this.theme.fg("success", name) : this.theme.fg("muted", name),
+          this.theme.fg("muted", ", "),
+        )
       : "(none)";
     lines.push(muted(`Skills (${this.data.skills.length}): `) + skillsRendered);
     lines.push("");
     lines.push(
       muted("Session: ") +
-      text(`${this.data.session.totalTokens.toLocaleString()} tokens`) +
-      muted(" · ") +
-      text(formatUsd(this.data.session.totalCost)),
+        text(`${this.data.session.totalTokens.toLocaleString()} tokens`) +
+        muted(" · ") +
+        text(formatUsd(this.data.session.totalCost)),
     );
 
     this.body.setText(lines.join("\n"));
@@ -533,35 +551,48 @@ export default function contextExtension(pi: ExtensionAPI) {
         } else {
           lines.push("Window: (unknown)");
         }
-        lines.push(`System: ~${systemPromptTokens.toLocaleString()} tok (AGENTS ~${agentTokens.toLocaleString()})`);
-        lines.push(`Tools: ~${toolsTokens.toLocaleString()} tok (${activeToolNames.length} active)`);
+        lines.push(
+          `System: ~${systemPromptTokens.toLocaleString()} tok (AGENTS ~${agentTokens.toLocaleString()})`,
+        );
+        lines.push(
+          `Tools: ~${toolsTokens.toLocaleString()} tok (${activeToolNames.length} active)`,
+        );
         lines.push(`AGENTS: ${agentFilePaths.length ? joinComma(agentFilePaths) : "(none)"}`);
-        lines.push(`Extensions (${extensionFiles.length}): ${extensionFiles.length ? joinComma(extensionFiles) : "(none)"}`);
+        lines.push(
+          `Extensions (${extensionFiles.length}): ${extensionFiles.length ? joinComma(extensionFiles) : "(none)"}`,
+        );
         lines.push(`Skills (${skills.length}): ${skills.length ? joinComma(skills) : "(none)"}`);
-        lines.push(`Session: ${sessionUsage.totalTokens.toLocaleString()} tokens · ${formatUsd(sessionUsage.totalCost)}`);
+        lines.push(
+          `Session: ${sessionUsage.totalTokens.toLocaleString()} tokens · ${formatUsd(sessionUsage.totalCost)}`,
+        );
         return lines.join("\n");
       };
 
       if (!ctx.hasUI) {
-        pi.sendMessage({ customType: "context", content: makePlainText(), display: true }, { triggerTurn: false });
+        pi.sendMessage(
+          { customType: "context", content: makePlainText(), display: true },
+          { triggerTurn: false },
+        );
         return;
       }
 
-      const loadedSkills = Array.from(getLoadedSkillsFromSession(ctx)).sort((a, b) => a.localeCompare(b));
+      const loadedSkills = Array.from(getLoadedSkillsFromSession(ctx)).sort((a, b) =>
+        a.localeCompare(b),
+      );
 
       const viewData: ContextViewData = {
         usage: usage
           ? {
-            messageTokens,
-            contextWindow: ctxWindow,
-            effectiveTokens,
-            percent,
-            remainingTokens,
-            systemPromptTokens,
-            agentTokens,
-            toolsTokens,
-            activeTools: activeToolNames.length,
-          }
+              messageTokens,
+              contextWindow: ctxWindow,
+              effectiveTokens,
+              percent,
+              remainingTokens,
+              systemPromptTokens,
+              agentTokens,
+              toolsTokens,
+              activeTools: activeToolNames.length,
+            }
           : null,
         agentFiles: agentFilePaths,
         extensions: extensionFiles,

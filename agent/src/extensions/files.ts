@@ -171,7 +171,7 @@ const extractFileReferencesFromEntry = (entry: SessionEntry): string[] => {
 
 const sanitizeReference = (raw: string): string => {
   let value = raw.trim();
-  value = value.replace(/^["'`(<\[]+/, "");
+  value = value.replace(/^["'`(<[]+/, "");
   value = value.replace(/[>"'`,;).\]]+$/, "");
   value = value.replace(/[.,;:]+$/, "");
   return value;
@@ -245,7 +245,11 @@ const formatDisplayPath = (absolutePath: string, cwd: string): string => {
   return absolutePath;
 };
 
-const collectRecentFileReferences = (entries: SessionEntry[], cwd: string, limit: number): FileReference[] => {
+const collectRecentFileReferences = (
+  entries: SessionEntry[],
+  cwd: string,
+  limit: number,
+): FileReference[] => {
   const results: FileReference[] = [];
   const seen = new Set<string>();
 
@@ -284,7 +288,9 @@ const findLatestFileReference = (entries: SessionEntry[], cwd: string): FileRefe
   return refs.find((ref) => ref.exists) ?? null;
 };
 
-const toCanonicalPath = (inputPath: string): { canonicalPath: string; isDirectory: boolean } | null => {
+const toCanonicalPath = (
+  inputPath: string,
+): { canonicalPath: string; isDirectory: boolean } | null => {
   if (!existsSync(inputPath)) {
     return null;
   }
@@ -315,7 +321,10 @@ const toCanonicalPathMaybeMissing = (
   }
 };
 
-const collectSessionFileChanges = (entries: SessionEntry[], cwd: string): Map<string, SessionFileChange> => {
+const collectSessionFileChanges = (
+  entries: SessionEntry[],
+  cwd: string,
+): Map<string, SessionFileChange> => {
   const toolCalls = new Map<string, { path: string; name: FileToolName }>();
 
   for (const entry of entries) {
@@ -385,7 +394,10 @@ const getGitRoot = async (pi: ExtensionAPI, cwd: string): Promise<string | null>
   return root ? root : null;
 };
 
-const getGitStatusMap = async (pi: ExtensionAPI, cwd: string): Promise<Map<string, GitStatusEntry>> => {
+const getGitStatusMap = async (
+  pi: ExtensionAPI,
+  cwd: string,
+): Promise<Map<string, GitStatusEntry>> => {
   const statusMap = new Map<string, GitStatusEntry>();
   const statusResult = await pi.exec("git", ["status", "--porcelain=1", "-z"], { cwd });
   if (statusResult.code !== 0 || !statusResult.stdout) {
@@ -421,7 +433,10 @@ const getGitStatusMap = async (pi: ExtensionAPI, cwd: string): Promise<Map<strin
 const getGitFiles = async (
   pi: ExtensionAPI,
   gitRoot: string,
-): Promise<{ tracked: Set<string>; files: Array<{ canonicalPath: string; isDirectory: boolean }> }> => {
+): Promise<{
+  tracked: Set<string>;
+  files: Array<{ canonicalPath: string; isDirectory: boolean }>;
+}> => {
   const tracked = new Set<string>();
   const files: Array<{ canonicalPath: string; isDirectory: boolean }> = [];
 
@@ -436,7 +451,11 @@ const getGitFiles = async (
     }
   }
 
-  const untrackedResult = await pi.exec("git", ["ls-files", "-z", "--others", "--exclude-standard"], { cwd: gitRoot });
+  const untrackedResult = await pi.exec(
+    "git",
+    ["ls-files", "-z", "--others", "--exclude-standard"],
+    { cwd: gitRoot },
+  );
   if (untrackedResult.code === 0 && untrackedResult.stdout) {
     for (const relativePath of splitNullSeparated(untrackedResult.stdout)) {
       const resolvedPath = path.resolve(gitRoot, relativePath);
@@ -449,11 +468,16 @@ const getGitFiles = async (
   return { tracked, files };
 };
 
-const buildFileEntries = async (pi: ExtensionAPI, ctx: ExtensionContext): Promise<{ files: FileEntry[]; gitRoot: string | null }> => {
+const buildFileEntries = async (
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+): Promise<{ files: FileEntry[]; gitRoot: string | null }> => {
   const entries = ctx.sessionManager.getBranch();
   const sessionChanges = collectSessionFileChanges(entries, ctx.cwd);
   const gitRoot = await getGitRoot(pi, ctx.cwd);
-  const statusMap = gitRoot ? await getGitStatusMap(pi, gitRoot) : new Map<string, GitStatusEntry>();
+  const statusMap = gitRoot
+    ? await getGitStatusMap(pi, gitRoot)
+    : new Map<string, GitStatusEntry>();
 
   let trackedSet = new Set<string>();
   let gitFiles: Array<{ canonicalPath: string; isDirectory: boolean }> = [];
@@ -465,7 +489,9 @@ const buildFileEntries = async (pi: ExtensionAPI, ctx: ExtensionContext): Promis
 
   const fileMap = new Map<string, FileEntry>();
 
-  const upsertFile = (data: Partial<FileEntry> & { canonicalPath: string; isDirectory: boolean }) => {
+  const upsertFile = (
+    data: Partial<FileEntry> & { canonicalPath: string; isDirectory: boolean },
+  ) => {
     const existing = fileMap.get(data.canonicalPath);
     const displayPath = data.displayPath ?? formatDisplayPath(data.canonicalPath, ctx.cwd);
 
@@ -642,42 +668,49 @@ const showActionSelector = async (
     ...(options.canEdit ? [{ value: "edit", label: "Edit" }] : []),
   ];
 
-  return ctx.ui.custom<"reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff" | null>((tui, theme, _kb, done) => {
-    const container = new Container();
-    container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-    container.addChild(new Text(theme.fg("accent", theme.bold("Choose action"))));
+  return ctx.ui.custom<"reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff" | null>(
+    (tui, theme, _kb, done) => {
+      const container = new Container();
+      container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
+      container.addChild(new Text(theme.fg("accent", theme.bold("Choose action"))));
 
-    const selectList = new SelectList(actions, actions.length, {
-      selectedPrefix: (text) => theme.fg("accent", text),
-      selectedText: (text) => theme.fg("accent", text),
-      description: (text) => theme.fg("muted", text),
-      scrollInfo: (text) => theme.fg("dim", text),
-      noMatch: (text) => theme.fg("warning", text),
-    });
+      const selectList = new SelectList(actions, actions.length, {
+        selectedPrefix: (text) => theme.fg("accent", text),
+        selectedText: (text) => theme.fg("accent", text),
+        description: (text) => theme.fg("muted", text),
+        scrollInfo: (text) => theme.fg("dim", text),
+        noMatch: (text) => theme.fg("warning", text),
+      });
 
-    selectList.onSelect = (item) => done(item.value as "reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff");
-    selectList.onCancel = () => done(null);
+      selectList.onSelect = (item) =>
+        done(item.value as "reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff");
+      selectList.onCancel = () => done(null);
 
-    container.addChild(selectList);
-    container.addChild(new Text(theme.fg("dim", "Press enter to confirm or esc to cancel")));
-    container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
+      container.addChild(selectList);
+      container.addChild(new Text(theme.fg("dim", "Press enter to confirm or esc to cancel")));
+      container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
-    return {
-      render(width: number) {
-        return container.render(width);
-      },
-      invalidate() {
-        container.invalidate();
-      },
-      handleInput(data: string) {
-        selectList.handleInput(data);
-        tui.requestRender();
-      },
-    };
-  });
+      return {
+        render(width: number) {
+          return container.render(width);
+        },
+        invalidate() {
+          container.invalidate();
+        },
+        handleInput(data: string) {
+          selectList.handleInput(data);
+          tui.requestRender();
+        },
+      };
+    },
+  );
 };
 
-const openPath = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileEntry): Promise<void> => {
+const openPath = async (
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  target: FileEntry,
+): Promise<void> => {
   if (!existsSync(target.resolvedPath)) {
     ctx.ui.notify(`File not found: ${target.displayPath}`, "error");
     return;
@@ -709,14 +742,17 @@ const openExternalEditor = (tui: TUI, editorCmd: string, content: string): strin
   } finally {
     try {
       unlinkSync(tmpFile);
-    } catch {
-    }
+    } catch {}
     tui.start();
     tui.requestRender(true);
   }
 };
 
-const editPath = async (ctx: ExtensionContext, target: FileEntry, content: string): Promise<void> => {
+const editPath = async (
+  ctx: ExtensionContext,
+  target: FileEntry,
+  content: string,
+): Promise<void> => {
   const editorCmd = process.env.VISUAL || process.env.EDITOR;
   if (!editorCmd) {
     ctx.ui.notify("No editor configured. Set $VISUAL or $EDITOR.", "warning");
@@ -746,7 +782,11 @@ const editPath = async (ctx: ExtensionContext, target: FileEntry, content: strin
   }
 };
 
-const revealPath = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileEntry): Promise<void> => {
+const revealPath = async (
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  target: FileEntry,
+): Promise<void> => {
   if (!existsSync(target.resolvedPath)) {
     ctx.ui.notify(`File not found: ${target.displayPath}`, "error");
     return;
@@ -770,7 +810,11 @@ const revealPath = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileE
   }
 };
 
-const quickLookPath = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileEntry): Promise<void> => {
+const quickLookPath = async (
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  target: FileEntry,
+): Promise<void> => {
   if (process.platform !== "darwin") {
     ctx.ui.notify("Quick Look is only available on macOS", "warning");
     return;
@@ -794,7 +838,12 @@ const quickLookPath = async (pi: ExtensionAPI, ctx: ExtensionContext, target: Fi
   }
 };
 
-const openDiff = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileEntry, gitRoot: string | null): Promise<void> => {
+const openDiff = async (
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  target: FileEntry,
+  gitRoot: string | null,
+): Promise<void> => {
   if (!gitRoot) {
     ctx.ui.notify("Git repository not found", "warning");
     return;
@@ -804,7 +853,9 @@ const openDiff = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileEnt
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "pi-files-"));
   const tmpFile = path.join(tmpDir, path.basename(target.displayPath));
 
-  const existsInHead = await pi.exec("git", ["cat-file", "-e", `HEAD:${relativePath}`], { cwd: gitRoot });
+  const existsInHead = await pi.exec("git", ["cat-file", "-e", `HEAD:${relativePath}`], {
+    cwd: gitRoot,
+  });
   if (existsInHead.code === 0) {
     const result = await pi.exec("git", ["show", `HEAD:${relativePath}`], { cwd: gitRoot });
     if (result.code !== 0) {
@@ -823,9 +874,12 @@ const openDiff = async (pi: ExtensionAPI, ctx: ExtensionContext, target: FileEnt
     writeFileSync(workingPath, "", "utf8");
   }
 
-  const openResult = await pi.exec("zed-preview", ["--diff", tmpFile, workingPath], { cwd: gitRoot });
+  const openResult = await pi.exec("zed-preview", ["--diff", tmpFile, workingPath], {
+    cwd: gitRoot,
+  });
   if (openResult.code !== 0) {
-    const errorMessage = openResult.stderr?.trim() || `Failed to open diff for ${target.displayPath}`;
+    const errorMessage =
+      openResult.stderr?.trim() || `Failed to open diff for ${target.displayPath}`;
     ctx.ui.notify(errorMessage, "error");
   }
 };
@@ -867,7 +921,11 @@ const showFileSelector = async (
     const listContainer = new Container();
     container.addChild(listContainer);
     container.addChild(
-      new Text(theme.fg("dim", "Type to filter • enter to select • ctrl+alt+d diff • esc to cancel"), 0, 0),
+      new Text(
+        theme.fg("dim", "Type to filter • enter to select • ctrl+alt+d diff • esc to cancel"),
+        0,
+        0,
+      ),
     );
     container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
@@ -906,7 +964,11 @@ const showFileSelector = async (
     const applyFilter = () => {
       const query = searchInput.getValue();
       filteredItems = query
-        ? fuzzyFilter(items, query, (item) => `${item.label} ${item.value} ${item.description ?? ""}`)
+        ? fuzzyFilter(
+            items,
+            query,
+            (item) => `${item.label} ${item.value} ${item.description ?? ""}`,
+          )
         : items;
       updateList();
     };
@@ -958,7 +1020,9 @@ const showFileSelector = async (
     };
   });
 
-  const selected = selection ? files.find((file) => file.canonicalPath === selection) ?? null : null;
+  const selected = selection
+    ? (files.find((file) => file.canonicalPath === selection) ?? null)
+    : null;
   return { selected, quickAction };
 };
 

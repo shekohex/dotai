@@ -2,7 +2,14 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Key } from "@mariozechner/pi-tui";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 
-import { getModesProjectPath, loadModesFile, loadModesFileSync, saveModesFile, type ModeSpec, type ModesFile } from "../mode-utils.js";
+import {
+  getModesProjectPath,
+  loadModesFile,
+  loadModesFileSync,
+  saveModesFile,
+  type ModeSpec,
+  type ModesFile,
+} from "../mode-utils.js";
 import { shouldUsePatch } from "./patch.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
@@ -103,7 +110,10 @@ function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-function describeModeAutocomplete(modeName: string, spec: ModeSpec | undefined): string | undefined {
+function describeModeAutocomplete(
+  modeName: string,
+  spec: ModeSpec | undefined,
+): string | undefined {
   const parts: string[] = [];
   if (runtime.activeMode === modeName) {
     parts.push("active");
@@ -119,7 +129,7 @@ function describeModeAutocomplete(modeName: string, spec: ModeSpec | undefined):
 
 function describeModeFlag(modeName: string, spec: ModeSpec | undefined): string {
   const details = describeModeSpec(spec);
-  return details ? `Start in \"${modeName}\" mode (${details})` : `Start in \"${modeName}\" mode`;
+  return details ? `Start in "${modeName}" mode (${details})` : `Start in "${modeName}" mode`;
 }
 
 function compareToolNames(left: string, right: string): number {
@@ -141,13 +151,18 @@ function sameToolSet(left: string[], right: string[]): boolean {
 }
 
 function getAvailableToolNames(pi: ExtensionAPI): string[] {
-  return pi.getAllTools()
+  return pi
+    .getAllTools()
     .map((tool) => tool.name)
     .filter((toolName) => !["grep", "find", "ls"].includes(toolName))
     .sort(compareToolNames);
 }
 
-function getDefaultToolNames(pi: ExtensionAPI, ctx: ExtensionContext, availableToolNames: string[]): string[] {
+function getDefaultToolNames(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  availableToolNames: string[],
+): string[] {
   const tools = new Set(availableToolNames);
 
   if (shouldUsePatch(ctx.model?.id)) {
@@ -163,7 +178,11 @@ function getDefaultToolNames(pi: ExtensionAPI, ctx: ExtensionContext, availableT
   return Array.from(tools).sort(compareToolNames);
 }
 
-function resolveModeToolNames(toolRules: string[] | undefined, defaultToolNames: string[], availableToolNames: string[]): string[] {
+function resolveModeToolNames(
+  toolRules: string[] | undefined,
+  defaultToolNames: string[],
+  availableToolNames: string[],
+): string[] {
   if (toolRules === undefined) {
     return defaultToolNames;
   }
@@ -236,7 +255,10 @@ function registerModeFlags(pi: ExtensionAPI): void {
   }
 }
 
-function getStartupModeSelection(pi: ExtensionAPI): { selectedMode?: string; requestedModes: string[] } {
+function getStartupModeSelection(pi: ExtensionAPI): {
+  selectedMode?: string;
+  requestedModes: string[];
+} {
   const requestedModes: string[] = [];
 
   for (const [flagName, modeName] of registeredModeFlags) {
@@ -253,7 +275,7 @@ function notifyStartupModeConflict(ctx: ExtensionContext, requestedModes: string
     return;
   }
 
-  const message = `Multiple mode flags specified (${requestedModes.join(", ")}). Using \"${requestedModes[0]}\"`;
+  const message = `Multiple mode flags specified (${requestedModes.join(", ")}). Using "${requestedModes[0]}"`;
   if (ctx.hasUI) {
     ctx.ui.notify(message, "warning");
     return;
@@ -262,17 +284,21 @@ function notifyStartupModeConflict(ctx: ExtensionContext, requestedModes: string
   console.warn(message);
 }
 
-function filterAutocompleteItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
+function filterAutocompleteItems(
+  items: AutocompleteItem[],
+  query: string,
+): AutocompleteItem[] | null {
   const normalizedQuery = query.trim().toLowerCase();
-  const filtered = normalizedQuery.length === 0
-    ? items
-    : items.filter((item) => {
-      const haystack = [item.value, item.label, item.description]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(normalizedQuery);
-    });
+  const filtered =
+    normalizedQuery.length === 0
+      ? items
+      : items.filter((item) => {
+          const haystack = [item.value, item.label, item.description]
+            .filter((value): value is string => Boolean(value))
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(normalizedQuery);
+        });
 
   return filtered.length > 0 ? filtered : null;
 }
@@ -286,26 +312,32 @@ function getModeSelectionItems(): AutocompleteItem[] {
 }
 
 function getModeRootCompletions(query: string): AutocompleteItem[] | null {
-  return filterAutocompleteItems([
-    ...getModeSelectionItems(),
-    {
-      value: "store ",
-      label: "store",
-      description: "Save current selection as a mode",
-    },
-    {
-      value: "reload",
-      label: "reload",
-      description: "Reload modes from config",
-    },
-  ], query);
+  return filterAutocompleteItems(
+    [
+      ...getModeSelectionItems(),
+      {
+        value: "store ",
+        label: "store",
+        description: "Save current selection as a mode",
+      },
+      {
+        value: "reload",
+        label: "reload",
+        description: "Reload modes from config",
+      },
+    ],
+    query,
+  );
 }
 
 function getModeStoreCompletions(query: string): AutocompleteItem[] | null {
   const items = orderedModeNames(runtime.data).map((modeName) => ({
     value: `store ${modeName}`,
     label: modeName,
-    description: ["Overwrite existing mode", describeModeAutocomplete(modeName, getModeSpec(runtime.data, modeName))]
+    description: [
+      "Overwrite existing mode",
+      describeModeAutocomplete(modeName, getModeSpec(runtime.data, modeName)),
+    ]
       .filter((value): value is string => Boolean(value))
       .join(" · "),
   }));
@@ -345,7 +377,11 @@ function getModeArgumentCompletions(argumentPrefix: string): AutocompleteItem[] 
   return tokens.length === 1 && !endsWithSpace ? getModeRootCompletions(command) : null;
 }
 
-function notifyModeSwitch(ctx: ExtensionContext, modeName: string | undefined, spec: ModeSpec | undefined): void {
+function notifyModeSwitch(
+  ctx: ExtensionContext,
+  modeName: string | undefined,
+  spec: ModeSpec | undefined,
+): void {
   if (!ctx.hasUI) return;
 
   const label = modeName ?? CUSTOM_MODE_LABEL;
@@ -356,7 +392,10 @@ function notifyModeSwitch(ctx: ExtensionContext, modeName: string | undefined, s
   );
 }
 
-function currentSelection(ctx: ExtensionContext, pi: ExtensionAPI): { provider?: string; modelId?: string; thinkingLevel: string } {
+function currentSelection(
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+): { provider?: string; modelId?: string; thinkingLevel: string } {
   return {
     provider: ctx.model?.provider,
     modelId: ctx.model?.id,
@@ -364,7 +403,10 @@ function currentSelection(ctx: ExtensionContext, pi: ExtensionAPI): { provider?:
   };
 }
 
-function matchesMode(spec: ModeSpec, selection: { provider?: string; modelId?: string; thinkingLevel: string }): boolean {
+function matchesMode(
+  spec: ModeSpec,
+  selection: { provider?: string; modelId?: string; thinkingLevel: string },
+): boolean {
   if (spec.provider && spec.modelId) {
     if (spec.provider !== selection.provider || spec.modelId !== selection.modelId) {
       return false;
@@ -378,7 +420,10 @@ function matchesMode(spec: ModeSpec, selection: { provider?: string; modelId?: s
   return Boolean(spec.provider && spec.modelId) || Boolean(spec.thinkingLevel);
 }
 
-function selectionSatisfiesMode(spec: ModeSpec, selection: { provider?: string; modelId?: string; thinkingLevel: string }): boolean {
+function selectionSatisfiesMode(
+  spec: ModeSpec,
+  selection: { provider?: string; modelId?: string; thinkingLevel: string },
+): boolean {
   if (spec.provider && spec.modelId) {
     if (spec.provider !== selection.provider || spec.modelId !== selection.modelId) {
       return false;
@@ -412,10 +457,17 @@ function inferActiveMode(pi: ExtensionAPI, ctx: ExtensionContext): string | unde
 
 function setStatus(ctx: ExtensionContext, modeName: string | undefined): void {
   if (!ctx.hasUI) return;
-  ctx.ui.setStatus(MODE_STATUS_KEY, ctx.ui.theme.fg(modeName ? "accent" : "warning", `mode:${modeName ?? CUSTOM_MODE_LABEL}`));
+  ctx.ui.setStatus(
+    MODE_STATUS_KEY,
+    ctx.ui.theme.fg(modeName ? "accent" : "warning", `mode:${modeName ?? CUSTOM_MODE_LABEL}`),
+  );
 }
 
-function emitModeChanged(pi: ExtensionAPI, _ctx: ExtensionContext, payload: ModeChangedEvent): void {
+function emitModeChanged(
+  pi: ExtensionAPI,
+  _ctx: ExtensionContext,
+  payload: ModeChangedEvent,
+): void {
   pi.events.emit("modes:changed", payload);
 }
 
@@ -462,10 +514,7 @@ function syncErrorUI(ctx: ExtensionContext): void {
     return;
   }
 
-  ctx.ui.setWidget(MODE_ERROR_WIDGET_KEY, [
-    `Modes config error: ${runtime.path}`,
-    runtime.error,
-  ]);
+  ctx.ui.setWidget(MODE_ERROR_WIDGET_KEY, [`Modes config error: ${runtime.path}`, runtime.error]);
 }
 
 function notifyConfigError(ctx: ExtensionContext): void {
@@ -560,7 +609,10 @@ async function applyMode(
     if (spec.provider && spec.modelId) {
       const model = ctx.modelRegistry.find(spec.provider, spec.modelId);
       if (!model) {
-        ctx.ui.notify(`Mode "${modeName}" references missing model ${spec.provider}/${spec.modelId}`, "warning");
+        ctx.ui.notify(
+          `Mode "${modeName}" references missing model ${spec.provider}/${spec.modelId}`,
+          "warning",
+        );
         return false;
       }
 
@@ -602,7 +654,10 @@ async function applyMode(
     const needsResyncAfterApply = runtime.needsResyncAfterApply;
     runtime.needsResyncAfterApply = false;
     if (needsResyncAfterApply) {
-      await syncFromSelection(pi, ctx, "before_agent_start", { notifyModeSwitch: false, emitChangedEvent: false });
+      await syncFromSelection(pi, ctx, "before_agent_start", {
+        notifyModeSwitch: false,
+        emitChangedEvent: false,
+      });
     }
   }
 }
@@ -626,7 +681,10 @@ async function applySelection(
       const modelApplied = await pi.setModel(event.targetModel);
       if (!modelApplied) {
         if (ctx.hasUI) {
-          ctx.ui.notify(`No API key available for ${event.targetModel.provider}/${event.targetModel.id}`, "warning");
+          ctx.ui.notify(
+            `No API key available for ${event.targetModel.provider}/${event.targetModel.id}`,
+            "warning",
+          );
         }
         return;
       }
@@ -656,7 +714,10 @@ async function applySelection(
     const needsResyncAfterApply = runtime.needsResyncAfterApply;
     runtime.needsResyncAfterApply = false;
     if (needsResyncAfterApply) {
-      await syncFromSelection(pi, ctx, "before_agent_start", { notifyModeSwitch: false, emitChangedEvent: false });
+      await syncFromSelection(pi, ctx, "before_agent_start", {
+        notifyModeSwitch: false,
+        emitChangedEvent: false,
+      });
     }
   }
 }
@@ -693,7 +754,9 @@ async function storeMode(pi: ExtensionAPI, ctx: ExtensionContext, modeName: stri
   });
   const description = describeModeSpec(runtime.data.modes[name]);
   ctx.ui.notify(
-    description ? `Stored and switched to mode "${name}" (${description})` : `Stored and switched to mode "${name}"`,
+    description
+      ? `Stored and switched to mode "${name}" (${description})`
+      : `Stored and switched to mode "${name}"`,
     "info",
   );
 }
@@ -716,7 +779,10 @@ async function reloadModes(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
   ctx.ui.notify("Modes reloaded", "info");
 }
 
-async function promptForModeName(ctx: ExtensionContext, title: string): Promise<string | undefined> {
+async function promptForModeName(
+  ctx: ExtensionContext,
+  title: string,
+): Promise<string | undefined> {
   const value = await ctx.ui.input(title, "mode name");
   return value?.trim() || undefined;
 }
@@ -788,15 +854,26 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
   const startupModeSelection = getStartupModeSelection(pi);
   notifyStartupModeConflict(ctx, startupModeSelection.requestedModes);
   if (startupModeSelection.selectedMode) {
-    const applied = await applyMode(pi, ctx, startupModeSelection.selectedMode, "session_start", "restore", { persist: false });
+    const applied = await applyMode(
+      pi,
+      ctx,
+      startupModeSelection.selectedMode,
+      "session_start",
+      "restore",
+      { persist: false },
+    );
     if (applied) {
       return;
     }
   }
 
   const entries = ctx.sessionManager.getEntries();
-  const modeEntries = entries.filter((entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY);
-  const lastEntry = modeEntries[modeEntries.length - 1] as { data?: { activeMode?: string } } | undefined;
+  const modeEntries = entries.filter(
+    (entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY,
+  );
+  const lastEntry = modeEntries[modeEntries.length - 1] as
+    | { data?: { activeMode?: string } }
+    | undefined;
   const sessionMode = lastEntry?.data?.activeMode;
   const hasExplicitSessionSelection = entries.some(
     (entry) => entry.type === "model_change" || entry.type === "thinking_level_change",
@@ -821,7 +898,9 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
   }
 
   if (runtime.data.currentMode && runtime.data.modes[runtime.data.currentMode]) {
-    await applyMode(pi, ctx, runtime.data.currentMode, "session_start", "restore", { persist: false });
+    await applyMode(pi, ctx, runtime.data.currentMode, "session_start", "restore", {
+      persist: false,
+    });
     return;
   }
 
@@ -836,7 +915,11 @@ async function restoreMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
   });
 }
 
-async function activateMode(pi: ExtensionAPI, ctx: ExtensionContext, event: ModeActivateEvent): Promise<void> {
+async function activateMode(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  event: ModeActivateEvent,
+): Promise<void> {
   await ensureRuntime(ctx);
   syncErrorUI(ctx);
 
@@ -858,10 +941,14 @@ export default function modesExtension(pi: ExtensionAPI): void {
   registerModeFlags(pi);
 
   pi.registerCommand("mode", {
-    description: "Select and store prompt modes: /mode, /mode <name>, /mode store <name>, /mode reload",
+    description:
+      "Select and store prompt modes: /mode, /mode <name>, /mode store <name>, /mode reload",
     getArgumentCompletions: (prefix) => getModeArgumentCompletions(prefix),
     handler: async (args, ctx) => {
-      const tokens = args.split(/\s+/).map((value) => value.trim()).filter(Boolean);
+      const tokens = args
+        .split(/\s+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
       if (tokens.length === 0) {
         await showModePicker(pi, ctx);
         return;

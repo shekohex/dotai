@@ -57,7 +57,10 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     state.cwd = ctx.cwd;
     state.executor = undefined;
     ctx.ui.setEditorComponent(
-      createCorePromptEditorFactory(() => ctx.ui.theme, () => ctx.isIdle()),
+      createCorePromptEditorFactory(
+        () => ctx.ui.theme,
+        () => ctx.isIdle(),
+      ),
     );
     bindCoreUI(ctx, pi, state, (nextRequestRender) => {
       requestRender = nextRequestRender;

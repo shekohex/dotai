@@ -36,12 +36,7 @@ export function bindCoreUI(
       },
       invalidate() {},
       render(width: number): string[] {
-        const left = buildProjectStatus(
-          theme,
-          footerData.getGitBranch(),
-          state,
-          ctx,
-        );
+        const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
         const leftBottom = buildTPSStatus(theme, state);
         const rightTop = buildModelStatus(theme, ctx, pi, state);
         const rightBottom = buildUsageStatus(
@@ -89,10 +84,7 @@ function buildProjectStatus(
   state: CoreUIState,
   ctx: ExtensionContext,
 ): string {
-  const projectLabel = theme.fg(
-    "dim",
-    state.repoSlug ?? shortenHome(ctx.sessionManager.getCwd()),
-  );
+  const projectLabel = theme.fg("dim", state.repoSlug ?? shortenHome(ctx.sessionManager.getCwd()));
   const refLabel = resolveRefLabel(branch, state.worktreeName);
 
   if (!refLabel) {
@@ -100,20 +92,10 @@ function buildProjectStatus(
   }
 
   const branchText = theme.fg("dim", `${refLabel}${state.dirty ? "*" : ""}`);
-  const addedText =
-    state.addedLines > 0 ? theme.fg("success", ` +${state.addedLines}`) : "";
-  const removedText =
-    state.removedLines > 0
-      ? theme.fg("error", ` -${state.removedLines}`)
-      : "";
-  const aheadText =
-    state.aheadCommits > 0
-      ? theme.fg("success", ` ↑${state.aheadCommits}`)
-      : "";
-  const behindText =
-    state.behindCommits > 0
-      ? theme.fg("warning", ` ↓${state.behindCommits}`)
-      : "";
+  const addedText = state.addedLines > 0 ? theme.fg("success", ` +${state.addedLines}`) : "";
+  const removedText = state.removedLines > 0 ? theme.fg("error", ` -${state.removedLines}`) : "";
+  const aheadText = state.aheadCommits > 0 ? theme.fg("success", ` ↑${state.aheadCommits}`) : "";
+  const behindText = state.behindCommits > 0 ? theme.fg("warning", ` ↓${state.behindCommits}`) : "";
 
   return `${projectLabel}${theme.fg("dim", " (")}${branchText}${addedText}${removedText}${aheadText}${behindText}${theme.fg("dim", ")")}`;
 }
@@ -145,9 +127,7 @@ function buildModelStatus(
     : "";
   const providerName = ctx.model?.provider ?? "no-provider";
   const modelName = ctx.model?.id ?? "no-model";
-  const thinkingLevel: ThinkingLevel = ctx.model?.reasoning
-    ? pi.getThinkingLevel()
-    : "off";
+  const thinkingLevel: ThinkingLevel = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
 
   return (
     modePrefix +
@@ -214,11 +194,7 @@ export function formatExecutorStatus(
   return theme.fg("success", "executor");
 }
 
-function formatContextAndCost(
-  theme: Theme,
-  ctx: ExtensionContext,
-  totalCost: number,
-): string {
+function formatContextAndCost(theme: Theme, ctx: ExtensionContext, totalCost: number): string {
   const usage = ctx.getContextUsage();
   const tokens = usage?.tokens ?? null;
   const percent = usage?.percent ?? null;
@@ -232,11 +208,7 @@ function formatContextAndCost(
   );
 }
 
-function styleContextPercent(
-  theme: Theme,
-  percent: number | null,
-  text: string,
-): string {
+function styleContextPercent(theme: Theme, percent: number | null, text: string): string {
   if (percent === null || !Number.isFinite(percent)) {
     return theme.fg("muted", text);
   }
@@ -289,11 +261,7 @@ function composeFooterLine(left: string, right: string, width: number): string {
   const innerWidth = Math.max(0, width - sidePadding.length * 2);
 
   if (innerWidth <= 0) {
-    return truncateToWidth(
-      `${sidePadding}${left}${right}${sidePadding}`,
-      width,
-      "",
-    );
+    return truncateToWidth(`${sidePadding}${left}${right}${sidePadding}`, width, "");
   }
 
   const rightWidth = visibleWidth(right);

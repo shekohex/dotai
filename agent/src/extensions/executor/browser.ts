@@ -7,30 +7,31 @@ function escapePowerShell(value: string): string {
 export async function openBrowserTarget(target: string): Promise<void> {
   const platform = process.platform;
 
-  const launch = platform === "darwin"
-    ? {
-        command: "open",
-        args: [target],
-        options: { stdio: "ignore" as const },
-      }
-    : platform === "win32"
+  const launch =
+    platform === "darwin"
       ? {
-          command: "powershell",
-          args: [
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            `Start '${escapePowerShell(target)}'`,
-          ],
+          command: "open",
+          args: [target],
           options: { stdio: "ignore" as const },
         }
-      : {
-          command: "xdg-open",
-          args: [target],
-          options: { stdio: "ignore" as const, detached: true },
-        };
+      : platform === "win32"
+        ? {
+            command: "powershell",
+            args: [
+              "-NoProfile",
+              "-NonInteractive",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-Command",
+              `Start '${escapePowerShell(target)}'`,
+            ],
+            options: { stdio: "ignore" as const },
+          }
+        : {
+            command: "xdg-open",
+            args: [target],
+            options: { stdio: "ignore" as const, detached: true },
+          };
 
   await new Promise<void>((resolveLaunch, reject) => {
     const child = spawn(launch.command, launch.args, launch.options);

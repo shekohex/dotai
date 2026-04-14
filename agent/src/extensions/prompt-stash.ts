@@ -3,7 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { ExtensionAPI, ExtensionContext, KeybindingsManager, Theme } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  KeybindingsManager,
+  Theme,
+} from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -55,14 +60,16 @@ function expandUserPath(value: string): string {
 }
 
 function getResolvedAgentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR ? expandUserPath(process.env.PI_CODING_AGENT_DIR) : getAgentDir();
+  return process.env.PI_CODING_AGENT_DIR
+    ? expandUserPath(process.env.PI_CODING_AGENT_DIR)
+    : getAgentDir();
 }
 
 export function getStashFilePath(): string {
   return path.join(getResolvedAgentDir(), STASH_FILE_NAME);
 }
 
-async function readStashEntries(cwd: string): Promise<{ entries: PromptStashEntry[]; dirty: boolean }> {
+async function readStashEntries(): Promise<{ entries: PromptStashEntry[]; dirty: boolean }> {
   const stashFilePath = getStashFilePath();
 
   try {
@@ -111,30 +118,38 @@ async function readStashEntries(cwd: string): Promise<{ entries: PromptStashEntr
 
     return { entries: normalizedEntries, dirty: needsRewrite };
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "ENOENT") {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "ENOENT"
+    ) {
       return { entries: [], dirty: false };
     }
     throw error;
   }
 }
 
-async function writeStashEntries(cwd: string, entries: PromptStashEntry[]): Promise<void> {
+async function writeStashEntries(entries: PromptStashEntry[]): Promise<void> {
   const stashFilePath = getStashFilePath();
   await mkdir(path.dirname(stashFilePath), { recursive: true });
-  const content = entries.slice(0, MAX_STASH_ENTRIES).map((entry) => JSON.stringify(entry)).join("\n");
+  const content = entries
+    .slice(0, MAX_STASH_ENTRIES)
+    .map((entry) => JSON.stringify(entry))
+    .join("\n");
   await writeFile(stashFilePath, content, "utf8");
 }
 
-export async function loadStashEntries(cwd: string): Promise<PromptStashEntry[]> {
-  const { entries, dirty } = await readStashEntries(cwd);
+export async function loadStashEntries(_cwd: string): Promise<PromptStashEntry[]> {
+  const { entries, dirty } = await readStashEntries();
   if (dirty) {
-    await writeStashEntries(cwd, entries);
+    await writeStashEntries(entries);
   }
   return entries;
 }
 
-export async function saveStashEntries(cwd: string, entries: PromptStashEntry[]): Promise<void> {
-  await writeStashEntries(cwd, entries.slice(0, MAX_STASH_ENTRIES));
+export async function saveStashEntries(_cwd: string, entries: PromptStashEntry[]): Promise<void> {
+  await writeStashEntries(entries.slice(0, MAX_STASH_ENTRIES));
 }
 
 function createStashEntry(text: string): PromptStashEntry {
@@ -251,7 +266,10 @@ class PromptStashBrowser implements Component, Focusable {
     this.root.addChild(new Spacer(1));
     this.root.addChild(
       new Text(
-        theme.fg("dim", "Search to filter • enter open • ctrl+alt+o pop • ctrl+backspace delete • esc cancel"),
+        theme.fg(
+          "dim",
+          "Search to filter • enter open • ctrl+alt+o pop • ctrl+backspace delete • esc cancel",
+        ),
         0,
         0,
       ),
@@ -285,7 +303,10 @@ class PromptStashBrowser implements Component, Focusable {
       return;
     }
 
-    if (this.keybindings.matches(data, "tui.select.cancel") || this.keybindings.matches(data, "app.interrupt")) {
+    if (
+      this.keybindings.matches(data, "tui.select.cancel") ||
+      this.keybindings.matches(data, "app.interrupt")
+    ) {
       this.close(null);
       return;
     }
@@ -385,7 +406,9 @@ class PromptStashBrowser implements Component, Focusable {
     }
 
     const next = this.selectedIndex + delta;
-    const wrapped = ((next % this.filteredEntries.length) + this.filteredEntries.length) % this.filteredEntries.length;
+    const wrapped =
+      ((next % this.filteredEntries.length) + this.filteredEntries.length) %
+      this.filteredEntries.length;
     this.selectedIndex = wrapped;
     if (this.selectList) {
       this.selectList.setSelectedIndex(this.selectedIndex);
@@ -414,7 +437,12 @@ class PromptStashBrowser implements Component, Focusable {
     const query = this.searchInput.getValue().trim();
 
     this.filteredEntries = query
-      ? fuzzyFilter(this.entries, query, (entry) => `${formatPreview(entry.text)} ${entry.text} ${countLines(entry.text)} ${formatRelativeAge(entry.createdAt)}`)
+      ? fuzzyFilter(
+          this.entries,
+          query,
+          (entry) =>
+            `${formatPreview(entry.text)} ${entry.text} ${countLines(entry.text)} ${formatRelativeAge(entry.createdAt)}`,
+        )
       : [...this.entries];
 
     this.selectedIndex = 0;
@@ -437,9 +465,8 @@ class PromptStashBrowser implements Component, Focusable {
     this.selectList = null;
 
     if (this.filteredEntries.length === 0) {
-      const message = this.entries.length === 0
-        ? "No stashed prompts yet"
-        : "No matching stash entries";
+      const message =
+        this.entries.length === 0 ? "No stashed prompts yet" : "No matching stash entries";
       this.listContainer.addChild(new Text(this.theme.fg("dim", message), 0, 0));
       return;
     }
@@ -458,9 +485,10 @@ class PromptStashBrowser implements Component, Focusable {
 
     const entry = this.getSelectedEntry();
     if (!entry) {
-      const hint = this.entries.length === 0
-        ? "Press ctrl+alt+s to stash the current prompt"
-        : "Choose a stash entry to preview it here";
+      const hint =
+        this.entries.length === 0
+          ? "Press ctrl+alt+s to stash the current prompt"
+          : "Choose a stash entry to preview it here";
       this.previewContainer.addChild(new Text(this.theme.fg("dim", hint), 0, 0));
       return;
     }
@@ -527,7 +555,10 @@ async function deleteStashEntry(ctx: ExtensionContext, entryId: string): Promise
   return true;
 }
 
-async function applyStashSelection(ctx: ExtensionContext, action: PromptStashBrowserAction): Promise<void> {
+async function applyStashSelection(
+  ctx: ExtensionContext,
+  action: PromptStashBrowserAction,
+): Promise<void> {
   if (!action) {
     return;
   }
@@ -569,7 +600,8 @@ async function showStashBrowser(ctx: ExtensionContext): Promise<PromptStashBrows
   const draft = ctx.ui.getEditorText();
 
   const result = await ctx.ui.custom<PromptStashBrowserAction>(
-    (tui, theme, keybindings, done) => new PromptStashBrowser(tui, theme, keybindings, entries, done),
+    (tui, theme, keybindings, done) =>
+      new PromptStashBrowser(tui, theme, keybindings, entries, done),
     {
       overlay: true,
       overlayOptions: {

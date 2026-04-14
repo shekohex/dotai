@@ -115,7 +115,11 @@ export function calculatePaceStatus(
 }
 
 export function getPaceStatusText(status: PaceStatus): string {
-  return status === "ahead" ? "Plenty of room" : status === "on-track" ? "Right on target" : "Will run out";
+  return status === "ahead"
+    ? "Plenty of room"
+    : status === "on-track"
+      ? "Right on target"
+      : "Will run out";
 }
 
 export function formatProjectedResetText(
@@ -127,7 +131,10 @@ export function formatProjectedResetText(
     return null;
   }
 
-  const projectedPercent = Math.max(0, Math.min(100, Math.round((paceResult.projectedUsage / limit) * 100)));
+  const projectedPercent = Math.max(
+    0,
+    Math.min(100, Math.round((paceResult.projectedUsage / limit) * 100)),
+  );
   const shownPercent = displayMode === "left" ? 100 - projectedPercent : projectedPercent;
   return `${shownPercent}% ${displayMode === "left" ? "left at reset" : "used at reset"}`;
 }
@@ -190,16 +197,21 @@ export function getMetricPaceDetails(
     statusText: paceResult ? getPaceStatusText(paceResult.status) : null,
     projectedText: formatProjectedResetText(paceResult, metric.limit, displayMode),
     runsOutText: formatRunsOutText(paceResult, metric, now),
-    elapsedPercent: context.periodDurationMs > 0
-      ? Math.max(0, Math.min(100, ((now - (context.resetsAtMs - context.periodDurationMs)) / context.periodDurationMs) * 100))
-      : null,
+    elapsedPercent:
+      context.periodDurationMs > 0
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              ((now - (context.resetsAtMs - context.periodDurationMs)) / context.periodDurationMs) *
+                100,
+            ),
+          )
+        : null,
   };
 }
 
-export function setStatus(
-  ctx: ExtensionContext,
-  snapshot: UsageSnapshot | undefined,
-): void {
+export function setStatus(ctx: ExtensionContext, snapshot: UsageSnapshot | undefined): void {
   if (!snapshot) {
     ctx.ui.setStatus(OPENUSAGE_STATUS_KEY, undefined);
     return;
@@ -213,11 +225,7 @@ export function setStatus(
 
   let text = theme.fg("dim", `${sessionLabel} `);
   text += sessionMetric
-    ? colorForMetric(
-        theme,
-        sessionMetric,
-        formatRemainingPercent(sessionMetric),
-      )
+    ? colorForMetric(theme, sessionMetric, formatRemainingPercent(sessionMetric))
     : theme.fg("muted", "n/a");
 
   text += theme.fg("dim", ` ${weeklyLabel} `);
@@ -232,10 +240,7 @@ export function formatSnapshotSummary(
   snapshot: UsageSnapshot,
   options: { resetTimeFormat?: ResetTimeFormat; now?: number } = {},
 ): string {
-  const lines = [
-    `Provider: ${snapshot.displayName}`,
-    `Source: ${snapshot.source}`,
-  ];
+  const lines = [`Provider: ${snapshot.displayName}`, `Source: ${snapshot.source}`];
 
   if (snapshot.plan) {
     lines.push(`Plan: ${snapshot.plan}`);
@@ -247,7 +252,9 @@ export function formatSnapshotSummary(
   }
 
   if (snapshot.session5h) {
-    lines.push(formatMetricLine(getMetricLabel(snapshot, "session5h"), snapshot.session5h, options));
+    lines.push(
+      formatMetricLine(getMetricLabel(snapshot, "session5h"), snapshot.session5h, options),
+    );
   }
 
   if (snapshot.weekly) {
@@ -272,7 +279,9 @@ function formatMetricLine(
     options.now ?? Date.now(),
   );
   const pace = getMetricPaceDetails(metric, "left", options.now ?? Date.now());
-  const paceText = [pace.statusText, pace.projectedText, pace.runsOutText].filter(Boolean).join(", ");
+  const paceText = [pace.statusText, pace.projectedText, pace.runsOutText]
+    .filter(Boolean)
+    .join(", ");
   return `${label}: ${formatRemainingPercent(metric)} left (${formatUsedPercent(metric)} used)${reset ? `, resets ${reset}` : ""}${paceText ? `, ${paceText}` : ""}`;
 }
 
@@ -287,11 +296,7 @@ function formatPercent(value: number | undefined): string {
 }
 
 function getUsedPercent(metric: UsageMetric): number | undefined {
-  if (
-    !Number.isFinite(metric.used) ||
-    !Number.isFinite(metric.limit) ||
-    metric.limit <= 0
-  ) {
+  if (!Number.isFinite(metric.used) || !Number.isFinite(metric.limit) || metric.limit <= 0) {
     return undefined;
   }
 
@@ -419,8 +424,15 @@ function formatCompactDuration(milliseconds: number): string | null {
   return "<1m";
 }
 
-function resolveMetricPaceContext(metric: UsageMetric): { resetsAtMs: number; periodDurationMs: number } | null {
-  if (!metric.resetsAt || !Number.isFinite(metric.periodDurationMs) || !metric.periodDurationMs || metric.periodDurationMs <= 0) {
+function resolveMetricPaceContext(
+  metric: UsageMetric,
+): { resetsAtMs: number; periodDurationMs: number } | null {
+  if (
+    !metric.resetsAt ||
+    !Number.isFinite(metric.periodDurationMs) ||
+    !metric.periodDurationMs ||
+    metric.periodDurationMs <= 0
+  ) {
     return null;
   }
 
@@ -443,8 +455,7 @@ function maskEmail(value: string): string {
   }
 
   const domainParts = domain.split(".");
-  const tld =
-    domainParts.length > 1 ? `.${domainParts[domainParts.length - 1]}` : "";
+  const tld = domainParts.length > 1 ? `.${domainParts[domainParts.length - 1]}` : "";
   const localMasked = `${local.slice(0, 2)}***`;
   return `${localMasked}@***${tld}`;
 }

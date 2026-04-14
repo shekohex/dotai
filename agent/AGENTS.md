@@ -5,6 +5,7 @@ A TypeScript-based wrapper around `@mariozechner/pi-coding-agent` that bundles t
 ## Project Overview
 
 This package provides:
+
 - The upstream `pi` TUI experience
 - Built-in LiteLLM support with automatic gateway selection
 - Bundled providers for `codex-openai` and `zai-coding-plan`
@@ -45,18 +46,22 @@ This package provides:
 ## Development Commands
 
 ### Build
+
 ```bash
 npm run build
 ```
+
 Compiles TypeScript, copies bundled resources, generates default settings, and prepares CLI binaries.
 
 ### Run Locally
+
 ```bash
 npm run pi                    # Run pi locally
 npm run pi -- -p "hello"      # Run with a prompt
 ```
 
 ### Linting
+
 ```bash
 npm run lint                  # Run oxlint
 npm run lint:fix              # Run oxlint with auto-fix
@@ -65,20 +70,36 @@ npm run lint:fix              # Run oxlint with auto-fix
 Uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) with TypeScript, Unicorn, and OXC plugins. Configuration in `.oxlintrc.json`.
 
 ### Formatting
+
 ```bash
-oxfmt                         # Format with oxfmt (not in package.json scripts)
+npm run format                # Format with oxfmt
+npm run format:check          # Check formatting without modifying files
 ```
 
 Uses [oxfmt](https://github.com/oxc-project/oxc) for formatting.
 
+## Task Completion
+
+After finishing each task, run these checks before replying:
+
+```bash
+npm test
+npm run lint
+npm run format:check
+```
+
+If there any errors, please fix them and rerun the workflow again.
+
 ## Testing
 
 ### Run All Tests
+
 ```bash
 npm test                      # Runs all test suites
 ```
 
 ### Individual Test Suites
+
 ```bash
 npm run test:keys             # TUI keybindings tests
 npm run test:tool-preview     # Tool preview harness tests
@@ -94,23 +115,22 @@ Tests use **Node.js built-in test runner** (`node:test` and `node:assert/strict`
 Key testing patterns:
 
 1. **Test Harness**: Uses `@marcfargas/pi-test-harness` for integration testing
+
    ```typescript
    import { createTestSession, calls, says, when } from "@marcfargas/pi-test-harness";
-   
+
    const session = await createTestSession({
      cwd: "/tmp/test",
      extensionFactories: [myExtension],
    });
-   
+
    await session.run(
-     when("Test scenario", [
-       calls("toolName", { arg: "value" }),
-       says("Expected response"),
-     ])
+     when("Test scenario", [calls("toolName", { arg: "value" }), says("Expected response")]),
    );
    ```
 
 2. **Mocking Tools**: Mock specific tools while keeping others real
+
    ```typescript
    const session = await createTestSession({
      mockTools: {
@@ -120,6 +140,7 @@ Key testing patterns:
    ```
 
 3. **HTTP Servers for Integration**: Create local HTTP servers to test external API calls
+
    ```typescript
    const server = createServer((req, res) => { ... });
    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -128,11 +149,11 @@ Key testing patterns:
    ```
 
 4. **Timeout Pattern**: Tests use a 15-second timeout
+
    ```typescript
    const TEST_TIMEOUT_MS = 15_000;
-   const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => 
-     test(name, { timeout: TEST_TIMEOUT_MS }, fn)
-   ) as typeof test;
+   const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
+     test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
    ```
 
 5. **Temp Directory Pattern**: Use `mkdtemp` for isolated test environments
@@ -146,6 +167,7 @@ Key testing patterns:
    ```
 
 ### Test File Naming
+
 - Test files: `*.test.ts`
 - Test utilities: `*.scenarios.ts`
 - Located in `/test` directory
@@ -153,6 +175,7 @@ Key testing patterns:
 ## Configuration
 
 ### TypeScript
+
 - Target: ES2022
 - Module: NodeNext
 - Strict mode enabled
@@ -160,6 +183,7 @@ Key testing patterns:
 - Source: `src/`
 
 ### Environment Variables
+
 - `PI_SKIP_VERSION_CHECK=1`: Skip version check (used in `npm run pi`)
 - `OPENAI_API_KEY`: Required for some tests (falls back to "test-key")
 - `LITELLM_API_KEY`: For LiteLLM gateway tests
@@ -176,7 +200,7 @@ const myExtension: ExtensionFactory = () => (pi: ExtensionAPI) => {
     name: "myTool",
     execute: async (id, args, ctx) => { ... },
   });
-  
+
   pi.on("session_start", async (event, ctx) => { ... });
 };
 ```

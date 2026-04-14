@@ -4,7 +4,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { ToolExecutionComponent, SessionManager, initTheme, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import {
+  ToolExecutionComponent,
+  SessionManager,
+  initTheme,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type ToolDefinition,
+} from "@mariozechner/pi-coding-agent";
 import { setKeybindings } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 
@@ -25,20 +32,31 @@ import {
 } from "../src/extensions/subagent/session.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/extensions/subagent/mux.ts";
 import { SubagentManager } from "../src/extensions/subagent/state.ts";
-import { SUBAGENT_MESSAGE_ENTRY, SUBAGENT_STATE_ENTRY, type RuntimeSubagent } from "../src/extensions/subagent/types.ts";
+import {
+  SUBAGENT_MESSAGE_ENTRY,
+  SUBAGENT_STATE_ENTRY,
+  type RuntimeSubagent,
+} from "../src/extensions/subagent/types.ts";
 import { renderSubagentWidget } from "../src/extensions/subagent/render.ts";
 import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
 
 const TEST_TIMEOUT_MS = 15_000;
 
-const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) => test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
+  test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
 initTheme("dark");
 setKeybindings(KeybindingsManager.create());
 
 class FakeMuxAdapter implements MuxAdapter {
   readonly backend = "tmux";
-  readonly created: Array<{ cwd: string; title: string; command: string; target: "pane" | "window"; paneId: string }> = [];
+  readonly created: Array<{
+    cwd: string;
+    title: string;
+    command: string;
+    target: "pane" | "window";
+    paneId: string;
+  }> = [];
   readonly sent: Array<{ paneId: string; text: string; submitMode?: PaneSubmitMode }> = [];
   readonly killed: string[] = [];
   readonly existingPanes = new Set<string>();
@@ -47,7 +65,12 @@ class FakeMuxAdapter implements MuxAdapter {
     return true;
   }
 
-  async createPane(options: { cwd: string; title: string; command: string; target: "pane" | "window" }): Promise<{ paneId: string }> {
+  async createPane(options: {
+    cwd: string;
+    title: string;
+    command: string;
+    target: "pane" | "window";
+  }): Promise<{ paneId: string }> {
     const paneId = `%${this.created.length + 1}`;
     this.created.push({ ...options, paneId });
     this.existingPanes.add(paneId);
@@ -89,7 +112,10 @@ class FakePi implements Partial<ExtensionAPI> {
 
       return () => {
         const currentHandlers = this.eventHandlers.get(eventName) ?? [];
-        this.eventHandlers.set(eventName, currentHandlers.filter((currentHandler) => currentHandler !== handler));
+        this.eventHandlers.set(
+          eventName,
+          currentHandlers.filter((currentHandler) => currentHandler !== handler),
+        );
       };
     },
   };
@@ -171,7 +197,12 @@ function createFakeContext(options: {
   } as unknown as ExtensionContext;
 }
 
-function renderToolText(tool: ToolDefinition<any, any>, args: Record<string, unknown>, result: { content: Array<{ type: "text"; text: string }>; details?: unknown; isError?: boolean }, expanded: boolean): string {
+function renderToolText(
+  tool: ToolDefinition<any, any>,
+  args: Record<string, unknown>,
+  result: { content: Array<{ type: "text"; text: string }>; details?: unknown; isError?: boolean },
+  expanded: boolean,
+): string {
   const component = new ToolExecutionComponent(
     tool.name,
     `preview-${tool.name}-${expanded ? "expanded" : "collapsed"}`,
@@ -189,7 +220,12 @@ function renderToolText(tool: ToolDefinition<any, any>, args: Record<string, unk
   return stripAnsi(component.render(140).join("\n"));
 }
 
-async function emitHandlers(fakePi: FakePi, eventName: string, event: unknown, ctx?: ExtensionContext): Promise<void> {
+async function emitHandlers(
+  fakePi: FakePi,
+  eventName: string,
+  event: unknown,
+  ctx?: ExtensionContext,
+): Promise<void> {
   for (const handler of fakePi.handlers.get(eventName) ?? []) {
     await handler(event, ctx);
   }
@@ -202,12 +238,20 @@ async function emitEventBus(fakePi: FakePi, eventName: string, event: unknown): 
 }
 
 timedTest("resolveModeTools inherits parent tools and denies subagent", () => {
-  const resolved = resolveModeTools(undefined, ["read", "bash", "subagent", "session_query"], ["read", "bash", "subagent", "session_query"]);
+  const resolved = resolveModeTools(
+    undefined,
+    ["read", "bash", "subagent", "session_query"],
+    ["read", "bash", "subagent", "session_query"],
+  );
   assert.deepEqual(resolved, ["bash", "read", "session_query"]);
 });
 
 timedTest("resolveModeTools supports explicit allow and deny rules", () => {
-  const resolved = resolveModeTools(["*", "!bash", "session_query"], ["read", "bash", "subagent"], ["read", "bash", "subagent", "session_query"]);
+  const resolved = resolveModeTools(
+    ["*", "!bash", "session_query"],
+    ["read", "bash", "subagent"],
+    ["read", "bash", "subagent", "session_query"],
+  );
   assert.deepEqual(resolved, ["read", "session_query"]);
 });
 
@@ -215,20 +259,28 @@ timedTest("resolveSubagentMode loads mode config from the child cwd", async () =
   const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-parent-"));
   const childCwd = path.join(parentCwd, "child");
   await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
-  await fs.writeFile(path.join(childCwd, ".pi", "modes.json"), `${JSON.stringify({
-    version: 1,
-    modes: {
-        reviewer: {
-          provider: "mode-provider",
-          modelId: "review-model",
-          tools: ["read"],
-          autoExit: false,
-          tmuxTarget: "window",
-          systemPrompt: "Review only",
-          systemPromptMode: "replace",
+  await fs.writeFile(
+    path.join(childCwd, ".pi", "modes.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        modes: {
+          reviewer: {
+            provider: "mode-provider",
+            modelId: "review-model",
+            tools: ["read"],
+            autoExit: false,
+            tmuxTarget: "window",
+            systemPrompt: "Review only",
+            systemPromptMode: "replace",
+          },
         },
-    },
-  }, null, 2)}\n`, "utf8");
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
 
   try {
     const mode = await resolveSubagentMode(
@@ -249,253 +301,297 @@ timedTest("resolveSubagentMode loads mode config from the child cwd", async () =
   }
 });
 
-timedTest("resolveSubagentMode expands file system prompts relative to the defining modes file", async () => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-global-"));
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-global-config-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+timedTest(
+  "resolveSubagentMode expands file system prompts relative to the defining modes file",
+  async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-global-"));
+    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-global-config-"));
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  await fs.mkdir(path.join(agentDir, "prompts"), { recursive: true });
-  await fs.writeFile(path.join(agentDir, "prompts", "review.md"), "Review only\nEscalate blockers\n", "utf8");
-  await fs.writeFile(path.join(agentDir, "modes.json"), `${JSON.stringify({
-    version: 1,
-    modes: {
-      reviewer: {
-        provider: "mode-provider",
-        modelId: "review-model",
-        systemPrompt: "{file:./prompts/review.md}",
-      },
-    },
-  }, null, 2)}\n`, "utf8");
-
-  try {
-    const mode = await resolveSubagentMode(
-      new FakePi() as unknown as ExtensionAPI,
-      createFakeContext({ cwd }),
-      { mode: "reviewer" },
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    await fs.mkdir(path.join(agentDir, "prompts"), { recursive: true });
+    await fs.writeFile(
+      path.join(agentDir, "prompts", "review.md"),
+      "Review only\nEscalate blockers\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(agentDir, "modes.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          modes: {
+            reviewer: {
+              provider: "mode-provider",
+              modelId: "review-model",
+              systemPrompt: "{file:./prompts/review.md}",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
     );
 
-    assert.ok(mode.value);
-    assert.equal(mode.value?.systemPrompt, "Review only\nEscalate blockers\n");
-    assert.equal(mode.value?.systemPromptMode, "append");
-  } finally {
-    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await fs.rm(agentDir, { recursive: true, force: true });
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
+    try {
+      const mode = await resolveSubagentMode(
+        new FakePi() as unknown as ExtensionAPI,
+        createFakeContext({ cwd }),
+        { mode: "reviewer" },
+      );
 
-timedTest("resolveSubagentMode defaults and preserves subagent auto-exit idle timeout", async () => {
-  const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-timeout-parent-"));
-  const childCwd = path.join(parentCwd, "child");
-  await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
-  await fs.writeFile(path.join(childCwd, ".pi", "modes.json"), `${JSON.stringify({
-    version: 1,
-    modes: {
-      reviewer: {
-        tools: ["read"],
-        autoExit: true,
-        autoExitTimeoutMs: 45_000,
-      },
-      manual: {
-        tools: ["read"],
-        autoExit: false,
-        autoExitTimeoutMs: 12_000,
-      },
-    },
-  }, null, 2)}\n`, "utf8");
+      assert.ok(mode.value);
+      assert.equal(mode.value?.systemPrompt, "Review only\nEscalate blockers\n");
+      assert.equal(mode.value?.systemPromptMode, "append");
+    } finally {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      await fs.rm(agentDir, { recursive: true, force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
-  try {
-    const defaultWorker = await resolveSubagentMode(
-      new FakePi() as unknown as ExtensionAPI,
-      createFakeContext({ cwd: parentCwd }),
-      {},
+timedTest(
+  "resolveSubagentMode defaults and preserves subagent auto-exit idle timeout",
+  async () => {
+    const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-timeout-parent-"));
+    const childCwd = path.join(parentCwd, "child");
+    await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
+    await fs.writeFile(
+      path.join(childCwd, ".pi", "modes.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          modes: {
+            reviewer: {
+              tools: ["read"],
+              autoExit: true,
+              autoExitTimeoutMs: 45_000,
+            },
+            manual: {
+              tools: ["read"],
+              autoExit: false,
+              autoExitTimeoutMs: 12_000,
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
     );
-    const configured = await resolveSubagentMode(
-      new FakePi() as unknown as ExtensionAPI,
-      createFakeContext({ cwd: parentCwd }),
-      { mode: "reviewer", cwd: childCwd },
-    );
-    const disabled = await resolveSubagentMode(
-      new FakePi() as unknown as ExtensionAPI,
-      createFakeContext({ cwd: parentCwd }),
-      { mode: "manual", cwd: childCwd },
-    );
 
-    assert.ok(defaultWorker.value);
-    assert.equal(defaultWorker.value?.autoExit, true);
-    assert.equal(defaultWorker.value?.autoExitTimeoutMs, 30_000);
+    try {
+      const defaultWorker = await resolveSubagentMode(
+        new FakePi() as unknown as ExtensionAPI,
+        createFakeContext({ cwd: parentCwd }),
+        {},
+      );
+      const configured = await resolveSubagentMode(
+        new FakePi() as unknown as ExtensionAPI,
+        createFakeContext({ cwd: parentCwd }),
+        { mode: "reviewer", cwd: childCwd },
+      );
+      const disabled = await resolveSubagentMode(
+        new FakePi() as unknown as ExtensionAPI,
+        createFakeContext({ cwd: parentCwd }),
+        { mode: "manual", cwd: childCwd },
+      );
 
-    assert.ok(configured.value);
-    assert.equal(configured.value?.autoExit, true);
-    assert.equal(configured.value?.autoExitTimeoutMs, 45_000);
+      assert.ok(defaultWorker.value);
+      assert.equal(defaultWorker.value?.autoExit, true);
+      assert.equal(defaultWorker.value?.autoExitTimeoutMs, 30_000);
 
-    assert.ok(disabled.value);
-    assert.equal(disabled.value?.autoExit, false);
-    assert.equal(disabled.value?.autoExitTimeoutMs, undefined);
-  } finally {
-    await fs.rm(parentCwd, { recursive: true, force: true });
-  }
-});
+      assert.ok(configured.value);
+      assert.equal(configured.value?.autoExit, true);
+      assert.equal(configured.value?.autoExitTimeoutMs, 45_000);
 
-timedTest("child bootstrap names child sessions with subagent name plus normalized prompt", async () => {
-  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-name-"));
-  const sessionPath = path.join(cwd, "child.jsonl");
+      assert.ok(disabled.value);
+      assert.equal(disabled.value?.autoExit, false);
+      assert.equal(disabled.value?.autoExitTimeoutMs, undefined);
+    } finally {
+      await fs.rm(parentCwd, { recursive: true, force: true });
+    }
+  },
+);
 
-  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
-    sessionId: "child-session-id",
-    sessionPath,
-    parentSessionId: "parent-session-id",
-    parentSessionPath: path.join(cwd, "parent.jsonl"),
-    name: "worker-one",
-    prompt: "Continue the review\n\tInspect failing tests\u0007 and summarize root cause",
-    autoExit: true,
-    autoExitTimeoutMs: 30_000,
-    handoff: false,
-    tools: ["read"],
-    startedAt: Date.now(),
-  });
+timedTest(
+  "child bootstrap names child sessions with subagent name plus normalized prompt",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-name-"));
+    const sessionPath = path.join(cwd, "child.jsonl");
 
-  try {
-    const fakePi = new FakePi();
-    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
-    const ctx = createFakeContext({
-      cwd,
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
       sessionId: "child-session-id",
-      sessionFile: sessionPath,
+      sessionPath,
+      parentSessionId: "parent-session-id",
+      parentSessionPath: path.join(cwd, "parent.jsonl"),
+      name: "worker-one",
+      prompt: "Continue the review\n\tInspect failing tests\u0007 and summarize root cause",
+      autoExit: true,
+      autoExitTimeoutMs: 30_000,
+      handoff: false,
+      tools: ["read"],
+      startedAt: Date.now(),
     });
 
-    await emitHandlers(fakePi, "session_start", { reason: "resume" }, ctx);
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "child-session-id",
+        sessionFile: sessionPath,
+      });
 
-    assert.equal(fakePi.sessionNames.at(-1), "[worker-one] Continue the review Inspect failing tests and summarize root cause");
-  } finally {
-    if (previousChildState === undefined) {
-      delete process.env.PI_SUBAGENT_CHILD_STATE;
-    } else {
-      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      await emitHandlers(fakePi, "session_start", { reason: "resume" }, ctx);
+
+      assert.equal(
+        fakePi.sessionNames.at(-1),
+        "[worker-one] Continue the review Inspect failing tests and summarize root cause",
+      );
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(cwd, { recursive: true, force: true });
     }
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
+  },
+);
 
-timedTest("child bootstrap auto-exits immediately on idle with no manual terminal input", async () => {
-  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-auto-exit-"));
-  const sessionPath = path.join(cwd, "child.jsonl");
-  let shutdownCount = 0;
-  const notifications: Array<{ message: string; level: string }> = [];
+timedTest(
+  "child bootstrap auto-exits immediately on idle with no manual terminal input",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-auto-exit-"));
+    const sessionPath = path.join(cwd, "child.jsonl");
+    let shutdownCount = 0;
+    const notifications: Array<{ message: string; level: string }> = [];
 
-  await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
-
-  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
-    sessionId: "child-session-id",
-    sessionPath,
-    parentSessionId: "parent-session-id",
-    parentSessionPath: path.join(cwd, "parent.jsonl"),
-    name: "worker-one",
-    prompt: "Inspect failing tests",
-    autoExit: true,
-    autoExitTimeoutMs: 25,
-    handoff: false,
-    tools: ["read"],
-    startedAt: Date.now(),
-  });
-
-  try {
-    const fakePi = new FakePi();
-    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
-    const ctx = createFakeContext({
-      cwd,
-      sessionId: "child-session-id",
-      sessionFile: sessionPath,
-      notify: (message, level) => {
-        notifications.push({ message, level });
-      },
-      shutdown: () => {
-        shutdownCount += 1;
-      },
-    });
-
-    await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
-
-    await emitHandlers(fakePi, "agent_end", {}, ctx);
-    assert.equal(shutdownCount, 1);
-    assert.deepEqual(notifications, []);
-  } finally {
-    if (previousChildState === undefined) {
-      delete process.env.PI_SUBAGENT_CHILD_STATE;
-    } else {
-      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
-    }
     await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
 
-timedTest("child bootstrap manual terminal input activates idle timeout mode across idle transitions", async () => {
-  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-timeout-mode-"));
-  const sessionPath = path.join(cwd, "child.jsonl");
-  let terminalInputHandler: ((data: string) => unknown) | undefined;
-  let shutdownCount = 0;
-
-  await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
-
-  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
-    sessionId: "child-session-id",
-    sessionPath,
-    parentSessionId: "parent-session-id",
-    parentSessionPath: path.join(cwd, "parent.jsonl"),
-    name: "worker-one",
-    prompt: "Inspect failing tests",
-    autoExit: true,
-    autoExitTimeoutMs: 25,
-    handoff: false,
-    tools: ["read"],
-    startedAt: Date.now(),
-  });
-
-  try {
-    const fakePi = new FakePi();
-    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
-    const ctx = createFakeContext({
-      cwd,
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
       sessionId: "child-session-id",
-      sessionFile: sessionPath,
-      captureTerminalInput: (handler) => {
-        terminalInputHandler = handler;
-      },
-      shutdown: () => {
-        shutdownCount += 1;
-      },
+      sessionPath,
+      parentSessionId: "parent-session-id",
+      parentSessionPath: path.join(cwd, "parent.jsonl"),
+      name: "worker-one",
+      prompt: "Inspect failing tests",
+      autoExit: true,
+      autoExitTimeoutMs: 25,
+      handoff: false,
+      tools: ["read"],
+      startedAt: Date.now(),
     });
 
-    await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
-    terminalInputHandler?.("manual follow-up");
-    assert.equal(isAutoExitTimeoutModeActive("child-session-id"), true);
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "child-session-id",
+        sessionFile: sessionPath,
+        notify: (message, level) => {
+          notifications.push({ message, level });
+        },
+        shutdown: () => {
+          shutdownCount += 1;
+        },
+      });
 
-    await emitHandlers(fakePi, "agent_end", {}, ctx);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    assert.equal(shutdownCount, 0);
+      await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
 
-    await emitHandlers(fakePi, "before_agent_start", {}, ctx);
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.equal(shutdownCount, 0);
-
-    await emitHandlers(fakePi, "agent_end", {}, ctx);
-    await new Promise((resolve) => setTimeout(resolve, 35));
-    assert.equal(shutdownCount, 1);
-  } finally {
-    if (previousChildState === undefined) {
-      delete process.env.PI_SUBAGENT_CHILD_STATE;
-    } else {
-      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      await emitHandlers(fakePi, "agent_end", {}, ctx);
+      assert.equal(shutdownCount, 1);
+      assert.deepEqual(notifications, []);
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
     }
+  },
+);
+
+timedTest(
+  "child bootstrap manual terminal input activates idle timeout mode across idle transitions",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-timeout-mode-"));
+    const sessionPath = path.join(cwd, "child.jsonl");
+    let terminalInputHandler: ((data: string) => unknown) | undefined;
+    let shutdownCount = 0;
+
     await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId: "child-session-id",
+      sessionPath,
+      parentSessionId: "parent-session-id",
+      parentSessionPath: path.join(cwd, "parent.jsonl"),
+      name: "worker-one",
+      prompt: "Inspect failing tests",
+      autoExit: true,
+      autoExitTimeoutMs: 25,
+      handoff: false,
+      tools: ["read"],
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "child-session-id",
+        sessionFile: sessionPath,
+        captureTerminalInput: (handler) => {
+          terminalInputHandler = handler;
+        },
+        shutdown: () => {
+          shutdownCount += 1;
+        },
+      });
+
+      await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
+      terminalInputHandler?.("manual follow-up");
+      assert.equal(isAutoExitTimeoutModeActive("child-session-id"), true);
+
+      await emitHandlers(fakePi, "agent_end", {}, ctx);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(shutdownCount, 0);
+
+      await emitHandlers(fakePi, "before_agent_start", {}, ctx);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(shutdownCount, 0);
+
+      await emitHandlers(fakePi, "agent_end", {}, ctx);
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      assert.equal(shutdownCount, 1);
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("child bootstrap ignores parent-injected input for timeout mode activation", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
@@ -523,7 +619,9 @@ timedTest("child bootstrap ignores parent-injected input for timeout mode activa
 
   try {
     const fakePi = new FakePi();
-    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
     const ctx = createFakeContext({
       cwd,
       sessionId: "child-session-id",
@@ -537,7 +635,9 @@ timedTest("child bootstrap ignores parent-injected input for timeout mode activa
     });
 
     await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
-    await fs.mkdir(path.dirname(getParentInjectedInputMarkerPath("child-session-id")), { recursive: true });
+    await fs.mkdir(path.dirname(getParentInjectedInputMarkerPath("child-session-id")), {
+      recursive: true,
+    });
     await fs.writeFile(
       getParentInjectedInputMarkerPath("child-session-id"),
       JSON.stringify({ expiresAt: Date.now() + 1_500 }),
@@ -590,11 +690,15 @@ timedTest("subagent widget shows idle auto-exit countdown only while idle", () =
   assert.match(idleWidget.join("\n"), /auto-exit/);
   assert.match(idleWidget.join("\n"), /1m 30s|1m 29s/);
 
-  const runningWidget = renderSubagentWidget([{ ...widgetState, status: "running", autoExitDeadlineAt: undefined }]);
+  const runningWidget = renderSubagentWidget([
+    { ...widgetState, status: "running", autoExitDeadlineAt: undefined },
+  ]);
   assert.ok(runningWidget);
   assert.doesNotMatch(runningWidget.join("\n"), /auto-exit/);
 
-  const idleImmediateExitWidget = renderSubagentWidget([{ ...widgetState, autoExitTimeoutActive: false, autoExitDeadlineAt: undefined }]);
+  const idleImmediateExitWidget = renderSubagentWidget([
+    { ...widgetState, autoExitTimeoutActive: false, autoExitDeadlineAt: undefined },
+  ]);
   assert.ok(idleImmediateExitWidget);
   assert.doesNotMatch(idleImmediateExitWidget.join("\n"), /auto-exit/);
 });
@@ -605,11 +709,31 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
   const sessionId = "child-session-id";
   const idleAt = new Date().toISOString();
 
-  await fs.writeFile(sessionPath, [
-    JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: idleAt, cwd: dir }),
-    JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: idleAt, message: { role: "user", content: [{ type: "text", text: "Do work" }] } }),
-    JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: idleAt, message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Done" }] } }),
-  ].join("\n") + "\n", "utf8");
+  await fs.writeFile(
+    sessionPath,
+    [
+      JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: idleAt, cwd: dir }),
+      JSON.stringify({
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: idleAt,
+        message: { role: "user", content: [{ type: "text", text: "Do work" }] },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: idleAt,
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "Done" }],
+        },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
 
   try {
     const manager = new SubagentManager(
@@ -639,14 +763,20 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
       updatedAt: 2,
     };
 
-    const immediateExitState = await (manager as any).syncLiveState(baseState, "updated") as RuntimeSubagent;
+    const immediateExitState = (await (manager as any).syncLiveState(
+      baseState,
+      "updated",
+    )) as RuntimeSubagent;
     assert.equal(immediateExitState.status, "idle");
     assert.equal(immediateExitState.autoExitTimeoutActive, false);
     assert.equal(immediateExitState.autoExitDeadlineAt, undefined);
 
     activateAutoExitTimeoutMode(sessionId);
 
-    const delayedExitState = await (manager as any).syncLiveState(baseState, "updated") as RuntimeSubagent;
+    const delayedExitState = (await (manager as any).syncLiveState(
+      baseState,
+      "updated",
+    )) as RuntimeSubagent;
     assert.equal(delayedExitState.status, "idle");
     assert.equal(delayedExitState.autoExitTimeoutActive, true);
     assert.equal(delayedExitState.autoExitDeadlineAt, Date.parse(idleAt) + 90_000);
@@ -675,15 +805,31 @@ timedTest("TmuxAdapter creates a new tmux window when requested", async () => {
   });
 
   assert.equal(created.paneId, "%7");
-  assert.deepEqual(calls.map((call) => call.args), [
-    ["new-window", "-d", "-c", "/tmp/project", "-n", "worker-window", "-P", "-F", "#{pane_id}", "pi --session fake"],
-    ["select-pane", "-t", "%7", "-T", "worker-window"],
-  ]);
+  assert.deepEqual(
+    calls.map((call) => call.args),
+    [
+      [
+        "new-window",
+        "-d",
+        "-c",
+        "/tmp/project",
+        "-n",
+        "worker-window",
+        "-P",
+        "-F",
+        "#{pane_id}",
+        "pi --session fake",
+      ],
+      ["select-pane", "-t", "%7", "-T", "worker-window"],
+    ],
+  );
 });
 
 timedTest("subagent tool metadata explains tmux inspection and wait-for-summary flow", () => {
   const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
   const tool = fakePi.registeredTools.get("subagent");
   assert.ok(tool);
 
@@ -691,73 +837,129 @@ timedTest("subagent tool metadata explains tmux inspection and wait-for-summary 
   assert.match(tool.description, /wait for the automatic completion summary/i);
   assert.match(tool.promptSnippet ?? "", /no subagent read action/i);
   assert.match(tool.promptSnippet ?? "", /automatic completion summary/i);
-  assert.ok(tool.promptGuidelines?.some((guideline) => /tmux pane\/window output directly/i.test(guideline)));
-  assert.ok(tool.promptGuidelines?.some((guideline) => /do not poll with `list` just to get the final result/i.test(guideline)));
+  assert.ok(
+    tool.promptGuidelines?.some((guideline) =>
+      /tmux pane\/window output directly/i.test(guideline),
+    ),
+  );
+  assert.ok(
+    tool.promptGuidelines?.some((guideline) =>
+      /do not poll with `list` just to get the final result/i.test(guideline),
+    ),
+  );
 
-  const parameterDescriptions = (tool.parameters as { properties?: Record<string, { description?: string }> }).properties ?? {};
+  const parameterDescriptions =
+    (tool.parameters as { properties?: Record<string, { description?: string }> }).properties ?? {};
   assert.match(parameterDescriptions.action?.description ?? "", /no subagent read action/i);
   assert.match(parameterDescriptions.name?.description ?? "", /title shown immediately on launch/i);
-  assert.match(parameterDescriptions.task?.description ?? "", /inspect tmux pane\/window output directly/i);
+  assert.match(
+    parameterDescriptions.task?.description ?? "",
+    /inspect tmux pane\/window output directly/i,
+  );
   assert.match(parameterDescriptions.sessionId?.description ?? "", /UUID v4/i);
-  assert.match(parameterDescriptions.message?.description ?? "", /inspect the reply, read the tmux output directly/i);
+  assert.match(
+    parameterDescriptions.message?.description ?? "",
+    /inspect the reply, read the tmux output directly/i,
+  );
 });
 
-timedTest("subagent tool prompt guidelines include available modes xml and refresh on modes change", async () => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-modes-prompt-"));
-  const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+timedTest(
+  "subagent tool prompt guidelines include available modes xml and refresh on modes change",
+  async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-modes-prompt-"));
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
 
-  try {
-    await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-    await fs.writeFile(path.join(cwd, ".pi", "modes.json"), `${JSON.stringify({
-      version: 1,
-      modes: {
-        review: {
-          provider: "mode-provider",
-          modelId: "review-model",
-          thinkingLevel: "high",
-          description: "Review & verify",
-        },
-      },
-    }, null, 2)}\n`, "utf8");
+    try {
+      await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
+      await fs.writeFile(
+        path.join(cwd, ".pi", "modes.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            modes: {
+              review: {
+                provider: "mode-provider",
+                modelId: "review-model",
+                thinkingLevel: "high",
+                description: "Review & verify",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
 
-    const ctx = createFakeContext({ cwd, sessionId: "parent-session-id", sessionFile: path.join(cwd, "parent.jsonl") });
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "parent-session-id",
+        sessionFile: path.join(cwd, "parent.jsonl"),
+      });
 
-    await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
+      await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
 
-    const initialTool = fakePi.registeredTools.get("subagent");
-    assert.ok(initialTool);
-    assert.ok(initialTool.promptGuidelines?.some((guideline) => /Available subagent modes/i.test(guideline)));
-    assert.ok(initialTool.promptGuidelines?.some((guideline) => /<available_modes>/i.test(guideline)));
-    assert.ok(initialTool.promptGuidelines?.some((guideline) => /description="Review &amp; verify"/i.test(guideline)));
+      const initialTool = fakePi.registeredTools.get("subagent");
+      assert.ok(initialTool);
+      assert.ok(
+        initialTool.promptGuidelines?.some((guideline) =>
+          /Available subagent modes/i.test(guideline),
+        ),
+      );
+      assert.ok(
+        initialTool.promptGuidelines?.some((guideline) => /<available_modes>/i.test(guideline)),
+      );
+      assert.ok(
+        initialTool.promptGuidelines?.some((guideline) =>
+          /description="Review &amp; verify"/i.test(guideline),
+        ),
+      );
 
-    await fs.writeFile(path.join(cwd, ".pi", "modes.json"), `${JSON.stringify({
-      version: 1,
-      modes: {
-        review: {
-          provider: "mode-provider",
-          modelId: "review-model",
-          thinkingLevel: "high",
-          description: "Review & verify",
-        },
-        docs: {
-          provider: "mode-provider",
-          modelId: "docs-model",
-          thinkingLevel: "low",
-          description: "Fast <writing>",
-        },
-      },
-    }, null, 2)}\n`, "utf8");
+      await fs.writeFile(
+        path.join(cwd, ".pi", "modes.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            modes: {
+              review: {
+                provider: "mode-provider",
+                modelId: "review-model",
+                thinkingLevel: "high",
+                description: "Review & verify",
+              },
+              docs: {
+                provider: "mode-provider",
+                modelId: "docs-model",
+                thinkingLevel: "low",
+                description: "Fast <writing>",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
 
-    await emitEventBus(fakePi, "modes:changed", undefined);
+      await emitEventBus(fakePi, "modes:changed", undefined);
 
-    const updatedTool = fakePi.registeredTools.get("subagent");
-    assert.ok(updatedTool);
-    assert.ok(updatedTool.promptGuidelines?.some((guideline) => /<mode name="docs" model="mode-provider\/docs-model" thinkingLevel="low" description="Fast &lt;writing&gt;" \/>/i.test(guideline)));
-  } finally {
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
+      const updatedTool = fakePi.registeredTools.get("subagent");
+      assert.ok(updatedTool);
+      assert.ok(
+        updatedTool.promptGuidelines?.some((guideline) =>
+          /<mode name="docs" model="mode-provider\/docs-model" thinkingLevel="low" description="Fast &lt;writing&gt;" \/>/i.test(
+            guideline,
+          ),
+        ),
+      );
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("formatAvailableModesXml sorts unsorted modes deterministically", () => {
   const xml = formatAvailableModesXml([
@@ -795,199 +997,230 @@ timedTest("formatAvailableModesXml sorts unsorted modes deterministically", () =
   );
 });
 
-timedTest("subagent available modes prompt signature stays stable across input reordering", async () => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-modes-signature-"));
-  const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+timedTest(
+  "subagent available modes prompt signature stays stable across input reordering",
+  async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-modes-signature-"));
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
 
-  try {
-    await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-    await fs.writeFile(path.join(cwd, ".pi", "modes.json"), `${JSON.stringify({
-      version: 1,
-      modes: {
-        bravo: {
-          provider: "mode-provider",
-          modelId: "bravo-model",
-        },
-        alpha: {
-          provider: "mode-provider",
-          modelId: "alpha-model",
-        },
-      },
-    }, null, 2)}\n`, "utf8");
+    try {
+      await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
+      await fs.writeFile(
+        path.join(cwd, ".pi", "modes.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            modes: {
+              bravo: {
+                provider: "mode-provider",
+                modelId: "bravo-model",
+              },
+              alpha: {
+                provider: "mode-provider",
+                modelId: "alpha-model",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
 
-    const ctx = createFakeContext({ cwd, sessionId: "parent-session-id", sessionFile: path.join(cwd, "parent.jsonl") });
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "parent-session-id",
+        sessionFile: path.join(cwd, "parent.jsonl"),
+      });
 
-    await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
+      await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
 
-    const initialTool = fakePi.registeredTools.get("subagent");
-    assert.ok(initialTool);
-    const initialPrompt = initialTool.promptGuidelines?.join("\n\n") ?? "";
+      const initialTool = fakePi.registeredTools.get("subagent");
+      assert.ok(initialTool);
+      const initialPrompt = initialTool.promptGuidelines?.join("\n\n") ?? "";
 
-    await fs.writeFile(path.join(cwd, ".pi", "modes.json"), `${JSON.stringify({
-      version: 1,
-      modes: {
-        alpha: {
-          provider: "mode-provider",
-          modelId: "alpha-model",
-        },
-        bravo: {
-          provider: "mode-provider",
-          modelId: "bravo-model",
-        },
-      },
-    }, null, 2)}\n`, "utf8");
+      await fs.writeFile(
+        path.join(cwd, ".pi", "modes.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            modes: {
+              alpha: {
+                provider: "mode-provider",
+                modelId: "alpha-model",
+              },
+              bravo: {
+                provider: "mode-provider",
+                modelId: "bravo-model",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
 
-    await emitEventBus(fakePi, "modes:changed", undefined);
+      await emitEventBus(fakePi, "modes:changed", undefined);
 
-    const updatedTool = fakePi.registeredTools.get("subagent");
-    assert.ok(updatedTool);
-    const updatedPrompt = updatedTool.promptGuidelines?.join("\n\n") ?? "";
-    assert.equal(updatedPrompt, initialPrompt);
-  } finally {
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
+      const updatedTool = fakePi.registeredTools.get("subagent");
+      assert.ok(updatedTool);
+      const updatedPrompt = updatedTool.promptGuidelines?.join("\n\n") ?? "";
+      assert.equal(updatedPrompt, initialPrompt);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("reduceRuntimeSubagents keeps latest state for the current parent session", () => {
-  const states = reduceRuntimeSubagents([
-    {
-      type: "custom",
-      customType: SUBAGENT_STATE_ENTRY,
-      data: {
-        event: "started",
-        sessionId: "child-1",
-        sessionPath: "/tmp/child-1.jsonl",
-        parentSessionId: "parent-a",
-        parentSessionPath: "/tmp/parent-a.jsonl",
-        name: "worker-a",
-        mode: "worker",
-        cwd: "/tmp/project",
-        paneId: "%1",
-        task: "task a",
-        handoff: false,
-        autoExit: true,
-        status: "running",
-        startedAt: 1,
-        updatedAt: 1,
+  const states = reduceRuntimeSubagents(
+    [
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "started",
+          sessionId: "child-1",
+          sessionPath: "/tmp/child-1.jsonl",
+          parentSessionId: "parent-a",
+          parentSessionPath: "/tmp/parent-a.jsonl",
+          name: "worker-a",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%1",
+          task: "task a",
+          handoff: false,
+          autoExit: true,
+          status: "running",
+          startedAt: 1,
+          updatedAt: 1,
+        },
       },
-    },
-    {
-      type: "custom",
-      customType: SUBAGENT_STATE_ENTRY,
-      data: {
-        event: "completed",
-        sessionId: "child-1",
-        sessionPath: "/tmp/child-1.jsonl",
-        parentSessionId: "parent-a",
-        parentSessionPath: "/tmp/parent-a.jsonl",
-        name: "worker-a",
-        mode: "worker",
-        cwd: "/tmp/project",
-        paneId: "%1",
-        task: "task a",
-        handoff: false,
-        autoExit: true,
-        status: "completed",
-        startedAt: 1,
-        updatedAt: 2,
-        completedAt: 2,
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "completed",
+          sessionId: "child-1",
+          sessionPath: "/tmp/child-1.jsonl",
+          parentSessionId: "parent-a",
+          parentSessionPath: "/tmp/parent-a.jsonl",
+          name: "worker-a",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%1",
+          task: "task a",
+          handoff: false,
+          autoExit: true,
+          status: "completed",
+          startedAt: 1,
+          updatedAt: 2,
+          completedAt: 2,
+        },
       },
-    },
-    {
-      type: "custom",
-      customType: SUBAGENT_STATE_ENTRY,
-      data: {
-        event: "started",
-        sessionId: "child-2",
-        sessionPath: "/tmp/child-2.jsonl",
-        parentSessionId: "parent-b",
-        parentSessionPath: "/tmp/parent-b.jsonl",
-        name: "worker-b",
-        mode: "worker",
-        cwd: "/tmp/project",
-        paneId: "%2",
-        task: "task b",
-        handoff: false,
-        autoExit: true,
-        status: "running",
-        startedAt: 1,
-        updatedAt: 1,
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "started",
+          sessionId: "child-2",
+          sessionPath: "/tmp/child-2.jsonl",
+          parentSessionId: "parent-b",
+          parentSessionPath: "/tmp/parent-b.jsonl",
+          name: "worker-b",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%2",
+          task: "task b",
+          handoff: false,
+          autoExit: true,
+          status: "running",
+          startedAt: 1,
+          updatedAt: 1,
+        },
       },
-    },
-  ], "parent-a");
+    ],
+    "parent-a",
+  );
 
   assert.equal(states.size, 1);
   assert.equal(states.get("child-1")?.status, "completed");
 });
 
 timedTest("reduceRuntimeSubagents ignores malformed and unexpected state entries", () => {
-  const states = reduceRuntimeSubagents([
-    {
-      type: "custom",
-      customType: SUBAGENT_STATE_ENTRY,
-      data: {
-        event: "started",
-        sessionId: "child-invalid-status",
-        sessionPath: "/tmp/child-invalid-status.jsonl",
-        parentSessionId: "parent-a",
-        parentSessionPath: "/tmp/parent-a.jsonl",
-        name: "worker-a",
-        mode: "worker",
-        cwd: "/tmp/project",
-        paneId: "%1",
-        task: "task a",
-        handoff: false,
-        autoExit: true,
-        status: "unknown",
-        startedAt: 1,
-        updatedAt: 1,
+  const states = reduceRuntimeSubagents(
+    [
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "started",
+          sessionId: "child-invalid-status",
+          sessionPath: "/tmp/child-invalid-status.jsonl",
+          parentSessionId: "parent-a",
+          parentSessionPath: "/tmp/parent-a.jsonl",
+          name: "worker-a",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%1",
+          task: "task a",
+          handoff: false,
+          autoExit: true,
+          status: "unknown",
+          startedAt: 1,
+          updatedAt: 1,
+        },
       },
-    },
-    {
-      type: "custom",
-      customType: SUBAGENT_STATE_ENTRY,
-      data: {
-        event: "started",
-        sessionId: "child-extra-field",
-        sessionPath: "/tmp/child-extra-field.jsonl",
-        parentSessionId: "parent-a",
-        parentSessionPath: "/tmp/parent-a.jsonl",
-        name: "worker-b",
-        mode: "worker",
-        cwd: "/tmp/project",
-        paneId: "%2",
-        task: "task b",
-        handoff: false,
-        autoExit: true,
-        status: "running",
-        startedAt: 1,
-        updatedAt: 1,
-        unexpected: true,
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "started",
+          sessionId: "child-extra-field",
+          sessionPath: "/tmp/child-extra-field.jsonl",
+          parentSessionId: "parent-a",
+          parentSessionPath: "/tmp/parent-a.jsonl",
+          name: "worker-b",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%2",
+          task: "task b",
+          handoff: false,
+          autoExit: true,
+          status: "running",
+          startedAt: 1,
+          updatedAt: 1,
+          unexpected: true,
+        },
       },
-    },
-    {
-      type: "custom",
-      customType: SUBAGENT_STATE_ENTRY,
-      data: {
-        event: "started",
-        sessionId: "child-valid",
-        sessionPath: "/tmp/child-valid.jsonl",
-        parentSessionId: "parent-a",
-        parentSessionPath: "/tmp/parent-a.jsonl",
-        name: "worker-c",
-        mode: "worker",
-        cwd: "/tmp/project",
-        paneId: "%3",
-        task: "task c",
-        handoff: false,
-        autoExit: true,
-        status: "running",
-        startedAt: 1,
-        updatedAt: 1,
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "started",
+          sessionId: "child-valid",
+          sessionPath: "/tmp/child-valid.jsonl",
+          parentSessionId: "parent-a",
+          parentSessionPath: "/tmp/parent-a.jsonl",
+          name: "worker-c",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%3",
+          task: "task c",
+          handoff: false,
+          autoExit: true,
+          status: "running",
+          startedAt: 1,
+          updatedAt: 1,
+        },
       },
-    },
-  ], "parent-a");
+    ],
+    "parent-a",
+  );
 
   assert.equal(states.size, 1);
   assert.deepEqual(Array.from(states.keys()), ["child-valid"]);
@@ -1022,10 +1255,30 @@ timedTest("createChildSessionFile bootstraps a persisted child session header", 
 timedTest("readChildSessionOutcome extracts the last assistant summary", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-outcome-"));
   const sessionPath = path.join(dir, "child.jsonl");
-  await fs.writeFile(sessionPath, [
-    JSON.stringify({ type: "session", version: 3, id: "child", timestamp: new Date().toISOString(), cwd: dir }),
-    JSON.stringify({ type: "message", id: "a", parentId: null, timestamp: new Date().toISOString(), message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Finished successfully" }] } }),
-  ].join("\n") + "\n", "utf8");
+  await fs.writeFile(
+    sessionPath,
+    [
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "child",
+        timestamp: new Date().toISOString(),
+        cwd: dir,
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "a",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "Finished successfully" }],
+        },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
 
   try {
     const outcome = await readChildSessionOutcome(sessionPath);
@@ -1042,16 +1295,46 @@ timedTest("readChildSessionStatus distinguishes running and idle child sessions"
   const runningPath = path.join(dir, "running.jsonl");
   const timestamp = new Date().toISOString();
 
-  await fs.writeFile(idlePath, [
-    JSON.stringify({ type: "session", version: 3, id: "idle", timestamp, cwd: dir }),
-    JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp, message: { role: "user", content: [{ type: "text", text: "Do work" }] } }),
-    JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp, message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Done" }] } }),
-  ].join("\n") + "\n", "utf8");
+  await fs.writeFile(
+    idlePath,
+    [
+      JSON.stringify({ type: "session", version: 3, id: "idle", timestamp, cwd: dir }),
+      JSON.stringify({
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp,
+        message: { role: "user", content: [{ type: "text", text: "Do work" }] },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp,
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "Done" }],
+        },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
 
-  await fs.writeFile(runningPath, [
-    JSON.stringify({ type: "session", version: 3, id: "running", timestamp, cwd: dir }),
-    JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp, message: { role: "user", content: [{ type: "text", text: "Still working" }] } }),
-  ].join("\n") + "\n", "utf8");
+  await fs.writeFile(
+    runningPath,
+    [
+      JSON.stringify({ type: "session", version: 3, id: "running", timestamp, cwd: dir }),
+      JSON.stringify({
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp,
+        message: { role: "user", content: [{ type: "text", text: "Still working" }] },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
 
   try {
     assert.equal(await readChildSessionStatus(idlePath), "idle");
@@ -1063,7 +1346,9 @@ timedTest("readChildSessionStatus distinguishes running and idle child sessions"
 
 timedTest("subagent tool renders compact collapsed success and expanded metadata", () => {
   const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
   const tool = fakePi.registeredTools.get("subagent");
   assert.ok(tool);
 
@@ -1088,30 +1373,53 @@ timedTest("subagent tool renders compact collapsed success and expanded metadata
     updatedAt: 2,
   };
 
-  const collapsed = renderToolText(tool, {
-    action: "start",
-    name: state.name,
-    mode: state.mode,
-    task: state.task,
-  }, {
-    content: [{ type: "text", text: "ok" }],
-    details: { action: "start", args: { action: "start", name: state.name, mode: state.mode, task: state.task }, prompt: state.task, state },
-    isError: false,
-  }, false);
-  const expanded = renderToolText(tool, {
-    action: "start",
-    name: state.name,
-    mode: state.mode,
-    task: state.task,
-  }, {
-    content: [{ type: "text", text: "ok" }],
-    details: { action: "start", args: { action: "start", name: state.name, mode: state.mode, task: state.task }, prompt: state.task, state },
-    isError: false,
-  }, true);
+  const collapsed = renderToolText(
+    tool,
+    {
+      action: "start",
+      name: state.name,
+      mode: state.mode,
+      task: state.task,
+    },
+    {
+      content: [{ type: "text", text: "ok" }],
+      details: {
+        action: "start",
+        args: { action: "start", name: state.name, mode: state.mode, task: state.task },
+        prompt: state.task,
+        state,
+      },
+      isError: false,
+    },
+    false,
+  );
+  const expanded = renderToolText(
+    tool,
+    {
+      action: "start",
+      name: state.name,
+      mode: state.mode,
+      task: state.task,
+    },
+    {
+      content: [{ type: "text", text: "ok" }],
+      details: {
+        action: "start",
+        args: { action: "start", name: state.name, mode: state.mode, task: state.task },
+        prompt: state.task,
+        state,
+      },
+      isError: false,
+    },
+    true,
+  );
 
   const collapsedLines = collapsed.split("\n").filter((line) => line.trim().length > 0);
   assert.equal(collapsedLines.length, 1);
-  assert.match(collapsed, /π start · worker-one · reviewer · Continue the review Inspect failing tests · worker-one · idle/);
+  assert.match(
+    collapsed,
+    /π start · worker-one · reviewer · Continue the review Inspect failing tests · worker-one · idle/,
+  );
   assert.doesNotMatch(collapsed, /sessionPath:/);
   assert.doesNotMatch(collapsed, /paneId:/);
   assert.doesNotMatch(collapsed, /prompt:/);
@@ -1134,7 +1442,9 @@ timedTest("subagent tool renders compact collapsed success and expanded metadata
 
 timedTest("subagent tool renders collapsed list summary counts and cancel status", () => {
   const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
   const tool = fakePi.registeredTools.get("subagent");
   assert.ok(tool);
 
@@ -1151,46 +1461,51 @@ timedTest("subagent tool renders collapsed list summary counts and cancel status
     updatedAt: 2,
   };
 
-  const listCollapsed = renderToolText(tool, {
-    action: "list",
-  }, {
-    content: [{ type: "text", text: "ok" }],
-    details: {
+  const listCollapsed = renderToolText(
+    tool,
+    {
       action: "list",
-      args: { action: "list" },
-      subagents: [
-        {
-          ...baseState,
-          sessionId: "running-1",
-          sessionPath: "/tmp/running-1.jsonl",
-          name: "worker-one",
-          paneId: "%1",
-          task: "Task one",
-          status: "running",
-        },
-        {
-          ...baseState,
-          sessionId: "idle-1",
-          sessionPath: "/tmp/idle-1.jsonl",
-          name: "worker-two",
-          paneId: "%2",
-          task: "Task two",
-          status: "idle",
-        },
-        {
-          ...baseState,
-          sessionId: "completed-1",
-          sessionPath: "/tmp/completed-1.jsonl",
-          name: "worker-three",
-          paneId: "%3",
-          task: "Task three",
-          status: "completed",
-          completedAt: 3,
-        },
-      ],
     },
-    isError: false,
-  }, false);
+    {
+      content: [{ type: "text", text: "ok" }],
+      details: {
+        action: "list",
+        args: { action: "list" },
+        subagents: [
+          {
+            ...baseState,
+            sessionId: "running-1",
+            sessionPath: "/tmp/running-1.jsonl",
+            name: "worker-one",
+            paneId: "%1",
+            task: "Task one",
+            status: "running",
+          },
+          {
+            ...baseState,
+            sessionId: "idle-1",
+            sessionPath: "/tmp/idle-1.jsonl",
+            name: "worker-two",
+            paneId: "%2",
+            task: "Task two",
+            status: "idle",
+          },
+          {
+            ...baseState,
+            sessionId: "completed-1",
+            sessionPath: "/tmp/completed-1.jsonl",
+            name: "worker-three",
+            paneId: "%3",
+            task: "Task three",
+            status: "completed",
+            completedAt: 3,
+          },
+        ],
+      },
+      isError: false,
+    },
+    false,
+  );
 
   assert.match(listCollapsed, /π list · 3 agents · 1 running · 1 idle · 1 completed/);
   assert.doesNotMatch(listCollapsed, /cancelled/);
@@ -1208,18 +1523,23 @@ timedTest("subagent tool renders collapsed list summary counts and cancel status
     completedAt: 4,
   };
 
-  const cancelCollapsed = renderToolText(tool, {
-    action: "cancel",
-    sessionId: cancelledState.sessionId,
-  }, {
-    content: [{ type: "text", text: "ok" }],
-    details: {
+  const cancelCollapsed = renderToolText(
+    tool,
+    {
       action: "cancel",
-      args: { action: "cancel", sessionId: cancelledState.sessionId },
-      state: cancelledState,
+      sessionId: cancelledState.sessionId,
     },
-    isError: false,
-  }, false);
+    {
+      content: [{ type: "text", text: "ok" }],
+      details: {
+        action: "cancel",
+        args: { action: "cancel", sessionId: cancelledState.sessionId },
+        state: cancelledState,
+      },
+      isError: false,
+    },
+    false,
+  );
 
   assert.match(cancelCollapsed, /π cancel · cancelle · worker-stop · cancelled/);
 });
@@ -1252,12 +1572,18 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
     );
 
     assert.equal((started.details as { prompt: string }).prompt, startTask);
-    assert.match((started.content[0]?.text ?? ""), /will return with a summary automatically when it finishes/i);
-    assert.match((started.content[0]?.text ?? ""), /Use subagent message only to steer the work/i);
+    assert.match(
+      started.content[0]?.text ?? "",
+      /will return with a summary automatically when it finishes/i,
+    );
+    assert.match(started.content[0]?.text ?? "", /Use subagent message only to steer the work/i);
     const startedDetails = started.details as { prompt: string; state: RuntimeSubagent };
-    assert.match((started.content[0]?.text ?? ""), new RegExp(`sessionId: ${startedDetails.state.sessionId}`));
+    assert.match(
+      started.content[0]?.text ?? "",
+      new RegExp(`sessionId: ${startedDetails.state.sessionId}`),
+    );
     assert.equal(startedDetails.state.task, startTask);
-    assert.match((started.content[0]?.text ?? ""), /subagent cancel to stop it/i);
+    assert.match(started.content[0]?.text ?? "", /subagent cancel to stop it/i);
 
     const listed = await tool.execute(
       "tool-call-list",
@@ -1266,13 +1592,20 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
       undefined,
       ctx,
     );
-    assert.match((listed.content[0]?.text ?? ""), /count: 1/);
-    assert.match((listed.content[0]?.text ?? ""), new RegExp(`sessionId: ${startedDetails.state.sessionId}`));
+    assert.match(listed.content[0]?.text ?? "", /count: 1/);
+    assert.match(
+      listed.content[0]?.text ?? "",
+      new RegExp(`sessionId: ${startedDetails.state.sessionId}`),
+    );
 
     const expanded = renderToolText(
       tool,
       { action: "start", name: "worker-one", mode: "worker", task: startTask },
-      { content: started.content as Array<{ type: "text"; text: string }>, details: started.details, isError: false },
+      {
+        content: started.content as Array<{ type: "text"; text: string }>,
+        details: started.details,
+        isError: false,
+      },
       true,
     );
 
@@ -1291,314 +1624,426 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
 
 timedTest("subagent tool surfaces invalid params with actionable guidance", async () => {
   const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
   const tool = fakePi.registeredTools.get("subagent");
   assert.ok(tool);
 
   await assert.rejects(
-    () => tool.execute(
-      "tool-call-invalid-start",
-      { action: "start", name: "worker-one" },
-      undefined,
-      undefined,
-      createFakeContext({ cwd: process.cwd() }),
-    ),
+    () =>
+      tool.execute(
+        "tool-call-invalid-start",
+        { action: "start", name: "worker-one" },
+        undefined,
+        undefined,
+        createFakeContext({ cwd: process.cwd() }),
+      ),
     /Invalid subagent start params: `task` is required.*There is no subagent read action later/i,
   );
 
   await assert.rejects(
-    () => tool.execute(
-      "tool-call-invalid-message",
-      { action: "message", sessionId: "child-1" },
-      undefined,
-      undefined,
-      createFakeContext({ cwd: process.cwd() }),
-    ),
+    () =>
+      tool.execute(
+        "tool-call-invalid-message",
+        { action: "message", sessionId: "child-1" },
+        undefined,
+        undefined,
+        createFakeContext({ cwd: process.cwd() }),
+      ),
     /Invalid subagent message params: `message` is required/i,
   );
 });
 
-timedTest("SubagentManager start, resume, message, cancel, and restore cover the lifecycle", async () => {
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-dir-"));
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-cwd-"));
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+timedTest(
+  "SubagentManager start, resume, message, cancel, and restore cover the lifecycle",
+  async () => {
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-dir-"));
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-cwd-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
 
-  const fakePi = new FakePi();
-  const fakeMux = new FakeMuxAdapter();
-  const launched: Array<{ state: RuntimeSubagent; childState: unknown; prompt: string; options: unknown }> = [];
-  const manager = new SubagentManager(
-    fakePi as unknown as ExtensionAPI,
-    fakeMux,
-    (state, childState, prompt, options) => {
-      launched.push({ state, childState, prompt, options });
-      return "pi --session fake";
-    },
-  );
-
-  try {
-    await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-    await fs.writeFile(path.join(cwd, ".pi", "modes.json"), `${JSON.stringify({
-      version: 1,
-      modes: {
-        reviewer: {
-          provider: "mode-provider",
-          modelId: "review-model",
-          tools: ["read"],
-          autoExit: true,
-          tmuxTarget: "window",
-          systemPrompt: "Review only",
-        },
-      },
-    }, null, 2)}\n`, "utf8");
-
-    const ctx = createFakeContext({
-      cwd,
-      sessionFile: path.join(cwd, "parent.jsonl"),
-    });
-
-    const started = await manager.start({
-      name: "worker-one",
-      task: "Inspect the failing tests",
-      mode: "reviewer",
-    }, ctx);
-    assert.equal(started.state.status, "running");
-    assert.equal(fakeMux.created.length, 1);
-    assert.equal(fakeMux.created[0]?.target, "window");
-    assert.equal(launched.length, 1);
-    const launch = launched[0]!;
-    assert.equal(launch.prompt, "Inspect the failing tests");
-    assert.equal(fakeMux.sent.length, 0);
-    assert.deepEqual((launch.childState as { tools: string[] }).tools, ["read"]);
-    assert.equal((launch.childState as { prompt: string }).prompt, "Inspect the failing tests");
-    assert.equal((launch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs, 30_000);
-    assert.deepEqual(launch.options, {
-      launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
-      tmuxTarget: "window",
-      mode: "reviewer",
-      model: "mode-provider/review-model",
-      thinkingLevel: undefined,
-      systemPrompt: "Review only",
-      systemPromptMode: "append",
-    });
-    assert.equal(fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_STATE_ENTRY).length, 1);
-    const persistedStartedState = fakePi.appendedEntries.find((entry) => entry.customType === SUBAGENT_STATE_ENTRY)?.data as Record<string, unknown> | undefined;
-    assert.ok(persistedStartedState);
-    assert.equal("modeLabel" in persistedStartedState, false);
-    assert.equal(manager.list().length, 1);
-
-    const delivered = await manager.message({
-      sessionId: started.state.sessionId,
-      message: "Focus on src/extensions first",
-      delivery: "steer",
-    }, ctx);
-    assert.equal(delivered.state.status, "running");
-    assert.equal(delivered.autoResumed, false);
-    assert.equal(fakeMux.sent.length, 1);
-    assert.equal(fakeMux.sent[0]?.submitMode, "steer");
-    assert.equal(fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY).length, 2);
-    const parentInputMarker = JSON.parse(await fs.readFile(getParentInjectedInputMarkerPath(started.state.sessionId), "utf8")) as { expiresAt: number };
-    assert.ok(parentInputMarker.expiresAt > Date.now());
-
-    const cancelled = await manager.cancel({ sessionId: started.state.sessionId });
-    assert.equal(cancelled.status, "cancelled");
-    assert.equal(fakeMux.killed.length, 1);
-    assert.equal(manager.list().length, 1);
-    assert.equal(manager.list()[0]?.status, "cancelled");
-    assert.equal(fakePi.sentMessages.length, 1);
-
-    const resumed = await manager.resume({
-      sessionId: started.state.sessionId,
-      task: "Address the review feedback",
-      mode: "reviewer",
-    }, ctx);
-    assert.equal(resumed.state.status, "running");
-    assert.equal(resumed.state.sessionId, started.state.sessionId);
-    assert.equal(resumed.state.paneId, "%2");
-    assert.equal(fakeMux.created.length, 2);
-    assert.equal(fakeMux.created[1]?.target, "window");
-    assert.equal(launched.length, 2);
-    assert.equal(launched[1]?.prompt, "Address the review feedback");
-    assert.equal((launched[1]?.childState as { prompt: string }).prompt, "Address the review feedback");
-    assert.equal((launched[1]?.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs, 30_000);
-    assert.deepEqual(launched[1]?.options, {
-      launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
-      tmuxTarget: "window",
-      mode: "reviewer",
-      model: "mode-provider/review-model",
-      thinkingLevel: undefined,
-      systemPrompt: "Review only",
-      systemPromptMode: "append",
-    });
-    fakeMux.existingPanes.delete(resumed.state.paneId);
-
-    const deliveredAfterAutoResume = await manager.message({
-      sessionId: started.state.sessionId,
-      message: "Continue with the highest priority review item",
-      delivery: "followUp",
-    }, ctx);
-    assert.equal(deliveredAfterAutoResume.autoResumed, true);
-    assert.equal(deliveredAfterAutoResume.resumePrompt, "Address the review feedback");
-    assert.equal(deliveredAfterAutoResume.state.status, "running");
-    assert.equal(deliveredAfterAutoResume.state.paneId, "%3");
-    assert.equal(fakeMux.created.length, 3);
-    assert.equal(fakeMux.sent.length, 2);
-    assert.equal(fakeMux.sent[1]?.paneId, "%3");
-    assert.equal(fakeMux.sent[1]?.submitMode, "followUp");
-    assert.equal(launched.length, 3);
-    assert.equal(launched[2]?.prompt, "Address the review feedback");
-    assert.equal(fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY).length, 4);
-
-    const restoredSessionId = "restored-child";
-    const childSessionDir = getDefaultSessionDir(cwd);
-    const childSessionPath = path.join(childSessionDir, `${new Date().toISOString().replace(/[:.]/g, "-")}_${restoredSessionId}.jsonl`);
-    await fs.mkdir(path.dirname(childSessionPath), { recursive: true });
-    await fs.writeFile(childSessionPath, [
-      JSON.stringify({ type: "session", version: 3, id: restoredSessionId, timestamp: new Date().toISOString(), cwd }),
-      JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: new Date().toISOString(), message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Restored completion summary" }] } }),
-    ].join("\n") + "\n", "utf8");
-
-    const restoreCtx = createFakeContext({
-      cwd,
-      sessionId: "parent-session-id",
-      sessionFile: path.join(cwd, "parent.jsonl"),
-      entries: [{
-        type: "custom",
-        customType: SUBAGENT_STATE_ENTRY,
-        data: {
-          event: "started",
-          sessionId: restoredSessionId,
-          sessionPath: childSessionPath,
-          parentSessionId: "parent-session-id",
-          parentSessionPath: path.join(cwd, "parent.jsonl"),
-          name: "worker-restore",
-          mode: "worker",
-          cwd,
-          paneId: "%999",
-          task: "restore me",
-          handoff: false,
-          autoExit: true,
-          status: "running",
-          startedAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      }],
-    });
-
-    await manager.restore(restoreCtx);
-    assert.equal(manager.list().find((state) => state.sessionId === restoredSessionId)?.status, "completed");
-    const completedStates = fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_STATE_ENTRY) as Array<{ customType: string; data: RuntimeSubagent }>;
-    assert.equal(completedStates.at(-1)?.data.status, "completed");
-    assert.equal(fakePi.sentMessages.length, 2);
-    assert.deepEqual(fakePi.sentMessages[1]?.options, { deliverAs: "steer", triggerTurn: true });
-  } finally {
-    manager.dispose();
-    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await fs.rm(agentDir, { recursive: true, force: true });
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
-
-timedTest("subagent tool execute auto-resumes dead child sessions before delivering a message", async () => {
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-message-dir-"));
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-message-cwd-"));
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-
-  const fakePi = new FakePi();
-  const fakeMux = new FakeMuxAdapter();
-  createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
-  const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
-
-  try {
-    const ctx = createFakeContext({
-      cwd,
-      sessionFile: path.join(cwd, "parent.jsonl"),
-    });
-
-    const started = await tool.execute(
-      "tool-call-start-for-message",
-      { action: "start", name: "worker-one", task: "Inspect the failing tests" },
-      undefined,
-      undefined,
-      ctx,
-    );
-    const startedState = (started.details as { state: RuntimeSubagent }).state;
-    fakeMux.existingPanes.delete(startedState.paneId);
-
-    const messaged = await tool.execute(
-      "tool-call-message-dead-child",
-      { action: "message", sessionId: startedState.sessionId, message: "Focus on the root cause", delivery: "followUp" },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    assert.match((messaged.content[0]?.text ?? ""), /sessionId: /);
-    assert.match((messaged.content[0]?.text ?? ""), /Previous task resumed and followUp message delivered/i);
-    const details = messaged.details as {
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    const launched: Array<{
       state: RuntimeSubagent;
-      autoResumed?: boolean;
-      resumePrompt?: string;
-      delivery: string;
-      message: string;
-    };
-    assert.equal(details.autoResumed, true);
-    assert.equal(details.resumePrompt, "Inspect the failing tests");
-    assert.equal(details.state.status, "running");
-    assert.equal(fakeMux.created.length, 2);
-    assert.equal(fakeMux.sent.length, 1);
-    assert.equal(fakeMux.sent[0]?.paneId, details.state.paneId);
-    assert.equal(fakeMux.sent[0]?.submitMode, "followUp");
+      childState: unknown;
+      prompt: string;
+      options: unknown;
+    }> = [];
+    const manager = new SubagentManager(
+      fakePi as unknown as ExtensionAPI,
+      fakeMux,
+      (state, childState, prompt, options) => {
+        launched.push({ state, childState, prompt, options });
+        return "pi --session fake";
+      },
+    );
 
-    const collapsed = renderToolText(tool, {
-      action: "message",
-      sessionId: startedState.sessionId,
-      message: "Focus on the root cause",
-      delivery: "followUp",
-    }, {
-      content: messaged.content as Array<{ type: "text"; text: string }>,
-      details: messaged.details,
-      isError: false,
-    }, false);
-    const expanded = renderToolText(tool, {
-      action: "message",
-      sessionId: startedState.sessionId,
-      message: "Focus on the root cause",
-      delivery: "followUp",
-    }, {
-      content: messaged.content as Array<{ type: "text"; text: string }>,
-      details: messaged.details,
-      isError: false,
-    }, true);
+    try {
+      await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
+      await fs.writeFile(
+        path.join(cwd, ".pi", "modes.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            modes: {
+              reviewer: {
+                provider: "mode-provider",
+                modelId: "review-model",
+                tools: ["read"],
+                autoExit: true,
+                tmuxTarget: "window",
+                systemPrompt: "Review only",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
 
-    assert.match(collapsed, /worker-one · running · resumed · followUp · Focus on the root cause/);
-    assert.match(expanded, /autoResumed: true/);
-    assert.match(expanded, /resumePrompt:[\s\S]*Inspect the failing tests/);
-    assert.match(expanded, /delivery: followUp/);
-    assert.match(expanded, /message:/);
-  } finally {
-    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-    await fs.rm(agentDir, { recursive: true, force: true });
-    await fs.rm(cwd, { recursive: true, force: true });
-  }
-});
+      const ctx = createFakeContext({
+        cwd,
+        sessionFile: path.join(cwd, "parent.jsonl"),
+      });
+
+      const started = await manager.start(
+        {
+          name: "worker-one",
+          task: "Inspect the failing tests",
+          mode: "reviewer",
+        },
+        ctx,
+      );
+      assert.equal(started.state.status, "running");
+      assert.equal(fakeMux.created.length, 1);
+      assert.equal(fakeMux.created[0]?.target, "window");
+      assert.equal(launched.length, 1);
+      const launch = launched[0]!;
+      assert.equal(launch.prompt, "Inspect the failing tests");
+      assert.equal(fakeMux.sent.length, 0);
+      assert.deepEqual((launch.childState as { tools: string[] }).tools, ["read"]);
+      assert.equal((launch.childState as { prompt: string }).prompt, "Inspect the failing tests");
+      assert.equal((launch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs, 30_000);
+      assert.deepEqual(launch.options, {
+        launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
+        tmuxTarget: "window",
+        mode: "reviewer",
+        model: "mode-provider/review-model",
+        thinkingLevel: undefined,
+        systemPrompt: "Review only",
+        systemPromptMode: "append",
+      });
+      assert.equal(
+        fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_STATE_ENTRY).length,
+        1,
+      );
+      const persistedStartedState = fakePi.appendedEntries.find(
+        (entry) => entry.customType === SUBAGENT_STATE_ENTRY,
+      )?.data as Record<string, unknown> | undefined;
+      assert.ok(persistedStartedState);
+      assert.equal("modeLabel" in persistedStartedState, false);
+      assert.equal(manager.list().length, 1);
+
+      const delivered = await manager.message(
+        {
+          sessionId: started.state.sessionId,
+          message: "Focus on src/extensions first",
+          delivery: "steer",
+        },
+        ctx,
+      );
+      assert.equal(delivered.state.status, "running");
+      assert.equal(delivered.autoResumed, false);
+      assert.equal(fakeMux.sent.length, 1);
+      assert.equal(fakeMux.sent[0]?.submitMode, "steer");
+      assert.equal(
+        fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY)
+          .length,
+        2,
+      );
+      const parentInputMarker = JSON.parse(
+        await fs.readFile(getParentInjectedInputMarkerPath(started.state.sessionId), "utf8"),
+      ) as { expiresAt: number };
+      assert.ok(parentInputMarker.expiresAt > Date.now());
+
+      const cancelled = await manager.cancel({ sessionId: started.state.sessionId });
+      assert.equal(cancelled.status, "cancelled");
+      assert.equal(fakeMux.killed.length, 1);
+      assert.equal(manager.list().length, 1);
+      assert.equal(manager.list()[0]?.status, "cancelled");
+      assert.equal(fakePi.sentMessages.length, 1);
+
+      const resumed = await manager.resume(
+        {
+          sessionId: started.state.sessionId,
+          task: "Address the review feedback",
+          mode: "reviewer",
+        },
+        ctx,
+      );
+      assert.equal(resumed.state.status, "running");
+      assert.equal(resumed.state.sessionId, started.state.sessionId);
+      assert.equal(resumed.state.paneId, "%2");
+      assert.equal(fakeMux.created.length, 2);
+      assert.equal(fakeMux.created[1]?.target, "window");
+      assert.equal(launched.length, 2);
+      const resumedLaunch = launched[1];
+      assert.ok(resumedLaunch);
+      assert.equal(resumedLaunch.prompt, "Address the review feedback");
+      assert.equal(
+        (resumedLaunch.childState as { prompt: string }).prompt,
+        "Address the review feedback",
+      );
+      assert.equal(
+        (resumedLaunch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs,
+        30_000,
+      );
+      assert.deepEqual(resumedLaunch.options, {
+        launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
+        tmuxTarget: "window",
+        mode: "reviewer",
+        model: "mode-provider/review-model",
+        thinkingLevel: undefined,
+        systemPrompt: "Review only",
+        systemPromptMode: "append",
+      });
+      fakeMux.existingPanes.delete(resumed.state.paneId);
+
+      const deliveredAfterAutoResume = await manager.message(
+        {
+          sessionId: started.state.sessionId,
+          message: "Continue with the highest priority review item",
+          delivery: "followUp",
+        },
+        ctx,
+      );
+      assert.equal(deliveredAfterAutoResume.autoResumed, true);
+      assert.equal(deliveredAfterAutoResume.resumePrompt, "Address the review feedback");
+      assert.equal(deliveredAfterAutoResume.state.status, "running");
+      assert.equal(deliveredAfterAutoResume.state.paneId, "%3");
+      assert.equal(fakeMux.created.length, 3);
+      assert.equal(fakeMux.sent.length, 2);
+      assert.equal(fakeMux.sent[1]?.paneId, "%3");
+      assert.equal(fakeMux.sent[1]?.submitMode, "followUp");
+      assert.equal(launched.length, 3);
+      assert.equal(launched[2]?.prompt, "Address the review feedback");
+      assert.equal(
+        fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY)
+          .length,
+        4,
+      );
+
+      const restoredSessionId = "restored-child";
+      const childSessionDir = getDefaultSessionDir(cwd);
+      const childSessionPath = path.join(
+        childSessionDir,
+        `${new Date().toISOString().replace(/[:.]/g, "-")}_${restoredSessionId}.jsonl`,
+      );
+      await fs.mkdir(path.dirname(childSessionPath), { recursive: true });
+      await fs.writeFile(
+        childSessionPath,
+        [
+          JSON.stringify({
+            type: "session",
+            version: 3,
+            id: restoredSessionId,
+            timestamp: new Date().toISOString(),
+            cwd,
+          }),
+          JSON.stringify({
+            type: "message",
+            id: "m1",
+            parentId: null,
+            timestamp: new Date().toISOString(),
+            message: {
+              role: "assistant",
+              stopReason: "stop",
+              content: [{ type: "text", text: "Restored completion summary" }],
+            },
+          }),
+        ].join("\n") + "\n",
+        "utf8",
+      );
+
+      const restoreCtx = createFakeContext({
+        cwd,
+        sessionId: "parent-session-id",
+        sessionFile: path.join(cwd, "parent.jsonl"),
+        entries: [
+          {
+            type: "custom",
+            customType: SUBAGENT_STATE_ENTRY,
+            data: {
+              event: "started",
+              sessionId: restoredSessionId,
+              sessionPath: childSessionPath,
+              parentSessionId: "parent-session-id",
+              parentSessionPath: path.join(cwd, "parent.jsonl"),
+              name: "worker-restore",
+              mode: "worker",
+              cwd,
+              paneId: "%999",
+              task: "restore me",
+              handoff: false,
+              autoExit: true,
+              status: "running",
+              startedAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+          },
+        ],
+      });
+
+      await manager.restore(restoreCtx);
+      assert.equal(
+        manager.list().find((state) => state.sessionId === restoredSessionId)?.status,
+        "completed",
+      );
+      const completedStates = fakePi.appendedEntries.filter(
+        (entry) => entry.customType === SUBAGENT_STATE_ENTRY,
+      ) as Array<{ customType: string; data: RuntimeSubagent }>;
+      assert.equal(completedStates.at(-1)?.data.status, "completed");
+      assert.equal(fakePi.sentMessages.length, 2);
+      assert.deepEqual(fakePi.sentMessages[1]?.options, { deliverAs: "steer", triggerTurn: true });
+    } finally {
+      manager.dispose();
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      await fs.rm(agentDir, { recursive: true, force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest(
+  "subagent tool execute auto-resumes dead child sessions before delivering a message",
+  async () => {
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-message-dir-"));
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-message-cwd-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
+    const tool = fakePi.registeredTools.get("subagent");
+    assert.ok(tool);
+
+    try {
+      const ctx = createFakeContext({
+        cwd,
+        sessionFile: path.join(cwd, "parent.jsonl"),
+      });
+
+      const started = await tool.execute(
+        "tool-call-start-for-message",
+        { action: "start", name: "worker-one", task: "Inspect the failing tests" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const startedState = (started.details as { state: RuntimeSubagent }).state;
+      fakeMux.existingPanes.delete(startedState.paneId);
+
+      const messaged = await tool.execute(
+        "tool-call-message-dead-child",
+        {
+          action: "message",
+          sessionId: startedState.sessionId,
+          message: "Focus on the root cause",
+          delivery: "followUp",
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      assert.match(messaged.content[0]?.text ?? "", /sessionId: /);
+      assert.match(
+        messaged.content[0]?.text ?? "",
+        /Previous task resumed and followUp message delivered/i,
+      );
+      const details = messaged.details as {
+        state: RuntimeSubagent;
+        autoResumed?: boolean;
+        resumePrompt?: string;
+        delivery: string;
+        message: string;
+      };
+      assert.equal(details.autoResumed, true);
+      assert.equal(details.resumePrompt, "Inspect the failing tests");
+      assert.equal(details.state.status, "running");
+      assert.equal(fakeMux.created.length, 2);
+      assert.equal(fakeMux.sent.length, 1);
+      assert.equal(fakeMux.sent[0]?.paneId, details.state.paneId);
+      assert.equal(fakeMux.sent[0]?.submitMode, "followUp");
+
+      const collapsed = renderToolText(
+        tool,
+        {
+          action: "message",
+          sessionId: startedState.sessionId,
+          message: "Focus on the root cause",
+          delivery: "followUp",
+        },
+        {
+          content: messaged.content as Array<{ type: "text"; text: string }>,
+          details: messaged.details,
+          isError: false,
+        },
+        false,
+      );
+      const expanded = renderToolText(
+        tool,
+        {
+          action: "message",
+          sessionId: startedState.sessionId,
+          message: "Focus on the root cause",
+          delivery: "followUp",
+        },
+        {
+          content: messaged.content as Array<{ type: "text"; text: string }>,
+          details: messaged.details,
+          isError: false,
+        },
+        true,
+      );
+
+      assert.match(
+        collapsed,
+        /worker-one · running · resumed · followUp · Focus on the root cause/,
+      );
+      assert.match(expanded, /autoResumed: true/);
+      assert.match(expanded, /resumePrompt:[\s\S]*Inspect the failing tests/);
+      assert.match(expanded, /delivery: followUp/);
+      assert.match(expanded, /message:/);
+    } finally {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      await fs.rm(agentDir, { recursive: true, force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("subagent tool execute reports unknown message sessions clearly", async () => {
   const fakePi = new FakePi();
-  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(fakePi as unknown as ExtensionAPI);
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
   const tool = fakePi.registeredTools.get("subagent");
   assert.ok(tool);
 
   await assert.rejects(
-    () => tool.execute(
-      "tool-call-message-unknown-session",
-      { action: "message", sessionId: "missing-child", message: "Ping", delivery: "steer" },
-      undefined,
-      undefined,
-      createFakeContext({ cwd: process.cwd() }),
-    ),
+    () =>
+      tool.execute(
+        "tool-call-message-unknown-session",
+        { action: "message", sessionId: "missing-child", message: "Ping", delivery: "steer" },
+        undefined,
+        undefined,
+        createFakeContext({ cwd: process.cwd() }),
+      ),
     /subagent message failed: sessionId missing-child was not found in this parent session\. Use subagent list or a prior result to get the full UUID v4 sessionId\./i,
   );
 });

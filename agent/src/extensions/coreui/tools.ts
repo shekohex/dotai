@@ -82,7 +82,7 @@ type BashOutputSummary = {
   renderedText: string;
 };
 
-type BashRenderState = NonNullable<BashCallContext['state']> & {
+type BashRenderState = NonNullable<BashCallContext["state"]> & {
   callComponent?: Text;
   callText?: string;
 };
@@ -109,22 +109,34 @@ export function registerCoreUIToolOverrides(pi: ExtensionAPI): (activeToolNames:
   return (activeToolNames: string[]) => {
     const activeTools = new Set(activeToolNames);
 
-    if (activeTools.has(readToolDefinition.name) && !registeredToolNames.has(readToolDefinition.name)) {
+    if (
+      activeTools.has(readToolDefinition.name) &&
+      !registeredToolNames.has(readToolDefinition.name)
+    ) {
       registerReadToolOverride(pi);
       registeredToolNames.add(readToolDefinition.name);
     }
 
-    if (activeTools.has(bashToolDefinition.name) && !registeredToolNames.has(bashToolDefinition.name)) {
+    if (
+      activeTools.has(bashToolDefinition.name) &&
+      !registeredToolNames.has(bashToolDefinition.name)
+    ) {
       registerBashToolOverride(pi);
       registeredToolNames.add(bashToolDefinition.name);
     }
 
-    if (activeTools.has(editToolDefinition.name) && !registeredToolNames.has(editToolDefinition.name)) {
+    if (
+      activeTools.has(editToolDefinition.name) &&
+      !registeredToolNames.has(editToolDefinition.name)
+    ) {
       registerEditToolOverride(pi);
       registeredToolNames.add(editToolDefinition.name);
     }
 
-    if (activeTools.has(writeToolDefinition.name) && !registeredToolNames.has(writeToolDefinition.name)) {
+    if (
+      activeTools.has(writeToolDefinition.name) &&
+      !registeredToolNames.has(writeToolDefinition.name)
+    ) {
       registerWriteToolOverride(pi);
       registeredToolNames.add(writeToolDefinition.name);
     }
@@ -170,7 +182,12 @@ export function createReadToolOverrideDefinition() {
         formatReadRangeSuffix(theme, args.offset, args.limit),
       );
     },
-    renderResult(result: ReadResult, options: ToolRenderResultOptions, theme: ToolTheme, context: ReadResultContext) {
+    renderResult(
+      result: ReadResult,
+      options: ToolRenderResultOptions,
+      theme: ToolTheme,
+      context: ReadResultContext,
+    ) {
       const textContent = getTextContent(result);
 
       if (context.isError) {
@@ -181,7 +198,10 @@ export function createReadToolOverrideDefinition() {
       }
 
       if (options.isPartial) {
-        return createTextComponent(context.lastComponent, theme.fg("dim", summarizeReadResult(result, true)));
+        return createTextComponent(
+          context.lastComponent,
+          theme.fg("dim", summarizeReadResult(result, true)),
+        );
       }
 
       if (!options.expanded) {
@@ -199,13 +219,20 @@ export function createReadToolOverrideDefinition() {
 
 export const bashToolParams = Type.Object({
   command: Type.String({ description: "Bash command to execute" }),
-  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+  timeout: Type.Optional(
+    Type.Number({ description: "Timeout in seconds (optional, no default timeout)" }),
+  ),
   description: Type.String({
-    description: "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
-  })
+    description:
+      "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+  }),
 });
 
-export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashToolParams, BashToolDetails | undefined, BashRenderState> {
+export function createBashToolOverrideDefinition(): ToolDefinition<
+  typeof bashToolParams,
+  BashToolDetails | undefined,
+  BashRenderState
+> {
   const { prepareArguments: _prepareArguments, ...rest } = bashToolDefinition;
   return {
     ...rest,
@@ -218,7 +245,12 @@ export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashTo
         return setBashCallComponent(
           state,
           context.lastComponent,
-          renderExpandedBashCall(metadata.command, theme, context, formatBashCallSuffix(theme, context, metadata)),
+          renderExpandedBashCall(
+            metadata.command,
+            theme,
+            context,
+            formatBashCallSuffix(theme, context, metadata),
+          ),
         );
       }
 
@@ -228,7 +260,12 @@ export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashTo
         `${formatBashStatus(theme, context)} ${theme.fg("text", metadata.label)}${formatBashCallSuffix(theme, context, metadata)}`,
       );
     },
-    renderResult(result: BashResult, options: BashResultOptions, theme: ToolTheme, context: BashResultContext) {
+    renderResult(
+      result: BashResult,
+      options: BashResultOptions,
+      theme: ToolTheme,
+      context: BashResultContext,
+    ) {
       const state = syncBashRenderState(context, options.isPartial);
       const elapsedMs = getBashElapsed(state);
 
@@ -240,10 +277,18 @@ export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashTo
 
       if (context.isError) {
         if (options.expanded) {
-          return renderExpandedBashResult(output, theme, context, summarizeBashFooter(result, theme, context.isError));
+          return renderExpandedBashResult(
+            output,
+            theme,
+            context,
+            summarizeBashFooter(result, theme, context.isError),
+          );
         }
 
-        applyCollapsedBashSummaryToCall(state, summarizeBashResult(result, theme, context.isError, elapsedMs));
+        applyCollapsedBashSummaryToCall(
+          state,
+          summarizeBashResult(result, theme, context.isError, elapsedMs),
+        );
         return createTextComponent(context.lastComponent, "");
       }
 
@@ -251,7 +296,10 @@ export function createBashToolOverrideDefinition(): ToolDefinition<typeof bashTo
         return renderExpandedBashResult(output, theme, context, formatElapsedFooter(elapsedMs));
       }
 
-      applyCollapsedBashSummaryToCall(state, summarizeBashResult(result, theme, context.isError, elapsedMs));
+      applyCollapsedBashSummaryToCall(
+        state,
+        summarizeBashResult(result, theme, context.isError, elapsedMs),
+      );
       return createTextComponent(context.lastComponent, "");
     },
   };
@@ -268,7 +316,12 @@ export function createEditToolOverrideDefinition() {
         context,
       );
     },
-    renderResult(result: EditResult, options: EditResultOptions, theme: ToolTheme, context: EditResultContext) {
+    renderResult(
+      result: EditResult,
+      options: EditResultOptions,
+      theme: ToolTheme,
+      context: EditResultContext,
+    ) {
       const textContent = getTextContent(result);
 
       if (context.isError) {
@@ -282,7 +335,12 @@ export function createEditToolOverrideDefinition() {
         const diff = getDiffText(result.details);
         const stats = getDiffStats(diff);
         return renderStreamingPreview(
-          renderEditStreamingContent(diff, getTextContent(result), theme, readPathArg(context.args)),
+          renderEditStreamingContent(
+            diff,
+            getTextContent(result),
+            theme,
+            readPathArg(context.args),
+          ),
           theme,
           context.lastComponent,
           {
@@ -295,12 +353,18 @@ export function createEditToolOverrideDefinition() {
       if (!options.expanded) {
         const diff = getDiffText(result.details);
         const stats = getDiffStats(diff);
-        return createTextComponent(context.lastComponent, formatCollapsedEditSummary(theme, context, readPathArg(context.args), stats));
+        return createTextComponent(
+          context.lastComponent,
+          formatCollapsedEditSummary(theme, context, readPathArg(context.args), stats),
+        );
       }
 
       const diff = getDiffText(result.details);
       if (diff) {
-        return createTextComponent(context.lastComponent, `\n${renderDiff(diff, { filePath: readPathArg(context.args) || undefined })}`);
+        return createTextComponent(
+          context.lastComponent,
+          `\n${renderDiff(diff, { filePath: readPathArg(context.args) || undefined })}`,
+        );
       }
 
       if (editToolDefinition.renderResult) {
@@ -368,7 +432,14 @@ function renderStatusPathToolCall(
   detail = "",
 ): Text {
   const pathDisplay = getToolPathDisplay(rawPath, context.cwd);
-  return renderStatusLine(verbs, pathDisplay.basename, detail, theme, context, pathDisplay.dirSuffix);
+  return renderStatusLine(
+    verbs,
+    pathDisplay.basename,
+    detail,
+    theme,
+    context,
+    pathDisplay.dirSuffix,
+  );
 }
 
 function renderStatusLine(
@@ -400,17 +471,21 @@ function delegateReadResult(
     });
   }
 
-  return new Text(`\n${theme.fg("toolOutput", fallbackText)}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  return new Text(
+    `\n${theme.fg("toolOutput", fallbackText)}`,
+    TOOL_TEXT_PADDING_X,
+    TOOL_TEXT_PADDING_Y,
+  );
 }
 
 export function createTextComponent(lastComponent: unknown, text: string): Text {
-  const component = lastComponent instanceof Text
-    ? lastComponent
-    : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+  const component =
+    lastComponent instanceof Text
+      ? lastComponent
+      : new Text("", TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
   component.setText(text);
   return component;
 }
-
 
 export function renderStreamingPreview(
   renderedText: string,
@@ -432,7 +507,9 @@ export function renderStreamingPreview(
   const blocks: string[] = [];
 
   if (earlierCount > 0) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`);
+    blocks.push(
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`,
+    );
   }
 
   if (visibleLines.length > 0) {
@@ -446,11 +523,16 @@ export function renderStreamingPreview(
   return createTextComponent(lastComponent, blocks.join("\n"));
 }
 
-export function renderToolError(message: string, theme: CoreUIToolTheme, lastComponent: unknown): Text {
-  return createTextComponent(lastComponent, message ? theme.fg("error", `↳ ${message.trim()}`) : "");
+export function renderToolError(
+  message: string,
+  theme: CoreUIToolTheme,
+  lastComponent: unknown,
+): Text {
+  return createTextComponent(
+    lastComponent,
+    message ? theme.fg("error", `↳ ${message.trim()}`) : "",
+  );
 }
-
-
 
 function getToolPhase(context: Pick<BaseRenderContext, "isPartial" | "isError">): ToolPhase {
   if (context.isError) {
@@ -511,10 +593,21 @@ function summarizeReadResult(result: ToolResult, partial: boolean): string {
   return partial ? `${lineSummary} so far` : lineSummary;
 }
 
-function summarizeBashResult(result: ToolResult, theme: ToolTheme, isError?: boolean, elapsedMs?: number): string {
+function summarizeBashResult(
+  result: ToolResult,
+  theme: ToolTheme,
+  isError?: boolean,
+  elapsedMs?: number,
+): string {
   const output = getTextContent(result);
   const summary = summarizeBashOutput(output, theme);
-  return formatCollapsedBashResultSummary(theme, summary.lineCount, summary.exitCode, isError, elapsedMs);
+  return formatCollapsedBashResultSummary(
+    theme,
+    summary.lineCount,
+    summary.exitCode,
+    isError,
+    elapsedMs,
+  );
 }
 
 function summarizeBashFooter(result: ToolResult, theme: ToolTheme, isError?: boolean): string {
@@ -541,9 +634,10 @@ function summarizeBashOutput(output: string, theme: ToolTheme): BashOutputSummar
   const bodyLines = lines.filter(
     (line) => line.trim().length > 0 && line !== exitLine && !line.trimStart().startsWith("> "),
   );
-  const visibleLines = bodyLines.length > 0
-    ? bodyLines
-    : lines.filter((line) => line.trim().length > 0 && line !== exitLine);
+  const visibleLines =
+    bodyLines.length > 0
+      ? bodyLines
+      : lines.filter((line) => line.trim().length > 0 && line !== exitLine);
   return {
     lineCount: visibleLines.length,
     exitCode,
@@ -633,7 +727,9 @@ function readContentArg(args: ToolPathArgs): string {
 }
 
 function summarizeTextLineCount(text: string): string {
-  return summarizeLineCount(text.split("\n").filter((line) => line.length > 0 || text.includes("\n")).length || 1);
+  return summarizeLineCount(
+    text.split("\n").filter((line) => line.length > 0 || text.includes("\n")).length || 1,
+  );
 }
 
 export function summarizeLineCount(lineCount: number): string {
@@ -841,15 +937,10 @@ function renderPartialBashResult(
 ): Text {
   const output = getTextContent(result);
   const summary = summarizeBashOutput(output, theme);
-  return renderStreamingPreview(
-    summary.renderedText,
-    theme,
-    context.lastComponent,
-    {
-      expanded: options.expanded,
-      footer: formatPartialBashFooter(summary.lineCount, elapsedMs),
-    },
-  );
+  return renderStreamingPreview(summary.renderedText, theme, context.lastComponent, {
+    expanded: options.expanded,
+    footer: formatPartialBashFooter(summary.lineCount, elapsedMs),
+  });
 }
 
 function renderExpandedBashResult(
@@ -859,17 +950,13 @@ function renderExpandedBashResult(
   footer?: string,
 ): Text {
   const summary = summarizeBashOutput(output, theme);
-  const renderedText = summary.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT);
+  const renderedText =
+    summary.renderedText || styleToolOutput(output, theme, BASH_OUTPUT_LINE_LIMIT);
 
-  return renderStreamingPreview(
-    renderedText,
-    theme,
-    context.lastComponent,
-    {
-      expanded: true,
-      footer,
-    },
-  );
+  return renderStreamingPreview(renderedText, theme, context.lastComponent, {
+    expanded: true,
+    footer,
+  });
 }
 
 function formatPartialBashFooter(lineCount: number, elapsedMs?: number): string {
@@ -945,7 +1032,12 @@ function getDiffStats(diff: string): DiffStats | undefined {
   return summarizeDiff(diff);
 }
 
-function renderEditStreamingContent(diff: string, output: string, theme: ToolTheme, filePath: string): string {
+function renderEditStreamingContent(
+  diff: string,
+  output: string,
+  theme: ToolTheme,
+  filePath: string,
+): string {
   if (diff) {
     return renderDiff(diff, { filePath: filePath || undefined });
   }
@@ -953,7 +1045,11 @@ function renderEditStreamingContent(diff: string, output: string, theme: ToolThe
   return styleToolOutput(output, theme);
 }
 
-function formatEditStreamingFooter(theme: ToolTheme, stats: DiffStats | undefined, args: ToolPathArgs): string {
+function formatEditStreamingFooter(
+  theme: ToolTheme,
+  stats: DiffStats | undefined,
+  args: ToolPathArgs,
+): string {
   if (!stats) {
     return summarizeEditProgress(args);
   }

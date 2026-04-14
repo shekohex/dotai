@@ -20,9 +20,13 @@ const notify = (title: string, body: string): void => {
 };
 
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
-  Boolean(part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part);
+  Boolean(
+    part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part,
+  );
 
-const extractLastAssistantText = (messages: Array<{ role?: string; content?: unknown }>): string | null => {
+const extractLastAssistantText = (
+  messages: Array<{ role?: string; content?: unknown }>,
+): string | null => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message?.role !== "assistant") {
@@ -35,7 +39,11 @@ const extractLastAssistantText = (messages: Array<{ role?: string; content?: unk
     }
 
     if (Array.isArray(content)) {
-      const text = content.filter(isTextPart).map((part) => part.text).join("\n").trim();
+      const text = content
+        .filter(isTextPart)
+        .map((part) => part.text)
+        .join("\n")
+        .trim();
       return text || null;
     }
 

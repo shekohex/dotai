@@ -31,20 +31,16 @@ export function createProjectInfoRefresher(
     state.cwd = cwd;
     state.refreshedAt = now;
 
-    const [remoteResult, gitDirResult, statusResult, diffResult] =
-      await Promise.all([
-        execGit(pi, ctx, cwd, ["remote", "get-url", "origin"]),
-        execGit(pi, ctx, cwd, ["rev-parse", "--git-dir"]),
-        execGit(pi, ctx, cwd, ["status", "--porcelain", "--branch"]),
-        execGit(pi, ctx, cwd, ["diff", "--shortstat", "HEAD"]),
-      ]);
+    const [remoteResult, gitDirResult, statusResult, diffResult] = await Promise.all([
+      execGit(pi, ctx, cwd, ["remote", "get-url", "origin"]),
+      execGit(pi, ctx, cwd, ["rev-parse", "--git-dir"]),
+      execGit(pi, ctx, cwd, ["status", "--porcelain", "--branch"]),
+      execGit(pi, ctx, cwd, ["diff", "--shortstat", "HEAD"]),
+    ]);
 
-    state.repoSlug =
-      remoteResult.code === 0 ? parseRepoSlug(remoteResult.stdout) : undefined;
+    state.repoSlug = remoteResult.code === 0 ? parseRepoSlug(remoteResult.stdout) : undefined;
     state.worktreeName =
-      gitDirResult.code === 0
-        ? parseWorktreeName(gitDirResult.stdout)
-        : undefined;
+      gitDirResult.code === 0 ? parseWorktreeName(gitDirResult.stdout) : undefined;
 
     applyBranchStatus(state, statusResult);
     applyDiffStat(state, diffResult);

@@ -1,7 +1,4 @@
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ModeChangedEvent } from "../modes.js";
 import { registerOpenUsageCommands } from "./commands.js";
 import { resolveSupportedProviderId } from "./model-map.js";
@@ -21,7 +18,10 @@ import {
 } from "./types.js";
 import { usageProviders } from "./providers/index.js";
 
-function getMetricLabels(snapshot: UsageSnapshot | undefined, providerId: SupportedProviderId): {
+function getMetricLabels(
+  snapshot: UsageSnapshot | undefined,
+  providerId: SupportedProviderId,
+): {
   session: string;
   weekly: string;
 } {
@@ -36,15 +36,20 @@ async function resolveAndRefreshProvider(
   modelId: string | undefined,
   ctx: ExtensionContext,
   state: ReturnType<typeof createRuntimeState>,
-  refreshFn: (providerId: SupportedProviderId, ctx: ExtensionContext, options: { force?: boolean }) => Promise<void>,
+  refreshFn: (
+    providerId: SupportedProviderId,
+    ctx: ExtensionContext,
+    options: { force?: boolean },
+  ) => Promise<void>,
   publishFn: (ctx: ExtensionContext, snapshot: UsageSnapshot | undefined, active: boolean) => void,
+  options: { force?: boolean } = {},
 ): Promise<void> {
   const providerId = resolveSupportedProviderId(provider, modelId);
   if (!providerId) {
     publishFn(ctx, undefined, true);
     return;
   }
-  await refreshFn(providerId, ctx, { force: false });
+  await refreshFn(providerId, ctx, options);
 }
 
 export default function openUsageExtension(pi: ExtensionAPI) {
@@ -90,6 +95,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
         state,
         refreshProvider,
         publishUsageUpdate,
+        { force: false },
       );
       publishUsageForProvider(
         ctx,
@@ -129,6 +135,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
         state,
         refreshProvider,
         publishUsageUpdate,
+        options,
       );
     } catch {
       return;
@@ -136,10 +143,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
   }
 
   function publishCurrentModelUsage(ctx: ExtensionContext): void {
-    publishUsageForProvider(
-      ctx,
-      resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id),
-    );
+    publishUsageForProvider(ctx, resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id));
   }
 
   function publishUsageForProvider(
@@ -179,15 +183,8 @@ export default function openUsageExtension(pi: ExtensionAPI) {
     }
 
     const cached = state.snapshots.get(providerId);
-    if (
-      !options.force &&
-      cached &&
-      Date.now() - cached.fetchedAt < OPENUSAGE_CACHE_TTL_MS
-    ) {
-      if (
-        providerId ===
-        resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id)
-      ) {
+    if (!options.force && cached && Date.now() - cached.fetchedAt < OPENUSAGE_CACHE_TTL_MS) {
+      if (providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id)) {
         publishUsageUpdate(ctx, cached, true);
         emitThresholdAlerts(cached);
       } else {
@@ -201,8 +198,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
       try {
         const snapshot = await currentInFlight;
         const isActive =
-          providerId ===
-          resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
+          providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
         publishUsageUpdate(ctx, snapshot, isActive);
         if (isActive) {
           emitThresholdAlerts(snapshot);
@@ -220,8 +216,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
       const snapshot = await task;
       state.snapshots.set(providerId, snapshot);
       const isActive =
-        providerId ===
-        resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
+        providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
       publishUsageUpdate(ctx, snapshot, isActive);
       if (isActive) {
         emitThresholdAlerts(snapshot);
@@ -254,9 +249,7 @@ export default function openUsageExtension(pi: ExtensionAPI) {
     error: unknown,
   ): void {
     const cached = state.snapshots.get(providerId);
-    const isActive =
-      providerId ===
-      resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
+    const isActive = providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
 
     if (cached) {
       publishUsageUpdate(ctx, cached, isActive);
@@ -341,7 +334,8 @@ export default function openUsageExtension(pi: ExtensionAPI) {
 }
 
 function formatAlertMessage(alert: OpenUsageAlertEvent): string {
-  const metricLabel = alert.snapshot.metricLabels?.[alert.metric] ?? (alert.metric === "weekly" ? "weekly" : "5h");
+  const metricLabel =
+    alert.snapshot.metricLabels?.[alert.metric] ?? (alert.metric === "weekly" ? "weekly" : "5h");
   const remaining = formatPercent(alert.remainingPercent);
   const threshold = formatPercent(alert.thresholdPercent);
   return `OpenUsage ${alert.displayName}: ${metricLabel} remaining ${remaining} (≤ ${threshold})`;

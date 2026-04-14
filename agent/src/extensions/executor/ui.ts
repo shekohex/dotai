@@ -31,7 +31,8 @@ class ExecutorView implements Component {
     this.container.addChild(new DynamicBorder((s) => this.theme.fg("accent", s)));
     this.container.addChild(
       new Text(
-        this.theme.fg("accent", this.theme.bold(this.data.title)) + this.theme.fg("dim", "  (Esc/q/Enter to close)"),
+        this.theme.fg("accent", this.theme.bold(this.data.title)) +
+          this.theme.fg("dim", "  (Esc/q/Enter to close)"),
         1,
         0,
       ),
@@ -93,7 +94,10 @@ class ExecutorView implements Component {
   }
 }
 
-function buildRuntimeLines(ctx: ExtensionCommandContext, attempts?: ExecutorConnectionAttempt[]): ExecutorViewLine[] {
+function buildRuntimeLines(
+  ctx: ExtensionCommandContext,
+  attempts?: ExecutorConnectionAttempt[],
+): ExecutorViewLine[] {
   const state = getExecutorState(ctx.cwd);
   const settings = getExecutorSettings();
   const lines: ExecutorViewLine[] = [{ kind: "heading", text: "Runtime" }];
@@ -200,13 +204,18 @@ function renderPlainText(title: string, lines: ExecutorViewLine[]): string {
   return rendered.join("\n");
 }
 
-async function showExecutorView(ctx: ExtensionCommandContext, data: ExecutorViewData): Promise<void> {
+async function showExecutorView(
+  ctx: ExtensionCommandContext,
+  data: ExecutorViewData,
+): Promise<void> {
   if (!ctx.hasUI) {
     ctx.ui.notify(renderPlainText(data.title, data.lines), "info");
     return;
   }
 
-  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => new ExecutorView(tui, theme, data, done));
+  await ctx.ui.custom<void>(
+    (tui, theme, _keybindings, done) => new ExecutorView(tui, theme, data, done),
+  );
 }
 
 export async function showExecutorStatusView(

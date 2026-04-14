@@ -26,11 +26,17 @@ export const codexUsageProvider: UsageProvider = {
 
     if (response.status === 401 && credential.refreshToken && credential.source === "cliproxy") {
       const refreshed = await refreshCodexToken(ctx, credential.refreshToken);
-      response = await fetchUsage(ctx, refreshed.accessToken, refreshed.accountId ?? credential.accountId);
+      response = await fetchUsage(
+        ctx,
+        refreshed.accessToken,
+        refreshed.accountId ?? credential.accountId,
+      );
     }
 
     if (response.status === 401) {
-      throw new Error("Codex auth unavailable. Login with /login openai-codex or choose a cliproxy account.");
+      throw new Error(
+        "Codex auth unavailable. Login with /login openai-codex or choose a cliproxy account.",
+      );
     }
 
     if (!response.ok) {
@@ -118,7 +124,9 @@ async function resolveCodexCredential(
   throw new Error("Codex auth unavailable. Login with /login openai-codex or configure cliproxy.");
 }
 
-async function resolveHostCodexCredential(ctx: ExtensionContext): Promise<CodexCredential | undefined> {
+async function resolveHostCodexCredential(
+  ctx: ExtensionContext,
+): Promise<CodexCredential | undefined> {
   const cred = ctx.modelRegistry.authStorage.get("openai-codex");
   const apiKey = await ctx.modelRegistry.authStorage.getApiKey("openai-codex", {
     includeFallback: true,
@@ -129,7 +137,9 @@ async function resolveHostCodexCredential(ctx: ExtensionContext): Promise<CodexC
   }
 
   const oauthAccountId =
-    cred && cred.type === "oauth" ? readString((cred as Record<string, unknown>).accountId) : undefined;
+    cred && cred.type === "oauth"
+      ? readString((cred as Record<string, unknown>).accountId)
+      : undefined;
   const accountId = oauthAccountId ?? extractAccountId(apiKey);
   if (!accountId) {
     throw new Error("Failed to resolve Codex account id from host auth.");
@@ -172,7 +182,9 @@ async function resolveCliproxyCodexCredential(
     (accessToken ? extractAccountId(accessToken) : undefined);
 
   if (!accessToken || !accountId) {
-    throw new Error(`cliproxy Codex auth file '${account.file.name}' is missing access_token/account_id`);
+    throw new Error(
+      `cliproxy Codex auth file '${account.file.name}' is missing access_token/account_id`,
+    );
   }
 
   return {
@@ -263,7 +275,10 @@ function extractAccountId(token: string): string | undefined {
       return undefined;
     }
 
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<string, unknown>;
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
     const chatgpt = asRecord(payload["https://api.openai.com/auth"]);
     const accountId = readString(chatgpt?.chatgpt_account_id);
     return accountId ?? undefined;
@@ -288,6 +303,7 @@ function readString(value: unknown): string | undefined {
 }
 
 function readNumber(value: unknown): number | undefined {
-  const numberValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  const numberValue =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }

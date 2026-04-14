@@ -19,11 +19,20 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify("Compaction extension triggered", "info");
 
     const { preparation, branchEntries: _, signal } = event;
-    const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
+    const {
+      messagesToSummarize,
+      turnPrefixMessages,
+      tokensBefore,
+      firstKeptEntryId,
+      previousSummary,
+    } = preparation;
 
     const model = ctx.modelRegistry.find(COMPACTION_PROVIDER, COMPACTION_MODEL);
     if (!model) {
-      ctx.ui.notify(`Could not find ${COMPACTION_PROVIDER}/${COMPACTION_MODEL} model, using default compaction`, "warning");
+      ctx.ui.notify(
+        `Could not find ${COMPACTION_PROVIDER}/${COMPACTION_MODEL} model, using default compaction`,
+        "warning",
+      );
       return;
     }
 
@@ -51,7 +60,9 @@ export default function (pi: ExtensionAPI) {
     const conversationText = serializeConversation(convertToLlm(allMessages));
 
     // Include previous summary context if available
-    const previousContext = previousSummary ? `\n\nPrevious session summary for context:\n${previousSummary}` : "";
+    const previousContext = previousSummary
+      ? `\n\nPrevious session summary for context:\n${previousSummary}`
+      : "";
 
     // Build messages that ask for a comprehensive summary
     const summaryMessages = [
@@ -99,7 +110,8 @@ export default function (pi: ExtensionAPI) {
         .join("\n");
 
       if (!summary.trim()) {
-        if (!signal.aborted) ctx.ui.notify("Compaction summary was empty, using default compaction", "warning");
+        if (!signal.aborted)
+          ctx.ui.notify("Compaction summary was empty, using default compaction", "warning");
         return;
       }
 

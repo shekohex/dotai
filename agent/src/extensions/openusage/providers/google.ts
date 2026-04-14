@@ -2,18 +2,24 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import {
-  downloadCliproxyAuthFile,
-  resolveCliproxySelectedAccount,
-} from "../cliproxy.js";
+import { downloadCliproxyAuthFile, resolveCliproxySelectedAccount } from "../cliproxy.js";
 import type { OpenUsageRuntimeState, UsageProvider, UsageSnapshot } from "../types.js";
 
 const SETTINGS_PATH = path.join(homedir(), ".gemini", "settings.json");
 const CREDS_PATH = path.join(homedir(), ".gemini", "oauth_creds.json");
 const OAUTH2_JS_PATHS = [
-  path.join(homedir(), ".bun/install/global/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"),
-  path.join(homedir(), ".npm-global/lib/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"),
-  path.join(homedir(), ".nvm/versions/node/current/lib/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"),
+  path.join(
+    homedir(),
+    ".bun/install/global/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js",
+  ),
+  path.join(
+    homedir(),
+    ".npm-global/lib/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js",
+  ),
+  path.join(
+    homedir(),
+    ".nvm/versions/node/current/lib/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js",
+  ),
   "/opt/homebrew/opt/gemini-cli/libexec/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js",
   "/usr/local/opt/gemini-cli/libexec/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js",
 ] as const;
@@ -23,7 +29,6 @@ const QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQu
 const PROJECTS_URL = "https://cloudresourcemanager.googleapis.com/v1/projects";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const IDE_METADATA = {
   ideType: "IDE_UNSPECIFIED",
   platform: "PLATFORM_UNSPECIFIED",
@@ -70,56 +75,61 @@ async function fetchSnapshotWithCredential(
   ctx: ExtensionContext,
   credential: GoogleCredential,
 ): Promise<UsageSnapshot> {
-    const idTokenPayload = decodeJwtPayload(credential.idToken);
-    const loadCodeAssistResult = await fetchLoadCodeAssist(ctx, credential);
-    const loadCodeAssistData = asRecord(loadCodeAssistResult.data);
-    const tier = readFirstStringDeep(loadCodeAssistData, ["tier", "userTier", "subscriptionTier"]);
-    const plan = mapTierToPlan(tier, idTokenPayload);
-    const projectId = await discoverProjectId(ctx, loadCodeAssistResult.accessToken, loadCodeAssistData);
-    const quotaResponse = await fetchQuota(ctx, credential, projectId);
-    const quotaData = (await quotaResponse.json()) as unknown;
-    const buckets = collectQuotaBuckets(quotaData);
-    const proBucket = pickLowestRemainingBucket(filterBuckets(buckets, "pro"));
-    const flashBucket = pickLowestRemainingBucket(filterBuckets(buckets, "flash"));
-    const sourceSummary = credential.source === "cliproxy" ? "cliproxy account" : "host auth";
+  const idTokenPayload = decodeJwtPayload(credential.idToken);
+  const loadCodeAssistResult = await fetchLoadCodeAssist(ctx, credential);
+  const loadCodeAssistData = asRecord(loadCodeAssistResult.data);
+  const tier = readFirstStringDeep(loadCodeAssistData, ["tier", "userTier", "subscriptionTier"]);
+  const plan = mapTierToPlan(tier, idTokenPayload);
+  const projectId = await discoverProjectId(
+    ctx,
+    loadCodeAssistResult.accessToken,
+    loadCodeAssistData,
+  );
+  const quotaResponse = await fetchQuota(ctx, credential, projectId);
+  const quotaData = (await quotaResponse.json()) as unknown;
+  const buckets = collectQuotaBuckets(quotaData);
+  const proBucket = pickLowestRemainingBucket(filterBuckets(buckets, "pro"));
+  const flashBucket = pickLowestRemainingBucket(filterBuckets(buckets, "flash"));
+  const sourceSummary = credential.source === "cliproxy" ? "cliproxy account" : "host auth";
 
-    const snapshot: UsageSnapshot = {
-      providerId: "google",
-      displayName: "Google",
-      plan,
-      source: credential.source,
-      accountLabel: credential.accountLabel ?? extractAccountLabel(idTokenPayload, loadCodeAssistData),
-      metricLabels: {
-        session5h: "Pro 24h",
-        weekly: "Flash 24h",
-      },
-      metricShortLabels: {
-        session5h: "pro",
-        weekly: "flash",
-      },
-      fetchedAt: Date.now(),
-      summary: joinSummary(sourceSummary, buildSummary(proBucket, flashBucket)),
+  const snapshot: UsageSnapshot = {
+    providerId: "google",
+    displayName: "Google",
+    plan,
+    source: credential.source,
+    accountLabel:
+      credential.accountLabel ?? extractAccountLabel(idTokenPayload, loadCodeAssistData),
+    metricLabels: {
+      session5h: "Pro 24h",
+      weekly: "Flash 24h",
+    },
+    metricShortLabels: {
+      session5h: "pro",
+      weekly: "flash",
+    },
+    fetchedAt: Date.now(),
+    summary: joinSummary(sourceSummary, buildSummary(proBucket, flashBucket)),
+  };
+
+  if (proBucket) {
+    snapshot.session5h = {
+      used: clampPercent((1 - clampFraction(proBucket.remainingFraction)) * 100),
+      limit: 100,
+      resetsAt: toIso(proBucket.resetTime),
+      periodDurationMs: TWENTY_FOUR_HOURS_MS,
     };
+  }
 
-    if (proBucket) {
-      snapshot.session5h = {
-        used: clampPercent((1 - clampFraction(proBucket.remainingFraction)) * 100),
-        limit: 100,
-        resetsAt: toIso(proBucket.resetTime),
-        periodDurationMs: TWENTY_FOUR_HOURS_MS,
-      };
-    }
+  if (flashBucket) {
+    snapshot.weekly = {
+      used: clampPercent((1 - clampFraction(flashBucket.remainingFraction)) * 100),
+      limit: 100,
+      resetsAt: toIso(flashBucket.resetTime),
+      periodDurationMs: TWENTY_FOUR_HOURS_MS,
+    };
+  }
 
-    if (flashBucket) {
-      snapshot.weekly = {
-        used: clampPercent((1 - clampFraction(flashBucket.remainingFraction)) * 100),
-        limit: 100,
-        resetsAt: toIso(flashBucket.resetTime),
-        periodDurationMs: TWENTY_FOUR_HOURS_MS,
-      };
-    }
-
-    return snapshot;
+  return snapshot;
 }
 
 type GoogleCredential = {
@@ -239,7 +249,9 @@ async function assertSupportedAuthType(): Promise<void> {
   throw new Error(`Gemini unsupported auth type: ${authType}`);
 }
 
-async function loadOauthCredsFromFile(filePath: string): Promise<Omit<GoogleCredential, "source"> | undefined> {
+async function loadOauthCredsFromFile(
+  filePath: string,
+): Promise<Omit<GoogleCredential, "source"> | undefined> {
   const parsed = await loadJsonFile<Record<string, unknown>>(filePath);
   return parsed ? extractOauthCreds(parsed) : undefined;
 }
@@ -277,7 +289,8 @@ async function refreshAccessToken(
     return undefined;
   }
 
-  const clientCreds = readOauthClientCredsFromCredential(credential) ?? await loadOauthClientCreds();
+  const clientCreds =
+    readOauthClientCredsFromCredential(credential) ?? (await loadOauthClientCreds());
   if (!clientCreds) {
     return undefined;
   }
@@ -340,16 +353,22 @@ async function fetchLoadCodeAssist(
   }
 
   if (!currentToken) {
-    throw new Error("Gemini auth unavailable. Run `gemini auth login` or choose a cliproxy account.");
+    throw new Error(
+      "Gemini auth unavailable. Run `gemini auth login` or choose a cliproxy account.",
+    );
   }
 
-  let response = await postJson(ctx, LOAD_CODE_ASSIST_URL, currentToken, { metadata: IDE_METADATA });
+  let response = await postJson(ctx, LOAD_CODE_ASSIST_URL, currentToken, {
+    metadata: IDE_METADATA,
+  });
 
   if ((response.status === 401 || response.status === 403) && credential.refreshToken) {
     const refreshed = await refreshAccessToken(ctx, credential);
     if (refreshed) {
       currentToken = refreshed;
-      response = await postJson(ctx, LOAD_CODE_ASSIST_URL, currentToken, { metadata: IDE_METADATA });
+      response = await postJson(ctx, LOAD_CODE_ASSIST_URL, currentToken, {
+        metadata: IDE_METADATA,
+      });
     }
   }
 
@@ -378,16 +397,28 @@ async function fetchQuota(
   }
 
   if (!currentToken) {
-    throw new Error("Gemini auth unavailable. Run `gemini auth login` or choose a cliproxy account.");
+    throw new Error(
+      "Gemini auth unavailable. Run `gemini auth login` or choose a cliproxy account.",
+    );
   }
 
-  let response = await postJson(ctx, QUOTA_URL, currentToken, projectId ? { project: projectId } : {});
+  let response = await postJson(
+    ctx,
+    QUOTA_URL,
+    currentToken,
+    projectId ? { project: projectId } : {},
+  );
 
   if ((response.status === 401 || response.status === 403) && credential.refreshToken) {
     const refreshed = await refreshAccessToken(ctx, credential);
     if (refreshed) {
       currentToken = refreshed;
-      response = await postJson(ctx, QUOTA_URL, currentToken, projectId ? { project: projectId } : {});
+      response = await postJson(
+        ctx,
+        QUOTA_URL,
+        currentToken,
+        projectId ? { project: projectId } : {},
+      );
     }
   }
 
@@ -470,7 +501,9 @@ async function discoverProjectId(
   return undefined;
 }
 
-function readProjectId(loadCodeAssistData: Record<string, unknown> | undefined): string | undefined {
+function readProjectId(
+  loadCodeAssistData: Record<string, unknown> | undefined,
+): string | undefined {
   const direct = loadCodeAssistData?.cloudaicompanionProject;
   if (typeof direct === "string" && direct.trim()) {
     return direct.trim();
@@ -598,7 +631,10 @@ function extractAccountLabel(
   idTokenPayload: Record<string, unknown> | undefined,
   loadCodeAssistData: Record<string, unknown> | undefined,
 ): string | undefined {
-  return readString(idTokenPayload?.email) ?? readFirstStringDeep(loadCodeAssistData, ["email", "userEmail"]);
+  return (
+    readString(idTokenPayload?.email) ??
+    readFirstStringDeep(loadCodeAssistData, ["email", "userEmail"])
+  );
 }
 
 function readOauthClientCredsFromCredential(
@@ -629,8 +665,8 @@ async function loadOauthClientCreds(): Promise<OauthClientCreds | undefined> {
 }
 
 function parseOauthClientCreds(text: string): OauthClientCreds | undefined {
-  const clientIdMatch = text.match(/OAUTH_CLIENT_ID\s*=\s*['\"]([^'\"]+)['\"]/);
-  const clientSecretMatch = text.match(/OAUTH_CLIENT_SECRET\s*=\s*['\"]([^'\"]+)['\"]/);
+  const clientIdMatch = text.match(/OAUTH_CLIENT_ID\s*=\s*['"]([^'"]+)['"]/);
+  const clientSecretMatch = text.match(/OAUTH_CLIENT_SECRET\s*=\s*['"]([^'"]+)['"]/);
   if (!clientIdMatch || !clientSecretMatch) {
     return undefined;
   }
@@ -698,41 +734,43 @@ function extractOauthCreds(payload: unknown): Omit<GoogleCredential, "source"> {
       ["data", "id_token"],
       ["data", "idToken"],
     ]),
-    expiryDate: readDeepNumber(payload, [
-      ["expiry_date"],
-      ["expiryDate"],
-      ["expires_at"],
-      ["expiresAt"],
-      ["expiry"],
-      ["token", "expiry_date"],
-      ["token", "expiryDate"],
-      ["token", "expires_at"],
-      ["token", "expiresAt"],
-      ["token", "expiry"],
-      ["tokens", "expiry_date"],
-      ["tokens", "expiryDate"],
-      ["credentials", "expiry_date"],
-      ["credentials", "expiryDate"],
-      ["google", "expiry_date"],
-      ["google", "expiryDate"],
-      ["gemini", "expiry_date"],
-      ["gemini", "expiryDate"],
-      ["oauth", "expiry_date"],
-      ["oauth", "expiryDate"],
-      ["data", "expiry_date"],
-      ["data", "expiryDate"],
-    ]) ?? readDeepString(payload, [
-      ["expiry_date"],
-      ["expiryDate"],
-      ["expires_at"],
-      ["expiresAt"],
-      ["expiry"],
-      ["token", "expiry_date"],
-      ["token", "expiryDate"],
-      ["token", "expires_at"],
-      ["token", "expiresAt"],
-      ["token", "expiry"],
-    ]),
+    expiryDate:
+      readDeepNumber(payload, [
+        ["expiry_date"],
+        ["expiryDate"],
+        ["expires_at"],
+        ["expiresAt"],
+        ["expiry"],
+        ["token", "expiry_date"],
+        ["token", "expiryDate"],
+        ["token", "expires_at"],
+        ["token", "expiresAt"],
+        ["token", "expiry"],
+        ["tokens", "expiry_date"],
+        ["tokens", "expiryDate"],
+        ["credentials", "expiry_date"],
+        ["credentials", "expiryDate"],
+        ["google", "expiry_date"],
+        ["google", "expiryDate"],
+        ["gemini", "expiry_date"],
+        ["gemini", "expiryDate"],
+        ["oauth", "expiry_date"],
+        ["oauth", "expiryDate"],
+        ["data", "expiry_date"],
+        ["data", "expiryDate"],
+      ]) ??
+      readDeepString(payload, [
+        ["expiry_date"],
+        ["expiryDate"],
+        ["expires_at"],
+        ["expiresAt"],
+        ["expiry"],
+        ["token", "expiry_date"],
+        ["token", "expiryDate"],
+        ["token", "expires_at"],
+        ["token", "expiresAt"],
+        ["token", "expiry"],
+      ]),
     clientId: readDeepString(payload, [
       ["client_id"],
       ["clientId"],
@@ -861,20 +899,6 @@ function decodeJwtPayload(token: string | undefined): Record<string, unknown> | 
   }
 }
 
-function needsRefresh(credential: GoogleCredential): boolean {
-  if (!credential.accessToken) {
-    return true;
-  }
-
-  const expiry = readNumber(credential.expiryDate);
-  if (expiry === undefined) {
-    return false;
-  }
-
-  const expiryMs = expiry > 10_000_000_000 ? expiry : expiry * 1000;
-  return Date.now() + REFRESH_BUFFER_MS >= expiryMs;
-}
-
 function toIso(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -885,7 +909,9 @@ function toIso(value: string | undefined): string | undefined {
 }
 
 function joinSummary(...values: Array<string | undefined>): string | undefined {
-  const parts = values.map((value) => value?.trim()).filter((value): value is string => Boolean(value));
+  const parts = values
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
@@ -909,7 +935,7 @@ function formatPercent(value: number): string {
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 

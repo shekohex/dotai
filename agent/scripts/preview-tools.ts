@@ -1,5 +1,14 @@
 import { Theme, initTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Key, matchesKey, ProcessTerminal, setKeybindings, Spacer, Text, TUI } from "@mariozechner/pi-tui";
+import {
+  Container,
+  Key,
+  matchesKey,
+  ProcessTerminal,
+  setKeybindings,
+  Spacer,
+  Text,
+  TUI,
+} from "@mariozechner/pi-tui";
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -25,7 +34,9 @@ type PreviewState = {
 
 type PreviewPanelEntry = {
   scenario: PreviewScenario;
-  panel: PreviewScenariosModule["getToolPreviewPanels"] extends (scenario: any) => Array<infer T> ? T : never;
+  panel: PreviewScenariosModule["getToolPreviewPanels"] extends (scenario: any) => Array<infer T>
+    ? T
+    : never;
   component: ReturnType<PreviewScenariosModule["createPreviewComponent"]>;
 };
 
@@ -72,7 +83,9 @@ class ToolPreviewApp extends Container {
     const configuredThemeIndex = themeNames.indexOf(configuredTheme);
     this.themeIndex = configuredThemeIndex >= 0 ? configuredThemeIndex : 0;
     if (initialState.scenarioId) {
-      const scenarioIndex = this.scenarios.findIndex((scenario) => scenario.id === initialState.scenarioId);
+      const scenarioIndex = this.scenarios.findIndex(
+        (scenario) => scenario.id === initialState.scenarioId,
+      );
       this.scenarioIndex = scenarioIndex >= 0 ? scenarioIndex : 0;
     }
     this.expandedPreview = initialState.expandedPreview ?? false;
@@ -108,7 +121,8 @@ class ToolPreviewApp extends Container {
       this.scenarioIndex = 0;
     } else if (currentScenarioId) {
       const nextIndex = this.scenarios.findIndex((scenario) => scenario.id === currentScenarioId);
-      this.scenarioIndex = nextIndex >= 0 ? nextIndex : Math.min(this.scenarioIndex, this.scenarios.length - 1);
+      this.scenarioIndex =
+        nextIndex >= 0 ? nextIndex : Math.min(this.scenarioIndex, this.scenarios.length - 1);
     } else {
       this.scenarioIndex = Math.min(this.scenarioIndex, this.scenarios.length - 1);
     }
@@ -151,7 +165,8 @@ class ToolPreviewApp extends Container {
     }
 
     if (data === "T") {
-      this.themeIndex = (this.themeIndex + this.themeRegistry.names.length - 1) % this.themeRegistry.names.length;
+      this.themeIndex =
+        (this.themeIndex + this.themeRegistry.names.length - 1) % this.themeRegistry.names.length;
       this.themeRegistry.apply(this.themeName);
       this.rebuild();
       this.tui.requestRender();
@@ -197,7 +212,9 @@ class ToolPreviewApp extends Container {
     const scenario = this.scenarios[this.scenarioIndex];
     const panels = this.previewModule
       .getToolPreviewPanels(scenario)
-      .filter((panel) => !this.expandedPreview || panel.id.endsWith("expanded") || panel.id === "error");
+      .filter(
+        (panel) => !this.expandedPreview || panel.id.endsWith("expanded") || panel.id === "error",
+      );
 
     this.addChild(
       new Text(
@@ -214,7 +231,12 @@ class ToolPreviewApp extends Container {
     for (const panel of panels) {
       this.addChild(new Spacer(1));
       this.addChild(new Text(panel.label, 1, 0));
-      const component = this.previewModule.createPreviewComponent(scenario, panel, this.tui, this.animationElapsedMs);
+      const component = this.previewModule.createPreviewComponent(
+        scenario,
+        panel,
+        this.tui,
+        this.animationElapsedMs,
+      );
       this.panelEntries.push({ scenario, panel, component });
       this.addChild(component);
     }
@@ -237,7 +259,11 @@ class ToolPreviewApp extends Container {
 
       this.animationElapsedMs += 1000;
       for (const entry of this.panelEntries) {
-        const result = this.previewModule.resolvePreviewResult(entry.scenario, entry.panel, this.animationElapsedMs);
+        const result = this.previewModule.resolvePreviewResult(
+          entry.scenario,
+          entry.panel,
+          this.animationElapsedMs,
+        );
         if (!result || !entry.panel.isPartial) {
           continue;
         }
@@ -322,7 +348,10 @@ function watchPreviewSources(onChange: () => void): void {
 
     try {
       watch(root, { persistent: true, recursive: true }, (_eventType, filename) => {
-        if (!filename || (!filename.endsWith(".ts") && !filename.endsWith(".tsx") && !filename.endsWith(".json"))) {
+        if (
+          !filename ||
+          (!filename.endsWith(".ts") && !filename.endsWith(".tsx") && !filename.endsWith(".json"))
+        ) {
           return;
         }
 
@@ -330,7 +359,10 @@ function watchPreviewSources(onChange: () => void): void {
       });
     } catch {
       watch(root, { persistent: true }, (_eventType, filename) => {
-        if (!filename || (!filename.endsWith(".ts") && !filename.endsWith(".tsx") && !filename.endsWith(".json"))) {
+        if (
+          !filename ||
+          (!filename.endsWith(".ts") && !filename.endsWith(".tsx") && !filename.endsWith(".json"))
+        ) {
           return;
         }
 
@@ -418,9 +450,16 @@ async function main() {
   setKeybindings(KeybindingsManager.create());
   const tui = new TUI(new ProcessTerminal());
   let stateWrite: Promise<void> = Promise.resolve();
-  const app = new ToolPreviewApp(tui, previewModule, scenarios, themeRegistry, persistedState, (state) => {
-    stateWrite = stateWrite.then(() => savePreviewState(state)).catch(() => undefined);
-  });
+  const app = new ToolPreviewApp(
+    tui,
+    previewModule,
+    scenarios,
+    themeRegistry,
+    persistedState,
+    (state) => {
+      stateWrite = stateWrite.then(() => savePreviewState(state)).catch(() => undefined);
+    },
+  );
   const shutdown = () => {
     tui.stop();
     process.exit(0);

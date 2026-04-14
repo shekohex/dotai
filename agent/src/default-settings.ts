@@ -11,7 +11,6 @@ const cwd = dirname(fileURLToPath(import.meta.url));
 const packageJsonFile = join(cwd, "..", "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonFile, { encoding: "utf8" }));
 
-
 export const defaultSettings = {
   defaultProvider: "codex-openai",
   defaultModel: "gpt-5.4",
@@ -25,8 +24,8 @@ export const defaultSettings = {
   theme: "catppuccin-mocha",
   retry: {
     enabled: true,
-    maxRetries: 1024
-  }
+    maxRetries: 1024,
+  },
 } satisfies AgentSettings;
 
 export type DefaultModes = Static<typeof ModesFileSchema>;
@@ -43,10 +42,9 @@ export const defaultModes = defineModesFile({
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
-      tools: [
-        "*"
-      ],
-      description: "Use me when you want a cheap, fast agent for exploration, rough implementation, and trying ideas quickly and you’re willing to review the output carefully using the review mode."
+      tools: ["*"],
+      description:
+        "Use me when you want a cheap, fast agent for exploration, rough implementation, and trying ideas quickly and you’re willing to review the output carefully using the review mode.",
     },
     docs: {
       provider: "opencode-go",
@@ -54,14 +52,9 @@ export const defaultModes = defineModesFile({
       thinkingLevel: "high",
       color: "success",
       tmuxTarget: "window",
-      tools: [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "websearch"
-      ],
-      description: "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes."
+      tools: ["read", "bash", "edit", "write", "websearch"],
+      description:
+        "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes.",
     },
     deep: {
       provider: "codex-openai",
@@ -69,10 +62,9 @@ export const defaultModes = defineModesFile({
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
-      tools: [
-        "*"
-      ],
-      description: "Use me when you want the highest-quality help for complex implementation, debugging, and code review; I’m the default mode."
+      tools: ["*"],
+      description:
+        "Use me when you want the highest-quality help for complex implementation, debugging, and code review; I’m the default mode.",
     },
     review: {
       provider: "codex-openai",
@@ -80,15 +72,14 @@ export const defaultModes = defineModesFile({
       thinkingLevel: "high",
       color: "muted",
       tmuxTarget: "window",
-      tools: [
-        "read",
-        "bash",
-        "websearch"
-      ],
+      tools: ["read", "bash", "websearch"],
       autoExit: true,
-      description: "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
-      systemPrompt: readFileSync(join(cwd, "resources", "modes", "review.md"), { encoding: "utf-8" }),
-      systemPromptMode: "append"
+      description:
+        "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
+      systemPrompt: readFileSync(join(cwd, "resources", "modes", "review.md"), {
+        encoding: "utf-8",
+      }),
+      systemPromptMode: "append",
     },
     search: {
       provider: "gemini",
@@ -96,12 +87,10 @@ export const defaultModes = defineModesFile({
       thinkingLevel: "high",
       color: "borderMuted",
       tmuxTarget: "window",
-      tools: [
-        "read",
-        "bash"
-      ],
+      tools: ["read", "bash"],
       autoExit: true,
-      description: "Use me when you want a quick answer from the current codebase or local files, especially for fast exploration."
+      description:
+        "Use me when you want a quick answer from the current codebase or local files, especially for fast exploration.",
     },
     painter: {
       provider: "opencode-go",
@@ -109,22 +98,14 @@ export const defaultModes = defineModesFile({
       thinkingLevel: "high",
       color: "bashMode",
       tmuxTarget: "window",
-      tools: [
-        "read",
-        "bash",
-        "edit",
-        "write",
-        "websearch"
-      ],
-      description: "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use."
+      tools: ["read", "bash", "edit", "write", "websearch"],
+      description:
+        "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use.",
     },
     worker: {
-      tools: [
-        "*",
-        "!subagent"
-      ],
+      tools: ["*", "!subagent"],
       autoExit: true,
-      description: "Use me when you want a general-purpose worker for a focused task."
-    }
-  }
+      description: "Use me when you want a general-purpose worker for a focused task.",
+    },
+  },
 }) satisfies DefaultModes;

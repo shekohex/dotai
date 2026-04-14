@@ -14,7 +14,7 @@ export class TmuxAdapter implements MuxAdapter {
   constructor(
     private readonly exec: ExecFunction,
     private readonly cwd: string,
-  ) { }
+  ) {}
 
   async isAvailable(): Promise<boolean> {
     if (!process.env.TMUX) {
@@ -26,30 +26,31 @@ export class TmuxAdapter implements MuxAdapter {
   }
 
   async createPane(options: CreatePaneOptions): Promise<{ paneId: string }> {
-    const createArgs = options.target === "window"
-      ? [
-        "new-window",
-        "-d",
-        "-c",
-        options.cwd,
-        "-n",
-        options.title,
-        "-P",
-        "-F",
-        "#{pane_id}",
-        options.command,
-      ]
-      : [
-        "split-window",
-        "-d",
-        "-h",
-        "-c",
-        options.cwd,
-        "-P",
-        "-F",
-        "#{pane_id}",
-        options.command,
-      ];
+    const createArgs =
+      options.target === "window"
+        ? [
+            "new-window",
+            "-d",
+            "-c",
+            options.cwd,
+            "-n",
+            options.title,
+            "-P",
+            "-F",
+            "#{pane_id}",
+            options.command,
+          ]
+        : [
+            "split-window",
+            "-d",
+            "-h",
+            "-c",
+            options.cwd,
+            "-P",
+            "-F",
+            "#{pane_id}",
+            options.command,
+          ];
     const result = await this.exec("tmux", createArgs, { cwd: this.cwd });
     this.assertOk(result, options.target === "window" ? "create window" : "create pane");
 
@@ -62,7 +63,11 @@ export class TmuxAdapter implements MuxAdapter {
     return { paneId };
   }
 
-  async sendText(paneId: string, text: string, submitMode: PaneSubmitMode = "steer"): Promise<void> {
+  async sendText(
+    paneId: string,
+    text: string,
+    submitMode: PaneSubmitMode = "steer",
+  ): Promise<void> {
     const bufferName = `pi-subagent-${paneId.replace(/[^a-zA-Z0-9_-]/g, "")}-${Date.now()}`;
     const filePath = path.join(os.tmpdir(), `${bufferName}.txt`);
 
@@ -73,10 +78,13 @@ export class TmuxAdapter implements MuxAdapter {
         "load tmux buffer",
       );
       this.assertOk(
-        await this.exec("tmux", ["paste-buffer", "-b", bufferName, "-d", "-t", paneId], { cwd: this.cwd }),
+        await this.exec("tmux", ["paste-buffer", "-b", bufferName, "-d", "-t", paneId], {
+          cwd: this.cwd,
+        }),
         "paste tmux buffer",
       );
-      const submitKey = submitMode === "followUp" ? "M-Enter" : submitMode === "steer" ? "Enter" : undefined;
+      const submitKey =
+        submitMode === "followUp" ? "M-Enter" : submitMode === "steer" ? "Enter" : undefined;
       if (submitKey) {
         this.assertOk(
           await this.exec("tmux", ["send-keys", "-t", paneId, submitKey], { cwd: this.cwd }),
@@ -89,12 +97,17 @@ export class TmuxAdapter implements MuxAdapter {
   }
 
   async paneExists(paneId: string): Promise<boolean> {
-    const result = await this.exec("tmux", ["list-panes", "-a", "-F", "#{pane_id}"], { cwd: this.cwd });
+    const result = await this.exec("tmux", ["list-panes", "-a", "-F", "#{pane_id}"], {
+      cwd: this.cwd,
+    });
     if (result.code !== 0) {
       return false;
     }
 
-    return result.stdout.split("\n").map((value) => value.trim()).includes(paneId);
+    return result.stdout
+      .split("\n")
+      .map((value) => value.trim())
+      .includes(paneId);
   }
 
   async killPane(paneId: string): Promise<void> {
@@ -106,7 +119,11 @@ export class TmuxAdapter implements MuxAdapter {
 
   async capturePane(paneId: string, lines = 120): Promise<PaneCapture> {
     const start = Math.max(0, lines - 1) * -1;
-    const result = await this.exec("tmux", ["capture-pane", "-p", "-t", paneId, "-S", String(start)], { cwd: this.cwd });
+    const result = await this.exec(
+      "tmux",
+      ["capture-pane", "-p", "-t", paneId, "-S", String(start)],
+      { cwd: this.cwd },
+    );
     this.assertOk(result, "capture pane");
     return { text: result.stdout };
   }

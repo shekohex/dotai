@@ -85,7 +85,11 @@ export function activateAutoExitTimeoutMode(sessionId: string): void {
 
   try {
     fs.mkdirSync(path.dirname(markerPath), { recursive: true });
-    fs.writeFileSync(markerPath, JSON.stringify({ activatedAt: Date.now() } satisfies TimeoutModeMarker), "utf8");
+    fs.writeFileSync(
+      markerPath,
+      JSON.stringify({ activatedAt: Date.now() } satisfies TimeoutModeMarker),
+      "utf8",
+    );
   } catch {
     return;
   }
@@ -93,7 +97,9 @@ export function activateAutoExitTimeoutMode(sessionId: string): void {
 
 export function isAutoExitTimeoutModeActive(sessionId: string): boolean {
   try {
-    const marker = JSON.parse(fs.readFileSync(getAutoExitTimeoutModeMarkerPath(sessionId), "utf8")) as TimeoutModeMarker;
+    const marker = JSON.parse(
+      fs.readFileSync(getAutoExitTimeoutModeMarkerPath(sessionId), "utf8"),
+    ) as TimeoutModeMarker;
     return typeof marker.activatedAt === "number";
   } catch {
     return false;
@@ -157,7 +163,9 @@ function parseTimestampMs(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export async function readChildSessionStatusDetails(sessionPath: string): Promise<ChildSessionStatusDetails> {
+export async function readChildSessionStatusDetails(
+  sessionPath: string,
+): Promise<ChildSessionStatusDetails> {
   try {
     const sessionManager = SessionManager.open(sessionPath);
     let entry = sessionManager.getLeafEntry();
@@ -167,7 +175,9 @@ export async function readChildSessionStatusDetails(sessionPath: string): Promis
         if (entry.message.role === "assistant") {
           return {
             status: "idle",
-            idleSinceAt: parseTimestampMs((entry as SessionEntry & { timestamp?: unknown }).timestamp),
+            idleSinceAt: parseTimestampMs(
+              (entry as SessionEntry & { timestamp?: unknown }).timestamp,
+            ),
           };
         }
 
@@ -183,7 +193,10 @@ export async function readChildSessionStatusDetails(sessionPath: string): Promis
   return { status: "running" };
 }
 
-export function reduceRuntimeSubagents(entries: SessionEntry[], parentSessionId: string): Map<string, RuntimeSubagent> {
+export function reduceRuntimeSubagents(
+  entries: SessionEntry[],
+  parentSessionId: string,
+): Map<string, RuntimeSubagent> {
   const states = new Map<string, RuntimeSubagent>();
 
   for (const entry of entries) {
@@ -223,7 +236,11 @@ function getSubagentStateEntry(entry: SessionEntry): SubagentStateEntry | undefi
 }
 
 function getAssistantOutcomeMessage(entry: SessionEntry): AssistantOutcomeMessage | undefined {
-  if (entry.type !== "message" || entry.message.role !== "assistant" || !("content" in entry.message)) {
+  if (
+    entry.type !== "message" ||
+    entry.message.role !== "assistant" ||
+    !("content" in entry.message)
+  ) {
     return undefined;
   }
 

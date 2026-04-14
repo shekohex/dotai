@@ -30,7 +30,9 @@ type AgentSessionPrototype = typeof AgentSession.prototype & {
   [patchSymbol]?: true;
 };
 
-export function resolveModelFamilySystemPrompt(modelId: string | undefined): ModelFamilySystemPrompt {
+export function resolveModelFamilySystemPrompt(
+  modelId: string | undefined,
+): ModelFamilySystemPrompt {
   const normalizedModelId = modelId?.trim().toLowerCase() ?? "";
 
   if (normalizedModelId.includes("codex")) {
@@ -57,7 +59,10 @@ export function extractPiDynamicTail(systemPrompt: string): string {
   return markerIndex === -1 ? systemPrompt : systemPrompt.slice(markerIndex);
 }
 
-export function buildModelFamilySystemPrompt(systemPrompt: string, modelId: string | undefined): string {
+export function buildModelFamilySystemPrompt(
+  systemPrompt: string,
+  modelId: string | undefined,
+): string {
   const family = resolveModelFamilySystemPrompt(modelId);
   const tail = extractPiDynamicTail(systemPrompt).trimStart();
   return tail.length > 0 ? `${promptTexts[family]}\n\n${tail}` : promptTexts[family];
@@ -65,7 +70,10 @@ export function buildModelFamilySystemPrompt(systemPrompt: string, modelId: stri
 
 function applySystemPrompt(session: AgentSession): void {
   const state = session as unknown as SessionPromptState;
-  state.agent.state.systemPrompt = buildModelFamilySystemPrompt(state._baseSystemPrompt, state.model?.id);
+  state.agent.state.systemPrompt = buildModelFamilySystemPrompt(
+    state._baseSystemPrompt,
+    state.model?.id,
+  );
 }
 
 function patchAgentSession(): void {
@@ -94,7 +102,10 @@ function patchAgentSession(): void {
   };
 
   const originalSetActiveToolsByName = prototype.setActiveToolsByName;
-  prototype.setActiveToolsByName = function patchedSetActiveToolsByName(this: AgentSession, toolNames) {
+  prototype.setActiveToolsByName = function patchedSetActiveToolsByName(
+    this: AgentSession,
+    toolNames,
+  ) {
     originalSetActiveToolsByName.call(this, toolNames);
     applySystemPrompt(this);
   };

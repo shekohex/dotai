@@ -1,5 +1,9 @@
 import { createTwoFilesPatch, diffLines } from "diff";
-import { ToolExecutionComponent, keyHint, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import {
+  ToolExecutionComponent,
+  keyHint,
+  type ToolDefinition,
+} from "@mariozechner/pi-coding-agent";
 import { Text, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
@@ -73,17 +77,23 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const readFile = joinPath(cwd, "README.md");
   const editFile = joinPath(cwd, "src/extensions/coreui/tools.ts");
   const writeFile = joinPath(cwd, "src/extensions/preview-look.ts");
-  const executeDefinition = createExecuteToolDefinition({} as never, "Execute TypeScript in a sandboxed runtime with access to configured API tools.");
-  const sessionPath = joinPath(cwd, ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl");
+  const executeDefinition = createExecuteToolDefinition(
+    {} as never,
+    "Execute TypeScript in a sandboxed runtime with access to configured API tools.",
+  );
+  const sessionPath = joinPath(
+    cwd,
+    ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl",
+  );
   const bashDefinition = createBashToolOverrideDefinition();
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
   const subagentDefinition = getSubagentPreviewDefinition();
-  const parentSessionPath = joinPath(cwd, ".pi/agent/sessions/parent/2026-04-11T17-45-51-124Z_parent.jsonl");
+  const parentSessionPath = joinPath(
+    cwd,
+    ".pi/agent/sessions/parent/2026-04-11T17-45-51-124Z_parent.jsonl",
+  );
   const subagentStartTask = "Review preview renderer and note UI gaps";
-  const subagentMessageBody = [
-    "Ping",
-    "Spacing?",
-  ].join("\n");
+  const subagentMessageBody = ["Ping", "Spacing?"].join("\n");
   const subagentHandoffPreviewLines = [
     "## Context",
     "We implemented tmux-backed subagents with session-backed persistence.",
@@ -258,13 +268,13 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const webSearchMinimalAnswer = "Bun 1.3.0 is not released yet in this preview fixture.";
 
   const beforePatch = [
-    "const title = \"before\";",
+    'const title = "before";',
     "const count = 1;",
     "console.log(title, count);",
     "",
   ].join("\n");
   const afterPatch = [
-    "const title = \"after\";",
+    'const title = "after";',
     "const count = 2;",
     "console.log(title.toUpperCase(), count);",
     "",
@@ -275,22 +285,22 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const movedAfter = ["export const modernPreview = true;", ""].join("\n");
   const executorCode = [
     'const matches = await tools.search({ namespace: "github_rest_api", query: "issues list", limit: 1 });',
-    'const path = matches[0]?.path;',
+    "const path = matches[0]?.path;",
     'if (!path) return { status: "not_found" };',
-    'const details = await tools.describe.tool({ path });',
+    "const details = await tools.describe.tool({ path });",
     '\tconst marker = "row\u0007";',
-    'const issues = await tools.github_rest_api.issues.listForRepo({',
+    "const issues = await tools.github_rest_api.issues.listForRepo({",
     '  owner: "badlogic",',
     '  repo: "pi-mono",',
     '  state: "open",',
-    '  per_page: 3,',
-    '});',
-    'return {',
+    "  per_page: 3,",
+    "});",
+    "return {",
     '  status: "completed",',
-    '  inputTypeScript: details.inputTypeScript,',
-    '  count: Array.isArray(issues) ? issues.length : 0,',
-    '  issues,',
-    '};',
+    "  inputTypeScript: details.inputTypeScript,",
+    "  count: Array.isArray(issues) ? issues.length : 0,",
+    "  issues,",
+    "};",
   ].join("\n");
 
   return [
@@ -306,7 +316,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         code: executorCode,
       },
       partialResult: {
-        content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "issues.listForRepo",\n  "count": 0\n}' }],
+        content: [
+          {
+            type: "text",
+            text: '{\n  "status": "executing",\n  "step": "issues.listForRepo",\n  "count": 0\n}',
+          },
+        ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
           scopeId: "scope_preview",
@@ -320,7 +335,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       successResult: {
-        content: [{ type: "text", text: '{\n  "content": [\n    {\n      "type": "text",\n      "text": "{\\n  \\\"markdown\\\": \\\"Example Domain\\\\n==============\\\\n\\\\nThis domain is for use in documentation examples without needing permission.\\\\n\\\\n\\\\tItem\\\\u0007\\\",\\n  \\\"metadata\\\": {\\n    \\\"title\\\": \\\"Example Domain\\\",\\n    \\\"statusCode\\\": 200,\\n    \\\"sourceURL\\\": \\\"https://example.com\\\"\\n  }\\n}"\n    }\n  ]\n}' }],
+        content: [
+          {
+            type: "text",
+            text: '{\n  "content": [\n    {\n      "type": "text",\n      "text": "{\\n  \\\"markdown\\\": \\\"Example Domain\\\\n==============\\\\n\\\\nThis domain is for use in documentation examples without needing permission.\\\\n\\\\n\\\\tItem\\\\u0007\\\",\\n  \\\"metadata\\\": {\\n    \\\"title\\\": \\\"Example Domain\\\",\\n    \\\"statusCode\\\": 200,\\n    \\\"sourceURL\\\": \\\"https://example.com\\\"\\n  }\\n}"\n    }\n  ]\n}',
+          },
+        ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
           scopeId: "scope_preview",
@@ -340,7 +360,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "ToolInvocationError: github_rest_api.issues.listForRepo returned 403 Forbidden" }],
+        content: [
+          {
+            type: "text",
+            text: "ToolInvocationError: github_rest_api.issues.listForRepo returned 403 Forbidden",
+          },
+        ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
           scopeId: "scope_preview",
@@ -369,7 +394,9 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             },
           },
           {
-            content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "describe.tool"\n}' }],
+            content: [
+              { type: "text", text: '{\n  "status": "executing",\n  "step": "describe.tool"\n}' },
+            ],
             details: {
               baseUrl: "http://127.0.0.1:4788/mcp",
               scopeId: "scope_preview",
@@ -382,7 +409,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             },
           },
           {
-            content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "issues.listForRepo",\n  "count": 0\n}' }],
+            content: [
+              {
+                type: "text",
+                text: '{\n  "status": "executing",\n  "step": "issues.listForRepo",\n  "count": 0\n}',
+              },
+            ],
             details: {
               baseUrl: "http://127.0.0.1:4788/mcp",
               scopeId: "scope_preview",
@@ -409,10 +441,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         code: 'return await tools.search({ namespace: "firecrawl", query: "scrape", limit: 2 });',
       },
       successResult: {
-        content: [{
-          type: "text",
-          text: '[\n  {\n    "path": "firecrawl.firecrawl_scrape",\n    "name": "firecrawl_scrape",\n    "description": "Scrape content from a single URL.\\n\\n```json\\n{\\n  \\\"url\\\": \\\"https://example.com\\\"\\n}\\n```",\n    "sourceId": "firecrawl",\n    "score": 310\n  },\n  {\n    "path": "firecrawl.firecrawl_search",\n    "name": "firecrawl_search",\n    "description": "Search the web and optionally extract content from search results.",\n    "sourceId": "firecrawl",\n    "score": 275\n  }\n]',
-        }],
+        content: [
+          {
+            type: "text",
+            text: '[\n  {\n    "path": "firecrawl.firecrawl_scrape",\n    "name": "firecrawl_scrape",\n    "description": "Scrape content from a single URL.\\n\\n```json\\n{\\n  \\\"url\\\": \\\"https://example.com\\\"\\n}\\n```",\n    "sourceId": "firecrawl",\n    "score": 310\n  },\n  {\n    "path": "firecrawl.firecrawl_search",\n    "name": "firecrawl_search",\n    "description": "Search the web and optionally extract content from search results.",\n    "sourceId": "firecrawl",\n    "score": 275\n  }\n]',
+          },
+        ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
           scopeId: "scope_preview",
@@ -422,7 +456,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
               {
                 path: "firecrawl.firecrawl_scrape",
                 name: "firecrawl_scrape",
-                description: 'Scrape content from a single URL.\n\n```json\n{\n  "url": "https://example.com"\n}\n```',
+                description:
+                  'Scrape content from a single URL.\n\n```json\n{\n  "url": "https://example.com"\n}\n```',
                 sourceId: "firecrawl",
                 score: 310,
               },
@@ -451,9 +486,9 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         patchText: [
           "*** Begin Patch",
           "*** Update File: src/extensions/patch.ts",
-          "@@ const title = \"before\";",
-          "-const title = \"before\";",
-          "+const title = \"after\";",
+          '@@ const title = "before";',
+          '-const title = "before";',
+          '+const title = "after";',
           "*** Add File: src/tool-preview-demo.ts",
           "+export const preview = true;",
         ].join("\n"),
@@ -471,15 +506,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         format: "markdown",
       },
       partialResult: {
-        content: [{
-          type: "text",
-          text: [
-            "Fetch preview",
-            "=============",
-            "",
-            "Streaming body chunk",
-          ].join("\n"),
-        }],
+        content: [
+          {
+            type: "text",
+            text: ["Fetch preview", "=============", "", "Streaming body chunk"].join("\n"),
+          },
+        ],
         details: {
           url: "https://example.com/docs/pi/fetch-preview",
           finalUrl: "https://example.com/docs/pi/fetch-preview",
@@ -490,12 +522,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
           bytes: 412,
           durationMs: 0,
           timeoutSeconds: 10,
-          body: [
-            "Fetch preview",
-            "=============",
-            "",
-            "Streaming body chunk",
-          ].join("\n"),
+          body: ["Fetch preview", "=============", "", "Streaming body chunk"].join("\n"),
           isBinary: false,
         },
       },
@@ -503,10 +530,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         frameDurationMs: 1000,
         partialFrames: [
           {
-            content: [{
-              type: "text",
-              text: "Fetch preview",
-            }],
+            content: [
+              {
+                type: "text",
+                text: "Fetch preview",
+              },
+            ],
             details: {
               url: "https://example.com/docs/pi/fetch-preview",
               finalUrl: "https://example.com/docs/pi/fetch-preview",
@@ -522,13 +551,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             },
           },
           {
-            content: [{
-              type: "text",
-              text: [
-                "Fetch preview",
-                "=============",
-              ].join("\n"),
-            }],
+            content: [
+              {
+                type: "text",
+                text: ["Fetch preview", "============="].join("\n"),
+              },
+            ],
             details: {
               url: "https://example.com/docs/pi/fetch-preview",
               finalUrl: "https://example.com/docs/pi/fetch-preview",
@@ -539,23 +567,17 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
               bytes: 224,
               durationMs: 1000,
               timeoutSeconds: 10,
-              body: [
-                "Fetch preview",
-                "=============",
-              ].join("\n"),
+              body: ["Fetch preview", "============="].join("\n"),
               isBinary: false,
             },
           },
           {
-            content: [{
-              type: "text",
-              text: [
-                "Fetch preview",
-                "=============",
-                "",
-                "Streaming body chunk",
-              ].join("\n"),
-            }],
+            content: [
+              {
+                type: "text",
+                text: ["Fetch preview", "=============", "", "Streaming body chunk"].join("\n"),
+              },
+            ],
             details: {
               url: "https://example.com/docs/pi/fetch-preview",
               finalUrl: "https://example.com/docs/pi/fetch-preview",
@@ -566,34 +588,31 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
               bytes: 412,
               durationMs: 2000,
               timeoutSeconds: 10,
-              body: [
-                "Fetch preview",
-                "=============",
-                "",
-                "Streaming body chunk",
-              ].join("\n"),
+              body: ["Fetch preview", "=============", "", "Streaming body chunk"].join("\n"),
               isBinary: false,
             },
           },
         ],
       },
       successResult: {
-        content: [{
-          type: "text",
-          text: [
-            "URL: https://example.com/docs/pi/fetch-preview",
-            "Status: 200 OK",
-            "Content-Type: text/html; charset=utf-8",
-            "Bytes: 2.2KB",
-            "",
-            "Fetch preview",
-            "=============",
-            "",
-            "This is the expanded preview body.",
-            "",
-            "[Output truncated: showing 18 of 42 lines. Full output saved to: /tmp/pi-fetch-preview.txt]",
-          ].join("\n"),
-        }],
+        content: [
+          {
+            type: "text",
+            text: [
+              "URL: https://example.com/docs/pi/fetch-preview",
+              "Status: 200 OK",
+              "Content-Type: text/html; charset=utf-8",
+              "Bytes: 2.2KB",
+              "",
+              "Fetch preview",
+              "=============",
+              "",
+              "This is the expanded preview body.",
+              "",
+              "[Output truncated: showing 18 of 42 lines. Full output saved to: /tmp/pi-fetch-preview.txt]",
+            ].join("\n"),
+          },
+        ],
         details: {
           url: "https://example.com/docs/pi/fetch-preview",
           finalUrl: "https://example.com/docs/pi/fetch-preview",
@@ -676,10 +695,15 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             },
           },
           {
-            content: [{ type: "text", text: [
-              "Next.js 16 released in October 2025.",
-              "The release stabilized Turbopack builds.",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "Next.js 16 released in October 2025.",
+                  "The release stabilized Turbopack builds.",
+                ].join("\n"),
+              },
+            ],
             details: {
               query: "When did Next.js 16 release and what changed?",
               model: "gemini-2.5-flash",
@@ -699,15 +723,20 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             },
           },
           {
-            content: [{ type: "text", text: [
-              "Next.js 16 released in October 2025.",
-              "The release stabilized Turbopack builds.",
-              "The upgrade guide also replaces ppr with cacheComponents.",
-              "Caching defaults changed for production builds.",
-              "React 19.2 alignment is part of the release.",
-              "Official upgrade docs remain the primary source.",
-              "Teams should re-run production build verification.",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "Next.js 16 released in October 2025.",
+                  "The release stabilized Turbopack builds.",
+                  "The upgrade guide also replaces ppr with cacheComponents.",
+                  "Caching defaults changed for production builds.",
+                  "React 19.2 alignment is part of the release.",
+                  "Official upgrade docs remain the primary source.",
+                  "Teams should re-run production build verification.",
+                ].join("\n"),
+              },
+            ],
             details: {
               query: "When did Next.js 16 release and what changed?",
               model: "gemini-2.5-flash",
@@ -755,8 +784,14 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
           ],
           sources: [
             { title: "Next.js 16", url: "https://nextjs.org/blog/next-16" },
-            { title: "Version 16 Upgrade Guide", url: "https://nextjs.org/docs/app/guides/upgrading/version-16" },
-            { title: "Next.js 16 docs", url: "https://nextjs.org/docs/app/getting-started/installation" },
+            {
+              title: "Version 16 Upgrade Guide",
+              url: "https://nextjs.org/docs/app/guides/upgrading/version-16",
+            },
+            {
+              title: "Next.js 16 docs",
+              url: "https://nextjs.org/docs/app/getting-started/installation",
+            },
           ],
         },
       },
@@ -781,7 +816,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
           model: "gemini-2.5-flash-lite",
           timeoutMs: 30000,
           durationMs: 3000,
-          endpoint: "https://litellm.example.test/v1beta/models/gemini-2.5-flash-lite:generateContent",
+          endpoint:
+            "https://litellm.example.test/v1beta/models/gemini-2.5-flash-lite:generateContent",
           answer: webSearchMinimalAnswer,
           markdown: webSearchMinimalAnswer,
           searchQueries: [],
@@ -803,13 +839,15 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         question: "What files were modified in the parent session?",
       },
       partialResult: {
-        content: [{
-          type: "text",
-          text: [
-            "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
-            "The tests in test/tool-preview.test.ts were updated too.",
-          ].join("\n"),
-        }],
+        content: [
+          {
+            type: "text",
+            text: [
+              "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+              "The tests in test/tool-preview.test.ts were updated too.",
+            ].join("\n"),
+          },
+        ],
         details: {
           sessionPath,
           sessionUuid: "0e990a27",
@@ -825,26 +863,31 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         frameDurationMs: 1000,
         partialFrames: [
           {
-            content: [{
-              type: "text",
-              text: "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
-            }],
+            content: [
+              {
+                type: "text",
+                text: "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+              },
+            ],
             details: {
               sessionPath,
               sessionUuid: "0e990a27",
               question: "What files were modified in the parent session?",
               messageCount: 42,
-              answer: "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+              answer:
+                "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
             },
           },
           {
-            content: [{
-              type: "text",
-              text: [
-                "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
-                "The tests in test/tool-preview.test.ts were updated too.",
-              ].join("\n"),
-            }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "Modified files included src/extensions/coreui/tools.ts and src/extensions/patch.ts.",
+                  "The tests in test/tool-preview.test.ts were updated too.",
+                ].join("\n"),
+              },
+            ],
             details: {
               sessionPath,
               sessionUuid: "0e990a27",
@@ -859,16 +902,19 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
       },
       successResult: {
-        content: [{
-          type: "text",
-          text: "Modified files included src/extensions/coreui/tools.ts, src/extensions/patch.ts, and test/tool-preview.test.ts.",
-        }],
+        content: [
+          {
+            type: "text",
+            text: "Modified files included src/extensions/coreui/tools.ts, src/extensions/patch.ts, and test/tool-preview.test.ts.",
+          },
+        ],
         details: {
           sessionPath,
           sessionUuid: "0e990a27",
           question: "What files were modified in the parent session?",
           messageCount: 42,
-          answer: "Modified files included src/extensions/coreui/tools.ts, src/extensions/patch.ts, and test/tool-preview.test.ts.",
+          answer:
+            "Modified files included src/extensions/coreui/tools.ts, src/extensions/patch.ts, and test/tool-preview.test.ts.",
         },
       },
       errorResult: {
@@ -935,7 +981,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
       },
       successResult: {
-        content: [{ type: "text", text: "Subagent reviewer-two (2d2c7b0c) started. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output." }],
+        content: [
+          {
+            type: "text",
+            text: "Subagent reviewer-two (2d2c7b0c) started. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.",
+          },
+        ],
         details: {
           action: "start",
           args: {
@@ -952,7 +1003,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "subagent start failed: tmux is not available in the current session. Run the parent pi session inside tmux before starting a subagent." }],
+        content: [
+          {
+            type: "text",
+            text: "subagent start failed: tmux is not available in the current session. Run the parent pi session inside tmux before starting a subagent.",
+          },
+        ],
       },
     },
     {
@@ -1021,7 +1077,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "subagent message failed: sessionId 92ad1c07-f550-4f8a-9c84-8992c1d6a132 was not found in this parent session. Use subagent list to inspect known child sessions or start a new subagent." }],
+        content: [
+          {
+            type: "text",
+            text: "subagent message failed: sessionId 92ad1c07-f550-4f8a-9c84-8992c1d6a132 was not found in this parent session. Use subagent list to inspect known child sessions or start a new subagent.",
+          },
+        ],
       },
     },
     {
@@ -1069,7 +1130,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         },
       },
       errorResult: {
-        content: [{ type: "text", text: "subagent cancel failed: tmux kill-pane failed: no such pane: %15" }],
+        content: [
+          {
+            type: "text",
+            text: "subagent cancel failed: tmux kill-pane failed: no such pane: %15",
+          },
+        ],
       },
     },
     {
@@ -1082,14 +1148,19 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         patchText: [
           "*** Begin Patch",
           "*** Update File: src/extensions/patch.ts",
-          "@@ const title = \"before\";",
-          "-const title = \"before\";",
-          "+const title = \"after\";",
+          '@@ const title = "before";',
+          '-const title = "before";',
+          '+const title = "after";',
           "*** End Patch",
         ].join("\n"),
       },
       successResult: {
-        content: [{ type: "text", text: "Success. Updated the following files:\nM src/extensions/patch.ts" }],
+        content: [
+          {
+            type: "text",
+            text: "Success. Updated the following files:\nM src/extensions/patch.ts",
+          },
+        ],
         details: {
           diff: createPatchDiff(patchFile, beforePatch, afterPatch),
           files: [
@@ -1160,9 +1231,9 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         patchText: [
           "*** Begin Patch",
           "*** Update File: src/extensions/patch.ts",
-          "@@ const title = \"before\";",
-          "-const title = \"before\";",
-          "+const title = \"after\";",
+          '@@ const title = "before";',
+          '-const title = "before";',
+          '+const title = "after";',
           "*** Add File: src/tool-preview-demo.ts",
           "+export const preview = true;",
           "*** Delete File: src/tool-preview-old.ts",
@@ -1229,7 +1300,11 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             { relativePath: "src/extensions/patch.ts", type: "update" },
             { relativePath: "src/tool-preview-demo.ts", type: "add" },
             { relativePath: "src/tool-preview-old.ts", type: "delete" },
-            { relativePath: "src/tool-preview-modern.ts", type: "move", sourcePath: "src/tool-preview-legacy.ts" },
+            {
+              relativePath: "src/tool-preview-modern.ts",
+              type: "move",
+              sourcePath: "src/tool-preview-legacy.ts",
+            },
           ],
           totalFiles: 4,
           completedFiles: 4,
@@ -1258,7 +1333,11 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             { relativePath: "src/extensions/patch.ts", type: "update" },
             { relativePath: "src/tool-preview-demo.ts", type: "add" },
             { relativePath: "src/tool-preview-old.ts", type: "delete" },
-            { relativePath: "src/tool-preview-modern.ts", type: "move", sourcePath: "src/tool-preview-legacy.ts" },
+            {
+              relativePath: "src/tool-preview-modern.ts",
+              type: "move",
+              sourcePath: "src/tool-preview-legacy.ts",
+            },
           ],
           totalFiles: 4,
           completedFiles: 2,
@@ -1275,7 +1354,11 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
                 { relativePath: "src/extensions/patch.ts", type: "update" },
                 { relativePath: "src/tool-preview-demo.ts", type: "add" },
                 { relativePath: "src/tool-preview-old.ts", type: "delete" },
-                { relativePath: "src/tool-preview-modern.ts", type: "move", sourcePath: "src/tool-preview-legacy.ts" },
+                {
+                  relativePath: "src/tool-preview-modern.ts",
+                  type: "move",
+                  sourcePath: "src/tool-preview-legacy.ts",
+                },
               ],
               totalFiles: 4,
               completedFiles: 0,
@@ -1297,7 +1380,11 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
                 { relativePath: "src/extensions/patch.ts", type: "update" },
                 { relativePath: "src/tool-preview-demo.ts", type: "add" },
                 { relativePath: "src/tool-preview-old.ts", type: "delete" },
-                { relativePath: "src/tool-preview-modern.ts", type: "move", sourcePath: "src/tool-preview-legacy.ts" },
+                {
+                  relativePath: "src/tool-preview-modern.ts",
+                  type: "move",
+                  sourcePath: "src/tool-preview-legacy.ts",
+                },
               ],
               totalFiles: 4,
               completedFiles: 1,
@@ -1326,7 +1413,11 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
                 { relativePath: "src/extensions/patch.ts", type: "update" },
                 { relativePath: "src/tool-preview-demo.ts", type: "add" },
                 { relativePath: "src/tool-preview-old.ts", type: "delete" },
-                { relativePath: "src/tool-preview-modern.ts", type: "move", sourcePath: "src/tool-preview-legacy.ts" },
+                {
+                  relativePath: "src/tool-preview-modern.ts",
+                  type: "move",
+                  sourcePath: "src/tool-preview-legacy.ts",
+                },
               ],
               totalFiles: 4,
               completedFiles: 2,
@@ -1362,7 +1453,11 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
                 { relativePath: "src/extensions/patch.ts", type: "update" },
                 { relativePath: "src/tool-preview-demo.ts", type: "add" },
                 { relativePath: "src/tool-preview-old.ts", type: "delete" },
-                { relativePath: "src/tool-preview-modern.ts", type: "move", sourcePath: "src/tool-preview-legacy.ts" },
+                {
+                  relativePath: "src/tool-preview-modern.ts",
+                  type: "move",
+                  sourcePath: "src/tool-preview-legacy.ts",
+                },
               ],
               totalFiles: 4,
               completedFiles: 3,
@@ -1386,7 +1481,12 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         timeout: 120,
       },
       partialResult: {
-        content: [{ type: "text", text: "\n> @shekohex/agent@0.65.2 test:tool-preview\n> node --import tsx --test ./test/tool-preview.test.ts\n" }],
+        content: [
+          {
+            type: "text",
+            text: "\n> @shekohex/agent@0.65.2 test:tool-preview\n> node --import tsx --test ./test/tool-preview.test.ts\n",
+          },
+        ],
       },
       previewAnimation: {
         frameDurationMs: 1000,
@@ -1395,27 +1495,42 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             content: [{ type: "text", text: "> @shekohex/agent@0.65.2 test:tool-preview" }],
           },
           {
-            content: [{ type: "text", text: [
-              "> @shekohex/agent@0.65.2 test:tool-preview",
-              "> node --import tsx --test ./test/tool-preview.test.ts",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "> @shekohex/agent@0.65.2 test:tool-preview",
+                  "> node --import tsx --test ./test/tool-preview.test.ts",
+                ].join("\n"),
+              },
+            ],
           },
           {
-            content: [{ type: "text", text: [
-              "> @shekohex/agent@0.65.2 test:tool-preview",
-              "> node --import tsx --test ./test/tool-preview.test.ts",
-              "",
-              "✔ apply_patch preview renders collapsed and expanded states",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "> @shekohex/agent@0.65.2 test:tool-preview",
+                  "> node --import tsx --test ./test/tool-preview.test.ts",
+                  "",
+                  "✔ apply_patch preview renders collapsed and expanded states",
+                ].join("\n"),
+              },
+            ],
           },
           {
-            content: [{ type: "text", text: [
-              "> @shekohex/agent@0.65.2 test:tool-preview",
-              "> node --import tsx --test ./test/tool-preview.test.ts",
-              "",
-              "✔ apply_patch preview renders collapsed and expanded states",
-              "✔ all preview scenarios render within width 120",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "> @shekohex/agent@0.65.2 test:tool-preview",
+                  "> node --import tsx --test ./test/tool-preview.test.ts",
+                  "",
+                  "✔ apply_patch preview renders collapsed and expanded states",
+                  "✔ all preview scenarios render within width 120",
+                ].join("\n"),
+              },
+            ],
           },
         ],
       },
@@ -1485,10 +1600,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         content: [
           {
             type: "text",
-            text: [
-              "stderr: " + "x".repeat(220),
-              "exit code: 1",
-            ].join("\n"),
+            text: ["stderr: " + "x".repeat(220), "exit code: 1"].join("\n"),
           },
         ],
       },
@@ -1532,11 +1644,9 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         content: [
           {
             type: "text",
-            text: [
-              "# Git Commit Skill",
-              "",
-              "Read this skill before making git commits.",
-            ].join("\n"),
+            text: ["# Git Commit Skill", "", "Read this skill before making git commits."].join(
+              "\n",
+            ),
           },
         ],
       },
@@ -1596,15 +1706,22 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       cwd,
       args: {
         path: editFile,
-        edits: [{ oldText: "return new Text(\"\", 0, 0);", newText: "return new Text(\"preview\", 0, 0);" }],
+        edits: [
+          { oldText: 'return new Text("", 0, 0);', newText: 'return new Text("preview", 0, 0);' },
+        ],
       },
       successResult: {
-        content: [{ type: "text", text: "Successfully replaced 1 block(s) in src/extensions/coreui/tools.ts." }],
+        content: [
+          {
+            type: "text",
+            text: "Successfully replaced 1 block(s) in src/extensions/coreui/tools.ts.",
+          },
+        ],
         details: {
           diff: createPatchDiff(
             editFile,
-            ["return new Text(\"\", 0, 0);", ""].join("\n"),
-            ["return new Text(\"preview\", 0, 0);", ""].join("\n"),
+            ['return new Text("", 0, 0);', ""].join("\n"),
+            ['return new Text("preview", 0, 0);', ""].join("\n"),
           ),
           firstChangedLine: 1,
         },
@@ -1616,8 +1733,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             "--- src/extensions/coreui/tools.ts",
             "+++ src/extensions/coreui/tools.ts",
             "@@ -1,1 +1,1 @@",
-            "-return new Text(\"\", 0, 0);",
-            "+return new Text(\"preview\", 0, 0);",
+            '-return new Text("", 0, 0);',
+            '+return new Text("preview", 0, 0);',
           ].join("\n"),
         },
       },
@@ -1641,7 +1758,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
                 "--- src/extensions/coreui/tools.ts",
                 "+++ src/extensions/coreui/tools.ts",
                 "@@ -1,1 +1,1 @@",
-                "-return new Text(\"\", 0, 0);",
+                '-return new Text("", 0, 0);',
               ].join("\n"),
             },
           },
@@ -1652,15 +1769,17 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
                 "--- src/extensions/coreui/tools.ts",
                 "+++ src/extensions/coreui/tools.ts",
                 "@@ -1,1 +1,1 @@",
-                "-return new Text(\"\", 0, 0);",
-                "+return new Text(\"preview\", 0, 0);",
+                '-return new Text("", 0, 0);',
+                '+return new Text("preview", 0, 0);',
               ].join("\n"),
             },
           },
         ],
       },
       errorResult: {
-        content: [{ type: "text", text: "apply_patch verification failed: Failed to read file to update" }],
+        content: [
+          { type: "text", text: "apply_patch verification failed: Failed to read file to update" },
+        ],
       },
     },
     {
@@ -1677,10 +1796,15 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         content: [{ type: "text", text: `Successfully wrote ${writeFile}` }],
       },
       partialResult: {
-        content: [{ type: "text", text: [
-          "export const previewLook = 'compact';",
-          "export const previewMode = 'streaming';",
-        ].join("\n") }],
+        content: [
+          {
+            type: "text",
+            text: [
+              "export const previewLook = 'compact';",
+              "export const previewMode = 'streaming';",
+            ].join("\n"),
+          },
+        ],
       },
       previewAnimation: {
         frameDurationMs: 1000,
@@ -1689,20 +1813,30 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             content: [{ type: "text", text: "export const previewLook = 'compact';" }],
           },
           {
-            content: [{ type: "text", text: [
-              "export const previewLook = 'compact';",
-              "export const previewMode = 'streaming';",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "export const previewLook = 'compact';",
+                  "export const previewMode = 'streaming';",
+                ].join("\n"),
+              },
+            ],
           },
           {
-            content: [{ type: "text", text: [
-              "export const previewLook = 'compact';",
-              "export const previewMode = 'streaming';",
-              "export const previewTail = 5;",
-              "export const previewExpanded = true;",
-              "export const previewHint = 'ctrl+o';",
-              "export const previewPaused = false;",
-            ].join("\n") }],
+            content: [
+              {
+                type: "text",
+                text: [
+                  "export const previewLook = 'compact';",
+                  "export const previewMode = 'streaming';",
+                  "export const previewTail = 5;",
+                  "export const previewExpanded = true;",
+                  "export const previewHint = 'ctrl+o';",
+                  "export const previewPaused = false;",
+                ].join("\n"),
+              },
+            ],
           },
         ],
       },
@@ -1721,22 +1855,56 @@ export function getToolPreviewPanels(scenario: ToolPreviewScenario): ToolPreview
 
   if (scenario.partialResult) {
     panels.push(
-      { id: "partial-collapsed", label: "Partial · collapsed", expanded: false, result: scenario.partialResult, isPartial: true },
-      { id: "partial-expanded", label: "Partial · expanded", expanded: true, result: scenario.partialResult, isPartial: true },
+      {
+        id: "partial-collapsed",
+        label: "Partial · collapsed",
+        expanded: false,
+        result: scenario.partialResult,
+        isPartial: true,
+      },
+      {
+        id: "partial-expanded",
+        label: "Partial · expanded",
+        expanded: true,
+        result: scenario.partialResult,
+        isPartial: true,
+      },
     );
   }
 
   if (scenario.successResult) {
     panels.push(
-      { id: "success-collapsed", label: "Success · collapsed", expanded: false, result: scenario.successResult },
-      { id: "success-expanded", label: "Success · expanded", expanded: true, result: scenario.successResult },
+      {
+        id: "success-collapsed",
+        label: "Success · collapsed",
+        expanded: false,
+        result: scenario.successResult,
+      },
+      {
+        id: "success-expanded",
+        label: "Success · expanded",
+        expanded: true,
+        result: scenario.successResult,
+      },
     );
   }
 
   if (scenario.errorResult) {
     panels.push(
-      { id: "error-collapsed", label: "Error · collapsed", expanded: false, result: scenario.errorResult, isError: true },
-      { id: "error-expanded", label: "Error · expanded", expanded: true, result: scenario.errorResult, isError: true },
+      {
+        id: "error-collapsed",
+        label: "Error · collapsed",
+        expanded: false,
+        result: scenario.errorResult,
+        isError: true,
+      },
+      {
+        id: "error-expanded",
+        label: "Error · expanded",
+        expanded: true,
+        result: scenario.errorResult,
+        isError: true,
+      },
     );
   }
 
@@ -1770,7 +1938,9 @@ export function createPreviewComponent(
   if (result?.details && typeof result.details === "object") {
     const durationMs = (result.details as { durationMs?: unknown }).durationMs;
     if (typeof durationMs === "number") {
-      const rendererState = (component as unknown as { rendererState?: { startedAt?: number; endedAt?: number } }).rendererState;
+      const rendererState = (
+        component as unknown as { rendererState?: { startedAt?: number; endedAt?: number } }
+      ).rendererState;
       if (rendererState) {
         const now = Date.now();
         rendererState.startedAt = now - durationMs;
@@ -1797,11 +1967,19 @@ export function createPreviewComponent(
   return component;
 }
 
-export function renderPreviewLines(scenario: ToolPreviewScenario, panel: ToolPreviewPanel, width = 120): string[] {
+export function renderPreviewLines(
+  scenario: ToolPreviewScenario,
+  panel: ToolPreviewPanel,
+  width = 120,
+): string[] {
   return createPreviewComponent(scenario, panel, fakeTui, 0).render(width);
 }
 
-export function renderPreviewText(scenario: ToolPreviewScenario, panel: ToolPreviewPanel, width = 120): string {
+export function renderPreviewText(
+  scenario: ToolPreviewScenario,
+  panel: ToolPreviewPanel,
+  width = 120,
+): string {
   return renderPreviewLines(scenario, panel, width).join("\n");
 }
 
@@ -1860,7 +2038,11 @@ export function resolvePreviewResult(
   panel: ToolPreviewPanel,
   animationMs = 0,
 ): ToolPreviewResult | undefined {
-  if (!panel.isPartial || !scenario.previewAnimation || scenario.previewAnimation.partialFrames.length === 0) {
+  if (
+    !panel.isPartial ||
+    !scenario.previewAnimation ||
+    scenario.previewAnimation.partialFrames.length === 0
+  ) {
     return panel.result;
   }
 
@@ -1933,7 +2115,10 @@ function getSubagentPreviewDefinition(): ToolDefinition<any, any> {
   return tool;
 }
 
-function createPreviewSubagent(input: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "sessionId" | "sessionPath" | "name" | "task" | "status">): RuntimeSubagent {
+function createPreviewSubagent(
+  input: Partial<RuntimeSubagent> &
+    Pick<RuntimeSubagent, "sessionId" | "sessionPath" | "name" | "task" | "status">,
+): RuntimeSubagent {
   return {
     event: "started",
     sessionId: input.sessionId,
@@ -1985,7 +2170,11 @@ function createReadBatchPreviewDefinition(cwd: string): ToolDefinition<any, any>
         : context.isPartial
           ? theme.fg("dim", "… batching")
           : theme.fg("muted", "✓ batched");
-      return new Text(`${status} ${theme.fg("accent", summary)}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+      return new Text(
+        `${status} ${theme.fg("accent", summary)}`,
+        TOOL_TEXT_PADDING_X,
+        TOOL_TEXT_PADDING_Y,
+      );
     },
     renderResult(result, options, theme, context) {
       const details = result.details as
@@ -1996,16 +2185,24 @@ function createReadBatchPreviewDefinition(cwd: string): ToolDefinition<any, any>
         | undefined;
 
       if (context.isError) {
-        const message = result.content.find((item) => item.type === "text")?.text ?? "failed to batch";
-        return new Text(theme.fg("error", `↳ ${message}`), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
+        const message =
+          result.content.find((item) => item.type === "text")?.text ?? "failed to batch";
+        return new Text(
+          theme.fg("error", `↳ ${message}`),
+          TOOL_TEXT_PADDING_X,
+          TOOL_TEXT_PADDING_Y,
+        );
       }
 
       const items = details?.items ?? args.items;
       if (!options.expanded) {
-        const progress = context.isPartial && typeof details?.completed === "number"
-          ? `${details.completed}/${items.length} complete`
-          : summarizeBatchItems(items, args.noun, cwd);
-        const suffix = context.isPartial ? progress : `${progress} · ${keyHint("app.tools.expand", "expand")}`;
+        const progress =
+          context.isPartial && typeof details?.completed === "number"
+            ? `${details.completed}/${items.length} complete`
+            : summarizeBatchItems(items, args.noun, cwd);
+        const suffix = context.isPartial
+          ? progress
+          : `${progress} · ${keyHint("app.tools.expand", "expand")}`;
         return new Text(theme.fg("dim", `↳ ${suffix}`), TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y);
       }
 
@@ -2020,7 +2217,11 @@ function createReadBatchPreviewDefinition(cwd: string): ToolDefinition<any, any>
   };
 }
 
-function summarizeBatchItems(items: Array<{ path: string; summary?: string }>, noun: string, cwd: string): string {
+function summarizeBatchItems(
+  items: Array<{ path: string; summary?: string }>,
+  noun: string,
+  cwd: string,
+): string {
   const labels = items.map((item) => shortenPathForTool(item.path, cwd));
   const shown = labels.slice(0, 3).join(", ");
   const remaining = labels.length - 3;

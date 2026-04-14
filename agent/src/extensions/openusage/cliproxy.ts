@@ -10,7 +10,11 @@ import {
 } from "./types.js";
 
 const BASE_URL_ENV_KEYS = ["CLIPROXYAPI_BASE_URL", "CLIPROXY_BASE_URL", "CLIPROXYAPI_URL"] as const;
-const API_KEY_ENV_KEYS = ["CLIPROXYAPI_API_KEY", "CLIPROXY_API_KEY", "CLIPROXYAPI_MANAGEMENT_KEY"] as const;
+const API_KEY_ENV_KEYS = [
+  "CLIPROXYAPI_API_KEY",
+  "CLIPROXY_API_KEY",
+  "CLIPROXYAPI_MANAGEMENT_KEY",
+] as const;
 const CLIPROXY_READINESS_PATH = "/v0/management/auth-files";
 const CLIPROXY_CANDIDATES = [
   { label: "lan", origin: "http://192.168.1.116:8317" },
@@ -33,9 +37,11 @@ let cliproxyStatePromise: Promise<CliproxyState> | undefined;
 export async function resolveCliproxyConfig(
   ctx: ExtensionContext,
 ): Promise<CliproxyConfig | undefined> {
-  const apiKey = ((await ctx.modelRegistry.authStorage.getApiKey(CLIPROXY_AUTH_PROVIDER, {
-    includeFallback: true,
-  })) ?? firstEnv(API_KEY_ENV_KEYS))?.trim();
+  const apiKey = (
+    (await ctx.modelRegistry.authStorage.getApiKey(CLIPROXY_AUTH_PROVIDER, {
+      includeFallback: true,
+    })) ?? firstEnv(API_KEY_ENV_KEYS)
+  )?.trim();
 
   if (!apiKey) {
     return undefined;
@@ -53,9 +59,13 @@ export async function resolveCliproxyState(
   ctx: ExtensionContext,
   apiKeyOverride?: string,
 ): Promise<CliproxyState> {
-  const apiKey = apiKeyOverride ?? ((await ctx.modelRegistry.authStorage.getApiKey(CLIPROXY_AUTH_PROVIDER, {
-    includeFallback: true,
-  })) ?? firstEnv(API_KEY_ENV_KEYS))?.trim();
+  const apiKey =
+    apiKeyOverride ??
+    (
+      (await ctx.modelRegistry.authStorage.getApiKey(CLIPROXY_AUTH_PROVIDER, {
+        includeFallback: true,
+      })) ?? firstEnv(API_KEY_ENV_KEYS)
+    )?.trim();
 
   if (!apiKey) {
     return {
@@ -140,7 +150,9 @@ export async function downloadCliproxyAuthFile(
   );
 
   if (!response.ok) {
-    throw new Error(`cliproxy auth-file download failed: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `cliproxy auth-file download failed: ${response.status} ${response.statusText}`,
+    );
   }
 
   const text = await response.text();
@@ -173,7 +185,9 @@ export async function resolveCliproxySelectedAccount(
 function parseAuthFiles(payload: unknown): CliproxyAuthFile[] {
   const items = Array.isArray(payload)
     ? payload
-    : payload && typeof payload === "object" && Array.isArray((payload as { files?: unknown }).files)
+    : payload &&
+        typeof payload === "object" &&
+        Array.isArray((payload as { files?: unknown }).files)
       ? (payload as { files: unknown[] }).files
       : [];
 

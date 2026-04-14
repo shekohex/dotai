@@ -5,7 +5,9 @@ import { DefaultResourceLoader, type ExtensionAPI } from "@mariozechner/pi-codin
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const bundledResourcesDir = join(extensionDir, "..", "resources");
-const loaderPatchSymbol = Symbol.for("@shekohex/agent/default-resource-loader-bundled-paths-patched");
+const loaderPatchSymbol = Symbol.for(
+  "@shekohex/agent/default-resource-loader-bundled-paths-patched",
+);
 
 type LoaderPatchState = {
   additionalSkillPaths?: string[];
@@ -37,9 +39,18 @@ export function installBundledResourcePaths(): void {
   const originalReload = loaderPrototype.reload;
   loaderPrototype.reload = async function patchedReload(this: LoaderPatchState): Promise<void> {
     if (!this.__shekohexBundledResourcePathsInstalled) {
-      this.additionalSkillPaths = appendUniquePaths(this.additionalSkillPaths, discoverSkillPaths());
-      this.additionalPromptTemplatePaths = appendUniquePaths(this.additionalPromptTemplatePaths, discoverPromptPaths());
-      this.additionalThemePaths = appendUniquePaths(this.additionalThemePaths, discoverThemePaths());
+      this.additionalSkillPaths = appendUniquePaths(
+        this.additionalSkillPaths,
+        discoverSkillPaths(),
+      );
+      this.additionalPromptTemplatePaths = appendUniquePaths(
+        this.additionalPromptTemplatePaths,
+        discoverPromptPaths(),
+      );
+      this.additionalThemePaths = appendUniquePaths(
+        this.additionalThemePaths,
+        discoverThemePaths(),
+      );
       this.__shekohexBundledResourcePathsInstalled = true;
     }
 
@@ -71,7 +82,9 @@ function discoverFiles(dir: string, include: (name: string) => boolean): string[
   }
 
   const results: string[] = [];
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 
   for (const entry of entries) {
     if (entry.name.startsWith(".")) {

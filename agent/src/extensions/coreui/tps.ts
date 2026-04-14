@@ -220,8 +220,10 @@ function readTPSSessionEntry(value: unknown): TPSSessionEntry | undefined {
   const max = typeof stats.max === "number" ? stats.max : undefined;
   const median = typeof stats.median === "number" ? stats.median : undefined;
   const min = typeof stats.min === "number" ? stats.min : undefined;
-  const sampleCount = typeof stats.sampleCount === "number" ? stats.sampleCount : TPS_SAMPLE_BUFFER_SIZE;
-  const bufferSize = typeof stats.bufferSize === "number" ? stats.bufferSize : TPS_SAMPLE_BUFFER_SIZE;
+  const sampleCount =
+    typeof stats.sampleCount === "number" ? stats.sampleCount : TPS_SAMPLE_BUFFER_SIZE;
+  const bufferSize =
+    typeof stats.bufferSize === "number" ? stats.bufferSize : TPS_SAMPLE_BUFFER_SIZE;
   const elapsedMs = typeof candidate.elapsedMs === "number" ? candidate.elapsedMs : 0;
   const input = typeof candidate.input === "number" ? candidate.input : 0;
   const output = typeof candidate.output === "number" ? candidate.output : 0;
@@ -339,9 +341,9 @@ function setPersistedTPSVisibility(
 
 function getTPSCommandCompletions(argumentPrefix: string) {
   const prefix = argumentPrefix.trim().toLowerCase();
-  const items = TPS_COMMAND_COMPLETIONS
-    .filter((value) => value.startsWith(prefix))
-    .map((value) => ({ value, label: value }));
+  const items = TPS_COMMAND_COMPLETIONS.filter((value) => value.startsWith(prefix)).map(
+    (value) => ({ value, label: value }),
+  );
 
   return items.length > 0 ? items : null;
 }
@@ -379,9 +381,7 @@ function handleTPSCommand(
   ctx.ui.notify(`TPS ${visible ? "enabled" : "hidden"}`, "info");
 }
 
-export function summarizeAssistantUsage(
-  messages: AgentMessage[],
-): AssistantUsageSummary {
+export function summarizeAssistantUsage(messages: AgentMessage[]): AssistantUsageSummary {
   let input = 0;
   let output = 0;
   let cacheRead = 0;
@@ -500,12 +500,7 @@ export default function registerTPSExtension(
     run.completedOutputTokens += resolveAssistantOutputTokens(event.message);
     run.currentOutputTokens = 0;
 
-    const result = setTPSState(
-      state,
-      sessionSamples,
-      run,
-      run.completedOutputTokens,
-    );
+    const result = setTPSState(state, sessionSamples, run, run.completedOutputTokens);
     sessionSamples = result.nextSamples;
     if (result.changed) {
       requestRender();

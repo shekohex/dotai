@@ -11,11 +11,7 @@ import { Type } from "@sinclair/typebox";
 import { readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import {
-  createTextComponent,
-  formatMutedDirSuffix,
-  getToolPathDisplay,
-} from "./coreui/tools.js";
+import { createTextComponent, formatMutedDirSuffix, getToolPathDisplay } from "./coreui/tools.js";
 
 type Hunk =
   | { type: "add"; path: string; contents: string }
@@ -116,7 +112,9 @@ export const applyPatchTool = defineTool({
   promptSnippet: `use \`apply_patch\` to edit/patch files`,
   parameters: Type.Object(
     {
-      patchText: Type.String({ description: "The full patch text that describes all changes to be made" }),
+      patchText: Type.String({
+        description: "The full patch text that describes all changes to be made",
+      }),
     },
     { additionalProperties: false },
   ),
@@ -162,7 +160,9 @@ export const applyPatchTool = defineTool({
           case "add": {
             const oldContent = "";
             const newContent =
-              hunk.contents.length === 0 || hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`;
+              hunk.contents.length === 0 || hunk.contents.endsWith("\n")
+                ? hunk.contents
+                : `${hunk.contents}\n`;
             const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent));
 
             let additions = 0;
@@ -196,7 +196,9 @@ export const applyPatchTool = defineTool({
           case "update": {
             const stats = await fs.stat(filePath).catch(() => null);
             if (!stats || stats.isDirectory()) {
-              throw new Error(`apply_patch verification failed: Failed to read file to update: ${filePath}`);
+              throw new Error(
+                `apply_patch verification failed: Failed to read file to update: ${filePath}`,
+              );
             }
 
             const oldContent = await fs.readFile(filePath, "utf-8");
@@ -322,31 +324,51 @@ export const applyPatchTool = defineTool({
     });
   },
   renderCall(args, theme, context) {
-    return setPatchCallComponent(context.state as ApplyPatchRenderState, context.lastComponent, formatApplyPatchCall(args.patchText, theme, context));
+    return setPatchCallComponent(
+      context.state as ApplyPatchRenderState,
+      context.lastComponent,
+      formatApplyPatchCall(args.patchText, theme, context),
+    );
   },
   renderResult(result, options, theme, context) {
-    syncPatchRenderState(context, result.details as ApplyPatchDetails | undefined, getResultText(result.content));
+    syncPatchRenderState(
+      context,
+      result.details as ApplyPatchDetails | undefined,
+      getResultText(result.content),
+    );
     const output = getResultText(result.content);
     const details = getApplyPatchDetails(result.details, context.args.patchText);
     const state = context.state as ApplyPatchRenderState;
 
     if (context.isError) {
       if (options.expanded) {
-        return createTextComponent(context.lastComponent, renderApplyPatchError(details.targets, output, theme, true));
+        return createTextComponent(
+          context.lastComponent,
+          renderApplyPatchError(details.targets, output, theme, true),
+        );
       }
       return createTextComponent(context.lastComponent, "");
     }
 
     if (options.isPartial) {
-      return createTextComponent(context.lastComponent, renderApplyPatchProgress(details, theme, options.expanded));
+      return createTextComponent(
+        context.lastComponent,
+        renderApplyPatchProgress(details, theme, options.expanded),
+      );
     }
 
     if (!options.expanded) {
       applyCollapsedPatchSummaryToCall(state, formatApplyPatchSuccess(details, theme, context.cwd));
-      return createTextComponent(context.lastComponent, renderApplyPatchCollapsedSuccess(details, theme));
+      return createTextComponent(
+        context.lastComponent,
+        renderApplyPatchCollapsedSuccess(details, theme),
+      );
     }
 
-    return createTextComponent(context.lastComponent, renderApplyPatchExpandedSuccess(details, theme, context.args.patchText));
+    return createTextComponent(
+      context.lastComponent,
+      renderApplyPatchExpandedSuccess(details, theme, context.args.patchText),
+    );
   },
 });
 
@@ -379,9 +401,9 @@ export default function patchExtension(pi: ExtensionAPI) {
     }
 
     if (patchMode) {
-      const restored = (savedToolsBeforePatch ?? activeTools.filter((toolName) => toolName !== "apply_patch")).filter(
-        (toolName) => toolName !== "apply_patch",
-      );
+      const restored = (
+        savedToolsBeforePatch ?? activeTools.filter((toolName) => toolName !== "apply_patch")
+      ).filter((toolName) => toolName !== "apply_patch");
       if (!sameToolSet(activeTools, restored)) {
         pi.setActiveTools(restored);
       }
@@ -427,7 +449,8 @@ export default function patchExtension(pi: ExtensionAPI) {
 
     return {
       block: true,
-      reason: "`apply_patch` is not active for this model. Use the available file-editing tools instead.",
+      reason:
+        "`apply_patch` is not active for this model. Use the available file-editing tools instead.",
     };
   });
 }
@@ -438,7 +461,11 @@ export function shouldUsePatch(modelId: string | undefined): boolean {
   }
 
   const normalizedModelId = modelId.toLowerCase();
-  return normalizedModelId.includes("gpt-") && !normalizedModelId.includes("oss") && !normalizedModelId.includes("gpt-4");
+  return (
+    normalizedModelId.includes("gpt-") &&
+    !normalizedModelId.includes("oss") &&
+    !normalizedModelId.includes("gpt-4")
+  );
 }
 
 function sameToolSet(left: string[], right: string[]): boolean {
@@ -487,27 +514,34 @@ async function withFileMutationQueues<T>(paths: string[], fn: () => Promise<T>):
   return withFileMutationQueue(first, () => withFileMutationQueues(rest, fn));
 }
 
-function formatApplyPatchCall(
-  patchText: string,
-  theme: any,
-  context: any,
-): string {
+function formatApplyPatchCall(patchText: string, theme: any, context: any): string {
   if (context.isPartial && !context.argsComplete && patchText.trim().length > 0) {
     const streamedTargets = summarizePartialPatchText(patchText);
-    const headline = streamedTargets.length > 1
-      ? `${streamedTargets.length} files`
-      : streamedTargets[0]?.relativePath ?? "...";
+    const headline =
+      streamedTargets.length > 1
+        ? `${streamedTargets.length} files`
+        : (streamedTargets[0]?.relativePath ?? "...");
     const preview = renderStreamingPatchPreview(stylePatchInputPreview(patchText, theme), theme, {
       expanded: context.expanded,
-      footer: streamedTargets.length > 0 ? formatPatchTargetList(streamedTargets, theme, context.expanded) : undefined,
+      footer:
+        streamedTargets.length > 0
+          ? formatPatchTargetList(streamedTargets, theme, context.expanded)
+          : undefined,
       tailLines: 6,
     });
-    return [`${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", headline)}`, preview].filter(Boolean).join("\n");
+    return [
+      `${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", headline)}`,
+      preview,
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   const details = getApplyPatchDetails(context.state.applyPatchDetails, patchText);
   const progress =
-    context.isPartial && details.totalFiles > 1 ? theme.fg("muted", ` · ${details.completedFiles}/${details.totalFiles}`) : "";
+    context.isPartial && details.totalFiles > 1
+      ? theme.fg("muted", ` · ${details.completedFiles}/${details.totalFiles}`)
+      : "";
 
   if (context.isError) {
     return `${theme.bold(theme.fg("error", "patch"))} ${theme.fg("muted", formatPatchHeadline(details, false))}`;
@@ -520,15 +554,12 @@ function formatApplyPatchCall(
   return formatApplyPatchSuccess(details, theme, context.cwd);
 }
 
-function formatApplyPatchSuccess(
-  details: ApplyPatchDetails,
-  theme: any,
-  cwd: string,
-): string {
+function formatApplyPatchSuccess(details: ApplyPatchDetails, theme: any, cwd: string): string {
   const totalChanges = countPatchChanges(details.files);
-  const totalSummary = totalChanges.additions + totalChanges.deletions > 0
-    ? `${theme.fg("muted", " · ")}${formatPatchChangeSummary(theme, totalChanges.additions, totalChanges.deletions)}`
-    : "";
+  const totalSummary =
+    totalChanges.additions + totalChanges.deletions > 0
+      ? `${theme.fg("muted", " · ")}${formatPatchChangeSummary(theme, totalChanges.additions, totalChanges.deletions)}`
+      : "";
   const singleFileHeadline = formatSinglePatchHeadline(details, theme, cwd);
   if (singleFileHeadline) {
     return `${theme.bold(theme.fg("muted", "patched"))} ${singleFileHeadline}${totalSummary}`;
@@ -581,7 +612,9 @@ function renderStreamingPatchPreview(
     return [
       renderedText,
       options.footer ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}` : "",
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   const visibleLines = lines.slice(-tailSize);
@@ -589,7 +622,9 @@ function renderStreamingPatchPreview(
   const blocks: string[] = [];
 
   if (earlierCount > 0) {
-    blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`);
+    blocks.push(
+      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `... (${earlierCount} earlier lines)`)}`,
+    );
   }
 
   if (visibleLines.length > 0) {
@@ -603,18 +638,11 @@ function renderStreamingPatchPreview(
   return blocks.join("\n");
 }
 
-function renderApplyPatchCollapsedSuccess(
-  _details: ApplyPatchDetails,
-  _theme: any,
-): string {
+function renderApplyPatchCollapsedSuccess(_details: ApplyPatchDetails, _theme: any): string {
   return "";
 }
 
-function formatSinglePatchHeadline(
-  details: ApplyPatchDetails,
-  theme: any,
-  cwd: string,
-): string {
+function formatSinglePatchHeadline(details: ApplyPatchDetails, theme: any, cwd: string): string {
   if (details.files.length !== 1) {
     return "";
   }
@@ -635,7 +663,9 @@ function renderApplyPatchExpandedSuccess(
   }
 
   const rendered = details.files
-    .map((file) => `${formatExpandedPatchFileLabel(file, theme)}\n${renderPatchFileDiff(file, theme)}`)
+    .map(
+      (file) => `${formatExpandedPatchFileLabel(file, theme)}\n${renderPatchFileDiff(file, theme)}`,
+    )
     .join("\n\n");
 
   return rendered;
@@ -698,10 +728,7 @@ function formatPatchTargetLabel(target: PatchTargetDetails, partial: boolean): s
   return target.relativePath;
 }
 
-function formatExpandedPatchFileLabel(
-  file: PatchFileDetails,
-  theme: any,
-): string {
+function formatExpandedPatchFileLabel(file: PatchFileDetails, theme: any): string {
   if (file.type === "add") {
     return theme.fg("muted", `A ${file.relativePath}`);
   }
@@ -711,29 +738,29 @@ function formatExpandedPatchFileLabel(
   }
 
   if (file.type === "move") {
-    return theme.fg("muted", `R ${file.sourceRelativePath ?? file.relativePath} → ${file.relativePath}`);
+    return theme.fg(
+      "muted",
+      `R ${file.sourceRelativePath ?? file.relativePath} → ${file.relativePath}`,
+    );
   }
 
   return `${theme.fg("muted", `M ${file.relativePath} · `)}${formatPatchChangeSummary(theme, file.additions, file.deletions)}`;
 }
 
-function renderPatchFileDiff(
-  file: PatchFileDetails,
-  theme: any,
-): string {
+function renderPatchFileDiff(file: PatchFileDetails, theme: any): string {
   return renderGitStyleDiff(file, theme);
 }
 
-function renderGitStyleDiff(
-  file: PatchFileDetails,
-  theme: any,
-): string {
-  const sourcePath = file.type === "add" ? "/dev/null" : `a/${file.sourceRelativePath ?? file.relativePath}`;
+function renderGitStyleDiff(file: PatchFileDetails, theme: any): string {
+  const sourcePath =
+    file.type === "add" ? "/dev/null" : `a/${file.sourceRelativePath ?? file.relativePath}`;
   const targetPath = file.type === "delete" ? "/dev/null" : `b/${file.relativePath}`;
   const diff = trimDiff(createTwoFilesPatch(sourcePath, targetPath, file.before, file.after));
   const relativeSourcePath = file.sourceRelativePath ?? file.relativePath;
   const relativeTargetPath = file.relativePath;
-  const headerLines = [theme.fg("muted", `diff --git a/${relativeSourcePath} b/${relativeTargetPath}`)];
+  const headerLines = [
+    theme.fg("muted", `diff --git a/${relativeSourcePath} b/${relativeTargetPath}`),
+  ];
 
   if (file.type === "move") {
     headerLines.push(theme.fg("muted", `rename from ${relativeSourcePath}`));
@@ -746,7 +773,10 @@ function renderGitStyleDiff(
       continue;
     }
 
-    if (line.startsWith("Index:") || line.startsWith("===================================================================")) {
+    if (
+      line.startsWith("Index:") ||
+      line.startsWith("===================================================================")
+    ) {
       continue;
     }
 
@@ -789,12 +819,16 @@ function getApplyPatchDetails(details: unknown, patchText: string): ApplyPatchDe
         diff: typeof patchDetails.diff === "string" ? patchDetails.diff : "",
         files: Array.isArray(patchDetails.files) ? patchDetails.files : [],
         targets: patchDetails.targets,
-        totalFiles: typeof patchDetails.totalFiles === "number" ? patchDetails.totalFiles : patchDetails.targets.length,
-        completedFiles: typeof patchDetails.completedFiles === "number"
-          ? patchDetails.completedFiles
-          : Array.isArray(patchDetails.files)
-            ? patchDetails.files.length
-            : 0,
+        totalFiles:
+          typeof patchDetails.totalFiles === "number"
+            ? patchDetails.totalFiles
+            : patchDetails.targets.length,
+        completedFiles:
+          typeof patchDetails.completedFiles === "number"
+            ? patchDetails.completedFiles
+            : Array.isArray(patchDetails.files)
+              ? patchDetails.files.length
+              : 0,
       };
     }
   }
@@ -850,10 +884,7 @@ function summarizePartialPatchText(patchText: string): PatchTargetDetails[] {
   return targets.filter((target) => target.relativePath.length > 0);
 }
 
-function stylePatchInputPreview(
-  patchText: string,
-  theme: any,
-): string {
+function stylePatchInputPreview(patchText: string, theme: any): string {
   return patchText
     .split("\n")
     .filter((line) => line.length > 0)
@@ -883,19 +914,30 @@ function summarizeHunks(hunks: Hunk[]): PatchTargetDetails[] {
   }));
 }
 
-function createPatchFileDetailsFromChanges(changes: PatchFileChange[], ctx: ExtensionContext): PatchFileDetails[] {
-  return changes.map((change) => ({
-    filePath: change.filePath,
-    relativePath: path.relative(ctx.cwd, change.movePath ?? change.filePath).replaceAll("\\", "/"),
-    sourceRelativePath: change.type === "move" ? path.relative(ctx.cwd, change.filePath).replaceAll("\\", "/") : undefined,
-    type: change.type,
-    diff: change.diff,
-    before: change.oldContent,
-    after: change.newContent,
-    additions: change.additions,
-    deletions: change.deletions,
-    movePath: change.movePath,
-  } satisfies PatchFileDetails));
+function createPatchFileDetailsFromChanges(
+  changes: PatchFileChange[],
+  ctx: ExtensionContext,
+): PatchFileDetails[] {
+  return changes.map(
+    (change) =>
+      ({
+        filePath: change.filePath,
+        relativePath: path
+          .relative(ctx.cwd, change.movePath ?? change.filePath)
+          .replaceAll("\\", "/"),
+        sourceRelativePath:
+          change.type === "move"
+            ? path.relative(ctx.cwd, change.filePath).replaceAll("\\", "/")
+            : undefined,
+        type: change.type,
+        diff: change.diff,
+        before: change.oldContent,
+        after: change.newContent,
+        additions: change.additions,
+        deletions: change.deletions,
+        movePath: change.movePath,
+      }) satisfies PatchFileDetails,
+  );
 }
 
 function countPatchChanges(files: PatchFileDetails[]): { additions: number; deletions: number } {
@@ -908,21 +950,22 @@ function countPatchChanges(files: PatchFileDetails[]): { additions: number; dele
   );
 }
 
-function formatPatchChangeSummary(
-  theme: any,
-  additions: number,
-  deletions: number,
-): string {
+function formatPatchChangeSummary(theme: any, additions: number, deletions: number): string {
   return `${theme.fg("toolDiffAdded", `+${additions}`)} ${theme.fg("toolDiffRemoved", `-${deletions}`)}`;
 }
 
-function emitApplyPatchUpdate(onUpdate: AgentToolUpdateCallback<ApplyPatchDetails> | undefined, details: ApplyPatchDetails): void {
+function emitApplyPatchUpdate(
+  onUpdate: AgentToolUpdateCallback<ApplyPatchDetails> | undefined,
+  details: ApplyPatchDetails,
+): void {
   if (!onUpdate) {
     return;
   }
 
   onUpdate({
-    content: [{ type: "text", text: `Patching ${details.completedFiles}/${details.totalFiles} files` }],
+    content: [
+      { type: "text", text: `Patching ${details.completedFiles}/${details.totalFiles} files` },
+    ],
     details,
   });
 }
@@ -1007,7 +1050,10 @@ function parsePatchHeader(
   return null;
 }
 
-function parseUpdateFileChunks(lines: string[], startIdx: number): { chunks: UpdateFileChunk[]; nextIdx: number } {
+function parseUpdateFileChunks(
+  lines: string[],
+  startIdx: number,
+): { chunks: UpdateFileChunk[]; nextIdx: number } {
   const chunks: UpdateFileChunk[] = [];
   let i = startIdx;
 
@@ -1056,7 +1102,10 @@ function parseUpdateFileChunks(lines: string[], startIdx: number): { chunks: Upd
   return { chunks, nextIdx: i };
 }
 
-function parseAddFileContent(lines: string[], startIdx: number): { content: string; nextIdx: number } {
+function parseAddFileContent(
+  lines: string[],
+  startIdx: number,
+): { content: string; nextIdx: number } {
   let content = "";
   let i = startIdx;
 
@@ -1134,7 +1183,10 @@ function parsePatch(patchText: string): { hunks: Hunk[] } {
   return { hunks };
 }
 
-function deriveNewContentsFromChunks(filePath: string, chunks: UpdateFileChunk[]): { unified_diff: string; content: string } {
+function deriveNewContentsFromChunks(
+  filePath: string,
+  chunks: UpdateFileChunk[],
+): { unified_diff: string; content: string } {
   let originalContent: string;
   try {
     originalContent = readFileSync(filePath, "utf-8");
@@ -1206,7 +1258,9 @@ function computeReplacements(
       replacements.push([found, pattern.length, newSlice]);
       lineIndex = found + pattern.length;
     } else {
-      throw new Error(`Failed to find expected lines in ${filePath}:\n${chunk.old_lines.join("\n")}`);
+      throw new Error(
+        `Failed to find expected lines in ${filePath}:\n${chunk.old_lines.join("\n")}`,
+      );
     }
   }
 
@@ -1215,7 +1269,10 @@ function computeReplacements(
   return replacements;
 }
 
-function applyReplacements(lines: string[], replacements: Array<[number, number, string[]]>): string[] {
+function applyReplacements(
+  lines: string[],
+  replacements: Array<[number, number, string[]]>,
+): string[] {
   const result = [...lines];
 
   for (let i = replacements.length - 1; i >= 0; i--) {
@@ -1285,7 +1342,13 @@ function seekSequence(lines: string[], pattern: string[], startIndex: number, eo
   const trim = tryMatch(lines, pattern, startIndex, (a, b) => a.trim() === b.trim(), eof);
   if (trim !== -1) return trim;
 
-  return tryMatch(lines, pattern, startIndex, (a, b) => normalizeUnicode(a.trim()) === normalizeUnicode(b.trim()), eof);
+  return tryMatch(
+    lines,
+    pattern,
+    startIndex,
+    (a, b) => normalizeUnicode(a.trim()) === normalizeUnicode(b.trim()),
+    eof,
+  );
 }
 
 function generateUnifiedDiff(oldContent: string, newContent: string): string {

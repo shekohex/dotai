@@ -23,6 +23,7 @@ import modelFamilySystemPromptExtension, {
   extractPiDynamicTail,
 } from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
+import filesExtension from "../src/extensions/files.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
 import promptStashExtension, {
   getStashFilePath,
@@ -2028,7 +2029,30 @@ timedTest("prompt stash registers a non-conflicting shortcut", async () => {
     }).extensionRunner.getShortcuts(KeybindingsManager.create().getEffectiveConfig());
 
     assert.equal(shortcuts.get("ctrl+alt+s")?.description, "Stash current prompt");
-    assert.equal(shortcuts.get("ctrl+shift+s")?.description, "Select prompt mode");
+    assert.equal(shortcuts.get("ctrl+alt+p")?.description, "Select prompt mode");
+    assert.equal(shortcuts.get("ctrl+alt+m")?.description, "Cycle prompt mode");
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest("files extension registers alt-based shortcuts", async () => {
+  let session: TestSession | undefined;
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [filesExtension],
+    });
+
+    const shortcuts = (session.session as {
+      extensionRunner: {
+        getShortcuts: (resolvedKeybindings: unknown) => Map<string, { description?: string; extensionPath: string }>;
+      };
+    }).extensionRunner.getShortcuts(KeybindingsManager.create().getEffectiveConfig());
+
+    assert.equal(shortcuts.get("ctrl+alt+o")?.description, "Browse files mentioned in the session");
+    assert.equal(shortcuts.get("ctrl+alt+f")?.description, "Reveal the latest file reference in Finder");
+    assert.equal(shortcuts.get("ctrl+alt+r")?.description, "Quick Look the latest file reference");
   } finally {
     session?.dispose();
   }

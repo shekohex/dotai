@@ -251,7 +251,7 @@ class PromptStashBrowser implements Component, Focusable {
     this.root.addChild(new Spacer(1));
     this.root.addChild(
       new Text(
-        theme.fg("dim", "Search to filter • enter open • ctrl+shift+o pop • ctrl+backspace delete • esc cancel"),
+        theme.fg("dim", "Search to filter • enter open • ctrl+alt+o pop • ctrl+backspace delete • esc cancel"),
         0,
         0,
       ),
@@ -328,7 +328,7 @@ class PromptStashBrowser implements Component, Focusable {
       return;
     }
 
-    if (matchesKey(data, "ctrl+shift+o")) {
+    if (matchesKey(data, "ctrl+alt+o")) {
       const entry = this.getSelectedEntry();
       if (entry) {
         this.close({ type: "pop", entry });

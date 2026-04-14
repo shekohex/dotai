@@ -867,7 +867,7 @@ const showFileSelector = async (
     const listContainer = new Container();
     container.addChild(listContainer);
     container.addChild(
-      new Text(theme.fg("dim", "Type to filter • enter to select • ctrl+shift+d diff • esc to cancel"), 0, 0),
+      new Text(theme.fg("dim", "Type to filter • enter to select • ctrl+alt+d diff • esc to cancel"), 0, 0),
     );
     container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
@@ -921,7 +921,7 @@ const showFileSelector = async (
         container.invalidate();
       },
       handleInput(data: string) {
-        if (matchesKey(data, "ctrl+shift+d")) {
+        if (matchesKey(data, "ctrl+alt+d")) {
           const selected = selectList?.getSelectedItem();
           if (selected) {
             const file = files.find((entry) => entry.canonicalPath === selected.value);
@@ -1037,14 +1037,14 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerShortcut("ctrl+shift+o", {
+  pi.registerShortcut("ctrl+alt+o", {
     description: "Browse files mentioned in the session",
     handler: async (ctx) => {
       await runFileBrowser(pi, ctx);
     },
   });
 
-  pi.registerShortcut("ctrl+shift+f", {
+  pi.registerShortcut("ctrl+alt+f", {
     description: "Reveal the latest file reference in Finder",
     handler: async (ctx) => {
       const entries = ctx.sessionManager.getBranch();
@@ -1077,7 +1077,7 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerShortcut("ctrl+shift+r", {
+  pi.registerShortcut("ctrl+alt+r", {
     description: "Quick Look the latest file reference",
     handler: async (ctx) => {
       const entries = ctx.sessionManager.getBranch();

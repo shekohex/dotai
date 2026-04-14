@@ -883,14 +883,14 @@ export default function modesExtension(pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerShortcut(Key.ctrlShift("s"), {
+  pi.registerShortcut(Key.ctrlAlt("p"), {
     description: "Select prompt mode",
     handler: async (ctx) => {
       await showModePicker(pi, ctx);
     },
   });
 
-  pi.registerShortcut(Key.ctrlShift("m"), {
+  pi.registerShortcut(Key.ctrlAlt("m"), {
     description: "Cycle prompt mode",
     handler: async (ctx) => {
       await cycleMode(pi, ctx);

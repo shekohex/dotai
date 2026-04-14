@@ -1,0 +1,255 @@
+import type {
+  AgentToolUpdateCallback,
+  ExtensionAPI,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
+
+import { SubagentRuntimeEventBus, type SubagentRuntimeEvent } from "./events.js";
+import type { PaneCapture, MuxAdapter } from "./mux.js";
+import { SubagentRuntime } from "./runtime.js";
+import type { LaunchCommandBuilder } from "./launch.js";
+import type {
+  CancelSubagentParams,
+  MessageSubagentParams,
+  MessageSubagentResult,
+  ResumeSubagentParams,
+  RuntimeSubagent,
+  StartSubagentParams,
+} from "./types.js";
+import { cloneRuntimeSubagent } from "./types.js";
+import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
+
+const SDK_EVENT_POLL_INTERVAL_MS = 500;
+
+function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
+  return status === "completed" || status === "cancelled" || status === "failed";
+}
+
+function getStateOrThrow(runtime: SubagentRuntime, sessionId: string): RuntimeSubagent {
+  const state = runtime.listStates().find((candidate) => candidate.sessionId === sessionId);
+  if (!state) {
+    throw new Error(`Unknown subagent sessionId: ${sessionId}`);
+  }
+
+  return state;
+}
+
+export type SubagentSDKEvent = SubagentRuntimeEvent;
+
+export interface SubagentHandle {
+  readonly sessionId: string;
+  getState(): RuntimeSubagent;
+  sendMessage(
+    params: Omit<MessageSubagentParams, "sessionId">,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<MessageSubagentResult>;
+  cancel(): Promise<RuntimeSubagent>;
+  waitForCompletion(options?: { signal?: AbortSignal }): Promise<RuntimeSubagent>;
+  captureOutput(lines?: number): Promise<PaneCapture>;
+  onEvent(listener: (event: SubagentSDKEvent) => void): () => void;
+}
+
+export interface SubagentSDK {
+  restore(ctx: ExtensionContext): Promise<SubagentHandle[]>;
+  spawn(
+    params: StartSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+    signal?: AbortSignal,
+  ): Promise<{ handle: SubagentHandle; prompt: string }>;
+  resume(
+    params: ResumeSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<{ handle: SubagentHandle; prompt: string }>;
+  message(
+    params: MessageSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<{ handle: SubagentHandle; result: MessageSubagentResult }>;
+  cancel(params: CancelSubagentParams): Promise<RuntimeSubagent>;
+  get(sessionId: string): SubagentHandle | undefined;
+  list(): RuntimeSubagent[];
+  captureOutput(params: { sessionId: string; lines?: number }): Promise<PaneCapture>;
+  onEvent(listener: (event: SubagentSDKEvent) => void): () => void;
+  dispose(): void;
+}
+
+type CreateSubagentSDKOptions = {
+  adapter: MuxAdapter;
+  buildLaunchCommand: LaunchCommandBuilder;
+  hooks?: SubagentRuntimeHooks;
+};
+
+class SDKSubagentHandle implements SubagentHandle {
+  constructor(
+    private readonly sdk: SubagentSDK,
+    public readonly sessionId: string,
+  ) {}
+
+  getState(): RuntimeSubagent {
+    const state = this.sdk.list().find((candidate) => candidate.sessionId === this.sessionId);
+    if (!state) {
+      throw new Error(`Unknown subagent sessionId: ${this.sessionId}`);
+    }
+
+    return cloneRuntimeSubagent(state);
+  }
+
+  sendMessage(
+    params: Omit<MessageSubagentParams, "sessionId">,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+  ): Promise<MessageSubagentResult> {
+    return this.sdk
+      .message({ ...params, sessionId: this.sessionId }, ctx, onUpdate)
+      .then((result) => result.result);
+  }
+
+  cancel(): Promise<RuntimeSubagent> {
+    return this.sdk.cancel({ sessionId: this.sessionId });
+  }
+
+  waitForCompletion(options: { signal?: AbortSignal } = {}): Promise<RuntimeSubagent> {
+    const currentState = this.getState();
+    if (isTerminalStatus(currentState.status)) {
+      return Promise.resolve(currentState);
+    }
+
+    return new Promise<RuntimeSubagent>((resolve, reject) => {
+      let cleanup = () => {};
+
+      const dispose = () => {
+        cleanup();
+        options.signal?.removeEventListener("abort", abortHandler);
+      };
+
+      const abortHandler = () => {
+        dispose();
+        reject(new Error("Cancelled"));
+      };
+
+      cleanup = this.onEvent(({ state }) => {
+        if (!isTerminalStatus(state.status)) {
+          return;
+        }
+
+        dispose();
+        resolve(state);
+      });
+
+      const updatedState = this.getState();
+      if (isTerminalStatus(updatedState.status)) {
+        dispose();
+        resolve(updatedState);
+        return;
+      }
+
+      if (options.signal?.aborted) {
+        abortHandler();
+        return;
+      }
+
+      options.signal?.addEventListener("abort", abortHandler, { once: true });
+    });
+  }
+
+  captureOutput(lines?: number): Promise<PaneCapture> {
+    return this.sdk.captureOutput({ sessionId: this.sessionId, lines });
+  }
+
+  onEvent(listener: (event: SubagentSDKEvent) => void): () => void {
+    return this.sdk.onEvent((event) => {
+      if (event.state.sessionId !== this.sessionId) {
+        return;
+      }
+
+      listener(event);
+    });
+  }
+}
+
+export function createSubagentSDK(
+  pi: ExtensionAPI,
+  options: CreateSubagentSDKOptions,
+): SubagentSDK {
+  const runtime = new SubagentRuntime(
+    pi,
+    options.adapter,
+    options.buildLaunchCommand,
+    options.hooks,
+  );
+  const eventBus = new SubagentRuntimeEventBus();
+  const timer = setInterval(() => {
+    emitChangedStates();
+  }, SDK_EVENT_POLL_INTERVAL_MS);
+
+  timer.unref?.();
+
+  function emitChangedStates(): void {
+    eventBus.emitChangedStates(runtime.listStates());
+  }
+
+  function toHandle(sessionId: string): SubagentHandle {
+    return new SDKSubagentHandle(sdk, sessionId);
+  }
+
+  const sdk: SubagentSDK = {
+    async restore(ctx) {
+      await runtime.restore(ctx);
+      emitChangedStates();
+      return runtime.listStates().map((state) => toHandle(state.sessionId));
+    },
+    async spawn(params, ctx, onUpdate, signal) {
+      const started = await runtime.spawn(params, ctx, onUpdate, signal);
+      emitChangedStates();
+      return {
+        handle: toHandle(started.state.sessionId),
+        prompt: started.prompt,
+      };
+    },
+    async resume(params, ctx, onUpdate) {
+      const resumed = await runtime.resume(params, ctx, onUpdate);
+      emitChangedStates();
+      return {
+        handle: toHandle(resumed.state.sessionId),
+        prompt: resumed.prompt,
+      };
+    },
+    async message(params, ctx, onUpdate) {
+      const result = await runtime.message(params, ctx, onUpdate);
+      emitChangedStates();
+      return {
+        handle: toHandle(result.state.sessionId),
+        result,
+      };
+    },
+    async cancel(params) {
+      const cancelled = await runtime.cancel(params);
+      emitChangedStates();
+      return cancelled;
+    },
+    get(sessionId) {
+      return runtime.listStates().some((state) => state.sessionId === sessionId)
+        ? toHandle(sessionId)
+        : undefined;
+    },
+    list() {
+      return runtime.listStates();
+    },
+    async captureOutput({ sessionId, lines }) {
+      const state = getStateOrThrow(runtime, sessionId);
+      return options.adapter.capturePane(state.paneId, lines);
+    },
+    onEvent(listener) {
+      return eventBus.subscribe(listener);
+    },
+    dispose() {
+      clearInterval(timer);
+      runtime.dispose();
+    },
+  };
+
+  return sdk;
+}

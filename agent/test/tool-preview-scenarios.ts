@@ -10,7 +10,7 @@ import { applyPatchTool } from "../src/extensions/patch.js";
 import { webFetchTool } from "../src/extensions/fetch.js";
 import { sessionQueryTool } from "../src/extensions/session-query.js";
 import { createSubagentExtension } from "../src/extensions/subagent.js";
-import type { RuntimeSubagent } from "../src/extensions/subagent/types.js";
+import type { RuntimeSubagent } from "../src/subagent-sdk/types.js";
 import { webSearchTool } from "../src/extensions/websearch.js";
 import { createExecuteToolDefinition } from "../src/extensions/executor/tools.js";
 import {
@@ -101,7 +101,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
     "- Keep tool call previews compact and stream the latest progress into expanded mode.",
     "- Reuse session-launch-utils handoff helpers for parent-to-child context transfer.",
     "Files involved:",
-    "- src/extensions/subagent.ts, src/extensions/subagent/state.ts, src/extensions/session-launch-utils.ts, test/tool-preview.test.ts, and keep SUBAGENT-TAIL-MARKER visible.",
+    "- src/extensions/subagent.ts, src/subagent-sdk/runtime.ts, src/extensions/session-launch-utils.ts, test/tool-preview.test.ts, and keep SUBAGENT-TAIL-MARKER visible.",
   ];
   const subagentHandoffPreview = subagentHandoffPreviewLines.join("\n");
   const subagentHandoffPrompt = [
@@ -110,7 +110,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
     "",
     "Files involved:",
     "- src/extensions/subagent.ts",
-    "- src/extensions/subagent/state.ts",
+    "- src/subagent-sdk/runtime.ts",
     "- src/extensions/session-launch-utils.ts",
     "- test/tool-preview.test.ts",
     "",

@@ -17,8 +17,8 @@ import stripAnsi from "strip-ansi";
 
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import { formatAvailableModesXml } from "../src/extensions/available-modes.ts";
-import { resolveSubagentMode, resolveModeTools } from "../src/extensions/subagent/modes.ts";
-import { TmuxAdapter } from "../src/extensions/subagent/tmux.ts";
+import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes.ts";
+import { TmuxAdapter } from "../src/subagent-sdk/tmux.ts";
 import {
   activateAutoExitTimeoutMode,
   createChildSessionFile,
@@ -29,15 +29,15 @@ import {
   readChildSessionOutcome,
   readChildSessionStatus,
   reduceRuntimeSubagents,
-} from "../src/extensions/subagent/session.ts";
-import type { MuxAdapter, PaneSubmitMode } from "../src/extensions/subagent/mux.ts";
-import { SubagentManager } from "../src/extensions/subagent/state.ts";
+} from "../src/subagent-sdk/persistence.ts";
+import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
+import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
 import {
   SUBAGENT_MESSAGE_ENTRY,
   SUBAGENT_STATE_ENTRY,
   type RuntimeSubagent,
-} from "../src/extensions/subagent/types.ts";
-import { renderSubagentWidget } from "../src/extensions/subagent/render.ts";
+} from "../src/subagent-sdk/types.ts";
+import { renderSubagentWidget } from "../src/subagent-sdk/ui.ts";
 import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
 
 const TEST_TIMEOUT_MS = 15_000;
@@ -736,7 +736,7 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
   );
 
   try {
-    const manager = new SubagentManager(
+    const runtime = new SubagentRuntime(
       new FakePi() as unknown as ExtensionAPI,
       new FakeMuxAdapter(),
       () => "",
@@ -763,7 +763,7 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
       updatedAt: 2,
     };
 
-    const immediateExitState = (await (manager as any).syncLiveState(
+    const immediateExitState = (await (runtime as any).syncLiveState(
       baseState,
       "updated",
     )) as RuntimeSubagent;
@@ -773,7 +773,7 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
 
     activateAutoExitTimeoutMode(sessionId);
 
-    const delayedExitState = (await (manager as any).syncLiveState(
+    const delayedExitState = (await (runtime as any).syncLiveState(
       baseState,
       "updated",
     )) as RuntimeSubagent;
@@ -1656,7 +1656,7 @@ timedTest("subagent tool surfaces invalid params with actionable guidance", asyn
 });
 
 timedTest(
-  "SubagentManager start, resume, message, cancel, and restore cover the lifecycle",
+  "SubagentRuntime spawn, resume, message, cancel, and restore cover the lifecycle",
   async () => {
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
     const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-dir-"));
@@ -1671,7 +1671,7 @@ timedTest(
       prompt: string;
       options: unknown;
     }> = [];
-    const manager = new SubagentManager(
+    const runtime = new SubagentRuntime(
       fakePi as unknown as ExtensionAPI,
       fakeMux,
       (state, childState, prompt, options) => {
@@ -1709,7 +1709,7 @@ timedTest(
         sessionFile: path.join(cwd, "parent.jsonl"),
       });
 
-      const started = await manager.start(
+      const started = await runtime.spawn(
         {
           name: "worker-one",
           task: "Inspect the failing tests",
@@ -1745,9 +1745,16 @@ timedTest(
       )?.data as Record<string, unknown> | undefined;
       assert.ok(persistedStartedState);
       assert.equal("modeLabel" in persistedStartedState, false);
-      assert.equal(manager.list().length, 1);
+      assert.equal(runtime.listStates().length, 1);
 
-      const delivered = await manager.message(
+      const runtimeSnapshot = runtime.listStates()[0];
+      assert.ok(runtimeSnapshot);
+      runtimeSnapshot.status = "failed";
+      runtimeSnapshot.paneId = "%999";
+      assert.equal(runtime.listStates()[0]?.status, "running");
+      assert.notEqual(runtime.listStates()[0]?.paneId, "%999");
+
+      const delivered = await runtime.message(
         {
           sessionId: started.state.sessionId,
           message: "Focus on src/extensions first",
@@ -1769,14 +1776,14 @@ timedTest(
       ) as { expiresAt: number };
       assert.ok(parentInputMarker.expiresAt > Date.now());
 
-      const cancelled = await manager.cancel({ sessionId: started.state.sessionId });
+      const cancelled = await runtime.cancel({ sessionId: started.state.sessionId });
       assert.equal(cancelled.status, "cancelled");
       assert.equal(fakeMux.killed.length, 1);
-      assert.equal(manager.list().length, 1);
-      assert.equal(manager.list()[0]?.status, "cancelled");
+      assert.equal(runtime.listStates().length, 1);
+      assert.equal(runtime.listStates()[0]?.status, "cancelled");
       assert.equal(fakePi.sentMessages.length, 1);
 
-      const resumed = await manager.resume(
+      const resumed = await runtime.resume(
         {
           sessionId: started.state.sessionId,
           task: "Address the review feedback",
@@ -1812,7 +1819,7 @@ timedTest(
       });
       fakeMux.existingPanes.delete(resumed.state.paneId);
 
-      const deliveredAfterAutoResume = await manager.message(
+      const deliveredAfterAutoResume = await runtime.message(
         {
           sessionId: started.state.sessionId,
           message: "Continue with the highest priority review item",
@@ -1897,9 +1904,9 @@ timedTest(
         ],
       });
 
-      await manager.restore(restoreCtx);
+      await runtime.restore(restoreCtx);
       assert.equal(
-        manager.list().find((state) => state.sessionId === restoredSessionId)?.status,
+        runtime.listStates().find((state) => state.sessionId === restoredSessionId)?.status,
         "completed",
       );
       const completedStates = fakePi.appendedEntries.filter(
@@ -1909,7 +1916,7 @@ timedTest(
       assert.equal(fakePi.sentMessages.length, 2);
       assert.deepEqual(fakePi.sentMessages[1]?.options, { deliverAs: "steer", triggerTurn: true });
     } finally {
-      manager.dispose();
+      runtime.dispose();
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;
       await fs.rm(agentDir, { recursive: true, force: true });
       await fs.rm(cwd, { recursive: true, force: true });

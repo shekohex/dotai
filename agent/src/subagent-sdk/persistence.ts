@@ -7,9 +7,9 @@ import {
   getDefaultSessionDir as getUpstreamDefaultSessionDir,
   type SessionEntry,
   type SessionMessageEntry,
-} from "../../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
+} from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
 
-import { extractMessageText } from "../session-launch-utils.js";
+import { extractMessageText } from "../extensions/session-launch-utils.js";
 import {
   SUBAGENT_STATE_ENTRY,
   parseSubagentStateEntry,

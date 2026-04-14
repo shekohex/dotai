@@ -248,6 +248,10 @@ export type SubagentToolProgressDetails = {
 
 export type SubagentToolRenderDetails = SubagentToolResultDetails | SubagentToolProgressDetails;
 
+export function cloneRuntimeSubagent(state: RuntimeSubagent): RuntimeSubagent {
+  return { ...state };
+}
+
 export function parseSubagentStateEntry(value: unknown): SubagentStateEntry | undefined {
   if (!Value.Check(SubagentStateEntrySchema, value)) {
     return undefined;

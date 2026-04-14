@@ -12,11 +12,10 @@ import {
   buildContextTransferPrompt,
   generateContextTransferSummary,
   getConversationMessages,
-} from "../session-launch-utils.js";
-import type { TmuxTarget } from "../../mode-utils.js";
+} from "../extensions/session-launch-utils.js";
+import type { LaunchCommandBuilder } from "./launch.js";
 import { resolveSubagentMode } from "./modes.js";
 import type { MuxAdapter } from "./mux.js";
-import { renderSubagentWidget } from "./render.js";
 import {
   createChildSessionFile,
   getParentInjectedInputMarkerPath,
@@ -25,14 +24,10 @@ import {
   readChildSessionStatusDetails,
   reduceRuntimeSubagents,
   SUBAGENT_PARENT_INPUT_GRACE_MS,
-} from "./session.js";
+} from "./persistence.js";
+import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "./runtime-hooks.js";
 import {
-  SUBAGENT_MESSAGE_ENTRY,
-  SUBAGENT_STATE_ENTRY,
-  SUBAGENT_STATUS_MESSAGE,
-  SUBAGENT_WIDGET_KEY,
-  serializeSubagentMessageEntry,
-  serializeSubagentStateEntry,
+  cloneRuntimeSubagent,
   type CancelSubagentParams,
   type ChildBootstrapState,
   type MessageSubagentParams,
@@ -42,32 +37,8 @@ import {
   type RuntimeSubagent,
   type StartSubagentParams,
   type StartSubagentResult,
-  type SubagentMessageEntry,
   type SubagentToolProgressDetails,
-  type SubagentStateEntry,
 } from "./types.js";
-
-type LaunchCommandBuilder = (
-  state: RuntimeSubagent,
-  childState: ChildBootstrapState,
-  prompt: string,
-  options: {
-    launchTarget?:
-      | {
-          kind: "session";
-          sessionPath: string;
-        }
-      | {
-          kind: "continue";
-        };
-    tmuxTarget: TmuxTarget;
-    mode?: string;
-    model?: string;
-    thinkingLevel?: string;
-    systemPrompt?: string;
-    systemPromptMode: "append" | "replace";
-  },
-) => string;
 
 function runtimeSubagentError(
   action: "start" | "resume" | "message" | "cancel",
@@ -103,7 +74,7 @@ function emitProgressUpdate(
   });
 }
 
-export class SubagentManager {
+export class SubagentRuntime {
   private ctx?: ExtensionContext;
   private states = new Map<string, RuntimeSubagent>();
   private activeSessionIds = new Set<string>();
@@ -115,10 +86,11 @@ export class SubagentManager {
     private readonly pi: ExtensionAPI,
     private readonly adapter: MuxAdapter,
     private readonly buildLaunchCommand: LaunchCommandBuilder,
+    private readonly hooks: SubagentRuntimeHooks = createDefaultSubagentRuntimeHooks(pi),
   ) {}
 
-  setContext(ctx: ExtensionContext): void {
-    this.ctx = ctx;
+  private toPublicState(state: RuntimeSubagent): RuntimeSubagent {
+    return cloneRuntimeSubagent(state);
   }
 
   dispose(): void {
@@ -133,8 +105,10 @@ export class SubagentManager {
     }
   }
 
-  list(): RuntimeSubagent[] {
-    return Array.from(this.states.values()).sort((left, right) => left.startedAt - right.startedAt);
+  listStates(): RuntimeSubagent[] {
+    return Array.from(this.states.values())
+      .sort((left, right) => left.startedAt - right.startedAt)
+      .map((state) => this.toPublicState(state));
   }
 
   private getStateOrThrow(
@@ -189,7 +163,7 @@ export class SubagentManager {
     }
   }
 
-  async start(
+  async spawn(
     params: StartSubagentParams,
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback<any>,
@@ -325,10 +299,10 @@ export class SubagentManager {
 
     this.states.set(sessionId, state);
     this.activeSessionIds.add(sessionId);
-    await this.persistState(state);
+    await this.hooks.persistState(state);
     this.ensurePolling();
     this.refreshWidget();
-    return { state, prompt };
+    return { state: this.toPublicState(state), prompt };
   }
 
   async resume(
@@ -447,10 +421,10 @@ export class SubagentManager {
 
     this.states.set(state.sessionId, state);
     this.activeSessionIds.add(state.sessionId);
-    await this.persistState(state);
+    await this.hooks.persistState(state);
     this.ensurePolling();
     this.refreshWidget();
-    return { state, prompt: params.task };
+    return { state: this.toPublicState(state), prompt: params.task };
   }
 
   async message(
@@ -465,7 +439,7 @@ export class SubagentManager {
     );
     const deliveredState = await this.deliverMessage(state, params, onUpdate);
     return {
-      state: deliveredState,
+      state: this.toPublicState(deliveredState),
       autoResumed,
       resumePrompt,
     };
@@ -519,7 +493,7 @@ export class SubagentManager {
       durationMs: 0,
     });
 
-    await this.persistMessage({
+    await this.hooks.persistMessage({
       sessionId: params.sessionId,
       message: params.message,
       delivery: params.delivery,
@@ -538,7 +512,7 @@ export class SubagentManager {
         delivery: params.delivery,
         durationMs: Date.now() - startedAt,
       });
-      await this.persistMessage({
+      await this.hooks.persistMessage({
         sessionId: params.sessionId,
         message: params.message,
         delivery: params.delivery,
@@ -557,11 +531,11 @@ export class SubagentManager {
       };
 
       this.states.set(updatedState.sessionId, updatedState);
-      await this.persistState(updatedState);
+      await this.hooks.persistState(updatedState);
       this.refreshWidget();
       return updatedState;
     } catch (error) {
-      await this.persistMessage({
+      await this.hooks.persistMessage({
         sessionId: params.sessionId,
         message: params.message,
         delivery: params.delivery,
@@ -593,18 +567,13 @@ export class SubagentManager {
 
     this.states.set(cancelled.sessionId, cancelled);
     this.activeSessionIds.delete(cancelled.sessionId);
-    await this.persistState(cancelled);
+    await this.hooks.persistState(cancelled);
     this.stopPollingIfIdle();
     this.refreshWidget();
-    this.pi.sendMessage(
-      {
-        customType: SUBAGENT_STATUS_MESSAGE,
-        content: `Subagent ${state.name} (${state.sessionId}) was cancelled.`,
-        display: true,
-      },
-      { deliverAs: "steer" },
-    );
-    return cancelled;
+    this.hooks.emitStatusMessage({
+      content: `Subagent ${state.name} (${state.sessionId}) was cancelled.`,
+    });
+    return this.toPublicState(cancelled);
   }
 
   private ensurePolling(): void {
@@ -697,7 +666,7 @@ export class SubagentManager {
 
     this.states.set(terminal.sessionId, terminal);
     this.activeSessionIds.delete(terminal.sessionId);
-    await this.persistState(terminal);
+    await this.hooks.persistState(terminal);
     this.stopPollingIfIdle();
 
     const messageText =
@@ -705,22 +674,7 @@ export class SubagentManager {
         ? `Subagent ${terminal.name} (${terminal.sessionId}) completed.\n\n${terminal.summary ?? "No summary available."}`
         : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${terminal.summary ?? "No summary available."}`;
 
-    this.pi.sendMessage(
-      {
-        customType: SUBAGENT_STATUS_MESSAGE,
-        content: messageText,
-        display: true,
-      },
-      { deliverAs: "steer", triggerTurn: true },
-    );
-  }
-
-  private async persistState(state: SubagentStateEntry): Promise<void> {
-    this.pi.appendEntry(SUBAGENT_STATE_ENTRY, serializeSubagentStateEntry(state));
-  }
-
-  private async persistMessage(entry: SubagentMessageEntry): Promise<void> {
-    this.pi.appendEntry(SUBAGENT_MESSAGE_ENTRY, serializeSubagentMessageEntry(entry));
+    this.hooks.emitStatusMessage({ content: messageText, triggerTurn: true });
   }
 
   private async markParentInjectedInput(sessionId: string): Promise<void> {
@@ -751,9 +705,7 @@ export class SubagentManager {
       .filter((state): state is RuntimeSubagent => state !== undefined)
       .sort((left, right) => left.startedAt - right.startedAt);
 
-    this.ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, renderSubagentWidget(activeSubagents), {
-      placement: "belowEditor",
-    });
+    this.hooks.renderWidget(this.ctx, activeSubagents);
     this.ensureWidgetTimer();
   }
 
@@ -783,7 +735,7 @@ export class SubagentManager {
       nextState.autoExitTimeoutActive !== state.autoExitTimeoutActive ||
       nextState.autoExitDeadlineAt !== state.autoExitDeadlineAt
     ) {
-      await this.persistState(nextState);
+      await this.hooks.persistState(nextState);
     }
 
     return nextState;

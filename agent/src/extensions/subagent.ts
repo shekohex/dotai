@@ -18,25 +18,19 @@ import {
   styleToolOutput,
   summarizeLineCount,
 } from "./coreui/tools.js";
-import { toModeFlagName } from "./modes.js";
-import type { TmuxTarget } from "../mode-utils.js";
-import type { MuxAdapter } from "./subagent/mux.js";
-import {
-  activateAutoExitTimeoutMode,
-  consumeParentInjectedInputMarker,
-  isAutoExitTimeoutModeActive,
-} from "./subagent/session.js";
-import { SubagentManager } from "./subagent/state.js";
-import { TmuxAdapter } from "./subagent/tmux.js";
+import { installChildBootstrap, isChildSession } from "../subagent-sdk/bootstrap.js";
+import { buildLaunchCommand, readChildState } from "../subagent-sdk/launch.js";
+import type { MuxAdapter } from "../subagent-sdk/mux.js";
+import { createSubagentSDK } from "../subagent-sdk/sdk.js";
+import { TmuxAdapter } from "../subagent-sdk/tmux.js";
 import {
   SubagentToolParamsSchema,
-  type ChildBootstrapState,
   type RuntimeSubagent,
   type SubagentToolProgressDetails,
   type SubagentToolParams,
   type SubagentToolRenderDetails,
   type SubagentToolResultDetails,
-} from "./subagent/types.js";
+} from "../subagent-sdk/types.js";
 
 type CreateSubagentExtensionOptions = {
   adapterFactory?: (pi: ExtensionAPI) => MuxAdapter;
@@ -48,8 +42,6 @@ type SubagentRuntimeState = {
   toolPromptSignature?: string;
 };
 
-type LaunchTarget = { kind: "session"; sessionPath: string } | { kind: "continue" };
-
 type SubagentRenderState = {
   startedAt?: number;
   endedAt?: number;
@@ -58,238 +50,8 @@ type SubagentRenderState = {
   callText?: string;
 };
 
-const CHILD_STATE_ENV = "PI_SUBAGENT_CHILD_STATE";
-const PI_COMMAND_ENV = "PI_SUBAGENT_PI_COMMAND";
 const SUBAGENT_STREAM_PREVIEW_LINE_LIMIT = 5;
 const SUBAGENT_STREAM_PREVIEW_WIDTH = 96;
-
-function normalizeSingleLine(value: string): string {
-  let normalized = "";
-  let previousWasWhitespace = false;
-
-  for (const char of value) {
-    const codePoint = char.codePointAt(0);
-    const isControl = codePoint !== undefined && (codePoint < 32 || codePoint === 127);
-    const isWhitespace = isControl || /\s/.test(char);
-    if (isWhitespace) {
-      if (!previousWasWhitespace) {
-        normalized += " ";
-        previousWasWhitespace = true;
-      }
-      continue;
-    }
-
-    normalized += char;
-    previousWasWhitespace = false;
-  }
-
-  return normalized.trim();
-}
-
-function formatChildSessionDisplayName(name: string, prompt: string): string {
-  const normalizedPrompt = normalizeSingleLine(prompt);
-  return normalizedPrompt ? `[${name}] ${normalizedPrompt}` : `[${name}]`;
-}
-
-function shellEscape(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function getPiCommandPrefix(): string[] {
-  const override = process.env[PI_COMMAND_ENV]?.trim();
-  if (override) {
-    return [override];
-  }
-
-  const script = process.argv[1];
-  if (!script) {
-    return ["pi"];
-  }
-
-  const parts = [process.execPath, ...process.execArgv, script];
-  return [parts.map((part) => shellEscape(part)).join(" ")];
-}
-
-function buildLaunchCommand(
-  state: RuntimeSubagent,
-  childState: ChildBootstrapState,
-  prompt: string,
-  options: {
-    launchTarget?: LaunchTarget;
-    tmuxTarget: TmuxTarget;
-    mode?: string;
-    model?: string;
-    thinkingLevel?: string;
-    systemPrompt?: string;
-    systemPromptMode: "append" | "replace";
-  },
-): string {
-  const commandParts = [...getPiCommandPrefix()];
-  const launchTarget: LaunchTarget = options.launchTarget ?? {
-    kind: "session",
-    sessionPath: state.sessionPath,
-  };
-
-  if (launchTarget.kind === "continue") {
-    commandParts.push("--continue");
-  } else {
-    commandParts.push("--session", shellEscape(launchTarget.sessionPath));
-  }
-
-  if (options.model) {
-    commandParts.push("--model", shellEscape(options.model));
-  }
-  if (options.thinkingLevel) {
-    commandParts.push("--thinking", shellEscape(options.thinkingLevel));
-  }
-  if (options.systemPrompt) {
-    commandParts.push(
-      options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt",
-      shellEscape(options.systemPrompt),
-    );
-  }
-  if (prompt.trim()) {
-    commandParts.push(shellEscape(prompt));
-  }
-  if (options.mode) {
-    const modeFlag = toModeFlagName(options.mode);
-    if (modeFlag) {
-      commandParts.push(`--${modeFlag}`);
-    }
-  }
-
-  const envPayload = shellEscape(JSON.stringify(childState));
-  return `env ${CHILD_STATE_ENV}=${envPayload} ${commandParts.join(" ")}`;
-}
-
-function readChildState(): ChildBootstrapState | undefined {
-  const raw = process.env[CHILD_STATE_ENV];
-  if (!raw) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(raw) as ChildBootstrapState;
-  } catch {
-    return undefined;
-  }
-}
-
-function applyChildToolState(pi: ExtensionAPI, childState: ChildBootstrapState | undefined): void {
-  if (!childState) {
-    return;
-  }
-
-  const activeTools = new Set(childState.tools);
-  activeTools.delete("subagent");
-  pi.setActiveTools(Array.from(activeTools).sort((left, right) => left.localeCompare(right)));
-}
-
-function isChildSession(
-  childState: ChildBootstrapState | undefined,
-  ctx: ExtensionContext,
-): childState is ChildBootstrapState {
-  if (!childState) {
-    return false;
-  }
-
-  return (
-    ctx.sessionManager.getSessionId() === childState.sessionId ||
-    ctx.sessionManager.getSessionFile() === childState.sessionPath
-  );
-}
-
-function installChildBootstrap(pi: ExtensionAPI): void {
-  const childState = readChildState();
-  const autoExitEnabled = Boolean(childState?.autoExit);
-  let pendingIdleShutdown: ReturnType<typeof setTimeout> | undefined;
-  let timeoutModeActive = childState ? isAutoExitTimeoutModeActive(childState.sessionId) : false;
-
-  const cancelIdleShutdown = () => {
-    if (!pendingIdleShutdown) {
-      return;
-    }
-
-    clearTimeout(pendingIdleShutdown);
-    pendingIdleShutdown = undefined;
-  };
-
-  const scheduleIdleShutdown = (ctx: ExtensionContext, currentChildState: ChildBootstrapState) => {
-    cancelIdleShutdown();
-
-    if (!timeoutModeActive) {
-      ctx.shutdown();
-      return;
-    }
-
-    pendingIdleShutdown = setTimeout(() => {
-      pendingIdleShutdown = undefined;
-      if (!autoExitEnabled || !isChildSession(currentChildState, ctx)) {
-        return;
-      }
-
-      ctx.shutdown();
-    }, currentChildState.autoExitTimeoutMs ?? 30_000);
-    pendingIdleShutdown.unref?.();
-  };
-
-  pi.on("session_start", async (_event, ctx) => {
-    const currentChildState = childState;
-    if (!isChildSession(currentChildState, ctx)) {
-      return;
-    }
-
-    timeoutModeActive = isAutoExitTimeoutModeActive(currentChildState.sessionId);
-
-    applyChildToolState(pi, currentChildState);
-    pi.setSessionName(
-      formatChildSessionDisplayName(currentChildState.name, currentChildState.prompt),
-    );
-
-    if (!ctx.hasUI) {
-      return;
-    }
-
-    ctx.ui.onTerminalInput((data) => {
-      if (!autoExitEnabled || !data.trim()) {
-        return undefined;
-      }
-
-      if (consumeParentInjectedInputMarker(currentChildState.sessionId)) {
-        return undefined;
-      }
-
-      timeoutModeActive = true;
-      activateAutoExitTimeoutMode(currentChildState.sessionId);
-      cancelIdleShutdown();
-      return undefined;
-    });
-  });
-
-  pi.on("before_agent_start", async (_event, ctx) => {
-    const currentChildState = childState;
-    if (!isChildSession(currentChildState, ctx)) {
-      return undefined;
-    }
-
-    cancelIdleShutdown();
-    applyChildToolState(pi, currentChildState);
-    return undefined;
-  });
-
-  pi.on("agent_end", async (_event, ctx) => {
-    const currentChildState = childState;
-    if (!isChildSession(currentChildState, ctx) || !autoExitEnabled) {
-      return;
-    }
-
-    scheduleIdleShutdown(ctx, currentChildState);
-  });
-
-  pi.on("session_shutdown", async () => {
-    cancelIdleShutdown();
-  });
-}
 
 function ensureParentSubagentToolActive(pi: ExtensionAPI): void {
   const activeTools = new Set(pi.getActiveTools());
@@ -802,7 +564,7 @@ export function createSubagentExtension(
         (command, args, execOptions) => pi.exec(command, args, execOptions),
         process.cwd(),
       );
-    const manager = new SubagentManager(pi, adapter, buildLaunchCommand);
+    const sdk = createSubagentSDK(pi, { adapter, buildLaunchCommand });
     const state: SubagentRuntimeState = {};
 
     const syncSubagentToolRegistration = async (ctx: ExtensionContext): Promise<void> => {
@@ -829,11 +591,10 @@ export function createSubagentExtension(
       parameters: SubagentToolParamsSchema,
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         try {
-          manager.setContext(ctx);
           validateToolParams(params);
 
           if (params.action === "start") {
-            const started = await manager.start(
+            const started = await sdk.spawn(
               {
                 name: params.name!,
                 task: params.task!,
@@ -846,20 +607,21 @@ export function createSubagentExtension(
               onUpdate,
               signal,
             );
+            const startedState = started.handle.getState();
 
             return {
-              content: [{ type: "text", text: formatStartResultText(started.state) }],
+              content: [{ type: "text", text: formatStartResultText(startedState) }],
               details: {
                 action: "start",
                 args: params,
                 prompt: started.prompt,
-                state: started.state,
+                state: startedState,
               },
             };
           }
 
           if (params.action === "message") {
-            const result = await manager.message(
+            const { result } = await sdk.message(
               {
                 sessionId: params.sessionId!,
                 message: params.message!,
@@ -891,14 +653,14 @@ export function createSubagentExtension(
           }
 
           if (params.action === "cancel") {
-            const result = await manager.cancel({ sessionId: params.sessionId! });
+            const result = await sdk.cancel({ sessionId: params.sessionId! });
             return {
               content: [{ type: "text", text: formatCancelResultText(result) }],
               details: { action: "cancel", args: params, state: result },
             };
           }
 
-          const subagents = manager.list();
+          const subagents = sdk.list();
           return {
             content: [{ type: "text", text: formatListResultText(subagents) }],
             details: { action: "list", args: params, subagents },
@@ -976,13 +738,12 @@ export function createSubagentExtension(
 
     pi.on("session_start", async (_event, ctx) => {
       await syncSubagentToolRegistration(ctx);
-      manager.setContext(ctx);
       if (isChildSession(readChildState(), ctx)) {
         return;
       }
 
       ensureParentSubagentToolActive(pi);
-      await manager.restore(ctx);
+      await sdk.restore(ctx);
     });
 
     pi.on("before_agent_start", async (_event, ctx) => {
@@ -995,7 +756,7 @@ export function createSubagentExtension(
     });
 
     pi.on("session_shutdown", async () => {
-      manager.dispose();
+      sdk.dispose();
     });
   };
 }

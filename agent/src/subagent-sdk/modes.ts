@@ -2,7 +2,7 @@ import path from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-import { resolveModeSpec, type ModeSpec } from "../../mode-utils.js";
+import { resolveModeSpec, type ModeSpec } from "../mode-utils.js";
 
 export type ResolvedSubagentMode = {
   modeName: string;

@@ -1,4 +1,4 @@
-import { formatDurationHuman } from "../coreui/tools.js";
+import { formatDurationHuman } from "../extensions/coreui/tools.js";
 import type { RuntimeSubagent } from "./types.js";
 
 function summarizeTask(task: string, maxLength = 72): string {

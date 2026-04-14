@@ -394,6 +394,96 @@ timedTest("websearch minimal preview omits source and query counts", () => {
   assert.match(text, /answered · 0 grounded results · took 3s/);
 });
 
+timedTest("executor preview renders compact call, highlighted code, json result, and error states", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "executor:compact");
+  assert.ok(scenario);
+
+  const call = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
+  const callExpanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-expanded");
+  const partial = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-collapsed");
+  const partialExpanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-expanded");
+  const success = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  const successExpanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
+  const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
+  const errorExpanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-expanded");
+
+  assert.ok(call);
+  assert.ok(callExpanded);
+  assert.ok(partial);
+  assert.ok(partialExpanded);
+  assert.ok(success);
+  assert.ok(successExpanded);
+  assert.ok(error);
+  assert.ok(errorExpanded);
+
+  const callText = stripAnsi(renderPreviewText(scenario, call, 120));
+  const callExpandedText = stripAnsi(renderPreviewText(scenario, callExpanded, 120));
+  const partialText = stripAnsi(renderPreviewText(scenario, partial, 120));
+  const animatedPartialText = stripAnsi(createPreviewComponent(scenario, partial, undefined, 2000).render(120).join("\n"));
+  const partialExpandedText = stripAnsi(renderPreviewText(scenario, partialExpanded, 120));
+  const animatedPartialExpandedText = stripAnsi(createPreviewComponent(scenario, partialExpanded, undefined, 2000).render(120).join("\n"));
+  const successText = stripAnsi(renderPreviewText(scenario, success, 120));
+  const successExpandedText = stripAnsi(renderPreviewText(scenario, successExpanded, 120));
+  const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
+  const errorExpandedText = stripAnsi(renderPreviewText(scenario, errorExpanded, 120));
+
+  assert.match(callText, /executing List GitHub issues via executor/);
+  assert.match(callText, /17 lines so far/);
+  assert.match(callText, /status: "completed"/);
+  assert.match(callExpandedText, /const matches = await tools\.search/);
+  assert.match(callExpandedText, /const marker = "row\\x07";/);
+  assert.match(callExpandedText, /issues\.listForRepo/);
+  assert.doesNotMatch(callExpandedText, /\t/);
+
+  assert.match(partialText, /executing List GitHub issues via executor/);
+  assert.match(partialText, /"step": "search"|"step": "issues\.listForRepo"/);
+  assert.match(partialText, /executing · object · took 1s/);
+  assert.match(animatedPartialText, /issues\.listForRepo/);
+  assert.match(partialExpandedText, /"status": "executing"/);
+  assert.match(partialExpandedText, /"step": "search"|"step": "issues\.listForRepo"/);
+  assert.match(animatedPartialExpandedText, /"step": "issues\.listForRepo"/);
+
+  assert.match(successText, /executed List GitHub issues via executor/);
+  assert.match(successText, /completed · object · took 4s/);
+  assert.doesNotMatch(successText, /"content"/);
+  assert.match(successExpandedText, /const matches = await tools\.search/);
+  assert.match(successExpandedText, /"markdown": "Example Domain/);
+  assert.match(successExpandedText, /"statusCode": 200/);
+  assert.doesNotMatch(successExpandedText, /"content": \[/);
+
+  assert.match(errorText, /execute List GitHub issues via executor/);
+  assert.match(errorText, /failed · took 2s/);
+  assert.match(errorExpandedText, /ToolInvocationError/);
+  assert.match(errorExpandedText, /"error": "403 Forbidden"/);
+});
+
+timedTest("executor search results render markdown-style expanded view and suppress took 0s", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "executor:search-results");
+  assert.ok(scenario);
+
+  const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
+  const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
+
+  assert.ok(collapsed);
+  assert.ok(expanded);
+
+  const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
+  const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
+
+  assert.match(collapsedText, /executed Search firecrawl tools via executor/);
+  assert.match(collapsedText, /completed · matches\(2\)/);
+  assert.doesNotMatch(collapsedText, /took 0s/);
+
+  assert.match(expandedText, /1\. firecrawl_scrape/);
+  assert.match(expandedText, /Path: firecrawl\.firecrawl_scrape/);
+  assert.match(expandedText, /Source: firecrawl/);
+  assert.match(expandedText, /Score: 310/);
+  assert.match(expandedText, /Scrape content from a single URL\./);
+  assert.match(expandedText, /"url": "https:\/\/example\.com"/);
+  assert.match(expandedText, /2\. firecrawl_search/);
+  assert.doesNotMatch(expandedText, /"path": "firecrawl\.firecrawl_scrape"/);
+});
+
 timedTest("multiline bash call preview truncates middle lines in collapsed mode", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
   assert.ok(scenario);

@@ -4,15 +4,9 @@ import { getExecutorSettings } from "./settings.js";
 import { clearExecutorState, connectExecutor } from "./status.js";
 import { isExecutorToolDetails, loadExecutorPrompt, registerExecutorTools } from "./tools.js";
 
-const registeredToolSets = new Set<string>();
-
 export default function (pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
-    const key = `${ctx.cwd}:${ctx.hasUI ? "ui" : "headless"}`;
-    if (!registeredToolSets.has(key)) {
-      await registerExecutorTools(pi, ctx.cwd, ctx.hasUI);
-      registeredToolSets.add(key);
-    }
+    await registerExecutorTools(pi, ctx.cwd, ctx.hasUI);
 
     const settings = getExecutorSettings();
 

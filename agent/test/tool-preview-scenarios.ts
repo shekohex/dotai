@@ -8,6 +8,7 @@ import { sessionQueryTool } from "../src/extensions/session-query.js";
 import { createSubagentExtension } from "../src/extensions/subagent.js";
 import type { RuntimeSubagent } from "../src/extensions/subagent/types.js";
 import { webSearchTool } from "../src/extensions/websearch.js";
+import { createExecuteToolDefinition } from "../src/extensions/executor/tools.js";
 import {
   createBashToolOverrideDefinition,
   createEditToolOverrideDefinition,
@@ -72,6 +73,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const readFile = joinPath(cwd, "README.md");
   const editFile = joinPath(cwd, "src/extensions/coreui/tools.ts");
   const writeFile = joinPath(cwd, "src/extensions/preview-look.ts");
+  const executeDefinition = createExecuteToolDefinition({} as never, "Execute TypeScript in a sandboxed runtime with access to configured API tools.");
   const sessionPath = joinPath(cwd, ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl");
   const bashDefinition = createBashToolOverrideDefinition();
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
@@ -271,8 +273,173 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const deletedBefore = ["export const oldPreview = false;", ""].join("\n");
   const movedBefore = ["export const legacyPreview = false;", ""].join("\n");
   const movedAfter = ["export const modernPreview = true;", ""].join("\n");
+  const executorCode = [
+    'const matches = await tools.search({ namespace: "github_rest_api", query: "issues list", limit: 1 });',
+    'const path = matches[0]?.path;',
+    'if (!path) return { status: "not_found" };',
+    'const details = await tools.describe.tool({ path });',
+    '\tconst marker = "row\u0007";',
+    'const issues = await tools.github_rest_api.issues.listForRepo({',
+    '  owner: "badlogic",',
+    '  repo: "pi-mono",',
+    '  state: "open",',
+    '  per_page: 3,',
+    '});',
+    'return {',
+    '  status: "completed",',
+    '  inputTypeScript: details.inputTypeScript,',
+    '  count: Array.isArray(issues) ? issues.length : 0,',
+    '  issues,',
+    '};',
+  ].join("\n");
 
   return [
+    {
+      id: "executor:compact",
+      title: "executor compact call and result",
+      toolName: "execute",
+      toolDefinition: executeDefinition,
+      cwd,
+      argsComplete: false,
+      args: {
+        description: "List GitHub issues via executor",
+        code: executorCode,
+      },
+      partialResult: {
+        content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "issues.listForRepo",\n  "count": 0\n}' }],
+        details: {
+          baseUrl: "http://127.0.0.1:4788/mcp",
+          scopeId: "scope_preview",
+          structuredContent: {
+            status: "executing",
+            step: "issues.listForRepo",
+            count: 0,
+          },
+          isError: false,
+          durationMs: 1000,
+        },
+      },
+      successResult: {
+        content: [{ type: "text", text: '{\n  "content": [\n    {\n      "type": "text",\n      "text": "{\\n  \\\"markdown\\\": \\\"Example Domain\\\\n==============\\\\n\\\\nThis domain is for use in documentation examples without needing permission.\\\\n\\\\n\\\\tItem\\\\u0007\\\",\\n  \\\"metadata\\\": {\\n    \\\"title\\\": \\\"Example Domain\\\",\\n    \\\"statusCode\\\": 200,\\n    \\\"sourceURL\\\": \\\"https://example.com\\\"\\n  }\\n}"\n    }\n  ]\n}' }],
+        details: {
+          baseUrl: "http://127.0.0.1:4788/mcp",
+          scopeId: "scope_preview",
+          structuredContent: {
+            status: "completed",
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: '{\n  "markdown": "Example Domain\\n==============\\n\\nThis domain is for use in documentation examples without needing permission.\\n\\n\\tItem\\u0007",\n  "metadata": {\n    "title": "Example Domain",\n    "statusCode": 200,\n    "sourceURL": "https://example.com"\n  }\n}',
+                },
+              ],
+            },
+          },
+          isError: false,
+          durationMs: 4000,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "ToolInvocationError: github_rest_api.issues.listForRepo returned 403 Forbidden" }],
+        details: {
+          baseUrl: "http://127.0.0.1:4788/mcp",
+          scopeId: "scope_preview",
+          structuredContent: {
+            status: "failed",
+            error: "403 Forbidden",
+          },
+          isError: true,
+          durationMs: 2000,
+        },
+      },
+      previewAnimation: {
+        frameDurationMs: 1000,
+        partialFrames: [
+          {
+            content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "search"\n}' }],
+            details: {
+              baseUrl: "http://127.0.0.1:4788/mcp",
+              scopeId: "scope_preview",
+              structuredContent: {
+                status: "executing",
+                step: "search",
+              },
+              isError: false,
+              durationMs: 1000,
+            },
+          },
+          {
+            content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "describe.tool"\n}' }],
+            details: {
+              baseUrl: "http://127.0.0.1:4788/mcp",
+              scopeId: "scope_preview",
+              structuredContent: {
+                status: "executing",
+                step: "describe.tool",
+              },
+              isError: false,
+              durationMs: 2000,
+            },
+          },
+          {
+            content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "issues.listForRepo",\n  "count": 0\n}' }],
+            details: {
+              baseUrl: "http://127.0.0.1:4788/mcp",
+              scopeId: "scope_preview",
+              structuredContent: {
+                status: "executing",
+                step: "issues.listForRepo",
+                count: 0,
+              },
+              isError: false,
+              durationMs: 3000,
+            },
+          },
+        ],
+      },
+    },
+    {
+      id: "executor:search-results",
+      title: "executor search results markdown view",
+      toolName: "execute",
+      toolDefinition: executeDefinition,
+      cwd,
+      args: {
+        description: "Search firecrawl tools via executor",
+        code: 'return await tools.search({ namespace: "firecrawl", query: "scrape", limit: 2 });',
+      },
+      successResult: {
+        content: [{
+          type: "text",
+          text: '[\n  {\n    "path": "firecrawl.firecrawl_scrape",\n    "name": "firecrawl_scrape",\n    "description": "Scrape content from a single URL.\\n\\n```json\\n{\\n  \\\"url\\\": \\\"https://example.com\\\"\\n}\\n```",\n    "sourceId": "firecrawl",\n    "score": 310\n  },\n  {\n    "path": "firecrawl.firecrawl_search",\n    "name": "firecrawl_search",\n    "description": "Search the web and optionally extract content from search results.",\n    "sourceId": "firecrawl",\n    "score": 275\n  }\n]',
+        }],
+        details: {
+          baseUrl: "http://127.0.0.1:4788/mcp",
+          scopeId: "scope_preview",
+          structuredContent: {
+            status: "completed",
+            result: [
+              {
+                path: "firecrawl.firecrawl_scrape",
+                name: "firecrawl_scrape",
+                description: 'Scrape content from a single URL.\n\n```json\n{\n  "url": "https://example.com"\n}\n```',
+                sourceId: "firecrawl",
+                score: 310,
+              },
+              {
+                path: "firecrawl.firecrawl_search",
+                name: "firecrawl_search",
+                description: "Search the web and optionally extract content from search results.",
+                sourceId: "firecrawl",
+                score: 275,
+              },
+            ],
+          },
+          isError: false,
+          durationMs: 500,
+        },
+      },
+    },
     {
       id: "apply_patch:streaming-call",
       title: "apply_patch streaming call",
@@ -1737,6 +1904,7 @@ function getSubagentPreviewDefinition(): ToolDefinition<any, any> {
   };
 
   createSubagentExtension({
+    enabled: true,
     adapterFactory: () => ({
       backend: "tmux",
       async isAvailable() {

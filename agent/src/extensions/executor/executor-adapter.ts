@@ -6,6 +6,7 @@ export type ExecuteToolDetails = {
   structuredContent: JsonValue;
   isError: boolean;
   executionId?: string;
+  durationMs?: number;
 };
 
 export type ExecuteToolResult = {
@@ -50,7 +51,7 @@ export const parseJsonContent = (raw: string | undefined): JsonObject | undefine
 
 export const toToolResult = (
   outcome: ExecutorToolOutcome,
-  meta: { baseUrl: string; scopeId: string },
+  meta: { baseUrl: string; scopeId: string; durationMs?: number },
 ): ExecuteToolResult => ({
   content: [{ type: "text", text: outcome.text }],
   details: {
@@ -59,6 +60,7 @@ export const toToolResult = (
     structuredContent: outcome.structuredContent,
     isError: outcome.isError,
     executionId: readExecutionId(outcome.structuredContent),
+    durationMs: meta.durationMs,
   },
 });
 

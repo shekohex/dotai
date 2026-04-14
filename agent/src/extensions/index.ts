@@ -12,6 +12,7 @@ import bundledResourcesExtension from "./bundled-resources.js";
 import mermaidExtension from "./mermaid.js";
 import sessionQueryExtension from "./session-query.js";
 import modesExtension from "./modes.js";
+import agentsMdExtension from "./agents-md.js";
 import contextExtension from "./context.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
 import filesExtension from "./files.js";
@@ -31,6 +32,7 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   // webFetchExtension,
   webSearchExtension,
   modesExtension,
+  agentsMdExtension,
   compactionExtension,
   handoffExtension,
   debugProviderRequestExtension,

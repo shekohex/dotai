@@ -59,7 +59,7 @@ export const webSearchTool = defineTool({
   promptGuidelines: [
     "Use this tool when the task needs fresh web data, release notes, official docs, or verification against external sources.",
     "Prefer primary sources and use returned citations in the final answer when the user asks for evidence or references.",
-    "Use this tool instead of guessing whenever correctness depends on current or externally verifiable information.",
+    "Use `websearch` tool instead of guessing whenever correctness depends on current or externally verifiable information.",
   ],
   parameters: Type.Object({
     query: Type.String({ description: "Search query or question to answer from the web" }),

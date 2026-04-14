@@ -33,6 +33,7 @@ import promptStashExtension, {
   saveStashEntries,
   type PromptStashEntry,
 } from "../src/extensions/prompt-stash.ts";
+import agentsMdExtension from "../src/extensions/agents-md.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/extensions/subagent/mux.ts";
 import {
@@ -1545,6 +1546,72 @@ timedTest("mermaid extension renders assistant diagrams inline without emitting 
     assert.doesNotMatch(renderedText, /more lines, to expand/i);
   } finally {
     session?.dispose();
+  }
+});
+
+timedTest("agents-md extension loads nested AGENTS context once per session and notifies the UI", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-agents-md-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-agents-md-global-"));
+  let session: TestSession | undefined;
+
+  try {
+    await mkdir(join(cwd, "src", "components"), { recursive: true });
+    await writeFile(join(cwd, "AGENTS.md"), "root rule\n", "utf8");
+    await writeFile(join(cwd, "src", "AGENTS.md"), "plain src rule\n", "utf8");
+    await writeFile(join(cwd, "src", "AGENTS.override.md"), "override src rule\nsecond override line\n", "utf8");
+    await writeFile(join(cwd, "src", "components", "AGENTS.md"), "component rule\n", "utf8");
+    await writeFile(join(cwd, "src", "components", "Button.tsx"), "export const Button = () => null;\n", "utf8");
+
+    await withTempAgentDir(agentDir, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [agentsMdExtension],
+      });
+      patchHarnessAgent(session);
+
+      await session.run(
+        when("Read the button component", [
+          calls("read", { path: "src/components/Button.tsx" }),
+          says("done"),
+        ]),
+        when("Read the button component again", [
+          calls("read", { path: "src/components/Button.tsx" }),
+          says("done again"),
+        ]),
+      );
+
+      const readResults = session.events.all
+        .filter((event) => event.type === "tool_execution_end" && event.toolName === "read")
+        .map((event) => ((event as { result?: { content?: Array<{ type: string; text?: string }> } }).result?.content ?? [])
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("\n"));
+
+      assert.equal(readResults.length, 2);
+      assert.match(readResults[0] ?? "", /export const Button = \(\) => null;/);
+      assert.match(readResults[0] ?? "", /Loaded subdirectory context from .*src\/AGENTS\.override\.md/);
+      assert.match(readResults[0] ?? "", /override src rule/);
+      assert.match(readResults[0] ?? "", /second override line/);
+      assert.match(readResults[0] ?? "", /Loaded subdirectory context from .*src\/components\/AGENTS\.md/);
+      assert.match(readResults[0] ?? "", /component rule/);
+      assert.doesNotMatch(readResults[0] ?? "", /plain src rule/);
+      assert.doesNotMatch(readResults[0] ?? "", /root rule/);
+
+      assert.match(readResults[1] ?? "", /export const Button = \(\) => null;/);
+      assert.doesNotMatch(readResults[1] ?? "", /Loaded subdirectory context from/);
+      assert.doesNotMatch(readResults[1] ?? "", /override src rule/);
+      assert.doesNotMatch(readResults[1] ?? "", /component rule/);
+
+      const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
+      assert.deepEqual(notifications, [
+        "Loaded src/AGENTS.override.md into context (2 lines)",
+        "Loaded src/components/AGENTS.md into context (1 line)",
+      ]);
+    });
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
   }
 });
 

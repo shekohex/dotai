@@ -53,6 +53,23 @@ function getAgentsFileFromDir(dir: string): string {
   return "";
 }
 
+function findContainingSkillDir(targetPath: string): string {
+  let dir = path.dirname(targetPath);
+
+  while (true) {
+    if (fs.existsSync(path.join(dir, "SKILL.md"))) {
+      return dir;
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return "";
+    }
+
+    dir = parent;
+  }
+}
+
 function countLines(content: string): number {
   if (!content) {
     return 0;
@@ -155,6 +172,11 @@ export default function agentsMdExtension(pi: ExtensionAPI) {
     }
 
     const absolutePath = resolvePath(pathInput, currentCwd);
+
+    if (findContainingSkillDir(absolutePath) && !isInsideRoot(currentCwd, absolutePath)) {
+      return undefined;
+    }
+
     const searchRoot = isInsideRoot(currentCwd, absolutePath)
       ? currentCwd
       : isInsideRoot(homeDir, absolutePath)

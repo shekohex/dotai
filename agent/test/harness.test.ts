@@ -32,7 +32,10 @@ import modesExtension from "../src/extensions/modes.ts";
 import filesExtension from "../src/extensions/files.ts";
 import executorExtension from "../src/extensions/executor/index.ts";
 import { setExecutorSettingsForTests } from "../src/extensions/executor/settings.ts";
-import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
+import {
+  discoverSkillPaths,
+  installBundledResourcePaths,
+} from "../src/extensions/bundled-resources.ts";
 import promptStashExtension, {
   getStashFilePath,
   loadStashEntries,
@@ -41,7 +44,7 @@ import promptStashExtension, {
 } from "../src/extensions/prompt-stash.ts";
 import agentsMdExtension from "../src/extensions/agents-md.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
-import type { MuxAdapter, PaneSubmitMode } from "../src/extensions/subagent/mux.ts";
+import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import {
   setRegisteredThemes,
   theme as activeTheme,
@@ -1991,6 +1994,54 @@ timedTest(
     }
   },
 );
+
+timedTest("agents-md extension ignores bundled skill reads outside the session cwd", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-agents-md-skill-"));
+  let session: TestSession | undefined;
+
+  try {
+    const executorSkillPath = discoverSkillPaths().find((skillPath) =>
+      skillPath.endsWith("/executor/SKILL.md"),
+    );
+
+    assert.ok(executorSkillPath);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [agentsMdExtension],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Read bundled executor skill", [
+        calls("read", { path: executorSkillPath }),
+        says("done"),
+      ]),
+    );
+
+    const readResult = session.events.all
+      .filter((event) => event.type === "tool_execution_end" && event.toolName === "read")
+      .map((event) =>
+        (
+          (event as { result?: { content?: Array<{ type: string; text?: string }> } }).result
+            ?.content ?? []
+        )
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("\n"),
+      )
+      .join("\n");
+
+    assert.match(readResult, /name: executor/);
+    assert.doesNotMatch(readResult, /Loaded subdirectory context from/);
+
+    const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
+    assert.deepEqual(notifications, []);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 timedTest(
   "subagent extension runs start, list, message, cancel, and auto-resume through the harness playbook",

@@ -20,6 +20,7 @@ import promptStashExtension from "./prompt-stash.js";
 import terminalNotifyExtension from "./terminal-notify.js";
 import { createSubagentExtension } from "./subagent.js";
 import executorExtension from "./executor/index.js";
+import reviewExtension from "./review.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
   modelFamilySystemPromptExtension,
@@ -32,6 +33,7 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   // webFetchExtension,
   webSearchExtension,
   modesExtension,
+  reviewExtension,
   agentsMdExtension,
   compactionExtension,
   handoffExtension,

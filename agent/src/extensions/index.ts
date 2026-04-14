@@ -17,7 +17,7 @@ import sessionBreakdownExtension from "./session-breakdown.js";
 import filesExtension from "./files.js";
 import promptStashExtension from "./prompt-stash.js";
 import terminalNotifyExtension from "./terminal-notify.js";
-import subagentExtension from "./subagent.js";
+import { createSubagentExtension } from "./subagent.js";
 import executorExtension from "./executor/index.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
@@ -42,5 +42,5 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   promptStashExtension,
   terminalNotifyExtension,
   executorExtension,
-  subagentExtension,
+  createSubagentExtension({ enabled: false }),
 ];

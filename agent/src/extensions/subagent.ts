@@ -35,6 +35,7 @@ import {
 
 type CreateSubagentExtensionOptions = {
   adapterFactory?: (pi: ExtensionAPI) => MuxAdapter;
+  enabled?: boolean;
 };
 
 type SubagentRuntimeState = {
@@ -713,8 +714,11 @@ async function buildSubagentPromptGuidelines(ctx: ExtensionContext): Promise<str
   ];
 }
 
-export function createSubagentExtension(options: CreateSubagentExtensionOptions = {}) {
+export function createSubagentExtension(options: CreateSubagentExtensionOptions = { enabled: true }) {
   return function subagentExtension(pi: ExtensionAPI): void {
+    if (options.enabled === false) {
+      return;
+    }
     installChildBootstrap(pi);
     const adapter = options.adapterFactory?.(pi) ?? new TmuxAdapter((command, args, execOptions) => pi.exec(command, args, execOptions), process.cwd());
     const manager = new SubagentManager(pi, adapter, buildLaunchCommand);

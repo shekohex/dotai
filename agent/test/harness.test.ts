@@ -1138,8 +1138,24 @@ timedTest("executor command without arguments shows status", async () => {
       extensionFactories: [executorExtension],
     });
 
+    const uiContext = (session.session as {
+      _extensionUIContext?: { custom?: (...args: unknown[]) => Promise<unknown> };
+    })._extensionUIContext;
+    assert.ok(uiContext);
+
+    const customCalls: Array<{ args: unknown[] }> = [];
+    const originalCustom = uiContext.custom?.bind(uiContext) ?? (async () => undefined);
+    uiContext.custom = async (...args: unknown[]) => {
+      customCalls.push({ args });
+      return originalCustom(...args as never);
+    };
+
     await session.session.prompt("/executor");
     await session.session.agent.waitForIdle();
+
+    assert.equal(customCalls.length, 1);
+    assert.equal(typeof customCalls[0]?.args[0], "function");
+    assert.equal(customCalls[0]?.args[1], undefined);
 
     const branchEntries = ((session.session as {
       sessionManager: {
@@ -1151,10 +1167,7 @@ timedTest("executor command without arguments shows status", async () => {
       (entry) => entry.type === "custom_message" && entry.customType === "executor",
     );
 
-    assert.ok(executorMessages.length >= 1);
-    assert.match(executorMessages.at(-1)?.content ?? "", /Executor ready/);
-    assert.equal(executorMessages.at(-1)?.details?.state?.kind, "ready");
-    assert.equal(executorMessages.at(-1)?.details?.candidates?.[0]?.mcpUrl, server.mcpUrl);
+    assert.equal(executorMessages.length, 0);
   } finally {
     setExecutorSettingsForTests(undefined);
     await server.close();

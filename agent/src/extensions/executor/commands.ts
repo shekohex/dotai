@@ -2,13 +2,8 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import { openBrowserTarget } from "./browser.js";
 import { ExecutorUnavailableError } from "./connection.js";
-import type { JsonObject } from "./http.js";
-import { formatExecutorSettings, getExecutorSettings } from "./settings.js";
-import {
-  connectExecutor,
-  formatExecutorRuntimeState,
-  getExecutorState,
-} from "./status.js";
+import { connectExecutor } from "./status.js";
+import { showExecutorStatusView, showExecutorWebView } from "./ui.js";
 
 type ExecutorSubcommand = "status" | "web";
 
@@ -50,60 +45,20 @@ function getExecutorArgumentCompletions(argumentPrefix: string): AutocompleteIte
   return filterAutocompleteItems(items, tokens[0] ?? "");
 }
 
-const notifyResult = (
-  pi: ExtensionAPI,
-  customType: string,
-  text: string,
-  details: JsonObject,
-): void => {
-  pi.sendMessage({
-    customType,
-    content: text,
-    display: true,
-    details,
-  });
-};
-
-function buildExecutorStatusDetails(ctx: ExtensionCommandContext): JsonObject {
-  const state = getExecutorState(ctx.cwd);
-  const settings = getExecutorSettings();
-
-  return {
-    cwd: ctx.cwd,
-    state,
-    autoStart: settings.autoStart,
-    probeTimeoutMs: settings.probeTimeoutMs,
-    candidates: settings.candidates.map((candidate) => ({
-      label: candidate.label,
-      mcpUrl: candidate.mcpUrl,
-    })),
-  };
-}
-
-function buildStatusLines(ctx: ExtensionCommandContext): string[] {
-  return [
-    ...formatExecutorRuntimeState(getExecutorState(ctx.cwd)),
-    "",
-    ...formatExecutorSettings(getExecutorSettings()),
-    `cwd: ${ctx.cwd}`,
-  ];
-}
-
 async function handleExecutorStatus(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   try {
     await connectExecutor(pi, ctx);
   } catch (error) {
-    const lines = [...buildStatusLines(ctx)];
     if (error instanceof ExecutorUnavailableError) {
-      lines.push("");
-      lines.push(...error.attempts.map((attempt) => `${attempt.label}: ${attempt.error}`));
+      await showExecutorStatusView(ctx, error.attempts);
+      return;
     }
 
-    notifyResult(pi, "executor", lines.join("\n"), buildExecutorStatusDetails(ctx));
+    await showExecutorStatusView(ctx);
     return;
   }
 
-  notifyResult(pi, "executor", buildStatusLines(ctx).join("\n"), buildExecutorStatusDetails(ctx));
+  await showExecutorStatusView(ctx);
 }
 
 const handleExecutorWeb = async (pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> => {
@@ -111,29 +66,10 @@ const handleExecutorWeb = async (pi: ExtensionAPI, ctx: ExtensionCommandContext)
 
   try {
     await openBrowserTarget(endpoint.webUrl);
-    notifyResult(pi, "executor", `Executor UI: ${endpoint.webUrl}`, {
-      candidate: endpoint.label,
-      mcpUrl: endpoint.mcpUrl,
-      webUrl: endpoint.webUrl,
-      scopeId: endpoint.scope.id,
-      scopeDir: endpoint.scope.dir,
-      launched: true,
-    });
+    await showExecutorWebView(ctx, endpoint);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    notifyResult(
-      pi,
-      "executor",
-      `Executor UI: ${endpoint.webUrl}\n\nBrowser launch failed: ${message}`,
-      {
-        candidate: endpoint.label,
-        mcpUrl: endpoint.mcpUrl,
-        webUrl: endpoint.webUrl,
-        scopeId: endpoint.scope.id,
-        scopeDir: endpoint.scope.dir,
-        launched: false,
-      },
-    );
+    await showExecutorWebView(ctx, endpoint, message);
   }
 };
 

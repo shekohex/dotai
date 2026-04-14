@@ -18,6 +18,7 @@ import filesExtension from "./files.js";
 import promptStashExtension from "./prompt-stash.js";
 import terminalNotifyExtension from "./terminal-notify.js";
 import subagentExtension from "./subagent.js";
+import executorExtension from "./executor/index.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
   modelFamilySystemPromptExtension,
@@ -40,5 +41,6 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   filesExtension,
   promptStashExtension,
   terminalNotifyExtension,
+  executorExtension,
   subagentExtension,
 ];

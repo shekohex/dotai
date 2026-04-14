@@ -24,6 +24,8 @@ import modelFamilySystemPromptExtension, {
 } from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import filesExtension from "../src/extensions/files.ts";
+import executorExtension from "../src/extensions/executor/index.ts";
+import { setExecutorSettingsForTests } from "../src/extensions/executor/settings.ts";
 import { installBundledResourcePaths } from "../src/extensions/bundled-resources.ts";
 import promptStashExtension, {
   getStashFilePath,
@@ -84,6 +86,30 @@ async function withTempAgentDir<T>(agentDir: string, fn: () => Promise<T>): Prom
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     }
   }
+}
+
+async function createExecutorProbeServer(scopeDir: string): Promise<{ mcpUrl: string; close: () => Promise<void> }> {
+  const server = createServer((request, response) => {
+    if (request.url === "/api/scope") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ id: "scope_test", name: "executor-test", dir: scopeDir }));
+      return;
+    }
+
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("not found");
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  return {
+    mcpUrl: `http://127.0.0.1:${address.port}/mcp`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    },
+  };
 }
 
 class HarnessMuxAdapter implements MuxAdapter {
@@ -1060,6 +1086,79 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
   } finally {
     session?.dispose();
     providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("executor command autocompletes subcommands with fuzzy search", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-executor-autocomplete-"));
+  let session: TestSession | undefined;
+  const server = await createExecutorProbeServer(cwd);
+
+  try {
+    setExecutorSettingsForTests({
+      autoStart: true,
+      probeTimeoutMs: 200,
+      candidates: [{ label: "lan", mcpUrl: server.mcpUrl }],
+    });
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [executorExtension],
+    });
+
+    const rootCompletions = await getCommandArgumentCompletions(session, "executor", "");
+    assert.deepEqual(rootCompletions?.map((item) => item.label), ["status", "web"]);
+
+    const fuzzyCompletions = await getCommandArgumentCompletions(session, "executor", "w");
+    assert.equal(fuzzyCompletions?.[0]?.label, "web");
+    assert.ok(fuzzyCompletions?.some((item) => item.label === "status"));
+  } finally {
+    setExecutorSettingsForTests(undefined);
+    await server.close();
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("executor command without arguments shows status", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-executor-command-"));
+  let session: TestSession | undefined;
+  const server = await createExecutorProbeServer(cwd);
+
+  try {
+    setExecutorSettingsForTests({
+      autoStart: true,
+      probeTimeoutMs: 200,
+      candidates: [{ label: "lan", mcpUrl: server.mcpUrl }],
+    });
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [executorExtension],
+    });
+
+    await session.session.prompt("/executor");
+    await session.session.agent.waitForIdle();
+
+    const branchEntries = ((session.session as {
+      sessionManager: {
+        getBranch: () => Array<{ type: string; customType?: string; content?: string; details?: { state?: { kind?: string }; candidates?: Array<{ mcpUrl?: string }> } }>;
+      };
+    }).sessionManager.getBranch());
+
+    const executorMessages = branchEntries.filter(
+      (entry) => entry.type === "custom_message" && entry.customType === "executor",
+    );
+
+    assert.ok(executorMessages.length >= 1);
+    assert.match(executorMessages.at(-1)?.content ?? "", /Executor ready/);
+    assert.equal(executorMessages.at(-1)?.details?.state?.kind, "ready");
+    assert.equal(executorMessages.at(-1)?.details?.candidates?.[0]?.mcpUrl, server.mcpUrl);
+  } finally {
+    setExecutorSettingsForTests(undefined);
+    await server.close();
+    session?.dispose();
     await rm(cwd, { recursive: true, force: true });
   }
 });

@@ -14,7 +14,7 @@
   "scripts": {
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "test": "npm run test:keys && npm run test:tool-preview && npm run test:harness && npm run test:subagent",
+    "test": "npm run test:keys && npm run test:tool-preview && npm run test:executor && npm run test:harness && npm run test:subagent",
     "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
     "prepare": "npm run build",
     "postinstall": "node ./scripts/postinstall.mjs",
@@ -24,6 +24,7 @@
     "preview:tools:once": "node --import tsx ./scripts/preview-tools.ts",
     "preview:tools:watch": "node --import tsx ./scripts/preview-tools.ts --watch",
     "patch:deps": "patch-package",
+    "test:executor": "node --import tsx --test ./test/executor.test.ts",
     "test:keys": "node --import tsx --test ./test/pi-tui-keys.test.ts",
     "test:tool-preview": "node --import tsx --test ./test/tool-preview.test.ts",
     "test:harness": "node --import tsx --test ./test/harness.test.ts",
@@ -38,6 +39,7 @@
   "dependencies": {
     "@mariozechner/pi-coding-agent": "0.66.1",
     "@mendable/firecrawl-js": "^4.18.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@sinclair/typebox": "^0.34.41",
     "beautiful-mermaid": "^1.1.3",
     "diff": "^8.0.4",

@@ -21,6 +21,7 @@ import terminalNotifyExtension from "./terminal-notify.js";
 import { createSubagentExtension } from "./subagent.js";
 import executorExtension from "./executor/index.js";
 import reviewExtension from "./review.js";
+import commitExtension from "./commit.js";
 
 export const bundledExtensionFactories: ExtensionFactory[] = [
   modelFamilySystemPromptExtension,
@@ -33,6 +34,7 @@ export const bundledExtensionFactories: ExtensionFactory[] = [
   // webFetchExtension,
   webSearchExtension,
   modesExtension,
+  commitExtension,
   reviewExtension,
   agentsMdExtension,
   compactionExtension,

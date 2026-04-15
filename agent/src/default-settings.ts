@@ -76,9 +76,20 @@ export const defaultModes = defineModesFile({
       autoExit: true,
       description:
         "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
-      systemPrompt: readFileSync(join(cwd, "resources", "modes", "review.md"), {
-        encoding: "utf-8",
-      }),
+      systemPrompt: modeSystemPrompt("review"),
+      systemPromptMode: "append",
+    },
+    commiter: {
+      provider: "codex-openai",
+      modelId: "gpt-5.4-mini",
+      thinkingLevel: "low",
+      color: "muted",
+      tmuxTarget: "window",
+      tools: ["read", "bash"],
+      autoExit: true,
+      description:
+        "Use me when you want to group local git changes and create atomic conventional commits.",
+      systemPrompt: modeSystemPrompt("commiter"),
       systemPromptMode: "append",
     },
     search: {
@@ -109,3 +120,9 @@ export const defaultModes = defineModesFile({
     },
   },
 }) satisfies DefaultModes;
+
+function modeSystemPrompt(mode: keyof DefaultModes["modes"]): string {
+  return readFileSync(join(cwd, "resources", "modes", `${mode}.md`), {
+    encoding: "utf-8",
+  });
+}

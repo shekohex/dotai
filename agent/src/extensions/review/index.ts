@@ -14,7 +14,7 @@ import {
   Text,
 } from "@mariozechner/pi-tui";
 
-import { installChildBootstrap, isChildSession } from "../../subagent-sdk/bootstrap.js";
+import { isChildSession } from "../../subagent-sdk/bootstrap.js";
 import { buildLaunchCommand, readChildState } from "../../subagent-sdk/launch.js";
 import { createDefaultSubagentRuntimeHooks } from "../../subagent-sdk/runtime-hooks.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
@@ -85,8 +85,6 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
     if (options.enabled === false) {
       return;
     }
-
-    installChildBootstrap(pi);
 
     const defaultSubagentHooks = createDefaultSubagentRuntimeHooks(pi);
     const reviewSubagentHooks = {

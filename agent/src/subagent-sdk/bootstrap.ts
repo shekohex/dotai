@@ -54,7 +54,7 @@ function getStructuredRetryCount(childState: ChildBootstrapState | undefined): n
   }
 
   const requested = childState.outputFormat.retryCount;
-  if (!Number.isFinite(requested)) {
+  if (typeof requested !== "number" || !Number.isFinite(requested)) {
     return DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT;
   }
 
@@ -176,14 +176,17 @@ export function isChildSession(
 }
 
 export function installChildBootstrap(pi: ExtensionAPI): void {
+  const childState = readChildState();
+  if (!childState) {
+    return;
+  }
+
   const bootstrapAwarePi = pi as BootstrapAwareExtensionApi;
   if (bootstrapAwarePi[bootstrapInstalledSymbol]) {
     return;
   }
 
   bootstrapAwarePi[bootstrapInstalledSymbol] = true;
-
-  const childState = readChildState();
   const restoredStructuredState = childState
     ? readLatestChildStructuredOutputState(childState.sessionPath)
     : undefined;
@@ -210,6 +213,7 @@ export function installChildBootstrap(pi: ExtensionAPI): void {
   if (isJsonSchemaOutputFormat(childState)) {
     const structuredOutputTool = defineTool({
       name: STRUCTURED_OUTPUT_TOOL_NAME,
+      label: "SO",
       description:
         "Submit the final structured JSON response. Use this tool exactly once as the final action.",
       parameters: childState.outputFormat.schema as TSchema,

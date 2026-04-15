@@ -83,6 +83,7 @@ type BashOutputSummary = {
 };
 
 type BashRenderState = NonNullable<BashCallContext["state"]> & {
+  completed?: boolean;
   callComponent?: Text;
   callText?: string;
 };
@@ -784,31 +785,37 @@ function syncBashRenderState(
   if (context.executionStarted && state.startedAt === undefined) {
     state.startedAt = Date.now();
     state.endedAt = undefined;
+    state.completed = false;
   }
 
-  if (
-    state.startedAt !== undefined &&
-    isPartial &&
-    state.endedAt === undefined &&
-    !state.interval
-  ) {
-    state.interval = setInterval(() => context.invalidate(), 1000);
-    state.interval.unref?.();
-  }
-
-  if ((!isPartial || state.endedAt !== undefined) && state.startedAt !== undefined) {
+  if (!isPartial) {
+    state.completed = true;
     state.endedAt ??= Date.now();
     if (state.interval) {
       clearInterval(state.interval);
       state.interval = undefined;
     }
+    return state;
+  }
+
+  if (state.completed) {
+    if (state.interval) {
+      clearInterval(state.interval);
+      state.interval = undefined;
+    }
+    return state;
+  }
+
+  if (state.startedAt !== undefined && !state.interval) {
+    state.interval = setInterval(() => context.invalidate(), 1000);
+    state.interval.unref?.();
   }
 
   return state;
 }
 
 function isBashRenderPartial(state: BashRenderState, isPartial: boolean): boolean {
-  return isPartial && state.endedAt === undefined;
+  return isPartial && !state.completed;
 }
 
 function getBashElapsed(state: BashRenderState): number | undefined {

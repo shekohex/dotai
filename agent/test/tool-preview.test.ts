@@ -676,12 +676,12 @@ timedTest("failed multiline bash preview shows exit code on collapsed error", ()
   assert.match(text, /exit 1/);
 });
 
-timedTest("bash preview keeps completed state when a late partial update arrives", () => {
+timedTest("bash preview completion is sticky even when start marker is missing", () => {
   const toolDefinition = createBashToolOverrideDefinition();
   const cwd = process.cwd().replace(/\\/g, "/");
   const ui = { requestRender() {} };
 
-  const createComponent = (toolCallId: string, description: string) => {
+  const createComponent = (toolCallId: string, description: string, markStarted = true) => {
     const component = new ToolExecutionComponent(
       "bash",
       toolCallId,
@@ -697,12 +697,14 @@ timedTest("bash preview keeps completed state when a late partial update arrives
     );
 
     component.setExpanded(false);
-    component.markExecutionStarted();
+    if (markStarted) {
+      component.markExecutionStarted();
+    }
     component.setArgsComplete();
     return component;
   };
 
-  const finished = createComponent("bash-finished", "finished");
+  const finished = createComponent("bash-finished", "finished", false);
   const running = createComponent("bash-running", "running");
   const partialResult = {
     content: [{ type: "text", text: "line one\nline two" }],

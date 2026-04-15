@@ -206,7 +206,7 @@ export type SubagentDelivery = Static<typeof SubagentDeliverySchema>;
 export type SubagentStateEvent = Static<typeof SubagentStateEventSchema>;
 export type SubagentStatus = Static<typeof SubagentStatusSchema>;
 export type TSchemaBase = TSchema;
-export type OutputFormat<TSchemaValue extends TSchemaBase = TSchemaBase> =
+export type OutputFormat<TSchemaValue = unknown> =
   | { type: "text" }
   | { type: "json_schema"; schema: TSchemaValue; retryCount?: number };
 export type StructuredOutputErrorCode = Static<typeof StructuredOutputErrorCodeSchema>;
@@ -283,7 +283,7 @@ export type ChildBootstrapState = {
   autoExitTimeoutMs?: number;
   handoff: boolean;
   tools: string[];
-  outputFormat?: OutputFormat;
+  outputFormat?: OutputFormat<unknown>;
   startedAt: number;
 };
 

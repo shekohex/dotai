@@ -473,6 +473,51 @@ timedTest(
   },
 );
 
+timedTest("child bootstrap installs when subagent extension is disabled", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-wrapper-"));
+  const sessionPath = path.join(cwd, "child.jsonl");
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Return structured output",
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    handoff: false,
+    tools: ["read", "bash"],
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      retryCount: 3,
+    },
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ enabled: false })(fakePi as unknown as ExtensionAPI);
+
+    assert.ok(fakePi.registeredTools.has("StructuredOutput"));
+    assert.equal(fakePi.registeredTools.has("subagent"), false);
+    assert.ok((fakePi.handlers.get("agent_end") ?? []).length > 0);
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "child bootstrap auto-exits immediately on idle with no manual terminal input",
   async () => {

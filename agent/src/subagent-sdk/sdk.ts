@@ -3,6 +3,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import type { Static } from "@sinclair/typebox";
 
 import { SubagentRuntimeEventBus, type SubagentRuntimeEvent } from "./events.js";
 import type { PaneCapture, MuxAdapter } from "./mux.js";
@@ -272,64 +273,83 @@ export function createSubagentSDK(
     return new SDKSubagentHandle(sdk, sessionId);
   }
 
+  async function spawn(
+    params: StartSubagentParamsText,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+    signal?: AbortSignal,
+  ): Promise<StartSubagentSpawnOutcomeText>;
+  async function spawn<TSchemaValue extends TSchemaBase>(
+    params: StartSubagentParamsJsonSchema<TSchemaValue>,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+    signal?: AbortSignal,
+  ): Promise<StartSubagentSpawnOutcomeJsonSchema<TSchemaValue>>;
+  async function spawn(
+    params: StartSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+    signal?: AbortSignal,
+  ): Promise<StartSubagentSpawnOutcomeText | StartSubagentSpawnOutcomeJsonSchema<TSchemaBase>> {
+    const retryCount =
+      params.outputFormat?.type === "json_schema"
+        ? (params.outputFormat.retryCount ?? DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT)
+        : DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT;
+
+    try {
+      const started = await runtime.spawn(params, ctx, onUpdate, signal);
+      emitChangedStates();
+
+      const handle = toHandle(started.state.sessionId);
+      if (params.outputFormat?.type !== "json_schema") {
+        return {
+          ok: true as const,
+          value: {
+            handle,
+            prompt: started.prompt,
+          },
+        };
+      }
+
+      try {
+        const terminal = await handle.waitForCompletion({ signal });
+        if (terminal.status === "completed" && terminal.structured !== undefined) {
+          return {
+            ok: true as const,
+            value: {
+              handle,
+              prompt: started.prompt,
+              state: terminal,
+              structured: terminal.structured as Static<TSchemaBase>,
+            },
+          };
+        }
+
+        return {
+          ok: false as const,
+          error: toStructuredOutputError(terminal, retryCount),
+        };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error: toSpawnAbortedError(error, retryCount),
+        };
+      }
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: toSpawnAbortedError(error, retryCount),
+      };
+    }
+  }
+
   const sdk: SubagentSDK = {
     async restore(ctx) {
       await runtime.restore(ctx);
       emitChangedStates();
       return runtime.listStates().map((state) => toHandle(state.sessionId));
     },
-    async spawn(params: StartSubagentParams, ctx, onUpdate, signal) {
-      const retryCount =
-        params.outputFormat?.type === "json_schema"
-          ? (params.outputFormat.retryCount ?? DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT)
-          : DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT;
-
-      try {
-        const started = await runtime.spawn(params, ctx, onUpdate, signal);
-        emitChangedStates();
-
-        const handle = toHandle(started.state.sessionId);
-        if (params.outputFormat?.type !== "json_schema") {
-          return {
-            ok: true,
-            value: {
-              handle,
-              prompt: started.prompt,
-            },
-          };
-        }
-
-        try {
-          const terminal = await handle.waitForCompletion({ signal });
-          if (terminal.status === "completed" && terminal.structured !== undefined) {
-            return {
-              ok: true,
-              value: {
-                handle,
-                prompt: started.prompt,
-                state: terminal,
-                structured: terminal.structured as never,
-              },
-            };
-          }
-
-          return {
-            ok: false,
-            error: toStructuredOutputError(terminal, retryCount),
-          };
-        } catch (error) {
-          return {
-            ok: false,
-            error: toSpawnAbortedError(error, retryCount),
-          };
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          error: toSpawnAbortedError(error, retryCount),
-        };
-      }
-    },
+    spawn,
     async resume(params, ctx, onUpdate) {
       const resumed = await runtime.resume(params, ctx, onUpdate);
       emitChangedStates();

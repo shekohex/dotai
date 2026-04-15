@@ -30,6 +30,7 @@ import {
   type SubagentToolParams,
   type SubagentToolRenderDetails,
   type SubagentToolResultDetails,
+  type TSchemaBase,
 } from "../subagent-sdk/types.js";
 
 type CreateSubagentExtensionOptions = {
@@ -593,10 +594,12 @@ export function createSubagentExtension(
   options: CreateSubagentExtensionOptions = { enabled: true },
 ) {
   return function subagentExtension(pi: ExtensionAPI): void {
+    installChildBootstrap(pi);
+
     if (options.enabled === false) {
       return;
     }
-    installChildBootstrap(pi);
+
     const adapter =
       options.adapterFactory?.(pi) ??
       new TmuxAdapter(
@@ -633,28 +636,50 @@ export function createSubagentExtension(
           validateToolParams(params);
 
           if (params.action === "start") {
-            const started = await sdk.spawn(
-              {
-                name: params.name!,
-                task: params.task!,
-                mode: params.mode,
-                handoff: params.handoff,
-                cwd: params.cwd,
-                autoExit: params.autoExit,
-                outputFormat: params.outputFormat,
-              },
-              ctx,
-              onUpdate,
-              signal,
-            );
+            const startBaseParams = {
+              name: params.name!,
+              task: params.task!,
+              mode: params.mode,
+              handoff: params.handoff,
+              cwd: params.cwd,
+              autoExit: params.autoExit,
+            };
+
+            const started =
+              params.outputFormat?.type === "json_schema"
+                ? await sdk.spawn(
+                    {
+                      ...startBaseParams,
+                      outputFormat: {
+                        type: "json_schema",
+                        schema: params.outputFormat.schema as TSchemaBase,
+                        retryCount: params.outputFormat.retryCount,
+                      },
+                    },
+                    ctx,
+                    onUpdate,
+                    signal,
+                  )
+                : await sdk.spawn(
+                    {
+                      ...startBaseParams,
+                      outputFormat:
+                        params.outputFormat?.type === "text" ? { type: "text" } : undefined,
+                    },
+                    ctx,
+                    onUpdate,
+                    signal,
+                  );
 
             if (!started.ok) {
               throw new Error(started.error.message);
             }
 
             const startedValue = started.value;
-            const startedState =
-              "state" in startedValue ? startedValue.state : startedValue.handle.getState();
+            const startedState: RuntimeSubagent =
+              "state" in startedValue
+                ? (startedValue.state as RuntimeSubagent)
+                : startedValue.handle.getState();
             const structuredContent =
               "structured" in startedValue
                 ? serializeStructuredStartContent(startedValue.structured)

@@ -1,5 +1,5 @@
 diff --git a/node_modules/@mariozechner/pi-tui/dist/keys.js b/node_modules/@mariozechner/pi-tui/dist/keys.js
-index 374f69a..dbd2238 100644
+index 374f69a..e4de602 100644
 --- a/node_modules/@mariozechner/pi-tui/dist/keys.js
 +++ b/node_modules/@mariozechner/pi-tui/dist/keys.js
 @@ -217,6 +217,13 @@ const KITTY_FUNCTIONAL_KEY_EQUIVALENTS = new Map([
@@ -53,3 +53,37 @@ index 374f69a..dbd2238 100644
          }
          if (alt && !ctrl && !shift && !_kittyProtocolActive && (isLetter || isDigit)) {
              // Legacy: alt+letter/digit is ESC followed by the key
+diff --git a/node_modules/@mariozechner/pi-tui/dist/tui.js b/node_modules/@mariozechner/pi-tui/dist/tui.js
+index e23b801..0fccf1d 100644
+--- a/node_modules/@mariozechner/pi-tui/dist/tui.js
++++ b/node_modules/@mariozechner/pi-tui/dist/tui.js
+@@ -835,11 +835,25 @@ export class TUI extends Container {
+             return;
+         }
+         // Differential rendering can only touch what was actually visible.
+-        // If the first changed line is above the previous viewport, we need a full redraw.
++        // If changes happen above the viewport but line count is stable, avoid full redraws.
+         if (firstChanged < prevViewportTop) {
+-            logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
+-            fullRender(true);
+-            return;
++            const lineCountUnchanged = newLines.length === this.previousLines.length;
++            if (lineCountUnchanged && lastChanged < prevViewportTop) {
++                this.positionHardwareCursor(cursorPos, newLines.length);
++                this.previousLines = newLines;
++                this.previousWidth = width;
++                this.previousHeight = height;
++                this.previousViewportTop = prevViewportTop;
++                return;
++            }
++            if (lineCountUnchanged) {
++                firstChanged = prevViewportTop;
++            }
++            else {
++                logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
++                fullRender(true);
++                return;
++            }
+         }
+         // Render from first changed line to end
+         // Build buffer with all updates wrapped in synchronized output

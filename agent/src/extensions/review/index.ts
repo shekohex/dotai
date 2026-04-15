@@ -1115,8 +1115,14 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
           ctx,
         );
 
+        if (!started.ok) {
+          throw new Error(started.error.message);
+        }
+
+        const startedValue = started.value;
+
         runtime.active = true;
-        runtime.subagentSessionId = started.handle.sessionId;
+        runtime.subagentSessionId = startedValue.handle.sessionId;
         runtime.targetLabel = targetLabel;
         runtime.branchAnchorId = branchAnchorId;
         runtime.checkoutToRestore = checkoutToRestore;
@@ -1127,7 +1133,7 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
         };
         persistReviewState({
           active: true,
-          subagentSessionId: started.handle.sessionId,
+          subagentSessionId: startedValue.handle.sessionId,
           targetLabel,
           branchAnchorId,
           checkoutToRestore,

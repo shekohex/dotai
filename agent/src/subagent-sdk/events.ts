@@ -14,6 +14,8 @@ function getStateSignature(state: RuntimeSubagent): string {
     autoExitDeadlineAt: state.autoExitDeadlineAt,
     autoExitTimeoutActive: state.autoExitTimeoutActive,
     summary: state.summary,
+    structured: state.structured,
+    structuredError: state.structuredError,
     exitCode: state.exitCode,
   });
 }

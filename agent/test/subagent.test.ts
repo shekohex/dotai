@@ -13,6 +13,7 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { setKeybindings } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 import stripAnsi from "strip-ansi";
 
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
@@ -34,7 +35,9 @@ import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
 import {
   SUBAGENT_MESSAGE_ENTRY,
+  SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
   SUBAGENT_STATE_ENTRY,
+  cloneRuntimeSubagent,
   type RuntimeSubagent,
 } from "../src/subagent-sdk/types.ts";
 import { renderSubagentWidget } from "../src/subagent-sdk/ui.ts";
@@ -100,6 +103,7 @@ class FakePi implements Partial<ExtensionAPI> {
   allTools = this.activeTools.map((name) => ({ name }));
   appendedEntries: Array<{ customType: string; data: unknown }> = [];
   sentMessages: Array<{ message: unknown; options: unknown }> = [];
+  sentUserMessages: Array<{ content: unknown; options: unknown }> = [];
   sessionNames: string[] = [];
   registeredTools = new Map<string, ToolDefinition<any, any>>();
   handlers = new Map<string, Array<(...args: any[]) => any>>();
@@ -136,6 +140,10 @@ class FakePi implements Partial<ExtensionAPI> {
 
   sendMessage(message: unknown, options?: unknown): void {
     this.sentMessages.push({ message, options });
+  }
+
+  sendUserMessage(content: unknown, options?: unknown): void {
+    this.sentUserMessages.push({ content, options });
   }
 
   async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -657,6 +665,311 @@ timedTest("child bootstrap ignores parent-injected input for timeout mode activa
     }
     await fs.rm(getParentInjectedInputMarkerPath("child-session-id"), { force: true });
     await fs.rm(getAutoExitTimeoutModeMarkerPath("child-session-id"), { force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("child bootstrap rejects structured output mixed with other tool calls", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-final-tool-"));
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Return structured output",
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    handoff: false,
+    tools: ["read", "bash"],
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      retryCount: 0,
+    },
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(
+      fakePi,
+      "before_agent_start",
+      { systemPrompt: "system", prompt: "task" },
+      ctx,
+    );
+    await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+
+    const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
+    assert.ok(structuredOutputTool);
+    await structuredOutputTool.execute(
+      "structured-tool-call",
+      { answer: "done" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    await emitHandlers(
+      fakePi,
+      "turn_end",
+      {
+        turnIndex: 1,
+        message: { role: "assistant", content: [], timestamp: Date.now() },
+        toolResults: [
+          {
+            role: "toolResult",
+            toolCallId: "structured-tool-call",
+            toolName: "StructuredOutput",
+            content: [{ type: "text", text: "ok" }],
+            isError: false,
+            timestamp: Date.now(),
+          },
+          {
+            role: "toolResult",
+            toolCallId: "bash-tool-call",
+            toolName: "bash",
+            content: [{ type: "text", text: "ran" }],
+            isError: false,
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
+
+    const structuredEntries = fakePi.appendedEntries.filter(
+      (entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+    );
+    assert.equal(structuredEntries.length, 1);
+    const structuredEntry = structuredEntries[0];
+    assert.ok(structuredEntry);
+    assert.equal((structuredEntry.data as { status: string }).status, "error");
+    assert.equal(
+      (structuredEntry.data as { error?: { code?: string } }).error?.code,
+      "validation_failed",
+    );
+    assert.equal(shutdownCount, 1);
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("child bootstrap treats retryCount as total allowed turns", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-retry-budget-"));
+  const sessionPath = path.join(cwd, "child.jsonl");
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Return structured output",
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    handoff: false,
+    tools: ["read"],
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      retryCount: 3,
+    },
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+    });
+
+    for (let run = 0; run < 3; run += 1) {
+      await emitHandlers(
+        fakePi,
+        "before_agent_start",
+        { systemPrompt: "system", prompt: `task-${run}` },
+        ctx,
+      );
+      await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+      await emitHandlers(
+        fakePi,
+        "turn_end",
+        {
+          turnIndex: 1,
+          message: { role: "assistant", content: [], timestamp: Date.now() },
+          toolResults: [],
+        },
+        ctx,
+      );
+      await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const structuredEntries = fakePi.appendedEntries
+      .filter((entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY)
+      .map((entry) => entry.data as { status: string; attempts: number });
+
+    assert.deepEqual(
+      structuredEntries.map((entry) => entry.status),
+      ["retrying", "retrying", "error"],
+    );
+    assert.deepEqual(
+      structuredEntries.map((entry) => entry.attempts),
+      [1, 2, 3],
+    );
+    assert.equal(fakePi.sentUserMessages.length, 2);
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("child bootstrap resumes structured retry counters from persisted state", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-retry-resume-"));
+  const sessionPath = path.join(cwd, "child.jsonl");
+
+  await fs.writeFile(
+    sessionPath,
+    [
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "child-session-id",
+        timestamp: new Date().toISOString(),
+        cwd,
+      }),
+      JSON.stringify({
+        type: "custom",
+        id: "structured-retrying-1",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        customType: SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+        data: {
+          status: "retrying",
+          attempts: 2,
+          retryCount: 3,
+          updatedAt: Date.now(),
+        },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Return structured output",
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    handoff: false,
+    tools: ["read"],
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      retryCount: 3,
+    },
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+    });
+
+    await emitHandlers(
+      fakePi,
+      "before_agent_start",
+      { systemPrompt: "system", prompt: "task" },
+      ctx,
+    );
+    await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+    await emitHandlers(
+      fakePi,
+      "turn_end",
+      {
+        turnIndex: 1,
+        message: { role: "assistant", content: [], timestamp: Date.now() },
+        toolResults: [],
+      },
+      ctx,
+    );
+    await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
+
+    const structuredEntries = fakePi.appendedEntries
+      .filter((entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY)
+      .map((entry) => entry.data as { status: string; attempts: number });
+
+    assert.deepEqual(
+      structuredEntries.map((entry) => entry.status),
+      ["error"],
+    );
+    assert.deepEqual(
+      structuredEntries.map((entry) => entry.attempts),
+      [3],
+    );
+    assert.equal(fakePi.sentUserMessages.length, 0);
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
@@ -1226,6 +1539,58 @@ timedTest("reduceRuntimeSubagents ignores malformed and unexpected state entries
   assert.deepEqual(Array.from(states.keys()), ["child-valid"]);
 });
 
+timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
+  const original: RuntimeSubagent = {
+    event: "started",
+    sessionId: "child-1",
+    sessionPath: "/tmp/child-1.jsonl",
+    parentSessionId: "parent-1",
+    parentSessionPath: "/tmp/parent-1.jsonl",
+    name: "worker-one",
+    mode: "worker",
+    modeLabel: "worker",
+    cwd: "/tmp/project",
+    paneId: "%1",
+    task: "task",
+    handoff: false,
+    autoExit: true,
+    status: "running",
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { result: { type: "string" } },
+      },
+      retryCount: 3,
+    },
+    structured: { result: "ok" },
+    structuredError: {
+      code: "validation_failed",
+      message: "error",
+      retryCount: 3,
+      attempts: 1,
+      lastValidationError: "bad",
+    },
+    startedAt: 1,
+    updatedAt: 2,
+  };
+
+  const cloned = cloneRuntimeSubagent(original);
+  (cloned.structured as { result: string }).result = "mutated";
+  (
+    cloned.outputFormat as { schema: { properties: { result: { type: string } } } }
+  ).schema.properties.result.type = "number";
+  (cloned.structuredError as { message: string }).message = "mutated error";
+
+  assert.equal((original.structured as { result: string }).result, "ok");
+  assert.equal(
+    (original.outputFormat as { schema: { properties: { result: { type: string } } } }).schema
+      .properties.result.type,
+    "string",
+  );
+  assert.equal((original.structuredError as { message: string }).message, "error");
+});
+
 timedTest("createChildSessionFile bootstraps a persisted child session header", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-bootstrap-dir-"));
@@ -1621,6 +1986,123 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
+
+timedTest(
+  "subagent tool execute returns structured JSON in content for structured start",
+  async () => {
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const agentDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agent-subagent-tool-structured-dir-"),
+    );
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-structured-cwd-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
+    const tool = fakePi.registeredTools.get("subagent");
+    assert.ok(tool);
+
+    try {
+      const ctx = createFakeContext({
+        cwd,
+        sessionFile: path.join(cwd, "parent.jsonl"),
+      });
+
+      const startedPromise = tool.execute(
+        "tool-call-start-structured",
+        {
+          action: "start",
+          name: "worker-one",
+          task: "Return structured output",
+          outputFormat: {
+            type: "json_schema",
+            schema: Type.Object({
+              summary: Type.String(),
+              risk: Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
+            }),
+          },
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      let sessionPath: string | undefined;
+      let paneId: string | undefined;
+      const startTimeoutAt = Date.now() + 4_000;
+      while (Date.now() < startTimeoutAt) {
+        const stateEntry = fakePi.appendedEntries.find(
+          (entry) => entry.customType === SUBAGENT_STATE_ENTRY,
+        );
+        if (stateEntry) {
+          const stateData = stateEntry.data as { sessionPath?: string; paneId?: string };
+          sessionPath = stateData.sessionPath;
+          paneId = stateData.paneId;
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      assert.ok(sessionPath);
+      assert.ok(paneId);
+
+      const timestamp = new Date().toISOString();
+      await fs.appendFile(
+        sessionPath,
+        [
+          JSON.stringify({
+            type: "message",
+            id: "u1",
+            parentId: null,
+            timestamp,
+            message: { role: "user", content: [{ type: "text", text: "Do work" }] },
+          }),
+          JSON.stringify({
+            type: "message",
+            id: "a1",
+            parentId: "u1",
+            timestamp,
+            message: {
+              role: "assistant",
+              stopReason: "stop",
+              content: [{ type: "text", text: "Done" }],
+            },
+          }),
+          JSON.stringify({
+            type: "custom",
+            id: "c1",
+            parentId: "a1",
+            timestamp,
+            customType: SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+            data: {
+              status: "captured",
+              attempts: 1,
+              retryCount: 3,
+              structured: { summary: "All clear", risk: "low" },
+              updatedAt: Date.now(),
+            },
+          }),
+        ].join("\n") + "\n",
+        "utf8",
+      );
+
+      fakeMux.existingPanes.delete(paneId);
+
+      const started = await startedPromise;
+      assert.equal(started.content.length, 1);
+      assert.deepEqual(JSON.parse(started.content[0]?.text ?? "{}"), {
+        summary: "All clear",
+        risk: "low",
+      });
+    } finally {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      await fs.rm(agentDir, { recursive: true, force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("subagent tool surfaces invalid params with actionable guidance", async () => {
   const fakePi = new FakePi();

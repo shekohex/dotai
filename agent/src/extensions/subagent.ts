@@ -85,6 +85,12 @@ function validateToolParams(params: SubagentToolParams): void {
         "Invalid subagent start params: `task` is required. There is no subagent read action later, so provide the delegated work up front and inspect tmux output from the parent session only when needed.",
       );
     }
+
+    if (params.outputFormat?.type === "json_schema" && !params.outputFormat.schema) {
+      throw new Error(
+        "Invalid subagent start params: `outputFormat.schema` is required when `outputFormat.type` is `json_schema`.",
+      );
+    }
   }
 
   if (params.action === "message") {
@@ -126,6 +132,19 @@ function getStartGuidanceText(): string {
 
 function formatStartResultText(state: RuntimeSubagent): string {
   return `Subagent ${state.name} started. sessionId: ${state.sessionId}. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.`;
+}
+
+function formatStructuredStartResultText(state: RuntimeSubagent): string {
+  return `Subagent ${state.name} completed with structured output. sessionId: ${state.sessionId}.`;
+}
+
+function serializeStructuredStartContent(structured: unknown): string {
+  try {
+    const serialized = JSON.stringify(structured);
+    return serialized ?? "null";
+  } catch {
+    return formatScalarValue(structured as string | number | boolean | undefined);
+  }
 }
 
 function formatAutoResumedMessageResultText(state: RuntimeSubagent, delivery: string): string {
@@ -405,6 +424,21 @@ function formatSubagentStateDetails(state: RuntimeSubagent): string {
     ...formatField("autoExitDeadlineAt", formatTimestamp(state.autoExitDeadlineAt)),
     ...formatField("task", state.task, true),
     ...formatField("summary", state.summary, true),
+    ...formatField(
+      "structured",
+      state.structured !== undefined ? JSON.stringify(state.structured, null, 2) : undefined,
+      true,
+    ),
+    ...formatField(
+      "outputFormat",
+      state.outputFormat ? JSON.stringify(state.outputFormat, null, 2) : undefined,
+      true,
+    ),
+    ...formatField(
+      "structuredError",
+      state.structuredError ? JSON.stringify(state.structuredError, null, 2) : undefined,
+      true,
+    ),
     ...formatField("exitCode", state.exitCode),
     ...formatField("startedAt", formatTimestamp(state.startedAt)),
     ...formatField("updatedAt", formatTimestamp(state.updatedAt)),
@@ -443,6 +477,11 @@ function formatExpandedResult(details: SubagentToolResultDetails | undefined): s
   if (details.action === "start") {
     resultLines.push(...formatField("prompt", details.prompt, true));
     resultLines.push(...formatField("promptGuidance", getStartGuidanceText(), true));
+    if (details.structured !== undefined) {
+      resultLines.push(
+        ...formatField("structured", JSON.stringify(details.structured, null, 2), true),
+      );
+    }
     return resultLines.join("\n");
   }
 
@@ -602,20 +641,43 @@ export function createSubagentExtension(
                 handoff: params.handoff,
                 cwd: params.cwd,
                 autoExit: params.autoExit,
+                outputFormat: params.outputFormat,
               },
               ctx,
               onUpdate,
               signal,
             );
-            const startedState = started.handle.getState();
+
+            if (!started.ok) {
+              throw new Error(started.error.message);
+            }
+
+            const startedValue = started.value;
+            const startedState =
+              "state" in startedValue ? startedValue.state : startedValue.handle.getState();
+            const structuredContent =
+              "structured" in startedValue
+                ? serializeStructuredStartContent(startedValue.structured)
+                : undefined;
 
             return {
-              content: [{ type: "text", text: formatStartResultText(startedState) }],
+              content: [
+                {
+                  type: "text",
+                  text:
+                    structuredContent ??
+                    ("structured" in startedValue
+                      ? formatStructuredStartResultText(startedState)
+                      : formatStartResultText(startedState)),
+                },
+              ],
               details: {
                 action: "start",
                 args: params,
-                prompt: started.prompt,
+                prompt: startedValue.prompt,
                 state: startedState,
+                structured:
+                  "structured" in startedValue ? (startedValue.structured as unknown) : undefined,
               },
             };
           }

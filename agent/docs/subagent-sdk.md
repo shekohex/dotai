@@ -28,7 +28,7 @@ The SDK consists of three primary layers:
 The public-facing API that extensions interact with. Key responsibilities:
 
 - **State Protection**: Returns cloned snapshots of internal state to prevent external mutation. This was a critical design decision made during SDK refactoring to prevent extensions from accidentally corrupting runtime state.
-- **Event Deduplication**: Uses `SubagentRuntimeEventBus` to emit events only when state actually changes. Signatures are computed from `{event, status, paneId, completedAt, autoExitDeadlineAt, autoExitTimeoutActive, summary, exitCode}` to filter out poll-only `updatedAt` churn.
+- **Event Deduplication**: Uses `SubagentRuntimeEventBus` to emit events only when state actually changes. Signatures are computed from `{event, status, paneId, completedAt, autoExitDeadlineAt, autoExitTimeoutActive, summary, structured, structuredError, exitCode}` to filter out poll-only `updatedAt` churn.
 - **Handle Abstraction**: Provides `SubagentHandle` instances for ergonomic interaction with specific subagents, eliminating the need to pass `sessionId` manually for every operation
 
 ```
@@ -37,7 +37,7 @@ Extension Code
       v
   SubagentSDK (createSubagentSDK)
       |
-      +-- spawn() -> SubagentHandle
+      +-- spawn() -> SpawnOutcome<{ handle, prompt } | { handle, prompt, state, structured }, StructuredOutputError>
       +-- message() -> SubagentHandle
       +-- cancel() -> RuntimeSubagent
       +-- onEvent() -> unsubscribe
@@ -106,7 +106,7 @@ const sdk = createSubagentSDK(pi, {
 Starts a new subagent session.
 
 ```typescript
-const { handle, prompt } = await sdk.spawn(
+const result = await sdk.spawn(
   {
     name: "worker-1",
     task: "Implement user authentication",
@@ -121,12 +121,77 @@ const { handle, prompt } = await sdk.spawn(
   },
   abortSignal, // Optional cancellation
 );
+
+if (!result.ok) {
+  throw new Error(result.error.message);
+}
+
+const { handle, prompt } = result.value;
 ```
 
 **Returns:**
 
-- `handle`: `SubagentHandle` for subsequent operations
-- `prompt`: The final prompt sent (includes handoff if requested)
+- `ok: true` with `value.handle` and `value.prompt` for text output mode
+- `ok: false` with a typed structured-output error for aborted startup/structured failures
+
+### Structured Results
+
+When `outputFormat.type` is `json_schema`, `spawn()` waits for terminal completion and returns structured output validated through the synthetic `StructuredOutput` tool flow.
+
+```typescript
+const result = await sdk.spawn(
+  {
+    name: "risk-worker",
+    task: "Summarize current release risk",
+    outputFormat: {
+      type: "json_schema",
+      schema: Type.Object({
+        summary: Type.String(),
+        risk: Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
+      }),
+      retryCount: 3,
+    },
+  },
+  ctx,
+);
+
+if (result.ok) {
+  result.value.structured.summary;
+  result.value.structured.risk;
+} else {
+  result.error.code;
+  result.error.message;
+}
+```
+
+Structured-mode failures resolve as `ok: false` (no throw), using these error codes:
+
+- `missing_tool_call`
+- `validation_failed`
+- `retry_exhausted`
+- `aborted`
+
+### Spawn Outcome Pattern
+
+For SDK consumers that call `spawn()` frequently, use a small helper to keep outcome handling explicit and consistent.
+
+```typescript
+function unwrapSpawn<T>(
+  result: { ok: true; value: T } | { ok: false; error: { message: string } },
+): T {
+  if (!result.ok) {
+    throw new Error(result.error.message);
+  }
+
+  return result.value;
+}
+
+const started = unwrapSpawn(
+  await sdk.spawn({ name: "worker", task: "Investigate flaky tests", mode: "worker" }, ctx),
+);
+
+const handle = started.handle;
+```
 
 #### `message(params, ctx, onUpdate?)`
 
@@ -170,6 +235,7 @@ Returns all subagent states (cloned snapshots).
 ```typescript
 const states = sdk.list();
 // Array of RuntimeSubagent, sorted by startedAt
+// RuntimeSubagent now includes optional structured/outputFormat/structuredError fields
 ```
 
 #### `get(sessionId)`
@@ -199,6 +265,7 @@ const terminalState = await handle.cancel();
 
 // Wait for terminal status with optional abort signal
 const finalState = await handle.waitForCompletion({ signal: abortSignal });
+// finalState.structured is set when child captured structured output
 
 // Capture recent output from tmux pane
 const capture = await handle.captureOutput(100); // last 100 lines
@@ -274,7 +341,7 @@ async function buildReviewPrompt(pi: ExtensionAPI, target: ReviewTarget): Promis
 Handoff generates a summary of parent session context for the child:
 
 ```typescript
-const { handle, prompt } = await sdk.spawn(
+const result = await sdk.spawn(
   {
     name: "review",
     task: reviewPrompt,
@@ -289,6 +356,12 @@ const { handle, prompt } = await sdk.spawn(
     }
   },
 );
+
+if (!result.ok) {
+  throw new Error(result.error.message);
+}
+
+const { handle, prompt } = result.value;
 ```
 
 The handoff process:
@@ -317,6 +390,7 @@ The SDK abstracts all tmux operations. The review extension:
 
 ```typescript
 const started = await sdk.spawn({ name: "review", task, mode: "review" }, ctx);
+if (!started.ok) throw new Error(started.error.message);
 // Pane created automatically, ID stored in state
 ```
 
@@ -366,7 +440,7 @@ const branchAnchorId = ctx.sessionManager.getLeafId() ?? undefined;
 // Persist with anchor reference
 persistReviewState({
   active: true,
-  subagentSessionId: started.handle.sessionId,
+  subagentSessionId: started.value.handle.sessionId,
   targetLabel,
   branchAnchorId, // Used to detect if user navigated away
   checkoutToRestore, // For PR reviews: git state before gh checkout
@@ -467,7 +541,7 @@ export function createWorkerExtension() {
       handler: async (args, ctx) => {
         const task = args || "Help with the current task";
 
-        const { handle } = await sdk.spawn(
+        const started = await sdk.spawn(
           {
             name: `worker-${workers.size + 1}`,
             task,
@@ -483,6 +557,12 @@ export function createWorkerExtension() {
             }
           },
         );
+
+        if (!started.ok) {
+          throw new Error(started.error.message);
+        }
+
+        const { handle } = started.value;
 
         workers.set(handle.sessionId, { task, handle });
         updateWidget(ctx);
@@ -526,7 +606,13 @@ async function runSequentialTasks(ctx: ExtensionContext, tasks: string[]) {
   const results = [];
 
   for (const task of tasks) {
-    const { handle } = await sdk.spawn({ name: "sequential-worker", task, mode: "worker" }, ctx);
+    const started = await sdk.spawn({ name: "sequential-worker", task, mode: "worker" }, ctx);
+    if (!started.ok) {
+      results.push({ task, status: "failed", error: started.error.message });
+      continue;
+    }
+
+    const { handle } = started.value;
 
     try {
       // Wait for completion with timeout
@@ -586,7 +672,7 @@ You are acting as a reviewer for a proposed code change made by another engineer
 Using the custom mode:
 
 ```typescript
-const { handle } = await sdk.spawn(
+const started = await sdk.spawn(
   {
     name: "planner",
     task: "Plan the authentication system implementation",
@@ -595,6 +681,11 @@ const { handle } = await sdk.spawn(
   },
   ctx,
 );
+if (!started.ok) {
+  throw new Error(started.error.message);
+}
+
+const { handle } = started.value;
 ```
 
 **Design insight:** Modes consolidate system prompt, tool selection, auto-exit behavior, and tmux target in a single file. This was inspired by the need to have review-specific guidelines that differ from general coding assistance.

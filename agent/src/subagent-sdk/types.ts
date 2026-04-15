@@ -1,9 +1,10 @@
 import type { CustomEntry } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
 export const SUBAGENT_STATE_ENTRY = "subagent-state";
 export const SUBAGENT_MESSAGE_ENTRY = "subagent-message";
+export const SUBAGENT_STRUCTURED_OUTPUT_ENTRY = "subagent-structured-output";
 export const SUBAGENT_WIDGET_KEY = "subagents";
 export const SUBAGENT_STATUS_MESSAGE = "subagent-status";
 
@@ -41,6 +42,63 @@ export const SubagentStatusSchema = Type.Union([
   Type.Literal("failed"),
 ]);
 
+export const OutputFormatTextSchema = Type.Object(
+  {
+    type: Type.Literal("text"),
+  },
+  { additionalProperties: false },
+);
+
+export const OutputFormatJsonSchemaSchema = Type.Object(
+  {
+    type: Type.Literal("json_schema"),
+    schema: Type.Unknown(),
+    retryCount: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+
+export const OutputFormatSchema = Type.Union([
+  OutputFormatTextSchema,
+  OutputFormatJsonSchemaSchema,
+]);
+
+export const StructuredOutputErrorCodeSchema = Type.Union([
+  Type.Literal("retry_exhausted"),
+  Type.Literal("missing_tool_call"),
+  Type.Literal("validation_failed"),
+  Type.Literal("aborted"),
+]);
+
+export const StructuredOutputErrorSchema = Type.Object(
+  {
+    code: StructuredOutputErrorCodeSchema,
+    message: Type.String(),
+    retryCount: Type.Integer({ minimum: 0 }),
+    attempts: Type.Integer({ minimum: 0 }),
+    lastValidationError: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const SubagentStructuredOutputEntryStatusSchema = Type.Union([
+  Type.Literal("retrying"),
+  Type.Literal("captured"),
+  Type.Literal("error"),
+]);
+
+export const SubagentStructuredOutputEntrySchema = Type.Object(
+  {
+    status: SubagentStructuredOutputEntryStatusSchema,
+    attempts: Type.Integer({ minimum: 0 }),
+    retryCount: Type.Integer({ minimum: 0 }),
+    structured: Type.Optional(Type.Unknown()),
+    error: Type.Optional(StructuredOutputErrorSchema),
+    updatedAt: Type.Number(),
+  },
+  { additionalProperties: false },
+);
+
 export const SubagentToolParamsSchema = Type.Object({
   action: SubagentActionSchema,
   name: Type.Optional(
@@ -66,6 +124,21 @@ export const SubagentToolParamsSchema = Type.Object({
   ),
   autoExit: Type.Optional(
     Type.Boolean({ description: "Optional override for the mode autoExit behavior." }),
+  ),
+  outputFormat: Type.Optional(
+    Type.Union([
+      OutputFormatTextSchema,
+      Type.Object(
+        {
+          type: Type.Literal("json_schema"),
+          schema: Type.Unknown({ description: "JSON Schema object for structured output." }),
+          retryCount: Type.Optional(
+            Type.Integer({ minimum: 0, description: "Optional retry budget. Defaults to 3." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ]),
   ),
   sessionId: Type.Optional(
     Type.String({
@@ -102,6 +175,9 @@ export const SubagentStateEntrySchema = Type.Object(
     status: SubagentStatusSchema,
     exitCode: Type.Optional(Type.Number()),
     summary: Type.Optional(Type.String()),
+    structured: Type.Optional(Type.Unknown()),
+    outputFormat: Type.Optional(OutputFormatSchema),
+    structuredError: Type.Optional(StructuredOutputErrorSchema),
     startedAt: Type.Number(),
     updatedAt: Type.Number(),
     completedAt: Type.Optional(Type.Number()),
@@ -129,9 +205,16 @@ export type SubagentAction = Static<typeof SubagentActionSchema>;
 export type SubagentDelivery = Static<typeof SubagentDeliverySchema>;
 export type SubagentStateEvent = Static<typeof SubagentStateEventSchema>;
 export type SubagentStatus = Static<typeof SubagentStatusSchema>;
+export type TSchemaBase = TSchema;
+export type OutputFormat<TSchemaValue extends TSchemaBase = TSchemaBase> =
+  | { type: "text" }
+  | { type: "json_schema"; schema: TSchemaValue; retryCount?: number };
+export type StructuredOutputErrorCode = Static<typeof StructuredOutputErrorCodeSchema>;
+export type StructuredOutputError = Static<typeof StructuredOutputErrorSchema>;
 export type SubagentToolParams = Static<typeof SubagentToolParamsSchema>;
 export type SubagentStateEntry = Static<typeof SubagentStateEntrySchema>;
 export type SubagentMessageEntry = Static<typeof SubagentMessageEntrySchema>;
+export type SubagentStructuredOutputEntry = Static<typeof SubagentStructuredOutputEntrySchema>;
 export type SubagentStateSessionEntry = CustomEntry<SubagentStateEntry>;
 export type SubagentMessageSessionEntry = CustomEntry<SubagentMessageEntry>;
 
@@ -139,7 +222,7 @@ export type RuntimeSubagent = SubagentStateEntry & {
   modeLabel: string;
 };
 
-export type StartSubagentParams = {
+type StartSubagentBaseParams = {
   name: string;
   task: string;
   mode?: string;
@@ -147,6 +230,20 @@ export type StartSubagentParams = {
   cwd?: string;
   autoExit?: boolean;
 };
+
+export type StartSubagentParamsText = StartSubagentBaseParams & {
+  outputFormat?: { type: "text" };
+};
+
+export type StartSubagentParamsJsonSchema<TSchemaValue extends TSchemaBase> =
+  StartSubagentBaseParams & {
+    outputFormat: { type: "json_schema"; schema: TSchemaValue; retryCount?: number };
+  };
+
+export type StartSubagentParams<TSchemaValue extends TSchemaBase = TSchemaBase> =
+  StartSubagentBaseParams & {
+    outputFormat?: OutputFormat<TSchemaValue>;
+  };
 
 export type ResumeSubagentParams = {
   sessionId: string;
@@ -186,13 +283,25 @@ export type ChildBootstrapState = {
   autoExitTimeoutMs?: number;
   handoff: boolean;
   tools: string[];
+  outputFormat?: OutputFormat;
   startedAt: number;
 };
 
-export type StartSubagentResult = {
+export type StartSubagentBaseResult = {
   state: RuntimeSubagent;
   prompt: string;
 };
+
+export type SpawnOutcome<T, E> = { ok: true; value: T } | { ok: false; error: E };
+
+export type StartSubagentResult = StartSubagentBaseResult;
+
+export type StartSubagentResultText = SpawnOutcome<StartSubagentBaseResult, StructuredOutputError>;
+
+export type StartSubagentResultJsonSchema<TSchemaValue extends TSchemaBase> = SpawnOutcome<
+  StartSubagentBaseResult & { structured: Static<TSchemaValue> },
+  StructuredOutputError
+>;
 
 export type ResumeSubagentResult = {
   state: RuntimeSubagent;
@@ -204,6 +313,7 @@ export type SubagentStartResultDetails = {
   args: SubagentToolParams;
   prompt: string;
   state: RuntimeSubagent;
+  structured?: unknown;
 };
 
 export type SubagentMessageResultDetails = {
@@ -248,8 +358,25 @@ export type SubagentToolProgressDetails = {
 
 export type SubagentToolRenderDetails = SubagentToolResultDetails | SubagentToolProgressDetails;
 
+function cloneNestedValue<T>(value: T): T {
+  if (value === undefined || value === null || typeof value !== "object") {
+    return value;
+  }
+
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+}
+
 export function cloneRuntimeSubagent(state: RuntimeSubagent): RuntimeSubagent {
-  return { ...state };
+  return {
+    ...state,
+    structured: cloneNestedValue(state.structured),
+    outputFormat: cloneNestedValue(state.outputFormat),
+    structuredError: cloneNestedValue(state.structuredError),
+  };
 }
 
 export function parseSubagentStateEntry(value: unknown): SubagentStateEntry | undefined {
@@ -266,4 +393,20 @@ export function serializeSubagentStateEntry(value: SubagentStateEntry): Subagent
 
 export function serializeSubagentMessageEntry(value: SubagentMessageEntry): SubagentMessageEntry {
   return Value.Parse(SubagentMessageEntrySchema, value);
+}
+
+export function parseSubagentStructuredOutputEntry(
+  value: unknown,
+): SubagentStructuredOutputEntry | undefined {
+  if (!Value.Check(SubagentStructuredOutputEntrySchema, value)) {
+    return undefined;
+  }
+
+  return Value.Parse(SubagentStructuredOutputEntrySchema, value);
+}
+
+export function serializeSubagentStructuredOutputEntry(
+  value: SubagentStructuredOutputEntry,
+): SubagentStructuredOutputEntry {
+  return Value.Parse(SubagentStructuredOutputEntrySchema, value);
 }

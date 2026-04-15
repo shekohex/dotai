@@ -11,8 +11,12 @@ import {
 
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 import {
+  SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
   SUBAGENT_STATE_ENTRY,
+  parseSubagentStructuredOutputEntry,
   parseSubagentStateEntry,
+  type SubagentStructuredOutputEntry,
+  type StructuredOutputError,
   type RuntimeSubagent,
   type SubagentStateEntry,
 } from "./types.js";
@@ -23,6 +27,8 @@ type SessionBootstrapWriter = {
 
 type ChildSessionOutcome = {
   summary?: string;
+  structured?: unknown;
+  structuredError?: StructuredOutputError;
   failed: boolean;
 };
 
@@ -47,6 +53,11 @@ type AssistantOutcomeMessage = SessionMessageEntry["message"] & {
   role: "assistant";
   stopReason?: string;
   content: string | Array<{ type: string; text?: string }>;
+};
+
+type StructuredOutputEntry = {
+  structured?: unknown;
+  error?: StructuredOutputError;
 };
 
 export function getDefaultSessionDir(cwd: string): string {
@@ -129,25 +140,58 @@ export async function readChildSessionOutcome(sessionPath: string): Promise<Chil
   try {
     const sessionManager = SessionManager.open(sessionPath);
     let entry = sessionManager.getLeafEntry();
+    let summary: string | undefined;
+    let failed = false;
+    let structured: unknown;
+    let structuredError: StructuredOutputError | undefined;
 
     while (entry) {
-      const message = getAssistantOutcomeMessage(entry);
-      if (!message) {
-        entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
-        continue;
+      const structuredEntry = getStructuredOutputEntry(entry);
+      if (structuredEntry && structured === undefined && structuredError === undefined) {
+        structured = structuredEntry.structured;
+        structuredError = structuredEntry.error;
       }
 
-      const summary = extractMessageText(message.content).trim();
-      return {
-        summary: summary || undefined,
-        failed: message.stopReason === "error" || message.stopReason === "aborted",
-      };
+      const message = getAssistantOutcomeMessage(entry);
+      if (message && summary === undefined) {
+        const extractedSummary = extractMessageText(message.content).trim();
+        summary = extractedSummary || undefined;
+        failed = message.stopReason === "error" || message.stopReason === "aborted";
+      }
+
+      entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
     }
+
+    return {
+      summary,
+      structured,
+      structuredError,
+      failed: failed || structuredError !== undefined,
+    };
   } catch {
     return { failed: true };
   }
+}
 
-  return { failed: true };
+export function readLatestChildStructuredOutputState(
+  sessionPath: string,
+): SubagentStructuredOutputEntry | undefined {
+  try {
+    const sessionManager = SessionManager.open(sessionPath);
+    let entry = sessionManager.getLeafEntry();
+
+    while (entry) {
+      if (entry.type === "custom" && entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY) {
+        return parseSubagentStructuredOutputEntry(entry.data);
+      }
+
+      entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 export async function readChildSessionStatus(sessionPath: string): Promise<ChildSessionStatus> {
@@ -245,4 +289,25 @@ function getAssistantOutcomeMessage(entry: SessionEntry): AssistantOutcomeMessag
   }
 
   return entry.message as AssistantOutcomeMessage;
+}
+
+function getStructuredOutputEntry(entry: SessionEntry): StructuredOutputEntry | undefined {
+  if (entry.type !== "custom" || entry.customType !== SUBAGENT_STRUCTURED_OUTPUT_ENTRY) {
+    return undefined;
+  }
+
+  const parsed = parseSubagentStructuredOutputEntry(entry.data);
+  if (!parsed) {
+    return undefined;
+  }
+
+  if (parsed.status === "captured") {
+    return { structured: parsed.structured };
+  }
+
+  if (parsed.status === "error" && parsed.error) {
+    return { error: parsed.error };
+  }
+
+  return undefined;
 }

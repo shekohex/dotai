@@ -14,12 +14,18 @@ import type {
   MessageSubagentResult,
   ResumeSubagentParams,
   RuntimeSubagent,
+  SpawnOutcome,
   StartSubagentParams,
+  StartSubagentParamsJsonSchema,
+  StartSubagentParamsText,
+  StructuredOutputError,
+  TSchemaBase,
 } from "./types.js";
 import { cloneRuntimeSubagent } from "./types.js";
 import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
 
 const SDK_EVENT_POLL_INTERVAL_MS = 500;
+const DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT = 3;
 
 function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
   return status === "completed" || status === "cancelled" || status === "failed";
@@ -33,6 +39,71 @@ function getStateOrThrow(runtime: SubagentRuntime, sessionId: string): RuntimeSu
 
   return state;
 }
+
+function toStructuredOutputError(
+  state: RuntimeSubagent,
+  retryCount = DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT,
+): StructuredOutputError {
+  if (state.structuredError) {
+    return state.structuredError;
+  }
+
+  if (state.status === "cancelled") {
+    return {
+      code: "aborted",
+      message: state.summary ?? "Subagent execution was cancelled.",
+      retryCount,
+      attempts: retryCount,
+    };
+  }
+
+  if (state.status === "failed") {
+    return {
+      code: "aborted",
+      message: state.summary ?? "Subagent execution failed.",
+      retryCount,
+      attempts: retryCount,
+    };
+  }
+
+  return {
+    code: "missing_tool_call",
+    message: "Subagent completed without structured output.",
+    retryCount,
+    attempts: retryCount,
+  };
+}
+
+function toSpawnAbortedError(
+  error: unknown,
+  retryCount = DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT,
+): StructuredOutputError {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    code: "aborted",
+    message,
+    retryCount,
+    attempts: 0,
+  };
+}
+
+type StartSubagentSpawnValue = {
+  handle: SubagentHandle;
+  prompt: string;
+};
+
+type StartSubagentSpawnStructuredValue<TSchemaValue extends TSchemaBase> = {
+  handle: SubagentHandle;
+  prompt: string;
+  state: RuntimeSubagent;
+  structured: Static<TSchemaValue>;
+};
+
+type StartSubagentSpawnOutcomeText = SpawnOutcome<StartSubagentSpawnValue, StructuredOutputError>;
+type StartSubagentSpawnOutcomeJsonSchema<TSchemaValue extends TSchemaBase> = SpawnOutcome<
+  StartSubagentSpawnStructuredValue<TSchemaValue>,
+  StructuredOutputError
+>;
 
 export type SubagentSDKEvent = SubagentRuntimeEvent;
 
@@ -53,11 +124,17 @@ export interface SubagentHandle {
 export interface SubagentSDK {
   restore(ctx: ExtensionContext): Promise<SubagentHandle[]>;
   spawn(
-    params: StartSubagentParams,
+    params: StartSubagentParamsText,
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback<any>,
     signal?: AbortSignal,
-  ): Promise<{ handle: SubagentHandle; prompt: string }>;
+  ): Promise<StartSubagentSpawnOutcomeText>;
+  spawn<TSchemaValue extends TSchemaBase>(
+    params: StartSubagentParamsJsonSchema<TSchemaValue>,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback<any>,
+    signal?: AbortSignal,
+  ): Promise<StartSubagentSpawnOutcomeJsonSchema<TSchemaValue>>;
   resume(
     params: ResumeSubagentParams,
     ctx: ExtensionContext,
@@ -201,13 +278,57 @@ export function createSubagentSDK(
       emitChangedStates();
       return runtime.listStates().map((state) => toHandle(state.sessionId));
     },
-    async spawn(params, ctx, onUpdate, signal) {
-      const started = await runtime.spawn(params, ctx, onUpdate, signal);
-      emitChangedStates();
-      return {
-        handle: toHandle(started.state.sessionId),
-        prompt: started.prompt,
-      };
+    async spawn(params: StartSubagentParams, ctx, onUpdate, signal) {
+      const retryCount =
+        params.outputFormat?.type === "json_schema"
+          ? (params.outputFormat.retryCount ?? DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT)
+          : DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT;
+
+      try {
+        const started = await runtime.spawn(params, ctx, onUpdate, signal);
+        emitChangedStates();
+
+        const handle = toHandle(started.state.sessionId);
+        if (params.outputFormat?.type !== "json_schema") {
+          return {
+            ok: true,
+            value: {
+              handle,
+              prompt: started.prompt,
+            },
+          };
+        }
+
+        try {
+          const terminal = await handle.waitForCompletion({ signal });
+          if (terminal.status === "completed" && terminal.structured !== undefined) {
+            return {
+              ok: true,
+              value: {
+                handle,
+                prompt: started.prompt,
+                state: terminal,
+                structured: terminal.structured as never,
+              },
+            };
+          }
+
+          return {
+            ok: false,
+            error: toStructuredOutputError(terminal, retryCount),
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            error: toSpawnAbortedError(error, retryCount),
+          };
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          error: toSpawnAbortedError(error, retryCount),
+        };
+      }
     },
     async resume(params, ctx, onUpdate) {
       const resumed = await runtime.resume(params, ctx, onUpdate);

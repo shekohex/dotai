@@ -35,6 +35,7 @@ import {
   type ResumeSubagentParams,
   type ResumeSubagentResult,
   type RuntimeSubagent,
+  type StructuredOutputError,
   type StartSubagentParams,
   type StartSubagentResult,
   type SubagentToolProgressDetails,
@@ -52,6 +53,14 @@ function unknownSessionError(action: "message" | "cancel" | "resume", sessionId:
     action,
     `sessionId ${sessionId} was not found in this parent session. Use subagent list or a prior result to get the full UUID v4 sessionId.`,
   );
+}
+
+function formatStructuredOutputError(error: StructuredOutputError | undefined): string | undefined {
+  if (!error) {
+    return undefined;
+  }
+
+  return `${error.message} (code: ${error.code}, attempts: ${error.attempts}, retryCount: ${error.retryCount})`;
 }
 
 type ResumeExecutionOptions = {
@@ -251,6 +260,7 @@ export class SubagentRuntime {
       autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
       handoff: params.handoff ?? false,
       tools: mode.value.tools,
+      outputFormat: params.outputFormat,
       startedAt,
     };
 
@@ -271,6 +281,7 @@ export class SubagentRuntime {
       autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
       autoExitTimeoutActive: false,
       status: "running",
+      outputFormat: params.outputFormat,
       startedAt,
       updatedAt: startedAt,
     };
@@ -370,6 +381,7 @@ export class SubagentRuntime {
       autoExitTimeoutMs: mode.value.autoExitTimeoutMs,
       handoff: false,
       tools: mode.value.tools,
+      outputFormat: existing.outputFormat,
       startedAt: existing.startedAt,
     };
 
@@ -390,6 +402,8 @@ export class SubagentRuntime {
         existing.autoExitTimeoutActive ?? isAutoExitTimeoutModeActive(existing.sessionId),
       status: "running",
       summary: undefined,
+      structured: undefined,
+      structuredError: undefined,
       exitCode: undefined,
       updatedAt: resumedAt,
       completedAt: undefined,
@@ -653,11 +667,14 @@ export class SubagentRuntime {
   private async finalizeInactiveSubagent(state: RuntimeSubagent): Promise<void> {
     const outcome = await readChildSessionOutcome(state.sessionPath);
     const now = Date.now();
+    const failed = outcome.failed || outcome.structuredError !== undefined;
     const terminal: RuntimeSubagent = {
       ...state,
-      event: outcome.failed ? "failed" : "completed",
-      status: outcome.failed ? "failed" : "completed",
+      event: failed ? "failed" : "completed",
+      status: failed ? "failed" : "completed",
       summary: outcome.summary,
+      structured: outcome.structured,
+      structuredError: outcome.structuredError,
       autoExitDeadlineAt: undefined,
       autoExitTimeoutActive: state.autoExitTimeoutActive,
       updatedAt: now,
@@ -669,10 +686,11 @@ export class SubagentRuntime {
     await this.hooks.persistState(terminal);
     this.stopPollingIfIdle();
 
+    const structuredErrorText = formatStructuredOutputError(terminal.structuredError);
     const messageText =
       terminal.status === "completed"
         ? `Subagent ${terminal.name} (${terminal.sessionId}) completed.\n\n${terminal.summary ?? "No summary available."}`
-        : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${terminal.summary ?? "No summary available."}`;
+        : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? terminal.summary ?? "No summary available."}`;
 
     this.hooks.emitStatusMessage({ content: messageText, triggerTurn: true });
   }

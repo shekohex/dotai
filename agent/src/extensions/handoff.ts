@@ -34,7 +34,6 @@ type PendingSessionHandoff = {
   prompt: string;
   autoSend: boolean;
   overrides?: ResolvedHandoffOptions;
-  deferSessionStartApply?: boolean;
 };
 
 declare global {
@@ -496,7 +495,6 @@ export async function launchHandoffSession(input: {
     prompt: result.prompt,
     autoSend: true,
     overrides: result.overrides,
-    deferSessionStartApply: Boolean(input.state),
   });
   createPendingNewSessionContext(state);
 
@@ -510,14 +508,14 @@ export async function launchHandoffSession(input: {
     return { status: "cancelled" };
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await waitForPendingNewSessionContext(state, input.ctx);
 
   const pendingCommandHandoff = getPendingCommandHandoff();
   if (!pendingCommandHandoff) {
     return { status: "started", warning: result.warning };
   }
 
-  const targetCtx = await waitForPendingNewSessionContext(state, input.ctx);
+  const targetCtx = state.ctx ?? input.ctx;
   await applyPendingSelection(input.pi, targetCtx, pendingCommandHandoff.overrides);
   setPendingCommandHandoff(undefined);
 
@@ -621,10 +619,6 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
     const pendingCommandHandoff = getPendingCommandHandoff();
     if (!pendingCommandHandoff) {
-      return;
-    }
-
-    if (pendingCommandHandoff.deferSessionStartApply) {
       return;
     }
 

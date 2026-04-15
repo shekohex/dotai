@@ -11,6 +11,23 @@ type TextContent = { type: "text"; text: string };
 
 const AGENTS_FILENAMES = ["AGENTS.override.md", "AGENTS.md"];
 
+function findGitRoot(startDir: string): string {
+  let dir = startDir;
+
+  while (true) {
+    if (fs.existsSync(path.join(dir, ".git"))) {
+      return dir;
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return startDir;
+    }
+
+    dir = parent;
+  }
+}
+
 function resolvePath(targetPath: string, baseDir: string): string {
   let absolute = targetPath;
 
@@ -85,7 +102,7 @@ function countLines(content: string): number {
 export default function agentsMdExtension(pi: ExtensionAPI) {
   const loadedAgents = new Set<string>();
   let currentCwd = "";
-  let cwdAgentsPath = "";
+  let sessionRoot = "";
   let homeDir = "";
 
   const formatAgentsPath = (agentsPath: string): string => {
@@ -116,10 +133,29 @@ export default function agentsMdExtension(pi: ExtensionAPI) {
 
   const resetSession = (cwd: string) => {
     currentCwd = resolvePath(cwd, process.cwd());
-    cwdAgentsPath = getAgentsFileFromDir(currentCwd);
+    sessionRoot = findGitRoot(currentCwd);
     homeDir = resolvePath(os.homedir(), process.cwd());
     loadedAgents.clear();
 
+    let dir = currentCwd;
+    while (isInsideRoot(sessionRoot, dir)) {
+      const agentsPath = path.join(dir, "AGENTS.md");
+      if (fs.existsSync(agentsPath)) {
+        loadedAgents.add(path.normalize(agentsPath));
+      }
+
+      if (dir === sessionRoot) {
+        break;
+      }
+
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        break;
+      }
+      dir = parent;
+    }
+
+    const cwdAgentsPath = getAgentsFileFromDir(currentCwd);
     if (cwdAgentsPath) {
       loadedAgents.add(path.normalize(cwdAgentsPath));
     }
@@ -135,7 +171,7 @@ export default function agentsMdExtension(pi: ExtensionAPI) {
 
     while (isInsideRoot(rootDir, dir)) {
       const candidate = getAgentsFileFromDir(dir);
-      if (candidate && candidate !== cwdAgentsPath) {
+      if (candidate) {
         agentsFiles.push(candidate);
       }
 
@@ -177,11 +213,7 @@ export default function agentsMdExtension(pi: ExtensionAPI) {
       return undefined;
     }
 
-    const searchRoot = isInsideRoot(currentCwd, absolutePath)
-      ? currentCwd
-      : isInsideRoot(homeDir, absolutePath)
-        ? homeDir
-        : "";
+    const searchRoot = isInsideRoot(sessionRoot, absolutePath) ? sessionRoot : "";
 
     if (!searchRoot) {
       return undefined;

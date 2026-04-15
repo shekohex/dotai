@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   calls,
@@ -2040,6 +2040,73 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("agents-md extension loads AGENTS only within the session git root", async () => {
+  const repoRoot = await mkdtemp(join(tmpdir(), "agent-agents-md-repo-root-"));
+  const cwd = join(repoRoot, "apps", "cli");
+  const externalDir = await mkdtemp(join(homedir(), "agent-agents-md-external-"));
+  let session: TestSession | undefined;
+
+  try {
+    await mkdir(join(repoRoot, ".git"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(repoRoot, "shared"), { recursive: true });
+
+    await writeFile(join(repoRoot, "AGENTS.md"), "repo root rule\n", "utf8");
+    await writeFile(join(repoRoot, "shared", "AGENTS.md"), "shared rule\n", "utf8");
+    await writeFile(join(repoRoot, "shared", "util.ts"), "export const util = 1;\n", "utf8");
+
+    await writeFile(join(externalDir, "AGENTS.md"), "external rule\n", "utf8");
+    await writeFile(join(externalDir, "note.txt"), "outside file\n", "utf8");
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [agentsMdExtension],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Read file within repo but outside cwd", [
+        calls("read", { path: join(repoRoot, "shared", "util.ts") }),
+        says("done"),
+      ]),
+      when("Read file outside repo root", [
+        calls("read", { path: join(externalDir, "note.txt") }),
+        says("done"),
+      ]),
+    );
+
+    const readResults = session.events.all
+      .filter((event) => event.type === "tool_execution_end" && event.toolName === "read")
+      .map((event) =>
+        (
+          (event as { result?: { content?: Array<{ type: string; text?: string }> } }).result
+            ?.content ?? []
+        )
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("\n"),
+      );
+
+    assert.equal(readResults.length, 2);
+    assert.match(readResults[0] ?? "", /export const util = 1;/);
+    assert.match(readResults[0] ?? "", /Loaded subdirectory context from .*shared\/AGENTS\.md/);
+    assert.match(readResults[0] ?? "", /shared rule/);
+    assert.doesNotMatch(readResults[0] ?? "", /repo root rule/);
+
+    assert.match(readResults[1] ?? "", /outside file/);
+    assert.doesNotMatch(readResults[1] ?? "", /Loaded subdirectory context from/);
+    assert.doesNotMatch(readResults[1] ?? "", /external rule/);
+
+    const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
+    assert.equal(notifications.length, 1);
+    assert.match(notifications[0] ?? "", /shared\/AGENTS\.md/);
+  } finally {
+    session?.dispose();
+    await rm(repoRoot, { recursive: true, force: true });
+    await rm(externalDir, { recursive: true, force: true });
   }
 });
 

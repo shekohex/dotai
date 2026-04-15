@@ -370,6 +370,13 @@ export function installChildBootstrap(pi: ExtensionAPI): void {
       return;
     }
 
+    if (event.toolResults.length === 0) {
+      if (turnStructuredValidationError) {
+        lastTurnStructuredValidationError = turnStructuredValidationError;
+      }
+      return;
+    }
+
     lastTurnStructuredCaptured = false;
     lastTurnStructuredPayload = undefined;
     lastTurnStructuredValidationError = turnStructuredValidationError;

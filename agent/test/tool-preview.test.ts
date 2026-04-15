@@ -5,7 +5,10 @@ import { setKeybindings } from "@mariozechner/pi-tui";
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
 import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
 import stripAnsi from "strip-ansi";
-import { createReadToolOverrideDefinition } from "../src/extensions/coreui/tools.js";
+import {
+  createBashToolOverrideDefinition,
+  createReadToolOverrideDefinition,
+} from "../src/extensions/coreui/tools.js";
 import {
   assertVisibleWidths,
   createPreviewComponent,
@@ -671,6 +674,60 @@ timedTest("failed multiline bash preview shows exit code on collapsed error", ()
   const text = stripAnsi(renderPreviewText(scenario, error, 120));
 
   assert.match(text, /exit 1/);
+});
+
+timedTest("bash preview keeps completed state when a late partial update arrives", () => {
+  const toolDefinition = createBashToolOverrideDefinition();
+  const cwd = process.cwd().replace(/\\/g, "/");
+  const ui = { requestRender() {} };
+
+  const createComponent = (toolCallId: string, description: string) => {
+    const component = new ToolExecutionComponent(
+      "bash",
+      toolCallId,
+      {
+        command: `echo ${description}`,
+        description,
+        timeout: 120,
+      },
+      {},
+      toolDefinition,
+      ui as never,
+      cwd,
+    );
+
+    component.setExpanded(false);
+    component.markExecutionStarted();
+    component.setArgsComplete();
+    return component;
+  };
+
+  const finished = createComponent("bash-finished", "finished");
+  const running = createComponent("bash-running", "running");
+  const partialResult = {
+    content: [{ type: "text", text: "line one\nline two" }],
+  };
+
+  finished.updateResult(partialResult, true);
+  running.updateResult(partialResult, true);
+
+  finished.updateResult({
+    content: [{ type: "text", text: "line one\nline two\nexit code: 0" }],
+    details: { durationMs: 1000 },
+    isError: false,
+  });
+
+  finished.updateResult(partialResult, true);
+
+  const renderedText = stripAnsi(finished.render(120).join("\n"));
+  const nonEmptyLines = finished
+    .render(120)
+    .map((line) => stripAnsi(line))
+    .filter((line) => line.trim().length > 0);
+
+  assert.match(renderedText, /finished · ok/);
+  assert.doesNotMatch(renderedText, /so far/);
+  assert.equal(nonEmptyLines.length, 1);
 });
 
 timedTest("tool previews render a bare left rail instead of a box wrapper", () => {

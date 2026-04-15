@@ -239,25 +239,27 @@ export function createBashToolOverrideDefinition(): ToolDefinition<
     parameters: bashToolParams,
     renderCall(args: BashCallArgs, theme: ToolTheme, context: BashCallContext) {
       const state = syncBashRenderState(context, context.isPartial);
+      const isPartial = isBashRenderPartial(state, context.isPartial);
+      const renderContext = isPartial === context.isPartial ? context : { ...context, isPartial };
       const metadata = getBashCallMetadata(args, state);
 
-      if (context.expanded && metadata.command) {
+      if (renderContext.expanded && metadata.command) {
         return setBashCallComponent(
           state,
-          context.lastComponent,
+          renderContext.lastComponent,
           renderExpandedBashCall(
             metadata.command,
             theme,
-            context,
-            formatBashCallSuffix(theme, context, metadata),
+            renderContext,
+            formatBashCallSuffix(theme, renderContext, metadata),
           ),
         );
       }
 
       return setBashCallComponent(
         state,
-        context.lastComponent,
-        `${formatBashStatus(theme, context)} ${theme.fg("text", metadata.label)}${formatBashCallSuffix(theme, context, metadata)}`,
+        renderContext.lastComponent,
+        `${formatBashStatus(theme, renderContext)} ${theme.fg("text", metadata.label)}${formatBashCallSuffix(theme, renderContext, metadata)}`,
       );
     },
     renderResult(
@@ -267,9 +269,10 @@ export function createBashToolOverrideDefinition(): ToolDefinition<
       context: BashResultContext,
     ) {
       const state = syncBashRenderState(context, options.isPartial);
+      const isPartial = isBashRenderPartial(state, options.isPartial);
       const elapsedMs = getBashElapsed(state);
 
-      if (options.isPartial) {
+      if (isPartial) {
         return renderPartialBashResult(result, options, theme, context, elapsedMs);
       }
 
@@ -783,12 +786,17 @@ function syncBashRenderState(
     state.endedAt = undefined;
   }
 
-  if (state.startedAt !== undefined && isPartial && !state.interval) {
+  if (
+    state.startedAt !== undefined &&
+    isPartial &&
+    state.endedAt === undefined &&
+    !state.interval
+  ) {
     state.interval = setInterval(() => context.invalidate(), 1000);
     state.interval.unref?.();
   }
 
-  if (!isPartial && state.startedAt !== undefined) {
+  if ((!isPartial || state.endedAt !== undefined) && state.startedAt !== undefined) {
     state.endedAt ??= Date.now();
     if (state.interval) {
       clearInterval(state.interval);
@@ -797,6 +805,10 @@ function syncBashRenderState(
   }
 
   return state;
+}
+
+function isBashRenderPartial(state: BashRenderState, isPartial: boolean): boolean {
+  return isPartial && state.endedAt === undefined;
 }
 
 function getBashElapsed(state: BashRenderState): number | undefined {

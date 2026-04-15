@@ -97,6 +97,28 @@ function startNewSessionInPlace(ctx: ExtensionContext, parentSession?: string): 
   });
 }
 
+async function applyPendingSelection(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  overrides?: ResolvedHandoffOptions,
+): Promise<void> {
+  if (!overrides) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    pi.events.emit(MODE_SELECTION_APPLY_EVENT, {
+      ctx,
+      mode: overrides.mode,
+      targetModel: overrides.targetModel,
+      thinkingLevel: overrides.thinkingLevel,
+      reason: "restore",
+      source: "session_start",
+      done: { resolve, reject },
+    });
+  });
+}
+
 function createPendingNewSessionContext(state: HandoffRuntimeState): Promise<ExtensionContext> {
   if (state.pendingNewSessionCtx) {
     return state.pendingNewSessionCtx.promise;
@@ -135,28 +157,6 @@ async function waitForPendingNewSessionContext(
       }, 500);
     }),
   ]);
-}
-
-async function applyPendingSelection(
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  overrides?: ResolvedHandoffOptions,
-): Promise<void> {
-  if (!overrides) {
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    pi.events.emit(MODE_SELECTION_APPLY_EVENT, {
-      ctx,
-      mode: overrides.mode,
-      targetModel: overrides.targetModel,
-      thinkingLevel: overrides.thinkingLevel,
-      reason: "restore",
-      source: "session_start",
-      done: { resolve, reject },
-    });
-  });
 }
 
 function describeModeSpec(spec: ModeSpec | undefined): string | undefined {
@@ -557,7 +557,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
       const result = await launchHandoffSession({
         pi,
         ctx,
-        newSession: ctx.newSession,
+        newSession: (options) => ctx.newSession(options),
         goal: parsed.goal,
         options: parsed.options,
         state,

@@ -1121,7 +1121,10 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
         runtime.branchAnchorId = branchAnchorId;
         runtime.checkoutToRestore = checkoutToRestore;
         runtime.completionNotifiedSessionId = undefined;
-        runtime.commandActions = { navigateTree: ctx.navigateTree, newSession: ctx.newSession };
+        runtime.commandActions = {
+          navigateTree: ctx.navigateTree,
+          newSession: (options) => ctx.newSession(options),
+        };
         persistReviewState({
           active: true,
           subagentSessionId: started.handle.sessionId,

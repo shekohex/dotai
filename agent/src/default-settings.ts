@@ -13,7 +13,7 @@ const packageJson = JSON.parse(readFileSync(packageJsonFile, { encoding: "utf8" 
 
 export const defaultSettings = {
   defaultProvider: "codex-openai",
-  defaultModel: "gpt-5.4",
+  defaultModel: "gpt-5.3-codex",
   hideThinkingBlock: true,
   defaultThinkingLevel: "high",
   transport: "auto",
@@ -58,7 +58,7 @@ export const defaultModes = defineModesFile({
     },
     deep: {
       provider: "codex-openai",
-      modelId: "gpt-5.4",
+      modelId: "gpt-5.3-codex",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",

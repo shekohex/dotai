@@ -1226,13 +1226,13 @@ timedTest("handoff command starts the new session in the requested mode", async 
       ),
     );
 
-    assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
-    assert.equal(observedModeChanges[0]?.mode, "docs");
-    assert.equal(observedModeChanges[0]?.reason, "restore");
-    assert.equal(observedModeChanges[0]?.source, "session_start");
-    assert.equal(observedModeChanges[0]?.spec?.provider, "mode-provider");
-    assert.equal(observedModeChanges[0]?.spec?.modelId, "mode-model");
-    assert.equal(observedModeChanges[0]?.spec?.thinkingLevel, "high");
+    const restoreEvents = observedModeChanges.filter((event) => event.reason === "restore");
+    assert.equal(restoreEvents.length, 1, JSON.stringify(observedModeChanges));
+    assert.equal(restoreEvents[0]?.mode, "docs");
+    assert.equal(restoreEvents[0]?.source, "session_start");
+    assert.equal(restoreEvents[0]?.spec?.provider, "mode-provider");
+    assert.equal(restoreEvents[0]?.spec?.modelId, "mode-model");
+    assert.equal(restoreEvents[0]?.spec?.thinkingLevel, "high");
   } finally {
     session?.dispose();
     providers.dispose();

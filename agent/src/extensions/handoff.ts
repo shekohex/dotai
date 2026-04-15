@@ -20,7 +20,7 @@ import {
   type SessionModel,
 } from "./session-launch-utils.js";
 import { MODE_SELECTION_APPLY_EVENT } from "./modes.js";
-type HandoffOptions = SessionLaunchOptions;
+export type HandoffOptions = SessionLaunchOptions;
 
 type ResolvedHandoffOptions = ResolvedSessionLaunchOptions;
 
@@ -34,6 +34,7 @@ type PendingSessionHandoff = {
   prompt: string;
   autoSend: boolean;
   overrides?: ResolvedHandoffOptions;
+  deferSessionStartApply?: boolean;
 };
 
 declare global {
@@ -49,13 +50,18 @@ type HandoffAutocompleteContext = {
   usedFlags: Set<HandoffFlagName>;
 };
 
-type HandoffRuntimeState = {
+export type HandoffRuntimeState = {
   ctx?: ExtensionContext;
   pendingNewSessionCtx?: {
     promise: Promise<ExtensionContext>;
     resolve: (ctx: ExtensionContext) => void;
   };
 };
+
+export type HandoffLaunchResult =
+  | { status: "started"; warning?: string }
+  | { status: "cancelled" }
+  | { status: "error"; error: string };
 
 const pendingToolHandoffState: {
   pending: PendingToolHandoff | undefined;
@@ -126,7 +132,7 @@ async function waitForPendingNewSessionContext(
     new Promise<ExtensionContext>((resolve) => {
       setTimeout(() => {
         resolve(state.ctx ?? fallbackCtx);
-      }, 0);
+      }, 500);
     }),
   ]);
 }
@@ -143,6 +149,7 @@ async function applyPendingSelection(
   await new Promise<void>((resolve, reject) => {
     pi.events.emit(MODE_SELECTION_APPLY_EVENT, {
       ctx,
+      mode: overrides.mode,
       targetModel: overrides.targetModel,
       thinkingLevel: overrides.thinkingLevel,
       reason: "restore",
@@ -466,6 +473,63 @@ async function prepareHandoff(
   };
 }
 
+export async function launchHandoffSession(input: {
+  pi: ExtensionAPI;
+  ctx: ExtensionContext;
+  newSession: ExtensionCommandContext["newSession"];
+  goal: string;
+  options?: HandoffOptions;
+  state?: HandoffRuntimeState;
+}): Promise<HandoffLaunchResult> {
+  const state = input.state ?? { ctx: input.ctx };
+  state.ctx = input.ctx;
+
+  const result = await prepareHandoff(input.pi, input.ctx, input.goal, input.options ?? {}, false);
+  if (result.error) {
+    if (result.error === "Cancelled") {
+      return { status: "cancelled" };
+    }
+    return { status: "error", error: result.error };
+  }
+
+  setPendingCommandHandoff({
+    prompt: result.prompt,
+    autoSend: true,
+    overrides: result.overrides,
+    deferSessionStartApply: Boolean(input.state),
+  });
+  createPendingNewSessionContext(state);
+
+  const newSessionResult = await input.newSession({
+    parentSession: result.parentSession,
+  });
+
+  if (newSessionResult.cancelled) {
+    state.pendingNewSessionCtx = undefined;
+    setPendingCommandHandoff(undefined);
+    return { status: "cancelled" };
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const pendingCommandHandoff = getPendingCommandHandoff();
+  if (!pendingCommandHandoff) {
+    return { status: "started", warning: result.warning };
+  }
+
+  const targetCtx = await waitForPendingNewSessionContext(state, input.ctx);
+  await applyPendingSelection(input.pi, targetCtx, pendingCommandHandoff.overrides);
+  setPendingCommandHandoff(undefined);
+
+  if (pendingCommandHandoff.autoSend) {
+    setTimeout(() => {
+      void input.pi.sendUserMessage(pendingCommandHandoff.prompt);
+    }, 0);
+  }
+
+  return { status: "started", warning: result.warning };
+}
+
 export default function handoffExtension(pi: ExtensionAPI) {
   const state: HandoffRuntimeState = {};
 
@@ -490,49 +554,26 @@ export default function handoffExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const result = await prepareHandoff(pi, ctx, parsed.goal, parsed.options, false);
-      if (result.error) {
-        ctx.ui.notify(result.error, result.error === "Cancelled" ? "info" : "error");
+      const result = await launchHandoffSession({
+        pi,
+        ctx,
+        newSession: ctx.newSession,
+        goal: parsed.goal,
+        options: parsed.options,
+        state,
+      });
+      if (result.status === "error") {
+        ctx.ui.notify(result.error, "error");
+        return;
+      }
+
+      if (result.status === "cancelled") {
+        ctx.ui.notify("New session cancelled", "info");
         return;
       }
 
       if (result.warning) {
         ctx.ui.notify(result.warning, "warning");
-      }
-
-      setPendingCommandHandoff({
-        prompt: result.prompt,
-        autoSend: true,
-        overrides: result.overrides,
-      });
-      createPendingNewSessionContext(state);
-
-      const newSessionResult = await (ctx as ExtensionCommandContext).newSession({
-        parentSession: result.parentSession,
-      });
-
-      if (newSessionResult.cancelled) {
-        state.pendingNewSessionCtx = undefined;
-        setPendingCommandHandoff(undefined);
-        ctx.ui.notify("New session cancelled", "info");
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const pendingCommandHandoff = getPendingCommandHandoff();
-      if (!pendingCommandHandoff) {
-        return;
-      }
-
-      const targetCtx = await waitForPendingNewSessionContext(state, ctx);
-      await applyPendingSelection(pi, targetCtx, pendingCommandHandoff.overrides);
-      setPendingCommandHandoff(undefined);
-
-      if (pendingCommandHandoff.autoSend) {
-        setTimeout(() => {
-          void pi.sendUserMessage(pendingCommandHandoff.prompt);
-        }, 0);
       }
     },
   });
@@ -580,6 +621,10 @@ export default function handoffExtension(pi: ExtensionAPI) {
 
     const pendingCommandHandoff = getPendingCommandHandoff();
     if (!pendingCommandHandoff) {
+      return;
+    }
+
+    if (pendingCommandHandoff.deferSessionStartApply) {
       return;
     }
 

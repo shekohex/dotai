@@ -44,6 +44,7 @@ type ModeActivateEvent = {
 
 type ModeSelectionApplyEvent = {
   ctx: ExtensionContext;
+  mode?: string;
   targetModel?: SessionModel;
   thinkingLevel?: ModeSpec["thinkingLevel"];
   reason: ModeChangedEvent["reason"];
@@ -694,7 +695,16 @@ async function applySelection(
       pi.setThinkingLevel(event.thinkingLevel);
     }
 
-    const nextMode = inferActiveMode(pi, ctx);
+    const targetSelection = {
+      provider: event.targetModel?.provider ?? ctx.model?.provider,
+      modelId: event.targetModel?.id ?? ctx.model?.id,
+      thinkingLevel: event.thinkingLevel ?? pi.getThinkingLevel(),
+    };
+    const preferredModeSpec = event.mode ? getModeSpec(runtime.data, event.mode) : undefined;
+    const nextMode =
+      event.mode && preferredModeSpec && selectionSatisfiesMode(preferredModeSpec, targetSelection)
+        ? event.mode
+        : inferActiveMode(pi, ctx);
     const nextSpec = nextMode ? getModeSpec(runtime.data, nextMode) : undefined;
     runtime.activeMode = nextMode;
     syncModeTools(pi, ctx, nextSpec);

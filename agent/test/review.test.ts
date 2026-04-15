@@ -411,6 +411,63 @@ timedTest("review supports multi-flag target-first parsing", async () => {
   }
 });
 
+timedTest("review supports unquoted flag-first --extra values", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-flag-first-unquoted-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createReviewExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("/review --extra focus migration ordering uncommitted");
+    await session.session.agent.waitForIdle();
+
+    assert.match(
+      mux.created[0]?.command ?? "",
+      /Review the current code changes \(staged, unstaged, and untracked files\)/,
+    );
+    assert.match(mux.created[0]?.command ?? "", /focus migration ordering/);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("review rejects --extra with no value", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-extra-missing-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createReviewExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("/review --extra");
+    await session.session.agent.waitForIdle();
+
+    assert.equal(session.events.uiCallsFor("notify").at(-1)?.args[0], "Missing value for --extra");
+    assert.equal(mux.created.length, 0);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("review preserves target keywords inside --extra text", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-review-extra-keywords-"));
   let session: TestSession | undefined;
@@ -691,6 +748,22 @@ timedTest("review loads REVIEW_GUIDELINES.md from repo root without .pi", async 
   }
 });
 
+timedTest("review guidelines lookup does not read above git root", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "agent-review-guidelines-boundary-"));
+  const cwd = join(parent, "repo");
+
+  try {
+    await mkdir(cwd, { recursive: true });
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "packages", "feature"), { recursive: true });
+    await writeFile(join(parent, "REVIEW_GUIDELINES.md"), "outside repo\n", "utf8");
+
+    assert.equal(await loadProjectReviewGuidelines(join(cwd, "packages", "feature")), null);
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
 timedTest("completed review can copy the summary to the clipboard", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-review-copy-summary-"));
   let session: TestSession | undefined;
@@ -766,6 +839,8 @@ timedTest("completed review can fork into a new fix branch", async () => {
   const mux = new HarnessMuxAdapter();
   let forkPicked = 0;
   const navigatedTargets: string[] = [];
+  const summarizeValues: boolean[] = [];
+  const labels: string[] = [];
 
   try {
     await initGitRepo(cwd);
@@ -781,8 +856,10 @@ timedTest("completed review can fork into a new fix branch", async () => {
             forkPicked += 1;
             return "fork";
           },
-          reviewFixBranchNavigator: async ({ targetId }) => {
+          reviewFixBranchNavigator: async ({ targetId, summarize, label }) => {
             navigatedTargets.push(targetId);
+            summarizeValues.push(summarize);
+            labels.push(label);
             return { cancelled: false };
           },
         }),
@@ -825,9 +902,140 @@ timedTest("completed review can fork into a new fix branch", async () => {
 
     assert.equal(forkPicked, 1);
     assert.equal(navigatedTargets.length, 1);
+    assert.deepEqual(summarizeValues, [true]);
+    assert.deepEqual(labels, ["review-fixes"]);
     assert.equal(navigatedTargets[0] !== "", true);
     assert.equal(navigatedTargets[0], activeReviewState?.branchAnchorId);
     assert.equal(navigatedTargets[0], latestAnchor?.id as string | undefined);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("completed review reports handoff runner exceptions", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-address-error-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        createReviewExtension({
+          adapterFactory: () => mux,
+          completionActionPicker: async () => "handoff",
+          handoffAddressRunner: async () => {
+            throw new Error("handoff crashed");
+          },
+        }),
+      ],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("/review folder src");
+    await session.session.agent.waitForIdle();
+
+    const command = mux.created[0]?.command;
+    assert.ok(command);
+    const childSessionPath = extractChildSessionPath(command);
+    mux.existingPanes.delete(mux.created[0]!.paneId);
+    await writeFile(
+      childSessionPath,
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-1",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "## Findings\n\n- [P1] Fix parsing." }],
+        },
+      })}\n`,
+      { encoding: "utf8", flag: "a" },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+
+    assert.equal(
+      session.events
+        .uiCallsFor("notify")
+        .map((call) => String(call.args[0] ?? ""))
+        .some((message) => message.includes("Failed to start review handoff: handoff crashed")),
+      true,
+    );
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("completed review can handoff and address findings", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-address-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+  let handoffPicked = 0;
+  const handoffGoals: string[] = [];
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        createReviewExtension({
+          adapterFactory: () => mux,
+          completionActionPicker: async () => {
+            handoffPicked += 1;
+            return "handoff";
+          },
+          handoffAddressRunner: async ({ goal }) => {
+            handoffGoals.push(goal);
+            return { status: "started" };
+          },
+        }),
+      ],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("/review folder src");
+    await session.session.agent.waitForIdle();
+
+    const command = mux.created[0]?.command;
+    assert.ok(command);
+    const childSessionPath = extractChildSessionPath(command);
+    mux.existingPanes.delete(mux.created[0]!.paneId);
+    await writeFile(
+      childSessionPath,
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-1",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "## Findings\n\n- [P1] Fix parsing." }],
+        },
+      })}\n`,
+      { encoding: "utf8", flag: "a" },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+
+    assert.equal(handoffPicked, 1);
+    assert.equal(handoffGoals.length, 1);
+    assert.match(
+      handoffGoals[0] ?? "",
+      /Please Address and fix the following findings:\n## Findings\n\n- \[P1\] Fix parsing\./,
+    );
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -1100,6 +1308,11 @@ timedTest("PR reference parsing preserves repo context from GitHub URLs", async 
   });
   assert.equal(parsePrReference("123abc"), null);
   assert.equal(parsePrReference("prefix https://github.com/org/repo/pull/456"), null);
+  assert.deepEqual(parsePrReference("https://github.com/org/repo/pull/456/?expand=1#discussion"), {
+    prNumber: 456,
+    repo: "org/repo",
+  });
+  assert.equal(parsePrReference("https://github.com.evil.com/org/repo/pull/456"), null);
 });
 
 timedTest("review path parsing preserves quoted and newline-delimited paths", async () => {
@@ -1115,6 +1328,11 @@ timedTest("review path parsing preserves quoted and newline-delimited paths", as
     "src/Architecture Notes",
     "src/index.ts",
   ]);
+  assert.deepEqual(parseReviewPaths("src/Architecture Notes\r\n\r\nsrc/index.ts"), [
+    "src/Architecture Notes",
+    "src/index.ts",
+  ]);
+  assert.deepEqual(parseReviewPaths("   \n  \t"), []);
 });
 
 timedTest("review state is only active on branches containing its anchor", async () => {
@@ -1140,6 +1358,18 @@ timedTest("review state is only active on branches containing its anchor", async
         branchAnchorId: "anchor-1",
       },
       [{ id: "anchor-1" }],
+    ),
+    true,
+  );
+
+  assert.equal(
+    isReviewStateActiveOnBranch(
+      {
+        active: true,
+        subagentSessionId: "subagent-1",
+        targetLabel: "folders: src",
+      },
+      [{ id: "other-entry" }],
     ),
     true,
   );

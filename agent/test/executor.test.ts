@@ -8,7 +8,6 @@ import {
   setExecutorSettingsForTests,
 } from "../src/extensions/executor/settings.ts";
 import { resolveExecutorEndpoint } from "../src/extensions/executor/connection.ts";
-import { formatExecutorStatus } from "../src/extensions/coreui/footer.ts";
 import { clearExecutorInspectionCache } from "../src/extensions/executor/tools.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
@@ -122,27 +121,6 @@ timedTest("resolveExecutorEndpoint falls back to the next healthy candidate", as
   } finally {
     await server.close();
   }
-});
-
-timedTest("formatExecutorStatus only renders when executor is connected", () => {
-  const theme = {
-    fg: (_color: string, text: string) => text,
-  };
-
-  assert.equal(formatExecutorStatus(theme as never, { kind: "idle" }), undefined);
-  assert.equal(formatExecutorStatus(theme as never, { kind: "connecting" }), undefined);
-  assert.equal(formatExecutorStatus(theme as never, { kind: "error", message: "boom" }), undefined);
-  assert.equal(
-    formatExecutorStatus(theme as never, {
-      kind: "ready",
-      label: "lan",
-      mcpUrl: "http://127.0.0.1:4788/mcp",
-      webUrl: "http://127.0.0.1:4788/",
-      scopeId: "scope_test",
-      scopeDir: "/tmp/executor-scope",
-    }),
-    "executor",
-  );
 });
 
 timedTest("executor tools re-register after session restart with same cwd", async () => {

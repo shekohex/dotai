@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
-import type { ExecutorRuntimeState } from "../executor/status.js";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { shortenHome } from "./path.js";
 import type { CoreUIState } from "./types.js";
@@ -44,7 +43,6 @@ export function bindCoreUI(
           ctx,
           state.totalCost,
           footerData.getExtensionStatuses().get(OPENUSAGE_STATUS_KEY),
-          state.executor,
         );
 
         return [
@@ -166,7 +164,6 @@ function buildUsageStatus(
   ctx: ExtensionContext,
   totalCost: number,
   usageStatus: string | undefined,
-  executorState: ExecutorRuntimeState | undefined,
 ): string {
   const contextAndCost = formatContextAndCost(theme, ctx, totalCost);
   const parts = [contextAndCost];
@@ -175,23 +172,7 @@ function buildUsageStatus(
     parts.push(usageStatus);
   }
 
-  const executorStatus = formatExecutorStatus(theme, executorState);
-  if (executorStatus) {
-    parts.push(executorStatus);
-  }
-
   return parts.join(theme.fg("dim", " · "));
-}
-
-export function formatExecutorStatus(
-  theme: Theme,
-  state: ExecutorRuntimeState | undefined,
-): string | undefined {
-  if (!state || state.kind !== "ready") {
-    return undefined;
-  }
-
-  return theme.fg("success", "executor");
 }
 
 function formatContextAndCost(theme: Theme, ctx: ExtensionContext, totalCost: number): string {

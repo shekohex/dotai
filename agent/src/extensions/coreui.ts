@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
-import { EXECUTOR_UPDATED_EVENT, type ExecutorUpdatedEvent } from "./executor/status.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import { bindCoreUI } from "./coreui/footer.js";
 import { createCorePromptEditorFactory } from "./coreui/editor.js";
@@ -42,20 +41,9 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     requestRender?.();
   });
 
-  const unsubscribeExecutorEvents = pi.events.on(EXECUTOR_UPDATED_EVENT, (data) => {
-    const event = data as ExecutorUpdatedEvent;
-    if (event.cwd !== state.cwd) {
-      return;
-    }
-
-    state.executor = event.state;
-    requestRender?.();
-  });
-
   pi.on("session_start", async (_event, ctx) => {
     ensureToolOverridesRegistered(pi.getActiveTools());
     state.cwd = ctx.cwd;
-    state.executor = undefined;
     ctx.ui.setEditorComponent(
       createCorePromptEditorFactory(
         () => ctx.ui.theme,
@@ -96,7 +84,6 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     unsubscribeOpenUsageEvents();
     unsubscribeModeEvents();
-    unsubscribeExecutorEvents();
     requestRender = undefined;
   });
 

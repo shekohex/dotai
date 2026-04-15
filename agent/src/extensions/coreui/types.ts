@@ -1,5 +1,4 @@
 import { ThemeColor } from "../../mode-utils.js";
-import type { ExecutorRuntimeState } from "../executor/status.js";
 
 export type CoreUITPSStats = {
   current: number;
@@ -25,7 +24,6 @@ export type CoreUIState = {
   behindCommits: number;
   totalCost: number;
   refreshedAt: number;
-  executor?: ExecutorRuntimeState;
 };
 
 export function createCoreUIState(): CoreUIState {

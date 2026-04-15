@@ -134,7 +134,7 @@ async function writeReviewModesFile(cwd: string): Promise<void> {
 }
 
 async function writeFakeGh(cwd: string): Promise<string> {
-  const binDir = join(cwd, "bin");
+  const binDir = join(cwd, ".git", "fake-bin");
   const ghPath = join(binDir, "gh");
   await mkdir(binDir, { recursive: true });
   await writeFile(
@@ -378,6 +378,101 @@ timedTest("review supports flag-first target parsing", async () => {
   }
 });
 
+timedTest("review supports multi-flag target-first parsing", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-multi-flag-first-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createReviewExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt(
+      '/review --extra "focus auth" --handoff "check migrations" uncommitted',
+    );
+    await session.session.agent.waitForIdle();
+
+    assert.match(
+      mux.created[0]?.command ?? "",
+      /Review the current code changes \(staged, unstaged, and untracked files\)/,
+    );
+    assert.match(mux.created[0]?.command ?? "", /focus auth/);
+    assert.match(mux.created[0]?.command ?? "", /check migrations/);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("review preserves target keywords inside --extra text", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-extra-keywords-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createReviewExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt(
+      "/review uncommitted --extra Does the new uncommitted flow actually fix parsing",
+    );
+    await session.session.agent.waitForIdle();
+
+    assert.match(
+      mux.created[0]?.command ?? "",
+      /Does the new uncommitted flow actually fix parsing/,
+    );
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("review preserves target keywords inside --handoff text", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-keywords-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createReviewExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt(
+      "/review uncommitted --handoff Verify uncommitted branch behavior before pr checkout",
+    );
+    await session.session.agent.waitForIdle();
+
+    assert.match(
+      mux.created[0]?.command ?? "",
+      /Verify uncommitted branch behavior before pr checkout/,
+    );
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("review generates handoff from the parent session before branching", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-parent-"));
   let session: TestSession | undefined;
@@ -601,7 +696,7 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const copiedSummaries: string[] = [];
-  const actionQueue: Array<"copy" | undefined> = ["copy", undefined];
+  let copyPicked = 0;
 
   try {
     await initGitRepo(cwd);
@@ -613,7 +708,10 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
       extensionFactories: [
         createReviewExtension({
           adapterFactory: () => mux,
-          completionActionPicker: async () => actionQueue.shift(),
+          completionActionPicker: async () => {
+            copyPicked += 1;
+            return "copy";
+          },
           clipboardWriter: async (text) => {
             copiedSummaries.push(text);
           },
@@ -647,6 +745,7 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
 
     await new Promise((resolve) => setTimeout(resolve, 2_600));
 
+    assert.equal(copyPicked, 1);
     assert.deepEqual(copiedSummaries, ["## Findings\n\n- [P1] Fix parsing."]);
     assert.equal(
       session.events
@@ -655,6 +754,80 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
         .includes("Copied review summary to clipboard."),
       true,
     );
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("completed review can fork into a new fix branch", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-fork-summary-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+  let forkPicked = 0;
+  const navigatedTargets: string[] = [];
+
+  try {
+    await initGitRepo(cwd);
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeReviewModesFile(cwd);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        createReviewExtension({
+          adapterFactory: () => mux,
+          completionActionPicker: async () => {
+            forkPicked += 1;
+            return "fork";
+          },
+          reviewFixBranchNavigator: async ({ targetId }) => {
+            navigatedTargets.push(targetId);
+            return { cancelled: false };
+          },
+        }),
+      ],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("/review folder src");
+    await session.session.agent.waitForIdle();
+
+    const command = mux.created[0]?.command;
+    assert.ok(command);
+    const childSessionPath = extractChildSessionPath(command);
+    mux.existingPanes.delete(mux.created[0]!.paneId);
+    await writeFile(
+      childSessionPath,
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-1",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "## Findings\n\n- [P1] Fix parsing." }],
+        },
+      })}\n`,
+      { encoding: "utf8", flag: "a" },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+    const entries = getBranchEntries(session);
+    const activeReviewState = entries
+      .filter((entry) => entry.type === "custom" && entry.customType === "review-session")
+      .map((entry) => (entry as { data?: { active?: boolean; branchAnchorId?: string } }).data)
+      .find((data) => data?.active);
+    const latestAnchor = entries
+      .filter((entry) => entry.type === "custom" && entry.customType === "review-anchor")
+      .at(-1);
+
+    assert.equal(forkPicked, 1);
+    assert.equal(navigatedTargets.length, 1);
+    assert.equal(navigatedTargets[0] !== "", true);
+    assert.equal(navigatedTargets[0], activeReviewState?.branchAnchorId);
+    assert.equal(navigatedTargets[0], latestAnchor?.id as string | undefined);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -670,6 +843,9 @@ timedTest("review restores the original branch after PR review completes", async
   try {
     await initGitRepo(cwd);
     await writeReviewModesFile(cwd);
+    await execFile("git", ["add", ".pi/modes.json"], { cwd });
+    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
     await commitFile(cwd, "README.md", "base\n", "init");
 
     const fakeGhBin = await writeFakeGh(cwd);
@@ -724,6 +900,89 @@ timedTest("review restores the original branch after PR review completes", async
   }
 });
 
+timedTest("review restores the original branch when PR handoff generation aborts", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-handoff-abort-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+  const previousPath = process.env.PATH;
+
+  try {
+    await initGitRepo(cwd);
+    await writeReviewModesFile(cwd);
+    await execFile("git", ["add", ".pi/modes.json"], { cwd });
+    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
+    await commitFile(cwd, "README.md", "base\n", "init");
+
+    const fakeGhBin = await writeFakeGh(cwd);
+    process.env.PATH = [fakeGhBin, previousPath].filter(Boolean).join(delimiter);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        createReviewExtension({
+          adapterFactory: () => mux,
+          handoffGenerator: async () => ({ aborted: true }),
+        }),
+      ],
+    });
+    patchHarnessAgent(session);
+
+    assert.equal(await getCurrentBranchName(cwd), "main");
+    appendUserMessage(session, "Please review the PR carefully.");
+
+    await session.session.prompt("/review pr 7 --handoff");
+    await session.session.agent.waitForIdle();
+
+    assert.equal(await getCurrentBranchName(cwd), "main");
+    assert.equal(session.events.uiCallsFor("notify").at(-1)?.args[0], "Review cancelled");
+  } finally {
+    process.env.PATH = previousPath;
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("review blocks PR checkout when untracked files are present", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-untracked-"));
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+  const previousPath = process.env.PATH;
+
+  try {
+    await initGitRepo(cwd);
+    await writeReviewModesFile(cwd);
+    await execFile("git", ["add", ".pi/modes.json"], { cwd });
+    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
+    await commitFile(cwd, "README.md", "base\n", "init");
+    await writeFile(join(cwd, "untracked.txt"), "local draft\n", "utf8");
+
+    const fakeGhBin = await writeFakeGh(cwd);
+    process.env.PATH = [fakeGhBin, previousPath].filter(Boolean).join(delimiter);
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [createReviewExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("/review pr 7");
+    await session.session.agent.waitForIdle();
+
+    assert.equal(await getCurrentBranchName(cwd), "main");
+    assert.equal(
+      session.events.uiCallsFor("notify").at(-1)?.args[0],
+      "PR review failed. Returning to review menu.",
+    );
+    assert.equal(mux.created.length, 0);
+  } finally {
+    process.env.PATH = previousPath;
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("failed PR review startup restores the original branch after checkout", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-failure-"));
   let session: TestSession | undefined;
@@ -733,6 +992,9 @@ timedTest("failed PR review startup restores the original branch after checkout"
   try {
     await initGitRepo(cwd);
     await writeReviewModesFile(cwd);
+    await execFile("git", ["add", ".pi/modes.json"], { cwd });
+    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
     await commitFile(cwd, "README.md", "base\n", "init");
 
     const fakeGhBin = await writeFakeGh(cwd);
@@ -827,6 +1089,17 @@ timedTest("PR reference parsing preserves repo context from GitHub URLs", async 
     prNumber: 456,
     repo: "org/repo",
   });
+  assert.equal(parsePrReference("0"), null);
+  assert.deepEqual(parsePrReference("https://github.com/org/repo/pull/456/files"), {
+    prNumber: 456,
+    repo: "org/repo",
+  });
+  assert.deepEqual(parsePrReference("https://github.com/org/repo/pull/456/commits"), {
+    prNumber: 456,
+    repo: "org/repo",
+  });
+  assert.equal(parsePrReference("123abc"), null);
+  assert.equal(parsePrReference("prefix https://github.com/org/repo/pull/456"), null);
 });
 
 timedTest("review path parsing preserves quoted and newline-delimited paths", async () => {

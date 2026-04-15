@@ -1,7 +1,6 @@
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
-  ExtensionCommandContextActions,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
@@ -46,6 +45,10 @@ type CreateReviewExtensionOptions = {
     summary: string;
   }) => Promise<"address" | "copy" | "fork" | undefined>;
   clipboardWriter?: (text: string) => Promise<void>;
+  reviewFixBranchNavigator?: (input: {
+    ctx: ExtensionContext;
+    targetId: string;
+  }) => Promise<{ cancelled: boolean }>;
 };
 
 type ReviewSessionState = {
@@ -254,12 +257,6 @@ function setReviewWidget(
   });
 }
 
-function hasNavigateTree(
-  ctx: ExtensionContext,
-): ctx is ExtensionContext & Pick<ExtensionCommandContextActions, "navigateTree"> {
-  return "navigateTree" in ctx && typeof ctx.navigateTree === "function";
-}
-
 function isTerminalReviewStatus(status: string): status is "completed" | "failed" | "cancelled" {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
@@ -413,34 +410,49 @@ async function hasPendingChanges(pi: ExtensionAPI): Promise<boolean> {
     return false;
   }
 
-  return result.stdout
-    .trim()
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .some((line) => !line.startsWith("??"));
+  return (
+    result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean).length > 0
+  );
 }
 
 export function parsePrReference(ref: string): ParsedPrReference | null {
   const trimmed = ref.trim();
-  const number = Number.parseInt(trimmed, 10);
-  if (Number.isInteger(number) && number > 0) {
+  if (/^\d+$/.test(trimmed)) {
+    const number = Number.parseInt(trimmed, 10);
+    if (!Number.isInteger(number) || number <= 0) {
+      return null;
+    }
     return { prNumber: number };
   }
 
-  const urlMatch = trimmed.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
-  if (!urlMatch?.[1] || !urlMatch?.[2]) {
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
     return null;
   }
 
-  const prNumberFromUrl = Number.parseInt(urlMatch[2], 10);
+  if (url.hostname !== "github.com") {
+    return null;
+  }
+
+  const pathMatch = url.pathname.match(/^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/.*)?$/);
+  if (!pathMatch?.[1] || !pathMatch?.[2]) {
+    return null;
+  }
+
+  const prNumberFromUrl = Number.parseInt(pathMatch[2], 10);
   if (!Number.isInteger(prNumberFromUrl) || prNumberFromUrl <= 0) {
     return null;
   }
 
   return {
     prNumber: prNumberFromUrl,
-    repo: urlMatch[1],
+    repo: pathMatch[1],
   };
 }
 
@@ -843,6 +855,29 @@ function isReviewTargetToken(value: string | undefined): boolean {
   return normalizeReviewTargetToken(value) !== undefined;
 }
 
+function isValidReviewTargetSuffix(parts: string[], index: number): boolean {
+  const targetType = normalizeReviewTargetToken(parts[index]);
+  if (!targetType) {
+    return false;
+  }
+
+  const remaining = parts.length - index;
+  switch (targetType) {
+    case "uncommitted":
+      return remaining === 1;
+    case "branch":
+      return remaining === 2;
+    case "pr":
+      return remaining === 2;
+    case "folder":
+      return remaining >= 2;
+    case "commit":
+      return remaining >= 2;
+    default:
+      return false;
+  }
+}
+
 function consumeFlagValue(
   parts: string[],
   startIndex: number,
@@ -857,7 +892,11 @@ function consumeFlagValue(
     if (part.startsWith("--")) {
       break;
     }
-    if (options.stopAtTarget && isReviewTargetToken(part)) {
+    if (
+      options.stopAtTarget &&
+      isReviewTargetToken(part) &&
+      isValidReviewTargetSuffix(parts, nextIndex)
+    ) {
       break;
     }
 
@@ -884,8 +923,9 @@ function parseArgs(args: string | undefined): ParsedReviewArgs {
 
   for (let index = 0; index < rawParts.length; index++) {
     const part = rawParts[index];
+    const stopAtTarget = parts.length === 0;
     if (part === "--extra") {
-      const consumed = consumeFlagValue(rawParts, index + 1, undefined, { stopAtTarget: true });
+      const consumed = consumeFlagValue(rawParts, index + 1, undefined, { stopAtTarget });
       if (!consumed.value) {
         return { target: null, error: "Missing value for --extra" };
       }
@@ -896,7 +936,7 @@ function parseArgs(args: string | undefined): ParsedReviewArgs {
 
     if (part.startsWith("--extra=")) {
       const consumed = consumeFlagValue(rawParts, index + 1, part.slice("--extra=".length), {
-        stopAtTarget: true,
+        stopAtTarget,
       });
       extraInstruction = consumed.value;
       index = consumed.nextIndex - 1;
@@ -905,7 +945,7 @@ function parseArgs(args: string | undefined): ParsedReviewArgs {
 
     if (part === "--handoff") {
       handoffRequested = true;
-      const consumed = consumeFlagValue(rawParts, index + 1, undefined, { stopAtTarget: true });
+      const consumed = consumeFlagValue(rawParts, index + 1, undefined, { stopAtTarget });
       if (consumed.value) {
         handoffInstruction = consumed.value;
         index = consumed.nextIndex - 1;
@@ -916,7 +956,7 @@ function parseArgs(args: string | undefined): ParsedReviewArgs {
     if (part.startsWith("--handoff=")) {
       handoffRequested = true;
       const consumed = consumeFlagValue(rawParts, index + 1, part.slice("--handoff=".length), {
-        stopAtTarget: true,
+        stopAtTarget,
       });
       handoffInstruction = consumed.value;
       index = consumed.nextIndex - 1;
@@ -1088,96 +1128,124 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
       active: false,
       subagentSessionId: undefined as string | undefined,
       targetLabel: undefined as string | undefined,
+      branchAnchorId: undefined as string | undefined,
       checkoutToRestore: undefined as ReviewCheckoutTarget | undefined,
       customInstructions: undefined as string | undefined,
       completionNotifiedSessionId: undefined as string | undefined,
+      commandActions: undefined as
+        | {
+            navigateTree: ExtensionCommandContext["navigateTree"];
+          }
+        | undefined,
     };
 
     function buildAddressReviewPrompt(summary: string): string {
       return `${REVIEW_ADDRESS_FINDINGS_PROMPT}\n\n## Review Summary\n${summary.trim()}`;
     }
 
-    async function offerCompletionActions(ctx: ExtensionContext, summary: string): Promise<void> {
+    async function restoreCheckoutAfterFailedStart(
+      ctx: ExtensionContext,
+      checkoutToRestore: ReviewCheckoutTarget | undefined,
+    ): Promise<void> {
+      const restoreResult = await restoreCheckoutTarget(pi, checkoutToRestore);
+      if (!restoreResult.success) {
+        ctx.ui.notify(`Failed to restore checkout: ${restoreResult.error}`, "error");
+      }
+    }
+
+    async function offerCompletionActions(
+      ctx: ExtensionContext,
+      summary: string,
+      branchAnchorId?: string,
+    ): Promise<void> {
       if (!ctx.hasUI || !summary.trim()) {
         return;
       }
 
       const prompt = buildAddressReviewPrompt(summary);
-      while (true) {
-        const selectedAction = options.completionActionPicker
-          ? await options.completionActionPicker({ ctx, summary })
-          : await (async () => {
-              const choice = await ctx.ui.select("Review subagent finished:", [
-                "Copy review summary",
-                "Address the review",
-                "Fork and address the review",
-              ]);
-              if (choice === undefined) {
-                return undefined;
-              }
+      const supportsFork = Boolean(
+        runtime.commandActions?.navigateTree || options.reviewFixBranchNavigator,
+      );
+      const selectedAction = options.completionActionPicker
+        ? await options.completionActionPicker({ ctx, summary })
+        : await (async () => {
+            const actions = ["Copy review summary", "Address the review"];
+            if (supportsFork) {
+              actions.push("Fork and address the review");
+            }
 
-              if (choice === "Copy review summary") {
-                return "copy";
-              }
+            const choice = await ctx.ui.select("Review subagent finished:", actions);
+            if (choice === undefined) {
+              return undefined;
+            }
 
-              return choice === "Address the review" ? "address" : "fork";
-            })();
-        if (selectedAction === undefined) {
-          return;
-        }
+            if (choice === "Copy review summary") {
+              return "copy";
+            }
 
-        if (selectedAction === "copy") {
-          try {
-            await (options.clipboardWriter ?? copyTextToClipboard)(summary);
-            ctx.ui.notify("Copied review summary to clipboard.", "info");
-          } catch (error) {
-            ctx.ui.notify(
-              `Failed to copy review summary: ${error instanceof Error ? error.message : String(error)}`,
-              "error",
-            );
-          }
-          continue;
-        }
+            return choice === "Address the review" ? "address" : "fork";
+          })();
+      if (selectedAction === undefined) {
+        return;
+      }
 
-        if (selectedAction === "address") {
-          pi.sendUserMessage(prompt, { deliverAs: "followUp" });
-          return;
-        }
-
-        let branchFromId = ctx.sessionManager.getLeafId() ?? undefined;
-        if (!branchFromId) {
-          pi.appendEntry(REVIEW_ANCHOR_TYPE, { createdAt: new Date().toISOString() });
-          branchFromId = ctx.sessionManager.getLeafId() ?? undefined;
-        }
-        if (!branchFromId) {
-          ctx.ui.notify("Failed to create a branch for addressing the review.", "error");
-          return;
-        }
-
+      if (selectedAction === "copy") {
         try {
-          if (!hasNavigateTree(ctx)) {
-            ctx.ui.notify("Forking review fixes requires command context support.", "error");
-            return;
-          }
-
-          const result = await ctx.navigateTree(branchFromId, {
-            summarize: false,
-            label: "review-fixes",
-          });
-          if (result.cancelled) {
-            return;
-          }
+          await (options.clipboardWriter ?? copyTextToClipboard)(summary);
+          ctx.ui.notify("Copied review summary to clipboard.", "info");
         } catch (error) {
           ctx.ui.notify(
-            `Failed to create review fix branch: ${error instanceof Error ? error.message : String(error)}`,
+            `Failed to copy review summary: ${error instanceof Error ? error.message : String(error)}`,
             "error",
           );
-          return;
         }
+        return;
+      }
 
+      if (selectedAction === "address") {
         pi.sendUserMessage(prompt, { deliverAs: "followUp" });
         return;
       }
+
+      const branchTargetId = branchAnchorId ?? null;
+      if (!branchTargetId) {
+        ctx.ui.notify(
+          "Failed to create a review fix branch from the current session state.",
+          "error",
+        );
+        return;
+      }
+
+      const navigateToReviewFixBranch = options.reviewFixBranchNavigator
+        ? options.reviewFixBranchNavigator
+        : async ({ targetId }: { ctx: ExtensionContext; targetId: string }) => {
+            if (!runtime.commandActions?.navigateTree) {
+              throw new Error(
+                "Forking review fixes is unavailable after session reload. Start a new session manually.",
+              );
+            }
+
+            return runtime.commandActions.navigateTree(targetId, {
+              summarize: false,
+              label: "review-fixes",
+            });
+          };
+
+      try {
+        const result = await navigateToReviewFixBranch({ ctx, targetId: branchTargetId });
+        if (result.cancelled) {
+          return;
+        }
+        ctx.ui.notify("Forked review fixes into a new branch.", "info");
+      } catch (error) {
+        ctx.ui.notify(
+          `Failed to create review fix branch: ${error instanceof Error ? error.message : String(error)}`,
+          "error",
+        );
+        return;
+      }
+
+      pi.sendUserMessage(prompt, { deliverAs: "followUp" });
     }
 
     async function finalizeReview(
@@ -1186,7 +1254,10 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
       summary?: string,
     ): Promise<void> {
       const checkoutToRestore = runtime.checkoutToRestore;
+      const commandActions = runtime.commandActions;
+      const branchAnchorId = runtime.branchAnchorId;
       clearReviewState(ctx);
+      runtime.commandActions = commandActions;
 
       const restoreResult = await restoreCheckoutTarget(pi, checkoutToRestore);
       if (!restoreResult.success) {
@@ -1203,8 +1274,10 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
       );
 
       if (status === "completed" && summary?.trim()) {
-        await offerCompletionActions(ctx, summary);
+        await offerCompletionActions(ctx, summary, branchAnchorId);
       }
+
+      runtime.commandActions = undefined;
     }
 
     function attachSdkEvents(): void {
@@ -1313,6 +1386,7 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
       runtime.active = Boolean(activeState?.active);
       runtime.subagentSessionId = activeState?.subagentSessionId;
       runtime.targetLabel = activeState?.targetLabel;
+      runtime.branchAnchorId = activeState?.branchAnchorId;
       runtime.checkoutToRestore = activeState?.checkoutToRestore;
       if (previousSessionId && previousSessionId !== runtime.subagentSessionId) {
         resetSdk();
@@ -1367,8 +1441,10 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
       runtime.active = false;
       runtime.subagentSessionId = undefined;
       runtime.targetLabel = undefined;
+      runtime.branchAnchorId = undefined;
       runtime.checkoutToRestore = undefined;
       runtime.completionNotifiedSessionId = undefined;
+      runtime.commandActions = undefined;
       persistReviewState({ active: false });
       syncReviewWidget(ctx);
     }
@@ -1873,11 +1949,13 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
           });
 
           if (handoffResult.error) {
+            await restoreCheckoutAfterFailedStart(ctx, checkoutToRestore);
             ctx.ui.notify(REVIEW_HANDOFF_GENERATION_FAILED_MESSAGE, "error");
             ctx.ui.notify(handoffResult.error, "error");
             return false;
           }
           if (handoffResult.aborted || !handoffResult.summary) {
+            await restoreCheckoutAfterFailedStart(ctx, checkoutToRestore);
             ctx.ui.notify("Review cancelled", "info");
             return false;
           }
@@ -1936,8 +2014,10 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
         runtime.active = true;
         runtime.subagentSessionId = started.handle.sessionId;
         runtime.targetLabel = targetLabel;
+        runtime.branchAnchorId = branchAnchorId;
         runtime.checkoutToRestore = checkoutToRestore;
         runtime.completionNotifiedSessionId = undefined;
+        runtime.commandActions = { navigateTree: ctx.navigateTree };
         persistReviewState({
           active: true,
           subagentSessionId: started.handle.sessionId,
@@ -2037,6 +2117,7 @@ export function createReviewExtension(options: CreateReviewExtensionOptions = { 
             target = await handlePrCheckout(ctx, parsed.target.ref);
             if (!target) {
               ctx.ui.notify("PR review failed. Returning to review menu.", "warning");
+              return;
             }
           } else {
             target = parsed.target;

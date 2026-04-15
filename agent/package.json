@@ -36,7 +36,7 @@
     "test:keys": "node --import tsx --test ./test/pi-tui-keys.test.ts",
     "test:tool-preview": "node --import tsx --test ./test/tool-preview.test.ts",
     "test:harness": "node --import tsx --test ./test/harness.test.ts ./test/review.test.ts",
-    "test:subagent": "node --import tsx --test ./test/subagent.test.ts ./test/subagent-sdk.test.ts"
+    "test:subagent": "node --import tsx --test ./test/commit.test.ts ./test/subagent.test.ts ./test/subagent-sdk.test.ts"
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "0.66.1",

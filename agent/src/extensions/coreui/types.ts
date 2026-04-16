@@ -16,6 +16,7 @@ export type CoreUIState = {
   activeMode?: string;
   activeModeColor?: ThemeColor;
   tps?: CoreUITPSStats;
+  tpsElapsedMs: number;
   tpsVisible: boolean;
   dirty: boolean;
   addedLines: number;
@@ -29,6 +30,7 @@ export type CoreUIState = {
 export function createCoreUIState(): CoreUIState {
   return {
     cwd: "",
+    tpsElapsedMs: 0,
     tpsVisible: true,
     dirty: false,
     addedLines: 0,

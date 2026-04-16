@@ -2265,7 +2265,7 @@ timedTest(
       assert.match(renderedText, /π message · [0-9a-f]{8} · followUp · Address review feedback/i);
       assert.match(
         renderedText,
-        /worker-one · running · resumed · followUp · Address[\s\S]*review feedback/i,
+        /worker-one · running · resumed · followUp · Address[\s\S]*review\s+feedback/i,
       );
     } finally {
       session?.dispose();

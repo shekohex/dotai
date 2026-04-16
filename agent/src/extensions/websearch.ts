@@ -2,6 +2,7 @@ import { stream, StringEnum } from "@mariozechner/pi-ai";
 import { defineTool, getMarkdownTheme, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { applyLinePrefix, formatToolRail } from "./coreui/tools.js";
 
 const WEBSEARCH_PROVIDER = "gemini";
 const WEBSEARCH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"] as const;
@@ -54,6 +55,7 @@ type WebSearchRenderState = {
 export const webSearchTool = defineTool({
   name: "websearch",
   label: "google",
+  renderShell: "self",
   description:
     "Search the web with Google Search grounding via Gemini and return an answer with sources.",
   promptSnippet:
@@ -81,6 +83,7 @@ export const webSearchTool = defineTool({
   }),
   renderCall(args, theme, context) {
     syncRenderState(context, context.isPartial);
+    const rail = formatToolRail(theme, context);
 
     const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
     const status =
@@ -94,11 +97,12 @@ export const webSearchTool = defineTool({
 
     return createTextComponent(
       context.lastComponent,
-      `${status} ${theme.fg("muted", query)}${theme.fg("muted", ` (${resolveModel(args.model)} • ${formatDurationHuman(resolveTimeoutMs(args.timeoutMs))})`)}`,
+      `${rail}${status} ${theme.fg("muted", query)}${theme.fg("muted", ` (${resolveModel(args.model)} • ${formatDurationHuman(resolveTimeoutMs(args.timeoutMs))})`)}`,
     );
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
     const state = syncRenderState(context, isPartial);
+    const rail = formatToolRail(theme, context);
     const details = result.details as WebSearchDetails | undefined;
     const answer = (details?.answer ?? getTextContent(result.content)).trim();
     const durationMs = details?.durationMs ?? getElapsedMs(state);
@@ -108,7 +112,7 @@ export const webSearchTool = defineTool({
         const errorText = answer || "Web search failed.";
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("error", "↳ ")}${theme.fg("error", errorText)}`,
+          `${rail}${theme.fg("error", "↳ ")}${theme.fg("error", errorText)}`,
         );
       }
       return createTextComponent(context.lastComponent, "");
@@ -118,10 +122,14 @@ export const webSearchTool = defineTool({
       const renderedText = renderToolOutput(answer, theme);
       const footer = durationMs !== undefined ? formatDurationHuman(durationMs) : "0s";
       return renderedText
-        ? renderStreamingPreview(renderedText, theme, context.lastComponent, { expanded, footer })
+        ? renderStreamingPreview(renderedText, theme, context.lastComponent, {
+            expanded,
+            footer,
+            linePrefix: rail,
+          })
         : createTextComponent(
             context.lastComponent,
-            `${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`,
+            `${rail}${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`,
           );
     }
 
@@ -138,7 +146,10 @@ export const webSearchTool = defineTool({
       .join(`${theme.fg("muted", " · ")}`);
 
     if (!expanded) {
-      return createTextComponent(context.lastComponent, `${theme.fg("dim", "↳ ")}${summary}`);
+      return createTextComponent(
+        context.lastComponent,
+        `${rail}${theme.fg("dim", "↳ ")}${summary}`,
+      );
     }
 
     const container =
@@ -156,7 +167,11 @@ export const webSearchTool = defineTool({
     );
     container.addChild(new Spacer(1));
     container.addChild(
-      new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y),
+      new Text(
+        `${rail}${theme.fg("dim", "↳ ")}${summary}`,
+        TOOL_TEXT_PADDING_X,
+        TOOL_TEXT_PADDING_Y,
+      ),
     );
     return container;
   },
@@ -394,7 +409,7 @@ function renderStreamingPreview(
   renderedText: string,
   theme: { fg: (color: "dim" | "muted" | "toolOutput", text: string) => string },
   lastComponent: unknown,
-  options: { expanded: boolean; footer?: string },
+  options: { expanded: boolean; footer?: string; linePrefix?: string },
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
@@ -402,7 +417,10 @@ function renderStreamingPreview(
     const footer = options.footer
       ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`
       : "";
-    return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
+    return createTextComponent(
+      lastComponent,
+      applyLinePrefix([renderedText, footer].filter(Boolean).join("\n"), options.linePrefix),
+    );
   }
 
   const visibleLines = lines.slice(-STREAM_PREVIEW_LINE_LIMIT);
@@ -424,7 +442,7 @@ function renderStreamingPreview(
     );
   }
 
-  return createTextComponent(lastComponent, blocks.join("\n"));
+  return createTextComponent(lastComponent, applyLinePrefix(blocks.join("\n"), options.linePrefix));
 }
 
 function summarizeLineCount(lineCount: number): string {

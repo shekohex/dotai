@@ -3,6 +3,7 @@ import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { shortenHome } from "./path.js";
+import { formatDuration } from "./tps.js";
 import type { CoreUIState } from "./types.js";
 
 const FOOTER_SIDE_PADDING = 1;
@@ -61,18 +62,20 @@ function buildTPSStatus(theme: Theme, state: CoreUIState): string {
   }
 
   const current = `${theme.fg("dim", "tps ")}${theme.fg("accent", state.tps.current.toFixed(1))}`;
+  const elapsed = `${theme.fg("dim", " · ")}${theme.fg("dim", formatDuration(state.tpsElapsedMs))}`;
   if (state.tps.sampleCount < state.tps.bufferSize) {
-    return current;
+    return `${current}${elapsed}`;
   }
 
   return (
     current +
-    `${theme.fg("dim", " · ")}` +
+    `${theme.fg("dim", " ")}` +
     `${theme.fg("success", state.tps.max.toFixed(1))}` +
     `${theme.fg("dim", "/")}` +
     `${theme.fg("warning", state.tps.median.toFixed(1))}` +
     `${theme.fg("dim", "/")}` +
-    `${theme.fg("error", state.tps.min.toFixed(1))}`
+    `${theme.fg("error", state.tps.min.toFixed(1))}` +
+    elapsed
   );
 }
 

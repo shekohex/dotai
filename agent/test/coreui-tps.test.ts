@@ -161,6 +161,7 @@ timedTest("restoreTPSState rehydrates latest stats and visibility from custom en
   assert.deepEqual(restored, {
     tps: { current: 42.1, max: 55.4, median: 45.4, min: 39.2, sampleCount: 50, bufferSize: 50 },
     tpsVisible: false,
+    tpsElapsedMs: 1000,
   });
 });
 
@@ -187,5 +188,60 @@ timedTest("restoreTPSState accepts older persisted TPS entries without buffer me
   assert.deepEqual(restored, {
     tps: { current: 40.5, max: 45.4, median: 33.3, min: 0.6, sampleCount: 50, bufferSize: 50 },
     tpsVisible: true,
+    tpsElapsedMs: 13320,
   });
+});
+
+timedTest("restoreTPSState accumulates elapsed time across all persisted TPS entries", () => {
+  const restored = restoreTPSState([
+    {
+      type: "custom",
+      id: "1",
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      customType: "coreui:tps",
+      data: {
+        stats: {
+          current: 10,
+          max: 10,
+          median: 10,
+          min: 10,
+          sampleCount: 1,
+          bufferSize: 50,
+        },
+        elapsedMs: 1200,
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+        totalTokens: 10,
+      },
+    },
+    {
+      type: "custom",
+      id: "2",
+      parentId: "1",
+      timestamp: new Date().toISOString(),
+      customType: "coreui:tps",
+      data: {
+        stats: {
+          current: 20,
+          max: 20,
+          median: 20,
+          min: 20,
+          sampleCount: 2,
+          bufferSize: 50,
+        },
+        elapsedMs: 3400,
+        input: 5,
+        output: 6,
+        cacheRead: 7,
+        cacheWrite: 8,
+        totalTokens: 26,
+      },
+    },
+  ] as any);
+
+  assert.equal(restored.tpsElapsedMs, 4600);
+  assert.equal(restored.tps?.current, 20);
 });

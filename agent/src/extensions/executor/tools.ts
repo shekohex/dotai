@@ -25,8 +25,10 @@ import { resolveExecutorEndpoint } from "./connection.js";
 import { connectExecutor } from "./status.js";
 import {
   countTextLines,
+  applyLinePrefix,
   createTextComponent,
   formatDurationHuman,
+  formatToolRail,
   getTextContent,
   renderStreamingPreview,
   styleToolOutput,
@@ -839,6 +841,7 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
   defineTool<typeof executeToolParams, ExecuteToolDetails, ExecuteRenderState>({
     name: "execute",
     label: "Execute",
+    renderShell: "self",
     description,
     promptSnippet: "Execute TypeScript in Executor's sandboxed runtime with configured API tools.",
     promptGuidelines: [
@@ -849,12 +852,14 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
     parameters: executeToolParams,
     renderCall(args, theme, context) {
       const state = syncExecuteRenderState(context, context.isPartial);
+      const rail = formatToolRail(theme, context);
       const header = formatExecuteCallHeader(
         args,
         theme,
         context.isError ? "error" : context.isPartial ? "pending" : "success",
       );
       const code = readCode(args);
+      let callText: string;
 
       if (!context.argsComplete && code) {
         const highlightedLines = renderHighlightedLines(code, "typescript", theme);
@@ -862,19 +867,15 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
         const preview = context.expanded
           ? `${highlightedLines.join("\n")}\n${theme.fg("dim", "↳ ")}${theme.fg("muted", footer)}`
           : formatCollapsedCodePreview(highlightedLines, footer, theme);
-        return setExecuteCallComponent(state, context.lastComponent, `${header}\n${preview}`);
-      }
-
-      if (context.expanded && code) {
+        callText = `${header}\n${preview}`;
+      } else if (context.expanded && code) {
         const highlightedCode = renderHighlightedLines(code, "typescript", theme).join("\n");
-        return setExecuteCallComponent(
-          state,
-          context.lastComponent,
-          `${header}\n\n${highlightedCode}`,
-        );
+        callText = `${header}\n\n${highlightedCode}`;
+      } else {
+        callText = header;
       }
 
-      return setExecuteCallComponent(state, context.lastComponent, header);
+      return setExecuteCallComponent(state, context.lastComponent, applyLinePrefix(callText, rail));
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
       const state = syncExecuteRenderState(context, isPartial);
@@ -920,7 +921,7 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
 
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("dim", "↳ ")}${theme.fg("muted", summary)}`,
+          `${formatToolRail(theme, context)}${theme.fg("dim", "↳ ")}${theme.fg("muted", summary)}`,
         );
       }
 

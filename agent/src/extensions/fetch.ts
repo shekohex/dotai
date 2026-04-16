@@ -17,6 +17,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { applyLinePrefix, formatToolRail } from "./coreui/tools.js";
 
 const WEBFETCH_DESCRIPTION = [
   "- Fetches content from a specified URL",
@@ -74,7 +75,16 @@ type WebFetchRenderState = {
 
 type ToolTheme = {
   fg: (
-    color: "accent" | "dim" | "error" | "muted" | "success" | "toolOutput" | "warning",
+    color:
+      | "accent"
+      | "borderAccent"
+      | "borderMuted"
+      | "dim"
+      | "error"
+      | "muted"
+      | "success"
+      | "toolOutput"
+      | "warning",
     text: string,
   ) => string;
   italic: (text: string) => string;
@@ -95,12 +105,14 @@ const webFetchSchema = Type.Object({
 export const webFetchTool = defineTool({
   name: "webfetch",
   label: "fetch",
+  renderShell: "self",
   description: WEBFETCH_DESCRIPTION,
   promptSnippet:
     "use `webfetch` tool when you need to get the conent of a url or a website. could be useful to explore more information from the references output of the `websearch` tool.",
   parameters: webFetchSchema,
   renderCall(args, theme, context) {
     const state = syncRenderState(context, context.isPartial);
+    const rail = formatToolRail(theme, context);
     const url = shortenUrl(typeof args.url === "string" ? upgradeToHttps(args.url.trim()) : "...");
     const timeoutSeconds = clampTimeout(
       typeof args.timeout === "number" ? args.timeout : undefined,
@@ -116,26 +128,27 @@ export const webFetchTool = defineTool({
             : "";
         return createTextComponent(
           context.lastComponent,
-          `${theme.bold(theme.fg("error", "fetch"))} ${theme.fg("muted", url)}${suffix}`,
+          `${rail}${theme.bold(theme.fg("error", "fetch"))} ${theme.fg("muted", url)}${suffix}`,
         );
       }
       case "partial":
         return createTextComponent(
           context.lastComponent,
-          `${theme.bold(theme.fg("dim", "fetching"))} ${theme.fg("muted", url)}${theme.fg("muted", ` (${timeoutSeconds}s)`)}`,
+          `${rail}${theme.bold(theme.fg("dim", "fetching"))} ${theme.fg("muted", url)}${theme.fg("muted", ` (${timeoutSeconds}s)`)}`,
         );
       case "success": {
         const suffix =
           elapsedMs !== undefined ? theme.fg("muted", ` in ${formatDurationHuman(elapsedMs)}`) : "";
         return createTextComponent(
           context.lastComponent,
-          `${theme.bold(theme.fg("dim", "fetched"))} ${theme.fg("muted", url)}${suffix}`,
+          `${rail}${theme.bold(theme.fg("dim", "fetched"))} ${theme.fg("muted", url)}${suffix}`,
         );
       }
     }
   },
   renderResult(result, options, theme, context) {
     const details = result.details as WebFetchDetails | undefined;
+    const rail = formatToolRail(theme, context);
     const textContent = getTextContent(result.content);
     const phase = context.isError ? "error" : options.isPartial ? "partial" : "complete";
 
@@ -144,7 +157,7 @@ export const webFetchTool = defineTool({
         if (options.expanded) {
           return createTextComponent(
             context.lastComponent,
-            renderToolErrorLine(textContent || "webfetch failed", theme),
+            `${rail}${renderToolErrorLine(textContent || "webfetch failed", theme)}`,
           );
         }
         return createTextComponent(context.lastComponent, "");
@@ -155,6 +168,7 @@ export const webFetchTool = defineTool({
           details?.durationMs !== undefined ? ` (${formatDurationHuman(details.durationMs)})` : "";
         return renderStreamingPreview(streamed, theme, context.lastComponent, {
           expanded: options.expanded,
+          linePrefix: rail,
           footer: `${summarizeLineCount(countTextLines(textContent))} so far${elapsed}${details ? ` · ${renderStatusMeta(details, theme)}` : ""}`,
         });
       }
@@ -171,13 +185,13 @@ export const webFetchTool = defineTool({
         if (!body) {
           return createTextComponent(
             context.lastComponent,
-            `${theme.fg("dim", "↳ ")}${renderStatusMeta(details, theme)}`,
+            `${rail}${theme.fg("dim", "↳ ")}${renderStatusMeta(details, theme)}`,
           );
         }
 
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("dim", "↳ ")}${renderStatusMeta(details, theme)}\n${styleToolOutput(body, theme, STREAM_PREVIEW_LINE_LENGTH)}`,
+          `${rail}${theme.fg("dim", "↳ ")}${renderStatusMeta(details, theme)}\n${applyLinePrefix(styleToolOutput(body, theme, STREAM_PREVIEW_LINE_LENGTH), rail)}`,
         );
       }
     }
@@ -580,7 +594,7 @@ function renderStreamingPreview(
   renderedText: string,
   theme: ToolTheme,
   lastComponent: unknown,
-  options: { expanded: boolean; footer?: string },
+  options: { expanded: boolean; footer?: string; linePrefix?: string },
 ): Text {
   const lines = renderedText.split("\n").filter((line) => line.length > 0);
 
@@ -588,7 +602,10 @@ function renderStreamingPreview(
     const footer = options.footer
       ? `${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`
       : "";
-    return createTextComponent(lastComponent, [renderedText, footer].filter(Boolean).join("\n"));
+    return createTextComponent(
+      lastComponent,
+      applyLinePrefix([renderedText, footer].filter(Boolean).join("\n"), options.linePrefix),
+    );
   }
 
   const visibleLines = lines.slice(-STREAM_PREVIEW_LINE_LIMIT);
@@ -609,7 +626,7 @@ function renderStreamingPreview(
     blocks.push(`${theme.fg("dim", "↳ ")}${theme.fg("muted", options.footer)}`);
   }
 
-  return createTextComponent(lastComponent, blocks.join("\n"));
+  return createTextComponent(lastComponent, applyLinePrefix(blocks.join("\n"), options.linePrefix));
 }
 
 function renderToolErrorLine(message: string, theme: ToolTheme): string {

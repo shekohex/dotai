@@ -163,6 +163,7 @@ function registerWriteToolOverride(pi: ExtensionAPI): void {
 export function createReadToolOverrideDefinition() {
   return {
     ...readToolDefinition,
+    renderShell: "self" as const,
     renderCall(args: ReadCallArgs, theme: ToolTheme, context: ReadCallContext) {
       const rawPath = readPathArg(args);
       const skillMatch = rawPath.match(/(?:^|[\\/])([^\\/]+)[\\/]SKILL\.md$/);
@@ -237,6 +238,7 @@ export function createBashToolOverrideDefinition(): ToolDefinition<
   const { prepareArguments: _prepareArguments, ...rest } = bashToolDefinition;
   return {
     ...rest,
+    renderShell: "self",
     parameters: bashToolParams,
     renderCall(args: BashCallArgs, theme: ToolTheme, context: BashCallContext) {
       const state = syncBashRenderState(context, context.isPartial);
@@ -312,6 +314,7 @@ export function createBashToolOverrideDefinition(): ToolDefinition<
 export function createEditToolOverrideDefinition() {
   return {
     ...editToolDefinition,
+    renderShell: "self" as const,
     renderCall(args: EditCallArgs, theme: ToolTheme, context: EditCallContext) {
       return renderStatusPathToolCall(
         { pending: "editing", success: "edited", error: "edit" },
@@ -386,6 +389,7 @@ export function createEditToolOverrideDefinition() {
 export function createWriteToolOverrideDefinition() {
   return {
     ...writeToolDefinition,
+    renderShell: "self" as const,
     renderCall(args: WriteCallArgs, theme: ToolTheme, context: WriteCallContext) {
       return renderStatusPathToolCall(
         { pending: "writing", success: "written", error: "write" },
@@ -456,7 +460,7 @@ function renderStatusLine(
 ): Text {
   const phase = getToolPhase(context);
   const status = formatToolStatus(theme, phase, verbs);
-  const text = `${status} ${theme.fg("text", subject)}${formatMutedDirSuffix(theme, subjectDir)}${detail}`;
+  const text = `${formatToolRail(theme, context)}${status} ${theme.fg("text", subject)}${formatMutedDirSuffix(theme, subjectDir)}${detail}`;
 
   return createTextComponent(context.lastComponent, text);
 }
@@ -527,6 +531,17 @@ export function renderStreamingPreview(
   return createTextComponent(lastComponent, blocks.join("\n"));
 }
 
+export function applyLinePrefix(text: string, linePrefix?: string): string {
+  if (!linePrefix || !text) {
+    return text;
+  }
+
+  return text
+    .split("\n")
+    .map((line) => `${linePrefix}${line}`)
+    .join("\n");
+}
+
 export function renderToolError(
   message: string,
   theme: CoreUIToolTheme,
@@ -563,15 +578,32 @@ function formatToolStatus(theme: ToolTheme, phase: ToolPhase, verbs: ToolVerbs):
 }
 
 function formatBashStatus(theme: ToolTheme, context: BaseRenderContext): string {
+  const rail = formatToolRail(theme, context);
+
   if (context.isError) {
-    return theme.bold(theme.fg("error", "$"));
+    return `${rail}${theme.bold(theme.fg("error", "$"))}`;
   }
 
   if (context.isPartial) {
-    return theme.italic(theme.fg("muted", "$"));
+    return `${rail}${theme.italic(theme.fg("muted", "$"))}`;
   }
 
-  return theme.bold(theme.fg("muted", "$"));
+  return `${rail}${theme.bold(theme.fg("muted", "$"))}`;
+}
+
+export function formatToolRail(
+  theme: ToolTheme,
+  context: Pick<BaseRenderContext, "isPartial" | "isError">,
+): string {
+  if (context.isError) {
+    return theme.fg("error", "▏");
+  }
+
+  if (context.isPartial) {
+    return theme.fg("borderAccent", "▏");
+  }
+
+  return theme.fg("borderMuted", "▏");
 }
 
 export function getTextContent(result: ToolResult): string {

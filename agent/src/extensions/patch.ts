@@ -108,6 +108,7 @@ It is important to remember:
 export const applyPatchTool = defineTool({
   name: "apply_patch",
   label: "patch",
+  renderShell: "self",
   description: APPLY_PATCH_DESCRIPTION,
   promptSnippet: `use \`apply_patch\` to edit/patch files`,
   parameters: Type.Object(
@@ -515,6 +516,7 @@ async function withFileMutationQueues<T>(paths: string[], fn: () => Promise<T>):
 }
 
 function formatApplyPatchCall(patchText: string, theme: any, context: any): string {
+  const rail = formatPatchRail(theme, context);
   if (context.isPartial && !context.argsComplete && patchText.trim().length > 0) {
     const streamedTargets = summarizePartialPatchText(patchText);
     const headline =
@@ -530,7 +532,7 @@ function formatApplyPatchCall(patchText: string, theme: any, context: any): stri
       tailLines: 6,
     });
     return [
-      `${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", headline)}`,
+      `${rail}${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", headline)}`,
       preview,
     ]
       .filter(Boolean)
@@ -544,17 +546,23 @@ function formatApplyPatchCall(patchText: string, theme: any, context: any): stri
       : "";
 
   if (context.isError) {
-    return `${theme.bold(theme.fg("error", "patch"))} ${theme.fg("muted", formatPatchHeadline(details, false))}`;
+    return `${rail}${theme.bold(theme.fg("error", "patch"))} ${theme.fg("muted", formatPatchHeadline(details, false))}`;
   }
 
   if (context.isPartial) {
-    return `${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", formatPatchHeadline(details, true))}${progress}`;
+    return `${rail}${theme.italic(theme.fg("muted", "patching"))} ${theme.fg("muted", formatPatchHeadline(details, true))}${progress}`;
   }
 
-  return formatApplyPatchSuccess(details, theme, context.cwd);
+  return formatApplyPatchSuccess(details, theme, context.cwd, context);
 }
 
-function formatApplyPatchSuccess(details: ApplyPatchDetails, theme: any, cwd: string): string {
+function formatApplyPatchSuccess(
+  details: ApplyPatchDetails,
+  theme: any,
+  cwd: string,
+  context?: { isPartial?: boolean; isError?: boolean },
+): string {
+  const rail = formatPatchRail(theme, context ?? { isPartial: false, isError: false });
   const totalChanges = countPatchChanges(details.files);
   const totalSummary =
     totalChanges.additions + totalChanges.deletions > 0
@@ -562,10 +570,10 @@ function formatApplyPatchSuccess(details: ApplyPatchDetails, theme: any, cwd: st
       : "";
   const singleFileHeadline = formatSinglePatchHeadline(details, theme, cwd);
   if (singleFileHeadline) {
-    return `${theme.bold(theme.fg("muted", "patched"))} ${singleFileHeadline}${totalSummary}`;
+    return `${rail}${theme.bold(theme.fg("muted", "patched"))} ${singleFileHeadline}${totalSummary}`;
   }
 
-  return `${theme.bold(theme.fg("muted", "patched"))} ${theme.fg("muted", formatPatchHeadline(details, false))}${totalSummary}`;
+  return `${rail}${theme.bold(theme.fg("muted", "patched"))} ${theme.fg("muted", formatPatchHeadline(details, false))}${totalSummary}`;
 }
 
 function renderApplyPatchProgress(
@@ -688,6 +696,18 @@ function renderApplyPatchError(
   }
 
   return lines.join("\n");
+}
+
+function formatPatchRail(theme: any, context: { isPartial?: boolean; isError?: boolean }): string {
+  if (context.isError) {
+    return theme.fg("error", "▏");
+  }
+
+  if (context.isPartial) {
+    return theme.fg("borderAccent", "▏");
+  }
+
+  return theme.fg("borderMuted", "▏");
 }
 
 function formatPatchHeadline(details: ApplyPatchDetails, partial: boolean): string {

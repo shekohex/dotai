@@ -10,11 +10,12 @@ import { buildAvailableModesPromptGuideline } from "./available-modes.js";
 
 import {
   countTextLines,
+  applyLinePrefix,
   createTextComponent,
   formatDurationHuman,
+  formatToolRail,
   getTextContent,
   renderStreamingPreview,
-  renderToolError,
   styleToolOutput,
   summarizeLineCount,
 } from "./coreui/tools.js";
@@ -302,6 +303,7 @@ function renderPartialSubagentResult(
   theme: Theme,
   context: { lastComponent: unknown },
   state: SubagentRenderState,
+  rail: string,
 ): Text {
   const details = result.details as SubagentToolRenderDetails | undefined;
   const progress = isProgressDetails(details) ? details : undefined;
@@ -318,12 +320,15 @@ function renderPartialSubagentResult(
     const duration = formatDurationHuman(elapsedMs ?? 0);
     return createTextComponent(
       context.lastComponent,
-      `${theme.fg("dim", "↳ ")}${theme.fg("muted", `${label} (${duration})`)}`,
+      `${rail}${theme.fg("dim", "↳ ")}${theme.fg("muted", `${label} (${duration})`)}`,
     );
   }
 
   return renderStreamingPreview(
-    styleToolOutput(previewText, theme, SUBAGENT_STREAM_PREVIEW_WIDTH, { truncateFrom: "tail" }),
+    applyLinePrefix(
+      styleToolOutput(previewText, theme, SUBAGENT_STREAM_PREVIEW_WIDTH, { truncateFrom: "tail" }),
+      rail,
+    ),
     theme,
     context.lastComponent,
     {
@@ -625,6 +630,7 @@ export function createSubagentExtension(
     const subagentTool = defineTool<typeof SubagentToolParamsSchema, SubagentToolResultDetails>({
       name: "subagent",
       label: "π",
+      renderShell: "self",
       description:
         "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. Session ids are UUID v4. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling.",
       promptSnippet:
@@ -758,25 +764,23 @@ export function createSubagentExtension(
       },
       renderCall(args, theme, context) {
         const state = syncRenderState(context);
-        return setCallComponent(
-          state,
-          context.lastComponent,
-          context.expanded
-            ? formatExpandedCallText(args, theme)
-            : formatCollapsedCallText(args, theme),
-        );
+        const rail = formatToolRail(theme, context);
+        const callText = context.expanded
+          ? formatExpandedCallText(args, theme)
+          : formatCollapsedCallText(args, theme);
+        return setCallComponent(state, context.lastComponent, applyLinePrefix(callText, rail));
       },
       renderResult(result, { expanded, isPartial }, theme, context) {
         const state = syncStreamingRenderState(context, isPartial);
+        const rail = formatToolRail(theme, context);
         const separator = theme.fg("dim", " · ");
         const details = result.details as SubagentToolRenderDetails | undefined;
 
         if (context.isError) {
           applyCollapsedSummaryToCall(state, `${separator}${theme.fg("error", "error")}`);
-          return renderToolError(
-            getTextContent(result) || "subagent failed",
-            theme,
+          return createTextComponent(
             context.lastComponent,
+            `${rail}${theme.fg("error", "↳ ")}${theme.fg("error", getTextContent(result) || "subagent failed")}`,
           );
         }
 
@@ -788,6 +792,7 @@ export function createSubagentExtension(
             theme,
             context,
             state,
+            rail,
           );
         }
 
@@ -801,7 +806,10 @@ export function createSubagentExtension(
 
         return createTextComponent(
           context.lastComponent,
-          formatExpandedResult(details as SubagentToolResultDetails | undefined),
+          applyLinePrefix(
+            formatExpandedResult(details as SubagentToolResultDetails | undefined),
+            rail,
+          ),
         );
       },
     });

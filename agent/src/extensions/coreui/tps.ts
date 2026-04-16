@@ -74,6 +74,42 @@ function formatCompactCount(count: number): string {
   return `${Math.round(count / 1_000_000)}M`;
 }
 
+export function formatDuration(elapsedMs: number): string {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return "0s";
+  }
+
+  const totalSeconds = elapsedMs / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`;
+  }
+
+  const roundedSeconds = Math.round(totalSeconds);
+  const days = Math.floor(roundedSeconds / 86_400);
+  const hours = Math.floor((roundedSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((roundedSeconds % 3_600) / 60);
+  const seconds = roundedSeconds % 60;
+  const parts: string[] = [];
+
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+
+  if (minutes > 0) {
+    parts.push(`${minutes}m`);
+  }
+
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds}s`);
+  }
+
+  return parts.join(" ");
+}
+
 export function calculateIntervalTPS(
   outputTokenDelta: number,
   elapsedMs: number,
@@ -124,9 +160,12 @@ function pushTPSSample(samples: number[], value: number): number[] {
   return nextSamples.slice(nextSamples.length - TPS_SAMPLE_BUFFER_SIZE);
 }
 
-export function restoreTPSState(entries: SessionEntry[]): Pick<CoreUIState, "tps" | "tpsVisible"> {
+export function restoreTPSState(
+  entries: SessionEntry[],
+): Pick<CoreUIState, "tps" | "tpsVisible" | "tpsElapsedMs"> {
   let tps: CoreUITPSStats | undefined;
   let tpsVisible = true;
+  let tpsElapsedMs = 0;
 
   for (const entry of entries) {
     if (entry.type !== "custom") {
@@ -137,6 +176,9 @@ export function restoreTPSState(entries: SessionEntry[]): Pick<CoreUIState, "tps
       const restored = readTPSSessionEntry(entry.data);
       if (restored) {
         tps = restored.stats;
+        if (restored.elapsedMs > 0 && Number.isFinite(restored.elapsedMs)) {
+          tpsElapsedMs += restored.elapsedMs;
+        }
       }
       continue;
     }
@@ -149,7 +191,24 @@ export function restoreTPSState(entries: SessionEntry[]): Pick<CoreUIState, "tps
     }
   }
 
-  return { tps, tpsVisible };
+  return { tps, tpsVisible, tpsElapsedMs };
+}
+
+function updateTPSElapsedInState(
+  state: CoreUIState,
+  persistedElapsedMs: number,
+  run: TPSRunState | null,
+  nowMs: number = Date.now(),
+): boolean {
+  const runElapsedMs = run ? Math.max(0, nowMs - run.startedAtMs) : 0;
+  const nextElapsedMs = persistedElapsedMs + runElapsedMs;
+
+  if (state.tpsElapsedMs === nextElapsedMs) {
+    return false;
+  }
+
+  state.tpsElapsedMs = nextElapsedMs;
+  return true;
 }
 
 function setTPSState(
@@ -294,9 +353,8 @@ function getLatestTPSSessionEntry(entries: SessionEntry[]): TPSSessionEntry | un
 }
 
 function formatTPSNotification(entry: TPSSessionEntry): string {
-  const elapsedSeconds = entry.elapsedMs / 1000;
   const averageTPS = calculateIntervalTPS(entry.output, entry.elapsedMs) ?? entry.stats.current;
-  return `TPS ${averageTPS.toFixed(1)} tok/s. out ${formatCompactCount(entry.output)}, in ${formatCompactCount(entry.input)}, cache r/w ${formatCompactCount(entry.cacheRead)}/${formatCompactCount(entry.cacheWrite)}, total ${formatCompactCount(entry.totalTokens)}, ${elapsedSeconds.toFixed(1)}s`;
+  return `TPS ${averageTPS.toFixed(1)} tok/s. out ${formatCompactCount(entry.output)}, in ${formatCompactCount(entry.input)}, cache r/w ${formatCompactCount(entry.cacheRead)}/${formatCompactCount(entry.cacheWrite)}, total ${formatCompactCount(entry.totalTokens)}, ${formatDuration(entry.elapsedMs)}`;
 }
 
 function setTPSVisibility(state: CoreUIState, visible: boolean): boolean {
@@ -444,6 +502,7 @@ export default function registerTPSExtension(
 ) {
   let run: TPSRunState | null = null;
   let sessionSamples: number[] = [];
+  let persistedElapsedMs = 0;
 
   pi.registerCommand("tps", {
     description: "Toggle TPS footer display: /tps on, /tps off",
@@ -457,6 +516,8 @@ export default function registerTPSExtension(
     const restored = restoreTPSState(ctx.sessionManager.getBranch());
     state.tps = restored.tps;
     state.tpsVisible = restored.tpsVisible;
+    state.tpsElapsedMs = restored.tpsElapsedMs;
+    persistedElapsedMs = restored.tpsElapsedMs;
     sessionSamples = [];
     requestRender();
   });
@@ -486,8 +547,9 @@ export default function registerTPSExtension(
       run,
       run.completedOutputTokens + run.currentOutputTokens,
     );
+    const elapsedChanged = updateTPSElapsedInState(state, persistedElapsedMs, run);
     sessionSamples = result.nextSamples;
-    if (result.changed) {
+    if (result.changed || elapsedChanged) {
       requestRender();
     }
   });
@@ -501,8 +563,9 @@ export default function registerTPSExtension(
     run.currentOutputTokens = 0;
 
     const result = setTPSState(state, sessionSamples, run, run.completedOutputTokens);
+    const elapsedChanged = updateTPSElapsedInState(state, persistedElapsedMs, run);
     sessionSamples = result.nextSamples;
-    if (result.changed) {
+    if (result.changed || elapsedChanged) {
       requestRender();
     }
   });
@@ -517,8 +580,9 @@ export default function registerTPSExtension(
       run,
       run.completedOutputTokens + run.currentOutputTokens,
     );
+    const elapsedChanged = updateTPSElapsedInState(state, persistedElapsedMs, run);
     sessionSamples = result.nextSamples;
-    if (result.changed) {
+    if (result.changed || elapsedChanged) {
       requestRender();
     }
   });
@@ -539,9 +603,14 @@ export default function registerTPSExtension(
     const didChange = result.changed;
     const finalStats = state.tps;
 
+    if (elapsedMs > 0) {
+      persistedElapsedMs += elapsedMs;
+    }
+    const elapsedChanged = updateTPSElapsedInState(state, persistedElapsedMs, null);
+
     run = null;
 
-    if (didChange) {
+    if (didChange || elapsedChanged) {
       requestRender();
     }
 

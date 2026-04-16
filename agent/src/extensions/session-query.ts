@@ -14,6 +14,7 @@ import path from "node:path";
 import {
   createTextComponent,
   formatDurationHuman,
+  formatToolRail,
   getTextContent,
   renderStreamingPreview,
   styleToolOutput,
@@ -75,6 +76,7 @@ Be concise and direct. If the information isn't in the session, say so.`;
 export const sessionQueryTool = defineTool({
   name: "session_query",
   label: "query",
+  renderShell: "self",
   description:
     "Query a previous pi session file for context, decisions, or information. Use when you need to look up what happened in a parent session or any other session.",
   parameters: Type.Object({
@@ -89,6 +91,7 @@ export const sessionQueryTool = defineTool({
   }),
   renderCall(args, theme, context) {
     const state = syncRenderState(context, context.isPartial);
+    const rail = formatToolRail(theme, context);
 
     const phase = context.isError ? "error" : context.isPartial ? "pending" : "success";
     const status =
@@ -103,11 +106,12 @@ export const sessionQueryTool = defineTool({
         ? args.question.trim()
         : "...";
 
-    const text = `${status} ${theme.fg("muted", sessionLabel)}${theme.fg("dim", " → ")}${theme.fg("muted", truncateQuestion(question))}`;
+    const text = `${rail}${status} ${theme.fg("muted", sessionLabel)}${theme.fg("dim", " → ")}${theme.fg("muted", truncateQuestion(question))}`;
     return setCallComponent(state, context.lastComponent, text);
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
     const state = syncRenderState(context, isPartial);
+    const rail = formatToolRail(theme, context);
     const textContent = getTextContent(result);
     const details = result.details as SessionQueryToolDetails | undefined;
     const elapsedMs = getElapsedMs(state);
@@ -116,7 +120,7 @@ export const sessionQueryTool = defineTool({
       if (expanded) {
         return createTextComponent(
           context.lastComponent,
-          `${theme.fg("error", "↳ ")}${theme.fg("error", textContent || "Session query failed.")}`,
+          `${rail}${theme.fg("error", "↳ ")}${theme.fg("error", textContent || "Session query failed.")}`,
         );
       }
       return createTextComponent(context.lastComponent, "");
@@ -138,7 +142,7 @@ export const sessionQueryTool = defineTool({
 
       return createTextComponent(
         context.lastComponent,
-        `${theme.fg("dim", "↳ ")}${theme.fg("muted", `loading session (${footer})`)}`,
+        `${rail}${theme.fg("dim", "↳ ")}${theme.fg("muted", `loading session (${footer})`)}`,
       );
     }
 
@@ -162,7 +166,7 @@ export const sessionQueryTool = defineTool({
     container.clear();
     container.addChild(
       new Text(
-        `${theme.fg("muted", "Question:")} ${theme.fg("accent", question)}`,
+        `${rail}${theme.fg("muted", "Question:")} ${theme.fg("accent", question)}`,
         TOOL_TEXT_PADDING_X,
         TOOL_TEXT_PADDING_Y,
       ),
@@ -181,7 +185,11 @@ export const sessionQueryTool = defineTool({
     );
     container.addChild(new Spacer(1));
     container.addChild(
-      new Text(`${theme.fg("dim", "↳ ")}${summary}`, TOOL_TEXT_PADDING_X, TOOL_TEXT_PADDING_Y),
+      new Text(
+        `${rail}${theme.fg("dim", "↳ ")}${summary}`,
+        TOOL_TEXT_PADDING_X,
+        TOOL_TEXT_PADDING_Y,
+      ),
     );
     return container;
   },

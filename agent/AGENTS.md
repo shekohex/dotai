@@ -78,11 +78,18 @@ npm run format:check          # Check formatting without modifying files
 
 Uses [oxfmt](https://github.com/oxc-project/oxc) for formatting.
 
+### Typechecking
+
+```bash
+npm run typecheck
+```
+
 ## Task Completion
 
 After finishing each task, run these checks before replying:
 
 ```bash
+npm typecheck
 npm test
 npm run lint
 npm run format:check

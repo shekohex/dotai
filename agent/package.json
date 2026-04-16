@@ -18,6 +18,7 @@
   ],
   "type": "module",
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt .",
@@ -28,6 +29,7 @@
     "postinstall": "node ./scripts/postinstall.mjs",
     "postprepare": "node ./scripts/postinstall.mjs",
     "pi": "PI_SKIP_VERSION_CHECK=1 tsx src/cli.ts",
+    "remote": "tsx watch src/remote/index.ts",
     "preview:tools": "node --import tsx ./scripts/preview-tools.ts --watch",
     "preview:tools:once": "node --import tsx ./scripts/preview-tools.ts",
     "preview:tools:watch": "node --import tsx ./scripts/preview-tools.ts --watch",
@@ -39,16 +41,19 @@
     "test:subagent": "node --import tsx --test ./test/commit.test.ts ./test/subagent.test.ts ./test/subagent-sdk.test.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.14",
     "@mariozechner/pi-coding-agent": "0.67.3",
     "@mendable/firecrawl-js": "^4.18.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sinclair/typebox": "^0.34.41",
     "beautiful-mermaid": "^1.1.3",
     "diff": "^8.0.4",
+    "hono": "^4.12.14",
     "mermaid": "^11.14.0",
     "patch-package": "8.0.1"
   },
   "devDependencies": {
+    "@types/node": "^20.11.17",
     "@marcfargas/pi-test-harness": "^0.5.0",
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0",

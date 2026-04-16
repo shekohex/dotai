@@ -1,4 +1,4 @@
-import { ThemeColor } from "../../mode-utils.js";
+import type { ThemeColor } from "../../mode-utils.js";
 
 export type CoreUITPSStats = {
   current: number;

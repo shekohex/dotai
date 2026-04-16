@@ -7,13 +7,13 @@ import {
   readToolDefinition,
   writeToolDefinition,
   type ExtensionAPI,
-  BashToolDetails,
-  ToolDefinition,
+  type BashToolDetails,
+  type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { splitToolPath, type ToolPathDisplay } from "./path.js";
 import { Type } from "@sinclair/typebox";
-import { Static } from "@sinclair/typebox";
+import type { Static } from "@sinclair/typebox";
 
 type ToolPathArgs = {
   path?: unknown;

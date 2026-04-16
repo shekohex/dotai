@@ -1,0 +1,80 @@
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+index 41555b5..a011de5 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+@@ -37,7 +37,6 @@ export class ToolExecutionComponent extends Container {
+         this.showImages = options.showImages ?? true;
+         this.ui = ui;
+         this.cwd = cwd;
+-        this.addChild(new Spacer(1));
+         // Always create all shell variants. contentBox is used for default renderer-based composition.
+         // selfRenderContainer is used when the tool renders its own framing.
+         // contentText is reserved for generic fallback rendering when no tool definition exists.
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+index f219693..d4403e8 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+@@ -64,6 +64,36 @@ function isTruthyEnvFlag(value) {
+         return false;
+     return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+ }
++function getVisibleChatChildKind(component, width) {
++    if (component instanceof Spacer) {
++        return undefined;
++    }
++    if (component instanceof ToolExecutionComponent) {
++        return "tool";
++    }
++    if (component instanceof Text || component instanceof Markdown) {
++        return component.text.trim() ? "other" : undefined;
++    }
++    const renderedLines = component.render(width);
++    return renderedLines.some((line) => visibleWidth(line.trim()) > 0) ? "other" : undefined;
++}
++function getLastVisibleChatChildKind(interactiveMode) {
++    const width = interactiveMode.ui.terminal.columns;
++    for (let i = interactiveMode.chatContainer.children.length - 1; i >= 0; i--) {
++        const kind = getVisibleChatChildKind(interactiveMode.chatContainer.children[i], width);
++        if (kind) {
++            return kind;
++        }
++    }
++    return undefined;
++}
++function addToolExecutionToChat(interactiveMode, component) {
++    const previousKind = getLastVisibleChatChildKind(interactiveMode);
++    if (previousKind && previousKind !== "tool") {
++        interactiveMode.chatContainer.addChild(new Spacer(1));
++    }
++    interactiveMode.chatContainer.addChild(component);
++}
+ export class InteractiveMode {
+     options;
+     runtimeHost;
+@@ -1982,7 +2012,7 @@ export class InteractiveMode {
+                                     showImages: this.settingsManager.getShowImages(),
+                                 }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+                                 component.setExpanded(this.toolOutputExpanded);
+-                                this.chatContainer.addChild(component);
++                                addToolExecutionToChat(this, component);
+                                 this.pendingTools.set(content.id, component);
+                             }
+                             else {
+@@ -2042,7 +2072,7 @@ export class InteractiveMode {
+                         showImages: this.settingsManager.getShowImages(),
+                     }, this.getRegisteredToolDefinition(event.toolName), this.ui, this.sessionManager.getCwd());
+                     component.setExpanded(this.toolOutputExpanded);
+-                    this.chatContainer.addChild(component);
++                    addToolExecutionToChat(this, component);
+                     this.pendingTools.set(event.toolCallId, component);
+                 }
+                 component.markExecutionStarted();
+@@ -2306,7 +2336,7 @@ export class InteractiveMode {
+                     if (content.type === "toolCall") {
+                         const component = new ToolExecutionComponent(content.name, content.id, content.arguments, { showImages: this.settingsManager.getShowImages() }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+                         component.setExpanded(this.toolOutputExpanded);
+-                        this.chatContainer.addChild(component);
++                        addToolExecutionToChat(this, component);
+                         if (message.stopReason === "aborted" || message.stopReason === "error") {
+                             let errorMessage;
+                             if (message.stopReason === "aborted") {

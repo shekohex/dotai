@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,22 +12,12 @@ const agentDir = join(homedir(), ".pi", "agent");
 const targetPath = join(agentDir, "settings.json");
 const modesTargetPath = join(agentDir, "modes.json");
 const patchPackageBin = join(packageDir, "node_modules", "patch-package", "index.js");
-const patchedToolExecutionPath = join(
+const patchesDir = join(packageDir, "patches");
+const dependencyPatchApplyMarker = join(
   packageDir,
   "node_modules",
-  "@mariozechner",
-  "pi-coding-agent",
-  "dist",
-  "modes",
-  "interactive",
-  "components",
-  "tool-execution.js",
+  ".shekohex-agent-dependency-patches-applied",
 );
-const dependencyPatchMarkers = [
-  "const TOOL_RAIL_WIDTH = 3;",
-  "getRailPrefix()",
-  'theme.fg("error", "▏")',
-];
 
 if (isMain()) {
   await runPostinstall();
@@ -70,11 +60,17 @@ export async function runPostinstall() {
 }
 
 export async function ensureDependencyPatches() {
-  if (areDependencyPatchesApplied()) {
+  const patchFiles = listDependencyPatchFiles();
+  if (patchFiles.length === 0) {
+    return;
+  }
+
+  if (areDependencyPatchesApplied(patchFiles)) {
     return;
   }
 
   await applyDependencyPatches();
+  writeFileSync(dependencyPatchApplyMarker, `${new Date().toISOString()}\n`, "utf8");
 }
 
 export async function applyDependencyPatches() {
@@ -102,13 +98,30 @@ export async function applyDependencyPatches() {
   }
 }
 
-function areDependencyPatchesApplied() {
-  if (!existsSync(patchedToolExecutionPath)) {
+function listDependencyPatchFiles() {
+  if (!existsSync(patchesDir)) {
+    return [];
+  }
+
+  return readdirSync(patchesDir)
+    .filter((entry) => entry.endsWith(".patch"))
+    .map((entry) => join(patchesDir, entry));
+}
+
+function areDependencyPatchesApplied(patchFiles) {
+  if (patchFiles.length === 0) {
+    return true;
+  }
+
+  if (!existsSync(dependencyPatchApplyMarker)) {
     return false;
   }
 
-  const contents = readFileSync(patchedToolExecutionPath, "utf8");
-  return dependencyPatchMarkers.every((marker) => contents.includes(marker));
+  const markerMtime = statSync(dependencyPatchApplyMarker).mtimeMs;
+  return patchFiles.every((patchFile) => {
+    const patchMtime = statSync(patchFile).mtimeMs;
+    return patchMtime <= markerMtime;
+  });
 }
 
 function isMain() {

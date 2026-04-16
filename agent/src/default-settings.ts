@@ -68,7 +68,7 @@ export const defaultModes = defineModesFile({
     },
     review: {
       provider: "codex-openai",
-      modelId: "gpt-5.4",
+      modelId: "gpt-5.3-codex",
       thinkingLevel: "high",
       color: "muted",
       tmuxTarget: "window",

@@ -1038,10 +1038,12 @@ Mitigation:
 - `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/PROTOCOL.md:141-181`
 - `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/PROTOCOL.md:523-599`
 - `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/PROTOCOL.md:605-620`
-
-### Bun
-
-- No Bun repository files were analyzed in this research. Bun is treated as a possible daemon runtime/deployment target only.
+- `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/packages/server/src/types.ts:10-15`
+- `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/packages/server/src/store.ts:1073-1129`
+- `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/packages/server/src/store.ts:1199-1214`
+- `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/packages/server/src/server.ts:812-826`
+- `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/packages/server/src/server.ts:930-943`
+- `/Users/shady/.cache/checkouts/github.com/durable-streams/durable-streams/packages/server/src/server.ts:1109-1223`
 
 ### Hono And Related Tooling
 
@@ -1050,3 +1052,4 @@ Mitigation:
 - `https://hono.dev/docs/middleware/third-party`
 - `https://github.com/honojs/middleware/tree/main/packages/typebox-validator`
 - `https://github.com/rhinobase/hono-openapi`
+- `https://hono.dev/docs/guides/testing` for testing.

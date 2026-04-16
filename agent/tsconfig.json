@@ -12,13 +12,9 @@
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx",
+    "jsxImportSource": "hono/jsx"
   },
-  "include": [
-    "src/**/*.ts"
-  ]
+  "include": ["src/**/*.ts"]
 }

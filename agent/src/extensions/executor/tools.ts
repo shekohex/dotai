@@ -949,20 +949,20 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
           hasUI: ctx.hasUI,
           onElicitation: ctx.hasUI
             ? (interaction) =>
-              promptForInteraction(
-                interaction.mode === "url"
-                  ? {
-                    mode: "url",
-                    message: interaction.message,
-                    url: interaction.url,
-                  }
-                  : {
-                    mode: "form",
-                    message: interaction.message,
-                    requestedSchema: interaction.requestedSchema,
-                  },
-                ctx,
-              )
+                promptForInteraction(
+                  interaction.mode === "url"
+                    ? {
+                        mode: "url",
+                        message: interaction.message,
+                        url: interaction.url,
+                      }
+                    : {
+                        mode: "form",
+                        message: interaction.message,
+                        requestedSchema: interaction.requestedSchema,
+                      },
+                  ctx,
+                )
             : undefined,
         },
         async (client) => client.execute(params.code),

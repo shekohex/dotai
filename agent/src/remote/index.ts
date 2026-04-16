@@ -1,15 +1,40 @@
-import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
+import { serve } from "@hono/node-server";
+import { createRemoteApp } from "./app.js";
+import { parseAllowedKeys } from "./auth.js";
 
-const app = new Hono()
+const port = Number.parseInt(process.env.PI_REMOTE_PORT ?? process.env.PORT ?? "3000", 10);
+const origin = process.env.PI_REMOTE_ORIGIN ?? `http://localhost:${port}`;
+const allowedKeys = parseAllowedKeys(process.env.PI_REMOTE_ALLOWED_KEYS);
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+if (allowedKeys.length === 0) {
+  throw new Error("PI_REMOTE_ALLOWED_KEYS must contain at least one key");
+}
 
-serve({
-  fetch: app.fetch,
-  port: 3000
-}, (info) => {
-  console.log(`Server is running on http://localhost:${info.port}`)
-})
+const { app, dispose } = createRemoteApp({
+  origin,
+  allowedKeys,
+});
+
+const server = serve(
+  {
+    fetch: app.fetch,
+    port,
+  },
+  (info) => {
+    console.log(`pi-remote running on ${origin} (port ${info.port})`);
+  },
+);
+
+const shutdown = async (): Promise<void> => {
+  server.close();
+  await dispose();
+  process.exit(0);
+};
+
+process.on("SIGINT", () => {
+  void shutdown();
+});
+
+process.on("SIGTERM", () => {
+  void shutdown();
+});

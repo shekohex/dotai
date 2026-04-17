@@ -70,6 +70,33 @@ export const SessionSummarySchema = Type.Object({
   lastSessionStreamOffset: Type.String(),
 });
 
+export const RemoteModelSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  api: Type.String(),
+  provider: Type.String(),
+  baseUrl: Type.String(),
+  reasoning: Type.Boolean(),
+  input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")])),
+  cost: Type.Object({
+    input: Type.Number(),
+    output: Type.Number(),
+    cacheRead: Type.Number(),
+    cacheWrite: Type.Number(),
+  }),
+  contextWindow: Type.Number(),
+  maxTokens: Type.Number(),
+  headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+  compat: Type.Optional(Type.Unknown()),
+});
+
+export const RemoteModelSettingsSchema = Type.Object({
+  defaultProvider: Type.Union([Type.String(), Type.Null()]),
+  defaultModel: Type.Union([Type.String(), Type.Null()]),
+  defaultThinkingLevel: Type.Union([Type.String(), Type.Null()]),
+  enabledModels: Type.Union([Type.Array(Type.String()), Type.Null()]),
+});
+
 export const AppSnapshotSchema = Type.Object({
   serverInfo: Type.Object({
     name: Type.String(),
@@ -139,6 +166,30 @@ export const SessionNameUpdateRequestSchema = Type.Object({
   requestId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
+export const UiResponseRequestSchema = Type.Union([
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    value: Type.String(),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    confirmed: Type.Boolean(),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    cancelled: Type.Literal(true),
+  }),
+]);
+
+export const UiResponseResponseSchema = Type.Object({
+  resolved: Type.Boolean(),
+});
+
+export const ClearQueueResponseSchema = Type.Object({
+  steering: Type.Array(Type.String()),
+  followUp: Type.Array(Type.String()),
+});
+
 export const CommandKindSchema = Type.Union([
   Type.Literal("prompt"),
   Type.Literal("steer"),
@@ -164,6 +215,8 @@ export const SessionSnapshotSchema = Type.Object({
   model: Type.String(),
   thinkingLevel: Type.String(),
   activeTools: Type.Array(Type.String()),
+  availableModels: Type.Array(RemoteModelSchema),
+  modelSettings: RemoteModelSettingsSchema,
   draft: DraftSchema,
   draftRevision: Type.Number(),
   transcript: Type.Array(Type.Unknown()),
@@ -278,12 +331,75 @@ const SessionStatePatchEventPayloadSchema = Type.Object({
       model: Type.Optional(Type.String()),
       thinkingLevel: Type.Optional(Type.String()),
       sessionName: Type.Optional(Type.String()),
+      availableModels: Type.Optional(Type.Array(RemoteModelSchema)),
+      modelSettings: Type.Optional(RemoteModelSettingsSchema),
     },
     { minProperties: 1 },
   ),
 });
 
-const ExtensionUiRequestEventPayloadSchema = Type.Unknown();
+export const ExtensionUiRequestEventPayloadSchema = Type.Union([
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("select"),
+    title: Type.String(),
+    options: Type.Array(Type.String()),
+    timeout: Type.Optional(Type.Number()),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("confirm"),
+    title: Type.String(),
+    message: Type.String(),
+    timeout: Type.Optional(Type.Number()),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("input"),
+    title: Type.String(),
+    placeholder: Type.Optional(Type.String()),
+    timeout: Type.Optional(Type.Number()),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("editor"),
+    title: Type.String(),
+    prefill: Type.Optional(Type.String()),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("notify"),
+    message: Type.String(),
+    notifyType: Type.Optional(
+      Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
+    ),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("setStatus"),
+    statusKey: Type.String(),
+    statusText: Type.Optional(Type.String()),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("setWidget"),
+    widgetKey: Type.String(),
+    widgetLines: Type.Optional(Type.Array(Type.String())),
+    widgetPlacement: Type.Optional(
+      Type.Union([Type.Literal("aboveEditor"), Type.Literal("belowEditor")]),
+    ),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("setTitle"),
+    title: Type.String(),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("set_editor_text"),
+    text: Type.String(),
+  }),
+]);
 
 const ExtensionErrorEventPayloadSchema = Type.Object({
   commandId: Type.String(),
@@ -378,11 +494,15 @@ export type InterruptCommandRequest = Static<typeof InterruptCommandRequestSchem
 export type DraftUpdateRequest = Static<typeof DraftUpdateRequestSchema>;
 export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
 export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
+export type UiResponseRequest = Static<typeof UiResponseRequestSchema>;
+export type UiResponseResponse = Static<typeof UiResponseResponseSchema>;
+export type ClearQueueResponse = Static<typeof ClearQueueResponseSchema>;
 export type CommandKind = Static<typeof CommandKindSchema>;
 export type CommandAcceptedResponse = Static<typeof CommandAcceptedResponseSchema>;
 export type SessionStatus = Static<typeof SessionStatusSchema>;
 export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;
 export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;
+export type ExtensionUiRequestEventPayload = Static<typeof ExtensionUiRequestEventPayloadSchema>;
 export type StreamReadResponse = Static<typeof StreamReadResponseSchema>;
 export type Presence = Static<typeof PresenceSchema>;

@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { tbValidator } from "@hono/typebox-validator";
 import { describeRoute } from "hono-openapi";
+import type { Static } from "@sinclair/typebox";
 import type { AuthService, AuthSession } from "./auth.js";
 import { RemoteError } from "./errors.js";
 import {
@@ -11,6 +12,7 @@ import {
   AuthVerifyRequestSchema,
   AuthVerifyResponseSchema,
   CommandAcceptedResponseSchema,
+  ClearQueueResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
   DraftUpdateRequestSchema,
@@ -25,6 +27,8 @@ import {
   SteerCommandRequestSchema,
   StreamReadQuerySchema,
   StreamReadResponseSchema,
+  UiResponseRequestSchema,
+  UiResponseResponseSchema,
 } from "./schemas.js";
 import { generateResponseCursor } from "./cursor.js";
 import type { SessionRegistry } from "./session-registry.js";
@@ -43,7 +47,13 @@ export interface RemoteRoutesDependencies {
   streams: InMemoryDurableStreamStore;
 }
 
-function authError(c: Parameters<MiddlewareHandler<RemoteHonoEnv>>[0], error: unknown): Response {
+type ErrorResponseBody = Static<typeof ErrorResponseSchema>;
+type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 500;
+
+function authError(
+  c: Parameters<MiddlewareHandler<RemoteHonoEnv>>[0],
+  error: unknown,
+): Response & { _data: ErrorResponseBody; _status: ErrorStatus; _format: "json" } {
   if (error instanceof RemoteError) {
     return jsonWithSchema(
       c,
@@ -250,11 +260,11 @@ function commandAcceptedResponses() {
   };
 }
 
-export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<RemoteHonoEnv> {
+export function createV1Routes(dependencies: RemoteRoutesDependencies) {
   const v1 = new Hono<RemoteHonoEnv>();
   const needsAuth = requireAuth(dependencies.auth);
 
-  v1.post(
+  const v1r1 = v1.post(
     "/auth/challenge",
     describeRoute({
       tags: ["auth"],
@@ -298,7 +308,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r2 = v1r1.post(
     "/auth/verify",
     describeRoute({
       tags: ["auth"],
@@ -348,7 +358,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.get(
+  const v1r3 = v1r2.get(
     "/app/snapshot",
     describeRoute({
       tags: ["snapshot"],
@@ -384,7 +394,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r4 = v1r3.post(
     "/sessions",
     describeRoute({
       tags: ["command"],
@@ -436,7 +446,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.get(
+  const v1r5 = v1r4.get(
     "/sessions/:sessionId/snapshot",
     describeRoute({
       tags: ["snapshot"],
@@ -488,7 +498,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r6 = v1r5.post(
     "/sessions/:sessionId/prompt",
     describeRoute({
       tags: ["command"],
@@ -534,7 +544,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r7 = v1r6.post(
     "/sessions/:sessionId/steer",
     describeRoute({
       tags: ["command"],
@@ -580,7 +590,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r8 = v1r7.post(
     "/sessions/:sessionId/follow-up",
     describeRoute({
       tags: ["command"],
@@ -626,7 +636,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r9 = v1r8.post(
     "/sessions/:sessionId/interrupt",
     describeRoute({
       tags: ["command"],
@@ -672,7 +682,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r10 = v1r9.post(
     "/sessions/:sessionId/draft",
     describeRoute({
       tags: ["command"],
@@ -718,7 +728,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r11 = v1r10.post(
     "/sessions/:sessionId/model",
     describeRoute({
       tags: ["command"],
@@ -764,7 +774,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.post(
+  const v1r12 = v1r11.post(
     "/sessions/:sessionId/session-name",
     describeRoute({
       tags: ["command"],
@@ -810,7 +820,118 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.get(
+  const v1r13 = v1r12.post(
+    "/sessions/:sessionId/ui-response",
+    describeRoute({
+      tags: ["command"],
+      operationId: "submitSessionUiResponse",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: UiResponseRequestSchema,
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: "UI response accepted",
+          content: {
+            "application/json": {
+              schema: UiResponseResponseSchema,
+            },
+          },
+        },
+        404: {
+          description: "Session or UI request not found",
+          content: {
+            "application/json": {
+              schema: ErrorResponseSchema,
+            },
+          },
+        },
+      },
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", UiResponseRequestSchema),
+    (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const resolved = dependencies.sessions.submitUiResponse(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, UiResponseResponseSchema, resolved, 200, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  const v1r14 = v1r13.post(
+    "/sessions/:sessionId/clear-queue",
+    describeRoute({
+      tags: ["command"],
+      operationId: "clearSessionQueue",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      responses: {
+        200: {
+          description: "Queue cleared",
+          content: {
+            "application/json": {
+              schema: ClearQueueResponseSchema,
+            },
+          },
+        },
+        404: {
+          description: "Session not found",
+          content: {
+            "application/json": {
+              schema: ErrorResponseSchema,
+            },
+          },
+        },
+      },
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const cleared = dependencies.sessions.clearQueue(sessionId, c.get("auth"), connectionId);
+        return jsonWithSchema(c, ClearQueueResponseSchema, cleared, 200, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  const v1r15 = v1r14.get(
     "/streams/app-events",
     describeRoute({
       tags: ["streams"],
@@ -919,7 +1040,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  v1.get(
+  const v1r16 = v1r15.get(
     "/streams/sessions/:sessionId/events",
     describeRoute({
       tags: ["streams"],
@@ -1049,5 +1170,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
     },
   );
 
-  return v1;
+  return v1r16;
 }
+
+export type RemoteV1RoutesApp = ReturnType<typeof createV1Routes>;

@@ -7,10 +7,13 @@ import {
   InMemoryPiRuntimeFactory,
   type RemoteRuntimeFactory,
 } from "../src/remote/runtime-factory.ts";
+import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
 import { assertType } from "../src/remote/typebox.ts";
+
+process.env.PI_REMOTE_ENABLE_LOGGER = "0";
 
 const TEST_TIMEOUT_MS = 15_000;
 
@@ -47,7 +50,23 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
 }
 
 class RecordingSession {
-  model = { provider: "pi-remote-faux", id: "pi-remote-faux-1" };
+  model = {
+    provider: "pi-remote-faux",
+    id: "pi-remote-faux-1",
+    name: "Pi Remote Faux 1",
+    api: "responses",
+    baseUrl: "http://localhost:0",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 128_000,
+    maxTokens: 16_384,
+  };
   thinkingLevel = "medium";
   isStreaming = false;
   isCompacting = false;
@@ -60,6 +79,7 @@ class RecordingSession {
   };
   modelRegistry = {
     find: () => this.model,
+    getAvailable: () => [this.model],
     getApiKeyAndHeaders: async () => ({
       ok: true as const,
       apiKey: "test-key",
@@ -82,20 +102,47 @@ class RecordingSession {
   clearQueueCalls = 0;
   bindExtensionsError: Error | undefined;
   setModelError: Error | undefined;
+  defaultProvider: string | undefined;
+  defaultModel: string | undefined;
+  defaultThinkingLevel: string | undefined;
+  enabledModels: string[] | undefined;
   extensionRunner:
     | {
         getCommand: (name: string) => unknown;
       }
     | undefined;
+  remoteUiContext:
+    | {
+        input: (title: string, placeholder?: string) => Promise<string | undefined>;
+      }
+    | undefined;
+  settingsManager = {
+    getDefaultProvider: () => this.defaultProvider,
+    getDefaultModel: () => this.defaultModel,
+    getDefaultThinkingLevel: () => this.defaultThinkingLevel,
+    getEnabledModels: () => this.enabledModels,
+    setDefaultModelAndProvider: (provider: string, modelId: string) => {
+      this.defaultProvider = provider;
+      this.defaultModel = modelId;
+    },
+    setDefaultThinkingLevel: (level: string) => {
+      this.defaultThinkingLevel = level;
+    },
+  };
 
   getActiveToolNames(): string[] {
     return ["read", "bash", "edit", "write"];
   }
 
-  async bindExtensions(): Promise<void> {
+  async bindExtensions(bindings?: {
+    uiContext?: {
+      input: (title: string, placeholder?: string) => Promise<string | undefined>;
+    };
+  }): Promise<void> {
     if (this.bindExtensionsError) {
       throw this.bindExtensionsError;
     }
+    this.remoteUiContext = bindings?.uiContext;
   }
 
   subscribe(): () => void {
@@ -150,7 +197,11 @@ class RecordingSession {
     if (this.setModelError) {
       throw this.setModelError;
     }
-    this.model = model;
+    this.model = {
+      ...this.model,
+      ...model,
+      name: `${model.provider}/${model.id}`,
+    };
   }
 
   setThinkingLevel(level: string): void {
@@ -228,6 +279,18 @@ class BlockingPromptSession extends RecordingSession {
   }
 }
 
+class UiRequestPromptSession extends RecordingSession {
+  uiAnswers: Array<string | undefined> = [];
+
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    if (this.remoteUiContext) {
+      const answer = await this.remoteUiContext.input("Remote question", "type answer");
+      this.uiAnswers.push(answer);
+    }
+    await super.prompt(text, options);
+  }
+}
+
 class RecordingRuntimeFactory implements RemoteRuntimeFactory {
   readonly session: RecordingSession;
   runtimeDisposeCalls = 0;
@@ -255,6 +318,24 @@ function testAuthSession() {
     keyId: "dev",
     expiresAt: Date.now() + 60_000,
   };
+}
+
+async function createRemoteRuntime(
+  app: ReturnType<typeof createRemoteApp>["app"],
+  options: {
+    privateKeyPem: string;
+    sessionId?: string;
+  },
+) {
+  return RemoteAgentSessionRuntime.create({
+    origin: "http://localhost:3000",
+    auth: {
+      keyId: "dev",
+      privateKey: options.privateKeyPem,
+    },
+    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+    fetchImpl: createInProcessFetch(app),
+  });
 }
 
 async function authenticate(app: ReturnType<typeof createRemoteApp>["app"], privateKey: string) {
@@ -503,6 +584,8 @@ timedTest("milestone 1 flow works end to end", async () => {
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/draft"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/model"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/session-name"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/ui-response"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/clear-queue"]);
     const appStreamResponses = (openApi.paths["/v1/streams/app-events"] as any)?.get?.responses;
     assert.ok(appStreamResponses?.["200"]?.content?.["application/json"]);
     assert.ok(appStreamResponses?.["200"]?.content?.["text/event-stream"]);
@@ -1259,6 +1342,7 @@ timedTest("failed model update does not emit command_accepted or consume sequenc
   const session = new RecordingSession();
   session.modelRegistry = {
     find: () => ({ provider: "openai", id: "gpt-4o" }),
+    getAvailable: () => [session.model],
   };
   session.setModelError = new Error("No API key for openai/gpt-4o");
   const runtimeFactory = new RecordingRuntimeFactory(session);
@@ -1337,6 +1421,7 @@ timedTest("prompt preflight rejects missing auth before command acceptance", asy
   const session = new RecordingSession();
   session.modelRegistry = {
     find: () => session.model,
+    getAvailable: () => [session.model],
     getApiKeyAndHeaders: async () => ({
       ok: true as const,
       apiKey: undefined,
@@ -1385,6 +1470,7 @@ timedTest("prompt skips preflight when already streaming and queues follow-up", 
   session.isStreaming = true;
   session.modelRegistry = {
     find: () => session.model,
+    getAvailable: () => [session.model],
     getApiKeyAndHeaders: async () => ({
       ok: false as const,
       error: "transient auth failure",
@@ -1430,6 +1516,7 @@ timedTest("registered slash commands bypass prompt preflight", async () => {
   const session = new RecordingSession();
   session.modelRegistry = {
     find: () => session.model,
+    getAvailable: () => [session.model],
     getApiKeyAndHeaders: async () => ({
       ok: true as const,
       apiKey: undefined,
@@ -2107,4 +2194,938 @@ timedTest("in-memory runtime factory preserves explicit null fauxApiKey", async 
 
   await nullRuntime.dispose();
   await nullFactory.dispose();
+});
+
+timedTest("milestone 3 remote runtime adapter replays snapshot and streams events", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new InMemoryPiRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sessionName: "milestone3" }),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const beforePromptSnapshot = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    assert.equal(beforePromptSnapshot.status, 200);
+    const snapshot = (await beforePromptSnapshot.json()) as { lastSessionStreamOffset: string };
+
+    const promptResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/prompt`,
+      token,
+      {
+        text: "hello from milestone 3",
+      },
+    );
+    assert.equal(promptResponse.status, 202);
+
+    await waitForSessionEvent(
+      remote.app,
+      token,
+      created.sessionId,
+      snapshot.lastSessionStreamOffset,
+      (event) =>
+        event.kind === "agent_session_event" &&
+        typeof event.payload === "object" &&
+        event.payload !== null &&
+        (event.payload as { type?: string }).type === "agent_end",
+    );
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    assert.ok(
+      runtime.session.messages.some(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { role?: string }).role === "assistant",
+      ),
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for remote adapter agent_end"));
+      }, 5_000);
+
+      const unsubscribe = runtime!.session.subscribe((event) => {
+        if (event.type !== "agent_end") {
+          return;
+        }
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve();
+      });
+
+      void runtime!.session.prompt("second prompt through adapter");
+    });
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter routes extension ui requests through ui-response", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new UiRequestPromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    let inputCalls = 0;
+    await runtime.session.bindExtensions({
+      uiContext: {
+        input: async () => {
+          inputCalls += 1;
+          return "client-answer";
+        },
+      } as any,
+    } as any);
+
+    await runtime.session.prompt("prompt requiring ui response");
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (session.uiAnswers.length > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+
+    assert.equal(inputCalls, 1);
+    assert.equal(session.uiAnswers.length, 1);
+    assert.equal(session.uiAnswers[0], "client-answer");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "milestone 3 adapter rolls back optimistic thinkingLevel on rejected update",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const session = new RecordingSession();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      const inProcessFetch = createInProcessFetch(remote.app);
+      runtime = await RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        sessionId: created.sessionId,
+        fetchImpl: async (input, init) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/model") && init?.method === "POST") {
+            return new Response(JSON.stringify({ message: "simulated transport failure" }), {
+              status: 500,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+          return inProcessFetch(input, init);
+        },
+      });
+
+      runtime.session.setThinkingLevel("high");
+
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (runtime.session.state.errorMessage) {
+          break;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+
+      assert.equal(runtime.session.thinkingLevel, "medium");
+      assert.match(runtime.session.state.errorMessage ?? "", /Failed to update thinking level/);
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("milestone 3 adapter surfaces extension_error stream events", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  session.promptError = new Error("simulated runtime prompt failure");
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    await runtime.session.prompt("trigger runtime failure");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (runtime.session.state.errorMessage) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.match(runtime.session.state.errorMessage ?? "", /simulated runtime prompt failure/);
+    assert.ok(
+      runtime.session.messages.some(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { customType?: string }).customType === "remote_error",
+      ),
+    );
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter clearQueue clears authoritative remote queue", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    await postSessionCommand(remote.app, `/v1/sessions/${created.sessionId}/steer`, token, {
+      text: "queued steer",
+    });
+    await postSessionCommand(remote.app, `/v1/sessions/${created.sessionId}/follow-up`, token, {
+      text: "queued follow-up",
+    });
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (session.queuedSteering.length > 0 && session.queuedFollowUp.length > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(session.queuedSteering.length, 1);
+    assert.equal(session.queuedFollowUp.length, 1);
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    runtime.session.clearQueue();
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (session.clearQueueCalls > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(session.clearQueueCalls, 1);
+    assert.deepEqual(session.queuedSteering, []);
+    assert.deepEqual(session.queuedFollowUp, []);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter does not double-append user/custom messages", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const sessionAny = runtime.session as any;
+    const baseline = runtime.session.messages.length;
+    const userMessage = {
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+      timestamp: Date.now(),
+    };
+    sessionAny.applyAgentSessionEvent({ type: "message_start", message: userMessage });
+    sessionAny.applyAgentSessionEvent({ type: "message_end", message: userMessage });
+
+    const customMessage = {
+      role: "custom",
+      customType: "remote_error",
+      content: "err",
+      display: true,
+      timestamp: Date.now(),
+    };
+    sessionAny.applyAgentSessionEvent({ type: "message_start", message: customMessage });
+    sessionAny.applyAgentSessionEvent({ type: "message_end", message: customMessage });
+
+    assert.equal(runtime.session.messages.length, baseline + 2);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3.1 snapshot includes model catalog and remote model settings", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = (await snapshotResponse.json()) as {
+      model: string;
+      availableModels: Array<{ provider: string; id: string }>;
+      modelSettings: {
+        defaultProvider: string | null;
+        defaultModel: string | null;
+        defaultThinkingLevel: string | null;
+        enabledModels: string[] | null;
+      };
+    };
+
+    assert.ok(snapshot.availableModels.length > 0);
+    assert.ok(
+      snapshot.availableModels.some(
+        (model) => model.provider === "pi-remote-faux" && model.id === "pi-remote-faux-1",
+      ),
+    );
+    assert.equal(snapshot.modelSettings.defaultProvider, null);
+    assert.equal(snapshot.modelSettings.defaultModel, null);
+    assert.equal(snapshot.modelSettings.defaultThinkingLevel, null);
+    assert.equal(snapshot.modelSettings.enabledModels, null);
+
+    const updateResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/model`,
+      token,
+      {
+        model: snapshot.model,
+        thinkingLevel: "high",
+      },
+    );
+    assert.equal(updateResponse.status, 202);
+
+    const updatedSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(updatedSnapshotResponse.status, 200);
+    const updatedSnapshot = (await updatedSnapshotResponse.json()) as {
+      model: string;
+      modelSettings: {
+        defaultProvider: string | null;
+        defaultModel: string | null;
+        defaultThinkingLevel: string | null;
+      };
+    };
+
+    assert.equal(updatedSnapshot.modelSettings.defaultProvider, "pi-remote-faux");
+    assert.equal(updatedSnapshot.modelSettings.defaultModel, "pi-remote-faux-1");
+    assert.equal(updatedSnapshot.modelSettings.defaultThinkingLevel, "high");
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3.1 adapter hydrates catalog and syncs remote model settings", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  session.model = {
+    ...session.model,
+    reasoning: false,
+    contextWindow: 4_096,
+    maxTokens: 1_024,
+  };
+  session.defaultProvider = "pi-remote-faux";
+  session.defaultModel = "pi-remote-faux-1";
+  session.defaultThinkingLevel = "off";
+  session.enabledModels = ["pi-remote-faux/*"];
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const availableModels = runtime.session.modelRegistry.getAvailable();
+    assert.equal(availableModels.length, 1);
+    assert.equal(availableModels[0]?.provider, "pi-remote-faux");
+    assert.equal(availableModels[0]?.id, "pi-remote-faux-1");
+    assert.equal(runtime.session.model?.reasoning, false);
+    assert.equal(runtime.session.state.model?.provider, "pi-remote-faux");
+    assert.equal(runtime.session.state.model?.id, "pi-remote-faux-1");
+    assert.equal(runtime.session.state.thinkingLevel, runtime.session.thinkingLevel);
+    assert.deepEqual(runtime.session.getAvailableThinkingLevels(), ["off"]);
+    assert.equal(runtime.session.supportsThinking(), false);
+    assert.equal(runtime.session.settingsManager.getDefaultProvider(), "pi-remote-faux");
+    assert.equal(runtime.session.settingsManager.getDefaultModel(), "pi-remote-faux-1");
+    assert.equal(runtime.session.settingsManager.getDefaultThinkingLevel(), "off");
+    assert.deepEqual(runtime.session.settingsManager.getEnabledModels(), ["pi-remote-faux/*"]);
+
+    const updateResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/model`,
+      token,
+      {
+        model: "pi-remote-faux/pi-remote-faux-1",
+        thinkingLevel: "high",
+      },
+    );
+    assert.equal(updateResponse.status, 202);
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (runtime.session.settingsManager.getDefaultThinkingLevel() === "high") {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(runtime.session.settingsManager.getDefaultThinkingLevel(), "high");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter reads session stream via sse", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const streamRequests: string[] = [];
+    const baseFetch = createInProcessFetch(remote.app);
+
+    runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: privateKeyPem,
+      },
+      sessionId: created.sessionId,
+      fetchImpl: async (input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
+          streamRequests.push(url);
+        }
+        return baseFetch(input, init);
+      },
+    });
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      if (streamRequests.some((url) => url.includes("live=sse"))) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.ok(streamRequests.some((url) => url.includes("live=sse")));
+    assert.equal(
+      streamRequests.some((url) => url.includes("live=long-poll")),
+      false,
+    );
+
+    const initialSseRequestCount = streamRequests.length;
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    assert.equal(streamRequests.length, initialSseRequestCount);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter applies live sse control offsets without reconnect", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const streamRequests: string[] = [];
+    const baseFetch = createInProcessFetch(remote.app);
+    runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: privateKeyPem,
+      },
+      sessionId: created.sessionId,
+      fetchImpl: async (input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
+          streamRequests.push(url);
+        }
+        return baseFetch(input, init);
+      },
+    });
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      if (streamRequests.length > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    const sessionAny = runtime.session as any;
+    const initialOffset = sessionAny.streamOffset;
+
+    const draftResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/draft`,
+      token,
+      {
+        text: "live sse offset",
+      },
+    );
+    assert.equal(draftResponse.status, 202);
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      if (sessionAny.streamOffset !== initialOffset) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.notEqual(sessionAny.streamOffset, initialOffset);
+    assert.equal(streamRequests.length, 1);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter surfaces unrecoverable stream polling failure once", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const baseFetch = createInProcessFetch(remote.app);
+    runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: privateKeyPem,
+      },
+      sessionId: created.sessionId,
+      fetchImpl: async (input, init) => {
+        const url = typeof input === "string" ? input : input.url;
+        if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
+          return new Response(JSON.stringify({ error: "Invalid token" }), {
+            status: 401,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
+        return baseFetch(input, init);
+      },
+    });
+
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (runtime.session.state.errorMessage?.includes("Remote stream polling failed")) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.match(runtime.session.state.errorMessage ?? "", /Remote stream polling failed/);
+
+    const remoteErrorMessages = runtime.session.messages.filter(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        (message as { customType?: string }).customType === "remote_error",
+    );
+    assert.equal(remoteErrorMessages.length, 1);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter retries failed stream batch from same offset", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const sessionAny = runtime.session as any;
+    sessionAny.closed = true;
+    sessionAny.activeReadAbortController?.abort();
+    await sessionAny.pollingTask;
+
+    sessionAny.closed = false;
+    sessionAny.streamOffset = "0-0";
+
+    const offsets: string[] = [];
+    let readCalls = 0;
+    sessionAny.client.readSessionEvents = async (_sessionId: string, offset: string) => {
+      offsets.push(offset);
+      readCalls += 1;
+      if (readCalls === 1) {
+        return {
+          events: [
+            { kind: "unknown_first", payload: { id: "first" }, streamOffset: "0-1" },
+            { kind: "unknown_second", payload: { id: "second" }, streamOffset: "0-2" },
+          ],
+          nextOffset: "0-3",
+          streamClosed: false,
+        };
+      }
+      if (readCalls === 2) {
+        return {
+          events: [
+            { kind: "unknown_first", payload: { id: "first" }, streamOffset: "0-1" },
+            { kind: "unknown_second", payload: { id: "second" }, streamOffset: "0-2" },
+          ],
+          nextOffset: "0-3",
+          streamClosed: true,
+        };
+      }
+      throw new Error("unexpected readSessionEvents call");
+    };
+
+    const handled: string[] = [];
+    let transientFailureInjected = false;
+    sessionAny.handleEnvelope = async (envelope: { payload: { id: string } }) => {
+      if (!transientFailureInjected) {
+        transientFailureInjected = true;
+        throw { status: 500, message: "transient" };
+      }
+      handled.push(envelope.payload.id);
+    };
+
+    await sessionAny.pollEvents();
+
+    assert.deepEqual(offsets, ["0-0", "0-0"]);
+    assert.deepEqual(handled, ["first", "second"]);
+    assert.equal(sessionAny.streamOffset, "0-3");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter fails fast on non-http polling errors", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const sessionAny = runtime.session as any;
+    sessionAny.closed = true;
+    sessionAny.activeReadAbortController?.abort();
+    await sessionAny.pollingTask;
+
+    sessionAny.closed = false;
+
+    let readCalls = 0;
+    sessionAny.client.readSessionEvents = async () => {
+      readCalls += 1;
+      throw new Error("schema mismatch");
+    };
+
+    await sessionAny.pollEvents();
+
+    assert.equal(readCalls, 1);
+    assert.match(
+      runtime.session.state.errorMessage ?? "",
+      /Remote stream polling failed: schema mismatch/,
+    );
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
 });

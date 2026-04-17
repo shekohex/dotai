@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AgentSessionEvent, AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  AgentSessionRuntime,
+  ExtensionUIContext,
+} from "@mariozechner/pi-coding-agent";
 import { RemoteError } from "./errors.js";
 import type { AuthSession } from "./auth.js";
 import type {
@@ -21,6 +25,10 @@ import type {
   SessionStatus,
   SessionSnapshot,
   SessionSummary,
+  ClearQueueResponse,
+  ExtensionUiRequestEventPayload,
+  UiResponseRequest,
+  UiResponseResponse,
 } from "./schemas.js";
 import { InMemoryDurableStreamStore, appEventsStreamId, sessionEventsStreamId } from "./streams.js";
 import type { RemoteRuntimeFactory } from "./runtime-factory.js";
@@ -32,6 +40,13 @@ interface SessionRecord {
   model: string;
   thinkingLevel: string;
   activeTools: string[];
+  availableModels: Model<Api>[];
+  modelSettings: {
+    defaultProvider: string | null;
+    defaultModel: string | null;
+    defaultThinkingLevel: string | null;
+    enabledModels: string[] | null;
+  };
   draft: {
     text: string;
     attachments: string[];
@@ -64,6 +79,7 @@ interface SessionRecord {
   runtimeDispatchQueue: Promise<void>;
   runtimeUndispatchedCommandCount: number;
   hasLocalCommandError: boolean;
+  pendingUiRequests: Map<string, { resolve: (value: UiResponseRequest) => void }>;
 }
 
 interface AcceptedSessionCommand {
@@ -135,6 +151,13 @@ export class SessionRegistry {
           model: "pi-remote-faux/pi-remote-faux-1",
           thinkingLevel: "medium",
           activeTools: ["read", "bash", "edit", "write"],
+          availableModels: [],
+          modelSettings: {
+            defaultProvider: null,
+            defaultModel: null,
+            defaultThinkingLevel: null,
+            enabledModels: null,
+          },
           draft: {
             text: "",
             attachments: [],
@@ -166,11 +189,14 @@ export class SessionRegistry {
           runtimeDispatchQueue: Promise.resolve(),
           runtimeUndispatchedCommandCount: 0,
           hasLocalCommandError: false,
+          pendingUiRequests: new Map(),
         };
 
         const session = this.getRuntimeSession(record);
         if (session) {
-          await session.bindExtensions({});
+          await session.bindExtensions({
+            uiContext: this.createRemoteUiContext(record),
+          });
           this.syncFromRuntime(record, { now: createdAt, updateTimestamp: false });
           record.runtimeSubscription = session.subscribe((event) => {
             this.handleSessionEvent(record.sessionId, event);
@@ -405,6 +431,12 @@ export class SessionRegistry {
           session.setThinkingLevel(thinkingLevel);
           record.thinkingLevel = thinkingLevel;
         }
+        if (model) {
+          session.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
+        }
+        if (thinkingLevel) {
+          session.settingsManager.setDefaultThinkingLevel(thinkingLevel);
+        }
       },
       onAccepted: (accepted) => {
         this.syncFromRuntime(record, { updateTimestamp: false });
@@ -418,6 +450,8 @@ export class SessionRegistry {
             patch: {
               model: record.model,
               thinkingLevel: record.thinkingLevel,
+              availableModels: record.availableModels,
+              modelSettings: record.modelSettings,
             },
           },
           ts: record.updatedAt,
@@ -458,6 +492,39 @@ export class SessionRegistry {
     });
   }
 
+  submitUiResponse(
+    sessionId: string,
+    input: UiResponseRequest,
+    client: AuthSession,
+    connectionId?: string,
+  ): UiResponseResponse {
+    const record = this.getRequired(sessionId);
+    this.touchPresence(sessionId, client, connectionId);
+    const pending = record.pendingUiRequests.get(input.id);
+    if (!pending) {
+      throw new RemoteError("UI request not found", 404);
+    }
+    record.pendingUiRequests.delete(input.id);
+    if (record.activeRun?.pendingUiRequestId === input.id) {
+      record.activeRun.pendingUiRequestId = undefined;
+      record.activeRun.updatedAt = this.now();
+    }
+    pending.resolve(input);
+    return { resolved: true };
+  }
+
+  clearQueue(sessionId: string, client: AuthSession, connectionId?: string): ClearQueueResponse {
+    const record = this.getRequired(sessionId);
+    this.touchPresence(sessionId, client, connectionId);
+    const session = this.requireRuntimeSession(record);
+    const cleared = session.clearQueue();
+    this.syncFromRuntime(record, { updateTimestamp: false });
+    return {
+      steering: [...cleared.steering],
+      followUp: [...cleared.followUp],
+    };
+  }
+
   touchPresence(sessionId: string, client: AuthSession, connectionId?: string): void {
     const record = this.getRequired(sessionId);
     const now = this.now();
@@ -490,6 +557,10 @@ export class SessionRegistry {
 
   async dispose(): Promise<void> {
     for (const record of this.sessions.values()) {
+      for (const [requestId, pending] of record.pendingUiRequests) {
+        record.pendingUiRequests.delete(requestId);
+        pending.resolve({ id: requestId, cancelled: true });
+      }
       record.runtimeSubscription?.();
       await record.runtime.dispose();
     }
@@ -601,6 +672,227 @@ export class SessionRegistry {
         mimeType: "application/octet-stream",
         data: attachment,
       };
+    });
+  }
+
+  private createRemoteUiContext(record: SessionRecord): ExtensionUIContext {
+    const style = (...parts: unknown[]): string => {
+      const last = parts[parts.length - 1];
+      return typeof last === "string" ? last : "";
+    };
+    const theme = {
+      fg: style,
+      bg: style,
+      bold: style,
+      dim: style,
+      italic: style,
+      underline: style,
+      strike: style,
+      stripAnsi: style,
+      link: style,
+      inlineCode: style,
+      blockCode: style,
+      heading: style,
+      quote: style,
+      hr: style,
+      listBullet: style,
+    } as unknown as ExtensionUIContext["theme"];
+
+    return {
+      select: (title, options, opts) =>
+        this.requestUiValue(record, {
+          method: "select",
+          title,
+          options,
+          timeout: opts?.timeout,
+          signal: opts?.signal,
+          defaultValue: undefined,
+          parse: (response) => ("value" in response ? response.value : undefined),
+        }),
+      confirm: (title, message, opts) =>
+        this.requestUiValue(record, {
+          method: "confirm",
+          title,
+          message,
+          timeout: opts?.timeout,
+          signal: opts?.signal,
+          defaultValue: false,
+          parse: (response) => ("confirmed" in response ? response.confirmed : false),
+        }),
+      input: (title, placeholder, opts) =>
+        this.requestUiValue(record, {
+          method: "input",
+          title,
+          placeholder,
+          timeout: opts?.timeout,
+          signal: opts?.signal,
+          defaultValue: undefined,
+          parse: (response) => ("value" in response ? response.value : undefined),
+        }),
+      notify: (message, notifyType) => {
+        this.publishUiEvent(record, {
+          id: randomUUID(),
+          method: "notify",
+          message,
+          notifyType,
+        });
+      },
+      onTerminalInput: () => () => undefined,
+      setStatus: (statusKey, statusText) => {
+        this.publishUiEvent(record, {
+          id: randomUUID(),
+          method: "setStatus",
+          statusKey,
+          ...(statusText === undefined ? {} : { statusText }),
+        });
+      },
+      setWorkingMessage: () => undefined,
+      setHiddenThinkingLabel: () => undefined,
+      setWidget: ((widgetKey: string, content: string[] | undefined, options?: unknown) => {
+        const placementCandidate =
+          typeof options === "object" &&
+          options !== null &&
+          "placement" in options &&
+          (options as { placement?: string }).placement
+            ? (options as { placement?: string }).placement
+            : undefined;
+        const placement =
+          placementCandidate === "aboveEditor" || placementCandidate === "belowEditor"
+            ? placementCandidate
+            : undefined;
+        this.publishUiEvent(record, {
+          id: randomUUID(),
+          method: "setWidget",
+          widgetKey,
+          widgetLines: content,
+          ...(placement ? { widgetPlacement: placement } : {}),
+        });
+      }) as ExtensionUIContext["setWidget"],
+      setFooter: () => undefined,
+      setHeader: () => undefined,
+      setTitle: (title) => {
+        this.publishUiEvent(record, {
+          id: randomUUID(),
+          method: "setTitle",
+          title,
+        });
+      },
+      custom: async () => undefined as never,
+      pasteToEditor: (text) => {
+        this.publishUiEvent(record, {
+          id: randomUUID(),
+          method: "set_editor_text",
+          text,
+        });
+      },
+      setEditorText: (text) => {
+        this.publishUiEvent(record, {
+          id: randomUUID(),
+          method: "set_editor_text",
+          text,
+        });
+      },
+      getEditorText: () => record.draft.text,
+      editor: (title, prefill) =>
+        this.requestUiValue(record, {
+          method: "editor",
+          title,
+          prefill,
+          defaultValue: undefined,
+          parse: (response) => ("value" in response ? response.value : undefined),
+        }),
+      setEditorComponent: () => undefined,
+      theme,
+      getAllThemes: () => [],
+      getTheme: () => undefined,
+      setTheme: () => ({
+        success: false,
+        error: "Theme switching is not supported by pi-remote",
+      }),
+      getToolsExpanded: () => true,
+      setToolsExpanded: () => undefined,
+    };
+  }
+
+  private requestUiValue<T>(
+    record: SessionRecord,
+    input: {
+      method: "select" | "confirm" | "input" | "editor";
+      title: string;
+      defaultValue: T;
+      parse: (response: UiResponseRequest) => T;
+      options?: string[];
+      message?: string;
+      placeholder?: string;
+      prefill?: string;
+      timeout?: number;
+      signal?: AbortSignal;
+    },
+  ): Promise<T> {
+    if (input.signal?.aborted) {
+      return Promise.resolve(input.defaultValue);
+    }
+
+    const id = randomUUID();
+    return new Promise<T>((resolve) => {
+      let done = false;
+      let timeoutHandle: NodeJS.Timeout | undefined;
+
+      const finish = (response: UiResponseRequest): void => {
+        if (done) {
+          return;
+        }
+        done = true;
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+        input.signal?.removeEventListener("abort", onAbort);
+        record.pendingUiRequests.delete(id);
+        if (record.activeRun?.pendingUiRequestId === id) {
+          record.activeRun.pendingUiRequestId = undefined;
+          record.activeRun.updatedAt = this.now();
+        }
+        resolve(input.parse(response));
+      };
+
+      const onAbort = (): void => {
+        finish({ id, cancelled: true });
+      };
+
+      input.signal?.addEventListener("abort", onAbort, { once: true });
+      if (input.timeout && input.timeout > 0) {
+        timeoutHandle = setTimeout(() => {
+          finish({ id, cancelled: true });
+        }, input.timeout);
+      }
+
+      record.pendingUiRequests.set(id, {
+        resolve: finish,
+      });
+      if (record.activeRun) {
+        record.activeRun.pendingUiRequestId = id;
+        record.activeRun.updatedAt = this.now();
+      }
+
+      this.publishUiEvent(record, {
+        id,
+        method: input.method,
+        title: input.title,
+        ...(input.options ? { options: input.options } : {}),
+        ...(input.message ? { message: input.message } : {}),
+        ...(input.placeholder ? { placeholder: input.placeholder } : {}),
+        ...(input.prefill ? { prefill: input.prefill } : {}),
+        ...(input.timeout ? { timeout: input.timeout } : {}),
+      } as ExtensionUiRequestEventPayload);
+    });
+  }
+
+  private publishUiEvent(record: SessionRecord, payload: ExtensionUiRequestEventPayload): void {
+    this.streams.append(sessionEventsStreamId(record.sessionId), {
+      sessionId: record.sessionId,
+      kind: "extension_ui_request",
+      payload,
+      ts: this.now(),
     });
   }
 
@@ -787,6 +1079,13 @@ export class SessionRegistry {
     }
     record.thinkingLevel = session.thinkingLevel;
     record.activeTools = [...session.getActiveToolNames()];
+    record.availableModels = session.modelRegistry.getAvailable().map((model) => ({ ...model }));
+    record.modelSettings = {
+      defaultProvider: session.settingsManager.getDefaultProvider() ?? null,
+      defaultModel: session.settingsManager.getDefaultModel() ?? null,
+      defaultThinkingLevel: session.settingsManager.getDefaultThinkingLevel() ?? null,
+      enabledModels: session.settingsManager.getEnabledModels() ?? null,
+    };
     record.transcript = [...session.messages];
     record.streamingState = session.isStreaming ? "streaming" : "idle";
     record.pendingToolCalls = [...session.state.pendingToolCalls.values()];
@@ -905,6 +1204,15 @@ export class SessionRegistry {
       model: record.model,
       thinkingLevel: record.thinkingLevel,
       activeTools: [...record.activeTools],
+      availableModels: record.availableModels.map((model) => ({ ...model })),
+      modelSettings: {
+        defaultProvider: record.modelSettings.defaultProvider,
+        defaultModel: record.modelSettings.defaultModel,
+        defaultThinkingLevel: record.modelSettings.defaultThinkingLevel,
+        enabledModels: record.modelSettings.enabledModels
+          ? [...record.modelSettings.enabledModels]
+          : null,
+      },
       draft: {
         text: record.draft.text,
         attachments: [...record.draft.attachments],

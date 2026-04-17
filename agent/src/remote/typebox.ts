@@ -1,7 +1,10 @@
 import type { TSchema, Static } from "@sinclair/typebox";
 import type { TypeCheck } from "@sinclair/typebox/compiler";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
-import type { Context } from "hono";
+import type { Context, TypedResponse } from "hono";
+
+type JsonResponseStatus = 200 | 201 | 202 | 400 | 401 | 403 | 404 | 409 | 500;
+type JsonResponseHeaders = Record<string, string | string[]>;
 
 const validatorCache = new WeakMap<TSchema, TypeCheck<TSchema>>();
 
@@ -34,21 +37,24 @@ export function jsonWithSchema<T extends TSchema>(
   c: Context,
   schema: T,
   value: Static<T>,
-  status?: 200 | 201 | 202 | 400 | 401 | 403 | 404 | 409 | 500,
-  headers?: HeadersInit,
+): Response & TypedResponse<Static<T>, 200, "json">;
+export function jsonWithSchema<T extends TSchema, TStatus extends JsonResponseStatus>(
+  c: Context,
+  schema: T,
+  value: Static<T>,
+  status: TStatus,
+  headers?: JsonResponseHeaders,
+): Response & TypedResponse<Static<T>, TStatus, "json">;
+export function jsonWithSchema<T extends TSchema>(
+  c: Context,
+  schema: T,
+  value: Static<T>,
+  status?: JsonResponseStatus,
+  headers?: JsonResponseHeaders,
 ): Response {
   assertType(schema, value);
-  if (headers) {
-    return new Response(JSON.stringify(value), {
-      status: status ?? 200,
-      headers: {
-        "content-type": "application/json",
-        ...headers,
-      },
-    });
+  if (status === undefined) {
+    return c.json(value, 200, headers);
   }
-  if (status) {
-    return c.json(value, status);
-  }
-  return c.json(value);
+  return c.json(value, status, headers);
 }

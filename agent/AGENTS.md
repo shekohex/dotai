@@ -219,3 +219,12 @@ Uses `patch-package` to maintain patches on `@mariozechner/pi-coding-agent`. Aft
 1. Reapply patches: `npm run patch:deps`
 2. Test: `npm run test:tool-preview && npm run test:harness`
 3. Rebuild: `npm run build`
+
+## External Repos.
+
+Load the `librarian` skill and then you an search the following repos:
+
+- `badlogic/pi-mono`: whenever you need to get the source code for the pi coding agent and any other package releated to pi.
+- `durable-streams/durable-streams`: when you need to learn anything about `durable-streams`
+- `honojs/hono`: anything hono http server, client or middleware releated.
+- `anomalyco/opencode`: when the user mention opencode, or any opencode releated things.

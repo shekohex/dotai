@@ -823,6 +823,130 @@ Run the existing local TUI against the remote daemon with minimal UI changes.
 - no local agent runtime is spawned
 - session updates are driven entirely from the server
 
+### Milestone 3.1: Discovery And Settings Sync Hardening
+
+#### Goal
+
+Make model discovery and model-related settings server-authoritative so remote clients reflect real runtime capabilities.
+
+#### Scope
+
+- include server `availableModels` in session bootstrap/snapshots
+- include server model settings metadata (`defaultProvider`, `defaultModel`, `defaultThinkingLevel`, `enabledModels`)
+- remove optimistic client model capability fallback
+- keep local client settings for UI concerns while syncing model settings from server state
+- add refresh/sync path for catalog updates on reload/switch and model state patches
+- seed in-memory faux runtime responses so remote smoke tests are deterministic
+
+#### Deliverables
+
+- `SessionSnapshot` includes `availableModels` and `modelSettings`
+- model update patches can carry refreshed discovery/settings metadata
+- remote adapter model selectors and capability checks use server-provided catalog
+- remote adapter settings getters for model defaults/enabled filters mirror server state
+- in-memory faux runtime starts with seeded responses
+
+#### Verification
+
+- remote model selector only shows server-available models
+- thinking controls reflect real model reasoning capability
+- server model settings changes propagate to attached clients
+- remote smoke prompt no longer fails immediately with empty faux response queue
+
+### Milestone 3.2: Extension Host Parity And Runtime-CWD Unification
+
+#### Goal
+
+Make extension behavior consistent between local and remote runs by preserving one `ExtensionAPI` contract, one authoritative `cwd`, and explicit extension host placement (server-bound vs UI-only client-bound).
+
+#### ExtensionAPI Construction (Ground Truth)
+
+The extension API already has a stable construction/injection path in Pi:
+
+- extension factories are loaded through `createAgentSessionServices(...resourceLoaderOptions.extensionFactories...)` in `/Users/shady/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/core/agent-session-services.ts:129-155`
+- `AgentSession` builds the extension runtime from loaded extensions in `/Users/shady/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/core/agent-session.ts:2331-2378`
+- `AgentSession` injects runtime actions/context into `ExtensionRunner.bindCore(...)` in `/Users/shady/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/core/agent-session.ts:2146-2268`
+- interactive mode injects concrete UI context via `session.bindExtensions({ uiContext, ... })` in `/Users/shady/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/interactive/interactive-mode.ts:1431-1458`
+- extension context `cwd` is provided by the extension runner context object in `/Users/shady/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/core/extensions/runner.ts:538-552`
+
+This confirms we should keep the same extension contract and wire remote mode through that contract instead of inventing a parallel API.
+
+#### Scope
+
+- keep one `cwd` abstraction: in remote mode, `cwd` means authoritative runtime cwd on the server host
+- extend remote UI request bridge so server-hosted extensions can drive UI primitives (not only select/input/confirm)
+- explicitly classify bundled extensions into `server-bound` and `ui-only` host placement
+- keep extension semantics identical across local and remote mode (same `ExtensionAPI`, same event model, same command model)
+- ensure faux runtime path uses the same extension loading model as bundled runtime for parity testing
+
+#### Deliverables
+
+- `SessionSnapshot` and state patch model include authoritative runtime `cwd`
+- remote adapter session manager is initialized from server-provided `cwd`, not local process cwd
+- remote bridge supports the UI primitives required by server-hosted bundled extensions
+- extension host policy document (or code map) for bundled extensions: `server-bound | ui-only`
+- faux and bundled runtime factories both support consistent extension factory injection
+
+#### Bundled Extension Host Flags (Initial Scan)
+
+Server-bound:
+
+- `model-family-system-prompt`
+- `bundled-resources`
+- `coreui` (must run against server runtime state/cwd; UI effects forwarded remotely)
+- `litellm`
+- `openusage`
+- `patch`
+- `websearch`
+- `modes`
+- `commit`
+- `review`
+- `agents-md`
+- `compaction`
+- `handoff`
+- `debug-provider-request`
+- `session-query`
+- `context`
+- `session-breakdown`
+- `files`
+- `executor`
+- `subagent`
+- `prompt-stash`
+
+UI-only (client-bound):
+
+- `mermaid`
+- `terminal-notify`
+
+Evidence driving this split includes local fs/process/git/exec and UI coupling in:
+
+- `src/extensions/coreui/footer.ts:21-33`
+- `src/extensions/coreui/project-info.ts:24-70`
+- `src/extensions/files.ts:388-460`
+- `src/extensions/review/git.ts:7-15`
+- `src/extensions/patch.ts:11-12`
+- `src/extensions/terminal-notify.ts:19`
+- `src/extensions/mermaid.ts:655-676`
+- `src/extensions/prompt-stash.ts:2-4`
+
+#### Checklist
+
+- [ ] Add authoritative `cwd` to session snapshot schema and runtime state patches
+- [ ] Populate `cwd` from server runtime/session manager on snapshot creation and updates
+- [ ] Remove remote client initialization dependency on local `process.cwd()` for runtime identity
+- [ ] Upgrade remote UI request bridge to cover required extension UI operations used by server-bound bundled extensions
+- [ ] Add extension host policy mapping (bundled extension id -> `server-bound | ui-only`)
+- [ ] Ensure bundled and faux runtime factories accept/use a consistent extension factory set
+- [ ] Add adapter tests proving cwd/rendered footer path reflects server host workspace
+- [ ] Add integration tests proving server-bound extensions remain functional in remote mode
+
+#### Verification
+
+- start remote client from `bar` attached to server runtime in `foo`; footer/project context resolves to `foo`
+- run server-bound extension flows (`files`, `review`, `patch`, `context`) and confirm server-host behavior
+- run UI-only extension flows (`terminal-notify`, `mermaid`) and confirm client-local behavior
+- verify extension command availability/listing remains stable across local and remote modes
+
 ### Milestone 4: Multi-Session Orchestration
 
 #### Goal

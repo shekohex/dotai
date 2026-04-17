@@ -10,11 +10,19 @@ import {
   AuthChallengeResponseSchema,
   AuthVerifyRequestSchema,
   AuthVerifyResponseSchema,
+  CommandAcceptedResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
+  DraftUpdateRequestSchema,
   ErrorResponseSchema,
+  FollowUpCommandRequestSchema,
+  InterruptCommandRequestSchema,
+  ModelUpdateRequestSchema,
+  PromptCommandRequestSchema,
   SessionParamsSchema,
+  SessionNameUpdateRequestSchema,
   SessionSnapshotSchema,
+  SteerCommandRequestSchema,
   StreamReadQuerySchema,
   StreamReadResponseSchema,
 } from "./schemas.js";
@@ -217,6 +225,27 @@ function streamResponseDescription() {
     },
     204: {
       description: "No new events available",
+    },
+  };
+}
+
+function commandAcceptedResponses() {
+  return {
+    202: {
+      description: "Command accepted",
+      content: {
+        "application/json": {
+          schema: CommandAcceptedResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: "Session not found",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
     },
   };
 }
@@ -451,6 +480,328 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies): Hono<Rem
           connectionId,
         );
         return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/prompt",
+    describeRoute({
+      tags: ["command"],
+      operationId: "promptSession",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: PromptCommandRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", PromptCommandRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.prompt(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/steer",
+    describeRoute({
+      tags: ["command"],
+      operationId: "steerSession",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: SteerCommandRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", SteerCommandRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.steer(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/follow-up",
+    describeRoute({
+      tags: ["command"],
+      operationId: "followUpSession",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: FollowUpCommandRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", FollowUpCommandRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.followUp(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/interrupt",
+    describeRoute({
+      tags: ["command"],
+      operationId: "interruptSession",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: InterruptCommandRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", InterruptCommandRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.interrupt(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/draft",
+    describeRoute({
+      tags: ["command"],
+      operationId: "updateSessionDraft",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: DraftUpdateRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", DraftUpdateRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.updateDraft(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/model",
+    describeRoute({
+      tags: ["command"],
+      operationId: "updateSessionModel",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: ModelUpdateRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", ModelUpdateRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.updateModel(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
+          "x-pi-connection-id": connectionId,
+        });
+      } catch (error) {
+        return authError(c, error);
+      }
+    },
+  );
+
+  v1.post(
+    "/sessions/:sessionId/session-name",
+    describeRoute({
+      tags: ["command"],
+      operationId: "updateSessionName",
+      parameters: [
+        {
+          in: "path",
+          name: "sessionId",
+          schema: { type: "string" },
+          required: true,
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: SessionNameUpdateRequestSchema,
+          },
+        },
+      },
+      responses: commandAcceptedResponses(),
+    }),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", SessionNameUpdateRequestSchema),
+    async (c) => {
+      try {
+        const connectionId = getConnectionId(c);
+        const { sessionId } = c.req.valid("param");
+        const payload = c.req.valid("json");
+        const accepted = await dependencies.sessions.updateSessionName(
+          sessionId,
+          payload,
+          c.get("auth"),
+          connectionId,
+        );
+        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
           "x-pi-connection-id": connectionId,
         });
       } catch (error) {

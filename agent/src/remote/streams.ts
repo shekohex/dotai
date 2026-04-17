@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import { RemoteError } from "./errors.js";
 import type { StreamEventEnvelope } from "./schemas.js";
 
+type StreamEventKind = StreamEventEnvelope["kind"];
+type StreamEventEnvelopeByKind<TKind extends StreamEventKind> = Extract<
+  StreamEventEnvelope,
+  { kind: TKind }
+>;
+
 export interface StreamReadResult {
   events: StreamEventEnvelope[];
   nextOffset: string;
@@ -28,10 +34,10 @@ export interface StreamSubscription {
   unsubscribe: () => void;
 }
 
-interface AppendEventInput {
-  sessionId: string | null;
-  kind: string;
-  payload: unknown;
+interface AppendEventInput<TKind extends StreamEventKind = StreamEventKind> {
+  sessionId: StreamEventEnvelopeByKind<TKind>["sessionId"];
+  kind: TKind;
+  payload: StreamEventEnvelopeByKind<TKind>["payload"];
   ts?: number;
 }
 
@@ -79,17 +85,20 @@ export class InMemoryDurableStreamStore {
     });
   }
 
-  append(streamId: string, input: AppendEventInput): StreamEventEnvelope {
+  append<TKind extends StreamEventKind>(
+    streamId: string,
+    input: AppendEventInput<TKind>,
+  ): StreamEventEnvelopeByKind<TKind> {
     const stream = this.getOrCreate(streamId);
     const streamOffset = formatOffset(stream.events.length + 1);
-    const event: StreamEventEnvelope = {
+    const event: StreamEventEnvelopeByKind<TKind> = {
       eventId: randomUUID(),
       sessionId: input.sessionId,
       streamOffset,
       ts: input.ts ?? Date.now(),
       kind: input.kind,
       payload: input.payload,
-    };
+    } as StreamEventEnvelopeByKind<TKind>;
     stream.events.push(event);
     for (const listener of stream.listeners) {
       listener(event);

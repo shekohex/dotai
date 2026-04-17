@@ -19,12 +19,14 @@ export interface RemoteRuntimeFactory {
 export interface InMemoryPiRuntimeFactoryOptions {
   cwd?: string;
   agentDir?: string;
+  fauxApiKey?: string | null;
 }
 
 export class InMemoryPiRuntimeFactory implements RemoteRuntimeFactory {
   private readonly cwdPromise: Promise<string>;
   private readonly agentDirPromise: Promise<string>;
   private readonly fauxRegistration: FauxProviderRegistration;
+  private readonly fauxApiKey: string | null;
 
   constructor(options: InMemoryPiRuntimeFactoryOptions = {}) {
     this.cwdPromise = options.cwd
@@ -38,6 +40,8 @@ export class InMemoryPiRuntimeFactory implements RemoteRuntimeFactory {
       api: "responses",
       models: [{ id: "pi-remote-faux-1", name: "Pi Remote Faux 1" }],
     });
+    this.fauxApiKey =
+      options.fauxApiKey === undefined ? "pi-remote-faux-local-key" : options.fauxApiKey;
   }
 
   async create(): Promise<AgentSessionRuntime> {
@@ -49,6 +53,9 @@ export class InMemoryPiRuntimeFactory implements RemoteRuntimeFactory {
       sessionStartEvent,
     }) => {
       const services = await createAgentSessionServices({ cwd, agentDir });
+      if (this.fauxApiKey !== null) {
+        services.authStorage.setRuntimeApiKey(model.provider, this.fauxApiKey);
+      }
       const created = await createAgentSessionFromServices({
         services,
         sessionManager,

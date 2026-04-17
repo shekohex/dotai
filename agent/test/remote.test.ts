@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { AuthService, createChallengePayload } from "../src/remote/auth.ts";
 import { createRemoteApp } from "../src/remote/app.ts";
-import type { RemoteRuntimeFactory } from "../src/remote/runtime-factory.ts";
+import {
+  InMemoryPiRuntimeFactory,
+  type RemoteRuntimeFactory,
+} from "../src/remote/runtime-factory.ts";
+import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
-import { InMemoryDurableStreamStore } from "../src/remote/streams.ts";
+import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
+import { assertType } from "../src/remote/typebox.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 
@@ -39,6 +44,217 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
   }
 
   async dispose(): Promise<void> {}
+}
+
+class RecordingSession {
+  model = { provider: "pi-remote-faux", id: "pi-remote-faux-1" };
+  thinkingLevel = "medium";
+  isStreaming = false;
+  isCompacting = false;
+  isRetrying = false;
+  pendingMessageCount = 0;
+  messages: unknown[] = [];
+  state = {
+    pendingToolCalls: new Set<string>(),
+    errorMessage: undefined as string | undefined,
+  };
+  modelRegistry = {
+    find: () => this.model,
+    getApiKeyAndHeaders: async () => ({
+      ok: true as const,
+      apiKey: "test-key",
+      headers: undefined,
+    }),
+    isUsingOAuth: () => false,
+  };
+  promptCalls: Array<{ text: string; options?: Record<string, unknown> }> = [];
+  promptError: Error | undefined;
+  steerCalls: Array<{
+    text: string;
+    images?: Array<{ type: string; data: string; mimeType: string }>;
+  }> = [];
+  followUpCalls: Array<{
+    text: string;
+    images?: Array<{ type: string; data: string; mimeType: string }>;
+  }> = [];
+  queuedSteering: string[] = [];
+  queuedFollowUp: string[] = [];
+  clearQueueCalls = 0;
+  bindExtensionsError: Error | undefined;
+  setModelError: Error | undefined;
+  extensionRunner:
+    | {
+        getCommand: (name: string) => unknown;
+      }
+    | undefined;
+
+  getActiveToolNames(): string[] {
+    return ["read", "bash", "edit", "write"];
+  }
+
+  async bindExtensions(): Promise<void> {
+    if (this.bindExtensionsError) {
+      throw this.bindExtensionsError;
+    }
+  }
+
+  subscribe(): () => void {
+    return () => undefined;
+  }
+
+  async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    if (this.promptError) {
+      throw this.promptError;
+    }
+    this.promptCalls.push({ text, options });
+    if (options?.streamingBehavior === "followUp") {
+      this.queuedFollowUp.push(text);
+      this.pendingMessageCount += 1;
+    }
+  }
+
+  async steer(
+    text: string,
+    images?: Array<{ type: string; data: string; mimeType: string }>,
+  ): Promise<void> {
+    this.steerCalls.push({ text, images });
+    this.queuedSteering.push(text);
+    this.pendingMessageCount += 1;
+  }
+
+  async followUp(
+    text: string,
+    images?: Array<{ type: string; data: string; mimeType: string }>,
+  ): Promise<void> {
+    this.followUpCalls.push({ text, images });
+    this.queuedFollowUp.push(text);
+    this.pendingMessageCount += 1;
+  }
+
+  clearQueue(): { steering: string[]; followUp: string[] } {
+    this.clearQueueCalls += 1;
+    const steering = [...this.queuedSteering];
+    const followUp = [...this.queuedFollowUp];
+    this.queuedSteering = [];
+    this.queuedFollowUp = [];
+    this.pendingMessageCount = 0;
+    return {
+      steering,
+      followUp,
+    };
+  }
+
+  async abort(): Promise<void> {}
+
+  async setModel(model: { provider: string; id: string }): Promise<void> {
+    if (this.setModelError) {
+      throw this.setModelError;
+    }
+    this.model = model;
+  }
+
+  setThinkingLevel(level: string): void {
+    this.thinkingLevel = level;
+  }
+
+  setSessionName(): void {}
+}
+
+class RacyPromptSession extends RecordingSession {
+  private promptInFlight = false;
+  private readonly startupTurns: number;
+
+  constructor(startupTurns = 80) {
+    super();
+    this.startupTurns = startupTurns;
+  }
+
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    this.promptCalls.push({ text, options });
+
+    if (this.isStreaming) {
+      if (options?.streamingBehavior !== "followUp") {
+        throw new Error("already processing");
+      }
+      this.pendingMessageCount += 1;
+      return;
+    }
+
+    if (this.promptInFlight) {
+      throw new Error("already processing");
+    }
+
+    this.promptInFlight = true;
+    for (let turn = 0; turn < this.startupTurns; turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    this.isStreaming = true;
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    this.isStreaming = false;
+    this.pendingMessageCount = 0;
+    this.promptInFlight = false;
+  }
+}
+
+class BlockingPromptSession extends RecordingSession {
+  private releasePromptStart: (() => void) | undefined;
+  abortCalls = 0;
+  dispatchOrder: string[] = [];
+
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    this.promptCalls.push({ text, options });
+    this.dispatchOrder.push("prompt");
+    await new Promise<void>((resolve) => {
+      this.releasePromptStart = resolve;
+    });
+  }
+
+  releasePrompt(): void {
+    this.releasePromptStart?.();
+    this.releasePromptStart = undefined;
+  }
+
+  override async abort(): Promise<void> {
+    this.dispatchOrder.push("interrupt");
+    this.abortCalls += 1;
+  }
+
+  override async steer(
+    text: string,
+    images?: Array<{ type: string; data: string; mimeType: string }>,
+  ): Promise<void> {
+    this.dispatchOrder.push("steer");
+    await super.steer(text, images);
+  }
+}
+
+class RecordingRuntimeFactory implements RemoteRuntimeFactory {
+  readonly session: RecordingSession;
+  runtimeDisposeCalls = 0;
+
+  constructor(session: RecordingSession) {
+    this.session = session;
+  }
+
+  async create() {
+    return {
+      session: this.session,
+      dispose: async () => {
+        this.runtimeDisposeCalls += 1;
+      },
+    } as any;
+  }
+
+  async dispose(): Promise<void> {}
+}
+
+function testAuthSession() {
+  return {
+    token: "token-dev",
+    clientId: "dev",
+    keyId: "dev",
+    expiresAt: Date.now() + 60_000,
+  };
 }
 
 async function authenticate(app: ReturnType<typeof createRemoteApp>["app"], privateKey: string) {
@@ -86,6 +302,83 @@ async function authenticate(app: ReturnType<typeof createRemoteApp>["app"], priv
   assert.equal(verifyResponse.status, 200);
   const verified = (await verifyResponse.json()) as { token: string };
   return verified.token;
+}
+
+async function postSessionCommand(
+  app: ReturnType<typeof createRemoteApp>["app"],
+  path: string,
+  token: string,
+  body: unknown,
+) {
+  const response = await app.request(path, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return response;
+}
+
+async function readSessionEvents(
+  app: ReturnType<typeof createRemoteApp>["app"],
+  token: string,
+  sessionId: string,
+  offset: string,
+  timeoutMs = 1_000,
+): Promise<{
+  events: Array<{ kind: string; payload: any; streamOffset: string }>;
+  nextOffset: string;
+}> {
+  const response = await app.request(
+    `/v1/streams/sessions/${sessionId}/events?live=long-poll&offset=${encodeURIComponent(offset)}&timeoutMs=${timeoutMs}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+    },
+  );
+
+  if (response.status === 204) {
+    return {
+      events: [],
+      nextOffset: response.headers.get("Stream-Next-Offset") ?? offset,
+    };
+  }
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    events: Array<{ kind: string; payload: any; streamOffset: string }>;
+    nextOffset: string;
+  };
+  return {
+    events: body.events,
+    nextOffset: body.nextOffset,
+  };
+}
+
+async function waitForSessionEvent(
+  app: ReturnType<typeof createRemoteApp>["app"],
+  token: string,
+  sessionId: string,
+  offset: string,
+  predicate: (event: { kind: string; payload: any; streamOffset: string }) => boolean,
+): Promise<{
+  event: { kind: string; payload: any; streamOffset: string };
+  nextOffset: string;
+}> {
+  let nextOffset = offset;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const read = await readSessionEvents(app, token, sessionId, nextOffset, 1_000);
+    nextOffset = read.nextOffset;
+    const matched = read.events.find(predicate);
+    if (matched) {
+      return {
+        event: matched,
+        nextOffset,
+      };
+    }
+  }
+  throw new Error("Timed out waiting for session event");
 }
 
 timedTest("milestone 1 flow works end to end", async () => {
@@ -203,6 +496,13 @@ timedTest("milestone 1 flow works end to end", async () => {
     assert.ok(openApi.paths["/v1/app/snapshot"]);
     assert.ok(openApi.paths["/v1/sessions"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/snapshot"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/prompt"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/steer"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/follow-up"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/interrupt"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/draft"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/model"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/session-name"]);
     const appStreamResponses = (openApi.paths["/v1/streams/app-events"] as any)?.get?.responses;
     assert.ok(appStreamResponses?.["200"]?.content?.["application/json"]);
     assert.ok(appStreamResponses?.["200"]?.content?.["text/event-stream"]);
@@ -258,8 +558,8 @@ timedTest("readAndSubscribe includes replay and post-subscribe events", () => {
 
   const first = streams.append(streamId, {
     sessionId: null,
-    kind: "first",
-    payload: { sequence: 1 },
+    kind: "server_notice",
+    payload: { message: "first" },
   });
 
   const seen: string[] = [];
@@ -269,14 +569,14 @@ timedTest("readAndSubscribe includes replay and post-subscribe events", () => {
 
   const second = streams.append(streamId, {
     sessionId: null,
-    kind: "second",
-    payload: { sequence: 2 },
+    kind: "auth_notice",
+    payload: { message: "second" },
   });
 
   assert.equal(subscription.read.events.length, 0);
   assert.equal(subscription.read.nextOffset, first.streamOffset);
-  assert.deepEqual(seen, ["second"]);
-  assert.equal(second.kind, "second");
+  assert.deepEqual(seen, ["auth_notice"]);
+  assert.equal(second.kind, "auth_notice");
   subscription.unsubscribe();
 });
 
@@ -834,6 +1134,659 @@ timedTest("session registry prunes stale presence and supports detach", async ()
   }
 });
 
+timedTest("accepted command failure persists error state in snapshots", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.promptError = new Error("missing API key");
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const accepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "run",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(accepted.sequence, 1);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const firstSnapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(firstSnapshot.status, "error");
+    assert.equal(firstSnapshot.errorMessage, "missing API key");
+
+    const secondSnapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(secondSnapshot.status, "error");
+    assert.equal(secondSnapshot.errorMessage, "missing API key");
+
+    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
+    assert.ok(events.some((event) => event.kind === "command_accepted"));
+    assert.ok(events.some((event) => event.kind === "extension_error"));
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("snapshot and summary polling keeps updatedAt stable", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  let now = 0;
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory: new RecordingRuntimeFactory(session),
+    now: () => {
+      now += 1;
+      return now;
+    },
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const initialSnapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    const initialUpdatedAt = initialSnapshot.updatedAt;
+
+    const polledSnapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(polledSnapshot.updatedAt, initialUpdatedAt);
+
+    const summariesA = registry.listSessionSummaries();
+    const summariesB = registry.listSessionSummaries();
+    assert.equal(summariesA[0]?.updatedAt, initialUpdatedAt);
+    assert.equal(summariesB[0]?.updatedAt, initialUpdatedAt);
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("stream read schema rejects unknown kinds and malformed payloads", () => {
+  assert.throws(
+    () =>
+      assertType(StreamReadResponseSchema, {
+        streamId: "app-events",
+        fromOffset: "0000000000000000_0000000000000000",
+        nextOffset: "0000000000000000_0000000000000001",
+        upToDate: true,
+        streamClosed: false,
+        events: [
+          {
+            eventId: "evt-1",
+            sessionId: null,
+            streamOffset: "0000000000000000_0000000000000001",
+            ts: Date.now(),
+            kind: "unknown_kind",
+            payload: {},
+          },
+        ],
+      }),
+    /Schema validation failed/,
+  );
+
+  assert.throws(
+    () =>
+      assertType(StreamReadResponseSchema, {
+        streamId: "app-events",
+        fromOffset: "0000000000000000_0000000000000000",
+        nextOffset: "0000000000000000_0000000000000001",
+        upToDate: true,
+        streamClosed: false,
+        events: [
+          {
+            eventId: "evt-1",
+            sessionId: null,
+            streamOffset: "0000000000000000_0000000000000001",
+            ts: Date.now(),
+            kind: "session_created",
+            payload: {
+              sessionId: "sess-1",
+            },
+          },
+        ],
+      }),
+    /Schema validation failed/,
+  );
+});
+
+timedTest("failed model update does not emit command_accepted or consume sequence", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.modelRegistry = {
+    find: () => ({ provider: "openai", id: "gpt-4o" }),
+  };
+  session.setModelError = new Error("No API key for openai/gpt-4o");
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const beforeOffset = streams.getHeadOffset(sessionEventsStreamId(created.sessionId));
+
+    await assert.rejects(
+      registry.updateModel(
+        created.sessionId,
+        {
+          model: "openai/gpt-4o",
+        },
+        auth,
+        "conn-a",
+      ),
+      /No API key for openai\/gpt-4o/,
+    );
+
+    const replay = streams.read(sessionEventsStreamId(created.sessionId), beforeOffset);
+    assert.ok(replay.events.every((event) => event.kind !== "command_accepted"));
+
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(snapshot.queue.nextSequence, 1);
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("invalid thinkingLevel is rejected before command acceptance", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const beforeOffset = streams.getHeadOffset(sessionEventsStreamId(created.sessionId));
+
+    await assert.rejects(
+      registry.updateModel(
+        created.sessionId,
+        {
+          model: "pi-remote-faux/pi-remote-faux-1",
+          thinkingLevel: "ultra",
+        },
+        auth,
+        "conn-a",
+      ),
+      /Invalid thinkingLevel/,
+    );
+
+    const replay = streams.read(sessionEventsStreamId(created.sessionId), beforeOffset);
+    assert.ok(replay.events.every((event) => event.kind !== "command_accepted"));
+
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(snapshot.queue.nextSequence, 1);
+    assert.equal(snapshot.thinkingLevel, "medium");
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("prompt preflight rejects missing auth before command acceptance", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.modelRegistry = {
+    find: () => session.model,
+    getApiKeyAndHeaders: async () => ({
+      ok: true as const,
+      apiKey: undefined,
+      headers: undefined,
+    }),
+    isUsingOAuth: () => false,
+  };
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const beforeOffset = streams.getHeadOffset(sessionEventsStreamId(created.sessionId));
+
+    await assert.rejects(
+      registry.prompt(
+        created.sessionId,
+        {
+          text: "prompt",
+        },
+        auth,
+        "conn-a",
+      ),
+      /No API key found for pi-remote-faux/,
+    );
+
+    const replay = streams.read(sessionEventsStreamId(created.sessionId), beforeOffset);
+    assert.ok(replay.events.every((event) => event.kind !== "command_accepted"));
+    assert.ok(replay.events.every((event) => event.kind !== "extension_error"));
+
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(snapshot.queue.nextSequence, 1);
+    assert.equal(session.promptCalls.length, 0);
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("prompt skips preflight when already streaming and queues follow-up", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.isStreaming = true;
+  session.modelRegistry = {
+    find: () => session.model,
+    getApiKeyAndHeaders: async () => ({
+      ok: false as const,
+      error: "transient auth failure",
+    }),
+    isUsingOAuth: () => false,
+  };
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const accepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "queued while streaming",
+      },
+      auth,
+      "conn-a",
+    );
+
+    assert.equal(accepted.sequence, 1);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(session.promptCalls.length, 1);
+    assert.equal(session.promptCalls[0]?.text, "queued while streaming");
+    assert.equal(session.promptCalls[0]?.options?.streamingBehavior, "followUp");
+
+    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
+    assert.ok(events.some((event) => event.kind === "command_accepted"));
+    assert.ok(events.every((event) => event.kind !== "extension_error"));
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("registered slash commands bypass prompt preflight", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.modelRegistry = {
+    find: () => session.model,
+    getApiKeyAndHeaders: async () => ({
+      ok: true as const,
+      apiKey: undefined,
+      headers: undefined,
+    }),
+    isUsingOAuth: () => false,
+  };
+  session.extensionRunner = {
+    getCommand: (name: string) => (name === "login" ? { name } : undefined),
+  };
+
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const accepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "/login openai",
+      },
+      auth,
+      "conn-a",
+    );
+
+    assert.equal(accepted.sequence, 1);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(session.promptCalls.length, 1);
+    assert.equal(session.promptCalls[0]?.text, "/login openai");
+
+    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
+    assert.ok(events.some((event) => event.kind === "command_accepted"));
+    assert.ok(events.every((event) => event.kind !== "extension_error"));
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("runtime dispatch serializes prompt start ordering", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RacyPromptSession(96);
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+
+    const [first, second] = await Promise.all([
+      registry.prompt(
+        created.sessionId,
+        {
+          text: "first",
+        },
+        auth,
+        "conn-a",
+      ),
+      registry.prompt(
+        created.sessionId,
+        {
+          text: "second",
+        },
+        auth,
+        "conn-a",
+      ),
+    ]);
+
+    assert.equal(first.sequence, 1);
+    assert.equal(second.sequence, 2);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(session.promptCalls.length, 2);
+    assert.equal(session.promptCalls[0]?.text, "first");
+    assert.equal(session.promptCalls[1]?.text, "second");
+    assert.equal(session.promptCalls[1]?.options?.streamingBehavior, "followUp");
+
+    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
+    assert.ok(events.filter((event) => event.kind === "command_accepted").length >= 2);
+    assert.ok(events.every((event) => event.kind !== "extension_error"));
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("interrupt stays ordered behind queued commands during prompt startup", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new BlockingPromptSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+
+    const promptAccepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "long startup",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(promptAccepted.sequence, 1);
+
+    const steerAccepted = await registry.steer(
+      created.sessionId,
+      {
+        text: "queued steer",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(steerAccepted.sequence, 2);
+
+    const interruptAccepted = await registry.interrupt(created.sessionId, {}, auth, "conn-a");
+    assert.equal(interruptAccepted.sequence, 3);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    assert.equal(session.steerCalls.length, 0);
+    assert.equal(session.abortCalls, 0);
+
+    session.releasePrompt();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+
+    assert.equal(session.steerCalls.length, 1);
+    assert.equal(session.abortCalls, 1);
+    assert.deepEqual(session.dispatchOrder, ["prompt", "steer", "interrupt"]);
+  } finally {
+    session.releasePrompt();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await registry.dispose();
+  }
+});
+
+timedTest("snapshot queue depth includes accepted-but-undispatched commands", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new BlockingPromptSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+
+    const promptAccepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "long startup",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(promptAccepted.sequence, 1);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const steerAccepted = await registry.steer(
+      created.sessionId,
+      {
+        text: "queued steer",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(steerAccepted.sequence, 2);
+
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    const headOffset = streams.getHeadOffset(sessionEventsStreamId(created.sessionId));
+
+    assert.equal(snapshot.lastSessionStreamOffset, headOffset);
+    assert.ok(snapshot.queue.depth >= 1);
+  } finally {
+    session.releasePrompt();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await registry.dispose();
+  }
+});
+
+timedTest("interrupt clears queued steering and follow-up before aborting", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.isStreaming = true;
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+
+    const steerAccepted = await registry.steer(
+      created.sessionId,
+      {
+        text: "queued steer",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(steerAccepted.sequence, 1);
+
+    const followUpAccepted = await registry.followUp(
+      created.sessionId,
+      {
+        text: "queued follow-up",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(followUpAccepted.sequence, 2);
+
+    const interruptAccepted = await registry.interrupt(created.sessionId, {}, auth, "conn-a");
+    assert.equal(interruptAccepted.sequence, 3);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(session.clearQueueCalls, 1);
+    assert.deepEqual(session.queuedSteering, []);
+    assert.deepEqual(session.queuedFollowUp, []);
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("prompt, steer, and follow-up forward attachments", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+    const attachments = ["data:image/png;base64,AAAA", "BBBB"];
+
+    const promptAccepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "prompt",
+        attachments,
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(promptAccepted.sequence, 1);
+
+    const steerAccepted = await registry.steer(
+      created.sessionId,
+      {
+        text: "steer",
+        attachments,
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(steerAccepted.sequence, 2);
+
+    const followUpAccepted = await registry.followUp(
+      created.sessionId,
+      {
+        text: "follow-up",
+        attachments,
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(followUpAccepted.sequence, 3);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(session.promptCalls.length, 1);
+    assert.equal(session.steerCalls.length, 1);
+    assert.equal(session.followUpCalls.length, 1);
+
+    assert.deepEqual(session.promptCalls[0]?.options?.images, [
+      {
+        type: "image",
+        mimeType: "image/png",
+        data: "AAAA",
+      },
+      {
+        type: "image",
+        mimeType: "application/octet-stream",
+        data: "BBBB",
+      },
+    ]);
+    assert.deepEqual(session.steerCalls[0]?.images, [
+      {
+        type: "image",
+        mimeType: "image/png",
+        data: "AAAA",
+      },
+      {
+        type: "image",
+        mimeType: "application/octet-stream",
+        data: "BBBB",
+      },
+    ]);
+    assert.deepEqual(session.followUpCalls[0]?.images, [
+      {
+        type: "image",
+        mimeType: "image/png",
+        data: "AAAA",
+      },
+      {
+        type: "image",
+        mimeType: "application/octet-stream",
+        data: "BBBB",
+      },
+    ]);
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("createSession disposes runtime when session initialization fails", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.bindExtensionsError = new Error("bind failed");
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    await assert.rejects(registry.createSession({}, auth, "conn-a"), /bind failed/);
+    assert.equal(runtimeFactory.runtimeDisposeCalls, 1);
+
+    const snapshot = registry.getAppSnapshot(auth);
+    assert.equal(snapshot.sessionSummaries.length, 0);
+  } finally {
+    await registry.dispose();
+  }
+});
+
 timedTest("open stream responses omit Stream-Closed header", async () => {
   const keys = generateKeyPairSync("ed25519");
   const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -868,6 +1821,243 @@ timedTest("open stream responses omit Stream-Closed header", async () => {
   }
 });
 
+timedTest("milestone 2 command surface sequences commands and replays session events", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+  });
+
+  try {
+    const tokenA = await authenticate(remote.app, privateKeyPem);
+    const tokenB = await authenticate(remote.app, privateKeyPem);
+
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${tokenA}`,
+        "content-type": "application/json",
+        "x-pi-connection-id": "device-a",
+      },
+      body: JSON.stringify({ sessionName: "Milestone 2" }),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const initialSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "x-pi-connection-id": "device-a",
+        },
+      },
+    );
+    assert.equal(initialSnapshotResponse.status, 200);
+    const initialSnapshot = (await initialSnapshotResponse.json()) as {
+      model: string;
+      thinkingLevel: string;
+      lastSessionStreamOffset: string;
+    };
+
+    const [draftAResponse, draftBResponse] = await Promise.all([
+      postSessionCommand(remote.app, `/v1/sessions/${created.sessionId}/draft`, tokenA, {
+        text: "draft from a",
+        attachments: ["a.txt"],
+      }),
+      postSessionCommand(remote.app, `/v1/sessions/${created.sessionId}/draft`, tokenB, {
+        text: "draft from b",
+        attachments: ["b.txt"],
+      }),
+    ]);
+
+    assert.equal(draftAResponse.status, 202);
+    assert.equal(draftBResponse.status, 202);
+    const draftAcceptedA = (await draftAResponse.json()) as {
+      sequence: number;
+    };
+    const draftAcceptedB = (await draftBResponse.json()) as {
+      sequence: number;
+    };
+    const draftSequences = [draftAcceptedA.sequence, draftAcceptedB.sequence].sort((a, b) => a - b);
+    assert.deepEqual(draftSequences, [1, 2]);
+
+    const draftReplayResponse = await remote.app.request(
+      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(initialSnapshot.lastSessionStreamOffset)}`,
+      {
+        headers: { authorization: `Bearer ${tokenA}` },
+      },
+    );
+    assert.equal(draftReplayResponse.status, 200);
+    const draftReplay = (await draftReplayResponse.json()) as {
+      events: Array<{ kind: string; payload: any }>;
+      nextOffset: string;
+    };
+    const draftUpdatedEvents = draftReplay.events.filter((event) => event.kind === "draft_updated");
+    assert.equal(draftUpdatedEvents.length, 2);
+    const revisions = draftUpdatedEvents
+      .map((event) => event.payload?.draft?.revision as number)
+      .sort((a, b) => a - b);
+    assert.deepEqual(revisions, [1, 2]);
+    const replayOffset = draftReplay.nextOffset;
+
+    const nameResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/session-name`,
+      tokenA,
+      {
+        sessionName: "Milestone 2 Renamed",
+      },
+    );
+    assert.equal(nameResponse.status, 202);
+    const nameAccepted = (await nameResponse.json()) as { sequence: number };
+    assert.equal(nameAccepted.sequence, 3);
+
+    const modelResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/model`,
+      tokenA,
+      {
+        model: initialSnapshot.model,
+        thinkingLevel: initialSnapshot.thinkingLevel,
+      },
+    );
+    assert.equal(modelResponse.status, 202);
+    const modelAccepted = (await modelResponse.json()) as { sequence: number };
+    assert.equal(modelAccepted.sequence, 4);
+
+    const promptResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/prompt`,
+      tokenA,
+      {
+        text: "Say hello in one sentence.",
+      },
+    );
+    assert.equal(promptResponse.status, 202);
+    const promptAccepted = (await promptResponse.json()) as { sequence: number };
+    assert.equal(promptAccepted.sequence, 5);
+
+    const steerResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/steer`,
+      tokenB,
+      {
+        text: "Keep it very short.",
+      },
+    );
+    assert.equal(steerResponse.status, 202);
+    const steerAccepted = (await steerResponse.json()) as { sequence: number };
+    assert.equal(steerAccepted.sequence, 6);
+
+    const followUpResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/follow-up`,
+      tokenB,
+      {
+        text: "Then add one more short sentence.",
+      },
+    );
+    assert.equal(followUpResponse.status, 202);
+    const followUpAccepted = (await followUpResponse.json()) as { sequence: number };
+    assert.equal(followUpAccepted.sequence, 7);
+
+    const interruptResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/interrupt`,
+      tokenA,
+      {},
+    );
+    assert.equal(interruptResponse.status, 202);
+    const interruptAccepted = (await interruptResponse.json()) as { sequence: number };
+    assert.equal(interruptAccepted.sequence, 8);
+
+    const waited = await waitForSessionEvent(
+      remote.app,
+      tokenA,
+      created.sessionId,
+      replayOffset,
+      (event) =>
+        event.kind === "agent_session_event" &&
+        typeof event.payload === "object" &&
+        event.payload !== null &&
+        (event.payload as { type?: string }).type === "agent_end",
+    );
+    assert.equal(waited.event.kind, "agent_session_event");
+    assert.equal((waited.event.payload as { type: string }).type, "agent_end");
+
+    const resumedResponse = await remote.app.request(
+      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(replayOffset)}`,
+      {
+        headers: { authorization: `Bearer ${tokenA}` },
+      },
+    );
+    assert.equal(resumedResponse.status, 200);
+    const resumed = (await resumedResponse.json()) as {
+      events: Array<{ kind: string; payload: any }>;
+      nextOffset: string;
+    };
+    assert.ok(resumed.events.some((event) => event.kind === "command_accepted"));
+    assert.ok(resumed.events.some((event) => event.kind === "agent_session_event"));
+    assert.ok(!resumed.events.some((event) => event.kind === "extension_error"));
+
+    const postPromptSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: { authorization: `Bearer ${tokenA}` },
+      },
+    );
+    assert.equal(postPromptSnapshotResponse.status, 200);
+    const postPromptSnapshot = (await postPromptSnapshotResponse.json()) as {
+      transcript: Array<{ role?: string }>;
+    };
+    assert.ok(postPromptSnapshot.transcript.some((message) => message.role === "assistant"));
+
+    const secondDeviceSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${tokenB}`,
+          "x-pi-connection-id": "device-b",
+        },
+      },
+    );
+    assert.equal(secondDeviceSnapshotResponse.status, 200);
+    const secondDeviceSnapshot = (await secondDeviceSnapshotResponse.json()) as {
+      sessionName: string;
+      draftRevision: number;
+      presence: Array<{ connectionId: string }>;
+      transcript: Array<{ role?: string }>;
+    };
+    assert.equal(secondDeviceSnapshot.sessionName, "Milestone 2 Renamed");
+    assert.equal(secondDeviceSnapshot.draftRevision, 2);
+    assert.ok(secondDeviceSnapshot.transcript.some((message) => message.role === "assistant"));
+    assert.ok(
+      secondDeviceSnapshot.presence.some((presence) => presence.connectionId === "device-a"),
+    );
+    assert.ok(
+      secondDeviceSnapshot.presence.some((presence) => presence.connectionId === "device-b"),
+    );
+
+    const secondDeviceResume = await remote.app.request(
+      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(resumed.nextOffset)}`,
+      {
+        headers: { authorization: `Bearer ${tokenB}` },
+      },
+    );
+    assert.equal(secondDeviceResume.status, 200);
+    const secondDeviceResumeBody = (await secondDeviceResume.json()) as {
+      events: unknown[];
+    };
+    assert.deepEqual(secondDeviceResumeBody.events, []);
+  } finally {
+    await remote.dispose();
+  }
+});
+
 timedTest("default runtime factory hosts an in-memory Pi runtime", async () => {
   const keys = generateKeyPairSync("ed25519");
   const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -895,4 +2085,26 @@ timedTest("default runtime factory hosts an in-memory Pi runtime", async () => {
   } finally {
     await remote.dispose();
   }
+});
+
+timedTest("in-memory runtime factory preserves explicit null fauxApiKey", async () => {
+  const defaultFactory = new InMemoryPiRuntimeFactory();
+  const defaultRuntime = await defaultFactory.create();
+  const defaultKey = await defaultRuntime.services.authStorage.getApiKey("pi-remote-faux");
+
+  assert.equal(defaultKey, "pi-remote-faux-local-key");
+
+  await defaultRuntime.dispose();
+  await defaultFactory.dispose();
+
+  const nullFactory = new InMemoryPiRuntimeFactory({
+    fauxApiKey: null,
+  });
+  const nullRuntime = await nullFactory.create();
+  const nullKey = await nullRuntime.services.authStorage.getApiKey("pi-remote-faux");
+
+  assert.equal(nullKey, undefined);
+
+  await nullRuntime.dispose();
+  await nullFactory.dispose();
 });

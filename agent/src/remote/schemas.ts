@@ -100,6 +100,63 @@ export const SessionParamsSchema = Type.Object({
   sessionId: Type.String({ minLength: 1 }),
 });
 
+export const PromptCommandRequestSchema = Type.Object({
+  text: Type.String({ minLength: 1 }),
+  attachments: Type.Optional(Type.Array(Type.String())),
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const SteerCommandRequestSchema = Type.Object({
+  text: Type.String({ minLength: 1 }),
+  attachments: Type.Optional(Type.Array(Type.String())),
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const FollowUpCommandRequestSchema = Type.Object({
+  text: Type.String({ minLength: 1 }),
+  attachments: Type.Optional(Type.Array(Type.String())),
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const InterruptCommandRequestSchema = Type.Object({
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const DraftUpdateRequestSchema = Type.Object({
+  text: Type.String(),
+  attachments: Type.Optional(Type.Array(Type.String())),
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const ModelUpdateRequestSchema = Type.Object({
+  model: Type.String({ minLength: 1 }),
+  thinkingLevel: Type.Optional(Type.String({ minLength: 1 })),
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const SessionNameUpdateRequestSchema = Type.Object({
+  sessionName: Type.String({ minLength: 1 }),
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const CommandKindSchema = Type.Union([
+  Type.Literal("prompt"),
+  Type.Literal("steer"),
+  Type.Literal("follow-up"),
+  Type.Literal("interrupt"),
+  Type.Literal("draft"),
+  Type.Literal("model"),
+  Type.Literal("session-name"),
+]);
+
+export const CommandAcceptedResponseSchema = Type.Object({
+  commandId: Type.String(),
+  sessionId: Type.String(),
+  kind: CommandKindSchema,
+  sequence: Type.Number(),
+  acceptedAt: Type.Number(),
+});
+
 export const SessionSnapshotSchema = Type.Object({
   sessionId: Type.String(),
   sessionName: Type.String(),
@@ -151,14 +208,151 @@ export const StreamReadQuerySchema = Type.Object({
   timeoutMs: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
 });
 
-export const StreamEventEnvelopeSchema = Type.Object({
+const StreamEventCommonProperties = {
   eventId: Type.String(),
   sessionId: Type.Union([Type.String(), Type.Null()]),
   streamOffset: Type.String(),
   ts: Type.Number(),
-  kind: Type.String(),
-  payload: Type.Unknown(),
+};
+
+const SessionCreatedEventPayloadSchema = Type.Object({
+  sessionId: Type.String(),
+  sessionName: Type.String(),
+  status: SessionStatusSchema,
 });
+
+const SessionClosedEventPayloadSchema = Type.Object({
+  sessionId: Type.String(),
+});
+
+const SessionSummaryUpdatedEventPayloadSchema = Type.Object({
+  sessionId: Type.String(),
+  sessionName: Type.String(),
+  status: SessionStatusSchema,
+  draftRevision: Type.Number(),
+  updatedAt: Type.Number(),
+});
+
+const ClientPresenceUpdatedEventPayloadSchema = Type.Object({
+  sessionId: Type.String(),
+  presence: Type.Array(PresenceSchema),
+});
+
+const AuthNoticeEventPayloadSchema = Type.Object({
+  message: Type.String(),
+});
+
+const ServerNoticeEventPayloadSchema = Type.Object({
+  message: Type.String(),
+});
+
+const AgentSessionEventPayloadSchema = Type.Object(
+  {
+    type: Type.String(),
+  },
+  { additionalProperties: true },
+);
+
+const CommandAcceptedEventPayloadSchema = Type.Object({
+  commandId: Type.String(),
+  sessionId: Type.String(),
+  clientId: Type.String(),
+  requestId: Type.Union([Type.String(), Type.Null()]),
+  kind: CommandKindSchema,
+  payload: Type.Unknown(),
+  acceptedAt: Type.Number(),
+  sequence: Type.Number(),
+});
+
+const DraftUpdatedEventPayloadSchema = Type.Object({
+  commandId: Type.String(),
+  sequence: Type.Number(),
+  draft: DraftSchema,
+});
+
+const SessionStatePatchEventPayloadSchema = Type.Object({
+  commandId: Type.String(),
+  sequence: Type.Number(),
+  patch: Type.Object(
+    {
+      model: Type.Optional(Type.String()),
+      thinkingLevel: Type.Optional(Type.String()),
+      sessionName: Type.Optional(Type.String()),
+    },
+    { minProperties: 1 },
+  ),
+});
+
+const ExtensionUiRequestEventPayloadSchema = Type.Unknown();
+
+const ExtensionErrorEventPayloadSchema = Type.Object({
+  commandId: Type.String(),
+  kind: CommandKindSchema,
+  error: Type.String(),
+});
+
+export const StreamEventEnvelopeSchema = Type.Union([
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("session_created"),
+    payload: SessionCreatedEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("session_closed"),
+    payload: SessionClosedEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("session_summary_updated"),
+    payload: SessionSummaryUpdatedEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("client_presence_updated"),
+    payload: ClientPresenceUpdatedEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("auth_notice"),
+    payload: AuthNoticeEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("server_notice"),
+    payload: ServerNoticeEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("agent_session_event"),
+    payload: AgentSessionEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("command_accepted"),
+    payload: CommandAcceptedEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("draft_updated"),
+    payload: DraftUpdatedEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("session_state_patch"),
+    payload: SessionStatePatchEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("extension_ui_request"),
+    payload: ExtensionUiRequestEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("extension_error"),
+    payload: ExtensionErrorEventPayloadSchema,
+  }),
+]);
 
 export const StreamReadResponseSchema = Type.Object({
   streamId: Type.String(),
@@ -177,6 +371,15 @@ export type AuthVerifyResponse = Static<typeof AuthVerifyResponseSchema>;
 export type AppSnapshot = Static<typeof AppSnapshotSchema>;
 export type CreateSessionRequest = Static<typeof CreateSessionRequestSchema>;
 export type CreateSessionResponse = Static<typeof CreateSessionResponseSchema>;
+export type PromptCommandRequest = Static<typeof PromptCommandRequestSchema>;
+export type SteerCommandRequest = Static<typeof SteerCommandRequestSchema>;
+export type FollowUpCommandRequest = Static<typeof FollowUpCommandRequestSchema>;
+export type InterruptCommandRequest = Static<typeof InterruptCommandRequestSchema>;
+export type DraftUpdateRequest = Static<typeof DraftUpdateRequestSchema>;
+export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
+export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
+export type CommandKind = Static<typeof CommandKindSchema>;
+export type CommandAcceptedResponse = Static<typeof CommandAcceptedResponseSchema>;
 export type SessionStatus = Static<typeof SessionStatusSchema>;
 export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;

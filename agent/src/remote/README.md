@@ -9,6 +9,13 @@ POST /v1/auth/verify
 GET /v1/app/snapshot
 POST /v1/sessions
 GET /v1/sessions/:sessionId/snapshot
+POST /v1/sessions/:sessionId/prompt
+POST /v1/sessions/:sessionId/steer
+POST /v1/sessions/:sessionId/follow-up
+POST /v1/sessions/:sessionId/interrupt
+POST /v1/sessions/:sessionId/draft
+POST /v1/sessions/:sessionId/model
+POST /v1/sessions/:sessionId/session-name
 GET /v1/streams/app-events
 GET /v1/streams/sessions/:sessionId/events
 ```

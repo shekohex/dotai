@@ -3106,7 +3106,112 @@ timedTest("milestone 3 adapter applies live sse control offsets without reconnec
   }
 });
 
-timedTest("milestone 3 adapter surfaces unrecoverable stream polling failure once", async () => {
+timedTest(
+  "milestone 3 adapter reauthenticates and resumes polling after token invalidation",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      const baseFetch = createInProcessFetch(remote.app);
+      let authChallengeCalls = 0;
+      let streamUnauthorizedInjected = false;
+      runtime = await RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        sessionId: created.sessionId,
+        fetchImpl: async (input, init) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (url.includes("/v1/auth/challenge")) {
+            authChallengeCalls += 1;
+          }
+          if (
+            !streamUnauthorizedInjected &&
+            url.includes(`/streams/sessions/${created.sessionId}/events`)
+          ) {
+            streamUnauthorizedInjected = true;
+            return new Response(JSON.stringify({ error: "Invalid token" }), {
+              status: 401,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+          return baseFetch(input, init);
+        },
+      });
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (streamUnauthorizedInjected && authChallengeCalls >= 2) {
+          break;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+
+      assert.equal(streamUnauthorizedInjected, true);
+      assert.ok(authChallengeCalls >= 2);
+      assert.equal(runtime.session.state.errorMessage, undefined);
+
+      const sessionAny = runtime.session as any;
+      const initialOffset = sessionAny.streamOffset;
+
+      const draftResponse = await postSessionCommand(
+        remote.app,
+        `/v1/sessions/${created.sessionId}/draft`,
+        token,
+        {
+          text: "resume-after-reauth",
+        },
+      );
+      assert.equal(draftResponse.status, 202);
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (sessionAny.streamOffset !== initialOffset) {
+          break;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+
+      assert.notEqual(sessionAny.streamOffset, initialOffset);
+
+      const remoteErrorMessages = runtime.session.messages.filter(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { customType?: string }).customType === "remote_error",
+      );
+      assert.equal(remoteErrorMessages.length, 0);
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("milestone 3 adapter stops auth refresh loop when key is denied", async () => {
   const keys = generateKeyPairSync("ed25519");
   const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
   const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -3132,6 +3237,7 @@ timedTest("milestone 3 adapter surfaces unrecoverable stream polling failure onc
     const created = (await createResponse.json()) as { sessionId: string };
 
     const baseFetch = createInProcessFetch(remote.app);
+    let authChallengeCalls = 0;
     runtime = await RemoteAgentSessionRuntime.create({
       origin: "http://localhost:3000",
       auth: {
@@ -3141,6 +3247,17 @@ timedTest("milestone 3 adapter surfaces unrecoverable stream polling failure onc
       sessionId: created.sessionId,
       fetchImpl: async (input, init) => {
         const url = typeof input === "string" ? input : input.url;
+        if (url.includes("/v1/auth/challenge")) {
+          authChallengeCalls += 1;
+          if (authChallengeCalls > 1) {
+            return new Response(JSON.stringify({ error: "Unknown key" }), {
+              status: 403,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+        }
         if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
           return new Response(JSON.stringify({ error: "Invalid token" }), {
             status: 401,
@@ -3153,14 +3270,16 @@ timedTest("milestone 3 adapter surfaces unrecoverable stream polling failure onc
       },
     });
 
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      if (runtime.session.state.errorMessage?.includes("Remote stream polling failed")) {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((runtime.session.state.errorMessage ?? "").includes("Remote authentication denied")) {
         break;
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
 
-    assert.match(runtime.session.state.errorMessage ?? "", /Remote stream polling failed/);
+    assert.match(runtime.session.state.errorMessage ?? "", /Remote authentication denied/);
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    assert.equal(authChallengeCalls, 2);
 
     const remoteErrorMessages = runtime.session.messages.filter(
       (message) =>

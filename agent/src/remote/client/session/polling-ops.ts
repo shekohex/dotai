@@ -35,6 +35,8 @@ export type PollRemoteSessionRuntimeInput = {
   setActiveReadAbortController: (controller: AbortController | undefined) => void;
   readSessionEvents: ReadSessionEvents;
   handleRemoteError: (message: string) => void;
+  handleRemoteWarning: (message: string) => void;
+  reauthenticate: () => Promise<void>;
   isAgentSessionEventLike: (value: unknown) => value is AgentSessionEvent;
   readErrorMessage: (payload: unknown) => string | undefined;
   applyAgentSessionEvent: (event: AgentSessionEvent) => void;
@@ -71,6 +73,8 @@ export function createRemoteSessionPollingInput(input: {
   setActiveReadAbortController: PollRemoteSessionRuntimeInput["setActiveReadAbortController"];
   readSessionEvents: PollRemoteSessionRuntimeInput["readSessionEvents"];
   handleRemoteError: PollRemoteSessionRuntimeInput["handleRemoteError"];
+  handleRemoteWarning: PollRemoteSessionRuntimeInput["handleRemoteWarning"];
+  reauthenticate: PollRemoteSessionRuntimeInput["reauthenticate"];
   isAgentSessionEventLike: PollRemoteSessionRuntimeInput["isAgentSessionEventLike"];
   readErrorMessage: PollRemoteSessionRuntimeInput["readErrorMessage"];
   applyAgentSessionEvent: PollRemoteSessionRuntimeInput["applyAgentSessionEvent"];
@@ -87,6 +91,8 @@ export function createRemoteSessionPollingInput(input: {
     setActiveReadAbortController: input.setActiveReadAbortController,
     readSessionEvents: input.readSessionEvents,
     handleRemoteError: input.handleRemoteError,
+    handleRemoteWarning: input.handleRemoteWarning,
+    reauthenticate: input.reauthenticate,
     isAgentSessionEventLike: input.isAgentSessionEventLike,
     readErrorMessage: input.readErrorMessage,
     applyAgentSessionEvent: input.applyAgentSessionEvent,
@@ -121,6 +127,8 @@ export async function pollRemoteSessionRuntime(
     readSessionEvents: input.readSessionEvents,
     handleEnvelope: handleEnvelopeCallback,
     handleRemoteError: input.handleRemoteError,
+    handleRemoteWarning: input.handleRemoteWarning,
+    reauthenticate: input.reauthenticate,
   });
 }
 

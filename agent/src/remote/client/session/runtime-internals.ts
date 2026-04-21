@@ -97,6 +97,10 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       handleRemoteError: (message) => {
         this.handleRemoteError(message);
       },
+      handleRemoteWarning: (message) => {
+        this.handleRemoteWarning(message);
+      },
+      reauthenticate: () => this.client.reauthenticate(),
       isAgentSessionEventLike,
       readErrorMessage,
       applyAgentSessionEvent: (event) => {
@@ -173,6 +177,10 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         this.applyAgentSessionEvent(event);
       },
     });
+  }
+
+  protected handleRemoteWarning(message: string): void {
+    this.uiContext?.notify(message, "warning");
   }
 
   protected applyAgentSessionEvent(event: AgentSessionEvent): void {

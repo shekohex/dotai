@@ -1,7 +1,6 @@
 import {
   InteractiveMode,
   initTheme,
-  type AgentSession,
   type AgentSessionRuntime,
 } from "@mariozechner/pi-coding-agent";
 import {
@@ -9,44 +8,29 @@ import {
   defaultSessionNameFromCwd,
   readRemotePrivateKey,
 } from "./client-runtime.js";
+import type { RemoteExtensionMetadata } from "./schemas.js";
 
-type InteractiveSessionContract = Pick<
-  AgentSession,
-  | "sessionManager"
-  | "settingsManager"
-  | "modelRegistry"
-  | "bindExtensions"
-  | "subscribe"
-  | "prompt"
-  | "steer"
-  | "followUp"
-  | "sendUserMessage"
-  | "setModel"
-  | "cycleModel"
-  | "setThinkingLevel"
-  | "cycleThinkingLevel"
-  | "getAvailableThinkingLevels"
-  | "setSessionName"
-  | "getActiveToolNames"
-  | "getToolDefinition"
-  | "reload"
->;
+function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRuntime {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
 
-type InteractiveRuntimeContract = Pick<
-  AgentSessionRuntime,
-  | "diagnostics"
-  | "modelFallbackMessage"
-  | "newSession"
-  | "switchSession"
-  | "fork"
-  | "importFromJsonl"
-  | "dispose"
-> & {
-  session: InteractiveSessionContract;
-};
+  const session: unknown = Reflect.get(value, "session");
+  if (session === null || typeof session !== "object" || Array.isArray(session)) {
+    return false;
+  }
 
-function toInteractiveRuntimeHost(runtime: InteractiveRuntimeContract): AgentSessionRuntime {
-  return runtime as unknown as AgentSessionRuntime;
+  return (
+    typeof Reflect.get(value, "newSession") === "function" &&
+    typeof Reflect.get(value, "switchSession") === "function" &&
+    typeof Reflect.get(value, "fork") === "function" &&
+    typeof Reflect.get(value, "importFromJsonl") === "function" &&
+    typeof Reflect.get(value, "dispose") === "function" &&
+    typeof Reflect.get(session, "prompt") === "function" &&
+    typeof Reflect.get(session, "sendUserMessage") === "function" &&
+    typeof Reflect.get(session, "setModel") === "function" &&
+    typeof Reflect.get(session, "reload") === "function"
+  );
 }
 
 interface ParsedRemoteArgs {
@@ -61,16 +45,98 @@ interface ParsedRemoteArgs {
   initialMessages: string[];
 }
 
+type RemoteFlagSetter = (parsed: ParsedRemoteArgs, value: string) => void;
+
+const remoteFlagSetters = new Map<string, RemoteFlagSetter>([
+  [
+    "--remote",
+    (parsed, value) => {
+      parsed.remoteOrigin = value;
+    },
+  ],
+  [
+    "--remote-origin",
+    (parsed, value) => {
+      parsed.remoteOrigin = value;
+    },
+  ],
+  [
+    "--remote-key-id",
+    (parsed, value) => {
+      parsed.keyId = value;
+    },
+  ],
+  [
+    "--remote-private-key",
+    (parsed, value) => {
+      parsed.privateKey = value;
+    },
+  ],
+  [
+    "--remote-private-key-path",
+    (parsed, value) => {
+      parsed.privateKeyPath = value;
+    },
+  ],
+  [
+    "--remote-session",
+    (parsed, value) => {
+      parsed.sessionId = value;
+    },
+  ],
+  [
+    "--remote-session-name",
+    (parsed, value) => {
+      parsed.sessionName = value;
+    },
+  ],
+  [
+    "-p",
+    (parsed, value) => {
+      parsed.initialMessage = value;
+    },
+  ],
+  [
+    "--prompt",
+    (parsed, value) => {
+      parsed.initialMessage = value;
+    },
+  ],
+]);
+
 function consumeFlagValue(args: string[], index: number): { value?: string; nextIndex: number } {
   const value = args[index + 1];
-  if (!value || value.startsWith("-")) {
+  if (value === undefined || value.length === 0 || value.startsWith("-")) {
     return { nextIndex: index };
   }
   return { value, nextIndex: index + 1 };
 }
 
+function applyRemoteFlag(
+  parsed: ParsedRemoteArgs,
+  args: string[],
+  index: number,
+): { consumed: boolean; nextIndex: number } {
+  const arg = args[index];
+  if (arg === "--verbose") {
+    parsed.verbose = true;
+    return { consumed: true, nextIndex: index };
+  }
+
+  const setter = remoteFlagSetters.get(arg);
+  if (!setter) {
+    return { consumed: false, nextIndex: index };
+  }
+
+  const consumed = consumeFlagValue(args, index);
+  if (consumed.value !== undefined) {
+    setter(parsed, consumed.value);
+  }
+  return { consumed: true, nextIndex: consumed.nextIndex };
+}
+
 export function shouldUseRemoteMode(args: string[]): boolean {
-  if (process.env.PI_REMOTE_ORIGIN) {
+  if (process.env.PI_REMOTE_ORIGIN !== undefined && process.env.PI_REMOTE_ORIGIN.length > 0) {
     return true;
   }
   return args.includes("--remote") || args.includes("--remote-origin");
@@ -91,75 +157,12 @@ function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (!arg) {
+    if (arg.length === 0) {
       continue;
     }
-    if (arg === "--remote") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.remoteOrigin = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--remote-origin") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.remoteOrigin = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--remote-key-id") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.keyId = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--remote-private-key") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.privateKey = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--remote-private-key-path") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.privateKeyPath = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--remote-session") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.sessionId = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--remote-session-name") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.sessionName = consumed.value;
-      }
-      index = consumed.nextIndex;
-      continue;
-    }
-    if (arg === "--verbose") {
-      parsed.verbose = true;
-      continue;
-    }
-    if (arg === "-p" || arg === "--prompt") {
-      const consumed = consumeFlagValue(args, index);
-      if (consumed.value) {
-        parsed.initialMessage = consumed.value;
-      }
-      index = consumed.nextIndex;
+    const appliedFlag = applyRemoteFlag(parsed, args, index);
+    if (appliedFlag.consumed) {
+      index = appliedFlag.nextIndex;
       continue;
     }
     if (arg.startsWith("-")) {
@@ -168,24 +171,31 @@ function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
     parsed.initialMessages.push(arg);
   }
 
-  if (!parsed.remoteOrigin) {
+  if (parsed.remoteOrigin.length === 0) {
     throw new Error("Missing PI_REMOTE_ORIGIN or --remote-origin");
   }
-  if (!parsed.keyId) {
+  if (parsed.keyId.length === 0) {
     throw new Error("Missing PI_REMOTE_KEY_ID or --remote-key-id");
   }
 
   return parsed;
 }
 
-export async function runRemoteInteractiveMode(args: string[]): Promise<void> {
+export interface RunRemoteInteractiveModeOptions {
+  clientExtensionMetadata?: RemoteExtensionMetadata[];
+}
+
+export async function runRemoteInteractiveMode(
+  args: string[],
+  options: RunRemoteInteractiveModeOptions = {},
+): Promise<void> {
   const parsed = parseRemoteArgs(args);
   const privateKey = await readRemotePrivateKey({
     privateKey: parsed.privateKey,
     privateKeyPath: parsed.privateKeyPath,
   });
 
-  const runtime = await RemoteAgentSessionRuntime.create({
+  const runtimeCandidate: unknown = await RemoteAgentSessionRuntime.create({
     origin: parsed.remoteOrigin,
     auth: {
       keyId: parsed.keyId,
@@ -193,12 +203,17 @@ export async function runRemoteInteractiveMode(args: string[]): Promise<void> {
     },
     sessionId: parsed.sessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
-    cwd: process.cwd(),
+    clientExtensionMetadata: options.clientExtensionMetadata,
   });
 
+  if (!isInteractiveRuntimeContract(runtimeCandidate)) {
+    throw new Error("Remote runtime does not satisfy interactive runtime contract");
+  }
+
+  const runtime = runtimeCandidate;
+
   initTheme(runtime.session.settingsManager.getTheme(), true);
-  const runtimeHost = toInteractiveRuntimeHost(runtime);
-  const interactiveMode = new InteractiveMode(runtimeHost, {
+  const interactiveMode = new InteractiveMode(runtime, {
     verbose: parsed.verbose,
     initialMessage: parsed.initialMessage,
     initialMessages: parsed.initialMessages,

@@ -171,11 +171,11 @@ export class AuthService {
 
   authenticate(authorizationHeader: string | undefined): AuthSession {
     this.pruneExpiredRecords(this.now());
-    if (!authorizationHeader) {
+    if (authorizationHeader === undefined || authorizationHeader.length === 0) {
       throw new RemoteError("Missing authorization header", 401);
     }
     const [scheme, token] = authorizationHeader.split(" ");
-    if (scheme !== "Bearer" || !token) {
+    if (scheme !== "Bearer" || token === undefined || token.length === 0) {
       throw new RemoteError("Invalid authorization header", 401);
     }
     const record = this.tokens.get(token);
@@ -198,14 +198,14 @@ export class AuthService {
 
 function decodeBase64(value: string): Buffer {
   try {
-    return Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    return Buffer.from(value.replaceAll("-", "+").replaceAll("_", "/"), "base64");
   } catch {
     throw new RemoteError("Invalid signature encoding", 400);
   }
 }
 
 export function parseAllowedKeys(value: string | undefined): AllowedPublicKey[] {
-  if (!value) {
+  if (value === undefined || value.length === 0) {
     return [];
   }
 
@@ -214,20 +214,20 @@ export function parseAllowedKeys(value: string | undefined): AllowedPublicKey[] 
     if (Array.isArray(parsed)) {
       return parsed
         .map((entry) => {
-          if (!entry || typeof entry !== "object") {
+          if (entry === null || typeof entry !== "object") {
             return null;
           }
-          const keyId = Reflect.get(entry, "keyId");
-          const publicKey = Reflect.get(entry, "publicKey");
+          const keyId: unknown = Reflect.get(entry, "keyId");
+          const publicKey: unknown = Reflect.get(entry, "publicKey");
           if (typeof keyId !== "string" || typeof publicKey !== "string") {
             return null;
           }
           return { keyId, publicKey };
         })
-        .filter((entry): entry is AllowedPublicKey => Boolean(entry));
+        .filter((entry): entry is AllowedPublicKey => entry !== null);
     }
 
-    if (parsed && typeof parsed === "object") {
+    if (parsed !== null && typeof parsed === "object") {
       return Object.entries(parsed).flatMap(([keyId, publicKey]) => {
         if (typeof publicKey !== "string") {
           return [];

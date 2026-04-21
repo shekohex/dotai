@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { RemoteError } from "./errors.js";
-import type { StreamEventEnvelope } from "./schemas.js";
+import { StreamEventEnvelopeSchema, type StreamEventEnvelope } from "./schemas.js";
+import { assertType } from "./typebox.js";
 
 type StreamEventKind = StreamEventEnvelope["kind"];
-type StreamEventEnvelopeByKind<TKind extends StreamEventKind> = Extract<
-  StreamEventEnvelope,
-  { kind: TKind }
->;
 
 export interface StreamReadResult {
   events: StreamEventEnvelope[];
@@ -35,9 +32,9 @@ export interface StreamSubscription {
 }
 
 interface AppendEventInput<TKind extends StreamEventKind = StreamEventKind> {
-  sessionId: StreamEventEnvelopeByKind<TKind>["sessionId"];
+  sessionId: string;
   kind: TKind;
-  payload: StreamEventEnvelopeByKind<TKind>["payload"];
+  payload: StreamEventEnvelope["payload"];
   ts?: number;
 }
 
@@ -88,17 +85,19 @@ export class InMemoryDurableStreamStore {
   append<TKind extends StreamEventKind>(
     streamId: string,
     input: AppendEventInput<TKind>,
-  ): StreamEventEnvelopeByKind<TKind> {
+  ): StreamEventEnvelope {
     const stream = this.getOrCreate(streamId);
     const streamOffset = formatOffset(stream.events.length + 1);
-    const event: StreamEventEnvelopeByKind<TKind> = {
+    const eventCandidate: unknown = {
       eventId: randomUUID(),
       sessionId: input.sessionId,
       streamOffset,
       ts: input.ts ?? Date.now(),
       kind: input.kind,
       payload: input.payload,
-    } as StreamEventEnvelopeByKind<TKind>;
+    };
+    assertType(StreamEventEnvelopeSchema, eventCandidate);
+    const event = eventCandidate;
     stream.events.push(event);
     for (const listener of stream.listeners) {
       listener(event);
@@ -110,9 +109,10 @@ export class InMemoryDurableStreamStore {
     const stream = this.getOrCreate(streamId);
     const nextOffset = formatOffset(stream.events.length);
     const resolvedOffset = resolveOffset(offset, nextOffset);
-    const events = resolvedOffset
-      ? stream.events.filter((event) => event.streamOffset > resolvedOffset)
-      : [...stream.events];
+    const events =
+      resolvedOffset !== undefined && resolvedOffset.length > 0
+        ? stream.events.filter((event) => event.streamOffset > resolvedOffset)
+        : [...stream.events];
     return {
       events,
       fromOffset: resolvedOffset ?? null,
@@ -143,9 +143,10 @@ export class InMemoryDurableStreamStore {
     const stream = this.getOrCreate(streamId);
     const nextOffset = formatOffset(stream.events.length);
     const resolvedOffset = resolveOffset(offset, nextOffset);
-    const events = resolvedOffset
-      ? stream.events.filter((event) => event.streamOffset > resolvedOffset)
-      : [...stream.events];
+    const events =
+      resolvedOffset !== undefined && resolvedOffset.length > 0
+        ? stream.events.filter((event) => event.streamOffset > resolvedOffset)
+        : [...stream.events];
     const read: StreamReadResult = {
       events,
       fromOffset: resolvedOffset ?? null,
@@ -157,7 +158,7 @@ export class InMemoryDurableStreamStore {
     if (stream.closed) {
       return {
         read,
-        unsubscribe: () => undefined,
+        unsubscribe: () => {},
       };
     }
 
@@ -170,7 +171,7 @@ export class InMemoryDurableStreamStore {
     };
   }
 
-  async waitForEvents(
+  waitForEvents(
     streamId: string,
     offset: string | undefined,
     timeoutMs: number,
@@ -208,7 +209,7 @@ export class InMemoryDurableStreamStore {
 
     if (current.events.length > 0 || current.streamClosed) {
       subscription.unsubscribe();
-      return { ...current, timedOut: false };
+      return Promise.resolve({ ...current, timedOut: false });
     }
 
     return new Promise<StreamLongPollResult>((resolve) => {

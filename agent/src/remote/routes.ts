@@ -1,1176 +1,278 @@
-import type { MiddlewareHandler } from "hono";
+import type { MiddlewareHandler, Schema } from "hono";
 import { Hono } from "hono";
 import { tbValidator } from "@hono/typebox-validator";
 import { describeRoute } from "hono-openapi";
-import type { Static } from "@sinclair/typebox";
-import type { AuthService, AuthSession } from "./auth.js";
-import { RemoteError } from "./errors.js";
 import {
-  AppSnapshotSchema,
   AuthChallengeRequestSchema,
-  AuthChallengeResponseSchema,
   AuthVerifyRequestSchema,
-  AuthVerifyResponseSchema,
-  CommandAcceptedResponseSchema,
-  ClearQueueResponseSchema,
   CreateSessionRequestSchema,
-  CreateSessionResponseSchema,
   DraftUpdateRequestSchema,
-  ErrorResponseSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
   PromptCommandRequestSchema,
   SessionParamsSchema,
   SessionNameUpdateRequestSchema,
-  SessionSnapshotSchema,
   SteerCommandRequestSchema,
   StreamReadQuerySchema,
-  StreamReadResponseSchema,
   UiResponseRequestSchema,
-  UiResponseResponseSchema,
 } from "./schemas.js";
-import { generateResponseCursor } from "./cursor.js";
-import type { SessionRegistry } from "./session-registry.js";
-import { InMemoryDurableStreamStore, appEventsStreamId, sessionEventsStreamId } from "./streams.js";
-import { jsonWithSchema } from "./typebox.js";
+import { requireAuth } from "./routes/auth.js";
+import {
+  appSnapshotRouteDescription,
+  authChallengeRouteDescription,
+  authVerifyRouteDescription,
+  clearSessionQueueRouteDescription,
+  createSessionRouteDescription,
+  followUpSessionRouteDescription,
+  interruptSessionRouteDescription,
+  promptSessionRouteDescription,
+  readAppEventsStreamRouteDescription,
+  readSessionEventsStreamRouteDescription,
+  sessionSnapshotRouteDescription,
+  steerSessionRouteDescription,
+  submitSessionUiResponseRouteDescription,
+  updateSessionDraftRouteDescription,
+  updateSessionModelRouteDescription,
+  updateSessionNameRouteDescription,
+} from "./routes/descriptions.js";
+import {
+  handleAppSnapshot,
+  handleAuthChallenge,
+  handleAuthVerify,
+  handleClearSessionQueue,
+  handleCreateSession,
+  handleSessionSnapshot,
+  handleSubmitSessionUiResponse,
+} from "./routes/handlers.js";
+import {
+  handleFollowUpSession,
+  handleInterruptSession,
+  handlePromptSession,
+  handleSteerSession,
+  handleUpdateSessionDraft,
+  handleUpdateSessionModel,
+  handleUpdateSessionName,
+} from "./routes/handlers-commands.js";
+import { handleAppEventsStreamRead, handleSessionEventsStreamRead } from "./routes/stream-read.js";
+import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./routes/types.js";
 
-export interface RemoteHonoEnv {
-  Variables: {
-    auth: AuthSession;
-  };
+type AuthMiddleware = MiddlewareHandler<RemoteHonoEnv>;
+
+function registerAuthRoutes<S extends Schema, BasePath extends string>(
+  app: Hono<RemoteHonoEnv, S, BasePath>,
+  dependencies: RemoteRoutesDependencies,
+) {
+  const route1 = app.post(
+    "/auth/challenge",
+    describeRoute(authChallengeRouteDescription),
+    tbValidator("json", AuthChallengeRequestSchema),
+    (c) => handleAuthChallenge(c, dependencies, c.req.valid("json")),
+  );
+  return route1.post(
+    "/auth/verify",
+    describeRoute(authVerifyRouteDescription),
+    tbValidator("json", AuthVerifyRequestSchema),
+    (c) => handleAuthVerify(c, dependencies, c.req.valid("json")),
+  );
 }
 
-export interface RemoteRoutesDependencies {
-  auth: AuthService;
-  sessions: SessionRegistry;
-  streams: InMemoryDurableStreamStore;
-}
-
-type ErrorResponseBody = Static<typeof ErrorResponseSchema>;
-type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 500;
-
-function authError(
-  c: Parameters<MiddlewareHandler<RemoteHonoEnv>>[0],
-  error: unknown,
-): Response & { _data: ErrorResponseBody; _status: ErrorStatus; _format: "json" } {
-  if (error instanceof RemoteError) {
-    return jsonWithSchema(
-      c,
-      ErrorResponseSchema,
-      { error: error.message },
-      error.status as 400 | 401 | 403 | 404 | 409 | 500,
-    );
-  }
-  if (error instanceof Error) {
-    return jsonWithSchema(
-      c,
-      ErrorResponseSchema,
-      { error: "Unexpected error", details: error.message },
-      500,
-    );
-  }
-  return jsonWithSchema(c, ErrorResponseSchema, { error: "Unexpected error" }, 500);
-}
-
-function requireAuth(authService: AuthService): MiddlewareHandler<RemoteHonoEnv> {
-  return async (c, next) => {
-    try {
-      const session = authService.authenticate(c.req.header("authorization"));
-      c.set("auth", session);
-      await next();
-    } catch (error) {
-      return authError(c, error);
-    }
-  };
-}
-
-function sseEventChunk(event: unknown, id?: string, eventName = "message"): string {
-  const idPart = id ? `id: ${id}\n` : "";
-  return `${idPart}event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
-}
-
-function streamStateHeaders(input: {
-  nextOffset: string;
-  upToDate: boolean;
-  streamClosed: boolean;
-  streamCursor?: string;
-}): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Stream-Next-Offset": input.nextOffset,
-    "Stream-Up-To-Date": String(input.upToDate),
-  };
-  if (input.streamClosed) {
-    headers["Stream-Closed"] = "true";
-  }
-  if (input.streamCursor && !input.streamClosed) {
-    headers["Stream-Cursor"] = input.streamCursor;
-  }
-  return headers;
-}
-
-function getConnectionId(c: Parameters<MiddlewareHandler<RemoteHonoEnv>>[0]): string {
-  const providedConnectionId = c.req.header("x-pi-connection-id")?.trim();
-  if (providedConnectionId) {
-    return providedConnectionId;
-  }
-  return c.get("auth").token;
-}
-
-function streamEventsSse(
-  streamId: string,
-  offset: string | undefined,
-  cursor: string | undefined,
-  connectionId: string,
-  streams: InMemoryDurableStreamStore,
-  onDisconnect?: () => void,
-): Response {
-  const encoder = new TextEncoder();
-  let currentCursor = generateResponseCursor(cursor);
-  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
-  const subscription = streams.readAndSubscribe(streamId, offset, (event) => {
-    if (!controller) {
-      return;
-    }
-    controller.enqueue(encoder.encode(sseEventChunk(event, event.streamOffset, "data")));
-    currentCursor = generateResponseCursor(currentCursor);
-    controller.enqueue(
-      encoder.encode(
-        sseEventChunk(
-          {
-            streamNextOffset: streams.getHeadOffset(streamId),
-            streamCursor: currentCursor,
-            upToDate: true,
-            streamClosed: false,
-          },
-          undefined,
-          "control",
-        ),
-      ),
-    );
-  });
-  const initial = subscription.read;
-
-  const body = new ReadableStream<Uint8Array>({
-    start(activeController) {
-      controller = activeController;
-      for (const event of initial.events) {
-        activeController.enqueue(encoder.encode(sseEventChunk(event, event.streamOffset, "data")));
-      }
-
-      activeController.enqueue(
-        encoder.encode(
-          sseEventChunk(
-            {
-              streamNextOffset: initial.nextOffset,
-              ...(initial.streamClosed ? {} : { streamCursor: currentCursor }),
-              upToDate: initial.upToDate,
-              streamClosed: initial.streamClosed,
-            },
-            undefined,
-            "control",
-          ),
-        ),
-      );
-
-      if (initial.streamClosed) {
-        activeController.close();
-        return;
-      }
+function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
+  app: Hono<RemoteHonoEnv, S, BasePath>,
+  dependencies: RemoteRoutesDependencies,
+  needsAuth: AuthMiddleware,
+) {
+  const route3 = app.get(
+    "/app/snapshot",
+    describeRoute(appSnapshotRouteDescription),
+    needsAuth,
+    (c) => handleAppSnapshot(c, dependencies),
+  );
+  const route4 = route3.post(
+    "/sessions",
+    describeRoute(createSessionRouteDescription),
+    needsAuth,
+    tbValidator("json", CreateSessionRequestSchema),
+    (c) => handleCreateSession(c, dependencies, c.req.valid("json")),
+  );
+  return route4.get(
+    "/sessions/:sessionId/snapshot",
+    describeRoute(sessionSnapshotRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleSessionSnapshot(c, dependencies, sessionId);
     },
-    cancel() {
-      subscription.unsubscribe();
-      controller = undefined;
-      onDisconnect?.();
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-      "x-pi-connection-id": connectionId,
-      ...streamStateHeaders({
-        ...initial,
-        streamCursor: initial.streamClosed ? undefined : currentCursor,
-      }),
-    },
-  });
+  );
 }
 
-function parseTimeout(timeoutMs: string | undefined): number {
-  if (!timeoutMs) {
-    return 25_000;
-  }
-  const parsed = Number.parseInt(timeoutMs, 10);
-  if (Number.isNaN(parsed)) {
-    return 25_000;
-  }
-  return Math.min(Math.max(parsed, 250), 60_000);
+function registerSessionCommandRoutesA<S extends Schema, BasePath extends string>(
+  app: Hono<RemoteHonoEnv, S, BasePath>,
+  dependencies: RemoteRoutesDependencies,
+  needsAuth: AuthMiddleware,
+) {
+  const route6 = app.post(
+    "/sessions/:sessionId/prompt",
+    describeRoute(promptSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", PromptCommandRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handlePromptSession(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  const route7 = route6.post(
+    "/sessions/:sessionId/steer",
+    describeRoute(steerSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", SteerCommandRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleSteerSession(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  return route7.post(
+    "/sessions/:sessionId/follow-up",
+    describeRoute(followUpSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", FollowUpCommandRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleFollowUpSession(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
 }
 
-function requireLiveOffset(mode: "sse" | "long-poll", offset: string | undefined): void {
-  if (offset) {
-    return;
-  }
-  throw new RemoteError(`${mode === "sse" ? "SSE" : "Long-poll"} requires offset parameter`, 400);
+function registerSessionCommandRoutesB<S extends Schema, BasePath extends string>(
+  app: Hono<RemoteHonoEnv, S, BasePath>,
+  dependencies: RemoteRoutesDependencies,
+  needsAuth: AuthMiddleware,
+) {
+  const route9 = app.post(
+    "/sessions/:sessionId/interrupt",
+    describeRoute(interruptSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", InterruptCommandRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleInterruptSession(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  const route10 = route9.post(
+    "/sessions/:sessionId/draft",
+    describeRoute(updateSessionDraftRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", DraftUpdateRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleUpdateSessionDraft(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  return route10.post(
+    "/sessions/:sessionId/model",
+    describeRoute(updateSessionModelRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", ModelUpdateRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleUpdateSessionModel(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
 }
 
-function streamResponseDescription() {
-  return {
-    200: {
-      description: "Stream events response",
-      content: {
-        "application/json": {
-          schema: StreamReadResponseSchema,
-        },
-        "text/event-stream": {
-          schema: {
-            type: "string" as const,
-            description: "SSE stream with data/control events when live=sse",
-          },
-        },
-      },
+function registerSessionCommandRoutesC<S extends Schema, BasePath extends string>(
+  app: Hono<RemoteHonoEnv, S, BasePath>,
+  dependencies: RemoteRoutesDependencies,
+  needsAuth: AuthMiddleware,
+) {
+  const route12 = app.post(
+    "/sessions/:sessionId/session-name",
+    describeRoute(updateSessionNameRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", SessionNameUpdateRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleUpdateSessionName(c, dependencies, sessionId, c.req.valid("json"));
     },
-    204: {
-      description: "No new events available",
+  );
+  const route13 = route12.post(
+    "/sessions/:sessionId/ui-response",
+    describeRoute(submitSessionUiResponseRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", UiResponseRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleSubmitSessionUiResponse(c, dependencies, sessionId, c.req.valid("json"));
     },
-  };
+  );
+  return route13.post(
+    "/sessions/:sessionId/clear-queue",
+    describeRoute(clearSessionQueueRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleClearSessionQueue(c, dependencies, sessionId);
+    },
+  );
 }
 
-function commandAcceptedResponses() {
-  return {
-    202: {
-      description: "Command accepted",
-      content: {
-        "application/json": {
-          schema: CommandAcceptedResponseSchema,
-        },
-      },
+function registerStreamRoutes<S extends Schema, BasePath extends string>(
+  app: Hono<RemoteHonoEnv, S, BasePath>,
+  dependencies: RemoteRoutesDependencies,
+  needsAuth: AuthMiddleware,
+) {
+  const route15 = app.get(
+    "/streams/app-events",
+    describeRoute(readAppEventsStreamRouteDescription),
+    needsAuth,
+    tbValidator("query", StreamReadQuerySchema),
+    (c) => handleAppEventsStreamRead(c, dependencies, c.req.valid("query")),
+  );
+  return route15.get(
+    "/streams/sessions/:sessionId/events",
+    describeRoute(readSessionEventsStreamRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("query", StreamReadQuerySchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleSessionEventsStreamRead(c, dependencies, sessionId, c.req.valid("query"));
     },
-    404: {
-      description: "Session not found",
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  };
+  );
 }
 
 export function createV1Routes(dependencies: RemoteRoutesDependencies) {
   const v1 = new Hono<RemoteHonoEnv>();
   const needsAuth = requireAuth(dependencies.auth);
-
-  const v1r1 = v1.post(
-    "/auth/challenge",
-    describeRoute({
-      tags: ["auth"],
-      operationId: "requestAuthChallenge",
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: AuthChallengeRequestSchema,
-          },
-        },
-      },
-      responses: {
-        200: {
-          description: "Challenge issued",
-          content: {
-            "application/json": {
-              schema: AuthChallengeResponseSchema,
-            },
-          },
-        },
-        403: {
-          description: "Unknown key",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
-    tbValidator("json", AuthChallengeRequestSchema),
-    (c) => {
-      try {
-        const payload = c.req.valid("json");
-        const challenge = dependencies.auth.createChallenge(payload.keyId);
-        return jsonWithSchema(c, AuthChallengeResponseSchema, challenge);
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r2 = v1r1.post(
-    "/auth/verify",
-    describeRoute({
-      tags: ["auth"],
-      operationId: "verifyAuthChallenge",
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: AuthVerifyRequestSchema,
-          },
-        },
-      },
-      responses: {
-        200: {
-          description: "Token issued",
-          content: {
-            "application/json": {
-              schema: AuthVerifyResponseSchema,
-            },
-          },
-        },
-        401: {
-          description: "Invalid challenge verification",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
-    tbValidator("json", AuthVerifyRequestSchema),
-    (c) => {
-      try {
-        const payload = c.req.valid("json");
-        const verified = dependencies.auth.verifyChallenge(payload);
-        return jsonWithSchema(c, AuthVerifyResponseSchema, {
-          token: verified.token,
-          tokenType: "Bearer",
-          expiresAt: verified.expiresAt,
-          clientId: verified.clientId,
-          keyId: verified.keyId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r3 = v1r2.get(
-    "/app/snapshot",
-    describeRoute({
-      tags: ["snapshot"],
-      operationId: "getAppSnapshot",
-      responses: {
-        200: {
-          description: "App snapshot",
-          content: {
-            "application/json": {
-              schema: AppSnapshotSchema,
-            },
-          },
-        },
-        401: {
-          description: "Unauthorized",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
+  const withAuthRoutes = registerAuthRoutes(v1, dependencies);
+  const withSnapshotRoutes = registerSnapshotRoutes(withAuthRoutes, dependencies, needsAuth);
+  const withSessionCommandsA = registerSessionCommandRoutesA(
+    withSnapshotRoutes,
+    dependencies,
     needsAuth,
-    (c) => {
-      try {
-        const auth = c.get("auth");
-        const snapshot = dependencies.sessions.getAppSnapshot(auth);
-        return jsonWithSchema(c, AppSnapshotSchema, snapshot);
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
   );
-
-  const v1r4 = v1r3.post(
-    "/sessions",
-    describeRoute({
-      tags: ["command"],
-      operationId: "createSession",
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: CreateSessionRequestSchema,
-          },
-        },
-      },
-      responses: {
-        201: {
-          description: "Session created",
-          content: {
-            "application/json": {
-              schema: CreateSessionResponseSchema,
-            },
-          },
-        },
-        409: {
-          description: "Milestone limit reached",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
+  const withSessionCommandsB = registerSessionCommandRoutesB(
+    withSessionCommandsA,
+    dependencies,
     needsAuth,
-    tbValidator("json", CreateSessionRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const payload = c.req.valid("json");
-        const session = await dependencies.sessions.createSession(
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CreateSessionResponseSchema, session, 201, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
   );
-
-  const v1r5 = v1r4.get(
-    "/sessions/:sessionId/snapshot",
-    describeRoute({
-      tags: ["snapshot"],
-      operationId: "getSessionSnapshot",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      responses: {
-        200: {
-          description: "Session snapshot",
-          content: {
-            "application/json": {
-              schema: SessionSnapshotSchema,
-            },
-          },
-        },
-        404: {
-          description: "Session not found",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
+  const withSessionCommandsC = registerSessionCommandRoutesC(
+    withSessionCommandsB,
+    dependencies,
     needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const snapshot = dependencies.sessions.getSessionSnapshot(
-          sessionId,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
   );
-
-  const v1r6 = v1r5.post(
-    "/sessions/:sessionId/prompt",
-    describeRoute({
-      tags: ["command"],
-      operationId: "promptSession",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: PromptCommandRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", PromptCommandRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.prompt(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r7 = v1r6.post(
-    "/sessions/:sessionId/steer",
-    describeRoute({
-      tags: ["command"],
-      operationId: "steerSession",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: SteerCommandRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", SteerCommandRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.steer(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r8 = v1r7.post(
-    "/sessions/:sessionId/follow-up",
-    describeRoute({
-      tags: ["command"],
-      operationId: "followUpSession",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: FollowUpCommandRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", FollowUpCommandRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.followUp(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r9 = v1r8.post(
-    "/sessions/:sessionId/interrupt",
-    describeRoute({
-      tags: ["command"],
-      operationId: "interruptSession",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: InterruptCommandRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", InterruptCommandRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.interrupt(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r10 = v1r9.post(
-    "/sessions/:sessionId/draft",
-    describeRoute({
-      tags: ["command"],
-      operationId: "updateSessionDraft",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: DraftUpdateRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", DraftUpdateRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.updateDraft(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r11 = v1r10.post(
-    "/sessions/:sessionId/model",
-    describeRoute({
-      tags: ["command"],
-      operationId: "updateSessionModel",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: ModelUpdateRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", ModelUpdateRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.updateModel(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r12 = v1r11.post(
-    "/sessions/:sessionId/session-name",
-    describeRoute({
-      tags: ["command"],
-      operationId: "updateSessionName",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: SessionNameUpdateRequestSchema,
-          },
-        },
-      },
-      responses: commandAcceptedResponses(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", SessionNameUpdateRequestSchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const accepted = await dependencies.sessions.updateSessionName(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, CommandAcceptedResponseSchema, accepted, 202, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r13 = v1r12.post(
-    "/sessions/:sessionId/ui-response",
-    describeRoute({
-      tags: ["command"],
-      operationId: "submitSessionUiResponse",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      requestBody: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: UiResponseRequestSchema,
-          },
-        },
-      },
-      responses: {
-        200: {
-          description: "UI response accepted",
-          content: {
-            "application/json": {
-              schema: UiResponseResponseSchema,
-            },
-          },
-        },
-        404: {
-          description: "Session or UI request not found",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", UiResponseRequestSchema),
-    (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const payload = c.req.valid("json");
-        const resolved = dependencies.sessions.submitUiResponse(
-          sessionId,
-          payload,
-          c.get("auth"),
-          connectionId,
-        );
-        return jsonWithSchema(c, UiResponseResponseSchema, resolved, 200, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r14 = v1r13.post(
-    "/sessions/:sessionId/clear-queue",
-    describeRoute({
-      tags: ["command"],
-      operationId: "clearSessionQueue",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-      ],
-      responses: {
-        200: {
-          description: "Queue cleared",
-          content: {
-            "application/json": {
-              schema: ClearQueueResponseSchema,
-            },
-          },
-        },
-        404: {
-          description: "Session not found",
-          content: {
-            "application/json": {
-              schema: ErrorResponseSchema,
-            },
-          },
-        },
-      },
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const cleared = dependencies.sessions.clearQueue(sessionId, c.get("auth"), connectionId);
-        return jsonWithSchema(c, ClearQueueResponseSchema, cleared, 200, {
-          "x-pi-connection-id": connectionId,
-        });
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r15 = v1r14.get(
-    "/streams/app-events",
-    describeRoute({
-      tags: ["streams"],
-      operationId: "readAppEventsStream",
-      parameters: [
-        {
-          in: "query",
-          name: "offset",
-          schema: { type: "string" },
-          required: false,
-        },
-        {
-          in: "query",
-          name: "live",
-          schema: { type: "string", enum: ["json", "sse", "long-poll"] },
-          required: false,
-        },
-        {
-          in: "query",
-          name: "timeoutMs",
-          schema: { type: "string" },
-          required: false,
-        },
-        {
-          in: "query",
-          name: "cursor",
-          schema: { type: "string" },
-          required: false,
-        },
-      ],
-      responses: streamResponseDescription(),
-    }),
-    needsAuth,
-    tbValidator("query", StreamReadQuerySchema),
-    async (c) => {
-      try {
-        const query = c.req.valid("query");
-        const streamId = appEventsStreamId();
-        const mode = query.live ?? "json";
-        if (mode === "sse" || mode === "long-poll") {
-          requireLiveOffset(mode, query.offset);
-        }
-        if (mode === "sse") {
-          const connectionId = getConnectionId(c);
-          return streamEventsSse(
-            streamId,
-            query.offset,
-            query.cursor,
-            connectionId,
-            dependencies.streams,
-          );
-        }
-        if (mode === "long-poll") {
-          const read = await dependencies.streams.waitForEvents(
-            streamId,
-            query.offset,
-            parseTimeout(query.timeoutMs),
-          );
-          const streamCursor = read.streamClosed ? undefined : generateResponseCursor(query.cursor);
-          if (read.events.length === 0 && (read.timedOut || read.streamClosed)) {
-            return new Response(null, {
-              status: 204,
-              headers: streamStateHeaders({
-                ...read,
-                streamCursor,
-              }),
-            });
-          }
-          return jsonWithSchema(
-            c,
-            StreamReadResponseSchema,
-            {
-              streamId,
-              fromOffset: read.fromOffset,
-              nextOffset: read.nextOffset,
-              ...(streamCursor ? { streamCursor } : {}),
-              upToDate: read.upToDate,
-              streamClosed: read.streamClosed,
-              events: read.events,
-            },
-            200,
-            streamStateHeaders({
-              ...read,
-              streamCursor,
-            }),
-          );
-        }
-        const read = dependencies.streams.read(streamId, query.offset);
-        return jsonWithSchema(
-          c,
-          StreamReadResponseSchema,
-          {
-            streamId,
-            fromOffset: read.fromOffset,
-            nextOffset: read.nextOffset,
-            upToDate: read.upToDate,
-            streamClosed: read.streamClosed,
-            events: read.events,
-          },
-          200,
-          streamStateHeaders(read),
-        );
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  const v1r16 = v1r15.get(
-    "/streams/sessions/:sessionId/events",
-    describeRoute({
-      tags: ["streams"],
-      operationId: "readSessionEventsStream",
-      parameters: [
-        {
-          in: "path",
-          name: "sessionId",
-          schema: { type: "string" },
-          required: true,
-        },
-        {
-          in: "query",
-          name: "offset",
-          schema: { type: "string" },
-          required: false,
-        },
-        {
-          in: "query",
-          name: "live",
-          schema: { type: "string", enum: ["json", "sse", "long-poll"] },
-          required: false,
-        },
-        {
-          in: "query",
-          name: "timeoutMs",
-          schema: { type: "string" },
-          required: false,
-        },
-        {
-          in: "query",
-          name: "cursor",
-          schema: { type: "string" },
-          required: false,
-        },
-      ],
-      responses: streamResponseDescription(),
-    }),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("query", StreamReadQuerySchema),
-    async (c) => {
-      try {
-        const connectionId = getConnectionId(c);
-        const { sessionId } = c.req.valid("param");
-        const query = c.req.valid("query");
-        dependencies.sessions.touchPresence(sessionId, c.get("auth"), connectionId);
-        const streamId = sessionEventsStreamId(sessionId);
-        const mode = query.live ?? "json";
-        if (mode === "sse" || mode === "long-poll") {
-          requireLiveOffset(mode, query.offset);
-        }
-        if (mode === "sse") {
-          return streamEventsSse(
-            streamId,
-            query.offset,
-            query.cursor,
-            connectionId,
-            dependencies.streams,
-            () => {
-              dependencies.sessions.detachPresence(sessionId, connectionId);
-            },
-          );
-        }
-        if (mode === "long-poll") {
-          const read = await dependencies.streams.waitForEvents(
-            streamId,
-            query.offset,
-            parseTimeout(query.timeoutMs),
-          );
-          const streamCursor = read.streamClosed ? undefined : generateResponseCursor(query.cursor);
-          if (read.events.length === 0 && (read.timedOut || read.streamClosed)) {
-            return new Response(null, {
-              status: 204,
-              headers: {
-                ...streamStateHeaders({
-                  ...read,
-                  streamCursor,
-                }),
-                "x-pi-connection-id": connectionId,
-              },
-            });
-          }
-          return jsonWithSchema(
-            c,
-            StreamReadResponseSchema,
-            {
-              streamId,
-              fromOffset: read.fromOffset,
-              nextOffset: read.nextOffset,
-              ...(streamCursor ? { streamCursor } : {}),
-              upToDate: read.upToDate,
-              streamClosed: read.streamClosed,
-              events: read.events,
-            },
-            200,
-            {
-              ...streamStateHeaders({
-                ...read,
-                streamCursor,
-              }),
-              "x-pi-connection-id": connectionId,
-            },
-          );
-        }
-        const read = dependencies.streams.read(streamId, query.offset);
-        return jsonWithSchema(
-          c,
-          StreamReadResponseSchema,
-          {
-            streamId,
-            fromOffset: read.fromOffset,
-            nextOffset: read.nextOffset,
-            upToDate: read.upToDate,
-            streamClosed: read.streamClosed,
-            events: read.events,
-          },
-          200,
-          {
-            ...streamStateHeaders(read),
-            "x-pi-connection-id": connectionId,
-          },
-        );
-      } catch (error) {
-        return authError(c, error);
-      }
-    },
-  );
-
-  return v1r16;
+  return registerStreamRoutes(withSessionCommandsC, dependencies, needsAuth);
 }
 
 export type RemoteV1RoutesApp = ReturnType<typeof createV1Routes>;
+export type { RemoteHonoEnv } from "./routes/types.js";

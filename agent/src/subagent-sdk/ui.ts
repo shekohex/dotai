@@ -2,7 +2,7 @@ import { formatDurationHuman } from "../extensions/coreui/tools.js";
 import type { RuntimeSubagent } from "./types.js";
 
 function summarizeTask(task: string, maxLength = 72): string {
-  const normalized = task.replace(/\s+/g, " ").trim();
+  const normalized = task.replaceAll(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) {
     return normalized;
   }
@@ -11,7 +11,7 @@ function summarizeTask(task: string, maxLength = 72): string {
 }
 
 function formatAutoExitCountdown(subagent: RuntimeSubagent): string | undefined {
-  if (!subagent.autoExit || !subagent.autoExitTimeoutActive || subagent.status !== "idle") {
+  if (!subagent.autoExit || subagent.autoExitTimeoutActive !== true || subagent.status !== "idle") {
     return undefined;
   }
 
@@ -32,7 +32,7 @@ export function renderSubagentWidget(subagents: RuntimeSubagent[]): string[] | u
     `Subagents (${subagents.length})`,
     ...subagents
       .slice()
-      .sort((left, right) => left.name.localeCompare(right.name))
+      .toSorted((left, right) => left.name.localeCompare(right.name))
       .map((subagent) => {
         const countdown = formatAutoExitCountdown(subagent);
         const parts = [
@@ -43,7 +43,7 @@ export function renderSubagentWidget(subagents: RuntimeSubagent[]): string[] | u
           summarizeTask(subagent.task, 48),
         ];
 
-        if (countdown) {
+        if (countdown !== undefined && countdown.length > 0) {
           parts.push(countdown);
         }
 

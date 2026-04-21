@@ -6,16 +6,8 @@ import type { Context, TypedResponse } from "hono";
 type JsonResponseStatus = 200 | 201 | 202 | 400 | 401 | 403 | 404 | 409 | 500;
 type JsonResponseHeaders = Record<string, string | string[]>;
 
-const validatorCache = new WeakMap<TSchema, TypeCheck<TSchema>>();
-
 function getValidator<T extends TSchema>(schema: T): TypeCheck<T> {
-  const existing = validatorCache.get(schema);
-  if (existing) {
-    return existing as TypeCheck<T>;
-  }
-  const created = TypeCompiler.Compile(schema);
-  validatorCache.set(schema, created as TypeCheck<TSchema>);
-  return created;
+  return TypeCompiler.Compile(schema);
 }
 
 export function assertType<T extends TSchema>(

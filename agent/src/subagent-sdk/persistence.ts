@@ -6,7 +6,6 @@ import {
   SessionManager,
   getDefaultSessionDir as getUpstreamDefaultSessionDir,
   type SessionEntry,
-  type SessionMessageEntry,
 } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
 
 import { extractMessageText } from "../extensions/session-launch-utils.js";
@@ -20,10 +19,15 @@ import {
   type RuntimeSubagent,
   type SubagentStateEntry,
 } from "./types.js";
-
-type SessionBootstrapWriter = {
-  _rewriteFile(): void;
-};
+import {
+  getAssistantOutcomeMessage,
+  getStructuredOutputEntry,
+  parseExpiringMarker,
+  parseTimeoutModeMarker,
+  parseTimestampMs,
+  type ExpiringMarker,
+  type TimeoutModeMarker,
+} from "./persistence-helpers.js";
 
 type ChildSessionOutcome = {
   summary?: string;
@@ -40,25 +44,6 @@ export type ChildSessionStatusDetails = {
 };
 
 export const SUBAGENT_PARENT_INPUT_GRACE_MS = 1500;
-
-type ExpiringMarker = {
-  expiresAt?: number;
-};
-
-type TimeoutModeMarker = {
-  activatedAt?: number;
-};
-
-type AssistantOutcomeMessage = SessionMessageEntry["message"] & {
-  role: "assistant";
-  stopReason?: string;
-  content: string | Array<{ type: string; text?: string }>;
-};
-
-type StructuredOutputEntry = {
-  structured?: unknown;
-  error?: StructuredOutputError;
-};
 
 export function getDefaultSessionDir(cwd: string): string {
   return getUpstreamDefaultSessionDir(cwd);
@@ -77,8 +62,12 @@ export function consumeParentInjectedInputMarker(sessionId: string): boolean {
   let marker: ExpiringMarker | undefined;
 
   try {
-    marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as ExpiringMarker;
+    marker = parseExpiringMarker(JSON.parse(fs.readFileSync(markerPath, "utf8")));
   } catch {
+    return false;
+  }
+
+  if (!marker) {
     return false;
   }
 
@@ -101,34 +90,35 @@ export function activateAutoExitTimeoutMode(sessionId: string): void {
       JSON.stringify({ activatedAt: Date.now() } satisfies TimeoutModeMarker),
       "utf8",
     );
-  } catch {
-    return;
-  }
+  } catch {}
 }
 
 export function isAutoExitTimeoutModeActive(sessionId: string): boolean {
   try {
-    const marker = JSON.parse(
-      fs.readFileSync(getAutoExitTimeoutModeMarkerPath(sessionId), "utf8"),
-    ) as TimeoutModeMarker;
+    const marker = parseTimeoutModeMarker(
+      JSON.parse(fs.readFileSync(getAutoExitTimeoutModeMarkerPath(sessionId), "utf8")),
+    );
+    if (!marker) {
+      return false;
+    }
     return typeof marker.activatedAt === "number";
   } catch {
     return false;
   }
 }
 
-export async function createChildSessionFile(options: {
+export function createChildSessionFile(options: {
   cwd: string;
   sessionId: string;
   parentSessionPath?: string;
-}): Promise<string> {
+}): string {
   const sessionManager = SessionManager.create(options.cwd, getDefaultSessionDir(options.cwd));
   const sessionPath = sessionManager.newSession({
     id: options.sessionId,
     parentSession: options.parentSessionPath,
   });
 
-  if (!sessionPath) {
+  if (sessionPath === undefined || sessionPath.length === 0) {
     throw new Error("Failed to allocate child session path");
   }
 
@@ -136,7 +126,7 @@ export async function createChildSessionFile(options: {
   return sessionPath;
 }
 
-export async function readChildSessionOutcome(sessionPath: string): Promise<ChildSessionOutcome> {
+export function readChildSessionOutcome(sessionPath: string): Promise<ChildSessionOutcome> {
   try {
     const sessionManager = SessionManager.open(sessionPath);
     let entry = sessionManager.getLeafEntry();
@@ -155,21 +145,24 @@ export async function readChildSessionOutcome(sessionPath: string): Promise<Chil
       const message = getAssistantOutcomeMessage(entry);
       if (message && summary === undefined) {
         const extractedSummary = extractMessageText(message.content).trim();
-        summary = extractedSummary || undefined;
+        summary = extractedSummary.length > 0 ? extractedSummary : undefined;
         failed = message.stopReason === "error" || message.stopReason === "aborted";
       }
 
-      entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
+      entry =
+        typeof entry.parentId === "string" && entry.parentId.length > 0
+          ? sessionManager.getEntry(entry.parentId)
+          : undefined;
     }
 
-    return {
+    return Promise.resolve({
       summary,
       structured,
       structuredError,
       failed: failed || structuredError !== undefined,
-    };
+    });
   } catch {
-    return { failed: true };
+    return Promise.resolve({ failed: true });
   }
 }
 
@@ -185,7 +178,10 @@ export function readLatestChildStructuredOutputState(
         return parseSubagentStructuredOutputEntry(entry.data);
       }
 
-      entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
+      entry =
+        typeof entry.parentId === "string" && entry.parentId.length > 0
+          ? sessionManager.getEntry(entry.parentId)
+          : undefined;
     }
   } catch {
     return undefined;
@@ -198,16 +194,7 @@ export async function readChildSessionStatus(sessionPath: string): Promise<Child
   return (await readChildSessionStatusDetails(sessionPath)).status;
 }
 
-function parseTimestampMs(value: unknown): number | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-export async function readChildSessionStatusDetails(
+export function readChildSessionStatusDetails(
   sessionPath: string,
 ): Promise<ChildSessionStatusDetails> {
   try {
@@ -217,24 +204,27 @@ export async function readChildSessionStatusDetails(
     while (entry) {
       if (entry.type === "message") {
         if (entry.message.role === "assistant") {
-          return {
+          return Promise.resolve({
             status: "idle",
             idleSinceAt: parseTimestampMs(
               (entry as SessionEntry & { timestamp?: unknown }).timestamp,
             ),
-          };
+          });
         }
 
-        return { status: "running" };
+        return Promise.resolve({ status: "running" });
       }
 
-      entry = entry.parentId ? sessionManager.getEntry(entry.parentId) : undefined;
+      entry =
+        typeof entry.parentId === "string" && entry.parentId.length > 0
+          ? sessionManager.getEntry(entry.parentId)
+          : undefined;
     }
   } catch {
-    return { status: "running" };
+    return Promise.resolve({ status: "running" });
   }
 
-  return { status: "running" };
+  return Promise.resolve({ status: "running" });
 }
 
 export function reduceRuntimeSubagents(
@@ -263,12 +253,12 @@ export function reduceRuntimeSubagents(
 }
 
 function persistSessionBootstrap(sessionManager: SessionManager): void {
-  const writablePrototype = SessionManager.prototype as unknown as Partial<SessionBootstrapWriter>;
-  if (typeof writablePrototype._rewriteFile !== "function") {
-    throw new Error("SessionManager bootstrap persistence is unavailable");
+  const rewriteFile: unknown = Reflect.get(sessionManager, "_rewriteFile");
+  if (typeof rewriteFile !== "function") {
+    throw new TypeError("SessionManager bootstrap persistence is unavailable");
   }
 
-  writablePrototype._rewriteFile.call(sessionManager);
+  Reflect.apply(rewriteFile, sessionManager, []);
 }
 
 function getSubagentStateEntry(entry: SessionEntry): SubagentStateEntry | undefined {
@@ -277,37 +267,4 @@ function getSubagentStateEntry(entry: SessionEntry): SubagentStateEntry | undefi
   }
 
   return parseSubagentStateEntry(entry.data);
-}
-
-function getAssistantOutcomeMessage(entry: SessionEntry): AssistantOutcomeMessage | undefined {
-  if (
-    entry.type !== "message" ||
-    entry.message.role !== "assistant" ||
-    !("content" in entry.message)
-  ) {
-    return undefined;
-  }
-
-  return entry.message as AssistantOutcomeMessage;
-}
-
-function getStructuredOutputEntry(entry: SessionEntry): StructuredOutputEntry | undefined {
-  if (entry.type !== "custom" || entry.customType !== SUBAGENT_STRUCTURED_OUTPUT_ENTRY) {
-    return undefined;
-  }
-
-  const parsed = parseSubagentStructuredOutputEntry(entry.data);
-  if (!parsed) {
-    return undefined;
-  }
-
-  if (parsed.status === "captured") {
-    return { structured: parsed.structured };
-  }
-
-  if (parsed.status === "error" && parsed.error) {
-    return { error: parsed.error };
-  }
-
-  return undefined;
 }

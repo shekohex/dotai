@@ -15,7 +15,7 @@ if (allowedKeys.length === 0) {
 const { app, dispose } = createRemoteApp({
   origin,
   allowedKeys,
-  runtimeFactory: runtimeMode === "faux" ? new InMemoryPiRuntimeFactory() : undefined,
+  runtimeFactory: runtimeMode === "faux" ? InMemoryPiRuntimeFactory() : undefined,
 });
 
 const server = serve(

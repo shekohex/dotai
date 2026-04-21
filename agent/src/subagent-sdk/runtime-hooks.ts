@@ -22,11 +22,13 @@ export type SubagentRuntimeHooks = {
 
 export function createDefaultSubagentRuntimeHooks(pi: ExtensionAPI): SubagentRuntimeHooks {
   return {
-    async persistState(state) {
+    persistState(state) {
       pi.appendEntry(SUBAGENT_STATE_ENTRY, serializeSubagentStateEntry(state));
+      return Promise.resolve();
     },
-    async persistMessage(entry) {
+    persistMessage(entry) {
       pi.appendEntry(SUBAGENT_MESSAGE_ENTRY, serializeSubagentMessageEntry(entry));
+      return Promise.resolve();
     },
     emitStatusMessage({ content, triggerTurn }) {
       pi.sendMessage(
@@ -35,11 +37,11 @@ export function createDefaultSubagentRuntimeHooks(pi: ExtensionAPI): SubagentRun
           content,
           display: true,
         },
-        triggerTurn ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "steer" },
+        triggerTurn === true ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "steer" },
       );
     },
     renderWidget(ctx, subagents) {
-      if (!ctx?.hasUI) {
+      if (ctx?.hasUI !== true) {
         return;
       }
 

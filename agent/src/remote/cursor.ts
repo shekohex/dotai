@@ -20,7 +20,7 @@ export function generateResponseCursor(
   nowMs = Date.now(),
 ): string {
   const currentCursor = calculateCursor(nowMs);
-  if (!clientCursor) {
+  if (clientCursor === undefined || clientCursor.length === 0) {
     return currentCursor;
   }
   const currentInterval = Number.parseInt(currentCursor, 10);

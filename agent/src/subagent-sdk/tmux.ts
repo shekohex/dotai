@@ -17,7 +17,7 @@ export class TmuxAdapter implements MuxAdapter {
   ) {}
 
   async isAvailable(): Promise<boolean> {
-    if (!process.env.TMUX) {
+    if (process.env.TMUX === undefined || process.env.TMUX.length === 0) {
       return false;
     }
 
@@ -68,7 +68,7 @@ export class TmuxAdapter implements MuxAdapter {
     text: string,
     submitMode: PaneSubmitMode = "steer",
   ): Promise<void> {
-    const bufferName = `pi-subagent-${paneId.replace(/[^a-zA-Z0-9_-]/g, "")}-${Date.now()}`;
+    const bufferName = `pi-subagent-${paneId.replaceAll(/[^a-zA-Z0-9_-]/g, "")}-${Date.now()}`;
     const filePath = path.join(os.tmpdir(), `${bufferName}.txt`);
 
     await fs.writeFile(filePath, text, "utf8");
@@ -83,8 +83,12 @@ export class TmuxAdapter implements MuxAdapter {
         }),
         "paste tmux buffer",
       );
-      const submitKey =
-        submitMode === "followUp" ? "M-Enter" : submitMode === "steer" ? "Enter" : undefined;
+      let submitKey: "M-Enter" | "Enter" | undefined;
+      if (submitMode === "followUp") {
+        submitKey = "M-Enter";
+      } else if (submitMode === "steer") {
+        submitKey = "Enter";
+      }
       if (submitKey) {
         this.assertOk(
           await this.exec("tmux", ["send-keys", "-t", paneId, submitKey], { cwd: this.cwd }),
@@ -92,7 +96,7 @@ export class TmuxAdapter implements MuxAdapter {
         );
       }
     } finally {
-      await fs.unlink(filePath).catch(() => undefined);
+      await fs.unlink(filePath).catch(() => {});
     }
   }
 

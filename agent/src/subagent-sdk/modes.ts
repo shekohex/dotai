@@ -23,6 +23,31 @@ const syntheticWorkerMode: ModeSpec = {
   autoExit: true,
 };
 
+function resolveModeCwd(ctx: ExtensionContext, value: string | undefined): string {
+  return value !== undefined && value.length > 0 ? path.resolve(ctx.cwd, value) : ctx.cwd;
+}
+
+function resolveRequestedModeName(mode: string | undefined): string {
+  const trimmedModeName = mode?.trim();
+  return trimmedModeName !== undefined && trimmedModeName.length > 0 ? trimmedModeName : "worker";
+}
+
+async function resolveRequestedSpec(
+  cwd: string,
+  modeName: string,
+  mode: string | undefined,
+): Promise<ModeSpec | undefined> {
+  const trimmedModeName = mode?.trim();
+  const resolved =
+    trimmedModeName !== undefined && trimmedModeName.length > 0
+      ? await resolveModeSpec(cwd, modeName)
+      : syntheticWorkerMode;
+  if (resolved === undefined && modeName === "worker") {
+    return syntheticWorkerMode;
+  }
+  return resolved;
+}
+
 export async function resolveSubagentMode(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -30,20 +55,22 @@ export async function resolveSubagentMode(
 ): Promise<{ value?: ResolvedSubagentMode; error?: string }> {
   const availableToolNames = pi.getAllTools().map((tool) => tool.name);
   const parentActiveTools = pi.getActiveTools();
-  const cwd = options.cwd ? path.resolve(ctx.cwd, options.cwd) : ctx.cwd;
-
-  let modeName = options.mode?.trim() || "worker";
-  let spec = options.mode ? await resolveModeSpec(cwd, modeName) : syntheticWorkerMode;
-  if (!spec && modeName === "worker") {
-    spec = syntheticWorkerMode;
-  }
+  const cwd = resolveModeCwd(ctx, options.cwd);
+  const modeName = resolveRequestedModeName(options.mode);
+  const spec = await resolveRequestedSpec(cwd, modeName, options.mode);
 
   if (!spec) {
     return { error: `Unknown mode "${modeName}"` };
   }
 
   const tools = resolveModeTools(spec.tools, parentActiveTools, availableToolNames);
-  const model = spec.provider && spec.modelId ? `${spec.provider}/${spec.modelId}` : undefined;
+  const model =
+    spec.provider !== undefined &&
+    spec.provider.length > 0 &&
+    spec.modelId !== undefined &&
+    spec.modelId.length > 0
+      ? `${spec.provider}/${spec.modelId}`
+      : undefined;
   const autoExit = options.autoExit ?? spec.autoExit ?? true;
 
   return {
@@ -92,5 +119,5 @@ export function resolveModeTools(
   }
 
   resolved.delete("subagent");
-  return Array.from(resolved).sort((left, right) => left.localeCompare(right));
+  return Array.from(resolved).toSorted((left, right) => left.localeCompare(right));
 }

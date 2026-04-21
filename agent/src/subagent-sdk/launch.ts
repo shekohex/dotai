@@ -1,7 +1,11 @@
 import { toModeFlagName } from "../extensions/modes.js";
 import type { TmuxTarget } from "../mode-utils.js";
 
-import type { ChildBootstrapState, RuntimeSubagent } from "./types.js";
+import {
+  parseChildBootstrapState,
+  type ChildBootstrapState,
+  type RuntimeSubagent,
+} from "./types.js";
 
 export type LaunchTarget = { kind: "session"; sessionPath: string } | { kind: "continue" };
 
@@ -26,12 +30,12 @@ export const CHILD_STATE_ENV = "PI_SUBAGENT_CHILD_STATE";
 export const PI_COMMAND_ENV = "PI_SUBAGENT_PI_COMMAND";
 
 function shellEscape(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function getPiCommandPrefix(): string[] {
   const override = process.env[PI_COMMAND_ENV]?.trim();
-  if (override) {
+  if (override !== undefined && override.length > 0) {
     return [override];
   }
 
@@ -57,24 +61,24 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
     commandParts.push("--session", shellEscape(launchTarget.sessionPath));
   }
 
-  if (options.model) {
+  if (options.model !== undefined && options.model.length > 0) {
     commandParts.push("--model", shellEscape(options.model));
   }
-  if (options.thinkingLevel) {
+  if (options.thinkingLevel !== undefined && options.thinkingLevel.length > 0) {
     commandParts.push("--thinking", shellEscape(options.thinkingLevel));
   }
-  if (options.systemPrompt) {
+  if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     commandParts.push(
       options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt",
       shellEscape(options.systemPrompt),
     );
   }
-  if (prompt.trim()) {
+  if (prompt.trim().length > 0) {
     commandParts.push(shellEscape(prompt));
   }
-  if (options.mode) {
+  if (options.mode !== undefined && options.mode.length > 0) {
     const modeFlag = toModeFlagName(options.mode);
-    if (modeFlag) {
+    if (modeFlag !== undefined && modeFlag.length > 0) {
       commandParts.push(`--${modeFlag}`);
     }
   }
@@ -85,12 +89,12 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
 
 export function readChildState(): ChildBootstrapState | undefined {
   const raw = process.env[CHILD_STATE_ENV];
-  if (!raw) {
+  if (raw === undefined || raw.length === 0) {
     return undefined;
   }
 
   try {
-    return JSON.parse(raw) as ChildBootstrapState;
+    return parseChildBootstrapState(JSON.parse(raw));
   } catch {
     return undefined;
   }

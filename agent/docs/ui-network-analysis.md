@@ -474,20 +474,9 @@ interface SelectResponse {
 ### Width Handling
 
 ```typescript
-// Client capabilities at connect
-interface ClientCapabilities {
-  terminal: { columns: number; rows: number };
-}
-
-// Client → Server on resize
-interface TerminalResize {
-  op: "terminal.resize";
-  columns: number;
-  rows: number;
-}
-
-// Server updates footer data (client re-renders locally)
-// No round-trip for resize!
+// No width/resize protocol.
+// Server publishes only serializable UI data/state events.
+// Client uses local terminal dimensions for render and re-render.
 ```
 
 ---
@@ -505,9 +494,17 @@ It was a **symptom** of trying to serialize non-serializable functions. The serv
 3. **Client renders** — Server sends data, client decides layout
 4. **Graceful degradation** — Extensions check capabilities, adapt behavior
 
-### Immediate Actions
+### Implementation Status
 
-1. **Remove 180 hardcode** — Send footer data, not rendered lines
-2. **Create declarative footer API** — Server sends JSON, client renders
-3. **Audit all `custom` usages** — Move to client or replace with `select`
-4. **Document tier 3 methods** — Explicitly unsupported in remote mode
+Completed:
+
+1. Removed server pre-render dependency that led to 180-column behavior.
+2. Added capabilities handshake endpoint and runtime capability helper.
+3. Enforced hard failures for unsupported remote server factory/callback primitives.
+4. Added multi-client first-response-wins + resolved outcome echo (`extension_ui_resolved`).
+
+Remaining:
+
+1. Continue command-level migration for flows that still rely on `custom` so non-custom clients degrade cleanly.
+2. Complete coverage pass over extension UI usage to keep remote server path strictly data-only.
+3. Adopt server KV namespaces (`global`/`user`) from extensions that currently persist only via session entries when cross-session storage is required.

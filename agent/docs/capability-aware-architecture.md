@@ -334,20 +334,29 @@ interface SelectResponse {
 
 ---
 
-## 7. Implementation Plan
+## 7. Implementation Status
 
-1. Immediate crash-class fix: remove server pre-render path.
-2. Add capabilities endpoint and runtime helper.
-3. Remove host split.
-4. Apply hard-fail semantics for unsupported interactive operations.
-5. Migrate `coreui`, then `files`, then `review`.
-6. Add global/per-user KV for extension data.
+### Completed
+
+1. Removed host split; bundled extensions load in both runtimes.
+2. Added dedicated capabilities registration endpoint: `POST /v1/connections/:connectionId/capabilities`.
+3. Added runtime capability helper (`attachRuntimeCapabilities`, `getRuntimeCapabilities`, `hasRuntimePrimitive`) without upstream type changes.
+4. Removed server pre-render dependency; no 180-column server render path.
+5. Added hard-fail semantics for unsupported remote server UI factory APIs (`setHeader`, `setFooter`, `setEditorComponent`, `custom`).
+6. Added multi-client first-response-wins arbitration with `extension_ui_resolved` broadcast.
+7. Migrated high-risk extension paths to capability-aware behavior (`coreui`, `files`, `prompt-stash`, `review` widget path).
+8. Added pluggable server KV backend with namespaced scopes (`global`, `user`) and default JSON file storage.
+
+### Remaining
+
+1. Continue replacing optional `custom` UI overlays with plain primitive fallbacks where UX parity is still desired.
+2. Trim remaining server-side UI state assumptions in remote session runtime where data-only contract can replace them.
 
 ---
 
 ## 8. References
 
-use `liberian` skill and load `badlogic/pi-mono` repo:
+use `librarian` skill and load `badlogic/pi-mono` repo:
 
 - Upstream API behavior: `packages/coding-agent/src/core/extensions/runner.ts`
 - Current split: `src/extensions/definitions.ts`

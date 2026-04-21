@@ -47,6 +47,8 @@ This package provides:
 
 - You must use `@sinclair/typebox` package instead of manually parsing inputs and validation of data.
 - Prefere spliting your code into multiple modules so it can be reused.
+- Avoid dynamic imports when possible, and prefer type imports when possible.
+- Client and Server interaction Must be using Hono RPC instead of calling `fetch` directly.
 
 ## Development Commands
 

@@ -3,16 +3,38 @@
   "plugins": ["typescript", "unicorn", "oxc", "node", "jsdoc", "import"],
   "categories": {
     "correctness": "error",
-    "pedantic": "warn",
-    "suspicious": "warn"
+    "pedantic": "error",
+    "suspicious": "error"
   },
   "ignorePatterns": [".pi/extensions/forbid.ts", "test/**", "**/**/*.test.ts"],
   "options": {
     "typeAware": true,
     "typeCheck": true,
-    "reportUnusedDisableDirectives": "warn"
+    "reportUnusedDisableDirectives": "error"
   },
   "rules": {
+    "import/max-dependencies": [
+      "error",
+      {
+        "max": 15
+      }
+    ],
+    "max-lines": [
+      "error",
+      {
+        "max": 750,
+        "skipComments": true,
+        "skipBlankLines": true
+      }
+    ],
+    "max-lines-per-function": [
+      "error",
+      {
+        "max": 128,
+        "skipComments": true,
+        "skipBlankLines": true
+      }
+    ],
     "typescript/no-explicit-any": "error",
     "typescript/no-unsafe-type-assertion": "error",
     "typescript/no-unsafe-assignment": "error",

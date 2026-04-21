@@ -1,12 +1,17 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AgentSessionRuntime, ExtensionUIContext } from "@mariozechner/pi-coding-agent";
+import { defaultSettings } from "../../default-settings.js";
 import { theme as defaultTheme } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import type { AuthSession } from "../auth.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import type {
+  CommandKind,
   CreateSessionRequest,
   Presence,
+  RemoteExtensionMetadata,
+  RemoteResourceBundle,
+  RemoteSettingsSnapshot,
   SessionSnapshot,
   SessionStatus,
   UiResponseRequest,
@@ -63,7 +68,9 @@ export interface SessionRecord {
   model: string;
   thinkingLevel: string;
   activeTools: string[];
-  extensions: import("../schemas.js").RemoteExtensionMetadata[];
+  extensions: RemoteExtensionMetadata[];
+  resources: RemoteResourceBundle;
+  settings: RemoteSettingsSnapshot;
   availableModels: Model<Api>[];
   modelSettings: {
     defaultProvider: string | null;
@@ -111,7 +118,7 @@ export interface AcceptedSessionCommand {
   sessionId: string;
   clientId: string;
   requestId: string | null;
-  kind: import("../schemas.js").CommandKind;
+  kind: CommandKind;
   payload: unknown;
   acceptedAt: number;
   sequence: number;
@@ -136,6 +143,20 @@ export function createEmptyModelSettings(): SessionRecord["modelSettings"] {
     defaultThinkingLevel: null,
     enabledModels: null,
   };
+}
+
+export function createEmptyResourceBundle(): SessionRecord["resources"] {
+  return {
+    skills: [],
+    prompts: [],
+    themes: [],
+    systemPrompt: null,
+    appendSystemPrompt: [],
+  };
+}
+
+export function createEmptySettingsSnapshot(): SessionRecord["settings"] {
+  return { ...defaultSettings };
 }
 
 export function createInitialDraft(createdAt: number): SessionRecord["draft"] {

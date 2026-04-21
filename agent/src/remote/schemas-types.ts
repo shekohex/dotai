@@ -18,6 +18,8 @@ import {
   PromptCommandRequestSchema,
   RemoteExtensionHostSchema,
   RemoteExtensionMetadataSchema,
+  RemoteResourceBundleSchema,
+  RemoteSettingsSnapshotSchema,
   SessionNameUpdateRequestSchema,
   SessionSnapshotSchema,
   SessionStatusSchema,
@@ -60,3 +62,5 @@ export type StreamReadResponse = Static<typeof StreamReadResponseSchema>;
 export type Presence = Static<typeof PresenceSchema>;
 export type RemoteExtensionMetadata = Static<typeof RemoteExtensionMetadataSchema>;
 export type RemoteExtensionHost = Static<typeof RemoteExtensionHostSchema>;
+export type RemoteResourceBundle = Static<typeof RemoteResourceBundleSchema>;
+export type RemoteSettingsSnapshot = Static<typeof RemoteSettingsSnapshotSchema>;

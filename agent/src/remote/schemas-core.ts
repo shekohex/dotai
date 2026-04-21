@@ -1,4 +1,13 @@
 import { Type } from "@sinclair/typebox";
+import { RemoteResourceBundleSchema, RemoteSettingsSnapshotSchema } from "./schemas-settings.js";
+
+export {
+  RemotePromptResourceSchema,
+  RemoteResourceBundleSchema,
+  RemoteSettingsSnapshotSchema,
+  RemoteSkillResourceSchema,
+  RemoteThemeResourceSchema,
+} from "./schemas-settings.js";
 
 export const SessionStatusSchema = Type.Union([
   Type.Literal("starting"),
@@ -228,6 +237,8 @@ export const SessionSnapshotSchema = Type.Object({
   thinkingLevel: Type.String(),
   activeTools: Type.Array(Type.String()),
   extensions: Type.Array(RemoteExtensionMetadataSchema),
+  resources: Type.Optional(RemoteResourceBundleSchema),
+  settings: Type.Optional(RemoteSettingsSnapshotSchema),
   availableModels: Type.Array(RemoteModelSchema),
   modelSettings: RemoteModelSettingsSchema,
   draft: DraftSchema,

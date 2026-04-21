@@ -132,7 +132,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
         this.touchPresence(targetSessionId, targetClient, targetConnectionId);
       },
       syncFromRuntime: (targetRecord) => {
-        this.syncFromRuntime(targetRecord, { updateTimestamp: false });
+        this.syncFromRuntime(targetRecord, { updateTimestamp: false, syncResources: true });
       },
       toSessionSnapshot: (targetRecord) => this.toSessionSnapshot(targetRecord),
     });

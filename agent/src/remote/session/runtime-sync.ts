@@ -3,6 +3,8 @@ import type { SessionSnapshot, SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import { parseResourceLoaderExtensionMetadata, parseRuntimeExtensionMetadata } from "./helpers.js";
+import { applyRuntimeResourcesSnapshot } from "./runtime-resources-sync.js";
+import { buildSessionSnapshotParts } from "./runtime-sync-snapshot.js";
 import type { SessionRecord } from "./types.js";
 
 export function syncSessionRecordFromRuntime(input: {
@@ -11,6 +13,7 @@ export function syncSessionRecordFromRuntime(input: {
   options?: {
     now?: number;
     updateTimestamp?: boolean;
+    syncResources?: boolean;
   };
   getRuntimeSession: (record: SessionRecord) => AgentSessionRuntime["session"] | undefined;
 }): void {
@@ -21,7 +24,8 @@ export function syncSessionRecordFromRuntime(input: {
 
   const now = input.options?.now ?? input.now();
   const updateTimestamp = input.options?.updateTimestamp ?? true;
-  applyRuntimeSnapshot(input.record, session);
+  const syncResources = input.options?.syncResources ?? false;
+  applyRuntimeSnapshot(input.record, session, syncResources);
   if (updateTimestamp) {
     input.record.updatedAt = now;
   }
@@ -41,9 +45,13 @@ export function syncSessionRecordFromRuntime(input: {
 function applyRuntimeSnapshot(
   record: SessionRecord,
   session: NonNullable<AgentSessionRuntime["session"]>,
+  syncResources: boolean,
 ): void {
   record.cwd = session.sessionManager.getCwd();
   record.extensions = readRuntimeExtensionMetadata(record.runtime);
+  if (syncResources) {
+    applyRuntimeResourcesSnapshot(record, session);
+  }
   applyRuntimeModelSnapshot(record, session);
   record.transcript = [...session.messages];
   record.streamingState = session.isStreaming ? "streaming" : "idle";
@@ -206,67 +214,6 @@ export function toSessionSnapshotRecord(
   return {
     ...snapshotParts,
     ...streamOffsets,
-  };
-}
-
-function buildSessionSnapshotParts(
-  record: SessionRecord,
-): Omit<SessionSnapshot, "lastSessionStreamOffset" | "lastAppStreamOffsetSeenByServer"> {
-  const modelSettings = buildModelSettingsSnapshot(record);
-  const draft = buildDraftSnapshot(record);
-  const queue = {
-    depth: record.queue.depth,
-    nextSequence: record.queue.nextSequence,
-  };
-  return {
-    sessionId: record.sessionId,
-    sessionName: record.sessionName,
-    status: record.status,
-    cwd: record.cwd,
-    model: record.model,
-    thinkingLevel: record.thinkingLevel,
-    activeTools: [...record.activeTools],
-    extensions: record.extensions.map((extension) => ({ ...extension })),
-    availableModels: record.availableModels.map((model) => ({ ...model })),
-    modelSettings,
-    draft,
-    draftRevision: record.draft.revision,
-    transcript: [...record.transcript],
-    queue,
-    retry: {
-      status: record.retry.status,
-    },
-    compaction: {
-      status: record.compaction.status,
-    },
-    presence: [...record.presence.values()],
-    activeRun: record.activeRun,
-    streamingState: record.streamingState,
-    pendingToolCalls: [...record.pendingToolCalls],
-    errorMessage: record.errorMessage,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-  };
-}
-
-function buildModelSettingsSnapshot(record: SessionRecord): SessionSnapshot["modelSettings"] {
-  return {
-    defaultProvider: record.modelSettings.defaultProvider,
-    defaultModel: record.modelSettings.defaultModel,
-    defaultThinkingLevel: record.modelSettings.defaultThinkingLevel,
-    enabledModels: record.modelSettings.enabledModels
-      ? [...record.modelSettings.enabledModels]
-      : null,
-  };
-}
-
-function buildDraftSnapshot(record: SessionRecord): SessionSnapshot["draft"] {
-  return {
-    text: record.draft.text,
-    attachments: [...record.draft.attachments],
-    revision: record.draft.revision,
-    updatedAt: record.draft.updatedAt,
-    updatedByClientId: record.draft.updatedByClientId,
   };
 }
 

@@ -10,6 +10,8 @@ import type {
 import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import type { AuthSession } from "../auth.js";
 import {
+  createEmptyResourceBundle,
+  createEmptySettingsSnapshot,
   createEmptyModelSettings,
   createIdleTaskState,
   createInitialDraft,
@@ -50,6 +52,8 @@ function buildSessionRecord(input: {
     thinkingLevel: "medium",
     activeTools: ["read", "bash", "edit", "write"],
     extensions: input.readRuntimeExtensionMetadata(input.runtime),
+    resources: createEmptyResourceBundle(),
+    settings: createEmptySettingsSnapshot(),
     availableModels: [],
     modelSettings: createEmptyModelSettings(),
     draft: createInitialDraft(input.createdAt),

@@ -181,6 +181,7 @@ export abstract class SessionRegistryBase {
     options?: {
       now?: number;
       updateTimestamp?: boolean;
+      syncResources?: boolean;
     },
   ): void {
     syncSessionRecordFromRuntime({

@@ -23,8 +23,10 @@ export {
   createInitialRemoteSessionState,
   getCombinedExtensionMetadata,
   initializeRemoteSessionMetadata,
+  readRemoteSettingsSnapshot,
   resolveModel,
 } from "./session-bootstrap-ops.js";
+export type { RemoteAgentSettings } from "./session-bootstrap-ops.js";
 export {
   contentToTextAndImages,
   isAgentMessageLike,

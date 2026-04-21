@@ -1,6 +1,8 @@
 import {
   AuthStorage,
+  type ExtensionFactory,
   ModelRegistry,
+  type ResourceLoader,
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
@@ -13,10 +15,20 @@ export type {
   RemoteRuntimeOptions,
 } from "./session-deps.js";
 import {
+  createRemoteResourceLoader,
   patchModelRegistryForRemoteCatalog,
   patchSettingsManagerForRemoteModelSettings,
+  readRemoteSettingsSnapshot,
 } from "./session-deps.js";
 import { RemoteAgentSessionCapabilitiesApi } from "./session/capabilities-api.js";
+
+interface RemoteAgentSessionCreateOptions {
+  snapshot?: SessionSnapshot;
+  fallbackCwd?: string;
+  agentDir: string;
+  clientExtensions?: RemoteExtensionMetadata[];
+  clientExtensionFactories?: ExtensionFactory[];
+}
 
 export class RemoteAgentSession
   extends RemoteAgentSessionCapabilitiesApi
@@ -25,28 +37,35 @@ export class RemoteAgentSession
   static async create(
     client: RemoteApiClient,
     sessionId: string,
-    options: {
-      snapshot?: SessionSnapshot;
-      fallbackCwd?: string;
-      agentDir: string;
-      clientExtensions?: RemoteExtensionMetadata[];
-    },
+    options: RemoteAgentSessionCreateOptions,
   ): Promise<RemoteAgentSession> {
     const snapshot = options.snapshot ?? (await client.getSessionSnapshot(sessionId));
     const sessionCwd = snapshot.cwd ?? options.fallbackCwd ?? process.cwd();
-    const settingsManager = SettingsManager.create(sessionCwd, options.agentDir);
+    const remoteSettings = readRemoteSettingsSnapshot(snapshot);
+    const settingsManager = SettingsManager.inMemory(remoteSettings);
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.inMemory(authStorage);
     let session: RemoteAgentSession | undefined;
-    patchModelRegistryForRemoteCatalog(
+    configureRemoteModelStateBindings({
       modelRegistry,
-      () => session?.getRemoteAvailableModels() ?? [],
-    );
-    patchSettingsManagerForRemoteModelSettings(
       settingsManager,
-      () => session?.getRemoteModelSettings() ?? {},
-    );
+      sessionRef: () => session,
+    });
     const sessionManager = SessionManager.inMemory(sessionCwd);
+    const resourceLoader = await createSessionResourceLoader({
+      sessionCwd,
+      agentDir: options.agentDir,
+      snapshot,
+      getExtensionsMetadata: () =>
+        session
+          ? session.getCombinedExtensionsMetadata()
+          : [
+              ...snapshot.extensions.map((extension) => ({ ...extension })),
+              ...(options.clientExtensions ?? []).map((extension) => ({ ...extension })),
+            ],
+      clientExtensions: options.clientExtensions ?? [],
+      clientExtensionFactories: options.clientExtensionFactories ?? [],
+    });
     session = new RemoteAgentSession(
       client,
       snapshot.sessionId,
@@ -54,6 +73,7 @@ export class RemoteAgentSession
       settingsManager,
       modelRegistry,
       sessionManager,
+      resourceLoader,
       {
         agentDir: options.agentDir,
         clientExtensions: options.clientExtensions ?? [],
@@ -62,4 +82,35 @@ export class RemoteAgentSession
     session.startPolling();
     return session;
   }
+}
+
+function configureRemoteModelStateBindings(input: {
+  modelRegistry: ModelRegistry;
+  settingsManager: SettingsManager;
+  sessionRef: () => RemoteAgentSession | undefined;
+}): void {
+  patchModelRegistryForRemoteCatalog(input.modelRegistry, () => {
+    return input.sessionRef()?.getRemoteAvailableModels() ?? [];
+  });
+  patchSettingsManagerForRemoteModelSettings(input.settingsManager, () => {
+    return input.sessionRef()?.getRemoteModelSettings() ?? {};
+  });
+}
+
+function createSessionResourceLoader(input: {
+  sessionCwd: string;
+  agentDir: string;
+  snapshot: SessionSnapshot;
+  getExtensionsMetadata: () => RemoteExtensionMetadata[];
+  clientExtensions: RemoteExtensionMetadata[];
+  clientExtensionFactories: ExtensionFactory[];
+}): Promise<ResourceLoader> {
+  return createRemoteResourceLoader({
+    cwd: input.sessionCwd,
+    agentDir: input.agentDir,
+    snapshot: input.snapshot,
+    getExtensionsMetadata: input.getExtensionsMetadata,
+    clientExtensionFactories: input.clientExtensionFactories,
+    clientExtensions: input.clientExtensions,
+  });
 }

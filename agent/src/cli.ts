@@ -12,15 +12,18 @@ process.title = "pi";
 
 installBundledResourcePaths();
 if (shouldUseRemoteMode(process.argv.slice(2))) {
-  const clientExtensionMetadata = getBundledExtensionDefinitionsByHost("ui-only").map(
-    (definition) => ({
-      id: definition.id,
-      host: definition.host,
-      path: `client:${definition.id}`,
-    }),
+  const clientExtensionDefinitions = getBundledExtensionDefinitionsByHost("ui-only");
+  const clientExtensionMetadata = clientExtensionDefinitions.map((definition) => ({
+    id: definition.id,
+    host: definition.host,
+    path: `client:${definition.id}`,
+  }));
+  const clientExtensionFactories = clientExtensionDefinitions.map(
+    (definition) => definition.factory,
   );
   await runRemoteInteractiveMode(process.argv.slice(2), {
     clientExtensionMetadata,
+    clientExtensionFactories,
   });
 } else {
   await main(process.argv.slice(2), { extensionFactories: bundledExtensionFactories });

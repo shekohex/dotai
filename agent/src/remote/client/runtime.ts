@@ -1,5 +1,6 @@
 import {
   getAgentDir,
+  type ExtensionFactory,
   type ModelRegistry,
   type ResourceLoader,
   type SessionManager,
@@ -16,6 +17,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   private readonly clientExtensionMetadata: NonNullable<
     RemoteRuntimeOptions["clientExtensionMetadata"]
   >;
+  private readonly clientExtensionFactories: ExtensionFactory[];
   private _session: RemoteAgentSession;
 
   private constructor(
@@ -25,6 +27,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       cwd: string;
       agentDir: string;
       clientExtensionMetadata: NonNullable<RemoteRuntimeOptions["clientExtensionMetadata"]>;
+      clientExtensionFactories: ExtensionFactory[];
     },
   ) {
     this.client = client;
@@ -32,12 +35,14 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     this.cwd = options.cwd;
     this.agentDir = options.agentDir;
     this.clientExtensionMetadata = options.clientExtensionMetadata;
+    this.clientExtensionFactories = options.clientExtensionFactories;
   }
 
   static async create(options: RemoteRuntimeOptions): Promise<RemoteAgentSessionRuntime> {
     const fallbackCwd = options.cwd ?? process.cwd();
     const agentDir = options.agentDir ?? getAgentDir();
     const clientExtensionMetadata = options.clientExtensionMetadata ?? [];
+    const clientExtensionFactories = options.clientExtensionFactories ?? [];
     const client = new RemoteApiClient({
       origin: options.origin,
       auth: options.auth,
@@ -57,12 +62,14 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       fallbackCwd,
       agentDir,
       clientExtensions: clientExtensionMetadata,
+      clientExtensionFactories,
     });
 
     return new RemoteAgentSessionRuntime(client, session, {
       cwd: authoritativeCwd,
       agentDir,
       clientExtensionMetadata,
+      clientExtensionFactories,
     });
   }
 
@@ -127,6 +134,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       fallbackCwd: this.cwd,
       agentDir: this.agentDir,
       clientExtensions: this.clientExtensionMetadata,
+      clientExtensionFactories: this.clientExtensionFactories,
     });
     this.cwd = snapshot.cwd ?? this.cwd;
     this._session = next;

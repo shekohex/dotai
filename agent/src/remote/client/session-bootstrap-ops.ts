@@ -1,7 +1,14 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
-import type { RemoteExtensionMetadata, SessionSnapshot } from "../schemas.js";
+import { defaultSettings } from "../../default-settings.js";
+import {
+  RemoteSettingsSnapshotSchema,
+  type RemoteExtensionMetadata,
+  type RemoteSettingsSnapshot,
+  type SessionSnapshot,
+} from "../schemas.js";
+import { assertType } from "../typebox.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
 import {
   cloneModel,
@@ -14,6 +21,19 @@ import {
   readPendingToolCallId,
   resolveOptionalThinkingLevel,
 } from "./session-shared.js";
+
+export type RemoteAgentSettings = Exclude<
+  Parameters<typeof SettingsManager.inMemory>[0],
+  undefined
+>;
+
+type TypesMatch<A, B> = A extends B ? (B extends A ? true : false) : false;
+type EnsureTrue<T extends true> = T;
+type AssertRemoteSettingsTypeParity = EnsureTrue<
+  TypesMatch<RemoteSettingsSnapshot, RemoteAgentSettings>
+>;
+const remoteSettingsTypeParity: AssertRemoteSettingsTypeParity = true;
+void remoteSettingsTypeParity;
 
 export function createInitialRemoteSessionState(input: {
   snapshot: SessionSnapshot;
@@ -100,7 +120,7 @@ export function applyAuthoritativeCwd(input: {
   nextCwd: string;
   sessionId: string;
   currentSessionName: string | undefined;
-  agentDir: string;
+  remoteSettings: RemoteAgentSettings;
   remoteModelSettings: RemoteModelSettingsState;
 }): { sessionManager: SessionManager; settingsManager: SettingsManager } | undefined {
   if (!input.nextCwd || input.nextCwd === input.currentCwd) {
@@ -112,9 +132,28 @@ export function applyAuthoritativeCwd(input: {
   if (input.currentSessionName !== undefined && input.currentSessionName.length > 0) {
     sessionManager.appendSessionInfo(input.currentSessionName);
   }
-  const settingsManager = SettingsManager.create(input.nextCwd, input.agentDir);
+  const settingsManager = SettingsManager.inMemory(input.remoteSettings);
   patchSettingsManagerForRemoteModelSettings(settingsManager, () => input.remoteModelSettings);
   return { sessionManager, settingsManager };
+}
+
+function createDefaultRemoteSettings(): RemoteAgentSettings {
+  return { ...defaultSettings };
+}
+
+export function readRemoteSettingsSnapshot(snapshot: SessionSnapshot): RemoteAgentSettings {
+  const settings: unknown = Reflect.get(snapshot, "settings");
+  if (settings === undefined) {
+    return createDefaultRemoteSettings();
+  }
+
+  assertType(RemoteSettingsSnapshotSchema, settings);
+
+  const defaults = createDefaultRemoteSettings();
+  return {
+    ...defaults,
+    ...settings,
+  };
 }
 
 export function resolveModel(input: {

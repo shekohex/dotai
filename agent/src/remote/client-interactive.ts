@@ -2,6 +2,7 @@ import {
   InteractiveMode,
   initTheme,
   type AgentSessionRuntime,
+  type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
 import {
   RemoteAgentSessionRuntime,
@@ -183,6 +184,7 @@ function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
 
 export interface RunRemoteInteractiveModeOptions {
   clientExtensionMetadata?: RemoteExtensionMetadata[];
+  clientExtensionFactories?: ExtensionFactory[];
 }
 
 export async function runRemoteInteractiveMode(
@@ -204,6 +206,7 @@ export async function runRemoteInteractiveMode(
     sessionId: parsed.sessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
     clientExtensionMetadata: options.clientExtensionMetadata,
+    clientExtensionFactories: options.clientExtensionFactories,
   });
 
   if (!isInteractiveRuntimeContract(runtimeCandidate)) {

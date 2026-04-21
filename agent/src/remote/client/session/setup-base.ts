@@ -9,6 +9,7 @@ import type {
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
+import { defaultSettings } from "../../../default-settings.js";
 import type { RemoteApiClient } from "../../remote-api-client.js";
 import type {
   ExtensionUiRequestEventPayload,
@@ -20,22 +21,23 @@ import {
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,
   createInitialRemoteSessionState,
-  createRemoteResourceLoader,
   getCombinedExtensionMetadata,
   handleRemoteUiRequest,
   initializeRemoteSessionMetadata,
   normalizeAvailableModels,
+  readRemoteSettingsSnapshot,
   resolveModel,
   resolveThinkingLevel,
 } from "../session-deps.js";
 import type { RemoteModelSettingsState } from "../contracts.js";
+import type { RemoteAgentSettings } from "../session-deps.js";
 
 export abstract class RemoteAgentSessionSetupBase {
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
   readonly modelRegistry: ModelRegistry;
-  readonly resourceLoader: ResourceLoader;
-  readonly promptTemplates: ReadonlyArray<PromptTemplate> = [];
+  resourceLoader: ResourceLoader;
+  promptTemplates: ReadonlyArray<PromptTemplate>;
   readonly state: {
     messages: AgentMessage[];
     pendingToolCalls: Set<string>;
@@ -78,6 +80,7 @@ export abstract class RemoteAgentSessionSetupBase {
   protected _retryAttempt = 0;
   protected remoteAvailableModels: Model<Api>[] = [];
   protected readonly remoteModelSettings: RemoteModelSettingsState = {};
+  protected remoteSettings: RemoteAgentSettings = { ...defaultSettings };
   protected remoteExtensions: RemoteExtensionMetadata[] = [];
   protected readonly clientExtensions: RemoteExtensionMetadata[];
   protected readonly agentDir: string;
@@ -89,7 +92,11 @@ export abstract class RemoteAgentSessionSetupBase {
     settingsManager: SettingsManager,
     modelRegistry: ModelRegistry,
     sessionManager: SessionManager,
-    options: { agentDir: string; clientExtensions: RemoteExtensionMetadata[] },
+    resourceLoader: ResourceLoader,
+    options: {
+      agentDir: string;
+      clientExtensions: RemoteExtensionMetadata[];
+    },
   ) {
     this.client = client;
     this.sessionId = sessionId;
@@ -99,15 +106,12 @@ export abstract class RemoteAgentSessionSetupBase {
     this.sessionManager = sessionManager;
     this.agentDir = options.agentDir;
     this.clientExtensions = options.clientExtensions;
-    this.resourceLoader = createRemoteResourceLoader(() =>
-      getCombinedExtensionMetadata({
-        remoteExtensions: this.remoteExtensions,
-        clientExtensions: this.clientExtensions,
-      }),
-    );
+    this.resourceLoader = resourceLoader;
+    this.promptTemplates = this.resourceLoader.getPrompts().prompts;
 
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
+    this.remoteSettings = readRemoteSettingsSnapshot(snapshot);
     this.remoteExtensions = applyRemoteExtensionsSnapshot(snapshot);
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, "medium");
     this._model = resolveModel({
@@ -145,6 +149,13 @@ export abstract class RemoteAgentSessionSetupBase {
     return this.remoteModelSettings;
   }
 
+  protected getCombinedExtensionsMetadata(): RemoteExtensionMetadata[] {
+    return getCombinedExtensionMetadata({
+      remoteExtensions: this.remoteExtensions,
+      clientExtensions: this.clientExtensions,
+    });
+  }
+
   protected applyRemoteCatalogSnapshot(snapshot: SessionSnapshot): void {
     this.remoteAvailableModels = normalizeAvailableModels(snapshot.availableModels);
   }
@@ -163,7 +174,7 @@ export abstract class RemoteAgentSessionSetupBase {
       nextCwd,
       sessionId: this.sessionId,
       currentSessionName: this.sessionManager.getSessionName(),
-      agentDir: this.agentDir,
+      remoteSettings: this.remoteSettings,
       remoteModelSettings: this.remoteModelSettings,
     });
     if (!cwdResult) {

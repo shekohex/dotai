@@ -1,3 +1,4 @@
+import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { StreamEventEnvelope } from "../../schemas.js";
 import {
@@ -5,6 +6,8 @@ import {
   applyRemoteSettingsSnapshot,
   isAgentMessageLike,
   isAgentSessionEventLike,
+  patchSettingsManagerForRemoteModelSettings,
+  readRemoteSettingsSnapshot,
   readErrorMessage,
   resolveThinkingLevel,
 } from "../session-deps.js";
@@ -28,6 +31,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.applyAuthoritativeCwdUpdate(snapshot.cwd);
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
+    this.remoteSettings = readRemoteSettingsSnapshot(snapshot);
+    this.settingsManager = SettingsManager.inMemory(this.remoteSettings);
+    patchSettingsManagerForRemoteModelSettings(
+      this.settingsManager,
+      () => this.remoteModelSettings,
+    );
     this.remoteExtensions = applyRemoteExtensionsSnapshot(snapshot);
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, this._thinkingLevel);
     this.state.thinkingLevel = this._thinkingLevel;

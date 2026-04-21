@@ -2,6 +2,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type {
   AgentSession,
   AgentSessionRuntime,
+  ExtensionFactory,
   ModelRegistry,
   SessionManager,
   SettingsManager,
@@ -22,6 +23,7 @@ export interface RemoteRuntimeOptions {
   cwd?: string;
   agentDir?: string;
   clientExtensionMetadata?: RemoteExtensionMetadata[];
+  clientExtensionFactories?: ExtensionFactory[];
   fetchImpl?: typeof fetch;
 }
 

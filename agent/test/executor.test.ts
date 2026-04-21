@@ -25,7 +25,7 @@ class FakePi implements Partial<ExtensionAPI> {
   readonly registerToolCalls: string[] = [];
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
   readonly events = {
-    emit: () => undefined,
+    emit: () => {},
   };
 
   registerTool(tool: ToolDefinition<any, any>): void {
@@ -58,7 +58,7 @@ function createFakeContext(): ExtensionContext {
     cwd: "/tmp/executor-session-restart",
     hasUI: false,
     ui: {
-      notify: () => undefined,
+      notify: () => {},
     },
   } as unknown as ExtensionContext;
 }

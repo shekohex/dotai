@@ -10,16 +10,15 @@ export default function (pi: ExtensionAPI): void {
 
     const settings = getExecutorSettings();
 
-    if (!settings.autoStart) {
+    if (settings.autoStart) {
+      try {
+        await connectExecutor(pi, ctx);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Executor auto-start failed: ${message}`, "warning");
+      }
+    } else {
       clearExecutorState(pi, ctx.cwd);
-      return;
-    }
-
-    try {
-      await connectExecutor(pi, ctx);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(`Executor auto-start failed: ${message}`, "warning");
     }
   });
 
@@ -27,7 +26,7 @@ export default function (pi: ExtensionAPI): void {
     systemPrompt: `${event.systemPrompt}\n\n${await loadExecutorPrompt(ctx.cwd, ctx.hasUI)}`,
   }));
 
-  pi.on("tool_result", async (event) => {
+  pi.on("tool_result", (event) => {
     if (
       (event.toolName === "execute" || event.toolName === "resume") &&
       typeof event.details === "object" &&
@@ -36,11 +35,13 @@ export default function (pi: ExtensionAPI): void {
     ) {
       return { isError: event.details.isError };
     }
+
+    return {};
   });
 
   registerExecutorCommands(pi);
 
-  pi.on("session_shutdown", async (_event, ctx) => {
+  pi.on("session_shutdown", (_event, ctx) => {
     clearExecutorState(pi, ctx.cwd);
   });
 }

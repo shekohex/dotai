@@ -1,15 +1,21 @@
 import type { SettingsManager } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { Static } from "@sinclair/typebox";
+import { join } from "node:path";
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 import { defineModesFile, ModesFileSchema } from "./mode-utils.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
-const cwd = dirname(fileURLToPath(import.meta.url));
+const PackageJsonSchema = Type.Object({
+  version: Type.String(),
+});
+const cwd = import.meta.dirname;
 const packageJsonFile = join(cwd, "..", "package.json");
-const packageJson = JSON.parse(readFileSync(packageJsonFile, { encoding: "utf8" }));
+const packageJson = Value.Parse(
+  PackageJsonSchema,
+  JSON.parse(readFileSync(packageJsonFile, { encoding: "utf8" })),
+);
 
 export const defaultSettings = {
   defaultProvider: "codex-openai",

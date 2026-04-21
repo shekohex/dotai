@@ -5,8 +5,9 @@ function stripMarkdownSection(content: string, heading: string): string {
 
 export function buildReviewAuthorTask(targetLabel: string, handoffInstruction?: string): string {
   const lines = [`Review ${targetLabel} using the review instructions in this prompt.`];
-  if (handoffInstruction?.trim()) {
-    lines.push(`Author guidance: ${handoffInstruction.trim()}`);
+  const trimmedInstruction = handoffInstruction?.trim();
+  if (trimmedInstruction !== undefined && trimmedInstruction.length > 0) {
+    lines.push(`Author guidance: ${trimmedInstruction}`);
   }
 
   return lines.join("\n");
@@ -21,10 +22,10 @@ export function buildReviewHandoffPrompt(options: {
   const sections = [
     stripMarkdownSection(options.summary, "Task"),
     `## Task\n${buildReviewAuthorTask(options.targetLabel, options.handoffInstruction)}`,
-    options.parentSessionPath
+    options.parentSessionPath !== undefined && options.parentSessionPath.length > 0
       ? `## Parent Session\nParent session: ${options.parentSessionPath}\nIf you need additional detail from the parent session, use \`session_query\` with \`sessionPath\` set to the path above and a focused \`question\`.`
       : undefined,
-  ].filter((value): value is string => Boolean(value));
+  ].filter((value): value is string => value !== undefined && value.length > 0);
 
   return sections.join("\n\n");
 }

@@ -1,28 +1,25 @@
 /**
  * Desktop Notification Extension
  *
- * Sends a native desktop notification when the agent finishes and is waiting for input.
- * Uses OSC 777 escape sequence - no external dependencies.
+ * Sends a native desktop notification when the agent finishes and is waiting for input. Uses OSC
+ * 777 escape sequence - no external dependencies.
  *
- * Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode
- * Not supported: Kitty (uses OSC 99), Terminal.app, Windows Terminal, Alacritty
+ * Supported terminals: Ghostty, iTerm2, WezTerm, rxvt-unicode Not supported: Kitty (uses OSC 99),
+ * Terminal.app, Windows Terminal, Alacritty
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Markdown, type MarkdownTheme } from "@mariozechner/pi-tui";
 
-/**
- * Send a desktop notification via OSC 777 escape sequence.
- */
 const notify = (title: string, body: string): void => {
-  // OSC 777 format: ESC ] 777 ; notify ; title ; body BEL
-  process.stdout.write(`\x1b]777;notify;${title};${body}\x07`);
+  process.stdout.write(`\u001B]777;notify;${title};${body}\u0007`);
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
-  Boolean(
-    part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part,
-  );
+  isRecord(part) && part.type === "text" && typeof part.text === "string";
 
 const extractLastAssistantText = (
   messages: Array<{ role?: string; content?: unknown }>,
@@ -40,7 +37,7 @@ const extractLastAssistantText = (
 
     if (Array.isArray(content)) {
       const text = content
-        .filter(isTextPart)
+        .filter((part) => isTextPart(part))
         .map((part) => part.text)
         .join("\n")
         .trim();
@@ -76,8 +73,8 @@ const simpleMarkdown = (text: string, width = 80): string => {
 };
 
 const formatNotification = (text: string | null): { title: string; body: string } => {
-  const simplified = text ? simpleMarkdown(text) : "";
-  const normalized = simplified.replace(/\s+/g, " ").trim();
+  const simplified = text !== null && text.length > 0 ? simpleMarkdown(text) : "";
+  const normalized = simplified.replaceAll(/\s+/g, " ").trim();
   if (!normalized) {
     return { title: "Ready for input", body: "" };
   }
@@ -88,7 +85,7 @@ const formatNotification = (text: string | null): { title: string; body: string 
 };
 
 export default function (pi: ExtensionAPI) {
-  pi.on("agent_end", async (event) => {
+  pi.on("agent_end", (event) => {
     const lastText = extractLastAssistantText(event.messages ?? []);
     const { title, body } = formatNotification(lastText);
     notify(title, body);

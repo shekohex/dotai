@@ -31,6 +31,10 @@ const LITELLM_READINESS_PATH = "/health/readiness";
 
 let litellmStatePromise: Promise<LiteLLMState> | undefined;
 
+function hasText(value: string | undefined): value is string {
+  return value !== undefined && value.length > 0;
+}
+
 export default async function litellmGatewayExtension(pi: ExtensionAPI) {
   const litellmApiKey = await resolveLiteLLMApiKey();
 
@@ -46,7 +50,7 @@ export function createLiteLLMProviderRegistrations(
   state: LiteLLMState,
   litellmApiKey?: string,
 ): Array<{ provider: string; config: RegisteredProviderConfig }> {
-  if (!state.baseUrl) {
+  if (!hasText(state.baseUrl)) {
     return [];
   }
 
@@ -71,7 +75,7 @@ export function createLiteLLMProviderRegistrations(
     },
   ];
 
-  if (state.origin) {
+  if (hasText(state.origin)) {
     registrations.push({
       provider: GEMINI_PROVIDER,
       config: {
@@ -85,14 +89,12 @@ export function createLiteLLMProviderRegistrations(
   return registrations;
 }
 
-export async function resolveLiteLLMApiKey(): Promise<string | undefined> {
+export function resolveLiteLLMApiKey(): Promise<string | undefined> {
   return AuthStorage.create().getApiKey(LITELLM_AUTH_PROVIDER, { includeFallback: false });
 }
 
-export async function resolveLiteLLMState(): Promise<LiteLLMState> {
-  if (!litellmStatePromise) {
-    litellmStatePromise = detectLiteLLMState();
-  }
+export function resolveLiteLLMState(): Promise<LiteLLMState> {
+  litellmStatePromise ??= detectLiteLLMState();
 
   return litellmStatePromise;
 }

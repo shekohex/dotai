@@ -299,7 +299,7 @@ timedTest("review command keeps quoted folder paths intact", async () => {
       extensionFactories: [
         createReviewExtension({
           adapterFactory: () => mux,
-          completionActionPicker: async () => undefined,
+          completionActionPicker: async () => {},
         }),
       ],
     });
@@ -626,7 +626,7 @@ timedTest("review auto-clears state after the subagent completes", async () => {
       extensionFactories: [
         createReviewExtension({
           adapterFactory: () => mux,
-          completionActionPicker: async () => undefined,
+          completionActionPicker: async () => {},
         }),
       ],
     });
@@ -690,7 +690,7 @@ timedTest("completed review offers an action picker", async () => {
           adapterFactory: () => mux,
           completionActionPicker: async ({ summary }) => {
             pickedSummaries.push(summary);
-            return undefined;
+            return;
           },
         }),
       ],
@@ -1064,7 +1064,7 @@ timedTest("review restores the original branch after PR review completes", async
       extensionFactories: [
         createReviewExtension({
           adapterFactory: () => mux,
-          completionActionPicker: async () => undefined,
+          completionActionPicker: async () => {},
         }),
       ],
     });

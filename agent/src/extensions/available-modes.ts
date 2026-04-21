@@ -25,7 +25,7 @@ function escapeXmlAttribute(value: string): string {
 export async function loadAvailableModes(cwd: string): Promise<AvailableMode[]> {
   const loaded = await loadModesFile(cwd);
   return Object.entries(loaded.data.modes)
-    .sort(([left], [right]) => compareModeNames(left, right))
+    .toSorted(([left], [right]) => compareModeNames(left, right))
     .map(([name, spec]) => ({ name, spec }));
 }
 
@@ -34,20 +34,27 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
     return "<available_modes>\n</available_modes>";
   }
 
-  const sortedModes = modes.slice().sort((left, right) => compareModeNames(left.name, right.name));
+  const sortedModes = modes
+    .slice()
+    .toSorted((left, right) => compareModeNames(left.name, right.name));
 
   return [
     "<available_modes>",
     ...sortedModes.map(({ name, spec }) => {
       const attrs = [`name="${escapeXmlAttribute(name)}"`];
-      if (spec.provider && spec.modelId) {
+      if (
+        spec.provider !== undefined &&
+        spec.provider.length > 0 &&
+        spec.modelId !== undefined &&
+        spec.modelId.length > 0
+      ) {
         const model = `${spec.provider}/${spec.modelId}`;
         attrs.push(`model="${escapeXmlAttribute(model)}"`);
       }
-      if (spec.thinkingLevel) {
+      if (spec.thinkingLevel !== undefined) {
         attrs.push(`thinkingLevel="${escapeXmlAttribute(spec.thinkingLevel)}"`);
       }
-      if (spec.description) {
+      if (spec.description !== undefined && spec.description.length > 0) {
         attrs.push(`description="${escapeXmlAttribute(spec.description)}"`);
       }
       return `  <mode ${attrs.join(" ")} />`;

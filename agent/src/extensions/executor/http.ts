@@ -41,12 +41,32 @@ export class HttpError extends Error {
 const DEFAULT_HTTP_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 100;
 
+const isJsonValue = (value: unknown): value is JsonValue => {
+  if (value === null) {
+    return true;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every((item) => isJsonValue(item));
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).every((item) => isJsonValue(item));
+  }
+
+  return false;
+};
+
 const isJsonObject = (value: JsonValue): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const readString = (value: JsonValue | undefined, field: string): string => {
   if (typeof value !== "string") {
-    throw new Error(`Expected ${field} to be a string`);
+    throw new TypeError(`Expected ${field} to be a string`);
   }
   return value;
 };
@@ -58,7 +78,11 @@ const parseJson = async (response: Response): Promise<JsonValue> => {
   }
 
   try {
-    return JSON.parse(text) as JsonValue;
+    const parsed: unknown = JSON.parse(text);
+    if (!isJsonValue(parsed)) {
+      throw new TypeError("invalid json value");
+    }
+    return parsed;
   } catch {
     throw new HttpError({
       baseUrl: new URL(response.url).origin,
@@ -78,55 +102,69 @@ export const fetchJson = async <T>(
 ): Promise<T> => {
   const url = new URL(path, baseUrl);
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    options.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS,
-  );
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, options.timeoutMs ?? DEFAULT_HTTP_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      method: options.method ?? "GET",
-      headers: options.body ? { "content-type": "application/json" } : undefined,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const bodyText = await response.text().catch(() => "");
-      throw new HttpError({
-        baseUrl,
-        path,
-        message: `Executor HTTP ${response.status} from ${path}`,
-        status: response.status,
-        bodyText,
-      });
-    }
-
+    const response = await requestJson(baseUrl, path, url, options, controller.signal);
     const json = await parseJson(response);
     return parse(json);
   } catch (error) {
-    if (error instanceof HttpError) {
-      throw error;
-    }
-
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new HttpError({
-        baseUrl,
-        path,
-        message: `Executor request to ${path} timed out`,
-      });
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-    throw new HttpError({
-      baseUrl,
-      path,
-      message: `Executor request to ${path} failed: ${message}`,
-    });
+    throw toHttpError(baseUrl, path, error);
   } finally {
     clearTimeout(timeout);
   }
 };
+
+async function requestJson(
+  baseUrl: string,
+  path: string,
+  url: URL,
+  options: FetchJsonOptions,
+  signal: AbortSignal,
+): Promise<Response> {
+  const response = await fetch(url, {
+    method: options.method ?? "GET",
+    headers: options.body ? { "content-type": "application/json" } : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal,
+  });
+
+  if (response.ok) {
+    return response;
+  }
+
+  const bodyText = await response.text().catch(() => "");
+  throw new HttpError({
+    baseUrl,
+    path,
+    message: `Executor HTTP ${response.status} from ${path}`,
+    status: response.status,
+    bodyText,
+  });
+}
+
+function toHttpError(baseUrl: string, path: string, error: unknown): HttpError {
+  if (error instanceof HttpError) {
+    return error;
+  }
+
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return new HttpError({
+      baseUrl,
+      path,
+      message: `Executor request to ${path} timed out`,
+    });
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return new HttpError({
+    baseUrl,
+    path,
+    message: `Executor request to ${path} failed: ${message}`,
+  });
+}
 
 export const parseScopeInfo = (value: JsonValue): ScopeInfo => {
   if (!isJsonObject(value)) {
@@ -140,7 +178,7 @@ export const parseScopeInfo = (value: JsonValue): ScopeInfo => {
   };
 };
 
-export const getScope = async (baseUrl: string, timeoutMs?: number): Promise<ScopeInfo> =>
+export const getScope = (baseUrl: string, timeoutMs?: number): Promise<ScopeInfo> =>
   fetchJson(baseUrl, "/api/scope", parseScopeInfo, { timeoutMs });
 
 export const waitForHealthyScope = async (

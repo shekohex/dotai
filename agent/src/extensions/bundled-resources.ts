@@ -1,9 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { DefaultResourceLoader, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const extensionDir = dirname(fileURLToPath(import.meta.url));
+const extensionDir = import.meta.dirname;
 const bundledResourcesDir = join(extensionDir, "..", "resources");
 const loaderPatchSymbol = Symbol.for(
   "@shekohex/agent/default-resource-loader-bundled-paths-patched",
@@ -16,10 +15,25 @@ type LoaderPatchState = {
   __shekohexBundledResourcePathsInstalled?: boolean;
 };
 
-type LoaderPrototype = {
-  reload(this: LoaderPatchState): Promise<void>;
-  [loaderPatchSymbol]?: boolean;
-};
+function readOptionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function readLoaderPatchState(loader: DefaultResourceLoader): LoaderPatchState {
+  return {
+    additionalSkillPaths: readOptionalStringArray(Reflect.get(loader, "additionalSkillPaths")),
+    additionalPromptTemplatePaths: readOptionalStringArray(
+      Reflect.get(loader, "additionalPromptTemplatePaths"),
+    ),
+    additionalThemePaths: readOptionalStringArray(Reflect.get(loader, "additionalThemePaths")),
+    __shekohexBundledResourcePathsInstalled:
+      Reflect.get(loader, "__shekohexBundledResourcePathsInstalled") === true,
+  };
+}
 
 export default function bundledResourcesExtension(pi: ExtensionAPI) {
   pi.on("resources_discover", () => ({
@@ -30,34 +44,45 @@ export default function bundledResourcesExtension(pi: ExtensionAPI) {
 }
 
 export function installBundledResourcePaths(): void {
-  const loaderPrototype = DefaultResourceLoader.prototype as unknown as LoaderPrototype;
+  const loaderPrototype = DefaultResourceLoader.prototype;
 
-  if (loaderPrototype[loaderPatchSymbol]) {
+  if (Reflect.get(loaderPrototype, loaderPatchSymbol) === true) {
     return;
   }
 
-  const originalReload = loaderPrototype.reload;
-  loaderPrototype.reload = async function patchedReload(this: LoaderPatchState): Promise<void> {
-    if (!this.__shekohexBundledResourcePathsInstalled) {
-      this.additionalSkillPaths = appendUniquePaths(
-        this.additionalSkillPaths,
-        discoverSkillPaths(),
+  const reloadDescriptor = Object.getOwnPropertyDescriptor(loaderPrototype, "reload");
+  const originalReloadValue: unknown = reloadDescriptor?.value;
+  if (typeof originalReloadValue !== "function") {
+    throw new TypeError("DefaultResourceLoader.reload is unavailable");
+  }
+
+  loaderPrototype.reload = async function patchedReload(
+    this: DefaultResourceLoader,
+  ): Promise<void> {
+    const state = readLoaderPatchState(this);
+    if (state.__shekohexBundledResourcePathsInstalled !== true) {
+      Reflect.set(
+        this,
+        "additionalSkillPaths",
+        appendUniquePaths(state.additionalSkillPaths, discoverSkillPaths()),
       );
-      this.additionalPromptTemplatePaths = appendUniquePaths(
-        this.additionalPromptTemplatePaths,
-        discoverPromptPaths(),
+      Reflect.set(
+        this,
+        "additionalPromptTemplatePaths",
+        appendUniquePaths(state.additionalPromptTemplatePaths, discoverPromptPaths()),
       );
-      this.additionalThemePaths = appendUniquePaths(
-        this.additionalThemePaths,
-        discoverThemePaths(),
+      Reflect.set(
+        this,
+        "additionalThemePaths",
+        appendUniquePaths(state.additionalThemePaths, discoverThemePaths()),
       );
-      this.__shekohexBundledResourcePathsInstalled = true;
+      Reflect.set(this, "__shekohexBundledResourcePathsInstalled", true);
     }
 
-    await originalReload.call(this);
+    await Promise.resolve(Reflect.apply(originalReloadValue, this, []));
   };
 
-  loaderPrototype[loaderPatchSymbol] = true;
+  Reflect.set(loaderPrototype, loaderPatchSymbol, true);
 }
 
 export function discoverSkillPaths(): string[] {
@@ -82,7 +107,7 @@ function discoverFiles(dir: string, include: (name: string) => boolean): string[
   }
 
   const results: string[] = [];
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+  const entries = readdirSync(dir, { withFileTypes: true }).toSorted((a, b) =>
     a.name.localeCompare(b.name),
   );
 

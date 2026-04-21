@@ -1,13 +1,18 @@
-import { stream, type Message } from "@mariozechner/pi-ai";
+import { stream } from "@mariozechner/pi-ai";
 import {
   BorderedLoader,
-  convertToLlm,
-  serializeConversation,
   type ExtensionContext,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 
 import { resolveModeSpec, type ThinkingLevel } from "../mode-utils.js";
+import { CONTEXT_TRANSFER_SYSTEM_PROMPT } from "./session-launch-utils.constants.js";
+import {
+  buildSummaryUserMessage,
+  collectSummaryText,
+  getSummaryGenerationConfig,
+  streamSummaryUpdates,
+} from "./session-launch-summary-helpers.js";
 
 export type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -23,13 +28,6 @@ export type ResolvedSessionLaunchOptions = {
   thinkingLevel?: ThinkingLevel;
 };
 
-type SummaryGenerationConfig = {
-  model: SessionModel;
-  apiKey: string;
-  headers?: Record<string, string>;
-  warning?: string;
-};
-
 export type SummaryGenerationResult = {
   summary?: string;
   warning?: string;
@@ -40,31 +38,6 @@ export type SummaryGenerationResult = {
 export type SummaryGenerationUpdate = {
   summary: string;
 };
-
-const CONTEXT_TRANSFER_SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
-
-1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)
-2. Lists any relevant files that were discussed or modified
-3. Clearly states the next task based on the user's goal
-4. Is self-contained - the new thread should be able to proceed without the old conversation
-
-Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here's the prompt" - just output the prompt itself.
-
-Example output format:
-## Context
-We've been working on X. Key decisions:
-- Decision 1
-- Decision 2
-
-Files involved:
-- path/to/file1.ts
-- path/to/file2.ts
-
-## Task
-[Clear description of what to do next based on user's goal]`;
-
-const CONTEXT_TRANSFER_PROVIDER = "gemini" as const;
-const CONTEXT_TRANSFER_MODEL = "gemini-3.1-flash-lite-preview" as const;
 
 export function extractMessageText(
   content: string | Array<{ type: string; text?: string }>,
@@ -108,41 +81,17 @@ export async function resolveSessionLaunchOptions(
   ctx: ExtensionContext,
   options: SessionLaunchOptions,
 ): Promise<{ overrides?: ResolvedSessionLaunchOptions; error?: string }> {
-  let targetModel: SessionModel | undefined;
-  let thinkingLevel: ThinkingLevel | undefined;
-
-  if (options.mode) {
-    const modeSpec = await resolveModeSpec(ctx.cwd, options.mode);
-    if (!modeSpec) {
-      return { error: `Unknown mode "${options.mode}"` };
-    }
-
-    if (modeSpec.provider && modeSpec.modelId) {
-      const modeModel = ctx.modelRegistry.find(modeSpec.provider, modeSpec.modelId);
-      if (!modeModel) {
-        return {
-          error: `Mode "${options.mode}" references unknown model ${modeSpec.provider}/${modeSpec.modelId}`,
-        };
-      }
-      targetModel = modeModel;
-    }
-
-    thinkingLevel = modeSpec.thinkingLevel;
+  const modeSelection = await resolveModeLaunchSelection(ctx, options.mode);
+  if (modeSelection.error !== undefined) {
+    return { error: modeSelection.error };
+  }
+  const modelSelection = resolveModelLaunchSelection(ctx, options.model);
+  if (modelSelection.error !== undefined) {
+    return { error: modelSelection.error };
   }
 
-  if (options.model) {
-    const parsedModel = parseModelOverride(options.model);
-    if (!parsedModel) {
-      return { error: `Invalid model override "${options.model}". Expected provider/modelId.` };
-    }
-
-    const model = ctx.modelRegistry.find(parsedModel.provider, parsedModel.modelId);
-    if (!model) {
-      return { error: `Unknown model ${options.model}` };
-    }
-
-    targetModel = model;
-  }
+  const targetModel = modelSelection.targetModel ?? modeSelection.targetModel;
+  const thinkingLevel = modeSelection.thinkingLevel;
 
   if (!targetModel && !thinkingLevel) {
     return {};
@@ -158,34 +107,59 @@ export async function resolveSessionLaunchOptions(
   };
 }
 
-async function getSummaryGenerationConfig(
+async function resolveModeLaunchSelection(
   ctx: ExtensionContext,
-): Promise<{ config?: SummaryGenerationConfig; error?: string }> {
-  if (!ctx.model) {
-    return { error: "No model selected" };
+  mode: string | undefined,
+): Promise<{ targetModel?: SessionModel; thinkingLevel?: ThinkingLevel; error?: string }> {
+  if (mode === undefined || mode.length === 0) {
+    return {};
   }
 
-  const preferredModel = ctx.modelRegistry.find(CONTEXT_TRANSFER_PROVIDER, CONTEXT_TRANSFER_MODEL);
-  const generationModel = preferredModel ?? ctx.model;
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(generationModel);
-  if (!auth.ok) {
-    return { error: `Handoff auth failed: ${auth.error}` };
+  const modeSpec = await resolveModeSpec(ctx.cwd, mode);
+  if (!modeSpec) {
+    return { error: `Unknown mode "${mode}"` };
   }
 
-  if (!auth.apiKey) {
-    return { error: `No API key for ${generationModel.provider}/${generationModel.id}` };
+  const provider = modeSpec.provider;
+  const modelId = modeSpec.modelId;
+  if (
+    provider === undefined ||
+    provider.length === 0 ||
+    modelId === undefined ||
+    modelId.length === 0
+  ) {
+    return { thinkingLevel: modeSpec.thinkingLevel };
   }
 
-  return {
-    config: {
-      model: generationModel,
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      warning: preferredModel
-        ? undefined
-        : `Could not find ${CONTEXT_TRANSFER_PROVIDER}/${CONTEXT_TRANSFER_MODEL}; using current session model.`,
-    },
-  };
+  const targetModel = ctx.modelRegistry.find(provider, modelId);
+  if (!targetModel) {
+    return {
+      error: `Mode "${mode}" references unknown model ${provider}/${modelId}`,
+    };
+  }
+
+  return { targetModel, thinkingLevel: modeSpec.thinkingLevel };
+}
+
+function resolveModelLaunchSelection(
+  ctx: ExtensionContext,
+  modelOverride: string | undefined,
+): { targetModel?: SessionModel; error?: string } {
+  if (modelOverride === undefined || modelOverride.length === 0) {
+    return {};
+  }
+
+  const parsedModel = parseModelOverride(modelOverride);
+  if (!parsedModel) {
+    return { error: `Invalid model override "${modelOverride}". Expected provider/modelId.` };
+  }
+
+  const targetModel = ctx.modelRegistry.find(parsedModel.provider, parsedModel.modelId);
+  if (!targetModel) {
+    return { error: `Unknown model ${modelOverride}` };
+  }
+
+  return { targetModel };
 }
 
 export async function generateContextTransferSummary(
@@ -200,17 +174,7 @@ export async function generateContextTransferSummary(
     return { error: generation.error };
   }
 
-  const conversationText = serializeConversation(convertToLlm(messages));
-  const userMessage: Message = {
-    role: "user",
-    content: [
-      {
-        type: "text",
-        text: `## Conversation History\n\n${conversationText}\n\n## User's Goal for New Thread\n\n${goal}`,
-      },
-    ],
-    timestamp: Date.now(),
-  };
+  const userMessage = buildSummaryUserMessage(messages, goal);
 
   try {
     const summaryStream = stream(
@@ -219,21 +183,9 @@ export async function generateContextTransferSummary(
       { apiKey: generation.config.apiKey, headers: generation.config.headers, signal },
     );
 
-    let lastPartialSummary = "";
-
-    for await (const event of summaryStream) {
-      if (event.type !== "text_start" && event.type !== "text_delta" && event.type !== "text_end") {
-        continue;
-      }
-
-      const partialSummary = getAssistantText(event.partial.content).trim();
-      if (!partialSummary || partialSummary === lastPartialSummary) {
-        continue;
-      }
-
-      lastPartialSummary = partialSummary;
-      onUpdate?.({ summary: partialSummary });
-    }
+    await streamSummaryUpdates(summaryStream, (summary) => {
+      onUpdate?.({ summary });
+    });
 
     const response = await summaryStream.result();
 
@@ -242,15 +194,11 @@ export async function generateContextTransferSummary(
     }
 
     if (response.stopReason === "error") {
-      return { error: response.errorMessage || "Handoff generation failed" };
+      return { error: response.errorMessage ?? "Handoff generation failed" };
     }
 
     return {
-      summary: response.content
-        .filter((part): part is { type: "text"; text: string } => part.type === "text")
-        .map((part) => part.text)
-        .join("\n")
-        .trim(),
+      summary: collectSummaryText(response.content),
       warning: generation.config.warning,
     };
   } catch (error) {
@@ -258,7 +206,7 @@ export async function generateContextTransferSummary(
   }
 }
 
-export async function generateContextTransferSummaryWithLoader(
+export function generateContextTransferSummaryWithLoader(
   ctx: ExtensionContext,
   goal: string,
   messages: ReturnType<typeof getConversationMessages>,
@@ -270,7 +218,9 @@ export async function generateContextTransferSummaryWithLoader(
 
   return ctx.ui.custom<SummaryGenerationResult>((tui, theme, _kb, done) => {
     const loader = new BorderedLoader(tui, theme, loaderTitle);
-    loader.onAbort = () => done({ aborted: true });
+    loader.onAbort = () => {
+      done({ aborted: true });
+    };
 
     generateContextTransferSummary(ctx, goal, messages, loader.signal)
       .then(done)
@@ -282,18 +232,8 @@ export async function generateContextTransferSummaryWithLoader(
   });
 }
 
-function getAssistantText(
-  content: Array<{ type: string; text?: string } | { type: string; thinking?: string }>,
-): string {
-  return content
-    .flatMap((item) =>
-      item.type === "text" && "text" in item && typeof item.text === "string" ? [item.text] : [],
-    )
-    .join("\n");
-}
-
 export function buildContextTransferPrompt(summary: string, parentSession?: string): string {
-  if (!parentSession) {
+  if (parentSession === undefined || parentSession.length === 0) {
     return summary.trim();
   }
 

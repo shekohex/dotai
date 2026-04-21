@@ -24,7 +24,9 @@ export function bindCoreUI(
   }));
 
   ctx.ui.setFooter((tui, theme, footerData) => {
-    const requestRender = () => tui.requestRender();
+    const requestRender = () => {
+      tui.requestRender();
+    };
     setRequestRender(requestRender);
 
     const unsubscribe = footerData.onBranchChange(requestRender);
@@ -69,12 +71,12 @@ function buildTPSStatus(theme: Theme, state: CoreUIState): string {
 
   return (
     current +
-    `${theme.fg("dim", " ")}` +
-    `${theme.fg("success", state.tps.max.toFixed(1))}` +
-    `${theme.fg("dim", "/")}` +
-    `${theme.fg("warning", state.tps.median.toFixed(1))}` +
-    `${theme.fg("dim", "/")}` +
-    `${theme.fg("error", state.tps.min.toFixed(1))}` +
+    theme.fg("dim", " ") +
+    theme.fg("success", state.tps.max.toFixed(1)) +
+    theme.fg("dim", "/") +
+    theme.fg("warning", state.tps.median.toFixed(1)) +
+    theme.fg("dim", "/") +
+    theme.fg("error", state.tps.min.toFixed(1)) +
     elapsed
   );
 }
@@ -88,7 +90,7 @@ function buildProjectStatus(
   const projectLabel = theme.fg("dim", state.repoSlug ?? shortenHome(ctx.sessionManager.getCwd()));
   const refLabel = resolveRefLabel(branch, state.worktreeName);
 
-  if (!refLabel) {
+  if (refLabel === undefined || refLabel.length === 0) {
     return projectLabel;
   }
 
@@ -105,11 +107,11 @@ function resolveRefLabel(
   branch: string | null,
   worktreeName: string | undefined,
 ): string | undefined {
-  if (branch && branch !== "detached") {
+  if (branch !== null && branch !== "detached") {
     return branch;
   }
 
-  if (worktreeName) {
+  if (worktreeName !== undefined && worktreeName.length > 0) {
     return worktreeName;
   }
 
@@ -123,12 +125,14 @@ function buildModelStatus(
   state: CoreUIState,
 ): string {
   const modeName = state.activeMode;
-  const modePrefix = modeName
-    ? `${colorModeLabel(theme, modeName, state.activeModeColor)}${theme.fg("dim", " ")}`
-    : "";
+  const modePrefix =
+    modeName !== undefined && modeName.length > 0
+      ? `${colorModeLabel(theme, modeName, state.activeModeColor)}${theme.fg("dim", " ")}`
+      : "";
   const providerName = ctx.model?.provider ?? "no-provider";
   const modelName = ctx.model?.id ?? "no-model";
-  const thinkingLevel: ThinkingLevel = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
+  const thinkingLevel: ThinkingLevel =
+    ctx.model?.reasoning === true ? pi.getThinkingLevel() : "off";
 
   return (
     modePrefix +
@@ -138,7 +142,7 @@ function buildModelStatus(
 }
 
 function colorModeLabel(theme: Theme, mode: string, color?: ThemeColor): string {
-  if (color) {
+  if (color !== undefined) {
     return theme.fg(color, mode);
   }
 
@@ -159,6 +163,8 @@ function colorThinkingLevel(theme: Theme, level: ThinkingLevel): string {
       return theme.fg("thinkingHigh", "high");
     case "xhigh":
       return theme.fg("thinkingXhigh", "xhigh");
+    default:
+      return theme.fg("thinkingOff", "off");
   }
 }
 
@@ -171,7 +177,7 @@ function buildUsageStatus(
   const contextAndCost = formatContextAndCost(theme, ctx, totalCost);
   const parts = [contextAndCost];
 
-  if (usageStatus) {
+  if (usageStatus !== undefined && usageStatus.length > 0) {
     parts.push(usageStatus);
   }
 
@@ -188,7 +194,7 @@ function formatContextAndCost(theme: Theme, ctx: ExtensionContext, totalCost: nu
   return (
     `${theme.fg("dim", "ctx ")}${theme.fg("dim", tokensText)}` +
     `${theme.fg("dim", " (")}${styleContextPercent(theme, percent, percentText)}${theme.fg("dim", ") · ")}` +
-    `${theme.fg("dim", `$${totalCost.toFixed(2)}`)}`
+    theme.fg("dim", `$${totalCost.toFixed(2)}`)
   );
 }
 
@@ -253,7 +259,7 @@ function composeFooterLine(left: string, right: string, width: number): string {
     return `${sidePadding}${truncateToWidth(right, innerWidth, "")}${sidePadding}`;
   }
 
-  const gap = left && right ? 1 : 0;
+  const gap = left.length > 0 && right.length > 0 ? 1 : 0;
   const leftBudget = Math.max(0, innerWidth - rightWidth - gap);
   const leftPart = truncateToWidth(left, leftBudget, "…");
   const leftWidth = visibleWidth(leftPart);

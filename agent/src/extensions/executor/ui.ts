@@ -103,46 +103,9 @@ function buildRuntimeLines(
   const lines: ExecutorViewLine[] = [{ kind: "heading", text: "Runtime" }];
 
   for (const line of formatExecutorRuntimeState(state)) {
-    if (line === "Executor ready") {
-      lines.push({ kind: "kv", label: "State", value: line });
-      continue;
-    }
-
-    if (line === "Executor connecting" || line === "Executor idle") {
-      lines.push({ kind: "kv", label: "State", value: line });
-      continue;
-    }
-
-    if (line === "Executor error") {
-      lines.push({ kind: "kv", label: "State", value: line });
-      continue;
-    }
-
-    if (state.kind === "ready") {
-      switch (line) {
-        case `candidate: ${state.label}`:
-          lines.push({ kind: "kv", label: "Candidate", value: state.label });
-          break;
-        case `mcpUrl: ${state.mcpUrl}`:
-          lines.push({ kind: "kv", label: "MCP URL", value: state.mcpUrl });
-          break;
-        case `webUrl: ${state.webUrl}`:
-          lines.push({ kind: "kv", label: "Web URL", value: state.webUrl });
-          break;
-        case `scopeId: ${state.scopeId}`:
-          lines.push({ kind: "kv", label: "Scope ID", value: state.scopeId });
-          break;
-        case `scopeDir: ${state.scopeDir}`:
-          lines.push({ kind: "kv", label: "Scope Dir", value: state.scopeDir });
-          break;
-        default:
-          break;
-      }
-      continue;
-    }
-
-    if (state.kind === "error" && line === state.message) {
-      lines.push({ kind: "text", text: line });
+    const entry = toRuntimeLine(state, line);
+    if (entry) {
+      lines.push(entry);
     }
   }
 
@@ -167,6 +130,53 @@ function buildRuntimeLines(
   return lines;
 }
 
+function toRuntimeLine(
+  state: ReturnType<typeof getExecutorState>,
+  line: string,
+): ExecutorViewLine | undefined {
+  if (
+    line === "Executor ready" ||
+    line === "Executor connecting" ||
+    line === "Executor idle" ||
+    line === "Executor error"
+  ) {
+    return { kind: "kv", label: "State", value: line };
+  }
+
+  if (state.kind === "ready") {
+    return toReadyRuntimeLine(state, line);
+  }
+
+  if (state.kind === "error" && line === state.message) {
+    return { kind: "text", text: line };
+  }
+
+  return undefined;
+}
+
+function toReadyRuntimeLine(
+  state: Extract<ReturnType<typeof getExecutorState>, { kind: "ready" }>,
+  line: string,
+): ExecutorViewLine | undefined {
+  if (line === `candidate: ${state.label}`) {
+    return { kind: "kv", label: "Candidate", value: state.label };
+  }
+  if (line === `mcpUrl: ${state.mcpUrl}`) {
+    return { kind: "kv", label: "MCP URL", value: state.mcpUrl };
+  }
+  if (line === `webUrl: ${state.webUrl}`) {
+    return { kind: "kv", label: "Web URL", value: state.webUrl };
+  }
+  if (line === `scopeId: ${state.scopeId}`) {
+    return { kind: "kv", label: "Scope ID", value: state.scopeId };
+  }
+  if (line === `scopeDir: ${state.scopeDir}`) {
+    return { kind: "kv", label: "Scope Dir", value: state.scopeDir };
+  }
+
+  return undefined;
+}
+
 function buildWebLines(endpoint: ExecutorEndpoint, launchError?: string): ExecutorViewLine[] {
   const lines: ExecutorViewLine[] = [
     { kind: "heading", text: "Executor UI" },
@@ -177,7 +187,7 @@ function buildWebLines(endpoint: ExecutorEndpoint, launchError?: string): Execut
     { kind: "kv", label: "Scope Dir", value: endpoint.scope.dir },
   ];
 
-  if (launchError) {
+  if (launchError !== undefined && launchError.length > 0) {
     lines.push({ kind: "blank" });
     lines.push({ kind: "heading", text: "Browser" });
     lines.push({ kind: "text", text: `Launch failed: ${launchError}` });

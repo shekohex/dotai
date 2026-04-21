@@ -1,11 +1,11 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 const truthyValues = new Set(["1", "true", "yes", "on"]);
 
 function isTruthy(value: string | undefined): boolean {
-  if (!value) {
+  if (value === undefined || value.length === 0) {
     return false;
   }
   return truthyValues.has(value.trim().toLowerCase());
@@ -19,7 +19,7 @@ function safeStringify(value: unknown): string {
   const seen = new WeakSet<object>();
   return JSON.stringify(
     value,
-    (_key, current) => {
+    (_key, current: unknown) => {
       if (typeof current === "bigint") {
         return current.toString();
       }
@@ -73,7 +73,7 @@ function extractSystemPrompt(payload: unknown): string | undefined {
 
 function getLogPath(): string {
   const override = process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG;
-  if (override && override.trim().length > 0) {
+  if (override !== undefined && override.trim().length > 0) {
     if (override.startsWith("~/")) {
       return join(process.env.HOME ?? process.cwd(), override.slice(2));
     }
@@ -81,6 +81,48 @@ function getLogPath(): string {
   }
 
   return join(process.cwd(), ".pi", "debug", "provider-requests.jsonl");
+}
+
+function buildProviderRequestRecord(input: {
+  payload: unknown;
+  turnSystemPrompt: string | undefined;
+  ctx: ExtensionContext;
+}): {
+  timestamp: string;
+  sessionId: string;
+  sessionFile: string | undefined;
+  model: string | undefined;
+  cwd: string;
+  beforeAgentStartSystemPrompt: string | undefined;
+  requestSystemPrompt: string | undefined;
+  effectiveSystemPrompt: string | undefined;
+  payload: unknown;
+} {
+  const requestSystemPrompt = extractSystemPrompt(input.payload);
+  const effectiveSystemPrompt =
+    requestSystemPrompt ?? input.turnSystemPrompt ?? input.ctx.getSystemPrompt();
+  const payload = isPlainObject(input.payload)
+    ? {
+        ...input.payload,
+      }
+    : input.payload;
+
+  return {
+    timestamp: new Date().toISOString(),
+    sessionId: input.ctx.sessionManager.getSessionId(),
+    sessionFile: input.ctx.sessionManager.getSessionFile(),
+    model: input.ctx.model ? `${input.ctx.model.provider}/${input.ctx.model.id}` : undefined,
+    cwd: input.ctx.cwd,
+    beforeAgentStartSystemPrompt: input.turnSystemPrompt,
+    requestSystemPrompt,
+    effectiveSystemPrompt,
+    payload,
+  };
+}
+
+function appendProviderRequestRecord(logPath: string, record: unknown): void {
+  mkdirSync(dirname(logPath), { recursive: true });
+  appendFileSync(logPath, `${safeStringify(record)}\n`, "utf8");
 }
 
 export default function debugProviderRequestExtension(pi: ExtensionAPI) {
@@ -105,29 +147,12 @@ export default function debugProviderRequestExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", (event, ctx) => {
-    mkdirSync(dirname(logPath), { recursive: true });
-
-    const requestSystemPrompt = extractSystemPrompt(event.payload);
-    const effectiveSystemPrompt = requestSystemPrompt ?? turnSystemPrompt ?? ctx.getSystemPrompt();
-    const payload = isPlainObject(event.payload)
-      ? {
-          ...event.payload,
-        }
-      : event.payload;
-
-    const record = {
-      timestamp: new Date().toISOString(),
-      sessionId: ctx.sessionManager.getSessionId(),
-      sessionFile: ctx.sessionManager.getSessionFile(),
-      model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
-      cwd: ctx.cwd,
-      beforeAgentStartSystemPrompt: turnSystemPrompt,
-      requestSystemPrompt,
-      effectiveSystemPrompt,
-      payload,
-    };
-
-    appendFileSync(logPath, `${safeStringify(record)}\n`, "utf8");
+    const record = buildProviderRequestRecord({
+      payload: event.payload,
+      turnSystemPrompt,
+      ctx,
+    });
+    appendProviderRequestRecord(logPath, record);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {

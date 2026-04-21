@@ -23,7 +23,7 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
 class FakeRuntimeFactory implements RemoteRuntimeFactory {
   async create() {
     return {
-      dispose: async () => undefined,
+      dispose: async () => {},
     } as any;
   }
 
@@ -42,7 +42,7 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
     this.createCalls += 1;
     await new Promise<void>((resolve) => setTimeout(resolve, this.delayMs));
     return {
-      dispose: async () => undefined,
+      dispose: async () => {},
     } as any;
   }
 
@@ -50,6 +50,7 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
 }
 
 class RecordingSession {
+  cwd = "/tmp/pi-remote-recording-session";
   model = {
     provider: "pi-remote-faux",
     id: "pi-remote-faux-1",
@@ -113,9 +114,17 @@ class RecordingSession {
     | undefined;
   remoteUiContext:
     | {
-        input: (title: string, placeholder?: string) => Promise<string | undefined>;
+        input?: (title: string, placeholder?: string) => Promise<string | undefined>;
+        setWorkingMessage?: (message?: string) => void;
+        setHiddenThinkingLabel?: (label?: string) => void;
+        setHeader?: (factory?: (...args: unknown[]) => unknown) => void;
+        setFooter?: (factory?: (...args: unknown[]) => unknown) => void;
+        setToolsExpanded?: (expanded: boolean) => void;
       }
     | undefined;
+  sessionManager = {
+    getCwd: () => this.cwd,
+  };
   settingsManager = {
     getDefaultProvider: () => this.defaultProvider,
     getDefaultModel: () => this.defaultModel,
@@ -146,7 +155,7 @@ class RecordingSession {
   }
 
   subscribe(): () => void {
-    return () => undefined;
+    return () => {};
   }
 
   async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
@@ -283,10 +292,27 @@ class UiRequestPromptSession extends RecordingSession {
   uiAnswers: Array<string | undefined> = [];
 
   override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
-    if (this.remoteUiContext) {
+    if (this.remoteUiContext?.input) {
       const answer = await this.remoteUiContext.input("Remote question", "type answer");
       this.uiAnswers.push(answer);
     }
+    await super.prompt(text, options);
+  }
+}
+
+class UiPrimitivesPromptSession extends RecordingSession {
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    this.remoteUiContext?.setWorkingMessage?.("remote-working");
+    this.remoteUiContext?.setHiddenThinkingLabel?.("remote-hidden-thinking");
+    this.remoteUiContext?.setToolsExpanded?.(false);
+    this.remoteUiContext?.setHeader?.(() => ({
+      render: () => ["remote-header"],
+      invalidate: () => {},
+    }));
+    this.remoteUiContext?.setFooter?.(() => ({
+      render: () => ["remote-footer"],
+      invalidate: () => {},
+    }));
     await super.prompt(text, options);
   }
 }
@@ -325,6 +351,7 @@ async function createRemoteRuntime(
   options: {
     privateKeyPem: string;
     sessionId?: string;
+    cwd?: string;
   },
 ) {
   return RemoteAgentSessionRuntime.create({
@@ -334,6 +361,7 @@ async function createRemoteRuntime(
       privateKey: options.privateKeyPem,
     },
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+    ...(options.cwd ? { cwd: options.cwd } : {}),
     fetchImpl: createInProcessFetch(app),
   });
 }
@@ -1004,7 +1032,7 @@ timedTest("session creation remains single-session under concurrent requests", a
       }),
     ]);
 
-    const statuses = [first.status, second.status].sort((a, b) => a - b);
+    const statuses = [first.status, second.status].toSorted((a, b) => a - b);
     assert.deepEqual(statuses, [201, 409]);
     assert.equal(runtimeFactory.createCalls, 1);
 
@@ -1122,7 +1150,7 @@ timedTest("presence tracks concurrent connections for the same token", async () 
       presence: Array<{ clientId: string; connectionId: string }>;
     };
     assert.equal(body.presence.length, 2);
-    const connectionIds = body.presence.map((presence) => presence.connectionId).sort();
+    const connectionIds = body.presence.map((presence) => presence.connectionId).toSorted();
     assert.deepEqual(connectionIds, ["conn-a", "conn-b"]);
     assert.equal(body.presence[0]?.clientId, "dev");
     assert.equal(body.presence[1]?.clientId, "dev");
@@ -1969,7 +1997,9 @@ timedTest("milestone 2 command surface sequences commands and replays session ev
     const draftAcceptedB = (await draftBResponse.json()) as {
       sequence: number;
     };
-    const draftSequences = [draftAcceptedA.sequence, draftAcceptedB.sequence].sort((a, b) => a - b);
+    const draftSequences = [draftAcceptedA.sequence, draftAcceptedB.sequence].toSorted(
+      (a, b) => a - b,
+    );
     assert.deepEqual(draftSequences, [1, 2]);
 
     const draftReplayResponse = await remote.app.request(
@@ -1987,7 +2017,7 @@ timedTest("milestone 2 command surface sequences commands and replays session ev
     assert.equal(draftUpdatedEvents.length, 2);
     const revisions = draftUpdatedEvents
       .map((event) => event.payload?.draft?.revision as number)
-      .sort((a, b) => a - b);
+      .toSorted((a, b) => a - b);
     assert.deepEqual(revisions, [1, 2]);
     const replayOffset = draftReplay.nextOffset;
 
@@ -2175,7 +2205,7 @@ timedTest("default runtime factory hosts an in-memory Pi runtime", async () => {
 });
 
 timedTest("in-memory runtime factory preserves explicit null fauxApiKey", async () => {
-  const defaultFactory = new InMemoryPiRuntimeFactory();
+  const defaultFactory = InMemoryPiRuntimeFactory();
   const defaultRuntime = await defaultFactory.create();
   const defaultKey = await defaultRuntime.services.authStorage.getApiKey("pi-remote-faux");
 
@@ -2184,7 +2214,7 @@ timedTest("in-memory runtime factory preserves explicit null fauxApiKey", async 
   await defaultRuntime.dispose();
   await defaultFactory.dispose();
 
-  const nullFactory = new InMemoryPiRuntimeFactory({
+  const nullFactory = InMemoryPiRuntimeFactory({
     fauxApiKey: null,
   });
   const nullRuntime = await nullFactory.create();
@@ -2204,7 +2234,7 @@ timedTest("milestone 3 remote runtime adapter replays snapshot and streams event
   const remote = createRemoteApp({
     origin: "http://localhost:3000",
     allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: new InMemoryPiRuntimeFactory(),
+    runtimeFactory: InMemoryPiRuntimeFactory(),
   });
 
   let runtime: RemoteAgentSessionRuntime | undefined;
@@ -2766,6 +2796,164 @@ timedTest("milestone 3.1 adapter hydrates catalog and syncs remote model setting
     }
 
     assert.equal(runtime.session.settingsManager.getDefaultThinkingLevel(), "high");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3.2 snapshot and adapter use authoritative server cwd", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  session.cwd = "/srv/authoritative-workspace";
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = await createResponse.json();
+    if (!created || typeof created !== "object" || !("sessionId" in created)) {
+      throw new Error("Missing sessionId in createSession response");
+    }
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = await snapshotResponse.json();
+    if (!snapshot || typeof snapshot !== "object" || !("cwd" in snapshot)) {
+      throw new Error("Missing cwd in session snapshot");
+    }
+    assert.equal(snapshot.cwd, "/srv/authoritative-workspace");
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      cwd: "/tmp/client-local-cwd",
+    });
+
+    assert.equal(runtime.session.sessionManager.getCwd(), "/srv/authoritative-workspace");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new UiPrimitivesPromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = await createResponse.json();
+    if (!created || typeof created !== "object" || !("sessionId" in created)) {
+      throw new Error("Missing sessionId in createSession response");
+    }
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    let workingMessage: string | undefined;
+    let hiddenThinkingLabel: string | undefined;
+    let toolsExpanded = true;
+    let headerLines: string[] | undefined;
+    let footerLines: string[] | undefined;
+
+    const uiContext = {
+      setWorkingMessage: (message?: string) => {
+        workingMessage = message;
+      },
+      setHiddenThinkingLabel: (label?: string) => {
+        hiddenThinkingLabel = label;
+      },
+      setToolsExpanded: (expanded: boolean) => {
+        toolsExpanded = expanded;
+      },
+      setHeader: (factory?: () => { render: (width: number) => string[] }) => {
+        headerLines = factory ? factory().render(120) : undefined;
+      },
+      setFooter: (factory?: () => { render: (width: number) => string[] }) => {
+        footerLines = factory ? factory().render(120) : undefined;
+      },
+      notify: () => {},
+      setStatus: () => {},
+      setWidget: () => {},
+      setTitle: () => {},
+      setEditorText: () => {},
+      select: async () => {},
+      confirm: async () => false,
+      input: async () => {},
+      editor: async () => {},
+      onTerminalInput: () => () => {},
+      custom: async () => {},
+      pasteToEditor: () => {},
+      getEditorText: () => "",
+      setEditorComponent: () => {},
+      theme: {
+        fg: (...parts: unknown[]) => String(parts.at(-1) ?? ""),
+      },
+      getAllThemes: () => [],
+      getTheme: () => {},
+      setTheme: () => ({ success: false }),
+      getToolsExpanded: () => true,
+    };
+
+    Reflect.set(runtime.session, "uiContext", uiContext);
+    await runtime.session.prompt("trigger ui primitives");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (workingMessage && hiddenThinkingLabel && headerLines && footerLines) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(workingMessage, "remote-working");
+    assert.equal(hiddenThinkingLabel, "remote-hidden-thinking");
+    assert.equal(toolsExpanded, false);
+    assert.deepEqual(headerLines, ["remote-header"]);
+    assert.deepEqual(footerLines, ["remote-footer"]);
   } finally {
     await runtime?.dispose();
     await remote.dispose();

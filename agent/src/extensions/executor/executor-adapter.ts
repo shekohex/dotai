@@ -20,7 +20,27 @@ type ExecutorToolOutcome = {
   isError: boolean;
 };
 
-const isJsonObject = (value: JsonValue): value is JsonObject =>
+const isJsonValue = (value: unknown): value is JsonValue => {
+  if (value === null) {
+    return true;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every((item) => isJsonValue(item));
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).every((item) => isJsonValue(item));
+  }
+
+  return false;
+};
+
+const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const readExecutionId = (structuredContent: JsonValue): string | undefined => {
@@ -35,13 +55,17 @@ const readExecutionId = (structuredContent: JsonValue): string | undefined => {
 };
 
 export const parseJsonContent = (raw: string | undefined): JsonObject | undefined => {
-  if (!raw || raw === "{}") {
+  if (raw === undefined || raw.length === 0 || raw === "{}") {
     return undefined;
   }
 
   let parsed: JsonValue;
   try {
-    parsed = JSON.parse(raw) as JsonValue;
+    const candidate: unknown = JSON.parse(raw);
+    if (!isJsonValue(candidate)) {
+      return undefined;
+    }
+    parsed = candidate;
   } catch {
     return undefined;
   }

@@ -38,6 +38,133 @@ function getTrailingToken(prefix: string): { value: string; hasTrailingSpace: bo
   };
 }
 
+function getInitialReviewCompletions(query: string): AutocompleteItem[] | null {
+  return filterAutocompleteItems(
+    [...REVIEW_TARGET_AUTOCOMPLETE_ITEMS, ...REVIEW_FLAG_AUTOCOMPLETE_ITEMS],
+    query,
+  );
+}
+
+async function completeBranchValue(
+  pi: ExtensionAPI,
+  trimmed: string,
+): Promise<AutocompleteItem[] | null> {
+  const branchValueMatch = trimmed.match(/^(?:branch|br)\s+(\S*)$/i);
+  if (!branchValueMatch) {
+    return null;
+  }
+
+  const branches = await getLocalBranches(pi);
+  const branchQuery = branchValueMatch[1] ?? "";
+  return filterAutocompleteItems(
+    branches.map((branch) => ({
+      value: `${trimmed.slice(0, trimmed.length - branchQuery.length)}${branch}`,
+      label: branch,
+    })),
+    branchQuery,
+  );
+}
+
+async function completeCommitValue(
+  pi: ExtensionAPI,
+  trimmed: string,
+): Promise<AutocompleteItem[] | null> {
+  const commitValueMatch = trimmed.match(/^commit\s+(\S*)$/i);
+  if (!commitValueMatch) {
+    return null;
+  }
+
+  const commits = await getRecentCommits(pi);
+  const commitQuery = commitValueMatch[1] ?? "";
+  return filterAutocompleteItems(
+    commits.map((commit) => ({
+      value: `${trimmed.slice(0, trimmed.length - commitQuery.length)}${commit.sha}`,
+      label: commit.sha.slice(0, 7),
+      description: commit.title,
+    })),
+    commitQuery,
+  );
+}
+
+async function completeFolderValue(
+  pi: ExtensionAPI,
+  trimmed: string,
+): Promise<AutocompleteItem[] | null> {
+  const folderValueMatch = trimmed.match(/^folder\s+(\S*)$/i);
+  if (!folderValueMatch) {
+    return null;
+  }
+
+  const paths = await getTrackedPaths(pi);
+  const folderQuery = folderValueMatch[1] ?? "";
+  return filterAutocompleteItems(
+    paths.map((candidate) => ({
+      value: `${trimmed.slice(0, trimmed.length - folderQuery.length)}${candidate}`,
+      label: candidate,
+    })),
+    folderQuery,
+  );
+}
+
+function completeFlagItems(valuePrefix: string, query: string): AutocompleteItem[] | null {
+  return filterAutocompleteItems(
+    REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
+      ...item,
+      value: `${valuePrefix}${item.value}`,
+    })),
+    query,
+  );
+}
+
+function completeUncommittedFlags(
+  trimmed: string,
+  trailing: { value: string; hasTrailingSpace: boolean },
+): AutocompleteItem[] | null {
+  if (!/^(?:uncommitted|u)(?:\s+.*)?$/i.test(trimmed)) {
+    return null;
+  }
+
+  if (trailing.hasTrailingSpace) {
+    return REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
+      ...item,
+      value: `${trimmed} ${item.value}`,
+    }));
+  }
+
+  const afterTarget = trimmed.replace(/^(?:uncommitted|u)\s+/i, "");
+  if (!afterTarget.startsWith("--")) {
+    return null;
+  }
+
+  return completeFlagItems("uncommitted ", afterTarget);
+}
+
+function completeResolvedTargetFlags(
+  trimmed: string,
+  trailing: { value: string; hasTrailingSpace: boolean },
+): AutocompleteItem[] | null {
+  const resolvedTargetMatch = trimmed.match(
+    /^(?:branch|br|commit|pr|folder)\s+\S+(?:\s+(--\S*))?$/i,
+  );
+  if (!resolvedTargetMatch) {
+    return null;
+  }
+
+  if (trailing.hasTrailingSpace) {
+    return REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
+      ...item,
+      value: `${trimmed} ${item.value}`,
+    }));
+  }
+
+  const trailingToken = resolvedTargetMatch[1];
+  if (!(trailingToken?.startsWith("--") ?? false)) {
+    return null;
+  }
+
+  return completeFlagItems(trimmed.slice(0, trimmed.length - trailingToken.length), trailingToken);
+}
+
 export async function getReviewArgumentCompletions(
   pi: ExtensionAPI,
   prefix: string,
@@ -50,90 +177,32 @@ export async function getReviewArgumentCompletions(
   }
 
   if (!trimmed.includes(" ")) {
-    return filterAutocompleteItems(
-      [...REVIEW_TARGET_AUTOCOMPLETE_ITEMS, ...REVIEW_FLAG_AUTOCOMPLETE_ITEMS],
-      trailing.value,
-    );
+    return getInitialReviewCompletions(trailing.value);
   }
 
-  const branchValueMatch = trimmed.match(/^(?:branch|br)\s+(\S*)$/i);
-  if (branchValueMatch) {
-    const branches = await getLocalBranches(pi);
-    return filterAutocompleteItems(
-      branches.map((branch) => ({
-        value: `${trimmed.slice(0, trimmed.length - branchValueMatch[1]!.length)}${branch}`,
-        label: branch,
-      })),
-      branchValueMatch[1] ?? "",
-    );
+  const branchCompletions = await completeBranchValue(pi, trimmed);
+  if (branchCompletions !== null) {
+    return branchCompletions;
   }
 
-  const commitValueMatch = trimmed.match(/^commit\s+(\S*)$/i);
-  if (commitValueMatch) {
-    const commits = await getRecentCommits(pi);
-    return filterAutocompleteItems(
-      commits.map((commit) => ({
-        value: `${trimmed.slice(0, trimmed.length - commitValueMatch[1]!.length)}${commit.sha}`,
-        label: commit.sha.slice(0, 7),
-        description: commit.title,
-      })),
-      commitValueMatch[1] ?? "",
-    );
+  const commitCompletions = await completeCommitValue(pi, trimmed);
+  if (commitCompletions !== null) {
+    return commitCompletions;
   }
 
-  const folderValueMatch = trimmed.match(/^folder\s+(\S*)$/i);
-  if (folderValueMatch) {
-    const paths = await getTrackedPaths(pi);
-    return filterAutocompleteItems(
-      paths.map((candidate) => ({
-        value: `${trimmed.slice(0, trimmed.length - folderValueMatch[1]!.length)}${candidate}`,
-        label: candidate,
-      })),
-      folderValueMatch[1] ?? "",
-    );
+  const folderCompletions = await completeFolderValue(pi, trimmed);
+  if (folderCompletions !== null) {
+    return folderCompletions;
   }
 
-  if (/^(?:uncommitted|u)(?:\s+.*)?$/i.test(trimmed)) {
-    if (trailing.hasTrailingSpace) {
-      return REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
-        ...item,
-        value: `${trimmed} ${item.value}`,
-      }));
-    }
-
-    const afterTarget = trimmed.replace(/^(?:uncommitted|u)\s+/i, "");
-    if (afterTarget.startsWith("--")) {
-      return filterAutocompleteItems(
-        REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
-          ...item,
-          value: `uncommitted ${item.value}`,
-        })),
-        afterTarget,
-      );
-    }
+  const uncommittedCompletions = completeUncommittedFlags(trimmed, trailing);
+  if (uncommittedCompletions !== null) {
+    return uncommittedCompletions;
   }
 
-  const resolvedTargetMatch = trimmed.match(
-    /^(?:branch|br|commit|pr|folder)\s+\S+(?:\s+(--\S*))?$/i,
-  );
-  if (resolvedTargetMatch) {
-    if (trailing.hasTrailingSpace) {
-      return REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
-        ...item,
-        value: `${trimmed} ${item.value}`,
-      }));
-    }
-
-    const trailingToken = resolvedTargetMatch[1];
-    if (trailingToken?.startsWith("--")) {
-      return filterAutocompleteItems(
-        REVIEW_FLAG_AUTOCOMPLETE_ITEMS.map((item) => ({
-          ...item,
-          value: `${trimmed.slice(0, trimmed.length - trailingToken.length)}${item.value}`,
-        })),
-        trailingToken,
-      );
-    }
+  const resolvedTargetCompletions = completeResolvedTargetFlags(trimmed, trailing);
+  if (resolvedTargetCompletions !== null) {
+    return resolvedTargetCompletions;
   }
 
   return null;

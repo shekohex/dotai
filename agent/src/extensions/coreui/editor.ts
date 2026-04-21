@@ -2,49 +2,29 @@ import { CustomEditor } from "@mariozechner/pi-coding-agent";
 import type { ExtensionContext, KeybindingsManager, Theme } from "@mariozechner/pi-coding-agent";
 import type { EditorTheme, TUI } from "@mariozechner/pi-tui";
 import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import {
+  addVerticalPaddingLines,
+  createPasteMarker,
+  normalizePastedText,
+  readEditorInternals,
+  removeEditorChromeLines,
+  shouldSummarizePaste,
+  writeEditorPasteCounter,
+  type CorePromptEditorConfig,
+  type CursorShape,
+} from "./editor-utils.js";
 import { pickRandomWelcomeMessage } from "./whimsical.js";
 
-type ThemeBackground = Parameters<Theme["bg"]>[0];
-type PasteSummaryMode = "always" | "large-only" | "never";
-type CursorShape =
-  | "blinking-block"
-  | "steady-block"
-  | "blinking-underline"
-  | "steady-underline"
-  | "blinking-bar"
-  | "steady-bar";
-
-type CorePromptEditorConfig = {
-  paddingX: number;
-  paddingY: number;
-  placeholderInsetX: number;
-  background: ThemeBackground;
-  placeholderRotationMs: number;
-  pasteSummaryMode: PasteSummaryMode;
-  pasteSummaryMinLines: number;
-  pasteSummaryMinChars: number;
-  cursorShape: CursorShape;
-};
-
-type EditorInternals = {
-  pastes: Map<number, string>;
-  pasteCounter: number;
-};
-
-const PASTE_START = "\x1b[200~";
-const PASTE_END = "\x1b[201~";
-const CURSOR = "\x1b[7m \x1b[27m";
-const STRIP_ANSI_PATTERN = new RegExp(
-  `${String.fromCharCode(27)}(?:\\[[0-9;? ]*[ -/]*[@-~]|_pi:c${String.fromCharCode(7)})`,
-  "g",
-);
+const PASTE_START = "\u001B[200~";
+const PASTE_END = "\u001B[201~";
+const CURSOR = "\u001B[7m \u001B[27m";
 const CURSOR_SHAPES: Record<CursorShape, string> = {
-  "blinking-block": "\x1b[1 q",
-  "steady-block": "\x1b[2 q",
-  "blinking-underline": "\x1b[3 q",
-  "steady-underline": "\x1b[4 q",
-  "blinking-bar": "\x1b[5 q",
-  "steady-bar": "\x1b[6 q",
+  "blinking-block": "\u001B[1 q",
+  "steady-block": "\u001B[2 q",
+  "blinking-underline": "\u001B[3 q",
+  "steady-underline": "\u001B[4 q",
+  "blinking-bar": "\u001B[5 q",
+  "steady-bar": "\u001B[6 q",
 };
 
 const CORE_PROMPT_EDITOR_CONFIG: CorePromptEditorConfig = {
@@ -153,7 +133,11 @@ class CorePromptEditor extends CustomEditor {
   }
 
   override render(width: number): string[] {
-    const lines = this.addVerticalPadding(this.removeEditorChrome(super.render(width)), width);
+    const lines = addVerticalPaddingLines(
+      removeEditorChromeLines(super.render(width)),
+      width,
+      CORE_PROMPT_EDITOR_CONFIG.paddingY,
+    );
     const paddingX = Math.min(
       CORE_PROMPT_EDITOR_CONFIG.paddingX,
       Math.max(0, Math.floor((width - 1) / 2)),
@@ -201,12 +185,12 @@ class CorePromptEditor extends CustomEditor {
   private applyBackground(line: string): string {
     const theme = this.getTheme();
     const backgroundAnsi = theme.getBgAnsi(CORE_PROMPT_EDITOR_CONFIG.background);
-    return `${backgroundAnsi}${line.replaceAll("\x1b[0m", `\x1b[0m${backgroundAnsi}`).replaceAll("\x1b[49m", backgroundAnsi)}\x1b[49m`;
+    return `${backgroundAnsi}${line.replaceAll("\u001B[0m", `\u001B[0m${backgroundAnsi}`).replaceAll("\u001B[49m", backgroundAnsi)}\u001B[49m`;
   }
 
   private installCallbackHooks(): void {
-    delete (this as { onSubmit?: (text: string) => void }).onSubmit;
-    delete (this as { onChange?: (text: string) => void }).onChange;
+    Reflect.deleteProperty(this, "onSubmit");
+    Reflect.deleteProperty(this, "onChange");
 
     Object.defineProperty(this, "onSubmit", {
       configurable: true,
@@ -277,103 +261,23 @@ class CorePromptEditor extends CustomEditor {
     this.tui.requestRender();
   }
 
-  private removeEditorChrome(lines: string[]): string[] {
-    const renderedLines = [...lines];
-
-    if (renderedLines.length > 0 && this.isEditorChromeLine(renderedLines[0]!)) {
-      renderedLines.shift();
-    }
-
-    for (let i = renderedLines.length - 1; i >= 0; i--) {
-      if (this.isEditorChromeLine(renderedLines[i]!)) {
-        renderedLines.splice(i, 1);
-        break;
-      }
-    }
-
-    return renderedLines.length > 0 ? renderedLines : [""];
-  }
-
-  private addVerticalPadding(lines: string[], width: number): string[] {
-    const verticalPadding = Math.max(0, CORE_PROMPT_EDITOR_CONFIG.paddingY);
-
-    if (verticalPadding === 0) {
-      return lines;
-    }
-
-    const blankLine = " ".repeat(Math.max(0, width));
-
-    return [
-      ...Array.from({ length: verticalPadding }, () => blankLine),
-      ...lines,
-      ...Array.from({ length: verticalPadding }, () => blankLine),
-    ];
-  }
-
-  private isEditorChromeLine(line: string): boolean {
-    const plain = this.stripAnsi(line).trim();
-    return /^(?:─+|─── [↑↓] \d+ more ─*)$/.test(plain);
-  }
-
-  private stripAnsi(text: string): string {
-    return text.replace(STRIP_ANSI_PATTERN, "");
-  }
-
   private insertPastedText(text: string): void {
-    const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\t/g, "    ");
-    const filtered = normalized
-      .split("")
-      .filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
-      .join("");
+    const filtered = normalizePastedText(text);
 
     if (!filtered) {
       return;
     }
 
-    if (!this.shouldSummarizePaste(filtered)) {
+    if (!shouldSummarizePaste(filtered, CORE_PROMPT_EDITOR_CONFIG)) {
       this.insertTextAtCursor(filtered);
       return;
     }
 
-    const internals = this.getInternals();
+    const internals = readEditorInternals(this);
     const pasteId = internals.pasteCounter + 1;
-    internals.pasteCounter = pasteId;
+    writeEditorPasteCounter(this, pasteId);
     internals.pastes.set(pasteId, filtered);
 
-    this.insertTextAtCursor(this.createPasteMarker(pasteId, filtered));
-  }
-
-  private shouldSummarizePaste(text: string): boolean {
-    switch (CORE_PROMPT_EDITOR_CONFIG.pasteSummaryMode) {
-      case "never":
-        return false;
-      case "always":
-        return true;
-      case "large-only": {
-        const lines = text.split("\n").length;
-        return (
-          lines > CORE_PROMPT_EDITOR_CONFIG.pasteSummaryMinLines ||
-          text.length > CORE_PROMPT_EDITOR_CONFIG.pasteSummaryMinChars
-        );
-      }
-    }
-  }
-
-  private createPasteMarker(pasteId: number, text: string): string {
-    const lineCount = text.split("\n").length;
-
-    if (
-      lineCount > 1 &&
-      (CORE_PROMPT_EDITOR_CONFIG.pasteSummaryMode === "always" ||
-        lineCount > CORE_PROMPT_EDITOR_CONFIG.pasteSummaryMinLines)
-    ) {
-      return `[paste #${pasteId} +${lineCount} lines]`;
-    }
-
-    return `[paste #${pasteId} ${text.length} chars]`;
-  }
-
-  private getInternals(): EditorInternals {
-    return this as unknown as EditorInternals;
+    this.insertTextAtCursor(createPasteMarker(pasteId, filtered, CORE_PROMPT_EDITOR_CONFIG));
   }
 }

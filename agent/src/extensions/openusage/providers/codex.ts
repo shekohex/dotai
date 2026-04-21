@@ -1,6 +1,13 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { downloadCliproxyAuthFile, resolveCliproxySelectedAccount } from "../cliproxy.js";
 import type { OpenUsageRuntimeState, UsageProvider, UsageSnapshot } from "../types.js";
+import {
+  asRecord,
+  clampPercent,
+  readNumber,
+  readString,
+  resolveResetAtFromWindow,
+} from "./shared.js";
 
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const REFRESH_URL = "https://auth.openai.com/oauth/token";
@@ -22,74 +29,90 @@ export const codexUsageProvider: UsageProvider = {
   },
   async fetchSnapshot(ctx, state) {
     const credential = await resolveCodexCredential(ctx, state);
-    let response = await fetchUsage(ctx, credential.accessToken, credential.accountId);
-
-    if (response.status === 401 && credential.refreshToken && credential.source === "cliproxy") {
-      const refreshed = await refreshCodexToken(ctx, credential.refreshToken);
-      response = await fetchUsage(
-        ctx,
-        refreshed.accessToken,
-        refreshed.accountId ?? credential.accountId,
-      );
+    const response = await fetchCodexUsageWithRefresh(ctx, credential);
+    const body = asRecord(await response.json());
+    if (!body) {
+      throw new Error("Codex usage response is not an object");
     }
 
-    if (response.status === 401) {
-      throw new Error(
-        "Codex auth unavailable. Login with /login openai-codex or choose a cliproxy account.",
-      );
-    }
-
-    if (!response.ok) {
-      throw new Error(`Codex usage failed: ${response.status} ${response.statusText}`);
-    }
-
-    const body = (await response.json()) as Record<string, unknown>;
-    const rateLimit = asRecord(body.rate_limit);
-    const primaryWindow = asRecord(rateLimit?.primary_window);
-    const secondaryWindow = asRecord(rateLimit?.secondary_window);
-
-    const sessionUsed =
-      readNumber(response.headers.get("x-codex-primary-used-percent")) ??
-      readNumber(primaryWindow?.used_percent);
-    const weeklyUsed =
-      readNumber(response.headers.get("x-codex-secondary-used-percent")) ??
-      readNumber(secondaryWindow?.used_percent);
-
-    const snapshot: UsageSnapshot = {
-      providerId: "codex",
-      displayName: "Codex",
-      plan: readString(body.plan_type),
-      source: credential.source,
-      accountLabel: credential.accountLabel,
-      fetchedAt: Date.now(),
-      summary: credential.source === "cliproxy" ? "cliproxy account" : "host auth",
-    };
-
-    if (sessionUsed !== undefined) {
-      snapshot.session5h = {
-        used: clampPercent(sessionUsed),
-        limit: 100,
-        resetsAt: resolveResetAt(primaryWindow),
-        periodDurationMs: FIVE_HOURS_MS,
-      };
-    }
-
-    if (weeklyUsed !== undefined) {
-      snapshot.weekly = {
-        used: clampPercent(weeklyUsed),
-        limit: 100,
-        resetsAt: resolveResetAt(secondaryWindow),
-        periodDurationMs: SEVEN_DAYS_MS,
-      };
-    }
-
-    if (!snapshot.session5h && !snapshot.weekly) {
-      throw new Error("Codex usage response did not include 5h or weekly limits.");
-    }
-
-    return snapshot;
+    return buildCodexSnapshot(credential, response, body);
   },
 };
+
+async function fetchCodexUsageWithRefresh(
+  ctx: ExtensionContext,
+  credential: CodexCredential,
+): Promise<Response> {
+  let response = await fetchUsage(ctx, credential.accessToken, credential.accountId);
+  const refreshToken = credential.refreshToken;
+  const hasRefreshToken = refreshToken !== undefined && refreshToken.length > 0;
+  if (response.status === 401 && hasRefreshToken && credential.source === "cliproxy") {
+    const refreshed = await refreshCodexToken(ctx, refreshToken);
+    response = await fetchUsage(
+      ctx,
+      refreshed.accessToken,
+      refreshed.accountId ?? credential.accountId,
+    );
+  }
+
+  if (response.status === 401) {
+    throw new Error(
+      "Codex auth unavailable. Login with /login openai-codex or choose a cliproxy account.",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`Codex usage failed: ${response.status} ${response.statusText}`);
+  }
+  return response;
+}
+
+function buildCodexSnapshot(
+  credential: CodexCredential,
+  response: Response,
+  body: Record<string, unknown>,
+): UsageSnapshot {
+  const rateLimit = asRecord(body.rate_limit);
+  const primaryWindow = asRecord(rateLimit?.primary_window);
+  const secondaryWindow = asRecord(rateLimit?.secondary_window);
+  const sessionUsed =
+    readNumber(response.headers.get("x-codex-primary-used-percent")) ??
+    readNumber(primaryWindow?.used_percent);
+  const weeklyUsed =
+    readNumber(response.headers.get("x-codex-secondary-used-percent")) ??
+    readNumber(secondaryWindow?.used_percent);
+
+  const snapshot: UsageSnapshot = {
+    providerId: "codex",
+    displayName: "Codex",
+    plan: readString(body.plan_type),
+    source: credential.source,
+    accountLabel: credential.accountLabel,
+    fetchedAt: Date.now(),
+    summary: credential.source === "cliproxy" ? "cliproxy account" : "host auth",
+  };
+
+  if (sessionUsed !== undefined) {
+    snapshot.session5h = {
+      used: clampPercent(sessionUsed),
+      limit: 100,
+      resetsAt: resolveResetAtFromWindow(primaryWindow),
+      periodDurationMs: FIVE_HOURS_MS,
+    };
+  }
+  if (weeklyUsed !== undefined) {
+    snapshot.weekly = {
+      used: clampPercent(weeklyUsed),
+      limit: 100,
+      resetsAt: resolveResetAtFromWindow(secondaryWindow),
+      periodDurationMs: SEVEN_DAYS_MS,
+    };
+  }
+  if (!snapshot.session5h && !snapshot.weekly) {
+    throw new Error("Codex usage response did not include 5h or weekly limits.");
+  }
+
+  return snapshot;
+}
 
 type CodexCredential = {
   accessToken: string;
@@ -104,7 +127,7 @@ async function resolveCodexCredential(
   state: OpenUsageRuntimeState,
 ): Promise<CodexCredential> {
   const selectedCliproxyAccount = state.persisted.selectedAccounts.codex?.trim();
-  if (selectedCliproxyAccount) {
+  if (selectedCliproxyAccount !== undefined && selectedCliproxyAccount.length > 0) {
     const cliproxy = await resolveCliproxyCodexCredential(ctx, state);
     if (cliproxy) {
       return cliproxy;
@@ -132,16 +155,14 @@ async function resolveHostCodexCredential(
     includeFallback: true,
   });
 
-  if (!apiKey) {
+  if (apiKey === undefined || apiKey.length === 0) {
     return undefined;
   }
 
   const oauthAccountId =
-    cred && cred.type === "oauth"
-      ? readString((cred as Record<string, unknown>).accountId)
-      : undefined;
+    cred && cred.type === "oauth" ? readString(asRecord(cred)?.accountId) : undefined;
   const accountId = oauthAccountId ?? extractAccountId(apiKey);
-  if (!accountId) {
+  if (accountId === undefined || accountId.length === 0) {
     throw new Error("Failed to resolve Codex account id from host auth.");
   }
 
@@ -179,9 +200,16 @@ async function resolveCliproxyCodexCredential(
     readString(root?.accountId) ??
     readString(tokens?.account_id) ??
     readString(tokens?.accountId) ??
-    (accessToken ? extractAccountId(accessToken) : undefined);
+    (accessToken !== undefined && accessToken.length > 0
+      ? extractAccountId(accessToken)
+      : undefined);
 
-  if (!accessToken || !accountId) {
+  if (
+    accessToken === undefined ||
+    accessToken.length === 0 ||
+    accountId === undefined ||
+    accountId.length === 0
+  ) {
     throw new Error(
       `cliproxy Codex auth file '${account.file.name}' is missing access_token/account_id`,
     );
@@ -196,7 +224,7 @@ async function resolveCliproxyCodexCredential(
   };
 }
 
-async function fetchUsage(
+function fetchUsage(
   ctx: ExtensionContext,
   accessToken: string,
   accountId: string,
@@ -234,9 +262,12 @@ async function refreshCodexToken(
     throw new Error(`Codex token refresh failed: ${response.status} ${response.statusText}`);
   }
 
-  const body = (await response.json()) as Record<string, unknown>;
+  const body = asRecord(await response.json());
+  if (!body) {
+    throw new Error("Codex refresh response is not an object");
+  }
   const accessToken = readString(body.access_token);
-  if (!accessToken) {
+  if (accessToken === undefined || accessToken.length === 0) {
     throw new Error("Codex refresh response missing access_token");
   }
 
@@ -246,28 +277,6 @@ async function refreshCodexToken(
   };
 }
 
-function resolveResetAt(window: Record<string, unknown> | undefined): string | undefined {
-  if (!window) {
-    return undefined;
-  }
-
-  const resetAt = readNumber(window.reset_at);
-  if (resetAt !== undefined) {
-    return new Date(resetAt * 1000).toISOString();
-  }
-
-  const resetAfterSeconds = readNumber(window.reset_after_seconds);
-  if (resetAfterSeconds !== undefined) {
-    return new Date(Date.now() + resetAfterSeconds * 1000).toISOString();
-  }
-
-  return undefined;
-}
-
-function clampPercent(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
-}
-
 function extractAccountId(token: string): string | undefined {
   try {
     const parts = token.split(".");
@@ -275,35 +284,14 @@ function extractAccountId(token: string): string | undefined {
       return undefined;
     }
 
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<
-      string,
-      unknown
-    >;
+    const payload = asRecord(JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")));
+    if (!payload) {
+      return undefined;
+    }
     const chatgpt = asRecord(payload["https://api.openai.com/auth"]);
     const accountId = readString(chatgpt?.chatgpt_account_id);
     return accountId ?? undefined;
   } catch {
     return undefined;
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function readString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed || undefined;
-}
-
-function readNumber(value: unknown): number | undefined {
-  const numberValue =
-    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  return Number.isFinite(numberValue) ? numberValue : undefined;
 }

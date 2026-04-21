@@ -1,4 +1,6 @@
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import type {
   OpenUsageRuntimeState,
   PersistedOpenUsageState,
@@ -11,6 +13,16 @@ const EMPTY_PERSISTED_STATE: PersistedOpenUsageState = {
   selectedAccounts: {},
   resetTimeFormat: "relative",
 };
+
+const OpenUsageStateEntrySchema = Type.Object(
+  {
+    selectedAccounts: Type.Optional(Type.Record(Type.String(), Type.String())),
+    resetTimeFormat: Type.Optional(
+      Type.Union([Type.Literal("relative"), Type.Literal("absolute")]),
+    ),
+  },
+  { additionalProperties: true },
+);
 
 export function createRuntimeState(): OpenUsageRuntimeState {
   return {
@@ -30,16 +42,14 @@ export function restorePersistedState(entries: SessionEntry[]): PersistedOpenUsa
     }
 
     const data = entry.data;
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
+    if (!Value.Check(OpenUsageStateEntrySchema, data)) {
       continue;
     }
 
-    const selectedAccounts = normalizeSelectedAccounts(
-      (data as { selectedAccounts?: unknown }).selectedAccounts,
-    );
-    const resetTimeFormat = normalizeResetTimeFormat(
-      (data as { resetTimeFormat?: unknown }).resetTimeFormat,
-    );
+    const parsed = Value.Parse(OpenUsageStateEntrySchema, data);
+
+    const selectedAccounts = normalizeSelectedAccounts(parsed.selectedAccounts);
+    const resetTimeFormat = normalizeResetTimeFormat(parsed.resetTimeFormat);
 
     latest = {
       selectedAccounts,
@@ -57,7 +67,7 @@ export function setSelectedAccount(
 ): PersistedOpenUsageState {
   const nextSelectedAccounts = { ...state.persisted.selectedAccounts };
 
-  if (!value) {
+  if (value === undefined || value.length === 0) {
     delete nextSelectedAccounts[providerId];
   } else {
     nextSelectedAccounts[providerId] = value;
@@ -84,18 +94,18 @@ export function setResetTimeFormat(
 }
 
 function normalizeSelectedAccounts(value: unknown): Partial<Record<SupportedProviderId, string>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
 
   const next: Partial<Record<SupportedProviderId, string>> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, raw] of Object.entries(value)) {
     if (!isSupportedProviderId(key) || typeof raw !== "string") {
       continue;
     }
 
     const trimmed = raw.trim();
-    if (!trimmed) {
+    if (trimmed.length === 0) {
       continue;
     }
 

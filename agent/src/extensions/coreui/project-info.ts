@@ -102,15 +102,16 @@ function applyDiffStat(state: CoreUIState, result: ExecResult): void {
 
 function parseRepoSlug(remote: string): string | undefined {
   const trimmed = remote.trim().replace(/\.git\/?$/i, "");
-  if (!trimmed) {
+  if (trimmed.length === 0) {
     return undefined;
   }
 
   let repoPath = "";
   const scpLike = trimmed.match(/^[^@]+@[^:]+:(.+)$/);
+  const scpPath = scpLike?.[1];
 
-  if (scpLike?.[1]) {
-    repoPath = scpLike[1];
+  if (scpPath !== undefined && scpPath.length > 0) {
+    repoPath = scpPath;
   } else {
     try {
       repoPath = new URL(trimmed).pathname.replace(/^\/+/, "");
@@ -131,11 +132,11 @@ function parseRepoSlug(remote: string): string | undefined {
     return undefined;
   }
 
-  return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  return `${segments.at(-2)}/${segments.at(-1)}`;
 }
 
 function parseWorktreeName(gitDir: string): string | undefined {
-  const normalized = gitDir.trim().replace(/\\/g, "/");
+  const normalized = gitDir.trim().replaceAll("\\", "/");
   const marker = "/worktrees/";
   const markerIndex = normalized.lastIndexOf(marker);
 

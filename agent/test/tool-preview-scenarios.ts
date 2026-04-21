@@ -2030,7 +2030,7 @@ function countDiffLines(before: string, after: string, added: boolean): number {
 }
 
 function joinPath(cwd: string, relativePath: string): string {
-  return `${cwd.replace(/\\/g, "/")}/${relativePath}`;
+  return `${cwd.replaceAll(/\\/g, "/")}/${relativePath}`;
 }
 
 export function resolvePreviewResult(

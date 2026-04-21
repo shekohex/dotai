@@ -75,7 +75,7 @@ function forceApplyPatchExtension(pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async () => {
     enablePatchTool();
-    return undefined;
+    return;
   });
 }
 
@@ -590,7 +590,7 @@ function createActiveToolsCaptureExtension(capturedToolSets: string[][]) {
           pi
             .getActiveTools()
             .slice()
-            .sort((left, right) => left.localeCompare(right)),
+            .toSorted((left, right) => left.localeCompare(right)),
         );
       });
     });
@@ -1419,7 +1419,7 @@ timedTest("executor command without arguments shows status", async () => {
     assert.ok(uiContext);
 
     const customCalls: Array<{ args: unknown[] }> = [];
-    const originalCustom = uiContext.custom?.bind(uiContext) ?? (async () => undefined);
+    const originalCustom = uiContext.custom?.bind(uiContext) ?? (async () => {});
     uiContext.custom = async (...args: unknown[]) => {
       customCalls.push({ args });
       return originalCustom(...(args as never));
@@ -1564,7 +1564,7 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
       assert.equal(model.thinkingLevel, "high");
       assert.equal(getLatestModeState(session!), "docs");
 
-      assert.ok(observedModeChanges.length >= 1, JSON.stringify(observedModeChanges));
+      assert.ok(observedModeChanges.length > 0, JSON.stringify(observedModeChanges));
       const latestModeChange = observedModeChanges.at(-1);
       assert.equal(latestModeChange?.mode, "docs");
       assert.equal(latestModeChange?.reason, "restore");
@@ -1718,7 +1718,7 @@ timedTest(
     const captureSystemPromptExtension = (pi: ExtensionAPI) => {
       pi.on("before_agent_start", async (event) => {
         seenSystemPrompts.push(event.systemPrompt);
-        return undefined;
+        return;
       });
     };
 

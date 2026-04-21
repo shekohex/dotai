@@ -103,6 +103,7 @@ type CreateCommitExtensionOptions = {
 };
 
 function buildCommitTask(extraDetails?: string): string {
+  const trimmedExtraDetails = extraDetails?.trim();
   return [
     "Use the commiter mode workflow to analyze local changes and create atomic conventional commits.",
     "Execute the needed git add + git commit commands and stop immediately if git reports signing, hook, or policy failures.",
@@ -111,9 +112,11 @@ function buildCommitTask(extraDetails?: string): string {
     "- `commits`: array of `{ sha, message, files }` for each created commit",
     "- `warnings`: list of warnings or blockers encountered (empty when none)",
     "- `remainingChanges`: list of files still modified/untracked after committing (empty when none)",
-    extraDetails?.trim() ? `Additional user details:\n${extraDetails.trim()}` : undefined,
+    trimmedExtraDetails !== undefined && trimmedExtraDetails.length > 0
+      ? `Additional user details:\n${trimmedExtraDetails}`
+      : undefined,
   ]
-    .filter((value): value is string => Boolean(value))
+    .filter((value): value is string => value !== undefined && value.length > 0)
     .join("\n\n");
 }
 
@@ -158,99 +161,103 @@ async function ensureGitRepository(
   return false;
 }
 
-export function createCommitExtension(options: CreateCommitExtensionOptions = { enabled: true }) {
-  return function commitExtension(pi: ExtensionAPI): void {
-    if (options.enabled === false) {
+export function createCommitExtension(options?: CreateCommitExtensionOptions) {
+  const resolvedOptions = options ?? { enabled: true };
+  return (pi: ExtensionAPI): void => {
+    if (resolvedOptions.enabled === false) {
       return;
     }
 
-    const defaultSubagentHooks = createDefaultSubagentRuntimeHooks(pi);
-    const commitSubagentHooks = {
-      ...defaultSubagentHooks,
-      emitStatusMessage({ content }: { content: string; triggerTurn?: boolean }) {
-        pi.sendMessage(
-          {
-            customType: SUBAGENT_STATUS_MESSAGE,
-            content,
-            display: true,
-          },
-          { deliverAs: "steer", triggerTurn: false },
-        );
-      },
-    };
-
-    const adapter =
-      options.adapterFactory?.(pi) ??
-      new TmuxAdapter(
-        (command, args, execOptions) => pi.exec(command, args, execOptions),
-        process.cwd(),
-      );
-    const sdk =
-      options.sdkFactory?.({ pi, adapter }) ??
-      createSubagentSDK(pi, {
-        adapter,
-        buildLaunchCommand,
-        hooks: commitSubagentHooks,
-      });
-
-    let running = false;
-
+    const sdk = createCommitSdk(pi, resolvedOptions);
+    const state = { running: false };
     pi.registerCommand("commit", {
       description: "Create atomic commits using the commiter subagent mode",
-      handler: async (args, ctx) => {
-        if (running) {
-          ctx.ui.notify("A commit job is already running.", "warning");
-          return;
-        }
-
-        if (!(await ensureGitRepository(pi, ctx))) {
-          return;
-        }
-
-        running = true;
-        ctx.ui.notify("Starting commiter subagent...", "info");
-
-        try {
-          const started = await sdk.spawn(
-            {
-              name: "commit",
-              task: buildCommitTask(args.trim() || undefined),
-              mode: "commiter",
-              cwd: ctx.cwd,
-              outputFormat: {
-                type: "json_schema",
-                schema: CommitStructuredSummarySchema,
-              },
-            },
-            ctx,
-          );
-
-          if (!started.ok) {
-            ctx.ui.notify(
-              `Commit failed (${started.error.code}): ${started.error.message}`,
-              "error",
-            );
-            return;
-          }
-
-          const summary = started.value.structured;
-          pi.sendMessage(
-            {
-              customType: COMMIT_SUMMARY_MESSAGE_TYPE,
-              content: formatCommitSummary(summary),
-              display: true,
-            },
-            { deliverAs: "steer", triggerTurn: false },
-          );
-        } finally {
-          running = false;
-        }
-      },
+      handler: createCommitCommandHandler(pi, sdk, state),
     });
-
-    pi.on("session_shutdown", async () => {
+    pi.on("session_shutdown", () => {
       sdk.dispose();
     });
+  };
+}
+
+function createCommitSdk(
+  pi: ExtensionAPI,
+  options: CreateCommitExtensionOptions,
+): Pick<SubagentSDK, "spawn" | "dispose"> {
+  const defaultSubagentHooks = createDefaultSubagentRuntimeHooks(pi);
+  const commitSubagentHooks = {
+    ...defaultSubagentHooks,
+    emitStatusMessage({ content }: { content: string; triggerTurn?: boolean }) {
+      pi.sendMessage(
+        {
+          customType: SUBAGENT_STATUS_MESSAGE,
+          content,
+          display: true,
+        },
+        { deliverAs: "steer", triggerTurn: false },
+      );
+    },
+  };
+
+  const adapter =
+    options.adapterFactory?.(pi) ??
+    new TmuxAdapter(
+      (command, args, execOptions) => pi.exec(command, args, execOptions),
+      process.cwd(),
+    );
+  return (
+    options.sdkFactory?.({ pi, adapter }) ??
+    createSubagentSDK(pi, {
+      adapter,
+      buildLaunchCommand,
+      hooks: commitSubagentHooks,
+    })
+  );
+}
+
+function createCommitCommandHandler(
+  pi: ExtensionAPI,
+  sdk: Pick<SubagentSDK, "spawn" | "dispose">,
+  state: { running: boolean },
+) {
+  return async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+    if (state.running) {
+      ctx.ui.notify("A commit job is already running.", "warning");
+      return;
+    }
+    if (!(await ensureGitRepository(pi, ctx))) {
+      return;
+    }
+
+    state.running = true;
+    ctx.ui.notify("Starting commiter subagent...", "info");
+    try {
+      const started = await sdk.spawn(
+        {
+          name: "commit",
+          task: buildCommitTask(args.trim() || undefined),
+          mode: "commiter",
+          cwd: ctx.cwd,
+          outputFormat: { type: "json_schema", schema: CommitStructuredSummarySchema },
+        },
+        ctx,
+      );
+      if (!started.ok) {
+        ctx.ui.notify(`Commit failed (${started.error.code}): ${started.error.message}`, "error");
+        return;
+      }
+
+      pi.sendMessage(
+        {
+          customType: COMMIT_SUMMARY_MESSAGE_TYPE,
+          content: formatCommitSummary(started.value.structured),
+          display: true,
+        },
+        { deliverAs: "steer", triggerTurn: false },
+      );
+    } finally {
+      state.running = false;
+    }
   };
 }
 

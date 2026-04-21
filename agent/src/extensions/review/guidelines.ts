@@ -7,7 +7,7 @@ async function findGitRoot(startDir: string): Promise<string | null> {
   while (true) {
     const gitPath = path.join(currentDir, ".git");
     const gitStats = await fs.stat(gitPath).catch(() => null);
-    if (gitStats?.isDirectory() || gitStats?.isFile()) {
+    if (gitStats?.isDirectory() === true || gitStats?.isFile() === true) {
       return currentDir;
     }
 
@@ -26,7 +26,7 @@ export async function loadProjectReviewGuidelines(cwd: string): Promise<string |
   while (true) {
     const guidelinesPath = path.join(currentDir, "REVIEW_GUIDELINES.md");
     const guidelineStats = await fs.stat(guidelinesPath).catch(() => null);
-    if (guidelineStats?.isFile()) {
+    if (guidelineStats?.isFile() === true) {
       try {
         const content = await fs.readFile(guidelinesPath, "utf8");
         const trimmed = content.trim();

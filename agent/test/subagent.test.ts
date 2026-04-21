@@ -1420,7 +1420,7 @@ timedTest(
         "utf8",
       );
 
-      await emitEventBus(fakePi, "modes:changed", undefined);
+      await emitEventBus(fakePi, "modes:changed");
 
       const updatedTool = fakePi.registeredTools.get("subagent");
       assert.ok(updatedTool);
@@ -1540,7 +1540,7 @@ timedTest(
         "utf8",
       );
 
-      await emitEventBus(fakePi, "modes:changed", undefined);
+      await emitEventBus(fakePi, "modes:changed");
 
       const updatedTool = fakePi.registeredTools.get("subagent");
       assert.ok(updatedTool);
@@ -2492,7 +2492,7 @@ timedTest(
       const childSessionDir = getDefaultSessionDir(cwd);
       const childSessionPath = path.join(
         childSessionDir,
-        `${new Date().toISOString().replace(/[:.]/g, "-")}_${restoredSessionId}.jsonl`,
+        `${new Date().toISOString().replaceAll(/[:.]/g, "-")}_${restoredSessionId}.jsonl`,
       );
       await fs.mkdir(path.dirname(childSessionPath), { recursive: true });
       await fs.writeFile(

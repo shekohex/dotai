@@ -5,15 +5,15 @@ import type { ReviewCheckoutTarget } from "./types.js";
 export async function getMergeBase(pi: ExtensionAPI, branch: string): Promise<string | null> {
   try {
     const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", `${branch}@{upstream}`]);
-    if (upstream.code === 0 && upstream.stdout.trim()) {
+    if (upstream.code === 0 && upstream.stdout.trim().length > 0) {
       const mergeBase = await pi.exec("git", ["merge-base", "HEAD", upstream.stdout.trim()]);
-      if (mergeBase.code === 0 && mergeBase.stdout.trim()) {
+      if (mergeBase.code === 0 && mergeBase.stdout.trim().length > 0) {
         return mergeBase.stdout.trim();
       }
     }
 
     const mergeBase = await pi.exec("git", ["merge-base", "HEAD", branch]);
-    if (mergeBase.code === 0 && mergeBase.stdout.trim()) {
+    if (mergeBase.code === 0 && mergeBase.stdout.trim().length > 0) {
       return mergeBase.stdout.trim();
     }
 
@@ -67,13 +67,11 @@ export async function hasPendingChanges(pi: ExtensionAPI): Promise<boolean> {
     return false;
   }
 
-  return (
-    result.stdout
-      .trim()
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean).length > 0
-  );
+  return result.stdout
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .some(Boolean);
 }
 
 export async function getPrInfo(
@@ -82,7 +80,7 @@ export async function getPrInfo(
   repo?: string,
 ): Promise<{ baseBranch: string; title: string; headBranch: string } | null> {
   const command = ["pr", "view", String(prNumber), "--json", "baseRefName,title,headRefName"];
-  if (repo) {
+  if (repo !== undefined && repo.length > 0) {
     command.push("--repo", repo);
   }
   const result = await pi.exec("gh", command);
@@ -91,19 +89,28 @@ export async function getPrInfo(
   }
 
   try {
-    const data = JSON.parse(result.stdout) as {
-      baseRefName?: string;
-      title?: string;
-      headRefName?: string;
-    };
-    if (!data.baseRefName || !data.title || !data.headRefName) {
+    const parsed: unknown = JSON.parse(result.stdout);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    const baseRefName: unknown = Reflect.get(parsed, "baseRefName");
+    const title: unknown = Reflect.get(parsed, "title");
+    const headRefName: unknown = Reflect.get(parsed, "headRefName");
+    if (
+      typeof baseRefName !== "string" ||
+      baseRefName.length === 0 ||
+      typeof title !== "string" ||
+      title.length === 0 ||
+      typeof headRefName !== "string" ||
+      headRefName.length === 0
+    ) {
       return null;
     }
 
     return {
-      baseBranch: data.baseRefName,
-      title: data.title,
-      headBranch: data.headRefName,
+      baseBranch: baseRefName,
+      title,
+      headBranch: headRefName,
     };
   } catch {
     return null;
@@ -116,7 +123,7 @@ export async function checkoutPr(
   repo?: string,
 ): Promise<{ success: boolean; error?: string }> {
   const command = ["pr", "checkout", String(prNumber)];
-  if (repo) {
+  if (repo !== undefined && repo.length > 0) {
     command.push("--repo", repo);
   }
   const result = await pi.exec("gh", command);
@@ -129,19 +136,19 @@ export async function checkoutPr(
 
 export async function getCurrentBranch(pi: ExtensionAPI): Promise<string | null> {
   const result = await pi.exec("git", ["branch", "--show-current"]);
-  return result.code === 0 && result.stdout.trim() ? result.stdout.trim() : null;
+  return result.code === 0 && result.stdout.trim().length > 0 ? result.stdout.trim() : null;
 }
 
 export async function getCurrentCheckoutTarget(
   pi: ExtensionAPI,
 ): Promise<ReviewCheckoutTarget | null> {
   const branchResult = await pi.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (branchResult.code === 0 && branchResult.stdout.trim()) {
+  if (branchResult.code === 0 && branchResult.stdout.trim().length > 0) {
     return { type: "branch", name: branchResult.stdout.trim() };
   }
 
   const commitResult = await pi.exec("git", ["rev-parse", "--verify", "HEAD"]);
-  if (commitResult.code === 0 && commitResult.stdout.trim()) {
+  if (commitResult.code === 0 && commitResult.stdout.trim().length > 0) {
     return { type: "detached", commit: commitResult.stdout.trim() };
   }
 

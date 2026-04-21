@@ -678,7 +678,7 @@ timedTest("failed multiline bash preview shows exit code on collapsed error", ()
 
 timedTest("bash preview completion is sticky even when start marker is missing", () => {
   const toolDefinition = createBashToolOverrideDefinition();
-  const cwd = process.cwd().replace(/\\/g, "/");
+  const cwd = process.cwd().replaceAll(/\\/g, "/");
   const ui = { requestRender() {} };
 
   const createComponent = (toolCallId: string, description: string, markStarted = true) => {
@@ -749,7 +749,7 @@ timedTest("tool previews render a bare left rail instead of a box wrapper", () =
 timedTest(
   "interactive mode only spaces tool calls when a visible non-tool item interrupts them",
   () => {
-    const cwd = process.cwd().replace(/\\/g, "/");
+    const cwd = process.cwd().replaceAll(/\\/g, "/");
     const mode = createInteractiveModePreview(cwd);
 
     try {
@@ -857,7 +857,7 @@ function createInteractiveModePreview(cwd: string) {
   const sessionManager = {
     getCwd: () => cwd,
     getEntries: () => [],
-    getSessionName: () => undefined,
+    getSessionName: () => {},
   };
   const session = {
     autoCompactionEnabled: false,

@@ -1,52 +1,45 @@
 import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
-import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
-import coreUIExtension from "./coreui.js";
-import litellmGatewayExtension from "./litellm.js";
-import openUsageExtension from "./openusage/index.js";
-import patchExtension from "./patch.js";
-import webSearchExtension from "./websearch.js";
-import compactionExtension from "./compaction.js";
-import handoffExtension from "./handoff.js";
-import debugProviderRequestExtension from "./debug-provider-request.js";
-import bundledResourcesExtension from "./bundled-resources.js";
-import mermaidExtension from "./mermaid.js";
-import sessionQueryExtension from "./session-query.js";
-import modesExtension from "./modes.js";
-import agentsMdExtension from "./agents-md.js";
-import contextExtension from "./context.js";
-import sessionBreakdownExtension from "./session-breakdown.js";
-import filesExtension from "./files.js";
-import promptStashExtension from "./prompt-stash.js";
-import terminalNotifyExtension from "./terminal-notify.js";
+import {
+  groupedExtensionsA,
+  groupedExtensionsB,
+  groupedExtensionsC,
+  type GroupedExtensionDefinition,
+} from "./definitions.js";
 import { createSubagentExtension } from "./subagent.js";
-import executorExtension from "./executor/index.js";
-import reviewExtension from "./review.js";
-import commitExtension from "./commit.js";
 
-export const bundledExtensionFactories: ExtensionFactory[] = [
-  modelFamilySystemPromptExtension,
-  bundledResourcesExtension,
-  coreUIExtension,
-  litellmGatewayExtension,
-  openUsageExtension,
-  patchExtension,
-  // Disabled: no need to use webfetch, it can just curl markdown
-  // webFetchExtension,
-  webSearchExtension,
-  modesExtension,
-  commitExtension,
-  reviewExtension,
-  agentsMdExtension,
-  compactionExtension,
-  handoffExtension,
-  debugProviderRequestExtension,
-  mermaidExtension,
-  sessionQueryExtension,
-  contextExtension,
-  sessionBreakdownExtension,
-  filesExtension,
-  promptStashExtension,
-  terminalNotifyExtension,
-  executorExtension,
-  createSubagentExtension({ enabled: false }),
-];
+export type BundledExtensionHost = "server-bound" | "ui-only";
+
+export interface BundledExtensionDefinition {
+  id: string;
+  host: BundledExtensionHost;
+  factory: ExtensionFactory;
+}
+
+const subagentExtensionFactory = createSubagentExtension({ enabled: false });
+
+export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
+  ...groupedExtensionsA,
+  ...groupedExtensionsB,
+  ...groupedExtensionsC,
+  { id: "subagent", host: "server-bound", factory: subagentExtensionFactory },
+] satisfies GroupedExtensionDefinition[];
+
+const bundledExtensionDefinitionByFactory = new Map<ExtensionFactory, BundledExtensionDefinition>(
+  bundledExtensionDefinitions.map((definition) => [definition.factory, definition]),
+);
+
+export function getBundledExtensionDefinitionsByHost(
+  host: BundledExtensionHost,
+): BundledExtensionDefinition[] {
+  return bundledExtensionDefinitions.filter((definition) => definition.host === host);
+}
+
+export function findBundledExtensionDefinitionByFactory(
+  factory: ExtensionFactory,
+): BundledExtensionDefinition | undefined {
+  return bundledExtensionDefinitionByFactory.get(factory);
+}
+
+export const bundledExtensionFactories: ExtensionFactory[] = bundledExtensionDefinitions.map(
+  (definition) => definition.factory,
+);

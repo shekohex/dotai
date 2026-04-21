@@ -1,4 +1,6 @@
-import type { ParsedPrReference, ParsedReviewArgs, ReviewRequestedTargetType } from "./types.js";
+import type { ParsedReviewArgs, ReviewRequestedTargetType } from "./types.js";
+
+export { parsePrReference } from "./pr-reference.js";
 
 export function tokenizeArgs(value: string): string[] {
   const tokens: string[] = [];
@@ -66,47 +68,13 @@ export function parseReviewPaths(value: string | string[]): string[] {
     .filter(Boolean);
 }
 
-export function parsePrReference(ref: string): ParsedPrReference | null {
-  const trimmed = ref.trim();
-  if (/^\d+$/.test(trimmed)) {
-    const number = Number.parseInt(trimmed, 10);
-    if (!Number.isInteger(number) || number <= 0) {
-      return null;
-    }
-    return { prNumber: number };
-  }
-
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    return null;
-  }
-
-  if (url.hostname !== "github.com") {
-    return null;
-  }
-
-  const pathMatch = url.pathname.match(/^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/.*)?$/);
-  if (!pathMatch?.[1] || !pathMatch?.[2]) {
-    return null;
-  }
-
-  const prNumberFromUrl = Number.parseInt(pathMatch[2], 10);
-  if (!Number.isInteger(prNumberFromUrl) || prNumberFromUrl <= 0) {
-    return null;
-  }
-
-  return {
-    prNumber: prNumberFromUrl,
-    repo: pathMatch[1],
-  };
-}
-
 export function normalizeReviewTargetToken(
   value: string | undefined,
 ): ReviewRequestedTargetType | undefined {
-  switch (value?.toLowerCase()) {
+  const normalizedValue = value?.toLowerCase();
+  switch (normalizedValue) {
+    case undefined:
+      return undefined;
     case "uncommitted":
     case "u":
       return "uncommitted";
@@ -157,7 +125,7 @@ function consumeFlagValue(
   initialValue?: string,
   options: { stopAtTarget?: boolean } = {},
 ): { value?: string; nextIndex: number } {
-  const collected = initialValue ? [initialValue] : [];
+  const collected = initialValue !== undefined && initialValue.length > 0 ? [initialValue] : [];
   let nextIndex = startIndex;
 
   while (nextIndex < parts.length) {
@@ -166,7 +134,7 @@ function consumeFlagValue(
       break;
     }
     if (
-      options.stopAtTarget &&
+      options.stopAtTarget === true &&
       isReviewTargetToken(part) &&
       isValidReviewTargetSuffix(parts, nextIndex)
     ) {
@@ -184,11 +152,26 @@ function consumeFlagValue(
 }
 
 export function parseArgs(args: string | undefined): ParsedReviewArgs {
-  if (!args?.trim()) {
+  if (args === undefined || args.trim().length === 0) {
     return { target: null };
   }
 
   const rawParts = tokenizeArgs(args.trim());
+  const parsedFlags = parseReviewFlags(rawParts);
+  if (parsedFlags.error !== undefined) {
+    return { target: null, error: parsedFlags.error };
+  }
+
+  return buildParsedReviewArgs(parsedFlags);
+}
+
+function parseReviewFlags(rawParts: string[]): {
+  parts: string[];
+  extraInstruction: string | undefined;
+  handoffRequested: boolean;
+  handoffInstruction: string | undefined;
+  error?: string;
+} {
   const parts: string[] = [];
   let extraInstruction: string | undefined;
   let handoffRequested = false;
@@ -197,146 +180,118 @@ export function parseArgs(args: string | undefined): ParsedReviewArgs {
   for (let index = 0; index < rawParts.length; index++) {
     const part = rawParts[index];
     const stopAtTarget = parts.length === 0;
-    if (part === "--extra") {
-      const consumed = consumeFlagValue(rawParts, index + 1, undefined, { stopAtTarget });
-      if (!consumed.value) {
-        return { target: null, error: "Missing value for --extra" };
+    if (part === "--extra" || part.startsWith("--extra=")) {
+      const consumed = consumeExtraReviewFlagValue(rawParts, index, part, stopAtTarget);
+      if (consumed.error !== undefined) {
+        return {
+          parts,
+          extraInstruction,
+          handoffRequested,
+          handoffInstruction,
+          error: consumed.error,
+        };
       }
       extraInstruction = consumed.value;
       index = consumed.nextIndex - 1;
       continue;
     }
 
-    if (part.startsWith("--extra=")) {
-      const consumed = consumeFlagValue(rawParts, index + 1, part.slice("--extra=".length), {
-        stopAtTarget,
-      });
-      extraInstruction = consumed.value;
-      index = consumed.nextIndex - 1;
-      continue;
-    }
-
-    if (part === "--handoff") {
+    if (part === "--handoff" || part.startsWith("--handoff=")) {
       handoffRequested = true;
-      const consumed = consumeFlagValue(rawParts, index + 1, undefined, { stopAtTarget });
-      if (consumed.value) {
+      const consumed = consumeHandoffReviewFlagValue(rawParts, index, part, stopAtTarget);
+      if (consumed.value !== undefined && consumed.value.length > 0) {
         handoffInstruction = consumed.value;
         index = consumed.nextIndex - 1;
       }
       continue;
     }
 
-    if (part.startsWith("--handoff=")) {
-      handoffRequested = true;
-      const consumed = consumeFlagValue(rawParts, index + 1, part.slice("--handoff=".length), {
-        stopAtTarget,
-      });
-      handoffInstruction = consumed.value;
-      index = consumed.nextIndex - 1;
-      continue;
-    }
-
     parts.push(part);
   }
 
-  const requestedTargetType = normalizeReviewTargetToken(parts[0]);
+  return { parts, extraInstruction, handoffRequested, handoffInstruction };
+}
 
-  if (parts.length === 0) {
-    return {
-      target: null,
-      requestedTargetType,
-      extraInstruction,
-      handoffRequested,
-      handoffInstruction,
-    };
+function consumeExtraReviewFlagValue(
+  rawParts: string[],
+  index: number,
+  part: string,
+  stopAtTarget: boolean,
+): {
+  value: string;
+  nextIndex: number;
+  error?: string;
+} {
+  const consumed = consumeFlagValue(rawParts, index + 1, readInlineFlagValue(part, "--extra"), {
+    stopAtTarget,
+  });
+  if (consumed.value === undefined || consumed.value.length === 0) {
+    return { value: "", nextIndex: consumed.nextIndex, error: "Missing value for --extra" };
+  }
+  return { value: consumed.value, nextIndex: consumed.nextIndex };
+}
+
+function consumeHandoffReviewFlagValue(
+  rawParts: string[],
+  index: number,
+  part: string,
+  stopAtTarget: boolean,
+): {
+  value?: string;
+  nextIndex: number;
+} {
+  return consumeFlagValue(rawParts, index + 1, readInlineFlagValue(part, "--handoff"), {
+    stopAtTarget,
+  });
+}
+
+function readInlineFlagValue(part: string, flag: "--extra" | "--handoff"): string | undefined {
+  const prefix = `${flag}=`;
+  return part.startsWith(prefix) ? part.slice(prefix.length) : undefined;
+}
+
+function buildParsedReviewArgs(input: {
+  parts: string[];
+  extraInstruction: string | undefined;
+  handoffRequested: boolean;
+  handoffInstruction: string | undefined;
+}): ParsedReviewArgs {
+  const requestedTargetType = normalizeReviewTargetToken(input.parts[0]);
+  const base = {
+    requestedTargetType,
+    extraInstruction: input.extraInstruction,
+    handoffRequested: input.handoffRequested,
+    handoffInstruction: input.handoffInstruction,
+  };
+  if (input.parts.length === 0 || requestedTargetType === undefined) {
+    return { target: null, ...base };
   }
 
   switch (requestedTargetType) {
     case "uncommitted":
-      return {
-        target: { type: "uncommitted" },
-        requestedTargetType,
-        extraInstruction,
-        handoffRequested,
-        handoffInstruction,
-      };
+      return { target: { type: "uncommitted" }, ...base };
     case "branch":
-      return parts[1]
-        ? {
-            target: { type: "baseBranch", branch: parts[1] },
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          }
-        : {
-            target: null,
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          };
+      return {
+        target: input.parts[1] ? { type: "baseBranch", branch: input.parts[1] } : null,
+        ...base,
+      };
     case "commit":
-      return parts[1]
-        ? {
-            target: {
+      return {
+        target: input.parts[1]
+          ? {
               type: "commit",
-              sha: parts[1],
-              title: parts.slice(2).join(" ") || undefined,
-            },
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          }
-        : {
-            target: null,
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          };
+              sha: input.parts[1],
+              title: input.parts.slice(2).join(" ") || undefined,
+            }
+          : null,
+        ...base,
+      };
     case "folder": {
-      const paths = parseReviewPaths(parts.slice(1));
-      return paths.length > 0
-        ? {
-            target: { type: "folder", paths },
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          }
-        : {
-            target: null,
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          };
+      const paths = parseReviewPaths(input.parts.slice(1));
+      return { target: paths.length > 0 ? { type: "folder", paths } : null, ...base };
     }
     case "pr":
-      return parts[1]
-        ? {
-            target: { type: "pr", ref: parts[1] },
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          }
-        : {
-            target: null,
-            requestedTargetType,
-            extraInstruction,
-            handoffRequested,
-            handoffInstruction,
-          };
-    default:
-      return {
-        target: null,
-        requestedTargetType,
-        extraInstruction,
-        handoffRequested,
-        handoffInstruction,
-      };
+      return { target: input.parts[1] ? { type: "pr", ref: input.parts[1] } : null, ...base };
   }
+  return { target: null, ...base };
 }

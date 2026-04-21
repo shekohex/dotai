@@ -3,34 +3,25 @@ import {
   CLIPROXY_AUTH_PROVIDER,
   type CliproxyAccount,
   type CliproxyAccountsByProvider,
-  type CliproxyAuthFile,
   type CliproxyConfig,
   type OpenUsageRuntimeState,
   type SupportedProviderId,
 } from "./types.js";
+import {
+  API_KEY_ENV_KEYS,
+  BASE_URL_ENV_KEYS,
+  CLIPROXY_READINESS_PATH,
+  buildAccountsByProvider,
+  detectCliproxyState,
+  firstEnv,
+  hasText,
+  normalizeBaseUrl,
+  parseAuthFiles,
+  probeCliproxyCandidate,
+  type CliproxyState,
+} from "./cliproxy-helpers.js";
 
-const BASE_URL_ENV_KEYS = ["CLIPROXYAPI_BASE_URL", "CLIPROXY_BASE_URL", "CLIPROXYAPI_URL"] as const;
-const API_KEY_ENV_KEYS = [
-  "CLIPROXYAPI_API_KEY",
-  "CLIPROXY_API_KEY",
-  "CLIPROXYAPI_MANAGEMENT_KEY",
-] as const;
-const CLIPROXY_READINESS_PATH = "/v0/management/auth-files";
-const CLIPROXY_CANDIDATES = [
-  { label: "lan", origin: "http://192.168.1.116:8317" },
-  { label: "tail", origin: "http://100.100.1.116:8317" },
-  { label: "public", origin: "https://ai-gateway.0iq.xyz/proxy" },
-] as const;
-
-export type CliproxyState = {
-  healthy: boolean;
-  label: string;
-  origin?: string;
-  baseUrl?: string;
-  checkedPath?: string;
-  error?: string;
-  source: "env" | "detected" | "missing-auth" | "offline";
-};
+export type { CliproxyState } from "./cliproxy-helpers.js";
 
 let cliproxyStatePromise: Promise<CliproxyState> | undefined;
 
@@ -43,12 +34,12 @@ export async function resolveCliproxyConfig(
     })) ?? firstEnv(API_KEY_ENV_KEYS)
   )?.trim();
 
-  if (!apiKey) {
+  if (!hasText(apiKey)) {
     return undefined;
   }
 
   const state = await resolveCliproxyState(ctx, apiKey);
-  if (!state.baseUrl) {
+  if (!hasText(state.baseUrl)) {
     return undefined;
   }
 
@@ -67,7 +58,7 @@ export async function resolveCliproxyState(
       })) ?? firstEnv(API_KEY_ENV_KEYS)
     )?.trim();
 
-  if (!apiKey) {
+  if (!hasText(apiKey)) {
     return {
       healthy: false,
       label: "missing-auth",
@@ -77,7 +68,7 @@ export async function resolveCliproxyState(
   }
 
   const envBaseUrl = normalizeBaseUrl(firstEnv(BASE_URL_ENV_KEYS));
-  if (envBaseUrl) {
+  if (hasText(envBaseUrl)) {
     const result = await probeCliproxyCandidate({ label: "env", origin: envBaseUrl }, apiKey);
     return {
       healthy: result.healthy,
@@ -90,9 +81,7 @@ export async function resolveCliproxyState(
     };
   }
 
-  if (!cliproxyStatePromise) {
-    cliproxyStatePromise = detectCliproxyState(apiKey);
-  }
+  cliproxyStatePromise ??= detectCliproxyState(apiKey);
 
   return cliproxyStatePromise;
 }
@@ -175,220 +164,9 @@ export async function resolveCliproxySelectedAccount(
   }
 
   const selectedValue = state.persisted.selectedAccounts[providerId]?.trim();
-  if (!selectedValue) {
+  if (!hasText(selectedValue)) {
     return accounts[0];
   }
 
   return accounts.find((account) => account.value === selectedValue) ?? accounts[0];
-}
-
-function parseAuthFiles(payload: unknown): CliproxyAuthFile[] {
-  const items = Array.isArray(payload)
-    ? payload
-    : payload &&
-        typeof payload === "object" &&
-        Array.isArray((payload as { files?: unknown }).files)
-      ? (payload as { files: unknown[] }).files
-      : [];
-
-  const files: CliproxyAuthFile[] = [];
-  for (const item of items) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-
-    const record = item as Record<string, unknown>;
-    const name = readString(record.name);
-    if (!name) {
-      continue;
-    }
-
-    const authIndex = readString(record.authIndex) ?? readString(record.auth_index);
-    files.push({
-      id: readString(record.id) ?? authIndex ?? name,
-      name,
-      provider: readString(record.provider) ?? readString(record.type) ?? "unknown",
-      email: readString(record.email) ?? readString(record.account) ?? readString(record.username),
-      authIndex,
-      disabled: readBoolean(record.disabled),
-      unavailable: readBoolean(record.unavailable),
-      runtimeOnly: readBoolean(record.runtimeOnly) || readBoolean(record.runtime_only),
-    });
-  }
-
-  return files;
-}
-
-function buildAccountsByProvider(files: CliproxyAuthFile[]): CliproxyAccountsByProvider {
-  const byProvider: CliproxyAccountsByProvider = {};
-  const seen = new Map<SupportedProviderId, Set<string>>();
-
-  for (const file of files) {
-    if (file.disabled || file.unavailable) {
-      continue;
-    }
-
-    const providerId = mapCliproxyProvider(file.provider);
-    if (!providerId) {
-      continue;
-    }
-
-    const selectionValue = (file.authIndex ?? file.id ?? file.name).trim();
-    if (!selectionValue) {
-      continue;
-    }
-
-    if (!seen.has(providerId)) {
-      seen.set(providerId, new Set());
-    }
-
-    if (seen.get(providerId)?.has(selectionValue)) {
-      continue;
-    }
-
-    seen.get(providerId)?.add(selectionValue);
-
-    const account: CliproxyAccount = {
-      value: selectionValue,
-      label: file.email?.trim() ? `${file.email.trim()} (${file.name})` : file.name,
-      file,
-    };
-
-    if (!byProvider[providerId]) {
-      byProvider[providerId] = [];
-    }
-
-    byProvider[providerId]?.push(account);
-  }
-
-  return byProvider;
-}
-
-async function detectCliproxyState(apiKey: string): Promise<CliproxyState> {
-  let lastError: string | undefined;
-
-  for (const candidate of CLIPROXY_CANDIDATES) {
-    const result = await probeCliproxyCandidate(candidate, apiKey);
-    if (result.healthy) {
-      return {
-        healthy: true,
-        label: candidate.label,
-        origin: candidate.origin,
-        baseUrl: candidate.origin,
-        checkedPath: result.checkedPath,
-        source: "detected",
-      };
-    }
-    lastError = result.error;
-  }
-
-  return {
-    healthy: false,
-    label: "offline",
-    error: lastError,
-    source: "offline",
-  };
-}
-
-async function probeCliproxyCandidate(
-  candidate: { label: string; origin: string },
-  apiKey: string,
-): Promise<{ healthy: boolean; checkedPath?: string; error?: string }> {
-  const origin = normalizeBaseUrl(candidate.origin);
-  if (!origin) {
-    return {
-      healthy: false,
-      error: `${candidate.label} invalid origin`,
-    };
-  }
-
-  try {
-    const response = await fetch(`${origin}${CLIPROXY_READINESS_PATH}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(1500),
-    });
-
-    if (response.ok || response.status === 401 || response.status === 403) {
-      return { healthy: true, checkedPath: CLIPROXY_READINESS_PATH };
-    }
-
-    return {
-      healthy: false,
-      error: `${candidate.label} ${CLIPROXY_READINESS_PATH} -> ${response.status}`,
-    };
-  } catch (error) {
-    return {
-      healthy: false,
-      error: `${candidate.label} ${CLIPROXY_READINESS_PATH} -> ${formatError(error)}`,
-    };
-  }
-}
-
-function mapCliproxyProvider(value: string): SupportedProviderId | undefined {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) {
-    return undefined;
-  }
-
-  if (normalized === "codex" || normalized === "openai-codex") {
-    return "codex";
-  }
-
-  if (
-    normalized === "google" ||
-    normalized === "gemini" ||
-    normalized === "gemini-cli" ||
-    normalized === "google-gemini-cli"
-  ) {
-    return "google";
-  }
-
-  if (normalized === "zai" || normalized === "glm") {
-    return "zai";
-  }
-
-  return undefined;
-}
-
-function normalizeBaseUrl(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-  const normalized = withProtocol.replace(/\/+$/, "").replace(/\/v0\/management$/i, "");
-  return normalized || undefined;
-}
-
-function firstEnv(keys: readonly string[]): string | undefined {
-  for (const key of keys) {
-    const value = process.env[key]?.trim();
-    if (value) {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function readString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed || undefined;
-}
-
-function readBoolean(value: unknown): boolean {
-  return value === true || value === 1 || value === "true";
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

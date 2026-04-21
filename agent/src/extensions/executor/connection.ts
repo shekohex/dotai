@@ -37,7 +37,7 @@ const assertMcpUrl = (mcpUrl: string): string => {
   try {
     return new URL(mcpUrl).toString().replace(/\/+$/, "");
   } catch (error) {
-    throw new Error(`Invalid Executor MCP URL: ${formatError(error)}`);
+    throw new Error(`Invalid Executor MCP URL: ${formatError(error)}`, { cause: error });
   }
 };
 

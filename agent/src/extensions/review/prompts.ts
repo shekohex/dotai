@@ -19,31 +19,33 @@ export async function buildReviewPrompt(pi: ExtensionAPI, target: ReviewTarget):
       return UNCOMMITTED_PROMPT;
     case "baseBranch": {
       const mergeBase = await getMergeBase(pi, target.branch);
-      return mergeBase
-        ? BASE_BRANCH_PROMPT_WITH_MERGE_BASE.replace(/{baseBranch}/g, target.branch).replace(
-            /{mergeBaseSha}/g,
+      return mergeBase !== null && mergeBase.length > 0
+        ? BASE_BRANCH_PROMPT_WITH_MERGE_BASE.replaceAll("{baseBranch}", target.branch).replaceAll(
+            "{mergeBaseSha}",
             mergeBase,
           )
-        : BASE_BRANCH_PROMPT_FALLBACK.replace(/{branch}/g, target.branch);
+        : BASE_BRANCH_PROMPT_FALLBACK.replaceAll("{branch}", target.branch);
     }
     case "commit":
-      return target.title
+      return target.title !== undefined && target.title.length > 0
         ? COMMIT_PROMPT_WITH_TITLE.replace("{sha}", target.sha).replace("{title}", target.title)
         : COMMIT_PROMPT.replace("{sha}", target.sha);
     case "pullRequest": {
       const mergeBase = await getMergeBase(pi, target.baseBranch);
-      return mergeBase
-        ? PULL_REQUEST_PROMPT.replace(/{prNumber}/g, String(target.prNumber))
-            .replace(/{title}/g, target.title)
-            .replace(/{baseBranch}/g, target.baseBranch)
-            .replace(/{mergeBaseSha}/g, mergeBase)
-        : PULL_REQUEST_PROMPT_FALLBACK.replace(/{prNumber}/g, String(target.prNumber))
-            .replace(/{title}/g, target.title)
-            .replace(/{baseBranch}/g, target.baseBranch);
+      return mergeBase !== null && mergeBase.length > 0
+        ? PULL_REQUEST_PROMPT.replaceAll("{prNumber}", String(target.prNumber))
+            .replaceAll("{title}", target.title)
+            .replaceAll("{baseBranch}", target.baseBranch)
+            .replaceAll("{mergeBaseSha}", mergeBase)
+        : PULL_REQUEST_PROMPT_FALLBACK.replaceAll("{prNumber}", String(target.prNumber))
+            .replaceAll("{title}", target.title)
+            .replaceAll("{baseBranch}", target.baseBranch);
     }
     case "folder":
       return FOLDER_REVIEW_PROMPT.replace("{paths}", target.paths.join(", "));
   }
+
+  return UNCOMMITTED_PROMPT;
 }
 
 export function getUserFacingHint(target: ReviewTarget): string {
@@ -53,7 +55,7 @@ export function getUserFacingHint(target: ReviewTarget): string {
     case "baseBranch":
       return `changes against '${target.branch}'`;
     case "commit":
-      return target.title
+      return target.title !== undefined && target.title.length > 0
         ? `commit ${target.sha.slice(0, 7)}: ${target.title}`
         : `commit ${target.sha.slice(0, 7)}`;
     case "pullRequest":
@@ -63,4 +65,6 @@ export function getUserFacingHint(target: ReviewTarget): string {
       return joined.length > 40 ? `folders: ${joined.slice(0, 37)}...` : `folders: ${joined}`;
     }
   }
+
+  return "current changes";
 }

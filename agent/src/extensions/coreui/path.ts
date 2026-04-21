@@ -1,5 +1,5 @@
 function normalizePath(value: string): string {
-  return value.replace(/\\/g, "/");
+  return value.replaceAll("\\", "/");
 }
 
 function isAbsolutePath(value: string): boolean {
@@ -12,8 +12,8 @@ export type ToolPathDisplay = {
 };
 
 export function shortenHome(value: string): string {
-  const home = process.env.HOME || process.env.USERPROFILE;
-  if (!home) {
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  if (home === undefined || home.length === 0) {
     return value;
   }
 

@@ -67,14 +67,49 @@ const buildCapabilities = (hasUI: boolean): ClientCapabilities =>
       }
     : {};
 
-const cloneJsonObject = (value: object): JsonObject =>
-  JSON.parse(JSON.stringify(value)) as JsonObject;
+const isJsonValue = (value: unknown): value is JsonValue => {
+  if (value === null) {
+    return true;
+  }
 
-const collectText = (content: Array<{ type: string } & Record<string, string>>): string => {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every((item) => isJsonValue(item));
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).every((item) => isJsonValue(item));
+  }
+
+  return false;
+};
+
+const isJsonObject = (value: unknown): value is JsonObject =>
+  value !== null && typeof value === "object" && !Array.isArray(value) && isJsonValue(value);
+
+const cloneJsonObject = (value: unknown): JsonObject => {
+  const cloned: unknown = JSON.parse(JSON.stringify(value));
+  return isJsonObject(cloned) ? cloned : {};
+};
+
+const collectText = (content: unknown): string => {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
   const textParts: string[] = [];
   for (const item of content) {
-    if (item.type === "text" && typeof item.text === "string") {
-      textParts.push(item.text);
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+
+    const type: unknown = Reflect.get(item, "type");
+    const text: unknown = Reflect.get(item, "text");
+    if (type === "text" && typeof text === "string") {
+      textParts.push(text);
     }
   }
   return textParts.join("\n").trim();
@@ -91,18 +126,19 @@ const normalizeToolResult = (
     };
   }
 
-  const structuredContent = result.structuredContent
-    ? cloneJsonObject(result.structuredContent)
-    : null;
-  const text = collectText(result.content as Array<{ type: string } & Record<string, string>>);
+  const structuredContent =
+    result.structuredContent !== undefined && result.structuredContent !== null
+      ? cloneJsonObject(result.structuredContent)
+      : null;
+  const text = collectText(result.content);
+  let normalizedText = text;
+  if (normalizedText.length === 0) {
+    normalizedText =
+      structuredContent === null ? DEFAULT_TEXT_RESULT : JSON.stringify(structuredContent, null, 2);
+  }
 
   return {
-    text:
-      text.length > 0
-        ? text
-        : structuredContent
-          ? JSON.stringify(structuredContent, null, 2)
-          : DEFAULT_TEXT_RESULT,
+    text: normalizedText,
     structuredContent,
     isError: result.isError === true,
   };
@@ -118,55 +154,14 @@ const connectExecutorMcpClient = async (
   );
   const transport = new StreamableHTTPClientTransport(new URL(mcpUrl));
 
-  const onElicitation = options.onElicitation;
-  if (onElicitation) {
-    client.setRequestHandler(ElicitRequestSchema, async (request) => {
-      const params = request.params;
-      const response = await onElicitation(
-        params.mode === "url"
-          ? {
-              mode: "url",
-              message: params.message,
-              url: params.url,
-              elicitationId: params.elicitationId,
-            }
-          : {
-              mode: "form",
-              message: params.message,
-              requestedSchema: cloneJsonObject(params.requestedSchema),
-            },
-      );
-
-      return response.content
-        ? { action: response.action, content: response.content }
-        : { action: response.action };
-    });
-  }
+  registerElicitationHandler(client, options.onElicitation);
 
   await client.connect(transport);
-
-  const listTools = async (): Promise<ExecutorMcpToolMetadata[]> => {
-    const tools: ExecutorMcpToolMetadata[] = [];
-    let cursor: string | undefined;
-
-    do {
-      const response = await client.listTools(cursor ? { cursor } : undefined);
-      tools.push(
-        ...response.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-        })),
-      );
-      cursor = response.nextCursor;
-    } while (cursor);
-
-    return tools;
-  };
 
   return {
     inspect: async () => ({
       instructions: client.getInstructions(),
-      tools: await listTools(),
+      tools: await listExecutorTools(client),
     }),
     execute: async (code) =>
       normalizeToolResult(
@@ -187,11 +182,71 @@ const connectExecutorMcpClient = async (
         }),
       ),
     close: async () => {
-      await transport.terminateSession().catch(() => undefined);
-      await client.close().catch(() => undefined);
+      await transport.terminateSession().catch(() => {});
+      await client.close().catch(() => {});
     },
   };
 };
+
+function registerElicitationHandler(
+  client: Client,
+  onElicitation: ExecutorMcpClientOptions["onElicitation"],
+): void {
+  if (!onElicitation) {
+    return;
+  }
+
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    const response = await onElicitation(toExecutorElicitationRequest(request.params));
+    if (response.content !== undefined) {
+      return { action: response.action, content: response.content };
+    }
+
+    return { action: response.action };
+  });
+}
+
+function toExecutorElicitationRequest(params: unknown): ExecutorElicitationRequest {
+  if (params !== null && typeof params === "object" && Reflect.get(params, "mode") === "url") {
+    return {
+      mode: "url",
+      message: String(Reflect.get(params, "message") ?? ""),
+      url: String(Reflect.get(params, "url") ?? ""),
+      elicitationId: String(Reflect.get(params, "elicitationId") ?? ""),
+    };
+  }
+
+  return {
+    mode: "form",
+    message:
+      params !== null && typeof params === "object"
+        ? String(Reflect.get(params, "message") ?? "")
+        : "",
+    requestedSchema:
+      params !== null && typeof params === "object"
+        ? cloneJsonObject(Reflect.get(params, "requestedSchema"))
+        : {},
+  };
+}
+
+async function listExecutorTools(client: Client): Promise<ExecutorMcpToolMetadata[]> {
+  const tools: ExecutorMcpToolMetadata[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await client.listTools(
+      cursor !== undefined && cursor.length > 0 ? { cursor } : undefined,
+    );
+    tools.push(
+      ...response.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+      })),
+    );
+    cursor = response.nextCursor;
+  } while (cursor !== undefined && cursor.length > 0);
+
+  return tools;
+}
 
 export const withExecutorMcpClient = async <T>(
   mcpUrl: string,
@@ -206,8 +261,8 @@ export const withExecutorMcpClient = async <T>(
   }
 };
 
-export const inspectExecutorMcp = async (
+export const inspectExecutorMcp = (
   mcpUrl: string,
   hasUI: boolean,
 ): Promise<ExecutorMcpInspection> =>
-  withExecutorMcpClient(mcpUrl, { hasUI }, async (client) => client.inspect());
+  withExecutorMcpClient(mcpUrl, { hasUI }, (client) => client.inspect());

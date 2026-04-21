@@ -75,6 +75,8 @@ export async function connectExecutor(
 
 export function formatExecutorRuntimeState(state: ExecutorRuntimeState): string[] {
   switch (state.kind) {
+    case "idle":
+      return ["Executor idle"];
     case "ready":
       return [
         "Executor ready",
@@ -88,7 +90,7 @@ export function formatExecutorRuntimeState(state: ExecutorRuntimeState): string[
       return ["Executor connecting"];
     case "error":
       return ["Executor error", state.message];
-    default:
-      return ["Executor idle"];
   }
+
+  return ["Executor idle"];
 }

@@ -138,6 +138,39 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     });
   }
 
+  getSessionTools(
+    sessionId: string,
+    client: AuthSession,
+    connectionId?: string,
+  ): Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+    sourceInfo: unknown;
+  }> {
+    const record = this.getRequired(sessionId);
+    this.touchPresence(sessionId, client, connectionId);
+    this.syncFromRuntime(record, { updateTimestamp: false, syncResources: true });
+    const session = this.getRuntimeSession(record);
+    if (!session) {
+      return record.activeTools.map((toolName) => ({
+        name: toolName,
+        description: `${toolName} tool`,
+        parameters: {},
+        sourceInfo: {
+          source: "remote",
+        },
+      }));
+    }
+
+    return session.getAllTools().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      sourceInfo: tool.sourceInfo,
+    }));
+  }
+
   getAppSnapshot(client: AuthSession): AppSnapshot {
     return getAppSnapshot({
       client,
@@ -169,6 +202,8 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       pruneExpiredPresence: (targetRecord, now) => {
         this.pruneExpiredPresence(targetRecord, now);
       },
+      readConnectionCapabilities: (targetClientId, targetConnectionId) =>
+        this.readConnectionCapabilities(targetClientId, targetConnectionId),
       getLastAppOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
       getLastSessionOffset: (targetSessionId) =>
         this.streams.getHeadOffset(sessionEventsStreamId(targetSessionId)),

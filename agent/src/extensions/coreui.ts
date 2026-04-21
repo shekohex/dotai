@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
+import { getRuntimeCapabilities } from "./runtime-capabilities.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import {
   bindCoreUI,
@@ -50,17 +51,25 @@ function registerSessionStartHandler(input: {
   setRequestRender: (requestRender: (() => void) | undefined) => void;
 }): void {
   input.pi.on("session_start", (_event, ctx) => {
+    const runtimeCapabilities = getRuntimeCapabilities(ctx);
     input.ensureToolOverridesRegistered(input.pi.getActiveTools());
     input.state.cwd = ctx.cwd;
-    ctx.ui.setEditorComponent(
-      createCorePromptEditorFactory(
-        () => ctx.ui.theme,
-        () => ctx.isIdle(),
-      ),
-    );
-    bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
-      input.setRequestRender(nextRequestRender);
-    });
+    if (runtimeCapabilities?.primitives.setEditorComponent !== false) {
+      ctx.ui.setEditorComponent(
+        createCorePromptEditorFactory(
+          () => ctx.ui.theme,
+          () => ctx.isIdle(),
+        ),
+      );
+    }
+    if (
+      runtimeCapabilities?.primitives.setHeader !== false &&
+      runtimeCapabilities?.primitives.setFooter !== false
+    ) {
+      bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
+        input.setRequestRender(nextRequestRender);
+      });
+    }
     input.refreshUsageMetrics(ctx);
     void input.refreshProjectInfo(ctx, true);
   });

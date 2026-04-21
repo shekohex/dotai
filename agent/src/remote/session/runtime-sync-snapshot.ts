@@ -5,7 +5,6 @@ export function buildSessionSnapshotParts(
   record: SessionRecord,
 ): Omit<SessionSnapshot, "lastSessionStreamOffset" | "lastAppStreamOffsetSeenByServer"> {
   const modelSettings = buildModelSettingsSnapshot(record);
-  const draft = buildDraftSnapshot(record);
   const queue = {
     depth: record.queue.depth,
     nextSequence: record.queue.nextSequence,
@@ -29,8 +28,6 @@ export function buildSessionSnapshotParts(
     settings: { ...record.settings },
     availableModels: record.availableModels.map((model) => ({ ...model })),
     modelSettings,
-    draft,
-    draftRevision: record.draft.revision,
     transcript: [...record.transcript],
     queue,
     retry: {
@@ -57,15 +54,5 @@ function buildModelSettingsSnapshot(record: SessionRecord): SessionSnapshot["mod
     enabledModels: record.modelSettings.enabledModels
       ? [...record.modelSettings.enabledModels]
       : null,
-  };
-}
-
-function buildDraftSnapshot(record: SessionRecord): SessionSnapshot["draft"] {
-  return {
-    text: record.draft.text,
-    attachments: [...record.draft.attachments],
-    revision: record.draft.revision,
-    updatedAt: record.draft.updatedAt,
-    updatedByClientId: record.draft.updatedByClientId,
   };
 }

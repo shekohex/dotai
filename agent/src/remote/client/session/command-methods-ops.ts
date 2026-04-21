@@ -12,6 +12,7 @@ import {
   abortRemoteSession,
   clearQueueRemoteSession,
   cycleModelRemoteSession,
+  setActiveToolsRemoteSession,
   setModelRemoteSession,
   setSessionNameRemoteSession,
   setThinkingLevelRemoteSession,
@@ -205,6 +206,24 @@ export function setSessionNameRemoteSessionMethod(input: {
     name: input.name,
     previousName: input.previousName,
     setSessionNameState: input.setSessionNameState,
+    enqueueMutation: input.enqueueMutation,
+    client: input.client,
+    sessionId: input.sessionId,
+  });
+}
+
+export function setActiveToolsRemoteSessionMethod(input: {
+  toolNames: string[];
+  previousToolNames: string[];
+  setActiveToolsState: (toolNames: string[]) => void;
+  enqueueMutation: (execute: () => Promise<void>, rollback: () => void, label: string) => void;
+  client: RemoteApiClient;
+  sessionId: string;
+}): void {
+  setActiveToolsRemoteSession({
+    toolNames: input.toolNames,
+    previousToolNames: input.previousToolNames,
+    setActiveToolsState: input.setActiveToolsState,
     enqueueMutation: input.enqueueMutation,
     client: input.client,
     sessionId: input.sessionId,

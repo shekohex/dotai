@@ -1,5 +1,4 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
 
 import { REVIEW_SETTINGS_TYPE, REVIEW_STATE_TYPE, REVIEW_WIDGET_KEY } from "./constants.js";
 import type { ReviewSessionState, ReviewSettingsState } from "./types.js";
@@ -67,17 +66,7 @@ export function setReviewWidget(
   const message = ["Review session active", options.targetLabel, options.statusText]
     .filter((value): value is string => value !== undefined && value.length > 0)
     .join(" · ");
-  ctx.ui.setWidget(REVIEW_WIDGET_KEY, (_tui, theme) => {
-    const text = new Text(theme.fg("warning", message), 0, 0);
-    return {
-      render(width: number) {
-        return text.render(width);
-      },
-      invalidate() {
-        text.invalidate();
-      },
-    };
-  });
+  ctx.ui.setWidget(REVIEW_WIDGET_KEY, [message]);
 }
 
 export function isTerminalReviewStatus(

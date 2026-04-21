@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import {
   estimateTokens,
   formatUsd,
@@ -30,7 +31,7 @@ type ContextUsageMetrics = {
 
 async function handleContextCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   const data = await buildContextCommandData(pi, ctx);
-  if (!ctx.hasUI) {
+  if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "custom")) {
     pi.sendMessage(
       { customType: "context", content: data.plainText, display: true },
       { triggerTurn: false },

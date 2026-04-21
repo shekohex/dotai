@@ -47,6 +47,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       origin: options.origin,
       auth: options.auth,
       connectionId: options.connectionId,
+      clientCapabilities: options.clientCapabilities,
       fetchImpl: options.fetchImpl,
     });
 

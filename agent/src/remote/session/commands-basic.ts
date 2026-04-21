@@ -2,7 +2,6 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
 import type {
   CommandAcceptedResponse,
-  DraftUpdateRequest,
   FollowUpCommandRequest,
   InterruptCommandRequest,
   PromptCommandRequest,
@@ -229,47 +228,6 @@ export function handleInterruptCommand(input: {
         session.clearQueue();
         await session.abort();
       });
-    },
-  );
-}
-
-export function handleDraftUpdateCommand(input: {
-  command: DraftUpdateRequest;
-  client: AuthSession;
-  connectionId?: string;
-  record: SessionRecord;
-  now: () => number;
-  acceptCommand: (
-    record: SessionRecord,
-    client: AuthSession,
-    connectionId: string | undefined,
-    kind: "draft",
-    payload: DraftUpdateRequest,
-    onAccepted: (accepted: AcceptedSessionCommand) => void,
-  ) => Promise<CommandAcceptedResponse>;
-  appendDraftUpdatedEvent: (
-    record: SessionRecord,
-    command: AcceptedSessionCommand,
-    updatedAt: number,
-  ) => void;
-  emitSessionSummaryUpdated: (record: SessionRecord, ts: number) => void;
-}): Promise<CommandAcceptedResponse> {
-  return input.acceptCommand(
-    input.record,
-    input.client,
-    input.connectionId,
-    "draft",
-    input.command,
-    (accepted) => {
-      const updatedAt = input.now();
-      input.record.draft.text = input.command.text;
-      input.record.draft.attachments = [...(input.command.attachments ?? [])];
-      input.record.draft.revision += 1;
-      input.record.draft.updatedAt = updatedAt;
-      input.record.draft.updatedByClientId = input.client.clientId;
-      input.record.updatedAt = updatedAt;
-      input.appendDraftUpdatedEvent(input.record, accepted, updatedAt);
-      input.emitSessionSummaryUpdated(input.record, updatedAt);
     },
   );
 }

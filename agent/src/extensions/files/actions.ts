@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 
 export type FileAction = "reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff";
 
@@ -25,6 +26,10 @@ export function showActionSelector(
   options: { canQuickLook: boolean; canEdit: boolean; canDiff: boolean },
 ): Promise<FileAction | null> {
   const actions = buildActionSelectorItems(options);
+
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    return showActionSelectorFallback(ctx, actions);
+  }
 
   return ctx.ui.custom<FileAction | null>((tui, theme, _kb, done) => {
     const container = new Container();
@@ -63,6 +68,22 @@ export function showActionSelector(
       },
     };
   });
+}
+
+async function showActionSelectorFallback(
+  ctx: ExtensionContext,
+  actions: Array<SelectItem & { value: FileAction }>,
+): Promise<FileAction | null> {
+  const selectedLabel = await ctx.ui.select(
+    "Choose action",
+    actions.map((action) => action.label),
+  );
+  if (selectedLabel === undefined || selectedLabel.length === 0) {
+    return null;
+  }
+
+  const selectedAction = actions.find((action) => action.label === selectedLabel);
+  return selectedAction?.value ?? null;
 }
 
 function buildActionSelectorItems(options: {

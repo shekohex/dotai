@@ -2,6 +2,7 @@ import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type {
   AgentSessionEventListener,
+  ContextUsage,
   ExtensionUIContext,
   ModelRegistry,
   PromptTemplate,
@@ -31,6 +32,36 @@ import {
 } from "../session-deps.js";
 import type { RemoteModelSettingsState } from "../contracts.js";
 import type { RemoteAgentSettings } from "../session-deps.js";
+import {
+  createRemoteLocalExtensionRunner,
+  type RemoteLocalExtensionRunner,
+} from "./local-extension-runner.js";
+import {
+  describeManagedExtensionState,
+  hydrateExtensionStateFromKv,
+  isKvManagedExtensionState,
+  persistManagedExtensionState,
+} from "./extension-state-kv.js";
+
+type RemoteExtensionCommandContextActions = {
+  waitForIdle: () => Promise<void>;
+  newSession: (options?: {
+    parentSession?: string;
+    setup?: (sessionManager: SessionManager) => Promise<void>;
+  }) => Promise<{ cancelled: boolean }>;
+  fork: (entryId: string) => Promise<{ cancelled: boolean; selectedText?: string }>;
+  navigateTree: (
+    targetId: string,
+    options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    },
+  ) => Promise<{ cancelled: boolean }>;
+  switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+  reload: () => Promise<void>;
+};
 
 export abstract class RemoteAgentSessionSetupBase {
   sessionManager: SessionManager;
@@ -62,10 +93,17 @@ export abstract class RemoteAgentSessionSetupBase {
   protected activeReadAbortController: AbortController | undefined;
   protected uiContext: ExtensionUIContext | undefined;
   protected readonly bufferedUiRequests: ExtensionUiRequestEventPayload[] = [];
+  protected readonly pendingInteractiveRequests = new Map<string, AbortController>();
   protected queuedSteeringMessages: string[] = [];
   protected queuedFollowUpMessages: string[] = [];
   protected queueDepth = 0;
   protected activeTools: string[] = [];
+  protected allTools: Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+    sourceInfo: unknown;
+  }> = [];
   protected emitQueue: Promise<void> = Promise.resolve();
   protected mutationQueue: Promise<void> = Promise.resolve();
   protected idleResolvers = new Set<() => void>();
@@ -84,6 +122,13 @@ export abstract class RemoteAgentSessionSetupBase {
   protected remoteExtensions: RemoteExtensionMetadata[] = [];
   protected readonly clientExtensions: RemoteExtensionMetadata[];
   protected readonly agentDir: string;
+  protected localExtensionRunner: RemoteLocalExtensionRunner | undefined;
+  protected localExtensionsStarted = false;
+  protected extensionCommandContextActions: RemoteExtensionCommandContextActions | undefined;
+  protected extensionShutdownHandler: (() => void) | undefined;
+  protected extensionErrorListener: ((error: unknown) => void) | undefined;
+  protected localExtensionErrorUnsubscriber: (() => void) | undefined;
+  protected extensionStateHydrationTask: Promise<void> | undefined;
 
   protected constructor(
     client: RemoteApiClient,
@@ -125,8 +170,123 @@ export abstract class RemoteAgentSessionSetupBase {
     });
     this.queueDepth = snapshot.queue.depth;
     this.activeTools = [...snapshot.activeTools];
+    this.allTools = this.activeTools.map((toolName) => ({
+      name: toolName,
+      description: `${toolName} tool`,
+      parameters: {},
+      sourceInfo: { source: "remote" },
+    }));
     this.agent = this.createAgentBindings();
     initializeRemoteSessionMetadata(this.sessionManager, snapshot);
+    this.extensionStateHydrationTask = hydrateExtensionStateFromKv({
+      client: this.client,
+      sessionManager: this.sessionManager,
+    });
+    this.localExtensionRunner = this.createLocalExtensionRunner();
+  }
+
+  private createLocalExtensionRunner(): RemoteLocalExtensionRunner | undefined {
+    return createRemoteLocalExtensionRunner({
+      resourceLoader: this.resourceLoader,
+      cwd: this.sessionManager.getCwd(),
+      sessionManager: this.sessionManager,
+      modelRegistry: this.modelRegistry,
+      promptTemplates: this.promptTemplates,
+      readSkills: () => this.resourceLoader.getSkills().skills,
+      readModel: () => this.model,
+      isIdle: () => !this.isStreaming,
+      readSignal: () => this.agent.signal,
+      abort: async () => {
+        await this.abort();
+      },
+      hasPendingMessages: () => this.pendingMessageCount > 0,
+      shutdown: () => {
+        this.extensionShutdownHandler?.();
+      },
+      getContextUsage: () => this.getContextUsage(),
+      compact: () => {},
+      getSystemPrompt: () => this.systemPrompt,
+      sendCustomMessage: async (message, sendOptions) => {
+        await this.sendCustomMessage(message, sendOptions);
+      },
+      sendUserMessage: async (content, sendOptions) => {
+        await this.sendUserMessage(content, sendOptions);
+      },
+      appendEntry: (customType, data) => {
+        if (!isKvManagedExtensionState(customType)) {
+          this.sessionManager.appendCustomEntry(customType, data);
+          return;
+        }
+
+        void persistManagedExtensionState({
+          client: this.client,
+          sessionManager: this.sessionManager,
+          customType,
+          value: data,
+        }).catch((error) => {
+          const stateLabel = describeManagedExtensionState(customType) ?? customType;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const message = `Failed to persist managed extension state (${stateLabel}): ${errorMessage}`;
+          this.uiContext?.notify(message, "error");
+          this.localExtensionRunner?.emitError({
+            extensionPath: "<runtime>",
+            event: "append_entry",
+            error: message,
+          });
+        });
+      },
+      setSessionName: (name) => {
+        this.setSessionName(name);
+      },
+      getSessionName: () => this.sessionManager.getSessionName(),
+      setLabel: (entryId, label) => {
+        this.sessionManager.appendLabelChange(entryId, label);
+      },
+      getActiveToolNames: () => this.getActiveToolNames(),
+      getAllTools: () => this.getAllTools(),
+      refreshTools: async () => {
+        await this.refreshRemoteToolCatalog();
+      },
+      setActiveToolsByName: (toolNames) => {
+        this.setActiveToolsByName(toolNames);
+      },
+      resolveModel: (provider, id) => this.modelRegistry.find(provider, id),
+      setModel: async (model) => {
+        await this.setModel(model);
+      },
+      hasConfiguredAuth: (model) => this.modelRegistry.hasConfiguredAuth(model),
+      getThinkingLevel: () => this.thinkingLevel,
+      setThinkingLevel: (level) => {
+        this.setThinkingLevel(level);
+      },
+    });
+  }
+
+  private refreshLocalExtensionRunnerAfterCwdChange(): void {
+    const previousRunner = this.localExtensionRunner;
+    const wasStarted = this.localExtensionsStarted;
+    if (previousRunner && wasStarted) {
+      void previousRunner.emit({ type: "session_shutdown" });
+    }
+
+    this.localExtensionErrorUnsubscriber?.();
+    this.localExtensionErrorUnsubscriber = undefined;
+    this.localExtensionRunner = this.createLocalExtensionRunner();
+    this.localExtensionsStarted = false;
+    this.applyLocalExtensionBindings();
+    if (wasStarted) {
+      void this.ensureLocalExtensionsStarted();
+    }
+  }
+
+  protected async refreshRemoteToolCatalog(): Promise<void> {
+    const response = await this.client.getSessionTools(this.sessionId);
+    this.allTools = response.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      sourceInfo: tool.sourceInfo,
+    }));
   }
 
   protected createAgentBindings(): RemoteAgentSessionSetupBase["agent"] {
@@ -183,6 +343,7 @@ export abstract class RemoteAgentSessionSetupBase {
 
     this.sessionManager = cwdResult.sessionManager;
     this.settingsManager = cwdResult.settingsManager;
+    this.refreshLocalExtensionRunnerAfterCwdChange();
   }
 
   get model(): Model<Api> | undefined {
@@ -241,8 +402,8 @@ export abstract class RemoteAgentSessionSetupBase {
     return "";
   }
 
-  get extensionRunner(): undefined {
-    return undefined;
+  get extensionRunner(): unknown {
+    return this.localExtensionRunner;
   }
 
   get scopedModels(): ReadonlyArray<{ model: Model<Api>; thinkingLevel?: ThinkingLevel }> {
@@ -253,8 +414,28 @@ export abstract class RemoteAgentSessionSetupBase {
     _scopedModels: Array<{ model: Model<Api>; thinkingLevel?: ThinkingLevel }>,
   ): void {}
 
-  bindExtensions(bindings: { uiContext?: ExtensionUIContext }): Promise<void> {
+  async bindExtensions(bindings: {
+    uiContext?: ExtensionUIContext;
+    commandContextActions?: RemoteExtensionCommandContextActions;
+    shutdownHandler?: () => void;
+    onError?: (error: unknown) => void;
+  }): Promise<void> {
     this.uiContext = bindings.uiContext;
+    try {
+      await this.extensionStateHydrationTask;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unknown extension state hydration error";
+      this.uiContext?.notify(`Failed to hydrate extension state: ${message}`, "warning");
+      throw new Error(`Failed to hydrate extension state: ${message}`, { cause: error });
+    }
+    this.extensionStateHydrationTask = undefined;
+    await this.refreshRemoteToolCatalog();
+    this.extensionCommandContextActions = bindings.commandContextActions;
+    this.extensionShutdownHandler = bindings.shutdownHandler;
+    this.extensionErrorListener = bindings.onError;
+    this.applyLocalExtensionBindings();
+    await this.ensureLocalExtensionsStarted();
     while (this.bufferedUiRequests.length > 0) {
       const request = this.bufferedUiRequests.shift();
       if (!request) {
@@ -262,7 +443,6 @@ export abstract class RemoteAgentSessionSetupBase {
       }
       void this.handleUiRequest(request);
     }
-    return Promise.resolve();
   }
 
   subscribe(listener: AgentSessionEventListener): () => void {
@@ -282,8 +462,101 @@ export abstract class RemoteAgentSessionSetupBase {
       request,
       client: this.client,
       sessionId: this.sessionId,
+      pendingInteractiveRequests: this.pendingInteractiveRequests,
     });
   }
+
+  protected async tryExecuteLocalExtensionCommand(text: string): Promise<boolean> {
+    if (!text.startsWith("/") || this.localExtensionRunner === undefined) {
+      return false;
+    }
+
+    await this.ensureLocalExtensionsStarted();
+
+    const spaceIndex = text.indexOf(" ");
+    const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+    const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+    const command = this.localExtensionRunner.getCommand(commandName);
+    if (!command) {
+      return false;
+    }
+
+    try {
+      await command.handler(args, this.localExtensionRunner.createCommandContext());
+      return true;
+    } catch (error) {
+      this.localExtensionRunner.emitError({
+        extensionPath: `command:${commandName}`,
+        event: "command",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+  }
+
+  protected async shutdownLocalExtensions(): Promise<void> {
+    if (this.localExtensionRunner === undefined) {
+      return;
+    }
+
+    if (this.localExtensionsStarted) {
+      await this.localExtensionRunner.emit({ type: "session_shutdown" });
+      this.localExtensionsStarted = false;
+    }
+    this.localExtensionErrorUnsubscriber?.();
+    this.localExtensionErrorUnsubscriber = undefined;
+  }
+
+  private applyLocalExtensionBindings(): void {
+    if (this.localExtensionRunner === undefined) {
+      return;
+    }
+
+    this.localExtensionRunner.setUIContext(this.uiContext);
+    this.localExtensionRunner.bindCommandContext(this.extensionCommandContextActions);
+    this.localExtensionErrorUnsubscriber?.();
+    this.localExtensionErrorUnsubscriber = this.extensionErrorListener
+      ? this.localExtensionRunner.onError(this.extensionErrorListener)
+      : undefined;
+  }
+
+  private async ensureLocalExtensionsStarted(): Promise<void> {
+    if (this.localExtensionRunner === undefined || this.localExtensionsStarted) {
+      return;
+    }
+
+    await this.localExtensionRunner.emit({ type: "session_start", reason: "startup" });
+    this.localExtensionsStarted = true;
+  }
+
+  abstract getContextUsage(): ContextUsage | undefined;
+  abstract sendCustomMessage(
+    message: {
+      customType: string;
+      content: string | Array<{ type: string; text?: string }>;
+      display: boolean;
+      details?: unknown;
+    },
+    options?: {
+      triggerTurn?: boolean;
+      deliverAs?: "steer" | "followUp" | "nextTurn";
+    },
+  ): Promise<void>;
+  abstract sendUserMessage(
+    content: string | Array<{ type: string; text?: string }>,
+    options?: { deliverAs?: "steer" | "followUp" },
+  ): Promise<void>;
+  abstract setSessionName(name: string): void;
+  abstract getActiveToolNames(): string[];
+  abstract getAllTools(): Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+    sourceInfo: unknown;
+  }>;
+  abstract setActiveToolsByName(toolNames: string[]): void;
+  abstract setModel(model: Model<Api>): Promise<void>;
+  abstract setThinkingLevel(level: ThinkingLevel): void;
 
   abstract abort(): Promise<void>;
   abstract waitForIdle(): Promise<void>;

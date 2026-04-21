@@ -13,6 +13,7 @@ import {
   getSummaryGenerationConfig,
   streamSummaryUpdates,
 } from "./session-launch-summary-helpers.js";
+import { hasRuntimePrimitive } from "./runtime-capabilities.js";
 
 export type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -212,7 +213,7 @@ export function generateContextTransferSummaryWithLoader(
   messages: ReturnType<typeof getConversationMessages>,
   loaderTitle = "Generating handoff prompt...",
 ): Promise<SummaryGenerationResult> {
-  if (!ctx.hasUI) {
+  if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "custom")) {
     return generateContextTransferSummary(ctx, goal, messages);
   }
 

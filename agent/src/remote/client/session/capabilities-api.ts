@@ -4,7 +4,10 @@ import {
   getLastAssistantTextRemoteSession,
   getSessionStatsRemoteSession,
 } from "../session-ops.js";
-import { setSessionNameRemoteSessionMethod } from "./command-methods-ops.js";
+import {
+  setActiveToolsRemoteSessionMethod,
+  setSessionNameRemoteSessionMethod,
+} from "./command-methods-ops.js";
 import { RemoteAgentSessionInteractionApi } from "./interaction-api.js";
 
 export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessionInteractionApi {
@@ -131,7 +134,9 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
     parameters: unknown;
     sourceInfo: unknown;
   }> {
-    return getAllToolsRemoteSession(this.activeTools);
+    return this.allTools.length > 0
+      ? [...this.allTools]
+      : getAllToolsRemoteSession(this.activeTools);
   }
 
   getToolDefinition(_name: string): undefined {
@@ -139,6 +144,17 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
   }
 
   setActiveToolsByName(toolNames: string[]): void {
-    this.activeTools = [...toolNames];
+    setActiveToolsRemoteSessionMethod({
+      toolNames: [...toolNames],
+      previousToolNames: [...this.activeTools],
+      setActiveToolsState: (nextTools) => {
+        this.activeTools = [...nextTools];
+      },
+      enqueueMutation: (execute, rollback, label) => {
+        this.enqueueMutation(execute, rollback, label);
+      },
+      client: this.client,
+      sessionId: this.sessionId,
+    });
   }
 }

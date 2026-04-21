@@ -1,6 +1,7 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 import type { HandoffLaunchResult } from "../handoff.js";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { REVIEW_ADDRESS_FINDINGS_PROMPT, type CreateReviewExtensionOptions } from "./deps.js";
 
 type CompletionAction = "address" | "copy" | "fork" | "handoff" | undefined;
@@ -200,6 +201,10 @@ async function runForkNavigationWithLoader(
   ctx: ExtensionContext,
   navigationResultPromise: Promise<{ cancelled: boolean; error?: string }>,
 ): Promise<{ cancelled: boolean; error?: string }> {
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    return navigationResultPromise;
+  }
+
   const loaderResult = await ctx.ui.custom<{ cancelled: boolean; error?: string } | undefined>(
     (tui, theme, _kb, done) => {
       const loader = new BorderedLoader(tui, theme, "Forking review fixes with summary...");

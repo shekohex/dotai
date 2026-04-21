@@ -1,13 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
+import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
 import { AuthService, createChallengePayload } from "../src/remote/auth.ts";
 import { createRemoteApp } from "../src/remote/app.ts";
+import { REMOTE_DEFAULT_CLIENT_CAPABILITIES } from "../src/remote/capabilities.ts";
+import { cancelRemoteUiRequest, handleRemoteUiRequest } from "../src/remote/client/session-ui.ts";
+import { InMemoryRemoteKvStore } from "../src/remote/kv/in-memory-store.ts";
+import { RemoteApiClient } from "../src/remote/runtime-api/client.ts";
+import {
+  hydrateExtensionStateFromKv,
+  isKvManagedExtensionState,
+  persistExtensionStateToKv,
+  persistManagedExtensionState,
+  type ExtensionStateKvClient,
+} from "../src/remote/client/session/extension-state-kv.ts";
+import { hasSessionPrimitiveCapability } from "../src/remote/session/capabilities.ts";
+import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
 import {
   InMemoryPiRuntimeFactory,
   type RemoteRuntimeFactory,
 } from "../src/remote/runtime-factory.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
+import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
@@ -51,6 +70,7 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
 
 class RecordingSession {
   cwd = "/tmp/pi-remote-recording-session";
+  activeTools = ["read", "bash", "edit", "write"];
   model = {
     provider: "pi-remote-faux",
     id: "pi-remote-faux-1",
@@ -140,7 +160,25 @@ class RecordingSession {
   };
 
   getActiveToolNames(): string[] {
-    return ["read", "bash", "edit", "write"];
+    return [...this.activeTools];
+  }
+
+  getAllTools(): Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+    sourceInfo: unknown;
+  }> {
+    return this.activeTools.map((toolName) => ({
+      name: toolName,
+      description: `${toolName} tool`,
+      parameters: {},
+      sourceInfo: { source: "test" },
+    }));
+  }
+
+  setActiveToolsByName(toolNames: string[]): void {
+    this.activeTools = [...toolNames];
   }
 
   async bindExtensions(bindings?: {
@@ -301,18 +339,29 @@ class UiRequestPromptSession extends RecordingSession {
 }
 
 class UiPrimitivesPromptSession extends RecordingSession {
+  headerError: string | undefined;
+  footerError: string | undefined;
+
   override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
     this.remoteUiContext?.setWorkingMessage?.("remote-working");
     this.remoteUiContext?.setHiddenThinkingLabel?.("remote-hidden-thinking");
     this.remoteUiContext?.setToolsExpanded?.(false);
-    this.remoteUiContext?.setHeader?.(() => ({
-      render: () => ["remote-header"],
-      invalidate: () => {},
-    }));
-    this.remoteUiContext?.setFooter?.(() => ({
-      render: () => ["remote-footer"],
-      invalidate: () => {},
-    }));
+    try {
+      this.remoteUiContext?.setHeader?.(() => ({
+        render: () => ["remote-header"],
+        invalidate: () => {},
+      }));
+    } catch (error) {
+      this.headerError = error instanceof Error ? error.message : String(error);
+    }
+    try {
+      this.remoteUiContext?.setFooter?.(() => ({
+        render: () => ["remote-footer"],
+        invalidate: () => {},
+      }));
+    } catch (error) {
+      this.footerError = error instanceof Error ? error.message : String(error);
+    }
     await super.prompt(text, options);
   }
 }
@@ -360,19 +409,24 @@ async function createRemoteRuntime(
       keyId: "dev",
       privateKey: options.privateKeyPem,
     },
+    clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     fetchImpl: createInProcessFetch(app),
   });
 }
 
-async function authenticate(app: ReturnType<typeof createRemoteApp>["app"], privateKey: string) {
+async function authenticate(
+  app: ReturnType<typeof createRemoteApp>["app"],
+  privateKey: string,
+  keyId = "dev",
+) {
   const challengeResponse = await app.request("/v1/auth/challenge", {
     method: "POST",
     headers: {
       "content-type": "application/json",
     },
-    body: JSON.stringify({ keyId: "dev" }),
+    body: JSON.stringify({ keyId }),
   });
   assert.equal(challengeResponse.status, 200);
   const challenge = (await challengeResponse.json()) as {
@@ -387,7 +441,7 @@ async function authenticate(app: ReturnType<typeof createRemoteApp>["app"], priv
     Buffer.from(
       createChallengePayload({
         challengeId: challenge.challengeId,
-        keyId: "dev",
+        keyId,
         nonce: challenge.nonce,
         origin: challenge.origin,
         expiresAt: challenge.expiresAt,
@@ -403,7 +457,7 @@ async function authenticate(app: ReturnType<typeof createRemoteApp>["app"], priv
     },
     body: JSON.stringify({
       challengeId: challenge.challengeId,
-      keyId: "dev",
+      keyId,
       signature,
     }),
   });
@@ -428,6 +482,50 @@ async function postSessionCommand(
     body: JSON.stringify(body),
   });
   return response;
+}
+
+async function writeRemoteKvValue(input: {
+  app: ReturnType<typeof createRemoteApp>["app"];
+  token: string;
+  scope: "global" | "user";
+  namespace: string;
+  key: string;
+  value: unknown;
+}): Promise<{ value: unknown; updatedAt: number }> {
+  const response = await input.app.request(
+    `/v1/kv/${input.scope}/${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.key)}`,
+    {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${input.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ value: input.value }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  return (await response.json()) as { value: unknown; updatedAt: number };
+}
+
+async function readRemoteKvValue(input: {
+  app: ReturnType<typeof createRemoteApp>["app"];
+  token: string;
+  scope: "global" | "user";
+  namespace: string;
+  key: string;
+}): Promise<{ found: boolean; value?: unknown; updatedAt?: number }> {
+  const response = await input.app.request(
+    `/v1/kv/${input.scope}/${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.key)}`,
+    {
+      headers: {
+        authorization: `Bearer ${input.token}`,
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  return (await response.json()) as { found: boolean; value?: unknown; updatedAt?: number };
 }
 
 async function readSessionEvents(
@@ -527,11 +625,9 @@ timedTest("milestone 1 flow works end to end", async () => {
     assert.equal(snapshotResponse.status, 200);
     const snapshot = (await snapshotResponse.json()) as {
       sessionId: string;
-      draftRevision: number;
       lastSessionStreamOffset: string;
     };
     assert.equal(snapshot.sessionId, created.sessionId);
-    assert.equal(snapshot.draftRevision, 0);
 
     const firstAttach = await remote.app.request(
       `/v1/streams/sessions/${created.sessionId}/events`,
@@ -609,7 +705,6 @@ timedTest("milestone 1 flow works end to end", async () => {
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/steer"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/follow-up"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/interrupt"]);
-    assert.ok(openApi.paths["/v1/sessions/{sessionId}/draft"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/model"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/session-name"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/ui-response"]);
@@ -617,6 +712,32 @@ timedTest("milestone 1 flow works end to end", async () => {
     const appStreamResponses = (openApi.paths["/v1/streams/app-events"] as any)?.get?.responses;
     assert.ok(appStreamResponses?.["200"]?.content?.["application/json"]);
     assert.ok(appStreamResponses?.["200"]?.content?.["text/event-stream"]);
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("health endpoint reports ready status", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  try {
+    const response = await remote.app.request("/health", {
+      method: "GET",
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      ok: boolean;
+      service: string;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "pi-remote");
   } finally {
     await remote.dispose();
   }
@@ -1089,6 +1210,630 @@ timedTest("presence tracks concurrent tokens independently", async () => {
   } finally {
     await remote.dispose();
   }
+});
+
+timedTest("connection capabilities endpoint stores flags and snapshots expose them", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const capabilitiesResponse = await remote.app.request("/v1/connections/conn-a/capabilities", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        protocolVersion: "1.0",
+        primitives: {
+          select: true,
+          confirm: true,
+          input: true,
+          editor: true,
+          custom: false,
+          setWidget: true,
+          setHeader: false,
+          setFooter: false,
+          setEditorComponent: false,
+          onTerminalInput: false,
+        },
+      }),
+    });
+
+    assert.equal(capabilitiesResponse.status, 200);
+
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-pi-connection-id": "conn-a",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-pi-connection-id": "conn-a",
+        },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+
+    const snapshot = (await snapshotResponse.json()) as {
+      presence: Array<{
+        connectionId: string;
+        clientCapabilities?: {
+          protocolVersion: string;
+          primitives: { custom: boolean; setHeader: boolean; setFooter: boolean };
+        };
+      }>;
+    };
+
+    assert.equal(snapshot.presence[0]?.connectionId, "conn-a");
+    assert.equal(snapshot.presence[0]?.clientCapabilities?.protocolVersion, "1.0");
+    assert.equal(snapshot.presence[0]?.clientCapabilities?.primitives.custom, false);
+    assert.equal(snapshot.presence[0]?.clientCapabilities?.primitives.setHeader, false);
+    assert.equal(snapshot.presence[0]?.clientCapabilities?.primitives.setFooter, false);
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "connection capabilities are isolated per authenticated client for shared connection ids",
+  async () => {
+    const keysA = generateKeyPairSync("ed25519");
+    const publicKeyPemA = keysA.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPemA = keysA.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const keysB = generateKeyPairSync("ed25519");
+    const publicKeyPemB = keysB.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPemB = keysB.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [
+        { keyId: "dev-a", publicKey: publicKeyPemA },
+        { keyId: "dev-b", publicKey: publicKeyPemB },
+      ],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    try {
+      const tokenA = await authenticate(remote.app, privateKeyPemA, "dev-a");
+      const tokenB = await authenticate(remote.app, privateKeyPemB, "dev-b");
+
+      const capabilitiesA = await remote.app.request("/v1/connections/conn-shared/capabilities", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          protocolVersion: "1.0",
+          primitives: {
+            select: true,
+            confirm: true,
+            input: true,
+            editor: true,
+            custom: false,
+            setWidget: true,
+            setHeader: false,
+            setFooter: false,
+            setEditorComponent: false,
+            onTerminalInput: false,
+          },
+        }),
+      });
+      assert.equal(capabilitiesA.status, 200);
+
+      const capabilitiesB = await remote.app.request("/v1/connections/conn-shared/capabilities", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenB}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          protocolVersion: "1.0",
+          primitives: {
+            select: true,
+            confirm: true,
+            input: true,
+            editor: true,
+            custom: true,
+            setWidget: true,
+            setHeader: true,
+            setFooter: true,
+            setEditorComponent: true,
+            onTerminalInput: true,
+          },
+        }),
+      });
+      assert.equal(capabilitiesB.status, 200);
+
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "x-pi-connection-id": "conn-shared",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      const snapshotA = await remote.app.request(`/v1/sessions/${created.sessionId}/snapshot`, {
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "x-pi-connection-id": "conn-shared",
+        },
+      });
+      assert.equal(snapshotA.status, 200);
+      const bodyA = (await snapshotA.json()) as {
+        presence: Array<{
+          connectionId: string;
+          clientCapabilities?: { primitives: { custom: boolean; setHeader: boolean } };
+        }>;
+      };
+      assert.equal(bodyA.presence[0]?.connectionId, "conn-shared");
+      assert.equal(bodyA.presence[0]?.clientCapabilities?.primitives.custom, false);
+      assert.equal(bodyA.presence[0]?.clientCapabilities?.primitives.setHeader, false);
+
+      const snapshotB = await remote.app.request(`/v1/sessions/${created.sessionId}/snapshot`, {
+        headers: {
+          authorization: `Bearer ${tokenB}`,
+          "x-pi-connection-id": "conn-shared",
+        },
+      });
+      assert.equal(snapshotB.status, 200);
+      const bodyB = (await snapshotB.json()) as {
+        presence: Array<{
+          connectionId: string;
+          clientCapabilities?: { primitives: { custom: boolean; setHeader: boolean } };
+        }>;
+      };
+      assert.equal(bodyB.presence[0]?.connectionId, "conn-shared");
+      assert.equal(bodyB.presence[0]?.clientCapabilities?.primitives.custom, true);
+      assert.equal(bodyB.presence[0]?.clientCapabilities?.primitives.setHeader, true);
+    } finally {
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("remote kv store backend is pluggable", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const kvStore = new InMemoryRemoteKvStore({ now: () => 1_700_000_000_000 });
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+    kvStore,
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+
+    await writeRemoteKvValue({
+      app: remote.app,
+      token,
+      scope: "user",
+      namespace: "review",
+      key: "state",
+      value: { active: true },
+    });
+
+    const read = await readRemoteKvValue({
+      app: remote.app,
+      token,
+      scope: "user",
+      namespace: "review",
+      key: "state",
+    });
+
+    assert.equal(read.found, true);
+    assert.deepEqual(read.value, { active: true });
+    assert.equal(read.updatedAt, 1_700_000_000_000);
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("default json-file kv backend persists global and user namespaces", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const kvRoot = await mkdtemp(join(tmpdir(), "pi-remote-kv-"));
+  const kvFilePath = join(kvRoot, "kv.json");
+
+  try {
+    const remoteA = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+      kvFilePath,
+    });
+
+    try {
+      const token = await authenticate(remoteA.app, privateKeyPem);
+
+      const globalWrite = await writeRemoteKvValue({
+        app: remoteA.app,
+        token,
+        scope: "global",
+        namespace: "openusage",
+        key: "selected-account",
+        value: "host",
+      });
+      const userWrite = await writeRemoteKvValue({
+        app: remoteA.app,
+        token,
+        scope: "user",
+        namespace: "openusage",
+        key: "selected-account",
+        value: "cliproxy:work",
+      });
+
+      assert.equal(typeof globalWrite.updatedAt, "number");
+      assert.equal(typeof userWrite.updatedAt, "number");
+    } finally {
+      await remoteA.dispose();
+    }
+
+    const remoteB = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+      kvFilePath,
+    });
+
+    try {
+      const token = await authenticate(remoteB.app, privateKeyPem);
+
+      const globalRead = await readRemoteKvValue({
+        app: remoteB.app,
+        token,
+        scope: "global",
+        namespace: "openusage",
+        key: "selected-account",
+      });
+      const userRead = await readRemoteKvValue({
+        app: remoteB.app,
+        token,
+        scope: "user",
+        namespace: "openusage",
+        key: "selected-account",
+      });
+
+      assert.equal(globalRead.found, true);
+      assert.equal(globalRead.value, "host");
+      assert.equal(userRead.found, true);
+      assert.equal(userRead.value, "cliproxy:work");
+    } finally {
+      await remoteB.dispose();
+    }
+  } finally {
+    await rm(kvRoot, { recursive: true, force: true });
+  }
+});
+
+timedTest("runtime api client exposes kv read write delete methods", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+    kvStore: new InMemoryRemoteKvStore(),
+  });
+
+  try {
+    const client = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: privateKeyPem,
+      },
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+    await client.authenticate();
+
+    const write = await client.writeKv("user", "review", "state", { active: true });
+    assert.deepEqual(write.value, { active: true });
+
+    const read = await client.readKv("user", "review", "state");
+    assert.equal(read.found, true);
+    assert.deepEqual(read.value, { active: true });
+
+    const deleted = await client.deleteKv("user", "review", "state");
+    assert.equal(deleted.deleted, true);
+
+    const readAfterDelete = await client.readKv("user", "review", "state");
+    assert.equal(readAfterDelete.found, false);
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("extension state kv hydration restores managed custom entries", async () => {
+  const sessionManager = SessionManager.inMemory("/tmp/pi-remote-kv-hydration");
+  sessionManager.newSession({ id: "kv-hydration" });
+
+  const readCalls: Array<{ scope: string; namespace: string; key: string }> = [];
+  const client: ExtensionStateKvClient = {
+    readKv: async (scope, namespace, key) => {
+      readCalls.push({ scope, namespace, key });
+      return {
+        found: true,
+        value: {
+          resetTimeFormat: "absolute",
+          selectedAccounts: { codex: "cliproxy:work" },
+        },
+        updatedAt: 1,
+      };
+    },
+    writeKv: async (_scope, _namespace, _key, value) => ({ value, updatedAt: 1 }),
+  };
+
+  await hydrateExtensionStateFromKv({ client, sessionManager });
+
+  assert.deepEqual(readCalls, [{ scope: "user", namespace: "openusage", key: "state" }]);
+  const restored = sessionManager
+    .getBranch()
+    .find((entry) => entry.type === "custom" && entry.customType === "openusage-state");
+  assert.ok(restored);
+  if (restored?.type === "custom") {
+    assert.deepEqual(restored.data, {
+      resetTimeFormat: "absolute",
+      selectedAccounts: { codex: "cliproxy:work" },
+    });
+  }
+});
+
+timedTest("extension state kv persistence writes managed state only", async () => {
+  const writes: Array<{ scope: string; namespace: string; key: string; value: unknown }> = [];
+  const client: ExtensionStateKvClient = {
+    readKv: async () => ({ found: false }),
+    writeKv: async (scope, namespace, key, value) => {
+      writes.push({ scope, namespace, key, value });
+      return { value, updatedAt: 1 };
+    },
+  };
+
+  assert.equal(isKvManagedExtensionState("openusage-state"), true);
+  assert.equal(isKvManagedExtensionState("review-settings"), false);
+
+  await persistExtensionStateToKv({
+    client,
+    customType: "openusage-state",
+    value: { resetTimeFormat: "relative" },
+  });
+  await persistExtensionStateToKv({
+    client,
+    customType: "review-settings",
+    value: { mode: "quick" },
+  });
+
+  assert.deepEqual(writes, [
+    {
+      scope: "user",
+      namespace: "openusage",
+      key: "state",
+      value: { resetTimeFormat: "relative" },
+    },
+  ]);
+});
+
+timedTest(
+  "managed extension state persistence does not fallback to local entry on kv failure",
+  async () => {
+    const sessionManager = SessionManager.inMemory("/tmp/pi-remote-kv-persist-failure");
+    sessionManager.newSession({ id: "kv-persist-failure" });
+
+    const client: ExtensionStateKvClient = {
+      readKv: async () => ({ found: false }),
+      writeKv: async () => {
+        throw new Error("kv write failed");
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        persistManagedExtensionState({
+          client,
+          sessionManager,
+          customType: "openusage-state",
+          value: { resetTimeFormat: "absolute" },
+        }),
+      /kv write failed/u,
+    );
+
+    const restored = sessionManager
+      .getBranch()
+      .find((entry) => entry.type === "custom" && entry.customType === "openusage-state");
+    assert.equal(restored, undefined);
+  },
+);
+
+timedTest("session primitive capability requires advertised support", () => {
+  const falseCapabilities: ClientCapabilities = {
+    protocolVersion: "1.0",
+    primitives: {
+      select: false,
+      confirm: false,
+      input: false,
+      editor: false,
+      custom: false,
+      setWidget: false,
+      setHeader: false,
+      setFooter: false,
+      setEditorComponent: false,
+      onTerminalInput: false,
+    },
+  };
+  const trueCapabilities: ClientCapabilities = {
+    ...falseCapabilities,
+    primitives: {
+      ...falseCapabilities.primitives,
+      select: true,
+    },
+  };
+
+  const noPresence = new Map<string, Presence>();
+  assert.equal(hasSessionPrimitiveCapability(noPresence, "select"), false);
+
+  const falseOnlyPresence = new Map<string, Presence>([
+    [
+      "a",
+      {
+        clientId: "client-a",
+        connectionId: "connection-a",
+        connectedAt: 1,
+        lastSeenAt: 1,
+        clientCapabilities: falseCapabilities,
+        lastSeenSessionOffset: "0000000000000000_0000000000000000",
+        lastSeenAppOffset: "0000000000000000_0000000000000000",
+      },
+    ],
+  ]);
+  assert.equal(hasSessionPrimitiveCapability(falseOnlyPresence, "select"), false);
+
+  const mixedPresence = new Map<string, Presence>([
+    ...falseOnlyPresence,
+    [
+      "b",
+      {
+        clientId: "client-b",
+        connectionId: "connection-b",
+        connectedAt: 1,
+        lastSeenAt: 1,
+        clientCapabilities: trueCapabilities,
+        lastSeenSessionOffset: "0000000000000000_0000000000000000",
+        lastSeenAppOffset: "0000000000000000_0000000000000000",
+      },
+    ],
+  ]);
+  assert.equal(hasSessionPrimitiveCapability(mixedPresence, "select"), true);
+});
+
+timedTest("authoritative cwd update refreshes local extension runner context", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const sessionAny = runtime.session as any;
+    const beforeRunner = sessionAny.localExtensionRunner;
+    assert.ok(beforeRunner);
+    const beforeContext = beforeRunner.createCommandContext();
+    const nextCwd = `${beforeContext.cwd}-updated`;
+
+    sessionAny.applyAuthoritativeCwdUpdate(nextCwd);
+
+    const afterRunner = sessionAny.localExtensionRunner;
+    assert.ok(afterRunner);
+    assert.notEqual(afterRunner, beforeRunner);
+    const afterContext = afterRunner.createCommandContext();
+    assert.equal(afterContext.cwd, nextCwd);
+    assert.equal(afterContext.sessionManager.getCwd(), nextCwd);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote server ui getEditorText returns empty string fallback", () => {
+  const uiContext = createRemoteUiContext({
+    record: {
+      presence: new Map(),
+    } as any,
+    now: () => Date.now(),
+    publishUiEvent: () => {},
+  });
+
+  assert.equal(uiContext.getEditorText(), "");
+});
+
+timedTest("editor ui request ignores late response after remote cancellation", async () => {
+  const pendingInteractiveRequests = new Map<string, AbortController>();
+  const postedResponses: Array<unknown> = [];
+  let resolveEditor: ((value: string | undefined) => void) | undefined;
+  const editorResult = new Promise<string | undefined>((resolve) => {
+    resolveEditor = resolve;
+  });
+
+  const uiContext = {
+    editor: async () => editorResult,
+  } as unknown as ExtensionUIContext;
+  const client = {
+    postUiResponse: async (_sessionId: string, response: unknown) => {
+      postedResponses.push(response);
+    },
+  } as unknown as RemoteApiClient;
+
+  const requestTask = handleRemoteUiRequest({
+    uiContext,
+    request: {
+      id: "editor-request-1",
+      method: "editor",
+      title: "Edit",
+      prefill: "abc",
+    },
+    client,
+    sessionId: "session-1",
+    pendingInteractiveRequests,
+  });
+
+  cancelRemoteUiRequest(pendingInteractiveRequests, "editor-request-1");
+  resolveEditor?.("late-value");
+  await requestTask;
+
+  assert.deepEqual(postedResponses, []);
+  assert.equal(pendingInteractiveRequests.size, 0);
 });
 
 timedTest("presence tracks concurrent connections for the same token", async () => {
@@ -1978,48 +2723,66 @@ timedTest("milestone 2 command surface sequences commands and replays session ev
       lastSessionStreamOffset: string;
     };
 
-    const [draftAResponse, draftBResponse] = await Promise.all([
-      postSessionCommand(remote.app, `/v1/sessions/${created.sessionId}/draft`, tokenA, {
-        text: "draft from a",
-        attachments: ["a.txt"],
+    const [nameAResponse, nameBResponse] = await Promise.all([
+      remote.app.request(`/v1/sessions/${created.sessionId}/session-name`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "content-type": "application/json",
+          "x-pi-connection-id": "device-a",
+        },
+        body: JSON.stringify({
+          sessionName: "Milestone 2 A",
+        }),
       }),
-      postSessionCommand(remote.app, `/v1/sessions/${created.sessionId}/draft`, tokenB, {
-        text: "draft from b",
-        attachments: ["b.txt"],
+      remote.app.request(`/v1/sessions/${created.sessionId}/session-name`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenB}`,
+          "content-type": "application/json",
+          "x-pi-connection-id": "device-b",
+        },
+        body: JSON.stringify({
+          sessionName: "Milestone 2 B",
+        }),
       }),
     ]);
 
-    assert.equal(draftAResponse.status, 202);
-    assert.equal(draftBResponse.status, 202);
-    const draftAcceptedA = (await draftAResponse.json()) as {
+    assert.equal(nameAResponse.status, 202);
+    assert.equal(nameBResponse.status, 202);
+    const nameAcceptedA = (await nameAResponse.json()) as {
       sequence: number;
     };
-    const draftAcceptedB = (await draftBResponse.json()) as {
+    const nameAcceptedB = (await nameBResponse.json()) as {
       sequence: number;
     };
-    const draftSequences = [draftAcceptedA.sequence, draftAcceptedB.sequence].toSorted(
+    const firstSequences = [nameAcceptedA.sequence, nameAcceptedB.sequence].toSorted(
       (a, b) => a - b,
     );
-    assert.deepEqual(draftSequences, [1, 2]);
+    assert.deepEqual(firstSequences, [1, 2]);
 
-    const draftReplayResponse = await remote.app.request(
+    const commandReplayResponse = await remote.app.request(
       `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(initialSnapshot.lastSessionStreamOffset)}`,
       {
         headers: { authorization: `Bearer ${tokenA}` },
       },
     );
-    assert.equal(draftReplayResponse.status, 200);
-    const draftReplay = (await draftReplayResponse.json()) as {
+    assert.equal(commandReplayResponse.status, 200);
+    const commandReplay = (await commandReplayResponse.json()) as {
       events: Array<{ kind: string; payload: any }>;
       nextOffset: string;
     };
-    const draftUpdatedEvents = draftReplay.events.filter((event) => event.kind === "draft_updated");
-    assert.equal(draftUpdatedEvents.length, 2);
-    const revisions = draftUpdatedEvents
-      .map((event) => event.payload?.draft?.revision as number)
-      .toSorted((a, b) => a - b);
-    assert.deepEqual(revisions, [1, 2]);
-    const replayOffset = draftReplay.nextOffset;
+    const sessionNamePatchEvents = commandReplay.events.filter(
+      (event) =>
+        event.kind === "session_state_patch" &&
+        typeof event.payload?.patch?.sessionName === "string",
+    );
+    assert.equal(sessionNamePatchEvents.length, 2);
+    const patchedNames = sessionNamePatchEvents
+      .map((event) => event.payload?.patch?.sessionName as string)
+      .toSorted((a, b) => a.localeCompare(b));
+    assert.deepEqual(patchedNames, ["Milestone 2 A", "Milestone 2 B"]);
+    const replayOffset = commandReplay.nextOffset;
 
     const nameResponse = await postSessionCommand(
       remote.app,
@@ -2145,12 +2908,10 @@ timedTest("milestone 2 command surface sequences commands and replays session ev
     assert.equal(secondDeviceSnapshotResponse.status, 200);
     const secondDeviceSnapshot = (await secondDeviceSnapshotResponse.json()) as {
       sessionName: string;
-      draftRevision: number;
       presence: Array<{ connectionId: string }>;
       transcript: Array<{ role?: string }>;
     };
     assert.equal(secondDeviceSnapshot.sessionName, "Milestone 2 Renamed");
-    assert.equal(secondDeviceSnapshot.draftRevision, 2);
     assert.ok(secondDeviceSnapshot.transcript.some((message) => message.role === "assistant"));
     assert.ok(
       secondDeviceSnapshot.presence.some((presence) => presence.connectionId === "device-a"),
@@ -2627,6 +3388,55 @@ timedTest("milestone 3 adapter does not double-append user/custom messages", asy
   }
 });
 
+timedTest("milestone 3 adapter sendCustomMessage appends custom messages", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const baseline = runtime.session.messages.length;
+    await runtime.session.sendCustomMessage({
+      customType: "pi-mermaid",
+      content: "graph TD;A-->B",
+      display: true,
+    });
+
+    assert.equal(runtime.session.messages.length, baseline + 1);
+    const appended = runtime.session.messages.at(-1);
+    assert.equal(appended?.role, "custom");
+    if (appended?.role === "custom") {
+      assert.equal(appended.customType, "pi-mermaid");
+    }
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
 timedTest("milestone 3.1 snapshot includes model catalog and remote model settings", async () => {
   const keys = generateKeyPairSync("ed25519");
   const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -2897,8 +3707,6 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
     let workingMessage: string | undefined;
     let hiddenThinkingLabel: string | undefined;
     let toolsExpanded = true;
-    let headerLines: string[] | undefined;
-    let footerLines: string[] | undefined;
 
     const uiContext = {
       setWorkingMessage: (message?: string) => {
@@ -2910,12 +3718,8 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
       setToolsExpanded: (expanded: boolean) => {
         toolsExpanded = expanded;
       },
-      setHeader: (factory?: () => { render: (width: number) => string[] }) => {
-        headerLines = factory ? factory().render(120) : undefined;
-      },
-      setFooter: (factory?: () => { render: (width: number) => string[] }) => {
-        footerLines = factory ? factory().render(120) : undefined;
-      },
+      setHeader: () => {},
+      setFooter: () => {},
       notify: () => {},
       setStatus: () => {},
       setWidget: () => {},
@@ -2943,7 +3747,7 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
     await runtime.session.prompt("trigger ui primitives");
 
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (workingMessage && hiddenThinkingLabel && headerLines && footerLines) {
+      if (workingMessage && hiddenThinkingLabel) {
         break;
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
@@ -2952,8 +3756,8 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
     assert.equal(workingMessage, "remote-working");
     assert.equal(hiddenThinkingLabel, "remote-hidden-thinking");
     assert.equal(toolsExpanded, false);
-    assert.deepEqual(headerLines, ["remote-header"]);
-    assert.deepEqual(footerLines, ["remote-footer"]);
+    assert.match(session.headerError ?? "", /setHeader\(factory\) is not supported/);
+    assert.match(session.footerError ?? "", /setFooter\(factory\) is not supported/);
   } finally {
     await runtime?.dispose();
     await remote.dispose();
@@ -3081,15 +3885,15 @@ timedTest("milestone 3 adapter applies live sse control offsets without reconnec
     const sessionAny = runtime.session as any;
     const initialOffset = sessionAny.streamOffset;
 
-    const draftResponse = await postSessionCommand(
+    const nameResponse = await postSessionCommand(
       remote.app,
-      `/v1/sessions/${created.sessionId}/draft`,
+      `/v1/sessions/${created.sessionId}/session-name`,
       token,
       {
-        text: "live sse offset",
+        sessionName: "live-sse-offset",
       },
     );
-    assert.equal(draftResponse.status, 202);
+    assert.equal(nameResponse.status, 202);
 
     for (let attempt = 0; attempt < 80; attempt += 1) {
       if (sessionAny.streamOffset !== initialOffset) {
@@ -3178,15 +3982,15 @@ timedTest(
       const sessionAny = runtime.session as any;
       const initialOffset = sessionAny.streamOffset;
 
-      const draftResponse = await postSessionCommand(
+      const nameResponse = await postSessionCommand(
         remote.app,
-        `/v1/sessions/${created.sessionId}/draft`,
+        `/v1/sessions/${created.sessionId}/session-name`,
         token,
         {
-          text: "resume-after-reauth",
+          sessionName: "resume-after-reauth",
         },
       );
-      assert.equal(draftResponse.status, 202);
+      assert.equal(nameResponse.status, 202);
 
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if (sessionAny.streamOffset !== initialOffset) {

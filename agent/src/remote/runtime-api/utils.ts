@@ -1,7 +1,7 @@
-import type { StreamEventEnvelope } from "./schemas.js";
-import { StreamEventEnvelopeSchema } from "./schemas.js";
-import { parseSseStream } from "./sse.js";
-import { assertType } from "./typebox.js";
+import type { StreamEventEnvelope } from "../schemas.js";
+import { StreamEventEnvelopeSchema } from "../schemas.js";
+import { parseSseStream } from "../sse.js";
+import { assertType } from "../typebox.js";
 
 export type StreamReadResult = {
   events: StreamEventEnvelope[];

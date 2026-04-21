@@ -1,4 +1,5 @@
 import { generateResponseCursor } from "../cursor.js";
+import { logSseFrame } from "../http-adapters.js";
 import type { RemoteRoutesDependencies } from "./types.js";
 
 function sseEventChunk(event: unknown, id?: string, eventName = "message"): string {
@@ -124,18 +125,41 @@ export function streamEventsSse(
   const currentCursor = { value: generateResponseCursor(cursor) };
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 
+  const logDataFrame = (event: unknown, streamOffset: string): void => {
+    logSseFrame("data", {
+      streamId,
+      streamOffset,
+      event,
+    });
+  };
+
+  const logControlFrame = (payload: {
+    streamNextOffset: string;
+    streamCursor?: string;
+    upToDate: boolean;
+    streamClosed: boolean;
+  }): void => {
+    logSseFrame("control", {
+      streamId,
+      ...payload,
+    });
+  };
+
   const subscription = dependencies.streams.readAndSubscribe(streamId, offset, (event) => {
     if (controller === undefined) {
       return;
     }
     enqueueData(controller, encoder, event, event.streamOffset);
+    logDataFrame(event, event.streamOffset);
     currentCursor.value = generateResponseCursor(currentCursor.value);
-    enqueueControl(controller, encoder, {
+    const controlPayload = {
       streamNextOffset: dependencies.streams.getHeadOffset(streamId),
       streamCursor: currentCursor.value,
       upToDate: true,
       streamClosed: false,
-    });
+    };
+    enqueueControl(controller, encoder, controlPayload);
+    logControlFrame(controlPayload);
   });
 
   const initial = subscription.read;
@@ -144,10 +168,12 @@ export function streamEventsSse(
     (activeController, event) => {
       controller = activeController;
       enqueueData(activeController, encoder, event, event.streamOffset);
+      logDataFrame(event, event.streamOffset);
     },
     (activeController, payload) => {
       controller = activeController;
       enqueueControl(activeController, encoder, payload);
+      logControlFrame(payload);
     },
     () => {
       subscription.unsubscribe();

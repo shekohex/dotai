@@ -20,6 +20,10 @@ export abstract class RemoteAgentSessionInteractionApi extends RemoteAgentSessio
     text: string,
     options?: { images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" },
   ): Promise<void> {
+    if (text.startsWith("/") && (await this.tryExecuteLocalExtensionCommand(text))) {
+      return;
+    }
+
     await promptRemoteSessionMethod({
       waitForPendingMutations: () => this.waitForPendingMutations(),
       isStreaming: this.isStreaming,
@@ -67,8 +71,8 @@ export abstract class RemoteAgentSessionInteractionApi extends RemoteAgentSessio
     });
   }
 
-  async sendCustomMessage<T = unknown>(
-    _message: {
+  sendCustomMessage<T = unknown>(
+    message: {
       customType: string;
       content: string | (TextContent | ImageContent)[];
       display: boolean;
@@ -78,7 +82,26 @@ export abstract class RemoteAgentSessionInteractionApi extends RemoteAgentSessio
       triggerTurn?: boolean;
       deliverAs?: "steer" | "followUp" | "nextTurn";
     },
-  ): Promise<void> {}
+  ): Promise<void> {
+    const messageEvent = {
+      role: "custom" as const,
+      customType: message.customType,
+      content: message.content,
+      display: message.display,
+      details: message.details,
+      timestamp: Date.now(),
+    };
+
+    this.applyAgentSessionEvent({
+      type: "message_start",
+      message: messageEvent,
+    });
+    this.applyAgentSessionEvent({
+      type: "message_end",
+      message: messageEvent,
+    });
+    return Promise.resolve();
+  }
 
   clearQueue(): { steering: string[]; followUp: string[] } {
     return clearQueueRemoteSessionMethod({

@@ -9,6 +9,7 @@ import {
   Spacer,
   Text,
 } from "@mariozechner/pi-tui";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { hasUncommittedChanges, getCurrentBranch, getDefaultBranch } from "./deps.js";
 
 type SearchableSelectNavigation = {
@@ -71,6 +72,10 @@ export function showSearchableSelect(
     items: SelectItem[];
   },
 ): Promise<string | null> {
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    return showSelectFallback(ctx, input);
+  }
+
   return ctx.ui.custom<string | null>((tui, theme, keybindings, done) =>
     createSearchableSelectComponent(input, {
       tui,
@@ -82,6 +87,23 @@ export function showSearchableSelect(
       done,
     }),
   );
+}
+
+async function showSelectFallback(
+  ctx: ExtensionContext,
+  input: {
+    title: string;
+    items: SelectItem[];
+  },
+): Promise<string | null> {
+  const options = input.items.map((item) => item.label);
+  const selectedLabel = await ctx.ui.select(input.title, options);
+  if (selectedLabel === undefined || selectedLabel.length === 0) {
+    return null;
+  }
+
+  const selectedItem = input.items.find((item) => item.label === selectedLabel);
+  return selectedItem?.value ?? null;
 }
 
 function createSearchableSelectComponent(

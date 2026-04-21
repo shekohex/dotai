@@ -1,27 +1,30 @@
 import type { Static } from "@sinclair/typebox";
 import {
   AppSnapshotSchema,
+  ActiveToolsUpdateRequestSchema,
   AuthChallengeRequestSchema,
   AuthChallengeResponseSchema,
   AuthVerifyRequestSchema,
   AuthVerifyResponseSchema,
+  ClientCapabilitiesSchema,
   ClearQueueResponseSchema,
   CommandAcceptedResponseSchema,
   CommandKindSchema,
+  ConnectionCapabilitiesResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
-  DraftUpdateRequestSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
   PresenceSchema,
   PromptCommandRequestSchema,
-  RemoteExtensionHostSchema,
   RemoteExtensionMetadataSchema,
+  RemoteExtensionRuntimeSchema,
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
   SessionNameUpdateRequestSchema,
   SessionSnapshotSchema,
+  SessionToolsResponseSchema,
   SessionStatusSchema,
   SessionSummarySchema,
   SteerCommandRequestSchema,
@@ -29,6 +32,15 @@ import {
   UiResponseResponseSchema,
 } from "./schemas-core.js";
 import {
+  RemoteKvDeleteResponseSchema,
+  RemoteKvItemParamsSchema,
+  RemoteKvReadResponseSchema,
+  RemoteKvScopeSchema,
+  RemoteKvWriteRequestSchema,
+  RemoteKvWriteResponseSchema,
+} from "./kv/schemas.js";
+import {
+  ExtensionUiResolvedEventPayloadSchema,
   ExtensionUiRequestEventPayloadSchema,
   StreamEventEnvelopeSchema,
   StreamReadResponseSchema,
@@ -38,18 +50,27 @@ export type AuthChallengeRequest = Static<typeof AuthChallengeRequestSchema>;
 export type AuthChallengeResponse = Static<typeof AuthChallengeResponseSchema>;
 export type AuthVerifyRequest = Static<typeof AuthVerifyRequestSchema>;
 export type AuthVerifyResponse = Static<typeof AuthVerifyResponseSchema>;
+export type ClientCapabilities = Static<typeof ClientCapabilitiesSchema>;
 export type AppSnapshot = Static<typeof AppSnapshotSchema>;
 export type CreateSessionRequest = Static<typeof CreateSessionRequestSchema>;
 export type CreateSessionResponse = Static<typeof CreateSessionResponseSchema>;
+export type ConnectionCapabilitiesResponse = Static<typeof ConnectionCapabilitiesResponseSchema>;
 export type PromptCommandRequest = Static<typeof PromptCommandRequestSchema>;
 export type SteerCommandRequest = Static<typeof SteerCommandRequestSchema>;
 export type FollowUpCommandRequest = Static<typeof FollowUpCommandRequestSchema>;
 export type InterruptCommandRequest = Static<typeof InterruptCommandRequestSchema>;
-export type DraftUpdateRequest = Static<typeof DraftUpdateRequestSchema>;
+export type ActiveToolsUpdateRequest = Static<typeof ActiveToolsUpdateRequestSchema>;
 export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
 export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
+export type SessionToolsResponse = Static<typeof SessionToolsResponseSchema>;
 export type UiResponseRequest = Static<typeof UiResponseRequestSchema>;
 export type UiResponseResponse = Static<typeof UiResponseResponseSchema>;
+export type RemoteKvScope = Static<typeof RemoteKvScopeSchema>;
+export type RemoteKvItemParams = Static<typeof RemoteKvItemParamsSchema>;
+export type RemoteKvWriteRequest = Static<typeof RemoteKvWriteRequestSchema>;
+export type RemoteKvReadResponse = Static<typeof RemoteKvReadResponseSchema>;
+export type RemoteKvWriteResponse = Static<typeof RemoteKvWriteResponseSchema>;
+export type RemoteKvDeleteResponse = Static<typeof RemoteKvDeleteResponseSchema>;
 export type ClearQueueResponse = Static<typeof ClearQueueResponseSchema>;
 export type CommandKind = Static<typeof CommandKindSchema>;
 export type CommandAcceptedResponse = Static<typeof CommandAcceptedResponseSchema>;
@@ -58,9 +79,10 @@ export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;
 export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;
 export type ExtensionUiRequestEventPayload = Static<typeof ExtensionUiRequestEventPayloadSchema>;
+export type ExtensionUiResolvedEventPayload = Static<typeof ExtensionUiResolvedEventPayloadSchema>;
 export type StreamReadResponse = Static<typeof StreamReadResponseSchema>;
 export type Presence = Static<typeof PresenceSchema>;
 export type RemoteExtensionMetadata = Static<typeof RemoteExtensionMetadataSchema>;
-export type RemoteExtensionHost = Static<typeof RemoteExtensionHostSchema>;
+export type RemoteExtensionRuntime = Static<typeof RemoteExtensionRuntimeSchema>;
 export type RemoteResourceBundle = Static<typeof RemoteResourceBundleSchema>;
 export type RemoteSettingsSnapshot = Static<typeof RemoteSettingsSnapshotSchema>;

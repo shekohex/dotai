@@ -1,6 +1,6 @@
-import { RemoteError } from "../errors.js";
 import type {
   CommandAcceptedResponse,
+  ExtensionUiResolvedEventPayload,
   SessionNameUpdateRequest,
   UiResponseRequest,
   UiResponseResponse,
@@ -53,17 +53,31 @@ export function handleSessionNameUpdateCommand(input: {
 export function submitUiResponseCommand(input: {
   record: SessionRecord;
   request: UiResponseRequest;
+  client: AuthSession;
+  connectionId: string;
   now: () => number;
+  appendUiResolvedEvent: (payload: ExtensionUiResolvedEventPayload) => void;
 }): UiResponseResponse {
   const pending = input.record.pendingUiRequests.get(input.request.id);
   if (!pending) {
-    throw new RemoteError("UI request not found", 404);
+    return { resolved: false };
   }
+
   input.record.pendingUiRequests.delete(input.request.id);
   if (input.record.activeRun?.pendingUiRequestId === input.request.id) {
     input.record.activeRun.pendingUiRequestId = undefined;
     input.record.activeRun.updatedAt = input.now();
   }
+  const resolvedAt = input.now();
   pending.resolve(input.request);
+
+  input.appendUiResolvedEvent({
+    id: input.request.id,
+    resolvedAt,
+    resolvedByClientId: input.client.clientId,
+    resolvedByConnectionId: input.connectionId,
+    response: input.request,
+  });
+
   return { resolved: true };
 }

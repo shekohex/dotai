@@ -97,10 +97,10 @@ export function applyRemoteExtensionsSnapshot(
     )
     .map((extension) => ({
       id: typeof extension.id === "string" ? extension.id : "unknown",
-      host:
-        "host" in extension && (extension.host === "server-bound" || extension.host === "ui-only")
-          ? extension.host
-          : "server-bound",
+      runtime:
+        "runtime" in extension && (extension.runtime === "server" || extension.runtime === "client")
+          ? extension.runtime
+          : "server",
       path: typeof extension.path === "string" ? extension.path : "unknown",
     }));
 }

@@ -18,10 +18,9 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
 import {
+  bundledExtensionDefinitions,
   findBundledExtensionDefinitionByFactory,
-  getBundledExtensionDefinitionsByHost,
   type BundledExtensionDefinition,
-  type BundledExtensionHost,
 } from "../extensions/index.js";
 
 export interface RemoteRuntimeFactory {
@@ -31,7 +30,7 @@ export interface RemoteRuntimeFactory {
 
 export interface RuntimeExtensionMetadata {
   id: string;
-  host: BundledExtensionHost;
+  runtime: "server" | "client";
   path: string;
 }
 
@@ -52,23 +51,24 @@ interface RuntimeFactoryExtensionSelection {
 
 function toRuntimeExtensionMetadata(
   definitions: BundledExtensionDefinition[],
+  runtime: RuntimeExtensionMetadata["runtime"],
 ): RuntimeExtensionMetadata[] {
   return definitions.map((definition) => ({
     id: definition.id,
-    host: definition.host,
+    runtime,
     path: `bundled:${definition.id}`,
   }));
 }
 
 function selectRuntimeExtensions(
   options: RuntimeExtensionOptions,
-  defaultHost: BundledExtensionHost,
+  runtime: RuntimeExtensionMetadata["runtime"],
 ): RuntimeFactoryExtensionSelection {
   let definitions: BundledExtensionDefinition[];
   if (options.extensionDefinitions !== undefined) {
     definitions = [...options.extensionDefinitions];
   } else if (options.extensionFactories === undefined) {
-    definitions = getBundledExtensionDefinitionsByHost(defaultHost);
+    definitions = [...bundledExtensionDefinitions];
   } else {
     definitions = options.extensionFactories.map((factory, index) => {
       const matched = findBundledExtensionDefinitionByFactory(factory);
@@ -77,7 +77,6 @@ function selectRuntimeExtensions(
       }
       return {
         id: `custom-${index + 1}`,
-        host: defaultHost,
         factory,
       } satisfies BundledExtensionDefinition;
     });
@@ -86,7 +85,7 @@ function selectRuntimeExtensions(
   return {
     definitions,
     factories: definitions.map((definition) => definition.factory),
-    metadata: toRuntimeExtensionMetadata(definitions),
+    metadata: toRuntimeExtensionMetadata(definitions, runtime),
   };
 }
 
@@ -111,7 +110,7 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
 
   constructor(options: BundledPiRuntimeFactoryOptions = {}) {
     installBundledResourcePaths();
-    const extensions = selectRuntimeExtensions(options, "server-bound");
+    const extensions = selectRuntimeExtensions(options, "server");
     this.cwd = options.cwd ?? process.cwd();
     this.agentDir = options.agentDir ?? getAgentDir();
     this.extensionFactories = extensions.factories;
@@ -226,7 +225,7 @@ export function InMemoryPiRuntimeFactory(
   options: InMemoryPiRuntimeFactoryOptions = {},
 ): RemoteRuntimeFactory {
   installBundledResourcePaths();
-  const extensions = selectRuntimeExtensions(options, "server-bound");
+  const extensions = selectRuntimeExtensions(options, "server");
   const cwdPromise =
     options.cwd !== undefined && options.cwd.length > 0
       ? Promise.resolve(options.cwd)

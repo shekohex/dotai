@@ -3,10 +3,10 @@ import { Hono } from "hono";
 import { tbValidator } from "@hono/typebox-validator";
 import { describeRoute } from "hono-openapi";
 import {
+  ActiveToolsUpdateRequestSchema,
   AuthChallengeRequestSchema,
   AuthVerifyRequestSchema,
   CreateSessionRequestSchema,
-  DraftUpdateRequestSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
@@ -30,11 +30,12 @@ import {
   readAppEventsStreamRouteDescription,
   readSessionEventsStreamRouteDescription,
   sessionSnapshotRouteDescription,
+  sessionToolsRouteDescription,
   steerSessionRouteDescription,
   submitSessionUiResponseRouteDescription,
-  updateSessionDraftRouteDescription,
   updateSessionModelRouteDescription,
   updateSessionNameRouteDescription,
+  updateSessionActiveToolsRouteDescription,
 } from "./routes/descriptions.js";
 import {
   handleAppSnapshot,
@@ -43,14 +44,17 @@ import {
   handleClearSessionQueue,
   handleCreateSession,
   handleSessionSnapshot,
+  handleSessionTools,
   handleSubmitSessionUiResponse,
 } from "./routes/handlers.js";
+import { createConnectionRoutes } from "./routes/connection-routes.js";
+import { createRemoteKvRoutes } from "./kv/routes.js";
 import {
   handleFollowUpSession,
   handleInterruptSession,
   handlePromptSession,
   handleSteerSession,
-  handleUpdateSessionDraft,
+  handleUpdateSessionActiveTools,
   handleUpdateSessionModel,
   handleUpdateSessionName,
 } from "./routes/handlers-commands.js";
@@ -95,16 +99,27 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
     tbValidator("json", CreateSessionRequestSchema),
     (c) => handleCreateSession(c, dependencies, c.req.valid("json")),
   );
-  return route4.get(
-    "/sessions/:sessionId/snapshot",
-    describeRoute(sessionSnapshotRouteDescription),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    (c) => {
-      const { sessionId } = c.req.valid("param");
-      return handleSessionSnapshot(c, dependencies, sessionId);
-    },
-  );
+  return route4
+    .get(
+      "/sessions/:sessionId/snapshot",
+      describeRoute(sessionSnapshotRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleSessionSnapshot(c, dependencies, sessionId);
+      },
+    )
+    .get(
+      "/sessions/:sessionId/tools",
+      describeRoute(sessionToolsRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleSessionTools(c, dependencies, sessionId);
+      },
+    );
 }
 
 function registerSessionCommandRoutesA<S extends Schema, BasePath extends string>(
@@ -164,14 +179,14 @@ function registerSessionCommandRoutesB<S extends Schema, BasePath extends string
     },
   );
   const route10 = route9.post(
-    "/sessions/:sessionId/draft",
-    describeRoute(updateSessionDraftRouteDescription),
+    "/sessions/:sessionId/active-tools",
+    describeRoute(updateSessionActiveToolsRouteDescription),
     needsAuth,
     tbValidator("param", SessionParamsSchema),
-    tbValidator("json", DraftUpdateRequestSchema),
+    tbValidator("json", ActiveToolsUpdateRequestSchema),
     (c) => {
       const { sessionId } = c.req.valid("param");
-      return handleUpdateSessionDraft(c, dependencies, sessionId, c.req.valid("json"));
+      return handleUpdateSessionActiveTools(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
   return route10.post(
@@ -255,7 +270,15 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies) {
   const v1 = new Hono<RemoteHonoEnv>();
   const needsAuth = requireAuth(dependencies.auth);
   const withAuthRoutes = registerAuthRoutes(v1, dependencies);
-  const withSnapshotRoutes = registerSnapshotRoutes(withAuthRoutes, dependencies, needsAuth);
+  const withConnectionRoutes = withAuthRoutes.route(
+    "/connections",
+    createConnectionRoutes(dependencies, needsAuth),
+  );
+  const withKvRoutes = withConnectionRoutes.route(
+    "/kv",
+    createRemoteKvRoutes(dependencies, needsAuth),
+  );
+  const withSnapshotRoutes = registerSnapshotRoutes(withKvRoutes, dependencies, needsAuth);
   const withSessionCommandsA = registerSessionCommandRoutesA(
     withSnapshotRoutes,
     dependencies,

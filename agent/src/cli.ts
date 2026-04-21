@@ -2,28 +2,26 @@
 
 import { main } from "@mariozechner/pi-coding-agent";
 import { installBundledResourcePaths } from "./extensions/bundled-resources.js";
-import {
-  bundledExtensionFactories,
-  getBundledExtensionDefinitionsByHost,
-} from "./extensions/index.js";
+import { bundledExtensionDefinitions, bundledExtensionFactories } from "./extensions/index.js";
+import { REMOTE_DEFAULT_CLIENT_CAPABILITIES } from "./remote/capabilities.js";
 import { runRemoteInteractiveMode, shouldUseRemoteMode } from "./remote/client-interactive.js";
 
 process.title = "pi";
 
 installBundledResourcePaths();
 if (shouldUseRemoteMode(process.argv.slice(2))) {
-  const clientExtensionDefinitions = getBundledExtensionDefinitionsByHost("ui-only");
-  const clientExtensionMetadata = clientExtensionDefinitions.map((definition) => ({
+  const clientExtensionMetadata = bundledExtensionDefinitions.map((definition) => ({
     id: definition.id,
-    host: definition.host,
+    runtime: "client" as const,
     path: `client:${definition.id}`,
   }));
-  const clientExtensionFactories = clientExtensionDefinitions.map(
+  const clientExtensionFactories = bundledExtensionDefinitions.map(
     (definition) => definition.factory,
   );
   await runRemoteInteractiveMode(process.argv.slice(2), {
     clientExtensionMetadata,
     clientExtensionFactories,
+    clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
   });
 } else {
   await main(process.argv.slice(2), { extensionFactories: bundledExtensionFactories });

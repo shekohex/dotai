@@ -1,10 +1,10 @@
 import { hc } from "hono/client";
-import type { createV1Routes } from "./routes.js";
+import type { createV1Routes } from "../routes.js";
 import { sign } from "node:crypto";
-import { createChallengePayload } from "./auth.js";
-import { toRemoteHttpError } from "./remote-api-client-utils.js";
-import { AuthChallengeResponseSchema, AuthVerifyResponseSchema } from "./schemas.js";
-import { assertType } from "./typebox.js";
+import { createChallengePayload } from "../auth.js";
+import { toRemoteHttpError } from "./utils.js";
+import { AuthChallengeResponseSchema, AuthVerifyResponseSchema } from "../schemas.js";
+import { assertType } from "../typebox.js";
 
 export interface RemoteApiClientAuthOptions {
   keyId: string;

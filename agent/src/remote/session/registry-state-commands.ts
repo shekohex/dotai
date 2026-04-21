@@ -1,5 +1,6 @@
 import type { AuthSession } from "../auth.js";
 import type {
+  ActiveToolsUpdateRequest,
   ClearQueueResponse,
   CommandAcceptedResponse,
   ModelUpdateRequest,
@@ -16,6 +17,41 @@ import {
 import { SessionRegistryPromptCommands } from "./registry-prompt-commands.js";
 
 export class SessionRegistryStateCommands extends SessionRegistryPromptCommands {
+  updateActiveTools(
+    sessionId: string,
+    input: ActiveToolsUpdateRequest,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<CommandAcceptedResponse> {
+    const record = this.getRequired(sessionId);
+    const session = this.requireRuntimeSession(record);
+    const normalizedToolNames = [...new Set(input.toolNames)];
+
+    return this.acceptCommand(record, client, connectionId, "active-tools", input, {
+      beforeAccepted: () => {
+        session.setActiveToolsByName(normalizedToolNames);
+      },
+      onAccepted: (accepted) => {
+        const updatedAt = this.now();
+        this.syncFromRuntime(record, { updateTimestamp: false });
+        record.updatedAt = updatedAt;
+        this.streams.append(sessionEventsStreamId(record.sessionId), {
+          sessionId: record.sessionId,
+          kind: "session_state_patch",
+          payload: {
+            commandId: accepted.commandId,
+            sequence: accepted.sequence,
+            patch: {
+              activeTools: [...record.activeTools],
+            },
+          },
+          ts: updatedAt,
+        });
+        this.emitSessionSummaryUpdated(record, updatedAt);
+      },
+    });
+  }
+
   updateModel(
     sessionId: string,
     input: ModelUpdateRequest,
@@ -110,11 +146,22 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
     connectionId?: string,
   ): UiResponseResponse {
     const record = this.getRequired(sessionId);
-    this.touchPresence(sessionId, client, connectionId);
+    const resolvedConnectionId = connectionId ?? client.token;
+    this.touchPresence(sessionId, client, resolvedConnectionId);
     return submitUiResponseCommand({
       record,
       request: input,
+      client,
+      connectionId: resolvedConnectionId,
       now: this.now,
+      appendUiResolvedEvent: (payload) => {
+        this.streams.append(sessionEventsStreamId(record.sessionId), {
+          sessionId: record.sessionId,
+          kind: "extension_ui_resolved",
+          payload,
+          ts: this.now(),
+        });
+      },
     });
   }
 

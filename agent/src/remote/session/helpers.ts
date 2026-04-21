@@ -1,6 +1,5 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { RemoteExtensionMetadata } from "../schemas.js";
-import type { RenderableComponent } from "./types.js";
 
 export function isApiModel(value: unknown): value is Model<Api> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -13,16 +12,6 @@ export function isApiModel(value: unknown): value is Model<Api> {
     typeof candidate.id === "string" &&
     typeof candidate.api === "string"
   );
-}
-
-export function isRenderableComponent(value: unknown): value is RenderableComponent {
-  if (value === null || typeof value !== "object") {
-    return false;
-  }
-  if (!("render" in value) || !("invalidate" in value)) {
-    return false;
-  }
-  return typeof value.render === "function" && typeof value.invalidate === "function";
 }
 
 export function hasExtensionMetadataChange(
@@ -39,7 +28,7 @@ export function hasExtensionMetadataChange(
 
       return (
         extension.id !== nextExtension.id ||
-        extension.host !== nextExtension.host ||
+        extension.runtime !== nextExtension.runtime ||
         extension.path !== nextExtension.path
       );
     })
@@ -58,14 +47,14 @@ export function parseRuntimeExtensionMetadata(value: unknown): RemoteExtensionMe
     }
 
     const id: unknown = Reflect.get(extension, "id");
-    const host: unknown = Reflect.get(extension, "host");
+    const runtime: unknown = Reflect.get(extension, "runtime");
     const extensionPath: unknown = Reflect.get(extension, "path");
     if (
       typeof id === "string" &&
       typeof extensionPath === "string" &&
-      (host === "server-bound" || host === "ui-only")
+      (runtime === "server" || runtime === "client")
     ) {
-      metadata.push({ id, host, path: extensionPath });
+      metadata.push({ id, runtime, path: extensionPath });
     }
   }
 
@@ -89,7 +78,7 @@ export function parseResourceLoaderExtensionMetadata(value: unknown): RemoteExte
     }
     metadata.push({
       id: extensionPath,
-      host: "server-bound",
+      runtime: "server",
       path: extensionPath,
     });
   }

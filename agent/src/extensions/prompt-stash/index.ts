@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { PromptStashBrowser, type PromptStashBrowserAction } from "./browser.js";
 import {
   MAX_STASH_ENTRIES,
@@ -121,6 +122,14 @@ async function showStashBrowser(ctx: ExtensionContext): Promise<PromptStashBrows
   const entries = await loadStashEntries(ctx.cwd);
   const draft = ctx.ui.getEditorText();
 
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    const fallbackAction = await showStashBrowserFallback(ctx, entries);
+    if (!fallbackAction) {
+      ctx.ui.setEditorText(draft);
+    }
+    return fallbackAction;
+  }
+
   const result = await ctx.ui.custom<PromptStashBrowserAction>(
     (tui, theme, keybindings, done) =>
       new PromptStashBrowser(tui, theme, keybindings, entries, done),
@@ -139,6 +148,45 @@ async function showStashBrowser(ctx: ExtensionContext): Promise<PromptStashBrows
   }
 
   return result;
+}
+
+async function showStashBrowserFallback(
+  ctx: ExtensionContext,
+  entries: PromptStashEntry[],
+): Promise<PromptStashBrowserAction> {
+  if (entries.length === 0) {
+    ctx.ui.notify("No stashed prompts yet", "info");
+    return null;
+  }
+
+  const options = entries.map((entry, index) => {
+    const headline = entry.text.replaceAll(/\s+/g, " ").trim();
+    const preview = headline.length > 64 ? `${headline.slice(0, 63)}…` : headline;
+    return `${index + 1}. ${preview.length > 0 ? preview : "(empty)"}`;
+  });
+
+  const selectedLabel = await ctx.ui.select("Select stash entry", options);
+  if (selectedLabel === undefined || selectedLabel.length === 0) {
+    return null;
+  }
+
+  const selectedIndex = options.findIndex((option) => option === selectedLabel);
+  const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : undefined;
+  if (selectedEntry === undefined) {
+    return null;
+  }
+
+  const selectedAction = await ctx.ui.select("Stash action", ["Open", "Pop", "Delete"]);
+  if (selectedAction === "Open") {
+    return { type: "open", entry: selectedEntry };
+  }
+  if (selectedAction === "Pop") {
+    return { type: "pop", entry: selectedEntry };
+  }
+  if (selectedAction === "Delete") {
+    return { type: "delete", entry: selectedEntry };
+  }
+  return null;
 }
 
 async function runStashAction(ctx: ExtensionContext, action: () => Promise<void>): Promise<void> {

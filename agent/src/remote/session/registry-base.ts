@@ -40,9 +40,23 @@ import {
   type SessionRegistryOptions,
   type ThinkingLevel,
 } from "./deps.js";
+import type { ClientCapabilities, ConnectionCapabilitiesResponse } from "../schemas.js";
+import {
+  readConnectionCapabilitiesForSessions,
+  setConnectionCapabilitiesForSessions,
+} from "./connection-capabilities.js";
 
 export abstract class SessionRegistryBase {
   protected readonly sessions = new Map<string, SessionRecord>();
+  protected readonly connectionCapabilities = new Map<
+    string,
+    {
+      clientId: string;
+      keyId: string;
+      capabilities: ClientCapabilities;
+      updatedAt: number;
+    }
+  >();
   protected readonly streams: InMemoryDurableStreamStore;
   protected readonly runtimeFactory: RemoteRuntimeFactory;
   protected readonly presenceTtlMs: number;
@@ -254,6 +268,32 @@ export abstract class SessionRegistryBase {
 
   protected toSessionSnapshot(record: SessionRecord): SessionSnapshot {
     return toSessionSnapshotRecord(record, (streamId) => this.streams.getHeadOffset(streamId));
+  }
+
+  setConnectionCapabilities(
+    connectionId: string,
+    capabilities: ClientCapabilities,
+    client: AuthSession,
+  ): ConnectionCapabilitiesResponse {
+    return setConnectionCapabilitiesForSessions({
+      connectionCapabilities: this.connectionCapabilities,
+      sessions: this.sessions,
+      connectionId,
+      capabilities,
+      client,
+      now: this.now,
+    });
+  }
+
+  protected readConnectionCapabilities(
+    clientId: string,
+    connectionId: string,
+  ): ClientCapabilities | undefined {
+    return readConnectionCapabilitiesForSessions(
+      this.connectionCapabilities,
+      clientId,
+      connectionId,
+    );
   }
 
   abstract touchPresence(sessionId: string, client: AuthSession, connectionId?: string): void;

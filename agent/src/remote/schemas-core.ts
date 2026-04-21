@@ -1,6 +1,22 @@
 import { Type } from "@sinclair/typebox";
 import { RemoteResourceBundleSchema, RemoteSettingsSnapshotSchema } from "./schemas-settings.js";
+import {
+  ClientCapabilitiesSchema,
+  ClientCapabilitiesPrimitivesSchema,
+  ConnectionCapabilitiesParamsSchema,
+  ConnectionCapabilitiesResponseSchema,
+  RemoteExtensionMetadataSchema,
+  RemoteExtensionRuntimeSchema,
+} from "./schemas-capabilities.js";
 
+export {
+  ClientCapabilitiesPrimitivesSchema,
+  ClientCapabilitiesSchema,
+  ConnectionCapabilitiesParamsSchema,
+  ConnectionCapabilitiesResponseSchema,
+  RemoteExtensionMetadataSchema,
+  RemoteExtensionRuntimeSchema,
+} from "./schemas-capabilities.js";
 export {
   RemotePromptResourceSchema,
   RemoteResourceBundleSchema,
@@ -50,21 +66,13 @@ export const ErrorResponseSchema = Type.Object({
   details: Type.Optional(Type.String()),
 });
 
-export const DraftSchema = Type.Object({
-  text: Type.String(),
-  attachments: Type.Array(Type.String()),
-  revision: Type.Number(),
-  updatedAt: Type.Number(),
-  updatedByClientId: Type.Union([Type.String(), Type.Null()]),
-});
-
 export const PresenceSchema = Type.Object({
   clientId: Type.String(),
   deviceId: Type.Optional(Type.String()),
   connectionId: Type.String(),
   connectedAt: Type.Number(),
   lastSeenAt: Type.Number(),
-  clientCapabilities: Type.Optional(Type.Record(Type.String(), Type.String())),
+  clientCapabilities: Type.Optional(ClientCapabilitiesSchema),
   lastSeenSessionOffset: Type.String(),
   lastSeenAppOffset: Type.String(),
 });
@@ -73,7 +81,6 @@ export const SessionSummarySchema = Type.Object({
   sessionId: Type.String(),
   sessionName: Type.String(),
   status: SessionStatusSchema,
-  draftRevision: Type.Number(),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
   lastSessionStreamOffset: Type.String(),
@@ -104,17 +111,6 @@ export const RemoteModelSettingsSchema = Type.Object({
   defaultModel: Type.Union([Type.String(), Type.Null()]),
   defaultThinkingLevel: Type.Union([Type.String(), Type.Null()]),
   enabledModels: Type.Union([Type.Array(Type.String()), Type.Null()]),
-});
-
-export const RemoteExtensionHostSchema = Type.Union([
-  Type.Literal("server-bound"),
-  Type.Literal("ui-only"),
-]);
-
-export const RemoteExtensionMetadataSchema = Type.Object({
-  id: Type.String(),
-  host: RemoteExtensionHostSchema,
-  path: Type.String(),
 });
 
 export const AppSnapshotSchema = Type.Object({
@@ -169,9 +165,8 @@ export const InterruptCommandRequestSchema = Type.Object({
   requestId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
-export const DraftUpdateRequestSchema = Type.Object({
-  text: Type.String(),
-  attachments: Type.Optional(Type.Array(Type.String())),
+export const ActiveToolsUpdateRequestSchema = Type.Object({
+  toolNames: Type.Array(Type.String({ minLength: 1 })),
   requestId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
@@ -184,6 +179,17 @@ export const ModelUpdateRequestSchema = Type.Object({
 export const SessionNameUpdateRequestSchema = Type.Object({
   sessionName: Type.String({ minLength: 1 }),
   requestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const RemoteToolInfoSchema = Type.Object({
+  name: Type.String(),
+  description: Type.String(),
+  parameters: Type.Unknown(),
+  sourceInfo: Type.Unknown(),
+});
+
+export const SessionToolsResponseSchema = Type.Object({
+  tools: Type.Array(RemoteToolInfoSchema),
 });
 
 export const UiResponseRequestSchema = Type.Union([
@@ -215,7 +221,7 @@ export const CommandKindSchema = Type.Union([
   Type.Literal("steer"),
   Type.Literal("follow-up"),
   Type.Literal("interrupt"),
-  Type.Literal("draft"),
+  Type.Literal("active-tools"),
   Type.Literal("model"),
   Type.Literal("session-name"),
 ]);
@@ -241,8 +247,6 @@ export const SessionSnapshotSchema = Type.Object({
   settings: Type.Optional(RemoteSettingsSnapshotSchema),
   availableModels: Type.Array(RemoteModelSchema),
   modelSettings: RemoteModelSettingsSchema,
-  draft: DraftSchema,
-  draftRevision: Type.Number(),
   transcript: Type.Array(Type.Unknown()),
   queue: Type.Object({
     depth: Type.Number(),

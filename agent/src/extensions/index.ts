@@ -7,11 +7,8 @@ import {
 } from "./definitions.js";
 import { createSubagentExtension } from "./subagent.js";
 
-export type BundledExtensionHost = "server-bound" | "ui-only";
-
 export interface BundledExtensionDefinition {
   id: string;
-  host: BundledExtensionHost;
   factory: ExtensionFactory;
 }
 
@@ -21,17 +18,15 @@ export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
   ...groupedExtensionsA,
   ...groupedExtensionsB,
   ...groupedExtensionsC,
-  { id: "subagent", host: "server-bound", factory: subagentExtensionFactory },
+  { id: "subagent", factory: subagentExtensionFactory },
 ] satisfies GroupedExtensionDefinition[];
 
 const bundledExtensionDefinitionByFactory = new Map<ExtensionFactory, BundledExtensionDefinition>(
   bundledExtensionDefinitions.map((definition) => [definition.factory, definition]),
 );
 
-export function getBundledExtensionDefinitionsByHost(
-  host: BundledExtensionHost,
-): BundledExtensionDefinition[] {
-  return bundledExtensionDefinitions.filter((definition) => definition.host === host);
+export function getBundledExtensionDefinitions(): BundledExtensionDefinition[] {
+  return [...bundledExtensionDefinitions];
 }
 
 export function findBundledExtensionDefinitionByFactory(

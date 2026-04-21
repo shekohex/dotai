@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import {
   CommandKindSchema,
-  DraftSchema,
   PresenceSchema,
   RemoteExtensionMetadataSchema,
   RemoteResourceBundleSchema,
@@ -9,6 +8,7 @@ import {
   RemoteModelSchema,
   RemoteModelSettingsSchema,
   SessionStatusSchema,
+  UiResponseRequestSchema,
 } from "./schemas-core.js";
 
 const StreamEventCommonProperties = {
@@ -32,7 +32,6 @@ const SessionSummaryUpdatedEventPayloadSchema = Type.Object({
   sessionId: Type.String(),
   sessionName: Type.String(),
   status: SessionStatusSchema,
-  draftRevision: Type.Number(),
   updatedAt: Type.Number(),
 });
 
@@ -67,12 +66,6 @@ const CommandAcceptedEventPayloadSchema = Type.Object({
   sequence: Type.Number(),
 });
 
-const DraftUpdatedEventPayloadSchema = Type.Object({
-  commandId: Type.String(),
-  sequence: Type.Number(),
-  draft: DraftSchema,
-});
-
 const SessionStatePatchEventPayloadSchema = Type.Object({
   commandId: Type.String(),
   sequence: Type.Number(),
@@ -81,6 +74,7 @@ const SessionStatePatchEventPayloadSchema = Type.Object({
       model: Type.Optional(Type.String()),
       thinkingLevel: Type.Optional(Type.String()),
       sessionName: Type.Optional(Type.String()),
+      activeTools: Type.Optional(Type.Array(Type.String())),
       cwd: Type.Optional(Type.String()),
       extensions: Type.Optional(Type.Array(RemoteExtensionMetadataSchema)),
       resources: Type.Optional(RemoteResourceBundleSchema),
@@ -160,16 +154,6 @@ export const ExtensionUiRequestEventPayloadSchema = Type.Union([
   }),
   Type.Object({
     id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setHeader"),
-    lines: Type.Optional(Type.Array(Type.String())),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setFooter"),
-    lines: Type.Optional(Type.Array(Type.String())),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
     method: Type.Literal("setToolsExpanded"),
     expanded: Type.Boolean(),
   }),
@@ -179,6 +163,14 @@ export const ExtensionUiRequestEventPayloadSchema = Type.Union([
     text: Type.String(),
   }),
 ]);
+
+export const ExtensionUiResolvedEventPayloadSchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  resolvedAt: Type.Number(),
+  resolvedByClientId: Type.String(),
+  resolvedByConnectionId: Type.String(),
+  response: UiResponseRequestSchema,
+});
 
 const ExtensionErrorEventPayloadSchema = Type.Object({
   commandId: Type.String(),
@@ -229,11 +221,6 @@ export const StreamEventEnvelopeSchema = Type.Union([
   }),
   Type.Object({
     ...StreamEventCommonProperties,
-    kind: Type.Literal("draft_updated"),
-    payload: DraftUpdatedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
     kind: Type.Literal("session_state_patch"),
     payload: SessionStatePatchEventPayloadSchema,
   }),
@@ -241,6 +228,11 @@ export const StreamEventEnvelopeSchema = Type.Union([
     ...StreamEventCommonProperties,
     kind: Type.Literal("extension_ui_request"),
     payload: ExtensionUiRequestEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("extension_ui_resolved"),
+    payload: ExtensionUiResolvedEventPayloadSchema,
   }),
   Type.Object({
     ...StreamEventCommonProperties,

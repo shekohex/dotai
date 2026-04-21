@@ -1,15 +1,12 @@
 import type { AuthSession } from "../auth.js";
 import type {
   CommandAcceptedResponse,
-  DraftUpdateRequest,
   FollowUpCommandRequest,
   InterruptCommandRequest,
   PromptCommandRequest,
   SteerCommandRequest,
 } from "../schemas.js";
-import { sessionEventsStreamId } from "../streams.js";
 import {
-  handleDraftUpdateCommand,
   handleFollowUpCommand,
   handleInterruptCommand,
   handlePromptCommand,
@@ -127,52 +124,6 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
       requireRuntimeSession: (targetRecord) => this.requireRuntimeSession(targetRecord),
       dispatchRuntimeCommand: (targetRecord, command, operation) => {
         this.dispatchRuntimeCommand(targetRecord, command, operation);
-      },
-    });
-  }
-
-  updateDraft(
-    sessionId: string,
-    input: DraftUpdateRequest,
-    client: AuthSession,
-    connectionId?: string,
-  ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
-    return handleDraftUpdateCommand({
-      command: input,
-      client,
-      connectionId,
-      record,
-      now: this.now,
-      acceptCommand: (targetRecord, targetClient, targetConnectionId, kind, payload, onAccepted) =>
-        this.acceptCommand(
-          targetRecord,
-          targetClient,
-          targetConnectionId,
-          kind,
-          payload,
-          onAccepted,
-        ),
-      appendDraftUpdatedEvent: (targetRecord, command, updatedAt) => {
-        this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-          sessionId: targetRecord.sessionId,
-          kind: "draft_updated",
-          payload: {
-            commandId: command.commandId,
-            sequence: command.sequence,
-            draft: {
-              text: targetRecord.draft.text,
-              attachments: [...targetRecord.draft.attachments],
-              revision: targetRecord.draft.revision,
-              updatedAt: targetRecord.draft.updatedAt,
-              updatedByClientId: targetRecord.draft.updatedByClientId,
-            },
-          },
-          ts: updatedAt,
-        });
-      },
-      emitSessionSummaryUpdated: (targetRecord, ts) => {
-        this.emitSessionSummaryUpdated(targetRecord, ts);
       },
     });
   }

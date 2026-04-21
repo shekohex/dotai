@@ -11,6 +11,7 @@ import type { RemoteModelSettingsState } from "../contracts.js";
 import {
   applyAgentSessionEnvelopePayload,
   routeRemoteSessionEnvelope,
+  validateExtensionUiResolvedPayload,
   validateExtensionUiRequestPayload,
 } from "../session-envelope-ops.js";
 import { applyRemoteSessionStatePatch } from "../session-patches.js";
@@ -47,8 +48,11 @@ export type PollRemoteSessionRuntimeInput = {
   applyAuthoritativeCwd: (cwd: string) => void;
   setRemoteExtensions: (extensions: RemoteExtensionMetadata[]) => void;
   setSessionName: (sessionName: string) => void;
+  setActiveTools: (activeTools: string[]) => void;
   getUiContext: () => ExtensionUIContext | undefined;
   bufferUiRequest: (request: ExtensionUiRequestEventPayload) => void;
+  pendingInteractiveRequests: Map<string, AbortController>;
+  cancelUiRequest: (requestId: string) => void;
   client: RemoteApiClient;
   sessionId: string;
   handleEnvelope?: (envelope: StreamEventEnvelope) => Promise<void>;
@@ -62,8 +66,11 @@ type PollingStateHandlers = Pick<
   | "applyAuthoritativeCwd"
   | "setRemoteExtensions"
   | "setSessionName"
+  | "setActiveTools"
   | "getUiContext"
   | "bufferUiRequest"
+  | "pendingInteractiveRequests"
+  | "cancelUiRequest"
 >;
 
 export function createRemoteSessionPollingInput(input: {
@@ -155,6 +162,9 @@ export async function handleRemoteSessionEnvelope(
     onExtensionUiRequestPayload: async (payload) => {
       await handleExtensionUiRequestPayload(input, payload);
     },
+    onExtensionUiResolvedPayload: (payload) => {
+      handleExtensionUiResolvedPayload(input, payload);
+    },
   });
 }
 
@@ -171,6 +181,7 @@ function handleSessionStatePatchPayload(
     applyAuthoritativeCwd: input.applyAuthoritativeCwd,
     setRemoteExtensions: input.setRemoteExtensions,
     setSessionName: input.setSessionName,
+    setActiveTools: input.setActiveTools,
   });
 }
 
@@ -195,5 +206,19 @@ async function handleExtensionUiRequestPayload(
     request: validatedPayload.value,
     client: input.client,
     sessionId: input.sessionId,
+    pendingInteractiveRequests: input.pendingInteractiveRequests,
   });
+}
+
+function handleExtensionUiResolvedPayload(
+  input: PollRemoteSessionRuntimeInput,
+  payload: unknown,
+): void {
+  const validatedPayload = validateExtensionUiResolvedPayload(payload);
+  if (!validatedPayload.ok) {
+    input.handleRemoteError(`Invalid extension UI resolved payload: ${validatedPayload.message}`);
+    return;
+  }
+
+  input.cancelUiRequest(validatedPayload.value.id);
 }

@@ -1,15 +1,17 @@
 import type { TSchema } from "@sinclair/typebox";
 import {
+  ActiveToolsUpdateRequestSchema,
   AppSnapshotSchema,
   AuthChallengeRequestSchema,
   AuthChallengeResponseSchema,
   AuthVerifyRequestSchema,
   AuthVerifyResponseSchema,
+  ClientCapabilitiesSchema,
   ClearQueueResponseSchema,
   CommandAcceptedResponseSchema,
+  ConnectionCapabilitiesResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
-  DraftUpdateRequestSchema,
   ErrorResponseSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
@@ -17,6 +19,7 @@ import {
   PromptCommandRequestSchema,
   SessionNameUpdateRequestSchema,
   SessionSnapshotSchema,
+  SessionToolsResponseSchema,
   SteerCommandRequestSchema,
   StreamReadResponseSchema,
   UiResponseRequestSchema,
@@ -26,6 +29,13 @@ import {
 const sessionIdPathParameter = {
   in: "path" as const,
   name: "sessionId",
+  schema: { type: "string" as const },
+  required: true,
+};
+
+const connectionIdPathParameter = {
+  in: "path" as const,
+  name: "connectionId",
   schema: { type: "string" as const },
   required: true,
 };
@@ -149,6 +159,20 @@ export const appSnapshotRouteDescription = {
   },
 };
 
+export const updateConnectionCapabilitiesRouteDescription = {
+  tags: ["connections"],
+  operationId: "updateConnectionCapabilities",
+  parameters: [connectionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(ClientCapabilitiesSchema),
+  },
+  responses: {
+    200: jsonResponse("Connection capabilities updated", ConnectionCapabilitiesResponseSchema),
+    401: jsonResponse("Unauthorized", ErrorResponseSchema),
+  },
+};
+
 export const createSessionRouteDescription = {
   tags: ["command"],
   operationId: "createSession",
@@ -172,6 +196,16 @@ export const sessionSnapshotRouteDescription = {
   },
 };
 
+export const sessionToolsRouteDescription = {
+  tags: ["snapshot"],
+  operationId: "getSessionTools",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session tools", SessionToolsResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
 export const promptSessionRouteDescription = commandRouteDescription(
   "promptSession",
   PromptCommandRequestSchema,
@@ -188,9 +222,9 @@ export const interruptSessionRouteDescription = commandRouteDescription(
   "interruptSession",
   InterruptCommandRequestSchema,
 );
-export const updateSessionDraftRouteDescription = commandRouteDescription(
-  "updateSessionDraft",
-  DraftUpdateRequestSchema,
+export const updateSessionActiveToolsRouteDescription = commandRouteDescription(
+  "updateSessionActiveTools",
+  ActiveToolsUpdateRequestSchema,
 );
 export const updateSessionModelRouteDescription = commandRouteDescription(
   "updateSessionModel",

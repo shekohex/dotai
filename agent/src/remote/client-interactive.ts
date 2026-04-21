@@ -9,7 +9,7 @@ import {
   defaultSessionNameFromCwd,
   readRemotePrivateKey,
 } from "./client-runtime.js";
-import type { RemoteExtensionMetadata } from "./schemas.js";
+import type { ClientCapabilities, RemoteExtensionMetadata } from "./schemas.js";
 
 function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRuntime {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -185,6 +185,7 @@ function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
 export interface RunRemoteInteractiveModeOptions {
   clientExtensionMetadata?: RemoteExtensionMetadata[];
   clientExtensionFactories?: ExtensionFactory[];
+  clientCapabilities?: ClientCapabilities;
 }
 
 export async function runRemoteInteractiveMode(
@@ -207,6 +208,7 @@ export async function runRemoteInteractiveMode(
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
     clientExtensionMetadata: options.clientExtensionMetadata,
     clientExtensionFactories: options.clientExtensionFactories,
+    clientCapabilities: options.clientCapabilities,
   });
 
   if (!isInteractiveRuntimeContract(runtimeCandidate)) {

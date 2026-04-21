@@ -2,7 +2,6 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AgentSessionRuntime, ExtensionUIContext } from "@mariozechner/pi-coding-agent";
 import { defaultSettings } from "../../default-settings.js";
-import { theme as defaultTheme } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import type { AuthSession } from "../auth.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import type {
@@ -17,30 +16,6 @@ import type {
   UiResponseRequest,
 } from "../schemas.js";
 import type { InMemoryDurableStreamStore } from "../streams.js";
-
-export type RenderableComponent = {
-  render: (width: number) => string[];
-  invalidate: () => void;
-  dispose?: () => void;
-};
-
-export type RemoteUiRenderState = {
-  theme: typeof defaultTheme;
-  footerStatuses: Map<string, string>;
-  footerData: {
-    getGitBranch: () => null;
-    getExtensionStatuses: () => Map<string, string>;
-    getAvailableProviderCount: () => number;
-    onBranchChange: () => () => void;
-  };
-  headerComponent: RenderableComponent | undefined;
-  footerComponent: RenderableComponent | undefined;
-  renderHeader: () => void;
-  renderFooter: () => void;
-  tui: {
-    requestRender: () => void;
-  };
-};
 
 export type RemoteUiInputHandlers = Pick<
   ExtensionUIContext,
@@ -77,13 +52,6 @@ export interface SessionRecord {
     defaultModel: string | null;
     defaultThinkingLevel: string | null;
     enabledModels: string[] | null;
-  };
-  draft: {
-    text: string;
-    attachments: string[];
-    revision: number;
-    updatedAt: number;
-    updatedByClientId: string | null;
   };
   transcript: unknown[];
   queue: {
@@ -157,16 +125,6 @@ export function createEmptyResourceBundle(): SessionRecord["resources"] {
 
 export function createEmptySettingsSnapshot(): SessionRecord["settings"] {
   return { ...defaultSettings };
-}
-
-export function createInitialDraft(createdAt: number): SessionRecord["draft"] {
-  return {
-    text: "",
-    attachments: [],
-    revision: 0,
-    updatedAt: createdAt,
-    updatedByClientId: null,
-  };
 }
 
 export function createInitialQueue(): SessionRecord["queue"] {

@@ -98,12 +98,12 @@ export function isRemoteExtensionMetadataLike(value: unknown): value is RemoteEx
   }
 
   const id = Reflect.get(value, "id");
-  const host = Reflect.get(value, "host");
+  const runtime = Reflect.get(value, "runtime");
   const extensionPath = Reflect.get(value, "path");
   return (
     typeof id === "string" &&
     typeof extensionPath === "string" &&
-    (host === "server-bound" || host === "ui-only")
+    (runtime === "server" || runtime === "client")
   );
 }
 

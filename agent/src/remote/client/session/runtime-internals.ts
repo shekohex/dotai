@@ -4,6 +4,7 @@ import type { StreamEventEnvelope } from "../../schemas.js";
 import {
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,
+  cancelRemoteUiRequest,
   isAgentMessageLike,
   isAgentSessionEventLike,
   patchSettingsManagerForRemoteModelSettings,
@@ -42,6 +43,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.state.thinkingLevel = this._thinkingLevel;
     this.setResolvedModel(snapshot.model);
     this.activeTools = [...snapshot.activeTools];
+    await this.refreshRemoteToolCatalog();
     this.queueDepth = snapshot.queue.depth;
     this.sessionManager.appendSessionInfo(snapshot.sessionName);
   }
@@ -52,16 +54,22 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   dispose(): Promise<void> {
     this.closed = true;
+    for (const pendingRequest of this.pendingInteractiveRequests.values()) {
+      pendingRequest.abort();
+    }
+    this.pendingInteractiveRequests.clear();
     this.activeReadAbortController?.abort();
     this.activeReadAbortController = undefined;
     const task = this.pollingTask;
     if (!task) {
-      return Promise.resolve();
+      return this.shutdownLocalExtensions();
     }
-    return task.then(
-      () => {},
-      () => {},
-    );
+    return task
+      .then(
+        () => {},
+        () => {},
+      )
+      .then(() => this.shutdownLocalExtensions());
   }
 
   protected startPolling(): void {
@@ -139,9 +147,16 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       setSessionName: (sessionName) => {
         this.sessionManager.appendSessionInfo(sessionName);
       },
+      setActiveTools: (activeTools) => {
+        this.activeTools = [...activeTools];
+      },
       getUiContext: () => this.uiContext,
       bufferUiRequest: (request) => {
         this.bufferedUiRequests.push(request);
+      },
+      pendingInteractiveRequests: this.pendingInteractiveRequests,
+      cancelUiRequest: (requestId) => {
+        cancelRemoteUiRequest(this.pendingInteractiveRequests, requestId);
       },
     });
   }

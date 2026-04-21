@@ -39,4 +39,4 @@ export {
   resolveOptionalThinkingLevel,
   resolveThinkingLevel,
 } from "./session-shared.js";
-export { handleRemoteUiRequest } from "./session-ui.js";
+export { cancelRemoteUiRequest, handleRemoteUiRequest } from "./session-ui.js";

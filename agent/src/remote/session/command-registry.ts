@@ -14,7 +14,6 @@ import {
   createEmptySettingsSnapshot,
   createEmptyModelSettings,
   createIdleTaskState,
-  createInitialDraft,
   createInitialQueue,
   type SessionRecord,
 } from "./types.js";
@@ -56,7 +55,6 @@ function buildSessionRecord(input: {
     settings: createEmptySettingsSnapshot(),
     availableModels: [],
     modelSettings: createEmptyModelSettings(),
-    draft: createInitialDraft(input.createdAt),
     transcript: [],
     queue: createInitialQueue(),
     retry: createIdleTaskState(),
@@ -142,7 +140,6 @@ export function listSessionSummaries(input: {
       sessionId: record.sessionId,
       sessionName: record.sessionName,
       status: record.status,
-      draftRevision: record.draft.revision,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),

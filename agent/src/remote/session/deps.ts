@@ -1,12 +1,10 @@
 export {
   hasExtensionMetadataChange,
   isApiModel,
-  isRenderableComponent,
   parseResourceLoaderExtensionMetadata,
   parseRuntimeExtensionMetadata,
 } from "./helpers.js";
 export {
-  handleDraftUpdateCommand,
   handleFollowUpCommand,
   handleInterruptCommand,
   handlePromptCommand,
@@ -23,6 +21,7 @@ export {
 export { disposeSessionRegistry } from "./lifecycle-ops.js";
 export {
   appendExtensionUiRequestEvent,
+  appendExtensionUiResolvedEvent,
   emitSessionSummaryUpdatedEvent,
   handleRegistrySessionEvent,
 } from "./event-stream-ops.js";
@@ -56,14 +55,12 @@ export {
   ALLOWED_THINKING_LEVELS,
   createEmptyModelSettings,
   createIdleTaskState,
-  createInitialDraft,
   createInitialQueue,
 } from "./types.js";
 export type {
   AcceptCommandHooks,
   AcceptedSessionCommand,
   RemoteUiInputHandlers,
-  RemoteUiRenderState,
   RemoteUiStatusHandlers,
   SessionRecord,
   SessionRegistryOptions,

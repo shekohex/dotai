@@ -4,6 +4,10 @@ import {
   sessionEventsStreamId,
   type InMemoryDurableStreamStore,
 } from "../streams.js";
+import type {
+  ExtensionUiRequestEventPayload,
+  ExtensionUiResolvedEventPayload,
+} from "../schemas.js";
 import { hasExtensionMetadataChange } from "./helpers.js";
 import { handleSessionEventForRecord } from "./event-ops.js";
 import type { SessionRecord } from "./types.js";
@@ -20,7 +24,6 @@ export function emitSessionSummaryUpdatedEvent(input: {
       sessionId: input.record.sessionId,
       sessionName: input.record.sessionName,
       status: input.record.status,
-      draftRevision: input.record.draft.revision,
       updatedAt: input.record.updatedAt,
     },
     ts: input.ts,
@@ -31,12 +34,26 @@ export function emitSessionSummaryUpdatedEvent(input: {
 export function appendExtensionUiRequestEvent(input: {
   streams: InMemoryDurableStreamStore;
   record: SessionRecord;
-  payload: import("../schemas.js").ExtensionUiRequestEventPayload;
+  payload: ExtensionUiRequestEventPayload;
   ts: number;
 }): void {
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_ui_request",
+    payload: input.payload,
+    ts: input.ts,
+  });
+}
+
+export function appendExtensionUiResolvedEvent(input: {
+  streams: InMemoryDurableStreamStore;
+  record: SessionRecord;
+  payload: ExtensionUiResolvedEventPayload;
+  ts: number;
+}): void {
+  input.streams.append(sessionEventsStreamId(input.record.sessionId), {
+    sessionId: input.record.sessionId,
+    kind: "extension_ui_resolved",
     payload: input.payload,
     ts: input.ts,
   });

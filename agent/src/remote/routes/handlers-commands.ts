@@ -1,5 +1,5 @@
 import type {
-  DraftUpdateRequest,
+  ActiveToolsUpdateRequest,
   FollowUpCommandRequest,
   InterruptCommandRequest,
   ModelUpdateRequest,
@@ -87,15 +87,15 @@ export function handleInterruptSession(
   });
 }
 
-export function handleUpdateSessionDraft(
+export function handleUpdateSessionActiveTools(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
-  payload: DraftUpdateRequest,
+  payload: ActiveToolsUpdateRequest,
 ): Promise<Response> {
   return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
-    const accepted = await dependencies.sessions.updateDraft(
+    const accepted = await dependencies.sessions.updateActiveTools(
       sessionId,
       payload,
       c.get("auth"),

@@ -7,19 +7,6 @@ type ConfirmUiRequest = Extract<ExtensionUiRequestEventPayload, { method: "confi
 type InputUiRequest = Extract<ExtensionUiRequestEventPayload, { method: "input" }>;
 type EditorUiRequest = Extract<ExtensionUiRequestEventPayload, { method: "editor" }>;
 
-function toUiLineComponentFactory(
-  lines: string[] | undefined,
-): (() => { render: () => string[]; invalidate: () => void }) | undefined {
-  if (!lines) {
-    return undefined;
-  }
-  const nextLines = [...lines];
-  return () => ({
-    render: () => [...nextLines],
-    invalidate: () => {},
-  });
-}
-
 function applyImmediateUiRequest(
   uiContext: ExtensionUIContext,
   request: ExtensionUiRequestEventPayload,
@@ -50,14 +37,6 @@ function applyImmediateUiRequest(
     uiContext.setTitle(request.title);
     return true;
   }
-  if (request.method === "setHeader") {
-    uiContext.setHeader(toUiLineComponentFactory(request.lines));
-    return true;
-  }
-  if (request.method === "setFooter") {
-    uiContext.setFooter(toUiLineComponentFactory(request.lines));
-    return true;
-  }
   if (request.method === "setToolsExpanded") {
     uiContext.setToolsExpanded(request.expanded);
     return true;
@@ -74,24 +53,49 @@ async function applyInteractiveUiRequest(input: {
   request: ExtensionUiRequestEventPayload;
   client: RemoteApiClient;
   sessionId: string;
+  pendingInteractiveRequests: Map<string, AbortController>;
 }): Promise<void> {
   if (input.request.method === "select") {
-    await postSelectUiResponse(input.uiContext, input.client, input.sessionId, input.request);
+    await postSelectUiResponse(
+      input.uiContext,
+      input.client,
+      input.sessionId,
+      input.request,
+      input.pendingInteractiveRequests,
+    );
     return;
   }
 
   if (input.request.method === "confirm") {
-    await postConfirmUiResponse(input.uiContext, input.client, input.sessionId, input.request);
+    await postConfirmUiResponse(
+      input.uiContext,
+      input.client,
+      input.sessionId,
+      input.request,
+      input.pendingInteractiveRequests,
+    );
     return;
   }
 
   if (input.request.method === "input") {
-    await postInputUiResponse(input.uiContext, input.client, input.sessionId, input.request);
+    await postInputUiResponse(
+      input.uiContext,
+      input.client,
+      input.sessionId,
+      input.request,
+      input.pendingInteractiveRequests,
+    );
     return;
   }
 
   if (input.request.method === "editor") {
-    await postEditorUiResponse(input.uiContext, input.client, input.sessionId, input.request);
+    await postEditorUiResponse(
+      input.uiContext,
+      input.client,
+      input.sessionId,
+      input.request,
+      input.pendingInteractiveRequests,
+    );
   }
 }
 
@@ -100,15 +104,23 @@ async function postSelectUiResponse(
   client: RemoteApiClient,
   sessionId: string,
   request: SelectUiRequest,
+  pendingInteractiveRequests: Map<string, AbortController>,
 ): Promise<void> {
   const id = request.id;
-  const value = await uiContext.select(request.title, request.options, {
-    timeout: request.timeout,
-  });
-  await client.postUiResponse(
-    sessionId,
-    value === undefined ? { id, cancelled: true } : { id, value },
-  );
+  const abortController = new AbortController();
+  pendingInteractiveRequests.set(id, abortController);
+  try {
+    const value = await uiContext.select(request.title, request.options, {
+      timeout: request.timeout,
+      signal: abortController.signal,
+    });
+    await client.postUiResponse(
+      sessionId,
+      value === undefined ? { id, cancelled: true } : { id, value },
+    );
+  } finally {
+    pendingInteractiveRequests.delete(id);
+  }
 }
 
 async function postConfirmUiResponse(
@@ -116,11 +128,19 @@ async function postConfirmUiResponse(
   client: RemoteApiClient,
   sessionId: string,
   request: ConfirmUiRequest,
+  pendingInteractiveRequests: Map<string, AbortController>,
 ): Promise<void> {
-  const confirmed = await uiContext.confirm(request.title, request.message, {
-    timeout: request.timeout,
-  });
-  await client.postUiResponse(sessionId, { id: request.id, confirmed });
+  const abortController = new AbortController();
+  pendingInteractiveRequests.set(request.id, abortController);
+  try {
+    const confirmed = await uiContext.confirm(request.title, request.message, {
+      timeout: request.timeout,
+      signal: abortController.signal,
+    });
+    await client.postUiResponse(sessionId, { id: request.id, confirmed });
+  } finally {
+    pendingInteractiveRequests.delete(request.id);
+  }
 }
 
 async function postInputUiResponse(
@@ -128,15 +148,23 @@ async function postInputUiResponse(
   client: RemoteApiClient,
   sessionId: string,
   request: InputUiRequest,
+  pendingInteractiveRequests: Map<string, AbortController>,
 ): Promise<void> {
   const id = request.id;
-  const value = await uiContext.input(request.title, request.placeholder, {
-    timeout: request.timeout,
-  });
-  await client.postUiResponse(
-    sessionId,
-    value === undefined ? { id, cancelled: true } : { id, value },
-  );
+  const abortController = new AbortController();
+  pendingInteractiveRequests.set(id, abortController);
+  try {
+    const value = await uiContext.input(request.title, request.placeholder, {
+      timeout: request.timeout,
+      signal: abortController.signal,
+    });
+    await client.postUiResponse(
+      sessionId,
+      value === undefined ? { id, cancelled: true } : { id, value },
+    );
+  } finally {
+    pendingInteractiveRequests.delete(id);
+  }
 }
 
 async function postEditorUiResponse(
@@ -144,13 +172,23 @@ async function postEditorUiResponse(
   client: RemoteApiClient,
   sessionId: string,
   request: EditorUiRequest,
+  pendingInteractiveRequests: Map<string, AbortController>,
 ): Promise<void> {
   const id = request.id;
-  const value = await uiContext.editor(request.title, request.prefill);
-  await client.postUiResponse(
-    sessionId,
-    value === undefined ? { id, cancelled: true } : { id, value },
-  );
+  const abortController = new AbortController();
+  pendingInteractiveRequests.set(id, abortController);
+  try {
+    const value = await uiContext.editor(request.title, request.prefill);
+    if (abortController.signal.aborted) {
+      return;
+    }
+    await client.postUiResponse(
+      sessionId,
+      value === undefined ? { id, cancelled: true } : { id, value },
+    );
+  } finally {
+    pendingInteractiveRequests.delete(id);
+  }
 }
 
 export async function handleRemoteUiRequest(input: {
@@ -158,6 +196,7 @@ export async function handleRemoteUiRequest(input: {
   request: ExtensionUiRequestEventPayload;
   client: RemoteApiClient;
   sessionId: string;
+  pendingInteractiveRequests: Map<string, AbortController>;
 }): Promise<void> {
   if (applyImmediateUiRequest(input.uiContext, input.request)) {
     return;
@@ -170,5 +209,18 @@ export async function handleRemoteUiRequest(input: {
       id: input.request.id,
       cancelled: true,
     });
+    input.pendingInteractiveRequests.delete(input.request.id);
   }
+}
+
+export function cancelRemoteUiRequest(
+  pendingInteractiveRequests: Map<string, AbortController>,
+  requestId: string,
+): void {
+  const controller = pendingInteractiveRequests.get(requestId);
+  if (!controller) {
+    return;
+  }
+  controller.abort();
+  pendingInteractiveRequests.delete(requestId);
 }

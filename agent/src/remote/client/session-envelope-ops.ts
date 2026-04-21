@@ -1,6 +1,13 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import type { ExtensionUiRequestEventPayload, StreamEventEnvelope } from "../schemas.js";
-import { ExtensionUiRequestEventPayloadSchema } from "../schemas.js";
+import type {
+  ExtensionUiRequestEventPayload,
+  ExtensionUiResolvedEventPayload,
+  StreamEventEnvelope,
+} from "../schemas.js";
+import {
+  ExtensionUiRequestEventPayloadSchema,
+  ExtensionUiResolvedEventPayloadSchema,
+} from "../schemas.js";
 import { assertType } from "../typebox.js";
 
 export async function routeRemoteSessionEnvelope(input: {
@@ -9,6 +16,7 @@ export async function routeRemoteSessionEnvelope(input: {
   onSessionStatePatchPayload: (payload: unknown) => void;
   onExtensionErrorPayload: (payload: unknown) => void;
   onExtensionUiRequestPayload: (payload: unknown) => Promise<void>;
+  onExtensionUiResolvedPayload: (payload: unknown) => void;
 }): Promise<void> {
   if (input.envelope.kind === "agent_session_event") {
     input.onAgentSessionPayload(input.envelope.payload);
@@ -27,6 +35,11 @@ export async function routeRemoteSessionEnvelope(input: {
 
   if (input.envelope.kind === "extension_ui_request") {
     await input.onExtensionUiRequestPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "extension_ui_resolved") {
+    input.onExtensionUiResolvedPayload(input.envelope.payload);
   }
 }
 
@@ -51,6 +64,20 @@ export function validateExtensionUiRequestPayload(
     return {
       ok: false,
       message: error instanceof Error ? error.message : "Invalid UI request payload",
+    };
+  }
+}
+
+export function validateExtensionUiResolvedPayload(
+  payload: unknown,
+): { ok: true; value: ExtensionUiResolvedEventPayload } | { ok: false; message: string } {
+  try {
+    assertType(ExtensionUiResolvedEventPayloadSchema, payload);
+    return { ok: true, value: payload };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Invalid UI resolved payload",
     };
   }
 }

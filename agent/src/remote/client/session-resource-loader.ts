@@ -231,7 +231,7 @@ function mergeRemoteAndClientExtensions(input: {
 }): LoadExtensionsResult {
   const syntheticRemote = input
     .getExtensionsMetadata()
-    .filter((extension) => extension.host === "server-bound")
+    .filter((extension) => extension.runtime === "server")
     .map((extension) => toRemoteLoadedExtension(extension));
   const loadedClient = input.loaded.extensions.map((extension, index) =>
     toClientLoadedExtension(extension, input.clientExtensions[index]),

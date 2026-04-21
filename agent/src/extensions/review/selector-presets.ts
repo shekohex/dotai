@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { REVIEW_PRESETS, TOGGLE_CUSTOM_INSTRUCTIONS_VALUE, type ReviewTarget } from "./deps.js";
 
 type SmartDefaultPreset = "uncommitted" | "baseBranch" | "commit";
@@ -36,6 +37,10 @@ function showReviewPresetMenu(
   items: SelectItem[],
   smartDefaultIndex: number,
 ): Promise<string | null> {
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    return showReviewPresetMenuFallback(ctx, items, smartDefaultIndex);
+  }
+
   return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
     const container = new Container();
     container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
@@ -76,6 +81,31 @@ function showReviewPresetMenu(
       },
     };
   });
+}
+
+async function showReviewPresetMenuFallback(
+  ctx: ExtensionContext,
+  items: SelectItem[],
+  smartDefaultIndex: number,
+): Promise<string | null> {
+  const orderedItems = [...items];
+  if (smartDefaultIndex > 0 && smartDefaultIndex < items.length) {
+    const [defaultItem] = orderedItems.splice(smartDefaultIndex, 1);
+    if (defaultItem !== undefined) {
+      orderedItems.unshift(defaultItem);
+    }
+  }
+
+  const selectedLabel = await ctx.ui.select(
+    "Select a review preset",
+    orderedItems.map((item) => item.label),
+  );
+  if (selectedLabel === undefined || selectedLabel.length === 0) {
+    return null;
+  }
+
+  const selectedItem = orderedItems.find((item) => item.label === selectedLabel);
+  return selectedItem?.value ?? null;
 }
 
 async function updateCustomReviewInstructions(

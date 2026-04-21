@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Text, type TUI } from "@mariozechner/pi-tui";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { showActionSelector, type FileAction } from "./actions.js";
 import { openDiff } from "./diff.js";
 
@@ -92,6 +93,21 @@ const editPath = async (
   target: BrowserFileEntry,
   content: string,
 ): Promise<void> => {
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    const updated = await ctx.ui.editor(`Edit ${target.displayPath}`, content);
+    if (updated === undefined) {
+      ctx.ui.notify("Edit cancelled", "info");
+      return;
+    }
+
+    try {
+      writeFileSync(target.resolvedPath, updated, "utf8");
+    } catch {
+      ctx.ui.notify(`Failed to save ${target.displayPath}`, "error");
+    }
+    return;
+  }
+
   const visualEditor = process.env.VISUAL;
   const fallbackEditor = process.env.EDITOR;
   const editorCmd =

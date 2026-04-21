@@ -19,6 +19,7 @@ type ApplyRemoteSessionStatePatchInput = {
   applyAuthoritativeCwd: (cwd: string) => void;
   setRemoteExtensions: (extensions: RemoteExtensionMetadata[]) => void;
   setSessionName: (sessionName: string) => void;
+  setActiveTools: (activeTools: string[]) => void;
 };
 
 export function applyRemoteSessionStatePatch(input: ApplyRemoteSessionStatePatchInput): void {
@@ -30,6 +31,7 @@ export function applyRemoteSessionStatePatch(input: ApplyRemoteSessionStatePatch
   applyRemoteModelAndThinkingPatch(input, patch);
   applyRemoteCwdAndExtensionsPatch(input, patch);
   applyRemoteSessionNamePatch(input, patch);
+  applyRemoteActiveToolsPatch(input, patch);
 }
 
 function applyRemoteAvailableModelsPatch(
@@ -108,4 +110,15 @@ function applyRemoteSessionNamePatch(
   if (typeof sessionName === "string") {
     input.setSessionName(sessionName);
   }
+}
+
+function applyRemoteActiveToolsPatch(
+  input: ApplyRemoteSessionStatePatchInput,
+  patch: Record<string, unknown> | undefined,
+): void {
+  const activeTools = patch ? Reflect.get(patch, "activeTools") : undefined;
+  if (!Array.isArray(activeTools) || !activeTools.every((tool) => typeof tool === "string")) {
+    return;
+  }
+  input.setActiveTools([...activeTools]);
 }

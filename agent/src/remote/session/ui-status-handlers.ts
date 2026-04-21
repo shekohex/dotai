@@ -1,18 +1,19 @@
 import { randomUUID } from "node:crypto";
-import type { RemoteUiRenderState, RemoteUiStatusHandlers } from "./types.js";
+import type { RemoteUiStatusHandlers } from "./types.js";
 import type { RemoteUiContextInput } from "./ui-context-types.js";
 
-export function createRemoteUiStatusHandlers(
-  input: RemoteUiContextInput,
-  renderState: RemoteUiRenderState,
-): RemoteUiStatusHandlers {
+export function createRemoteUiStatusHandlers(input: RemoteUiContextInput): RemoteUiStatusHandlers {
   return {
     notify: (message, notifyType) => {
       publishRemoteUiNotify(input, message, notifyType);
     },
-    onTerminalInput: () => () => {},
+    onTerminalInput: () => {
+      throw new Error(
+        "ctx.ui.onTerminalInput() is not supported in remote server runtime. Run terminal handlers on client runtime.",
+      );
+    },
     setStatus: (statusKey, statusText) => {
-      publishRemoteUiStatus(input, renderState, statusKey, statusText);
+      publishRemoteUiStatus(input, statusKey, statusText);
     },
     setWorkingMessage: (message) => {
       publishRemoteUiWorkingMessage(input, message);
@@ -26,7 +27,11 @@ export function createRemoteUiStatusHandlers(
     setTitle: (title) => {
       publishRemoteUiTitle(input, title);
     },
-    getToolsExpanded: () => true,
+    getToolsExpanded: () => {
+      throw new Error(
+        "ctx.ui.getToolsExpanded() is not supported in remote server runtime. Track tools panel state on client runtime.",
+      );
+    },
     setToolsExpanded: (expanded) => {
       publishRemoteUiToolsExpanded(input, expanded);
     },
@@ -48,18 +53,9 @@ function publishRemoteUiNotify(
 
 function publishRemoteUiStatus(
   input: RemoteUiContextInput,
-  renderState: RemoteUiRenderState,
   statusKey: string,
   statusText: string | undefined,
 ): void {
-  if (statusText === undefined) {
-    renderState.footerStatuses.delete(statusKey);
-  } else {
-    renderState.footerStatuses.set(statusKey, statusText);
-  }
-  if (renderState.footerComponent) {
-    renderState.renderFooter();
-  }
   input.publishUiEvent(input.record, {
     id: randomUUID(),
     method: "setStatus",
@@ -96,6 +92,14 @@ function publishRemoteUiWidget(
   content: unknown,
   options: unknown,
 ): void {
+  if (typeof content === "function") {
+    throw new TypeError(
+      "ctx.ui.setWidget() function content is not supported in remote server runtime. Send string[] widget lines or move widget rendering to client runtime.",
+    );
+  }
+  if (content !== undefined && !Array.isArray(content)) {
+    throw new TypeError("ctx.ui.setWidget() expects string[] content in remote server runtime");
+  }
   const placement = readWidgetPlacement(options);
   input.publishUiEvent(input.record, {
     id: randomUUID(),

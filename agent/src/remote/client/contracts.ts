@@ -7,7 +7,7 @@ import type {
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import type { RemoteExtensionMetadata } from "../schemas.js";
+import type { ClientCapabilities, RemoteExtensionMetadata } from "../schemas.js";
 
 export interface RemoteRuntimeAuthOptions {
   keyId: string;
@@ -24,6 +24,7 @@ export interface RemoteRuntimeOptions {
   agentDir?: string;
   clientExtensionMetadata?: RemoteExtensionMetadata[];
   clientExtensionFactories?: ExtensionFactory[];
+  clientCapabilities?: ClientCapabilities;
   fetchImpl?: typeof fetch;
 }
 

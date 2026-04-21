@@ -140,3 +140,25 @@ export function setSessionNameRemoteSession(input: {
     "Failed to update session name",
   );
 }
+
+export function setActiveToolsRemoteSession(input: {
+  toolNames: string[];
+  previousToolNames: string[];
+  setActiveToolsState: (toolNames: string[]) => void;
+  enqueueMutation: (execute: () => Promise<void>, rollback: () => void, label: string) => void;
+  client: RemoteApiClient;
+  sessionId: string;
+}): void {
+  input.setActiveToolsState(input.toolNames);
+  input.enqueueMutation(
+    async () => {
+      await input.client.updateActiveTools(input.sessionId, {
+        toolNames: input.toolNames,
+      });
+    },
+    () => {
+      input.setActiveToolsState(input.previousToolNames);
+    },
+    "Failed to update active tools",
+  );
+}

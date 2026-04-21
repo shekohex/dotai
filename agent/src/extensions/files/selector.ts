@@ -11,6 +11,7 @@ import {
   Text,
   type TUI,
 } from "@mariozechner/pi-tui";
+import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { handleFileSelectorInput } from "./selector-input.js";
 
 type SelectableFileEntry = {
@@ -56,6 +57,10 @@ function showFileSelectorDialog(
   selectedPath?: string | null,
   gitRoot?: string | null,
 ): Promise<string | null> {
+  if (!hasRuntimePrimitive(ctx, "custom")) {
+    return showFileSelectorFallback(files, selectedPath, ctx);
+  }
+
   return ctx.ui.custom<string | null>((tui, theme, keybindings, done) =>
     createFileSelectorComponent(ctx, files, items, quickAction, selectedPath, gitRoot, {
       tui,
@@ -67,6 +72,39 @@ function showFileSelectorDialog(
       done,
     }),
   );
+}
+
+async function showFileSelectorFallback(
+  files: SelectableFileEntry[],
+  selectedPath: string | null | undefined,
+  ctx: ExtensionContext,
+): Promise<string | null> {
+  const hasSelectedPath =
+    selectedPath !== undefined && selectedPath !== null && selectedPath.length > 0;
+  const orderedFiles = hasSelectedPath
+    ? [
+        ...files.filter((file) => file.canonicalPath === selectedPath),
+        ...files.filter((file) => file.canonicalPath !== selectedPath),
+      ]
+    : files;
+
+  const options = orderedFiles.map((file, index) => {
+    const directoryLabel = file.isDirectory ? " [directory]" : "";
+    const statusSuffix =
+      file.status !== undefined && file.status.length > 0 ? ` [${file.status}]` : "";
+    return `${index + 1}. ${file.displayPath}${directoryLabel}${statusSuffix}`;
+  });
+
+  const selected = await ctx.ui.select("Select file", options);
+  if (selected === undefined || selected.length === 0) {
+    return null;
+  }
+
+  const selectedIndex = options.findIndex((option) => option === selected);
+  if (selectedIndex < 0) {
+    return null;
+  }
+  return orderedFiles[selectedIndex]?.canonicalPath ?? null;
 }
 
 type FileSelectorRuntime = {

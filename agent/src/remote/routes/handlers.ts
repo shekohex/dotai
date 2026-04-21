@@ -2,14 +2,17 @@ import {
   AppSnapshotSchema,
   AuthChallengeResponseSchema,
   AuthVerifyResponseSchema,
+  ConnectionCapabilitiesResponseSchema,
   ClearQueueResponseSchema,
   CreateSessionResponseSchema,
+  SessionToolsResponseSchema,
   SessionSnapshotSchema,
   UiResponseResponseSchema,
 } from "../schemas.js";
 import type {
   AuthChallengeRequest,
   AuthVerifyRequest,
+  ClientCapabilities,
   CreateSessionRequest,
   UiResponseRequest,
 } from "../schemas.js";
@@ -60,6 +63,28 @@ export function handleAppSnapshot(
   });
 }
 
+export function handleUpdateConnectionCapabilities(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  connectionId: string,
+  payload: ClientCapabilities,
+): Promise<Response> {
+  return withAuthError(c, () => {
+    const updated = dependencies.sessions.setConnectionCapabilities(
+      connectionId,
+      payload,
+      c.get("auth"),
+    );
+    return jsonWithSchema(
+      c,
+      ConnectionCapabilitiesResponseSchema,
+      updated,
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
 export function handleCreateSession(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,
@@ -91,6 +116,24 @@ export function handleSessionSnapshot(
       connectionId,
     );
     return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, connectionHeader(connectionId));
+  });
+}
+
+export function handleSessionTools(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, () => {
+    const connectionId = getConnectionId(c);
+    const tools = dependencies.sessions.getSessionTools(sessionId, c.get("auth"), connectionId);
+    return jsonWithSchema(
+      c,
+      SessionToolsResponseSchema,
+      { tools },
+      200,
+      connectionHeader(connectionId),
+    );
   });
 }
 

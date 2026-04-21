@@ -1,6 +1,4 @@
-import { sign } from "node:crypto";
 import { hc } from "hono/client";
-import { createChallengePayload } from "./auth.js";
 import type { createV1Routes } from "./routes.js";
 import type {
   AppSnapshot,
@@ -11,24 +9,25 @@ import type {
 } from "./schemas.js";
 import {
   AppSnapshotSchema,
-  AuthChallengeResponseSchema,
-  AuthVerifyResponseSchema,
   ClearQueueResponseSchema,
   CreateSessionResponseSchema,
   SessionSnapshotSchema,
 } from "./schemas.js";
 import { assertType } from "./typebox.js";
 import {
+  requestRemoteAuthToken,
+  type RemoteApiClientAuthOptions,
+} from "./remote-api-client-auth.js";
+import {
   type ReadSessionEventsOptions,
   type StreamReadResult,
   readSessionEventsFromSse,
   toRemoteHttpError,
 } from "./remote-api-client-utils.js";
+
 type RemoteV1Routes = ReturnType<typeof createV1Routes>;
-export interface RemoteApiClientAuthOptions {
-  keyId: string;
-  privateKey: string;
-}
+type AuthFlowMode = "normal" | "forced";
+
 export class RemoteApiClient {
   private readonly rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
   private readonly auth: RemoteApiClientAuthOptions;
@@ -36,6 +35,7 @@ export class RemoteApiClient {
   private readonly fetchImpl: typeof fetch;
   private token: string | undefined;
   private connectionId: string | undefined;
+  private authTask: Promise<void> | undefined;
   private readonly sessionStreamCursors = new Map<string, string>();
   constructor(options: {
     origin: string;
@@ -50,39 +50,40 @@ export class RemoteApiClient {
     this.auth = options.auth;
     this.connectionId = options.connectionId;
   }
-  async authenticate(): Promise<void> {
-    const challengeResponse = await this.rpcClient.auth.challenge.$post({
-      json: { keyId: this.auth.keyId },
+  authenticate(): Promise<void> {
+    return this.runAuthFlow("normal");
+  }
+
+  reauthenticate(): Promise<void> {
+    return this.runAuthFlow("forced");
+  }
+
+  private runAuthFlow(mode: AuthFlowMode): Promise<void> {
+    if (mode === "normal" && this.token !== undefined && this.token.length > 0) {
+      return Promise.resolve();
+    }
+    if (this.authTask !== undefined) {
+      return this.authTask;
+    }
+
+    const authTask = this.authenticateWithChallenge().finally(() => {
+      if (this.authTask === authTask) {
+        this.authTask = undefined;
+      }
     });
-    this.captureConnectionId(challengeResponse);
-    if (challengeResponse.status !== 200) throw await toRemoteHttpError(challengeResponse);
 
-    const challengePayload: unknown = await challengeResponse.json();
-    assertType(AuthChallengeResponseSchema, challengePayload);
-    const challenge = challengePayload;
-    const signature = sign(
-      null,
-      Buffer.from(
-        createChallengePayload({
-          challengeId: challenge.challengeId,
-          keyId: this.auth.keyId,
-          nonce: challenge.nonce,
-          origin: challenge.origin,
-          expiresAt: challenge.expiresAt,
-        }),
-      ),
-      this.auth.privateKey,
-    ).toString("base64");
+    this.authTask = authTask;
+    return authTask;
+  }
 
-    const verifyResponse = await this.rpcClient.auth.verify.$post({
-      json: { challengeId: challenge.challengeId, keyId: this.auth.keyId, signature },
+  private async authenticateWithChallenge(): Promise<void> {
+    this.token = await requestRemoteAuthToken({
+      rpcAuthClient: this.rpcClient.auth,
+      auth: this.auth,
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
     });
-    this.captureConnectionId(verifyResponse);
-    if (verifyResponse.status !== 200) throw await toRemoteHttpError(verifyResponse);
-
-    const verifiedPayload: unknown = await verifyResponse.json();
-    assertType(AuthVerifyResponseSchema, verifiedPayload);
-    this.token = verifiedPayload.token;
   }
 
   async getAppSnapshot(): Promise<AppSnapshot> {

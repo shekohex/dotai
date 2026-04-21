@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = import.meta.dirname;
 const packageDir = join(__dirname, "..");
 const templatePath = join(packageDir, "dist", "defaults", "settings.json");
 const modesTemplatePath = join(packageDir, "dist", "defaults", "modes.json");
@@ -20,19 +19,17 @@ const dependencyPatchApplyMarker = join(
 );
 
 if (isMain()) {
-  await runPostinstall();
+  runPostinstall();
 }
 
-export async function runPostinstall() {
+export function runPostinstall() {
   if (process.env.SHEKOHEX_AGENT_SKIP_SETTINGS_INSTALL === "1") {
     console.log("[shekohex/agent] Skipping settings seed (SHEKOHEX_AGENT_SKIP_SETTINGS_INSTALL=1)");
-    await ensureDependencyPatches();
+    ensureDependencyPatches();
     process.exit(0);
   }
 
-  if (!existsSync(templatePath)) {
-    console.log(`[shekohex/agent] Skipping settings seed; template not found: ${templatePath}`);
-  } else {
+  if (existsSync(templatePath)) {
     mkdirSync(agentDir, { recursive: true });
 
     if (existsSync(targetPath)) {
@@ -41,11 +38,11 @@ export async function runPostinstall() {
       copyFileSync(templatePath, targetPath);
       console.log(`[shekohex/agent] Seeded default settings: ${targetPath}`);
     }
+  } else {
+    console.log(`[shekohex/agent] Skipping settings seed; template not found: ${templatePath}`);
   }
 
-  if (!existsSync(modesTemplatePath)) {
-    console.log(`[shekohex/agent] Skipping modes seed; template not found: ${modesTemplatePath}`);
-  } else {
+  if (existsSync(modesTemplatePath)) {
     mkdirSync(agentDir, { recursive: true });
 
     if (existsSync(modesTargetPath)) {
@@ -54,26 +51,23 @@ export async function runPostinstall() {
       copyFileSync(modesTemplatePath, modesTargetPath);
       console.log(`[shekohex/agent] Seeded default modes: ${modesTargetPath}`);
     }
+  } else {
+    console.log(`[shekohex/agent] Skipping modes seed; template not found: ${modesTemplatePath}`);
   }
 
-  await ensureDependencyPatches();
+  ensureDependencyPatches();
 }
 
-export async function ensureDependencyPatches() {
-  const patchFiles = listDependencyPatchFiles();
-  if (patchFiles.length === 0) {
+export function ensureDependencyPatches() {
+  if (areDependencyPatchesApplied()) {
     return;
   }
 
-  if (areDependencyPatchesApplied(patchFiles)) {
-    return;
-  }
-
-  await applyDependencyPatches();
+  applyDependencyPatches();
   writeFileSync(dependencyPatchApplyMarker, `${new Date().toISOString()}\n`, "utf8");
 }
 
-export async function applyDependencyPatches() {
+export function applyDependencyPatches() {
   if (!existsSync(patchPackageBin)) {
     console.log(
       `[shekohex/agent] Skipping dependency patches; patch-package not found: ${patchPackageBin}`,
@@ -108,7 +102,8 @@ function listDependencyPatchFiles() {
     .map((entry) => join(patchesDir, entry));
 }
 
-function areDependencyPatchesApplied(patchFiles) {
+function areDependencyPatchesApplied() {
+  const patchFiles = listDependencyPatchFiles();
   if (patchFiles.length === 0) {
     return true;
   }
@@ -125,9 +120,9 @@ function areDependencyPatchesApplied(patchFiles) {
 }
 
 function isMain() {
-  if (!process.argv[1]) {
+  if (process.argv[1] === undefined || process.argv[1].length === 0) {
     return false;
   }
 
-  return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  return resolve(process.argv[1]) === import.meta.filename;
 }

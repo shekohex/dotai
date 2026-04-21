@@ -1,4 +1,4 @@
 #!/usr/bin/env node
 import { ensureDependencyPatches } from "../scripts/postinstall.mjs";
-await ensureDependencyPatches();
+ensureDependencyPatches();
 await import("../dist/cli.js");

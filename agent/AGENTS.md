@@ -43,6 +43,11 @@ This package provides:
 └── package.json
 ```
 
+## Project Rules
+
+- You must use `@sinclair/typebox` package instead of manually parsing inputs and validation of data.
+- Prefere spliting your code into multiple modules so it can be reused.
+
 ## Development Commands
 
 ### Build

@@ -19,7 +19,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint -f json",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
@@ -65,6 +65,7 @@
     "@types/node": "^20.11.17",
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0",
+    "oxlint-tsgolint": "^0.21.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },

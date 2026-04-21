@@ -1,8 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = import.meta.dirname;
 const packageDir = join(__dirname, "..");
 const binDir = join(packageDir, "bin");
 const distCliPath = join(packageDir, "dist", "cli.js");
@@ -11,7 +10,7 @@ const windowsBinPath = join(binDir, "pi.cmd");
 
 const unixBinContents = `#!/usr/bin/env node
 import { ensureDependencyPatches } from "../scripts/postinstall.mjs";
-await ensureDependencyPatches();
+ensureDependencyPatches();
 await import("../dist/cli.js");
 `;
 
@@ -21,21 +20,24 @@ node "%~dp0\\pi.js" %*
 
 mkdirSync(binDir, { recursive: true });
 
-writeIfChanged(unixBinPath, unixBinContents);
-writeIfChanged(windowsBinPath, windowsBinContents);
+const existingUnix = existsSync(unixBinPath) ? readFileSync(unixBinPath, "utf8") : undefined;
+if (existingUnix !== unixBinContents) {
+  writeFileSync(unixBinPath, unixBinContents, "utf8");
+}
 
-chmodIfExists(unixBinPath, 0o755);
-chmodIfExists(distCliPath, 0o755);
+const existingWindows = existsSync(windowsBinPath)
+  ? readFileSync(windowsBinPath, "utf8")
+  : undefined;
+if (existingWindows !== windowsBinContents) {
+  writeFileSync(windowsBinPath, windowsBinContents, "utf8");
+}
+
+if (existsSync(unixBinPath)) {
+  chmodSync(unixBinPath, 0o755);
+}
+
+if (existsSync(distCliPath)) {
+  chmodSync(distCliPath, 0o755);
+}
 
 console.log(`[shekohex/agent] Prepared bin wrappers in ${binDir}`);
-
-function writeIfChanged(path, contents) {
-  const existing = existsSync(path) ? readFileSync(path, "utf8") : undefined;
-  if (existing === contents) return;
-  writeFileSync(path, contents, "utf8");
-}
-
-function chmodIfExists(path, mode) {
-  if (!existsSync(path)) return;
-  chmodSync(path, mode);
-}

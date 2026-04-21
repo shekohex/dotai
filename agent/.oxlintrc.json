@@ -1,10 +1,23 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc"],
+  "plugins": ["typescript", "unicorn", "oxc", "node", "jsdoc", "import"],
   "categories": {
-    "correctness": "error"
+    "correctness": "error",
+    "pedantic": "warn",
+    "suspicious": "warn"
   },
-  "rules": {},
+  "ignorePatterns": [".pi/extensions/forbid.ts", "test/**", "**/**/*.test.ts"],
+  "options": {
+    "typeAware": true,
+    "typeCheck": true,
+    "reportUnusedDisableDirectives": "warn"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-unsafe-type-assertion": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "no-nested-ternary": "error"
+  },
   "env": {
     "builtin": true
   }

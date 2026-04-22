@@ -94,39 +94,38 @@ export function createRemoteLocalExtensionRunner(input: {
 
 export type ForwardableRemoteExtensionEvent =
   | Extract<
-    ExtensionEvent,
-    {
-      type:
-      | "agent_start"
-      | "agent_end"
-      | "turn_start"
-      | "turn_end"
-      | "message_start"
-      | "message_update"
-      | "message_end"
-      | "tool_execution_start"
-      | "tool_execution_update"
-      | "tool_execution_end";
-    }
-  >
+      ExtensionEvent,
+      {
+        type:
+          | "agent_start"
+          | "agent_end"
+          | "turn_start"
+          | "turn_end"
+          | "message_start"
+          | "message_update"
+          | "message_end"
+          | "tool_execution_start"
+          | "tool_execution_update"
+          | "tool_execution_end";
+      }
+    >
   | Extract<
-    AgentSessionEvent,
-    {
-      type:
-      | "queue_update"
-      | "compaction_start"
-      | "compaction_end"
-      | "auto_retry_start"
-      | "auto_retry_end";
-    }
-  >;
+      AgentSessionEvent,
+      {
+        type:
+          | "queue_update"
+          | "compaction_start"
+          | "compaction_end"
+          | "auto_retry_start"
+          | "auto_retry_end";
+      }
+    >;
 
 export function toForwardableRemoteExtensionEvent(
   event: AgentSessionEvent,
   turnIndex: number,
   timestamp: number,
 ): ForwardableRemoteExtensionEvent | undefined {
-
   switch (event.type) {
     case "turn_start":
       return {

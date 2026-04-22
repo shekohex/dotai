@@ -12,6 +12,7 @@ import {
   readRemoteSettingsSnapshot,
   resolveThinkingLevel,
 } from "../session-deps.js";
+import { mirrorSessionEventMessage } from "../session-manager-mirror.js";
 import {
   applyRemoteAgentEventAndEmit,
   enqueueRemoteSessionMutation,
@@ -224,6 +225,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   }
 
   protected applyAgentSessionEvent(event: AgentSessionEvent): void {
+    mirrorSessionEventMessage(this.sessionManager, event);
     this.forwardAgentSessionEventToLocalExtensions(event);
     const next = applyRemoteAgentEventAndEmit({
       event,

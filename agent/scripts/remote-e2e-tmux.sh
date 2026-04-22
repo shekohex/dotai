@@ -148,7 +148,7 @@ start_session() {
   local server_cmd
   local client_cmd
   server_cmd="cd ${root_q} && PI_REMOTE_PORT=${PORT} PI_REMOTE_ORIGIN=${origin_q} PI_REMOTE_ALLOWED_KEYS=${keys_q} npm run remote"
-  client_cmd="cd ${root_q} && npm run pi -- --remote-origin ${origin_q} --remote-key-id dev --remote-private-key-path ${private_q} --remote-session-name ${client_session_q}"
+  client_cmd="cd ${root_q} && npm run pi -- --mode-rush --remote-origin ${origin_q} --remote-key-id dev --remote-private-key-path ${private_q} --remote-session-name ${client_session_q}"
 
   local server_pane_id client_pane_id
 

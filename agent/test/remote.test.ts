@@ -27,6 +27,7 @@ import {
   type RemoteRuntimeFactory,
 } from "../src/remote/runtime-factory.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
+import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
@@ -1867,6 +1868,177 @@ timedTest("remote snapshot and adapter expose runtime context usage", async () =
     assert.equal(runtime.session.autoCompactionEnabled, true);
     assert.equal(runtime.session.steeringMode, "one-at-a-time");
     assert.equal(runtime.session.followUpMode, "all");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote adapter mirrors snapshot transcript into session entries", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  session.messages = [
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "pong" }],
+      usage: {
+        input: 2,
+        output: 3,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 5,
+        cost: {
+          input: 0.01,
+          output: 0.02,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0.03,
+        },
+      },
+      api: "responses",
+      provider: "pi-remote-faux",
+      model: "pi-remote-faux-1",
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
+  ];
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const messageEntries = runtime.session.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message");
+
+    assert.equal(messageEntries.length, 1);
+    assert.equal(messageEntries[0]?.message.role, "assistant");
+    assert.equal(
+      calculateTotalCost({ sessionManager: runtime.session.sessionManager } as ExtensionContext),
+      0.03,
+    );
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote adapter mirrors live message events into session entries", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const sessionAny = runtime.session as {
+      applyAgentSessionEvent: (event: {
+        type: "message_start" | "message_end";
+        message: Record<string, unknown>;
+      }) => void;
+    };
+
+    sessionAny.applyAgentSessionEvent({
+      type: "message_start",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "ping" }],
+        timestamp: Date.now(),
+      },
+    });
+    sessionAny.applyAgentSessionEvent({
+      type: "message_end",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "ping" }],
+        timestamp: Date.now(),
+      },
+    });
+    sessionAny.applyAgentSessionEvent({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "pong" }],
+        usage: {
+          input: 2,
+          output: 3,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 5,
+          cost: {
+            input: 0.01,
+            output: 0.02,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0.03,
+          },
+        },
+        api: "responses",
+        provider: "pi-remote-faux",
+        model: "pi-remote-faux-1",
+        stopReason: "stop",
+        timestamp: Date.now(),
+      },
+    });
+
+    const messageEntries = runtime.session.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message");
+
+    assert.equal(messageEntries.length, 2);
+    assert.equal(messageEntries[0]?.message.role, "user");
+    assert.equal(messageEntries[1]?.message.role, "assistant");
+    assert.equal(
+      calculateTotalCost({ sessionManager: runtime.session.sessionManager } as ExtensionContext),
+      0.03,
+    );
   } finally {
     await runtime?.dispose();
     await remote.dispose();

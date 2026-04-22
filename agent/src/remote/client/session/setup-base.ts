@@ -34,6 +34,7 @@ import {
 } from "../session-deps.js";
 import type { RemoteModelSettingsState } from "../contracts.js";
 import type { RemoteAgentSettings } from "../session-deps.js";
+import { rehydrateMirroredSessionManager } from "../session-manager-mirror.js";
 import {
   createRemoteLocalExtensionRunner,
   emitForwardableRemoteExtensionEvent,
@@ -346,11 +347,12 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   protected applyAuthoritativeCwdUpdate(nextCwd: string): void {
+    const currentSessionName = this.sessionManager.getSessionName();
     const cwdResult = applyAuthoritativeCwd({
       currentCwd: this.sessionManager.getCwd(),
       nextCwd,
       sessionId: this.sessionId,
-      currentSessionName: this.sessionManager.getSessionName(),
+      currentSessionName,
       remoteSettings: this.remoteSettings,
       remoteModelSettings: this.remoteModelSettings,
     });
@@ -359,6 +361,12 @@ export abstract class RemoteAgentSessionSetupBase {
     }
 
     this.sessionManager = cwdResult.sessionManager;
+    rehydrateMirroredSessionManager({
+      sessionManager: this.sessionManager,
+      sessionId: this.sessionId,
+      sessionName: currentSessionName,
+      messages: this.state.messages,
+    });
     this.settingsManager = cwdResult.settingsManager;
     this.refreshLocalExtensionRunnerAfterCwdChange();
   }

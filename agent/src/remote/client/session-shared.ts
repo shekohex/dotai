@@ -55,8 +55,8 @@ export function isAgentMessageLike(value: unknown): value is AgentMessage {
   return (
     role === "user" ||
     role === "assistant" ||
-    role === "system" ||
-    role === "tool" ||
+    role === "toolResult" ||
+    role === "bashExecution" ||
     role === "custom"
   );
 }

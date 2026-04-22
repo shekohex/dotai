@@ -22,6 +22,7 @@ import {
   readPendingToolCallId,
   resolveOptionalThinkingLevel,
 } from "./session-shared.js";
+import { initializeMirroredSessionManager } from "./session-manager-mirror.js";
 
 export type RemoteAgentSettings = Exclude<
   Parameters<typeof SettingsManager.inMemory>[0],
@@ -90,8 +91,12 @@ export function initializeRemoteSessionMetadata(
   sessionManager: SessionManager,
   snapshot: SessionSnapshot,
 ): void {
-  sessionManager.newSession({ id: snapshot.sessionId });
-  sessionManager.appendSessionInfo(snapshot.sessionName);
+  initializeMirroredSessionManager({
+    sessionManager,
+    sessionId: snapshot.sessionId,
+    sessionName: snapshot.sessionName,
+    messages: normalizeTranscript(snapshot.transcript),
+  });
 }
 
 export function applyRemoteSettingsSnapshot(

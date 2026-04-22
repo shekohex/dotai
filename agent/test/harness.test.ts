@@ -2858,6 +2858,17 @@ timedTest("/stash pop applies the latest entry and removes it from disk", async 
         session.events.uiCallsFor("notify").at(-1)?.args[0],
         "Applied latest stash entry (2 lines)",
       );
+      const latestPromptStashState = (
+        session.session as {
+          sessionManager: {
+            getEntries: () => Array<{ type: string; customType?: string; data?: unknown }>;
+          };
+        }
+      ).sessionManager
+        .getEntries()
+        .filter((entry) => entry.type === "custom" && entry.customType === "prompt-stash-state")
+        .at(-1);
+      assert.ok(latestPromptStashState);
       assert.deepEqual(await loadStashEntries(cwd), [entries[1]]);
     });
   } finally {

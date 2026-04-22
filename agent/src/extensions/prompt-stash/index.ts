@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { PromptStashBrowser, type PromptStashBrowserAction } from "./browser.js";
 import {
@@ -11,6 +13,25 @@ import {
   saveStashEntries,
   type PromptStashEntry,
 } from "./storage.js";
+
+const PROMPT_STASH_STATE_ENTRY = "prompt-stash-state";
+
+const PromptStashStateEntrySchema = Type.Object(
+  {
+    version: Type.Literal(STASH_VERSION),
+    id: Type.String(),
+    text: Type.String(),
+    createdAt: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+
+const PromptStashStateSchema = Type.Object(
+  {
+    entries: Type.Array(PromptStashStateEntrySchema),
+  },
+  { additionalProperties: false },
+);
 
 export type { PromptStashEntry };
 export { getStashFilePath, loadStashEntries, saveStashEntries } from "./storage.js";
@@ -36,16 +57,16 @@ function describeError(error: unknown): string {
   return String(error);
 }
 
-async function stashCurrentDraft(ctx: ExtensionContext): Promise<void> {
+async function stashCurrentDraft(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   const current = ctx.ui.getEditorText();
   if (current.trim().length === 0) {
     ctx.ui.notify("Nothing to stash", "info");
     return;
   }
 
-  const entries = await loadStashEntries(ctx.cwd);
+  const entries = await readPersistedStashEntries(ctx);
   const nextEntries = [createStashEntry(current), ...entries].slice(0, MAX_STASH_ENTRIES);
-  await saveStashEntries(ctx.cwd, nextEntries);
+  await persistStashEntries(pi, nextEntries, ctx);
   ctx.ui.setEditorText("");
 
   const pruned = Math.max(0, entries.length + 1 - MAX_STASH_ENTRIES);
@@ -53,8 +74,8 @@ async function stashCurrentDraft(ctx: ExtensionContext): Promise<void> {
   ctx.ui.notify(`Prompt stashed (${countLines(current)} lines)${suffix}`, "info");
 }
 
-async function popLatestEntry(ctx: ExtensionContext): Promise<void> {
-  const entries = await loadStashEntries(ctx.cwd);
+async function popLatestEntry(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  const entries = await readPersistedStashEntries(ctx);
   const entry = entries.at(0);
 
   if (entry === undefined) {
@@ -62,24 +83,29 @@ async function popLatestEntry(ctx: ExtensionContext): Promise<void> {
     return;
   }
 
-  await saveStashEntries(ctx.cwd, entries.slice(1));
+  await persistStashEntries(pi, entries.slice(1), ctx);
   ctx.ui.setEditorText(entry.text);
   ctx.ui.notify(`Applied latest stash entry (${countLines(entry.text)} lines)`, "info");
 }
 
-async function deleteStashEntry(ctx: ExtensionContext, entryId: string): Promise<boolean> {
-  const entries = await loadStashEntries(ctx.cwd);
+async function deleteStashEntry(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  entryId: string,
+): Promise<boolean> {
+  const entries = await readPersistedStashEntries(ctx);
   const nextEntries = entries.filter((entry) => entry.id !== entryId);
 
   if (nextEntries.length === entries.length) {
     return false;
   }
 
-  await saveStashEntries(ctx.cwd, nextEntries);
+  await persistStashEntries(pi, nextEntries, ctx);
   return true;
 }
 
 async function applyStashSelection(
+  pi: ExtensionAPI,
   ctx: ExtensionContext,
   action: PromptStashBrowserAction,
 ): Promise<void> {
@@ -95,7 +121,7 @@ async function applyStashSelection(
     }
 
     case "pop": {
-      const removed = await deleteStashEntry(ctx, action.entry.id);
+      const removed = await deleteStashEntry(pi, ctx, action.entry.id);
       if (!removed) {
         ctx.ui.notify("Selected stash entry no longer exists", "warning");
         return;
@@ -107,7 +133,7 @@ async function applyStashSelection(
     }
 
     case "delete": {
-      const removed = await deleteStashEntry(ctx, action.entry.id);
+      const removed = await deleteStashEntry(pi, ctx, action.entry.id);
       if (!removed) {
         ctx.ui.notify("Selected stash entry no longer exists", "warning");
         return;
@@ -119,7 +145,7 @@ async function applyStashSelection(
 }
 
 async function showStashBrowser(ctx: ExtensionContext): Promise<PromptStashBrowserAction> {
-  const entries = await loadStashEntries(ctx.cwd);
+  const entries = await readPersistedStashEntries(ctx);
   const draft = ctx.ui.getEditorText();
 
   if (!hasRuntimePrimitive(ctx, "custom")) {
@@ -148,6 +174,44 @@ async function showStashBrowser(ctx: ExtensionContext): Promise<PromptStashBrows
   }
 
   return result;
+}
+
+function readPersistedEntriesFromSessionEntries(
+  sessionEntries: SessionEntry[],
+): PromptStashEntry[] | undefined {
+  for (const entry of [...sessionEntries].toReversed()) {
+    if (entry.type !== "custom" || entry.customType !== PROMPT_STASH_STATE_ENTRY) {
+      continue;
+    }
+
+    if (!Value.Check(PromptStashStateSchema, entry.data)) {
+      continue;
+    }
+
+    const parsed = Value.Parse(PromptStashStateSchema, entry.data);
+    return parsed.entries.slice(0, MAX_STASH_ENTRIES);
+  }
+
+  return undefined;
+}
+
+function readPersistedStashEntries(ctx: ExtensionContext): Promise<PromptStashEntry[]> {
+  const persisted = readPersistedEntriesFromSessionEntries(ctx.sessionManager.getBranch());
+  if (persisted !== undefined) {
+    return Promise.resolve(persisted);
+  }
+
+  return loadStashEntries(ctx.cwd);
+}
+
+async function persistStashEntries(
+  pi: ExtensionAPI,
+  entries: PromptStashEntry[],
+  ctx: ExtensionContext,
+): Promise<void> {
+  const nextEntries = entries.slice(0, MAX_STASH_ENTRIES);
+  await saveStashEntries(ctx.cwd, nextEntries).catch(() => {});
+  pi.appendEntry(PROMPT_STASH_STATE_ENTRY, { entries: nextEntries });
 }
 
 async function showStashBrowserFallback(
@@ -210,12 +274,12 @@ export default function promptStashExtension(pi: ExtensionAPI): void {
         const trimmed = args.trim();
         if (trimmed === "") {
           const action = await showStashBrowser(ctx);
-          await applyStashSelection(ctx, action);
+          await applyStashSelection(pi, ctx, action);
           return;
         }
 
         if (trimmed === "pop") {
-          await popLatestEntry(ctx);
+          await popLatestEntry(pi, ctx);
           return;
         }
 
@@ -233,7 +297,7 @@ export default function promptStashExtension(pi: ExtensionAPI): void {
           return;
         }
 
-        await stashCurrentDraft(ctx);
+        await stashCurrentDraft(pi, ctx);
       });
     },
   });

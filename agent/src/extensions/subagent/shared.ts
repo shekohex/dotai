@@ -179,9 +179,10 @@ function isSubagentRenderState(value: unknown): value is SubagentRenderState {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
-  const startedAt: unknown = Reflect.get(value, "startedAt");
-  const endedAt: unknown = Reflect.get(value, "endedAt");
-  const interval: unknown = Reflect.get(value, "interval");
+
+  const startedAt = "startedAt" in value ? value.startedAt : undefined;
+  const endedAt = "endedAt" in value ? value.endedAt : undefined;
+  const interval = "interval" in value ? value.interval : undefined;
 
   const startedAtValid = startedAt === undefined || typeof startedAt === "number";
   const endedAtValid = endedAt === undefined || typeof endedAt === "number";
@@ -197,10 +198,15 @@ function isRuntimeSubagent(value: unknown): value is RuntimeSubagent {
   return (
     value !== null &&
     typeof value === "object" &&
-    typeof Reflect.get(value, "sessionId") === "string" &&
-    typeof Reflect.get(value, "name") === "string" &&
-    typeof Reflect.get(value, "status") === "string" &&
-    typeof Reflect.get(value, "task") === "string"
+    !Array.isArray(value) &&
+    "sessionId" in value &&
+    typeof value.sessionId === "string" &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "status" in value &&
+    typeof value.status === "string" &&
+    "task" in value &&
+    typeof value.task === "string"
   );
 }
 

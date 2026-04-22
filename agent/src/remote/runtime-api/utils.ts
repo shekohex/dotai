@@ -85,8 +85,8 @@ export async function toRemoteHttpError(response: Response): Promise<Error & { s
   try {
     const body: unknown = await response.json();
     const bodyObject = readObject(body);
-    const errorValue = bodyObject ? Reflect.get(bodyObject, "error") : undefined;
-    const detailsValue = bodyObject ? Reflect.get(bodyObject, "details") : undefined;
+    const errorValue = bodyObject?.error;
+    const detailsValue = bodyObject?.details;
     const errorMessage = typeof errorValue === "string" ? errorValue : undefined;
     const detailsMessage = typeof detailsValue === "string" ? detailsValue : undefined;
     const message =

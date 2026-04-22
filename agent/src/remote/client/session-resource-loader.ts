@@ -59,7 +59,7 @@ function toClientLoadedExtension(
 }
 
 function readRemoteResources(snapshot: SessionSnapshot): RemoteResourceBundle {
-  const resources: unknown = Reflect.get(snapshot, "resources");
+  const resources = snapshot.resources;
   if (resources === undefined) {
     return {
       skills: [],

@@ -49,7 +49,7 @@ function isRetryablePollingError(error: unknown): boolean {
 }
 
 function readErrorStatus(error: unknown): number | undefined {
-  const statusCandidate = isRecord(error) ? Reflect.get(error, "status") : undefined;
+  const statusCandidate = isRecord(error) ? error.status : undefined;
   return typeof statusCandidate === "number" ? statusCandidate : undefined;
 }
 

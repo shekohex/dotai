@@ -199,17 +199,17 @@ function installAssistantMessagePatch(
   if (assistantPatchInstalled) return;
 
   const prototype = AssistantMessageComponent.prototype;
-  if (Reflect.get(prototype, "__piMermaidPatched") === true) {
+  if (readObjectProperty(prototype, "__piMermaidPatched") === true) {
     assistantPatchInstalled = true;
     return;
   }
 
-  const originalUpdateContent = Reflect.get(prototype, "updateContent");
-  if (typeof originalUpdateContent !== "function") {
+  const originalUpdateContent = readObjectProperty(prototype, "updateContent");
+  if (!isUpdateContentMethod(originalUpdateContent)) {
     throw new TypeError("AssistantMessageComponent.updateContent is unavailable");
   }
 
-  Reflect.set(
+  writeObjectProperty(
     prototype,
     "updateContent",
     function (this: AssistantMessagePatchInstance, message: AssistantMessage): void {
@@ -217,8 +217,40 @@ function installAssistantMessagePatch(
     },
   );
 
-  Reflect.set(prototype, "__piMermaidPatched", true);
+  writeObjectProperty(prototype, "__piMermaidPatched", true);
   assistantPatchInstalled = true;
+}
+
+function readObjectProperty(target: object, key: PropertyKey): unknown {
+  let current: object | null = target;
+  while (current) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor) {
+      if ("value" in descriptor) {
+        return descriptor.value;
+      }
+      return descriptor.get?.call(target);
+    }
+    const parent: unknown = Object.getPrototypeOf(current);
+    current = parent !== null && typeof parent === "object" ? parent : null;
+  }
+
+  return undefined;
+}
+
+function writeObjectProperty(target: object, key: PropertyKey, value: unknown): void {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  });
+}
+
+function isUpdateContentMethod(
+  value: unknown,
+): value is (this: AssistantMessagePatchInstance, message: AssistantMessage) => void {
+  return typeof value === "function";
 }
 
 export { installAssistantMessagePatch };

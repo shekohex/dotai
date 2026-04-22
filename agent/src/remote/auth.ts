@@ -1,5 +1,15 @@
 import { createPublicKey, randomBytes, randomUUID, verify, type KeyObject } from "node:crypto";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { RemoteError } from "./errors.js";
+
+const AllowedPublicKeySchema = Type.Object(
+  {
+    keyId: Type.String(),
+    publicKey: Type.String(),
+  },
+  { additionalProperties: false },
+);
 
 export interface AllowedPublicKey {
   keyId: string;
@@ -210,19 +220,15 @@ export function parseAllowedKeys(value: string | undefined): AllowedPublicKey[] 
   }
 
   try {
-    const parsed = JSON.parse(value) as unknown;
+    const parsed: unknown = JSON.parse(value);
     if (Array.isArray(parsed)) {
       return parsed
         .map((entry) => {
-          if (entry === null || typeof entry !== "object") {
+          if (!Value.Check(AllowedPublicKeySchema, entry)) {
             return null;
           }
-          const keyId: unknown = Reflect.get(entry, "keyId");
-          const publicKey: unknown = Reflect.get(entry, "publicKey");
-          if (typeof keyId !== "string" || typeof publicKey !== "string") {
-            return null;
-          }
-          return { keyId, publicKey };
+
+          return Value.Parse(AllowedPublicKeySchema, entry);
         })
         .filter((entry): entry is AllowedPublicKey => entry !== null);
     }

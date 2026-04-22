@@ -25,6 +25,19 @@ export type EditorInternals = {
   pasteCounter: number;
 };
 
+function readObjectProperty(target: object, key: PropertyKey): unknown {
+  return Object.getOwnPropertyDescriptor(target, key)?.value;
+}
+
+function writeObjectProperty(target: object, key: PropertyKey, value: unknown): void {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  });
+}
+
 const STRIP_ANSI_PATTERN = new RegExp(
   `${String.fromCodePoint(27)}(?:\\[[0-9;? ]*[ -/]*[@-~]|_pi:c${String.fromCodePoint(7)})`,
   "g",
@@ -111,7 +124,7 @@ export function createPasteMarker(
 }
 
 export function readEditorInternals(target: object): EditorInternals {
-  const existing: unknown = Reflect.get(target, "pastes");
+  const existing = readObjectProperty(target, "pastes");
   let pastes = new Map<number, string>();
   if (existing instanceof Map) {
     const entries = [...existing.entries()];
@@ -127,20 +140,20 @@ export function readEditorInternals(target: object): EditorInternals {
       pastes = new Map(entries);
     }
   }
-  if (!Reflect.has(target, "pastes") || Reflect.get(target, "pastes") !== pastes) {
-    Reflect.set(target, "pastes", pastes);
+  if (readObjectProperty(target, "pastes") !== pastes) {
+    writeObjectProperty(target, "pastes", pastes);
   }
-  const pasteCounterValue: unknown = Reflect.get(target, "pasteCounter");
+  const pasteCounterValue = readObjectProperty(target, "pasteCounter");
   const pasteCounter =
     typeof pasteCounterValue === "number" && Number.isFinite(pasteCounterValue)
       ? pasteCounterValue
       : 0;
   if (pasteCounterValue !== pasteCounter) {
-    Reflect.set(target, "pasteCounter", pasteCounter);
+    writeObjectProperty(target, "pasteCounter", pasteCounter);
   }
   return { pastes, pasteCounter };
 }
 
 export function writeEditorPasteCounter(target: object, value: number): void {
-  Reflect.set(target, "pasteCounter", value);
+  writeObjectProperty(target, "pasteCounter", value);
 }

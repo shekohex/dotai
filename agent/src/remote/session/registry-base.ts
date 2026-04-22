@@ -212,7 +212,8 @@ export abstract class SessionRegistryBase {
 
   protected readRuntimeExtensionMetadata(runtime: AgentSessionRuntime): RemoteExtensionMetadata[] {
     const runtimeMetadata = parseRuntimeExtensionMetadata(
-      Reflect.get(runtime, "remoteExtensionMetadata"),
+      (runtime as AgentSessionRuntime & { remoteExtensionMetadata?: unknown })
+        .remoteExtensionMetadata,
     );
     if (runtimeMetadata.length > 0) {
       return runtimeMetadata;
@@ -224,26 +225,26 @@ export abstract class SessionRegistryBase {
   protected readResourceLoaderExtensionMetadata(
     runtime: AgentSessionRuntime,
   ): RemoteExtensionMetadata[] {
-    const session: unknown = Reflect.get(runtime, "session");
-    if (session === null || typeof session !== "object") {
+    const session = runtime.session;
+    if (session === undefined || session === null || typeof session !== "object") {
       return [];
     }
 
-    const resourceLoader: unknown = Reflect.get(session, "resourceLoader");
-    if (resourceLoader === null || typeof resourceLoader !== "object") {
+    const resourceLoader = session.resourceLoader;
+    if (
+      resourceLoader === undefined ||
+      resourceLoader === null ||
+      typeof resourceLoader !== "object"
+    ) {
       return [];
     }
 
-    const getExtensions: unknown = Reflect.get(resourceLoader, "getExtensions");
-    if (typeof getExtensions !== "function") {
+    const loaded = resourceLoader.getExtensions();
+    if (loaded === undefined || loaded === null || typeof loaded !== "object") {
       return [];
     }
 
-    const loaded: unknown = getExtensions.call(resourceLoader);
-    if (loaded === null || typeof loaded !== "object") {
-      return [];
-    }
-    return parseResourceLoaderExtensionMetadata(Reflect.get(loaded, "extensions"));
+    return parseResourceLoaderExtensionMetadata(loaded.extensions);
   }
 
   protected requireRuntimeSession(record: SessionRecord): AgentSessionRuntime["session"] {

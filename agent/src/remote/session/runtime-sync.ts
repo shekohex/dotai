@@ -7,6 +7,10 @@ import { applyRuntimeResourcesSnapshot } from "./runtime-resources-sync.js";
 import { buildSessionSnapshotParts } from "./runtime-sync-snapshot.js";
 import { createEmptySessionStats, type SessionRecord } from "./types.js";
 
+type RuntimeWithExtensionMetadata = AgentSessionRuntime & {
+  remoteExtensionMetadata?: unknown;
+};
+
 export function syncSessionRecordFromRuntime(input: {
   record: SessionRecord;
   now: () => number;
@@ -163,49 +167,37 @@ function deriveRuntimeSessionStatus(
 export function getRuntimeSessionFromRecord(
   record: SessionRecord,
 ): AgentSessionRuntime["session"] | undefined {
-  const session = Reflect.get(record.runtime, "session");
-  return isRuntimeSessionShape(session) ? session : undefined;
+  return record.runtime.session;
 }
 
 function readRuntimeExtensionMetadata(runtime: AgentSessionRuntime) {
   const runtimeMetadata = parseRuntimeExtensionMetadata(
-    Reflect.get(runtime, "remoteExtensionMetadata"),
+    (runtime as RuntimeWithExtensionMetadata).remoteExtensionMetadata,
   );
   if (runtimeMetadata.length > 0) {
     return runtimeMetadata;
   }
 
-  const session: unknown = Reflect.get(runtime, "session");
-  if (session === null || typeof session !== "object") {
+  const session = runtime.session;
+  if (session === undefined || session === null || typeof session !== "object") {
     return [];
   }
 
-  const resourceLoader: unknown = Reflect.get(session, "resourceLoader");
-  if (resourceLoader === null || typeof resourceLoader !== "object") {
+  const resourceLoader = session.resourceLoader;
+  if (
+    resourceLoader === undefined ||
+    resourceLoader === null ||
+    typeof resourceLoader !== "object"
+  ) {
     return [];
   }
 
-  const getExtensions: unknown = Reflect.get(resourceLoader, "getExtensions");
-  if (typeof getExtensions !== "function") {
+  const loaded = resourceLoader.getExtensions();
+  if (loaded === undefined || loaded === null || typeof loaded !== "object") {
     return [];
   }
 
-  const loaded: unknown = getExtensions.call(resourceLoader);
-  if (loaded === null || typeof loaded !== "object") {
-    return [];
-  }
-  return parseResourceLoaderExtensionMetadata(Reflect.get(loaded, "extensions"));
-}
-
-function isRuntimeSessionShape(value: unknown): value is AgentSessionRuntime["session"] {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    typeof Reflect.get(value, "sessionManager") === "object" &&
-    typeof Reflect.get(value, "settingsManager") === "object" &&
-    typeof Reflect.get(value, "modelRegistry") === "object" &&
-    typeof Reflect.get(value, "getActiveToolNames") === "function"
-  );
+  return parseResourceLoaderExtensionMetadata(loaded.extensions);
 }
 
 export function requireRuntimeSessionFromRecord(

@@ -56,14 +56,15 @@ function isSubagentRenderCallContext(value: unknown): value is SubagentRenderCal
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
-  const expanded: unknown = Reflect.get(value, "expanded");
-  const isError: unknown = Reflect.get(value, "isError");
-  const isPartial: unknown = Reflect.get(value, "isPartial");
+
+  const expanded = "expanded" in value ? value.expanded : undefined;
+  const isError = "isError" in value ? value.isError : undefined;
+  const isPartial = "isPartial" in value ? value.isPartial : undefined;
   return (
     typeof expanded === "boolean" &&
     typeof isError === "boolean" &&
     typeof isPartial === "boolean" &&
-    Reflect.has(value, "state")
+    "state" in value
   );
 }
 
@@ -71,17 +72,18 @@ function isSubagentRenderResultContext(value: unknown): value is SubagentRenderR
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
-  const isError: unknown = Reflect.get(value, "isError");
-  const isPartial: unknown = Reflect.get(value, "isPartial");
-  const executionStarted: unknown = Reflect.get(value, "executionStarted");
-  const invalidate: unknown = Reflect.get(value, "invalidate");
+
+  const isError = "isError" in value ? value.isError : undefined;
+  const isPartial = "isPartial" in value ? value.isPartial : undefined;
+  const executionStarted = "executionStarted" in value ? value.executionStarted : undefined;
+  const invalidate = "invalidate" in value ? value.invalidate : undefined;
   return (
     typeof isError === "boolean" &&
     typeof isPartial === "boolean" &&
     typeof executionStarted === "boolean" &&
     typeof invalidate === "function" &&
-    Reflect.has(value, "state") &&
-    Reflect.has(value, "args")
+    "state" in value &&
+    "args" in value
   );
 }
 

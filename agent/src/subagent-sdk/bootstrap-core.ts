@@ -101,16 +101,19 @@ export function extractToolResultText(content: unknown): string | undefined {
     return undefined;
   }
   const chunks = content
-    .map((part) => {
-      if (typeof part !== "object" || part === null) {
-        return "";
-      }
-      const text: unknown = Reflect.get(part, "text");
-      return typeof text === "string" ? text : "";
-    })
+    .map((part) => readTextChunk(part))
     .join("\n")
     .trim();
   return chunks.length > 0 ? chunks : undefined;
+}
+
+function readTextChunk(part: unknown): string {
+  if (part === null || typeof part !== "object" || Array.isArray(part)) {
+    return "";
+  }
+
+  const text = "text" in part ? part.text : undefined;
+  return typeof text === "string" ? text : "";
 }
 
 export function isTypeboxSchema(value: unknown): value is TSchema {

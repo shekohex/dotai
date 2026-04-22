@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import type { SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import type { AcceptedSessionCommand, SessionRecord } from "./types.js";
+
+const ModelRefSchema = Type.Object({
+  provider: Type.String(),
+  id: Type.String(),
+});
 
 type PromptPreflightSession = {
   model: unknown;
@@ -19,17 +26,10 @@ type PromptPreflightSession = {
 };
 
 function readModelRef(value: unknown): { provider: string; id: string } | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!Value.Check(ModelRefSchema, value)) {
     return undefined;
   }
-
-  const provider: unknown = Reflect.get(value, "provider");
-  const id: unknown = Reflect.get(value, "id");
-  if (typeof provider !== "string" || typeof id !== "string") {
-    return undefined;
-  }
-
-  return { provider, id };
+  return Value.Parse(ModelRefSchema, value);
 }
 
 function resolvePromptPreflightModel(input: {

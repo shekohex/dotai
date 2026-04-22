@@ -1,47 +1,53 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 import { REVIEW_SETTINGS_TYPE, REVIEW_STATE_TYPE, REVIEW_WIDGET_KEY } from "./constants.js";
 import type { ReviewSessionState, ReviewSettingsState } from "./types.js";
 
+const ReviewSessionStateSchema = Type.Object(
+  {
+    active: Type.Boolean(),
+    branchAnchorId: Type.Optional(Type.String()),
+    subagentSessionId: Type.Optional(Type.String()),
+    targetLabel: Type.Optional(Type.String()),
+  },
+  { additionalProperties: true },
+);
+
+const ReviewSettingsStateSchema = Type.Object(
+  {
+    customInstructions: Type.Optional(Type.String()),
+  },
+  { additionalProperties: true },
+);
+
 function readReviewSessionState(value: unknown): ReviewSessionState | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!Value.Check(ReviewSessionStateSchema, value)) {
     return undefined;
   }
-
-  const active: unknown = Reflect.get(value, "active");
-  if (typeof active !== "boolean") {
-    return undefined;
-  }
-
-  const branchAnchorId: unknown = Reflect.get(value, "branchAnchorId");
-  if (branchAnchorId !== undefined && typeof branchAnchorId !== "string") {
-    return undefined;
-  }
-
-  const subagentSessionId: unknown = Reflect.get(value, "subagentSessionId");
-  const targetLabel: unknown = Reflect.get(value, "targetLabel");
+  const { active, branchAnchorId, subagentSessionId, targetLabel } = Value.Parse(
+    ReviewSessionStateSchema,
+    value,
+  );
 
   return {
     active,
-    subagentSessionId: typeof subagentSessionId === "string" ? subagentSessionId : undefined,
-    branchAnchorId: typeof branchAnchorId === "string" ? branchAnchorId : undefined,
-    targetLabel: typeof targetLabel === "string" ? targetLabel : undefined,
+    subagentSessionId,
+    branchAnchorId,
+    targetLabel,
     checkoutToRestore: undefined,
   };
 }
 
 function readReviewSettingsState(value: unknown): ReviewSettingsState | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!Value.Check(ReviewSettingsStateSchema, value)) {
     return undefined;
   }
-
-  const customInstructions: unknown = Reflect.get(value, "customInstructions");
-  if (customInstructions !== undefined && typeof customInstructions !== "string") {
-    return undefined;
-  }
+  const { customInstructions } = Value.Parse(ReviewSettingsStateSchema, value);
 
   return {
-    customInstructions: typeof customInstructions === "string" ? customInstructions : undefined,
+    customInstructions,
   };
 }
 

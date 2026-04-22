@@ -1,44 +1,15 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { Value } from "@sinclair/typebox/value";
+import { RemoteModelSchema } from "../schemas.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
-import { readObject } from "./session-shared.js";
 
 function isModelLike(value: unknown): value is Model<Api> {
-  const model = readObject(value);
-  if (!model) {
+  if (!Value.Check(RemoteModelSchema, value)) {
     return false;
   }
-
-  const provider = Reflect.get(model, "provider");
-  const id = Reflect.get(model, "id");
-  const name = Reflect.get(model, "name");
-  const input = Reflect.get(model, "input");
-  const cost = Reflect.get(model, "cost");
-  const contextWindow = Reflect.get(model, "contextWindow");
-  const maxTokens = Reflect.get(model, "maxTokens");
-
-  if (typeof provider !== "string" || typeof id !== "string" || typeof name !== "string") {
-    return false;
-  }
-
-  if (!Array.isArray(input) || !input.every((item) => typeof item === "string")) {
-    return false;
-  }
-
-  const modelCost = readObject(cost);
-  if (!modelCost) {
-    return false;
-  }
-
-  const costFields = ["input", "output", "cacheRead", "cacheWrite"];
-  for (const field of costFields) {
-    if (typeof Reflect.get(modelCost, field) !== "number") {
-      return false;
-    }
-  }
-
-  return typeof contextWindow === "number" && typeof maxTokens === "number";
+  return true;
 }
 
 export function normalizeAvailableModels(value: unknown): Model<Api>[] {

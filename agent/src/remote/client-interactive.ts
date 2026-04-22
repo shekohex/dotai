@@ -16,21 +16,29 @@ function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRunt
     return false;
   }
 
-  const session: unknown = Reflect.get(value, "session");
+  const runtime = value as Partial<AgentSessionRuntime> & {
+    session?: {
+      prompt?: unknown;
+      sendUserMessage?: unknown;
+      setModel?: unknown;
+      reload?: unknown;
+    };
+  };
+  const session = runtime.session;
   if (session === null || typeof session !== "object" || Array.isArray(session)) {
     return false;
   }
 
   return (
-    typeof Reflect.get(value, "newSession") === "function" &&
-    typeof Reflect.get(value, "switchSession") === "function" &&
-    typeof Reflect.get(value, "fork") === "function" &&
-    typeof Reflect.get(value, "importFromJsonl") === "function" &&
-    typeof Reflect.get(value, "dispose") === "function" &&
-    typeof Reflect.get(session, "prompt") === "function" &&
-    typeof Reflect.get(session, "sendUserMessage") === "function" &&
-    typeof Reflect.get(session, "setModel") === "function" &&
-    typeof Reflect.get(session, "reload") === "function"
+    typeof runtime.newSession === "function" &&
+    typeof runtime.switchSession === "function" &&
+    typeof runtime.fork === "function" &&
+    typeof runtime.importFromJsonl === "function" &&
+    typeof runtime.dispose === "function" &&
+    typeof session.prompt === "function" &&
+    typeof session.sendUserMessage === "function" &&
+    typeof session.setModel === "function" &&
+    typeof session.reload === "function"
   );
 }
 

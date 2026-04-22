@@ -124,12 +124,17 @@ export function readActiveModeFromEntry(value: unknown): string | undefined {
 }
 
 function isExtensionContextLike(value: unknown): value is ExtensionContext {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
   return (
-    value !== null &&
-    typeof value === "object" &&
-    typeof Reflect.get(value, "cwd") === "string" &&
-    typeof Reflect.get(value, "sessionManager") === "object" &&
-    typeof Reflect.get(value, "ui") === "object"
+    "cwd" in value &&
+    typeof value.cwd === "string" &&
+    "sessionManager" in value &&
+    typeof value.sessionManager === "object" &&
+    "ui" in value &&
+    typeof value.ui === "object"
   );
 }
 
@@ -169,8 +174,11 @@ function isSessionModelLike(value: unknown): value is SessionModel {
   return (
     value !== null &&
     typeof value === "object" &&
-    typeof Reflect.get(value, "provider") === "string" &&
-    typeof Reflect.get(value, "id") === "string"
+    !Array.isArray(value) &&
+    "provider" in value &&
+    typeof value.provider === "string" &&
+    "id" in value &&
+    typeof value.id === "string"
   );
 }
 
@@ -180,8 +188,11 @@ function isDoneCallbacks(
   return (
     value !== null &&
     typeof value === "object" &&
-    typeof Reflect.get(value, "resolve") === "function" &&
-    typeof Reflect.get(value, "reject") === "function"
+    !Array.isArray(value) &&
+    "resolve" in value &&
+    typeof value.resolve === "function" &&
+    "reject" in value &&
+    typeof value.reject === "function"
   );
 }
 
@@ -194,15 +205,15 @@ export function parseModeActivateEvent(data: unknown): ModeActivateEvent | undef
     return undefined;
   }
 
-  const ctx = Reflect.get(data, "ctx");
+  const ctx = "ctx" in data ? data.ctx : undefined;
   if (!isExtensionContextLike(ctx)) {
     return undefined;
   }
 
-  const mode = Reflect.get(data, "mode");
-  const spec = Reflect.get(data, "spec");
-  const reason = Reflect.get(data, "reason");
-  const source = Reflect.get(data, "source");
+  const mode = "mode" in data ? data.mode : undefined;
+  const spec = "spec" in data ? data.spec : undefined;
+  const reason = "reason" in data ? data.reason : undefined;
+  const source = "source" in data ? data.source : undefined;
   if (typeof mode !== "string" || typeof reason !== "string" || typeof source !== "string") {
     return undefined;
   }
@@ -225,24 +236,21 @@ export function parseModeSelectionApplyEvent(data: unknown): ModeSelectionApplyE
     return undefined;
   }
 
-  const ctx = Reflect.get(data, "ctx");
+  const ctx = "ctx" in data ? data.ctx : undefined;
   if (!isExtensionContextLike(ctx)) {
     return undefined;
   }
 
-  const mode = Reflect.get(data, "mode");
-  const reason = Reflect.get(data, "reason");
-  const source = Reflect.get(data, "source");
+  const mode = "mode" in data ? data.mode : undefined;
+  const reason = "reason" in data ? data.reason : undefined;
+  const source = "source" in data ? data.source : undefined;
   if (typeof mode !== "string" || typeof reason !== "string" || typeof source !== "string") {
     return undefined;
   }
 
-  const targetModelValue = Reflect.get(data, "targetModel");
-  const thinkingLevel = Reflect.get(data, "thinkingLevel");
-  const doneValue = Reflect.get(data, "done");
-
-  const targetModel = isSessionModelLike(targetModelValue) ? targetModelValue : undefined;
-  const done = isDoneCallbacks(doneValue) ? doneValue : undefined;
+  const targetModel = "targetModel" in data ? data.targetModel : undefined;
+  const thinkingLevel = "thinkingLevel" in data ? data.thinkingLevel : undefined;
+  const done = "done" in data ? data.done : undefined;
   const resolvedThinkingLevel =
     thinkingLevel === undefined ||
     thinkingLevel === "off" ||
@@ -257,10 +265,10 @@ export function parseModeSelectionApplyEvent(data: unknown): ModeSelectionApplyE
   return {
     ctx,
     mode,
-    targetModel,
+    targetModel: isSessionModelLike(targetModel) ? targetModel : undefined,
     thinkingLevel: resolvedThinkingLevel,
     reason,
     source,
-    done,
+    done: isDoneCallbacks(done) ? done : undefined,
   };
 }

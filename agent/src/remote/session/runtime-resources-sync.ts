@@ -54,15 +54,14 @@ export function applyRuntimeResourcesSnapshot(
 }
 
 export function readRuntimeSettingsSnapshot(session: RuntimeSession): SessionRecord["settings"] {
-  const settingsManager: unknown = Reflect.get(session, "settingsManager");
-  if (!isSettingsSnapshotReader(settingsManager)) {
+  if (!isSettingsSnapshotReader(session.settingsManager)) {
     return {
       ...defaultSettings,
     };
   }
 
-  const globalSettings = settingsManager.getGlobalSettings();
-  const projectSettings = settingsManager.getProjectSettings();
+  const globalSettings = session.settingsManager.getGlobalSettings();
+  const projectSettings = session.settingsManager.getProjectSettings();
   const hasPersistedSettings =
     Object.keys(globalSettings).length > 0 || Object.keys(projectSettings).length > 0;
 
@@ -84,20 +83,23 @@ type SettingsSnapshotReader = {
   getProjectSettings: () => Record<string, unknown>;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function isSettingsSnapshotReader(value: unknown): value is SettingsSnapshotReader {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return false;
   }
   return (
-    typeof Reflect.get(value, "getGlobalSettings") === "function" &&
-    typeof Reflect.get(value, "getProjectSettings") === "function"
+    typeof value.getGlobalSettings === "function" && typeof value.getProjectSettings === "function"
   );
 }
 
 function readRuntimeResourceLoader(
   session: RuntimeSession,
 ): RuntimeSession["resourceLoader"] | undefined {
-  const candidate: unknown = Reflect.get(session, "resourceLoader");
+  const candidate = session.resourceLoader;
   if (!isRuntimeResourceLoader(candidate)) {
     return undefined;
   }
@@ -105,16 +107,16 @@ function readRuntimeResourceLoader(
 }
 
 function isRuntimeResourceLoader(value: unknown): value is RuntimeSession["resourceLoader"] {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return false;
   }
 
   return (
-    typeof Reflect.get(value, "getSkills") === "function" &&
-    typeof Reflect.get(value, "getPrompts") === "function" &&
-    typeof Reflect.get(value, "getThemes") === "function" &&
-    typeof Reflect.get(value, "getSystemPrompt") === "function" &&
-    typeof Reflect.get(value, "getAppendSystemPrompt") === "function"
+    typeof value.getSkills === "function" &&
+    typeof value.getPrompts === "function" &&
+    typeof value.getThemes === "function" &&
+    typeof value.getSystemPrompt === "function" &&
+    typeof value.getAppendSystemPrompt === "function"
   );
 }
 

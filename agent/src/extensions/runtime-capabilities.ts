@@ -1,4 +1,5 @@
-import type { ClientCapabilities } from "../remote/schemas.js";
+import { Value } from "@sinclair/typebox/value";
+import { ClientCapabilitiesSchema, type ClientCapabilities } from "../remote/schemas.js";
 
 export const runtimeCapabilitiesSymbol = Symbol.for("@shekohex/agent/runtime-capabilities");
 
@@ -14,7 +15,8 @@ export function attachRuntimeCapabilities(
   if (target === null || typeof target !== "object" || Array.isArray(target)) {
     return;
   }
-  Reflect.set(target, runtimeCapabilitiesSymbol, source);
+
+  writeObjectProperty(target, runtimeCapabilitiesSymbol, source);
 }
 
 export function getRuntimeCapabilities(context: {
@@ -64,12 +66,11 @@ export function hasRuntimePrimitive(
 }
 
 function readRuntimeCapabilitiesSource(target: unknown): ClientCapabilities | undefined {
-  const targetRecord = toRecord(target);
-  if (!targetRecord) {
+  if (target === null || typeof target !== "object" || Array.isArray(target)) {
     return undefined;
   }
 
-  const source: unknown = Reflect.get(targetRecord, runtimeCapabilitiesSymbol);
+  const source = readObjectProperty(target, runtimeCapabilitiesSymbol);
   if (isRuntimeCapabilitiesGetter(source)) {
     const value = source();
     return isClientCapabilities(value) ? value : undefined;
@@ -78,41 +79,22 @@ function readRuntimeCapabilitiesSource(target: unknown): ClientCapabilities | un
 }
 
 function isClientCapabilities(value: unknown): value is ClientCapabilities {
-  const valueRecord = toRecord(value);
-  if (!valueRecord) {
-    return false;
-  }
-
-  const protocolVersion = valueRecord["protocolVersion"];
-  const primitives = toRecord(valueRecord["primitives"]);
-  if (protocolVersion !== "1.0") {
-    return false;
-  }
-  if (!primitives) {
-    return false;
-  }
-
-  return (
-    typeof primitives["select"] === "boolean" &&
-    typeof primitives["confirm"] === "boolean" &&
-    typeof primitives["input"] === "boolean" &&
-    typeof primitives["editor"] === "boolean" &&
-    typeof primitives["custom"] === "boolean" &&
-    typeof primitives["setWidget"] === "boolean" &&
-    typeof primitives["setHeader"] === "boolean" &&
-    typeof primitives["setFooter"] === "boolean" &&
-    typeof primitives["setEditorComponent"] === "boolean" &&
-    typeof primitives["onTerminalInput"] === "boolean"
-  );
+  return Value.Check(ClientCapabilitiesSchema, value);
 }
 
 function isRuntimeCapabilitiesGetter(value: unknown): value is () => unknown {
   return typeof value === "function";
 }
 
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  return { ...value };
+function readObjectProperty(target: object, key: PropertyKey): unknown {
+  return Object.getOwnPropertyDescriptor(target, key)?.value;
+}
+
+function writeObjectProperty(target: object, key: PropertyKey, value: unknown): void {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value,
+  });
 }

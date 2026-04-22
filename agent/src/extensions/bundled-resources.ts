@@ -15,6 +15,18 @@ type LoaderPatchState = {
   __shekohexBundledResourcePathsInstalled?: boolean;
 };
 
+function readObjectProperty(target: object, key: PropertyKey): unknown {
+  return Reflect.get(target, key);
+}
+
+function writeObjectProperty(target: object, key: PropertyKey, value: unknown): void {
+  Reflect.set(target, key, value);
+}
+
+function isMethod(value: unknown): value is (this: DefaultResourceLoader) => Promise<void> {
+  return typeof value === "function";
+}
+
 function readOptionalStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -25,13 +37,17 @@ function readOptionalStringArray(value: unknown): string[] | undefined {
 
 function readLoaderPatchState(loader: DefaultResourceLoader): LoaderPatchState {
   return {
-    additionalSkillPaths: readOptionalStringArray(Reflect.get(loader, "additionalSkillPaths")),
-    additionalPromptTemplatePaths: readOptionalStringArray(
-      Reflect.get(loader, "additionalPromptTemplatePaths"),
+    additionalSkillPaths: readOptionalStringArray(
+      readObjectProperty(loader, "additionalSkillPaths"),
     ),
-    additionalThemePaths: readOptionalStringArray(Reflect.get(loader, "additionalThemePaths")),
+    additionalPromptTemplatePaths: readOptionalStringArray(
+      readObjectProperty(loader, "additionalPromptTemplatePaths"),
+    ),
+    additionalThemePaths: readOptionalStringArray(
+      readObjectProperty(loader, "additionalThemePaths"),
+    ),
     __shekohexBundledResourcePathsInstalled:
-      Reflect.get(loader, "__shekohexBundledResourcePathsInstalled") === true,
+      readObjectProperty(loader, "__shekohexBundledResourcePathsInstalled") === true,
   };
 }
 
@@ -46,13 +62,13 @@ export default function bundledResourcesExtension(pi: ExtensionAPI) {
 export function installBundledResourcePaths(): void {
   const loaderPrototype = DefaultResourceLoader.prototype;
 
-  if (Reflect.get(loaderPrototype, loaderPatchSymbol) === true) {
+  if (readObjectProperty(loaderPrototype, loaderPatchSymbol) === true) {
     return;
   }
 
   const reloadDescriptor = Object.getOwnPropertyDescriptor(loaderPrototype, "reload");
   const originalReloadValue: unknown = reloadDescriptor?.value;
-  if (typeof originalReloadValue !== "function") {
+  if (!isMethod(originalReloadValue)) {
     throw new TypeError("DefaultResourceLoader.reload is unavailable");
   }
 
@@ -61,28 +77,28 @@ export function installBundledResourcePaths(): void {
   ): Promise<void> {
     const state = readLoaderPatchState(this);
     if (state.__shekohexBundledResourcePathsInstalled !== true) {
-      Reflect.set(
+      writeObjectProperty(
         this,
         "additionalSkillPaths",
         appendUniquePaths(state.additionalSkillPaths, discoverSkillPaths()),
       );
-      Reflect.set(
+      writeObjectProperty(
         this,
         "additionalPromptTemplatePaths",
         appendUniquePaths(state.additionalPromptTemplatePaths, discoverPromptPaths()),
       );
-      Reflect.set(
+      writeObjectProperty(
         this,
         "additionalThemePaths",
         appendUniquePaths(state.additionalThemePaths, discoverThemePaths()),
       );
-      Reflect.set(this, "__shekohexBundledResourcePathsInstalled", true);
+      writeObjectProperty(this, "__shekohexBundledResourcePathsInstalled", true);
     }
 
-    await Promise.resolve(Reflect.apply(originalReloadValue, this, []));
+    await Promise.resolve(originalReloadValue.call(this));
   };
 
-  Reflect.set(loaderPrototype, loaderPatchSymbol, true);
+  writeObjectProperty(loaderPrototype, loaderPatchSymbol, true);
 }
 
 export function discoverSkillPaths(): string[] {

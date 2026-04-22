@@ -189,8 +189,8 @@ class CorePromptEditor extends CustomEditor {
   }
 
   private installCallbackHooks(): void {
-    Reflect.deleteProperty(this, "onSubmit");
-    Reflect.deleteProperty(this, "onChange");
+    delete this.onSubmit;
+    delete this.onChange;
 
     Object.defineProperty(this, "onSubmit", {
       configurable: true,

@@ -1,6 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ElicitRequestSchema, type ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import type { JsonObject, JsonValue } from "./http.js";
 
 export type ResumeAction = "accept" | "decline" | "cancel";
@@ -57,6 +59,32 @@ type ConnectedExecutorMcpClient = {
 
 const DEFAULT_TEXT_RESULT = "(no result)";
 
+const TextContentPartSchema = Type.Object(
+  {
+    type: Type.Literal("text"),
+    text: Type.String(),
+  },
+  { additionalProperties: true },
+);
+
+const ExecutorUrlElicitationSchema = Type.Object(
+  {
+    mode: Type.Literal("url"),
+    message: Type.Optional(Type.Unknown()),
+    url: Type.Optional(Type.Unknown()),
+    elicitationId: Type.Optional(Type.Unknown()),
+  },
+  { additionalProperties: true },
+);
+
+const ExecutorFormElicitationSchema = Type.Object(
+  {
+    message: Type.Optional(Type.Unknown()),
+    requestedSchema: Type.Optional(Type.Unknown()),
+  },
+  { additionalProperties: true },
+);
+
 const buildCapabilities = (hasUI: boolean): ClientCapabilities =>
   hasUI
     ? {
@@ -95,6 +123,8 @@ const cloneJsonObject = (value: unknown): JsonObject => {
   return isJsonObject(cloned) ? cloned : {};
 };
 
+const readOptionalString = (value: unknown): string => (typeof value === "string" ? value : "");
+
 const collectText = (content: unknown): string => {
   if (!Array.isArray(content)) {
     return "";
@@ -102,15 +132,11 @@ const collectText = (content: unknown): string => {
 
   const textParts: string[] = [];
   for (const item of content) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+    if (!Value.Check(TextContentPartSchema, item)) {
       continue;
     }
 
-    const type: unknown = Reflect.get(item, "type");
-    const text: unknown = Reflect.get(item, "text");
-    if (type === "text" && typeof text === "string") {
-      textParts.push(text);
-    }
+    textParts.push(Value.Parse(TextContentPartSchema, item).text);
   }
   return textParts.join("\n").trim();
 };
@@ -207,25 +233,24 @@ function registerElicitationHandler(
 }
 
 function toExecutorElicitationRequest(params: unknown): ExecutorElicitationRequest {
-  if (params !== null && typeof params === "object" && Reflect.get(params, "mode") === "url") {
+  if (Value.Check(ExecutorUrlElicitationSchema, params)) {
+    const parsed = Value.Parse(ExecutorUrlElicitationSchema, params);
     return {
       mode: "url",
-      message: String(Reflect.get(params, "message") ?? ""),
-      url: String(Reflect.get(params, "url") ?? ""),
-      elicitationId: String(Reflect.get(params, "elicitationId") ?? ""),
+      message: readOptionalString(parsed.message),
+      url: readOptionalString(parsed.url),
+      elicitationId: readOptionalString(parsed.elicitationId),
     };
   }
 
+  const parsed = Value.Check(ExecutorFormElicitationSchema, params)
+    ? Value.Parse(ExecutorFormElicitationSchema, params)
+    : { message: undefined, requestedSchema: undefined };
+
   return {
     mode: "form",
-    message:
-      params !== null && typeof params === "object"
-        ? String(Reflect.get(params, "message") ?? "")
-        : "",
-    requestedSchema:
-      params !== null && typeof params === "object"
-        ? cloneJsonObject(Reflect.get(params, "requestedSchema"))
-        : {},
+    message: readOptionalString(parsed.message),
+    requestedSchema: cloneJsonObject(parsed.requestedSchema),
   };
 }
 

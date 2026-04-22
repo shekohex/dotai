@@ -1,5 +1,6 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
-import type { RemoteExtensionMetadata } from "../schemas.js";
+import { Value } from "@sinclair/typebox/value";
+import { RemoteExtensionMetadataSchema, type RemoteExtensionMetadata } from "../schemas.js";
 
 export function isApiModel(value: unknown): value is Model<Api> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -42,20 +43,10 @@ export function parseRuntimeExtensionMetadata(value: unknown): RemoteExtensionMe
 
   const metadata: RemoteExtensionMetadata[] = [];
   for (const extension of value) {
-    if (extension === null || typeof extension !== "object" || Array.isArray(extension)) {
+    if (!Value.Check(RemoteExtensionMetadataSchema, extension)) {
       continue;
     }
-
-    const id: unknown = Reflect.get(extension, "id");
-    const runtime: unknown = Reflect.get(extension, "runtime");
-    const extensionPath: unknown = Reflect.get(extension, "path");
-    if (
-      typeof id === "string" &&
-      typeof extensionPath === "string" &&
-      (runtime === "server" || runtime === "client")
-    ) {
-      metadata.push({ id, runtime, path: extensionPath });
-    }
+    metadata.push(Value.Parse(RemoteExtensionMetadataSchema, extension));
   }
 
   return metadata;
@@ -68,20 +59,28 @@ export function parseResourceLoaderExtensionMetadata(value: unknown): RemoteExte
 
   const metadata: RemoteExtensionMetadata[] = [];
   for (const extension of value) {
-    if (extension === null || typeof extension !== "object") {
+    if (!hasPathProperty(extension)) {
       continue;
     }
 
-    const extensionPath: unknown = Reflect.get(extension, "path");
-    if (typeof extensionPath !== "string" || extensionPath.length === 0) {
-      continue;
-    }
+    const path = extension.path;
     metadata.push({
-      id: extensionPath,
+      id: path,
       runtime: "server",
-      path: extensionPath,
+      path,
     });
   }
 
   return metadata;
+}
+
+function hasPathProperty(value: unknown): value is { path: string } {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    value.path.length > 0
+  );
 }

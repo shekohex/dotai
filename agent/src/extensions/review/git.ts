@@ -1,6 +1,17 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 import type { ReviewCheckoutTarget } from "./types.js";
+
+const PullRequestViewSchema = Type.Object(
+  {
+    baseRefName: Type.String({ minLength: 1 }),
+    title: Type.String({ minLength: 1 }),
+    headRefName: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: true },
+);
 
 export async function getMergeBase(pi: ExtensionAPI, branch: string): Promise<string | null> {
   try {
@@ -90,22 +101,10 @@ export async function getPrInfo(
 
   try {
     const parsed: unknown = JSON.parse(result.stdout);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!Value.Check(PullRequestViewSchema, parsed)) {
       return null;
     }
-    const baseRefName: unknown = Reflect.get(parsed, "baseRefName");
-    const title: unknown = Reflect.get(parsed, "title");
-    const headRefName: unknown = Reflect.get(parsed, "headRefName");
-    if (
-      typeof baseRefName !== "string" ||
-      baseRefName.length === 0 ||
-      typeof title !== "string" ||
-      title.length === 0 ||
-      typeof headRefName !== "string" ||
-      headRefName.length === 0
-    ) {
-      return null;
-    }
+    const { baseRefName, title, headRefName } = Value.Parse(PullRequestViewSchema, parsed);
 
     return {
       baseBranch: baseRefName,

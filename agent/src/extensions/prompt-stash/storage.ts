@@ -23,11 +23,15 @@ const PromptStashEntrySchema = Type.Object(
 export type PromptStashEntry = Static<typeof PromptStashEntrySchema>;
 
 function readErrorCode(error: unknown): string | undefined {
-  if (error === null || typeof error !== "object" || !("code" in error)) {
+  if (!hasCode(error)) {
     return undefined;
   }
-  const code = Reflect.get(error, "code");
+  const { code } = error;
   return typeof code === "string" ? code : undefined;
+}
+
+function hasCode(value: unknown): value is { code?: unknown } {
+  return value !== null && typeof value === "object" && "code" in value;
 }
 
 function expandUserPath(value: string): string {

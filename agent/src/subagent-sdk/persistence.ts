@@ -253,12 +253,23 @@ export function reduceRuntimeSubagents(
 }
 
 function persistSessionBootstrap(sessionManager: SessionManager): void {
-  const rewriteFile: unknown = Reflect.get(sessionManager, "_rewriteFile");
+  const rewriteFile = readObjectProperty(sessionManager, "_rewriteFile");
   if (typeof rewriteFile !== "function") {
     throw new TypeError("SessionManager bootstrap persistence is unavailable");
   }
 
-  Reflect.apply(rewriteFile, sessionManager, []);
+  rewriteFile.call(sessionManager);
+}
+
+function readObjectProperty<T extends PropertyKey>(target: object, key: T): unknown {
+  return hasProperty(target, key) ? target[key] : undefined;
+}
+
+function hasProperty<T extends PropertyKey>(
+  target: object,
+  key: T,
+): target is object & Record<T, unknown> {
+  return key in target;
 }
 
 function getSubagentStateEntry(entry: SessionEntry): SubagentStateEntry | undefined {

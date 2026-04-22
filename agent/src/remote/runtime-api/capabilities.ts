@@ -40,9 +40,9 @@ function resolveCapabilitiesPostMethod(
   input: { param: { connectionId: string }; json: ClientCapabilities },
   options: { headers: Record<string, string> },
 ) => Promise<Response> {
-  const connections = readObject(readProperty(rpcClient, "connections"));
-  const connectionRoute = readObject(readProperty(connections, ":connectionId"));
-  const capabilitiesRoute = readObject(readProperty(connectionRoute, "capabilities"));
+  const connections = requireObject(readProperty(rpcClient, "connections"));
+  const connectionRoute = requireObject(readProperty(connections, ":connectionId"));
+  const capabilitiesRoute = requireObject(readProperty(connectionRoute, "capabilities"));
   const postCandidate = readProperty(capabilitiesRoute, "$post");
   if (!isCapabilitiesPostMethod(postCandidate)) {
     throw new TypeError("Capabilities RPC route is not available");
@@ -65,7 +65,7 @@ function isPromise(value: unknown): value is Promise<unknown> {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) {
     return false;
   }
-  return typeof Reflect.get(value, "then") === "function";
+  return "then" in value && typeof value.then === "function";
 }
 
 function isCapabilitiesPostMethod(
@@ -77,11 +77,11 @@ function isCapabilitiesPostMethod(
   return typeof value === "function";
 }
 
-function readProperty(target: object, key: string): unknown {
-  return Reflect.get(target, key);
+function readProperty(target: unknown, key: string): unknown {
+  return Reflect.get(requireObject(target), key);
 }
 
-function readObject(value: unknown): object {
+function requireObject(value: unknown): object {
   if (!isReflectTarget(value)) {
     throw new TypeError("Capabilities RPC route is not available");
   }

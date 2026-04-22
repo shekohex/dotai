@@ -1,8 +1,19 @@
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+
 type MermaidFenceBlock = {
   block: string;
   startOffset: number;
   endOffset: number;
 };
+
+const TextPartSchema = Type.Object(
+  {
+    type: Type.Literal("text"),
+    text: Type.String(),
+  },
+  { additionalProperties: true },
+);
 
 const SUPPORTED_TYPES = new Map<string, string>([
   ["graph", "flowchart"],
@@ -18,12 +29,7 @@ const SUPPORTED_TYPE_LABEL =
   "graph/flowchart, sequenceDiagram, classDiagram, erDiagram, stateDiagram(-v2)";
 
 function isTextPart(value: unknown): value is { type: "text"; text: string } {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    Reflect.get(value, "type") === "text" &&
-    typeof Reflect.get(value, "text") === "string"
-  );
+  return Value.Check(TextPartSchema, value);
 }
 
 function parseFenceChar(marker: string): "`" | "~" | undefined {

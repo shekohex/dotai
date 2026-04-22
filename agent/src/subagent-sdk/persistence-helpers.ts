@@ -2,6 +2,8 @@ import type {
   SessionEntry,
   SessionMessageEntry,
 } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
 import {
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
@@ -28,6 +30,20 @@ export type StructuredOutputEntry = {
   error?: StructuredOutputError;
 };
 
+const ExpiringMarkerSchema = Type.Object(
+  {
+    expiresAt: Type.Number(),
+  },
+  { additionalProperties: true },
+);
+
+const TimeoutModeMarkerSchema = Type.Object(
+  {
+    activatedAt: Type.Number(),
+  },
+  { additionalProperties: true },
+);
+
 export function parseTimestampMs(value: unknown): number | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -37,25 +53,19 @@ export function parseTimestampMs(value: unknown): number | undefined {
 }
 
 export function parseExpiringMarker(value: unknown): ExpiringMarker | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!Value.Check(ExpiringMarkerSchema, value)) {
     return undefined;
   }
-  const expiresAt: unknown = Reflect.get(value, "expiresAt");
-  if (typeof expiresAt !== "number") {
-    return undefined;
-  }
-  return { expiresAt };
+
+  return Value.Parse(ExpiringMarkerSchema, value);
 }
 
 export function parseTimeoutModeMarker(value: unknown): TimeoutModeMarker | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!Value.Check(TimeoutModeMarkerSchema, value)) {
     return undefined;
   }
-  const activatedAt: unknown = Reflect.get(value, "activatedAt");
-  if (typeof activatedAt !== "number") {
-    return undefined;
-  }
-  return { activatedAt };
+
+  return Value.Parse(TimeoutModeMarkerSchema, value);
 }
 
 export function getAssistantOutcomeMessage(

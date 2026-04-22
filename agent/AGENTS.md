@@ -50,6 +50,58 @@ This package provides:
 - Avoid dynamic imports when possible, and prefer type imports when possible.
 - Client and Server interaction Must be using Hono RPC instead of calling `fetch` directly.
 
+### Type Safety Rules
+
+DO:
+
+- Use TypeScript types and narrowing first for internal application code.
+- Use `@sinclair/typebox` schemas for payloads that cross boundaries:
+  - client/server RPC payloads
+  - persisted JSON/JSONL state
+  - tool inputs and outputs
+  - env-derived structured config
+  - external API responses when shape matters
+- Use `Value.Check(...)` for validation and `Value.Parse(...)` only when parsed value is plain data and safe to clone.
+- Prefer explicit type guards, discriminated unions, `in` checks, and small helper functions over dynamic property access.
+- Keep unknown data as `unknown` until validated.
+- Prefer typed Hono RPC clients over manual URL construction or ad-hoc route traversal.
+
+DON'T:
+
+- Don't use unsafe type assertions like `as Foo`, double assertions, or broad casts to silence TypeScript.
+- Don't use `any` unless there is no alternative and user explicitly accepts it.
+- Don't use dynamic typing patterns for normal internal code paths.
+- Don't parse structured payloads manually if a TypeBox schema should exist.
+- Don't use `Value.Parse(...)` on objects that may contain functions, class instances, timers, callbacks, or other non-cloneable runtime values.
+
+### Reflect Rules
+
+DO:
+
+- Use `Reflect.get` / `Reflect.set` only for upstream hidden or private internals that are not safely reachable through normal typed property access.
+- Keep every `Reflect` use isolated in the smallest possible helper or patch point.
+- Add a short code-local type guard around `Reflect` boundaries so unknown values are validated immediately after access.
+- Prefer normal property access as soon as data is back in our own typed code.
+
+DON'T:
+
+- Don't use `Reflect` for our own internal objects, local state, or normal TypeScript-controlled code.
+- Don't use `Reflect` as a shortcut to avoid writing proper types or guards.
+- Don't spread `Reflect` access through business logic. Contain it at boundary points only.
+- Don't use `Reflect` for client/server payload validation. Use TypeBox there.
+
+### Hono RPC Rules
+
+DO:
+
+- Use Hono RPC client objects directly when typed route access works.
+- If Hono RPC proxy behavior forces dynamic access for a route segment, isolate that workaround to one boundary helper only.
+
+DON'T:
+
+- Don't replace Hono RPC with raw `fetch`.
+- Don't manually assemble RPC URLs when a typed Hono client can represent the route.
+
 ## Development Commands
 
 ### Build

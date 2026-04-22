@@ -51,7 +51,7 @@ export function isAgentMessageLike(value: unknown): value is AgentMessage {
     return false;
   }
 
-  const role = Reflect.get(message, "role");
+  const role = message.role;
   return (
     role === "user" ||
     role === "assistant" ||
@@ -79,17 +79,17 @@ export function readPendingToolCallId(value: unknown): string | undefined {
     return undefined;
   }
 
-  const toolCallId = Reflect.get(objectValue, "toolCallId");
+  const toolCallId = objectValue.toolCallId;
   if (typeof toolCallId === "string") {
     return toolCallId;
   }
 
-  const id = Reflect.get(objectValue, "id");
+  const id = objectValue.id;
   return typeof id === "string" ? id : undefined;
 }
 
 export function isAgentSessionEventLike(value: unknown): value is AgentSessionEvent {
-  return isRecord(value) && typeof Reflect.get(value, "type") === "string";
+  return isRecord(value) && typeof value.type === "string";
 }
 
 export function isRemoteExtensionMetadataLike(value: unknown): value is RemoteExtensionMetadata {
@@ -97,9 +97,9 @@ export function isRemoteExtensionMetadataLike(value: unknown): value is RemoteEx
     return false;
   }
 
-  const id = Reflect.get(value, "id");
-  const runtime = Reflect.get(value, "runtime");
-  const extensionPath = Reflect.get(value, "path");
+  const id = value.id;
+  const runtime = value.runtime;
+  const extensionPath = value.path;
   return (
     typeof id === "string" &&
     typeof extensionPath === "string" &&
@@ -123,7 +123,7 @@ export function readErrorMessage(value: unknown): string | undefined {
     return undefined;
   }
 
-  const error = Reflect.get(objectValue, "error");
+  const error = objectValue.error;
   return typeof error === "string" ? error : undefined;
 }
 

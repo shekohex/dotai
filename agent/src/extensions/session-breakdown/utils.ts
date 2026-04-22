@@ -13,13 +13,26 @@ export const PALETTE: RGB[] = [
   { r: 244, g: 67, b: 54 },
 ];
 
+function readObjectProperty<T extends PropertyKey>(target: object, key: T): unknown {
+  return hasProperty(target, key) ? target[key] : undefined;
+}
+
+function hasProperty<T extends PropertyKey>(
+  target: object,
+  key: T,
+): target is object & Record<T, unknown> {
+  return key in target;
+}
+
 export function setBorderedLoaderMessage(loader: BorderedLoader, message: string) {
-  const innerUnknown: unknown = Reflect.get(loader, "loader");
-  if (innerUnknown !== null && typeof innerUnknown === "object") {
-    const setMessageUnknown: unknown = Reflect.get(innerUnknown, "setMessage");
-    if (typeof setMessageUnknown === "function") {
-      Reflect.apply(setMessageUnknown, innerUnknown, [message]);
-    }
+  const inner = readObjectProperty(loader, "loader");
+  if (inner === null || typeof inner !== "object" || Array.isArray(inner)) {
+    return;
+  }
+
+  const setMessage = readObjectProperty(inner, "setMessage");
+  if (typeof setMessage === "function") {
+    setMessage.call(inner, message);
   }
 }
 

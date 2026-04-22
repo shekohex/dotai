@@ -23,51 +23,57 @@ const promptTexts: Record<ModelFamilySystemPrompt, string> = {
 const promptMarker = "Available tools:\n";
 const patchSymbol = Symbol.for("@shekohex/agent/model-family-system-prompt-patched");
 
-type AgentSessionPrototype = typeof AgentSession.prototype & {
-  [patchSymbol]?: true;
-};
-
 function readStringField(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function isMethod(value: unknown): value is (this: unknown, ...args: unknown[]) => unknown {
+  return typeof value === "function";
+}
+
+function readObjectProperty(target: object, key: PropertyKey): unknown {
+  return Reflect.get(target, key);
+}
+
+function writeObjectProperty(target: object, key: PropertyKey, value: unknown): void {
+  Reflect.set(target, key, value);
+}
+
 function readModelId(session: AgentSession): string | undefined {
-  const model = Reflect.get(session, "model");
+  const model = readObjectProperty(session, "model");
   if (model === null || typeof model !== "object" || Array.isArray(model)) {
     return undefined;
   }
 
-  return readStringField(Reflect.get(model, "id"));
+  return readStringField(readObjectProperty(model, "id"));
 }
 
 function readBaseSystemPrompt(session: AgentSession): string | undefined {
-  return readStringField(Reflect.get(session, "_baseSystemPrompt"));
+  return readStringField(readObjectProperty(session, "_baseSystemPrompt"));
 }
 
 function writeSystemPrompt(session: AgentSession, prompt: string): void {
-  const agent = Reflect.get(session, "agent");
+  const agent = readObjectProperty(session, "agent");
   if (agent === null || typeof agent !== "object" || Array.isArray(agent)) {
     return;
   }
 
-  const state = Reflect.get(agent, "state");
+  const state = readObjectProperty(agent, "state");
   if (state === null || typeof state !== "object" || Array.isArray(state)) {
     return;
   }
 
-  Reflect.set(state, "systemPrompt", prompt);
+  writeObjectProperty(state, "systemPrompt", prompt);
 }
 
 function readMethod(target: object, key: string): ((...args: unknown[]) => unknown) | undefined {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);
   const methodValue: unknown = descriptor?.value;
-  if (typeof methodValue !== "function") {
+  if (!isMethod(methodValue)) {
     return undefined;
   }
 
-  return function methodProxy(this: unknown, ...args: unknown[]): unknown {
-    return Reflect.apply(methodValue, this, args);
-  };
+  return methodValue;
 }
 
 export function resolveModelFamilySystemPrompt(
@@ -118,8 +124,8 @@ function applySystemPrompt(session: AgentSession): void {
 }
 
 function patchAgentSession(): void {
-  const prototype = AgentSession.prototype as AgentSessionPrototype;
-  if (prototype[patchSymbol]) {
+  const prototype = AgentSession.prototype;
+  if (readObjectProperty(prototype, patchSymbol) === true) {
     return;
   }
 
@@ -162,7 +168,7 @@ function patchAgentSession(): void {
     applySystemPrompt(this);
   };
 
-  prototype[patchSymbol] = true;
+  writeObjectProperty(prototype, patchSymbol, true);
 }
 
 export default function modelFamilySystemPromptExtension(pi: ExtensionAPI): void {

@@ -116,23 +116,7 @@ export function applyRemoteSettingsSnapshot(
 export function applyRemoteExtensionsSnapshot(
   snapshot: SessionSnapshot,
 ): RemoteExtensionMetadata[] {
-  const extensions: unknown = Reflect.get(snapshot, "extensions");
-  if (!Array.isArray(extensions)) {
-    return [];
-  }
-  return extensions
-    .filter(
-      (extension): extension is Record<string, unknown> =>
-        extension !== null && typeof extension === "object" && !Array.isArray(extension),
-    )
-    .map((extension) => ({
-      id: typeof extension.id === "string" ? extension.id : "unknown",
-      runtime:
-        "runtime" in extension && (extension.runtime === "server" || extension.runtime === "client")
-          ? extension.runtime
-          : "server",
-      path: typeof extension.path === "string" ? extension.path : "unknown",
-    }));
+  return snapshot.extensions.map((extension) => ({ ...extension }));
 }
 
 export function getCombinedExtensionMetadata(input: {
@@ -172,7 +156,7 @@ function createDefaultRemoteSettings(): RemoteAgentSettings {
 }
 
 export function readRemoteSettingsSnapshot(snapshot: SessionSnapshot): RemoteAgentSettings {
-  const settings: unknown = Reflect.get(snapshot, "settings");
+  const settings = snapshot.settings;
   if (settings === undefined) {
     return createDefaultRemoteSettings();
   }

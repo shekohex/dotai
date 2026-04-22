@@ -5,6 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
 import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
 import { AuthService, createChallengePayload } from "../src/remote/auth.ts";
 import { createRemoteApp } from "../src/remote/app.ts";
@@ -92,8 +93,31 @@ class RecordingSession {
   isStreaming = false;
   isCompacting = false;
   isRetrying = false;
+  autoCompactionEnabled = false;
+  steeringMode: "all" | "one-at-a-time" = "all";
+  followUpMode: "all" | "one-at-a-time" = "all";
   pendingMessageCount = 0;
   messages: unknown[] = [];
+  sessionStats = {
+    sessionFile: "/tmp/pi-remote-recording-session/session.jsonl",
+    sessionId: "pi-remote-recording-session",
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+    toolResults: 0,
+    totalMessages: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    },
+    cost: 0,
+    contextUsage: undefined as
+      | { tokens: number | null; contextWindow: number; percent: number | null }
+      | undefined,
+  };
   state = {
     pendingToolCalls: new Set<string>(),
     errorMessage: undefined as string | undefined,
@@ -255,6 +279,26 @@ class RecordingSession {
     this.thinkingLevel = level;
   }
 
+  getContextUsage() {
+    return this.sessionStats.contextUsage;
+  }
+
+  getSessionStats() {
+    return {
+      ...this.sessionStats,
+      tokens: {
+        input: this.sessionStats.tokens.input,
+        output: this.sessionStats.tokens.output,
+        cacheRead: this.sessionStats.tokens.cacheRead,
+        cacheWrite: this.sessionStats.tokens.cacheWrite,
+        total: this.sessionStats.tokens.total,
+      },
+      ...(this.sessionStats.contextUsage
+        ? { contextUsage: { ...this.sessionStats.contextUsage } }
+        : {}),
+    };
+  }
+
   setSessionName(): void {}
 }
 
@@ -338,6 +382,56 @@ class UiRequestPromptSession extends RecordingSession {
   }
 }
 
+class RuntimeExtensionEventsPromptSession extends RecordingSession {
+  private readonly listeners = new Set<(event: unknown) => void>();
+
+  override subscribe(listener: (event: unknown) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emit(event: unknown): void {
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
+
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    await super.prompt(text, options);
+    this.emit({
+      type: "queue_update",
+      steering: ["queued-steer"],
+      followUp: ["queued-follow-up"],
+    });
+    this.emit({
+      type: "compaction_start",
+      reason: "manual",
+    });
+    this.emit({
+      type: "compaction_end",
+      reason: "manual",
+      result: undefined,
+      aborted: false,
+      willRetry: false,
+    });
+    this.emit({
+      type: "auto_retry_start",
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 100,
+      errorMessage: "simulated retry",
+    });
+    this.emit({
+      type: "auto_retry_end",
+      success: false,
+      attempt: 1,
+      finalError: "simulated retry",
+    });
+  }
+}
+
 class UiPrimitivesPromptSession extends RecordingSession {
   headerError: string | undefined;
   footerError: string | undefined;
@@ -401,6 +495,8 @@ async function createRemoteRuntime(
     privateKeyPem: string;
     sessionId?: string;
     cwd?: string;
+    clientExtensionMetadata?: Array<{ id: string; runtime: "client"; path: string }>;
+    clientExtensionFactories?: ExtensionFactory[];
   },
 ) {
   return RemoteAgentSessionRuntime.create({
@@ -412,6 +508,12 @@ async function createRemoteRuntime(
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.clientExtensionMetadata
+      ? { clientExtensionMetadata: options.clientExtensionMetadata }
+      : {}),
+    ...(options.clientExtensionFactories
+      ? { clientExtensionFactories: options.clientExtensionFactories }
+      : {}),
     fetchImpl: createInProcessFetch(app),
   });
 }
@@ -1583,6 +1685,9 @@ timedTest("extension state kv hydration restores managed custom entries", async 
   const client: ExtensionStateKvClient = {
     readKv: async (scope, namespace, key) => {
       readCalls.push({ scope, namespace, key });
+      if (namespace !== "openusage") {
+        return { found: false };
+      }
       return {
         found: true,
         value: {
@@ -1597,7 +1702,10 @@ timedTest("extension state kv hydration restores managed custom entries", async 
 
   await hydrateExtensionStateFromKv({ client, sessionManager });
 
-  assert.deepEqual(readCalls, [{ scope: "user", namespace: "openusage", key: "state" }]);
+  assert.deepEqual(readCalls, [
+    { scope: "user", namespace: "openusage", key: "state" },
+    { scope: "user", namespace: "prompt-stash", key: "state" },
+  ]);
   const restored = sessionManager
     .getBranch()
     .find((entry) => entry.type === "custom" && entry.customType === "openusage-state");
@@ -1621,12 +1729,27 @@ timedTest("extension state kv persistence writes managed state only", async () =
   };
 
   assert.equal(isKvManagedExtensionState("openusage-state"), true);
+  assert.equal(isKvManagedExtensionState("prompt-stash-state"), true);
   assert.equal(isKvManagedExtensionState("review-settings"), false);
 
   await persistExtensionStateToKv({
     client,
     customType: "openusage-state",
     value: { resetTimeFormat: "relative" },
+  });
+  await persistExtensionStateToKv({
+    client,
+    customType: "prompt-stash-state",
+    value: {
+      entries: [
+        {
+          version: 1,
+          id: "stash-id",
+          text: "saved prompt",
+          createdAt: 123,
+        },
+      ],
+    },
   });
   await persistExtensionStateToKv({
     client,
@@ -1641,7 +1764,290 @@ timedTest("extension state kv persistence writes managed state only", async () =
       key: "state",
       value: { resetTimeFormat: "relative" },
     },
+    {
+      scope: "user",
+      namespace: "prompt-stash",
+      key: "state",
+      value: {
+        entries: [
+          {
+            version: 1,
+            id: "stash-id",
+            text: "saved prompt",
+            createdAt: 123,
+          },
+        ],
+      },
+    },
   ]);
+});
+
+timedTest("remote snapshot and adapter expose runtime context usage", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const usage = {
+    tokens: 1234,
+    contextWindow: 128_000,
+    percent: 0.96,
+  };
+  const session = new RecordingSession();
+  session.sessionStats = {
+    ...session.sessionStats,
+    sessionFile: "/tmp/pi-remote-recording-session/authoritative.jsonl",
+    contextUsage: usage,
+    cost: 12.34,
+  };
+  session.autoCompactionEnabled = true;
+  session.steeringMode = "one-at-a-time";
+  session.followUpMode = "all";
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = (await snapshotResponse.json()) as {
+      contextUsage?: typeof usage;
+      usageCost: number;
+      sessionStats: {
+        sessionFile?: string;
+        cost: number;
+        contextUsage?: typeof usage;
+      };
+      autoCompactionEnabled: boolean;
+      steeringMode: "all" | "one-at-a-time";
+      followUpMode: "all" | "one-at-a-time";
+    };
+    assert.deepEqual(snapshot.contextUsage, usage);
+    assert.equal(snapshot.usageCost, 12.34);
+    assert.equal(
+      snapshot.sessionStats.sessionFile,
+      "/tmp/pi-remote-recording-session/authoritative.jsonl",
+    );
+    assert.equal(snapshot.sessionStats.cost, 12.34);
+    assert.deepEqual(snapshot.sessionStats.contextUsage, usage);
+    assert.equal(snapshot.autoCompactionEnabled, true);
+    assert.equal(snapshot.steeringMode, "one-at-a-time");
+    assert.equal(snapshot.followUpMode, "all");
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+    assert.deepEqual(runtime.session.getContextUsage(), usage);
+    assert.equal(runtime.session.getSessionStats().cost, 12.34);
+    assert.equal(
+      runtime.session.getSessionStats().sessionFile,
+      "/tmp/pi-remote-recording-session/authoritative.jsonl",
+    );
+    assert.equal(runtime.session.autoCompactionEnabled, true);
+    assert.equal(runtime.session.steeringMode, "one-at-a-time");
+    assert.equal(runtime.session.followUpMode, "all");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "remote adapter getSessionStats uses server-authoritative stats instead of transcript",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const session = new RecordingSession();
+    session.messages = [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "hi" }],
+        usage: {
+          input: 999,
+          output: 999,
+          cacheRead: 999,
+          cacheWrite: 999,
+          totalTokens: 3996,
+          cost: {
+            input: 9,
+            output: 9,
+            cacheRead: 9,
+            cacheWrite: 9,
+            total: 36,
+          },
+        },
+        api: "responses",
+        provider: "pi-remote-faux",
+        model: "pi-remote-faux-1",
+        stopReason: "stop",
+        timestamp: Date.now(),
+      },
+    ];
+    session.sessionStats = {
+      ...session.sessionStats,
+      sessionFile: "/tmp/pi-remote-recording-session/authoritative-stats.jsonl",
+      userMessages: 1,
+      assistantMessages: 1,
+      totalMessages: 2,
+      tokens: {
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+        total: 10,
+      },
+      cost: 1.23,
+    };
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      const stats = runtime.session.getSessionStats();
+      assert.equal(stats.cost, 1.23);
+      assert.equal(stats.tokens.total, 10);
+      assert.equal(stats.sessionFile, "/tmp/pi-remote-recording-session/authoritative-stats.jsonl");
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("session state patch carries server stats and client cache updates", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = (await snapshotResponse.json()) as {
+      lastSessionStreamOffset: string;
+      sessionStats: { totalMessages: number };
+    };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const initialStats = runtime.session.getSessionStats();
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for agent_end"));
+      }, 10_000);
+
+      const unsubscribe = runtime!.session.subscribe((event) => {
+        if (event.type !== "agent_end") {
+          return;
+        }
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve();
+      });
+
+      void runtime!.session.prompt("report a short status line");
+    });
+
+    const updatedStats = runtime.session.getSessionStats();
+    assert.ok(updatedStats.totalMessages > initialStats.totalMessages);
+
+    const replayResponse = await remote.app.request(
+      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(snapshot.lastSessionStreamOffset)}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    assert.equal(replayResponse.status, 200);
+    const replay = (await replayResponse.json()) as {
+      events: Array<{
+        kind: string;
+        payload: { patch?: { sessionStats?: { totalMessages: number } } };
+      }>;
+    };
+    assert.equal(
+      replay.events.some(
+        (event) =>
+          event.kind === "session_state_patch" &&
+          event.payload.patch?.sessionStats !== undefined &&
+          event.payload.patch.sessionStats.totalMessages > snapshot.sessionStats.totalMessages,
+      ),
+      true,
+    );
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
 });
 
 timedTest(
@@ -3133,6 +3539,243 @@ timedTest("milestone 3 adapter routes extension ui requests through ui-response"
     assert.equal(inputCalls, 1);
     assert.equal(session.uiAnswers.length, 1);
     assert.equal(session.uiAnswers[0], "client-answer");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter forwards turn_end to client extensions", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new InMemoryPiRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  let turnEndCount = 0;
+  const turnEndExtension: ExtensionFactory = (pi) => {
+    pi.on("turn_end", () => {
+      turnEndCount += 1;
+    });
+  };
+
+  try {
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      clientExtensionMetadata: [
+        {
+          id: "test-turn-end",
+          runtime: "client",
+          path: "client:test-turn-end",
+        },
+      ],
+      clientExtensionFactories: [turnEndExtension],
+    });
+
+    await runtime.session.bindExtensions({});
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for agent_end while forwarding turn_end"));
+      }, 5_000);
+
+      const unsubscribe = runtime!.session.subscribe((event) => {
+        if (event.type !== "agent_end") {
+          return;
+        }
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve();
+      });
+
+      void runtime!.session.prompt("forward turn end");
+    });
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (turnEndCount > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(turnEndCount, 1);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "milestone 3 adapter passes message_end object by reference to client extensions",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    const mutatingExtension: ExtensionFactory = (pi) => {
+      pi.on("message_end", (event) => {
+        const message = event.message as { role?: string; content?: unknown };
+        if (message.role !== "assistant" || !Array.isArray(message.content)) {
+          return;
+        }
+        message.content.length = 0;
+      });
+    };
+
+    try {
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        clientExtensionMetadata: [
+          {
+            id: "test-mutating-message-end",
+            runtime: "client",
+            path: "client:test-mutating-message-end",
+          },
+        ],
+        clientExtensionFactories: [mutatingExtension],
+      });
+
+      await runtime.session.bindExtensions({});
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          unsubscribe();
+          reject(new Error("Timed out waiting for agent_end in mutation pass-through test"));
+        }, 5_000);
+
+        const unsubscribe = runtime!.session.subscribe((event) => {
+          if (event.type !== "agent_end") {
+            return;
+          }
+          clearTimeout(timeout);
+          unsubscribe();
+          resolve();
+        });
+
+        void runtime!.session.prompt("verify message mutation pass-through");
+      });
+
+      const assistant = [...runtime.session.messages]
+        .toReversed()
+        .find(
+          (message) =>
+            typeof message === "object" &&
+            message !== null &&
+            (message as { role?: string }).role === "assistant",
+        ) as
+        | {
+            role?: string;
+            content?: Array<{ type?: string; text?: string }>;
+          }
+        | undefined;
+
+      assert.ok(assistant);
+      assert.ok(Array.isArray(assistant.content));
+      assert.equal((assistant.content ?? []).length, 0);
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("milestone 3 adapter forwards queue, compaction, and retry events", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RuntimeExtensionEventsPromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  let queueUpdateCount = 0;
+  let compactionStartCount = 0;
+  let compactionEndCount = 0;
+  let autoRetryStartCount = 0;
+  let autoRetryEndCount = 0;
+
+  const extension: ExtensionFactory = (pi) => {
+    pi.on("queue_update", () => {
+      queueUpdateCount += 1;
+    });
+    pi.on("compaction_start", () => {
+      compactionStartCount += 1;
+    });
+    pi.on("compaction_end", () => {
+      compactionEndCount += 1;
+    });
+    pi.on("auto_retry_start", () => {
+      autoRetryStartCount += 1;
+    });
+    pi.on("auto_retry_end", () => {
+      autoRetryEndCount += 1;
+    });
+  };
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      clientExtensionMetadata: [
+        {
+          id: "test-runtime-events",
+          runtime: "client",
+          path: "client:test-runtime-events",
+        },
+      ],
+      clientExtensionFactories: [extension],
+    });
+
+    await runtime.session.bindExtensions({});
+    await runtime.session.prompt("trigger runtime extension events");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (
+        queueUpdateCount > 0 &&
+        compactionStartCount > 0 &&
+        compactionEndCount > 0 &&
+        autoRetryStartCount > 0 &&
+        autoRetryEndCount > 0
+      ) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(queueUpdateCount, 1);
+    assert.equal(compactionStartCount, 1);
+    assert.equal(compactionEndCount, 1);
+    assert.equal(autoRetryStartCount, 1);
+    assert.equal(autoRetryEndCount, 1);
   } finally {
     await runtime?.dispose();
     await remote.dispose();

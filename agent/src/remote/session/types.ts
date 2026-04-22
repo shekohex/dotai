@@ -1,6 +1,11 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
-import type { AgentSessionRuntime, ExtensionUIContext } from "@mariozechner/pi-coding-agent";
+import type {
+  AgentSessionRuntime,
+  ContextUsage,
+  ExtensionUIContext,
+  SessionStats,
+} from "@mariozechner/pi-coding-agent";
 import { defaultSettings } from "../../default-settings.js";
 import type { AuthSession } from "../auth.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
@@ -53,6 +58,12 @@ export interface SessionRecord {
     defaultThinkingLevel: string | null;
     enabledModels: string[] | null;
   };
+  contextUsage: ContextUsage | undefined;
+  usageCost: number;
+  sessionStats: SessionStats;
+  autoCompactionEnabled: boolean;
+  steeringMode: "all" | "one-at-a-time";
+  followUpMode: "all" | "one-at-a-time";
   transcript: unknown[];
   queue: {
     depth: number;
@@ -136,6 +147,27 @@ export function createInitialQueue(): SessionRecord["queue"] {
 
 export function createIdleTaskState(): { status: "idle" } {
   return { status: "idle" };
+}
+
+export function createEmptySessionStats(sessionId: string): SessionStats {
+  return {
+    sessionFile: undefined,
+    sessionId,
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+    toolResults: 0,
+    totalMessages: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    },
+    cost: 0,
+    contextUsage: undefined,
+  };
 }
 
 export type SessionCreationInput = {

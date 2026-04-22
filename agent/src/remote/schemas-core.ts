@@ -113,6 +113,31 @@ export const RemoteModelSettingsSchema = Type.Object({
   enabledModels: Type.Union([Type.Array(Type.String()), Type.Null()]),
 });
 
+export const ContextUsageSchema = Type.Object({
+  tokens: Type.Union([Type.Number(), Type.Null()]),
+  contextWindow: Type.Number(),
+  percent: Type.Union([Type.Number(), Type.Null()]),
+});
+
+export const SessionStatsSchema = Type.Object({
+  sessionFile: Type.Optional(Type.String()),
+  sessionId: Type.String(),
+  userMessages: Type.Number(),
+  assistantMessages: Type.Number(),
+  toolCalls: Type.Number(),
+  toolResults: Type.Number(),
+  totalMessages: Type.Number(),
+  tokens: Type.Object({
+    input: Type.Number(),
+    output: Type.Number(),
+    cacheRead: Type.Number(),
+    cacheWrite: Type.Number(),
+    total: Type.Number(),
+  }),
+  cost: Type.Number(),
+  contextUsage: Type.Optional(ContextUsageSchema),
+});
+
 export const AppSnapshotSchema = Type.Object({
   serverInfo: Type.Object({
     name: Type.String(),
@@ -247,6 +272,12 @@ export const SessionSnapshotSchema = Type.Object({
   settings: Type.Optional(RemoteSettingsSnapshotSchema),
   availableModels: Type.Array(RemoteModelSchema),
   modelSettings: RemoteModelSettingsSchema,
+  sessionStats: SessionStatsSchema,
+  contextUsage: Type.Optional(ContextUsageSchema),
+  usageCost: Type.Number(),
+  autoCompactionEnabled: Type.Boolean(),
+  steeringMode: Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]),
+  followUpMode: Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]),
   transcript: Type.Array(Type.Unknown()),
   queue: Type.Object({
     depth: Type.Number(),

@@ -1,8 +1,14 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
-import type { AgentSessionEvent, ExtensionUIContext } from "@mariozechner/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  ContextUsage,
+  ExtensionUIContext,
+  SessionStats,
+} from "@mariozechner/pi-coding-agent";
 import type { RemoteApiClient } from "../../remote-api-client.js";
 import type {
+  ExtensionUiResolvedEventPayload,
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
   StreamEventEnvelope,
@@ -11,8 +17,6 @@ import type { RemoteModelSettingsState } from "../contracts.js";
 import {
   applyAgentSessionEnvelopePayload,
   routeRemoteSessionEnvelope,
-  validateExtensionUiResolvedPayload,
-  validateExtensionUiRequestPayload,
 } from "../session-envelope-ops.js";
 import { applyRemoteSessionStatePatch } from "../session-patches.js";
 import { pollRemoteSessionEvents } from "../session-polling.js";
@@ -39,7 +43,6 @@ export type PollRemoteSessionRuntimeInput = {
   handleRemoteWarning: (message: string) => void;
   reauthenticate: () => Promise<void>;
   isAgentSessionEventLike: (value: unknown) => value is AgentSessionEvent;
-  readErrorMessage: (payload: unknown) => string | undefined;
   applyAgentSessionEvent: (event: AgentSessionEvent) => void;
   remoteModelSettings: RemoteModelSettingsState;
   setRemoteAvailableModels: (models: Model<Api>[]) => void;
@@ -49,6 +52,12 @@ export type PollRemoteSessionRuntimeInput = {
   setRemoteExtensions: (extensions: RemoteExtensionMetadata[]) => void;
   setSessionName: (sessionName: string) => void;
   setActiveTools: (activeTools: string[]) => void;
+  setContextUsage: (contextUsage: ContextUsage | undefined) => void;
+  setSessionStats: (sessionStats: SessionStats) => void;
+  setUsageCost: (usageCost: number) => void;
+  setAutoCompactionEnabled: (enabled: boolean) => void;
+  setSteeringMode: (mode: "all" | "one-at-a-time") => void;
+  setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
   getUiContext: () => ExtensionUIContext | undefined;
   bufferUiRequest: (request: ExtensionUiRequestEventPayload) => void;
   pendingInteractiveRequests: Map<string, AbortController>;
@@ -67,6 +76,12 @@ type PollingStateHandlers = Pick<
   | "setRemoteExtensions"
   | "setSessionName"
   | "setActiveTools"
+  | "setContextUsage"
+  | "setSessionStats"
+  | "setUsageCost"
+  | "setAutoCompactionEnabled"
+  | "setSteeringMode"
+  | "setFollowUpMode"
   | "getUiContext"
   | "bufferUiRequest"
   | "pendingInteractiveRequests"
@@ -83,7 +98,6 @@ export function createRemoteSessionPollingInput(input: {
   handleRemoteWarning: PollRemoteSessionRuntimeInput["handleRemoteWarning"];
   reauthenticate: PollRemoteSessionRuntimeInput["reauthenticate"];
   isAgentSessionEventLike: PollRemoteSessionRuntimeInput["isAgentSessionEventLike"];
-  readErrorMessage: PollRemoteSessionRuntimeInput["readErrorMessage"];
   applyAgentSessionEvent: PollRemoteSessionRuntimeInput["applyAgentSessionEvent"];
   handleEnvelope: PollRemoteSessionRuntimeInput["handleEnvelope"];
   remoteModelSettings: PollRemoteSessionRuntimeInput["remoteModelSettings"];
@@ -101,7 +115,6 @@ export function createRemoteSessionPollingInput(input: {
     handleRemoteWarning: input.handleRemoteWarning,
     reauthenticate: input.reauthenticate,
     isAgentSessionEventLike: input.isAgentSessionEventLike,
-    readErrorMessage: input.readErrorMessage,
     applyAgentSessionEvent: input.applyAgentSessionEvent,
     handleEnvelope: input.handleEnvelope,
     remoteModelSettings: input.remoteModelSettings,
@@ -156,8 +169,7 @@ export async function handleRemoteSessionEnvelope(
       handleSessionStatePatchPayload(input, payload);
     },
     onExtensionErrorPayload: (payload) => {
-      const errorMessage = input.readErrorMessage(payload);
-      input.handleRemoteError(errorMessage ?? "Remote command execution failed");
+      input.handleRemoteError(payload.error);
     },
     onExtensionUiRequestPayload: async (payload) => {
       await handleExtensionUiRequestPayload(input, payload);
@@ -170,7 +182,7 @@ export async function handleRemoteSessionEnvelope(
 
 function handleSessionStatePatchPayload(
   input: PollRemoteSessionRuntimeInput,
-  payload: unknown,
+  payload: Extract<StreamEventEnvelope, { kind: "session_state_patch" }>["payload"],
 ): void {
   applyRemoteSessionStatePatch({
     payload,
@@ -182,28 +194,28 @@ function handleSessionStatePatchPayload(
     setRemoteExtensions: input.setRemoteExtensions,
     setSessionName: input.setSessionName,
     setActiveTools: input.setActiveTools,
+    setContextUsage: input.setContextUsage,
+    setSessionStats: input.setSessionStats,
+    setUsageCost: input.setUsageCost,
+    setAutoCompactionEnabled: input.setAutoCompactionEnabled,
+    setSteeringMode: input.setSteeringMode,
+    setFollowUpMode: input.setFollowUpMode,
   });
 }
 
 async function handleExtensionUiRequestPayload(
   input: PollRemoteSessionRuntimeInput,
-  payload: unknown,
+  payload: ExtensionUiRequestEventPayload,
 ): Promise<void> {
-  const validatedPayload = validateExtensionUiRequestPayload(payload);
-  if (!validatedPayload.ok) {
-    input.handleRemoteError(`Invalid extension UI request payload: ${validatedPayload.message}`);
-    return;
-  }
-
   const uiContext = input.getUiContext();
   if (!uiContext) {
-    input.bufferUiRequest(validatedPayload.value);
+    input.bufferUiRequest(payload);
     return;
   }
 
   await handleRemoteUiRequest({
     uiContext,
-    request: validatedPayload.value,
+    request: payload,
     client: input.client,
     sessionId: input.sessionId,
     pendingInteractiveRequests: input.pendingInteractiveRequests,
@@ -212,13 +224,7 @@ async function handleExtensionUiRequestPayload(
 
 function handleExtensionUiResolvedPayload(
   input: PollRemoteSessionRuntimeInput,
-  payload: unknown,
+  payload: ExtensionUiResolvedEventPayload,
 ): void {
-  const validatedPayload = validateExtensionUiResolvedPayload(payload);
-  if (!validatedPayload.ok) {
-    input.handleRemoteError(`Invalid extension UI resolved payload: ${validatedPayload.message}`);
-    return;
-  }
-
-  input.cancelUiRequest(validatedPayload.value.id);
+  input.cancelUiRequest(payload.id);
 }

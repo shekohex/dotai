@@ -1,4 +1,5 @@
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
+import type { SessionStats } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { StreamEventEnvelope } from "../../schemas.js";
 import {
@@ -9,7 +10,6 @@ import {
   isAgentSessionEventLike,
   patchSettingsManagerForRemoteModelSettings,
   readRemoteSettingsSnapshot,
-  readErrorMessage,
   resolveThinkingLevel,
 } from "../session-deps.js";
 import {
@@ -42,6 +42,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, this._thinkingLevel);
     this.state.thinkingLevel = this._thinkingLevel;
     this.setResolvedModel(snapshot.model);
+    this.state.sessionStats = cloneSessionStats(snapshot.sessionStats);
+    this.state.contextUsage = this.state.sessionStats.contextUsage ?? snapshot.contextUsage;
+    this.state.usageCost = this.state.sessionStats.cost;
+    this._autoCompactionEnabled = snapshot.autoCompactionEnabled;
+    this._steeringMode = snapshot.steeringMode;
+    this._followUpMode = snapshot.followUpMode;
     this.activeTools = [...snapshot.activeTools];
     await this.refreshRemoteToolCatalog();
     this.queueDepth = snapshot.queue.depth;
@@ -110,7 +116,6 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       },
       reauthenticate: () => this.client.reauthenticate(),
       isAgentSessionEventLike,
-      readErrorMessage,
       applyAgentSessionEvent: (event) => {
         this.applyAgentSessionEvent(event);
       },
@@ -149,6 +154,26 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       },
       setActiveTools: (activeTools) => {
         this.activeTools = [...activeTools];
+      },
+      setContextUsage: (contextUsage) => {
+        this.state.contextUsage = contextUsage;
+      },
+      setSessionStats: (sessionStats) => {
+        this.state.sessionStats = cloneSessionStats(sessionStats);
+        this.state.contextUsage = this.state.sessionStats.contextUsage;
+        this.state.usageCost = this.state.sessionStats.cost;
+      },
+      setUsageCost: (usageCost) => {
+        this.state.usageCost = usageCost;
+      },
+      setAutoCompactionEnabled: (enabled) => {
+        this._autoCompactionEnabled = enabled;
+      },
+      setSteeringMode: (mode) => {
+        this._steeringMode = mode;
+      },
+      setFollowUpMode: (mode) => {
+        this._followUpMode = mode;
       },
       getUiContext: () => this.uiContext,
       bufferUiRequest: (request) => {
@@ -199,6 +224,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   }
 
   protected applyAgentSessionEvent(event: AgentSessionEvent): void {
+    this.forwardAgentSessionEventToLocalExtensions(event);
     const next = applyRemoteAgentEventAndEmit({
       event,
       state: this.state,
@@ -226,4 +252,21 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._retryAttempt = next.retryAttempt;
     this._isCompacting = next.isCompacting;
   }
+}
+
+function cloneSessionStats(
+  stats: Omit<SessionStats, "sessionFile"> & { sessionFile?: string },
+): RemoteAgentSessionRuntimeInternals["state"]["sessionStats"] {
+  return {
+    ...stats,
+    sessionFile: stats.sessionFile,
+    tokens: {
+      input: stats.tokens.input,
+      output: stats.tokens.output,
+      cacheRead: stats.tokens.cacheRead,
+      cacheWrite: stats.tokens.cacheWrite,
+      total: stats.tokens.total,
+    },
+    ...(stats.contextUsage ? { contextUsage: { ...stats.contextUsage } } : {}),
+  };
 }

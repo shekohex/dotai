@@ -89,6 +89,19 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
               extensions: targetRecord.extensions,
               availableModels: targetRecord.availableModels,
               modelSettings: targetRecord.modelSettings,
+              sessionStats: {
+                ...targetRecord.sessionStats,
+                tokens: {
+                  input: targetRecord.sessionStats.tokens.input,
+                  output: targetRecord.sessionStats.tokens.output,
+                  cacheRead: targetRecord.sessionStats.tokens.cacheRead,
+                  cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
+                  total: targetRecord.sessionStats.tokens.total,
+                },
+                ...(targetRecord.sessionStats.contextUsage
+                  ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
+                  : {}),
+              },
             },
           },
           ts,

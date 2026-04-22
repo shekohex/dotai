@@ -1,11 +1,11 @@
-import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
+import type { AgentSessionRuntime, SessionStats } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot, SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import { parseResourceLoaderExtensionMetadata, parseRuntimeExtensionMetadata } from "./helpers.js";
 import { applyRuntimeResourcesSnapshot } from "./runtime-resources-sync.js";
 import { buildSessionSnapshotParts } from "./runtime-sync-snapshot.js";
-import type { SessionRecord } from "./types.js";
+import { createEmptySessionStats, type SessionRecord } from "./types.js";
 
 export function syncSessionRecordFromRuntime(input: {
   record: SessionRecord;
@@ -76,6 +76,13 @@ function applyRuntimeModelSnapshot(
   }
   record.thinkingLevel = session.thinkingLevel;
   record.activeTools = [...session.getActiveToolNames()];
+  record.autoCompactionEnabled = session.autoCompactionEnabled;
+  record.steeringMode = session.steeringMode === "one-at-a-time" ? "one-at-a-time" : "all";
+  record.followUpMode = session.followUpMode === "one-at-a-time" ? "one-at-a-time" : "all";
+  const sessionStats = readSessionStats(record.sessionId, session);
+  record.sessionStats = sessionStats;
+  record.contextUsage = sessionStats.contextUsage ? { ...sessionStats.contextUsage } : undefined;
+  record.usageCost = sessionStats.cost;
   record.availableModels = session.modelRegistry
     .getAvailable()
     .map((availableModel) => ({ ...availableModel }));
@@ -84,6 +91,38 @@ function applyRuntimeModelSnapshot(
     defaultModel: session.settingsManager.getDefaultModel() ?? null,
     defaultThinkingLevel: session.settingsManager.getDefaultThinkingLevel() ?? null,
     enabledModels: session.settingsManager.getEnabledModels() ?? null,
+  };
+}
+
+function readSessionStats(
+  sessionId: string,
+  session: NonNullable<AgentSessionRuntime["session"]>,
+): SessionRecord["sessionStats"] {
+  if (typeof session.getSessionStats !== "function") {
+    const fallback = createEmptySessionStats(sessionId);
+    if (typeof session.getContextUsage === "function") {
+      const contextUsage = session.getContextUsage();
+      if (contextUsage) {
+        fallback.contextUsage = { ...contextUsage };
+      }
+    }
+    return fallback;
+  }
+
+  return cloneSessionStats(session.getSessionStats());
+}
+
+function cloneSessionStats(stats: SessionStats): SessionRecord["sessionStats"] {
+  return {
+    ...stats,
+    tokens: {
+      input: stats.tokens.input,
+      output: stats.tokens.output,
+      cacheRead: stats.tokens.cacheRead,
+      cacheWrite: stats.tokens.cacheWrite,
+      total: stats.tokens.total,
+    },
+    ...(stats.contextUsage ? { contextUsage: { ...stats.contextUsage } } : {}),
   };
 }
 

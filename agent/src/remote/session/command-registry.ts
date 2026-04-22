@@ -15,6 +15,7 @@ import {
   createEmptyModelSettings,
   createIdleTaskState,
   createInitialQueue,
+  createEmptySessionStats,
   type SessionRecord,
 } from "./types.js";
 
@@ -55,6 +56,12 @@ function buildSessionRecord(input: {
     settings: createEmptySettingsSnapshot(),
     availableModels: [],
     modelSettings: createEmptyModelSettings(),
+    contextUsage: undefined,
+    usageCost: 0,
+    sessionStats: createEmptySessionStats(input.sessionId),
+    autoCompactionEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
     transcript: [],
     queue: createInitialQueue(),
     retry: createIdleTaskState(),

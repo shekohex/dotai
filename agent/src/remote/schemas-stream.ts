@@ -1,12 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import {
   CommandKindSchema,
+  ContextUsageSchema,
   PresenceSchema,
   RemoteExtensionMetadataSchema,
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
   RemoteModelSchema,
   RemoteModelSettingsSchema,
+  SessionStatsSchema,
   SessionStatusSchema,
   UiResponseRequestSchema,
 } from "./schemas-core.js";
@@ -81,6 +83,12 @@ const SessionStatePatchEventPayloadSchema = Type.Object({
       settings: Type.Optional(RemoteSettingsSnapshotSchema),
       availableModels: Type.Optional(Type.Array(RemoteModelSchema)),
       modelSettings: Type.Optional(RemoteModelSettingsSchema),
+      sessionStats: Type.Optional(SessionStatsSchema),
+      contextUsage: Type.Optional(ContextUsageSchema),
+      usageCost: Type.Optional(Type.Number()),
+      autoCompactionEnabled: Type.Optional(Type.Boolean()),
+      steeringMode: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")])),
+      followUpMode: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")])),
     },
     { minProperties: 1 },
   ),

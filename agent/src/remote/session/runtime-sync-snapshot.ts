@@ -28,6 +28,12 @@ export function buildSessionSnapshotParts(
     settings: { ...record.settings },
     availableModels: record.availableModels.map((model) => ({ ...model })),
     modelSettings,
+    sessionStats: cloneSessionStats(record.sessionStats),
+    contextUsage: record.contextUsage ? { ...record.contextUsage } : undefined,
+    usageCost: record.usageCost,
+    autoCompactionEnabled: record.autoCompactionEnabled,
+    steeringMode: record.steeringMode,
+    followUpMode: record.followUpMode,
     transcript: [...record.transcript],
     queue,
     retry: {
@@ -43,6 +49,20 @@ export function buildSessionSnapshotParts(
     errorMessage: record.errorMessage,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  };
+}
+
+function cloneSessionStats(stats: SessionRecord["sessionStats"]): SessionSnapshot["sessionStats"] {
+  return {
+    ...stats,
+    tokens: {
+      input: stats.tokens.input,
+      output: stats.tokens.output,
+      cacheRead: stats.tokens.cacheRead,
+      cacheWrite: stats.tokens.cacheWrite,
+      total: stats.tokens.total,
+    },
+    ...(stats.contextUsage ? { contextUsage: { ...stats.contextUsage } } : {}),
   };
 }
 

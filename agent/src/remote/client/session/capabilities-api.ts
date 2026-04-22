@@ -1,9 +1,5 @@
 import type { SessionStats } from "@mariozechner/pi-coding-agent";
-import {
-  getAllToolsRemoteSession,
-  getLastAssistantTextRemoteSession,
-  getSessionStatsRemoteSession,
-} from "../session-ops.js";
+import { getAllToolsRemoteSession, getLastAssistantTextRemoteSession } from "../session-ops.js";
 import {
   setActiveToolsRemoteSessionMethod,
   setSessionNameRemoteSessionMethod,
@@ -98,14 +94,11 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
   }
 
   getSessionStats(): SessionStats {
-    return getSessionStatsRemoteSession({
-      sessionId: this.sessionId,
-      messages: this.state.messages,
-    });
+    return cloneSessionStats(this.state.sessionStats);
   }
 
-  getContextUsage(): undefined {
-    return undefined;
+  getContextUsage() {
+    return this.state.contextUsage;
   }
 
   exportToHtml(_outputPath?: string): Promise<never> {
@@ -157,4 +150,18 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
       sessionId: this.sessionId,
     });
   }
+}
+
+function cloneSessionStats(stats: SessionStats): SessionStats {
+  return {
+    ...stats,
+    tokens: {
+      input: stats.tokens.input,
+      output: stats.tokens.output,
+      cacheRead: stats.tokens.cacheRead,
+      cacheWrite: stats.tokens.cacheWrite,
+      total: stats.tokens.total,
+    },
+    ...(stats.contextUsage ? { contextUsage: { ...stats.contextUsage } } : {}),
+  };
 }

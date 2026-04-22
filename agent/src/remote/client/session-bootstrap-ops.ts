@@ -1,5 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
+import type { ContextUsage, SessionStats } from "@mariozechner/pi-coding-agent";
 import { SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { defaultSettings } from "../../default-settings.js";
 import {
@@ -35,6 +36,8 @@ type AssertRemoteSettingsTypeParity = EnsureTrue<
 const remoteSettingsTypeParity: AssertRemoteSettingsTypeParity = true;
 void remoteSettingsTypeParity;
 
+type SessionStatsPayload = Omit<SessionStats, "sessionFile"> & { sessionFile?: string };
+
 export function createInitialRemoteSessionState(input: {
   snapshot: SessionSnapshot;
   model: Model<Api> | undefined;
@@ -45,8 +48,12 @@ export function createInitialRemoteSessionState(input: {
   isStreaming: boolean;
   model: Model<Api> | undefined;
   thinkingLevel: ThinkingLevel;
+  sessionStats: SessionStats;
+  contextUsage: ContextUsage | undefined;
+  usageCost: number;
   errorMessage?: string;
 } {
+  const sessionStats = cloneSessionStats(input.snapshot.sessionStats);
   return {
     messages: normalizeTranscript(input.snapshot.transcript),
     pendingToolCalls: new Set(
@@ -57,7 +64,25 @@ export function createInitialRemoteSessionState(input: {
     isStreaming: input.snapshot.streamingState === "streaming",
     model: input.model,
     thinkingLevel: input.thinkingLevel,
+    sessionStats,
+    contextUsage: sessionStats.contextUsage ?? input.snapshot.contextUsage,
+    usageCost: sessionStats.cost,
     errorMessage: input.snapshot.errorMessage ?? undefined,
+  };
+}
+
+function cloneSessionStats(stats: SessionStatsPayload): SessionStats {
+  return {
+    ...stats,
+    sessionFile: stats.sessionFile,
+    tokens: {
+      input: stats.tokens.input,
+      output: stats.tokens.output,
+      cacheRead: stats.tokens.cacheRead,
+      cacheWrite: stats.tokens.cacheWrite,
+      total: stats.tokens.total,
+    },
+    ...(stats.contextUsage ? { contextUsage: { ...stats.contextUsage } } : {}),
   };
 }
 

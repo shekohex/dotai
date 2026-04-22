@@ -1,6 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
-import type { SessionManager, SessionStats } from "@mariozechner/pi-coding-agent";
+import type { SessionManager } from "@mariozechner/pi-coding-agent";
 import type { RemoteApiClient } from "../remote-api-client.js";
 import type { SessionSnapshot } from "../schemas.js";
 import {
@@ -90,32 +90,6 @@ export async function sendUserMessageRemoteSession(input: {
   }
 
   await input.prompt(text, { images });
-}
-
-export function getSessionStatsRemoteSession(input: {
-  sessionId: string;
-  messages: AgentMessage[];
-}): SessionStats {
-  const assistantMessages = input.messages.filter((message) => message.role === "assistant").length;
-  const userMessages = input.messages.filter((message) => message.role === "user").length;
-  return {
-    sessionFile: undefined,
-    sessionId: input.sessionId,
-    userMessages,
-    assistantMessages,
-    toolCalls: 0,
-    toolResults: 0,
-    totalMessages: input.messages.length,
-    tokens: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      total: 0,
-    },
-    cost: 0,
-    contextUsage: undefined,
-  };
 }
 
 export function getLastAssistantTextRemoteSession(messages: AgentMessage[]): string | undefined {

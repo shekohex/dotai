@@ -4,19 +4,20 @@ import type {
   ExtensionUiResolvedEventPayload,
   StreamEventEnvelope,
 } from "../schemas.js";
-import {
-  ExtensionUiRequestEventPayloadSchema,
-  ExtensionUiResolvedEventPayloadSchema,
-} from "../schemas.js";
-import { assertType } from "../typebox.js";
 
 export async function routeRemoteSessionEnvelope(input: {
   envelope: StreamEventEnvelope;
-  onAgentSessionPayload: (payload: unknown) => void;
-  onSessionStatePatchPayload: (payload: unknown) => void;
-  onExtensionErrorPayload: (payload: unknown) => void;
-  onExtensionUiRequestPayload: (payload: unknown) => Promise<void>;
-  onExtensionUiResolvedPayload: (payload: unknown) => void;
+  onAgentSessionPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+  ) => void;
+  onSessionStatePatchPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "session_state_patch" }>["payload"],
+  ) => void;
+  onExtensionErrorPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "extension_error" }>["payload"],
+  ) => void;
+  onExtensionUiRequestPayload: (payload: ExtensionUiRequestEventPayload) => Promise<void>;
+  onExtensionUiResolvedPayload: (payload: ExtensionUiResolvedEventPayload) => void;
 }): Promise<void> {
   if (input.envelope.kind === "agent_session_event") {
     input.onAgentSessionPayload(input.envelope.payload);
@@ -52,32 +53,4 @@ export function applyAgentSessionEnvelopePayload(input: {
     return;
   }
   input.applyAgentSessionEvent(input.payload);
-}
-
-export function validateExtensionUiRequestPayload(
-  payload: unknown,
-): { ok: true; value: ExtensionUiRequestEventPayload } | { ok: false; message: string } {
-  try {
-    assertType(ExtensionUiRequestEventPayloadSchema, payload);
-    return { ok: true, value: payload };
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : "Invalid UI request payload",
-    };
-  }
-}
-
-export function validateExtensionUiResolvedPayload(
-  payload: unknown,
-): { ok: true; value: ExtensionUiResolvedEventPayload } | { ok: false; message: string } {
-  try {
-    assertType(ExtensionUiResolvedEventPayloadSchema, payload);
-    return { ok: true, value: payload };
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : "Invalid UI resolved payload",
-    };
-  }
 }

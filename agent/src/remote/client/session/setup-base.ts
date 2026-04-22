@@ -1,12 +1,14 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type {
+  AgentSessionEvent,
   AgentSessionEventListener,
   ContextUsage,
   ExtensionUIContext,
   ModelRegistry,
   PromptTemplate,
   ResourceLoader,
+  SessionStats,
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
@@ -34,7 +36,10 @@ import type { RemoteModelSettingsState } from "../contracts.js";
 import type { RemoteAgentSettings } from "../session-deps.js";
 import {
   createRemoteLocalExtensionRunner,
+  emitForwardableRemoteExtensionEvent,
+  type ForwardableRemoteExtensionEvent,
   type RemoteLocalExtensionRunner,
+  toForwardableRemoteExtensionEvent,
 } from "./local-extension-runner.js";
 import {
   describeManagedExtensionState,
@@ -75,6 +80,9 @@ export abstract class RemoteAgentSessionSetupBase {
     isStreaming: boolean;
     model: Model<Api> | undefined;
     thinkingLevel: ThinkingLevel;
+    sessionStats: SessionStats;
+    contextUsage: ContextUsage | undefined;
+    usageCost: number;
     streamingMessage?: AgentMessage;
     errorMessage?: string;
   };
@@ -129,6 +137,9 @@ export abstract class RemoteAgentSessionSetupBase {
   protected extensionErrorListener: ((error: unknown) => void) | undefined;
   protected localExtensionErrorUnsubscriber: (() => void) | undefined;
   protected extensionStateHydrationTask: Promise<void> | undefined;
+  protected localExtensionEventQueue: Promise<void> = Promise.resolve();
+  protected readonly bufferedLocalExtensionEvents: ForwardableRemoteExtensionEvent[] = [];
+  protected localExtensionTurnIndex = 0;
 
   protected constructor(
     client: RemoteApiClient,
@@ -168,6 +179,9 @@ export abstract class RemoteAgentSessionSetupBase {
       model: this._model,
       thinkingLevel: this._thinkingLevel,
     });
+    this._autoCompactionEnabled = snapshot.autoCompactionEnabled;
+    this._steeringMode = snapshot.steeringMode;
+    this._followUpMode = snapshot.followUpMode;
     this.queueDepth = snapshot.queue.depth;
     this.activeTools = [...snapshot.activeTools];
     this.allTools = this.activeTools.map((toolName) => ({
@@ -273,6 +287,9 @@ export abstract class RemoteAgentSessionSetupBase {
     this.localExtensionErrorUnsubscriber = undefined;
     this.localExtensionRunner = this.createLocalExtensionRunner();
     this.localExtensionsStarted = false;
+    this.localExtensionEventQueue = Promise.resolve();
+    this.bufferedLocalExtensionEvents.length = 0;
+    this.localExtensionTurnIndex = 0;
     this.applyLocalExtensionBindings();
     if (wasStarted) {
       void this.ensureLocalExtensionsStarted();
@@ -499,6 +516,7 @@ export abstract class RemoteAgentSessionSetupBase {
       return;
     }
 
+    await this.localExtensionEventQueue;
     if (this.localExtensionsStarted) {
       await this.localExtensionRunner.emit({ type: "session_shutdown" });
       this.localExtensionsStarted = false;
@@ -527,6 +545,63 @@ export abstract class RemoteAgentSessionSetupBase {
 
     await this.localExtensionRunner.emit({ type: "session_start", reason: "startup" });
     this.localExtensionsStarted = true;
+
+    while (this.bufferedLocalExtensionEvents.length > 0) {
+      const event = this.bufferedLocalExtensionEvents.shift();
+      if (!event) {
+        break;
+      }
+      this.enqueueLocalExtensionEvent(event);
+    }
+  }
+
+  protected forwardAgentSessionEventToLocalExtensions(event: AgentSessionEvent): void {
+    if (event.type === "agent_start") {
+      this.localExtensionTurnIndex = 0;
+    }
+
+    const mappedEvent = toForwardableRemoteExtensionEvent(
+      event,
+      this.localExtensionTurnIndex,
+      Date.now(),
+    );
+    if (!mappedEvent) {
+      return;
+    }
+
+    if (event.type === "turn_end") {
+      this.localExtensionTurnIndex += 1;
+    }
+
+    if (!this.localExtensionRunner || !this.localExtensionsStarted) {
+      this.bufferedLocalExtensionEvents.push(mappedEvent);
+      return;
+    }
+
+    this.enqueueLocalExtensionEvent(mappedEvent);
+  }
+
+  private enqueueLocalExtensionEvent(event: ForwardableRemoteExtensionEvent): void {
+    this.localExtensionEventQueue = this.localExtensionEventQueue.then(async () => {
+      await this.emitLocalExtensionEvent(event);
+    });
+    this.localExtensionEventQueue = this.localExtensionEventQueue.catch(() => {});
+  }
+
+  private async emitLocalExtensionEvent(event: ForwardableRemoteExtensionEvent): Promise<void> {
+    if (!this.localExtensionRunner || !this.localExtensionsStarted) {
+      return;
+    }
+
+    try {
+      await emitForwardableRemoteExtensionEvent(this.localExtensionRunner, event);
+    } catch (error) {
+      this.localExtensionRunner.emitError({
+        extensionPath: "<runtime>",
+        event: event.type,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   abstract getContextUsage(): ContextUsage | undefined;

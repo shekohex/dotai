@@ -25,6 +25,12 @@ const extensionStateBindings: ReadonlyArray<ExtensionStateBinding> = [
     namespace: "openusage",
     key: "state",
   },
+  {
+    customType: "prompt-stash-state",
+    scope: "user",
+    namespace: "prompt-stash",
+    key: "state",
+  },
 ];
 
 function findExtensionStateBinding(customType: string): ExtensionStateBinding | undefined {

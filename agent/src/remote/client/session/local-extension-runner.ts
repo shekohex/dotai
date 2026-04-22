@@ -1,7 +1,9 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
 import type {
+  AgentSessionEvent,
   ContextUsage,
+  ExtensionEvent,
   ModelRegistry,
   PromptTemplate,
   ResourceLoader,
@@ -88,6 +90,96 @@ export function createRemoteLocalExtensionRunner(input: {
   const contextActions = createExtensionContextActions(input);
   runner.bindCore(actions, contextActions);
   return runner;
+}
+
+export type ForwardableRemoteExtensionEvent =
+  | Extract<
+    ExtensionEvent,
+    {
+      type:
+      | "agent_start"
+      | "agent_end"
+      | "turn_start"
+      | "turn_end"
+      | "message_start"
+      | "message_update"
+      | "message_end"
+      | "tool_execution_start"
+      | "tool_execution_update"
+      | "tool_execution_end";
+    }
+  >
+  | Extract<
+    AgentSessionEvent,
+    {
+      type:
+      | "queue_update"
+      | "compaction_start"
+      | "compaction_end"
+      | "auto_retry_start"
+      | "auto_retry_end";
+    }
+  >;
+
+export function toForwardableRemoteExtensionEvent(
+  event: AgentSessionEvent,
+  turnIndex: number,
+  timestamp: number,
+): ForwardableRemoteExtensionEvent | undefined {
+
+  switch (event.type) {
+    case "turn_start":
+      return {
+        type: "turn_start",
+        turnIndex,
+        timestamp,
+      };
+    case "turn_end":
+      return {
+        type: "turn_end",
+        turnIndex,
+        message: event.message,
+        toolResults: event.toolResults,
+      };
+    case "agent_start":
+    case "agent_end":
+    case "message_start":
+    case "message_update":
+    case "message_end":
+    case "tool_execution_start":
+    case "tool_execution_update":
+    case "tool_execution_end":
+    case "queue_update":
+    case "compaction_start":
+    case "compaction_end":
+    case "auto_retry_start":
+    case "auto_retry_end":
+      return event;
+    default:
+      return undefined;
+  }
+}
+
+type ForwardableExtensionRunner = {
+  emit: (event: ForwardableRemoteExtensionEvent) => Promise<unknown>;
+};
+
+function isForwardableExtensionRunner(value: unknown): value is ForwardableExtensionRunner {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const maybeRunner = value as { emit?: unknown };
+  return typeof maybeRunner.emit === "function";
+}
+
+export async function emitForwardableRemoteExtensionEvent(
+  runner: RemoteLocalExtensionRunner,
+  event: ForwardableRemoteExtensionEvent,
+): Promise<void> {
+  if (!isForwardableExtensionRunner(runner)) {
+    return;
+  }
+  await runner.emit(event);
 }
 
 function createExtensionActions(

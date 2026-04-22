@@ -25,6 +25,7 @@ export {
   emitSessionSummaryUpdatedEvent,
   handleRegistrySessionEvent,
 } from "./event-stream-ops.js";
+export { installRemoteExtensionEventMirror } from "./extension-event-stream.js";
 export { detachSessionPresence, touchSessionPresence } from "./presence-ops.js";
 export {
   createSingleSession,

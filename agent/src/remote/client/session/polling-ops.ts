@@ -16,11 +16,13 @@ import type {
 import type { RemoteModelSettingsState } from "../contracts.js";
 import {
   applyAgentSessionEnvelopePayload,
+  applyExtensionEnvelopePayload,
   routeRemoteSessionEnvelope,
 } from "../session-envelope-ops.js";
 import { applyRemoteSessionStatePatch } from "../session-patches.js";
 import { pollRemoteSessionEvents } from "../session-polling.js";
 import { handleRemoteUiRequest } from "../session-ui.js";
+import type { ForwardableRemoteExtensionEvent } from "./local-extension-runner.js";
 
 type ReadSessionEvents = (options: {
   offset: string;
@@ -44,6 +46,8 @@ export type PollRemoteSessionRuntimeInput = {
   reauthenticate: () => Promise<void>;
   isAgentSessionEventLike: (value: unknown) => value is AgentSessionEvent;
   applyAgentSessionEvent: (event: AgentSessionEvent) => void;
+  isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
+  applyExtensionEvent: (event: ForwardableRemoteExtensionEvent) => void;
   remoteModelSettings: RemoteModelSettingsState;
   setRemoteAvailableModels: (models: Model<Api>[]) => void;
   setResolvedModel: (modelRef: string) => void;
@@ -99,6 +103,8 @@ export function createRemoteSessionPollingInput(input: {
   reauthenticate: PollRemoteSessionRuntimeInput["reauthenticate"];
   isAgentSessionEventLike: PollRemoteSessionRuntimeInput["isAgentSessionEventLike"];
   applyAgentSessionEvent: PollRemoteSessionRuntimeInput["applyAgentSessionEvent"];
+  isForwardableRemoteExtensionEvent: PollRemoteSessionRuntimeInput["isForwardableRemoteExtensionEvent"];
+  applyExtensionEvent: PollRemoteSessionRuntimeInput["applyExtensionEvent"];
   handleEnvelope: PollRemoteSessionRuntimeInput["handleEnvelope"];
   remoteModelSettings: PollRemoteSessionRuntimeInput["remoteModelSettings"];
   stateHandlers: PollingStateHandlers;
@@ -116,6 +122,8 @@ export function createRemoteSessionPollingInput(input: {
     reauthenticate: input.reauthenticate,
     isAgentSessionEventLike: input.isAgentSessionEventLike,
     applyAgentSessionEvent: input.applyAgentSessionEvent,
+    isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
+    applyExtensionEvent: input.applyExtensionEvent,
     handleEnvelope: input.handleEnvelope,
     remoteModelSettings: input.remoteModelSettings,
     ...input.stateHandlers,
@@ -163,6 +171,13 @@ export async function handleRemoteSessionEnvelope(
         payload,
         isAgentSessionEventLike: input.isAgentSessionEventLike,
         applyAgentSessionEvent: input.applyAgentSessionEvent,
+      });
+    },
+    onExtensionEventPayload: (payload) => {
+      applyExtensionEnvelopePayload({
+        payload,
+        isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
+        applyExtensionEvent: input.applyExtensionEvent,
       });
     },
     onSessionStatePatchPayload: (payload) => {

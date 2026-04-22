@@ -97,6 +97,9 @@ export type ForwardableRemoteExtensionEvent =
       ExtensionEvent,
       {
         type:
+          | "model_select"
+          | "session_compact"
+          | "session_tree"
           | "agent_start"
           | "agent_end"
           | "turn_start"
@@ -157,6 +160,36 @@ export function toForwardableRemoteExtensionEvent(
     default:
       return undefined;
   }
+}
+
+export function isForwardableRemoteExtensionEvent(
+  value: unknown,
+): value is ForwardableRemoteExtensionEvent {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+
+  const type = (value as { type?: unknown }).type;
+  return (
+    type === "model_select" ||
+    type === "session_compact" ||
+    type === "session_tree" ||
+    type === "agent_start" ||
+    type === "agent_end" ||
+    type === "turn_start" ||
+    type === "turn_end" ||
+    type === "message_start" ||
+    type === "message_update" ||
+    type === "message_end" ||
+    type === "tool_execution_start" ||
+    type === "tool_execution_update" ||
+    type === "tool_execution_end" ||
+    type === "queue_update" ||
+    type === "compaction_start" ||
+    type === "compaction_end" ||
+    type === "auto_retry_start" ||
+    type === "auto_retry_end"
+  );
 }
 
 type ForwardableExtensionRunner = {

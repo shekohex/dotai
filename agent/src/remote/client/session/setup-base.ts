@@ -39,6 +39,7 @@ import {
   createRemoteLocalExtensionRunner,
   emitForwardableRemoteExtensionEvent,
   type ForwardableRemoteExtensionEvent,
+  isForwardableRemoteExtensionEvent,
   type RemoteLocalExtensionRunner,
   toForwardableRemoteExtensionEvent,
 } from "./local-extension-runner.js";
@@ -587,6 +588,29 @@ export abstract class RemoteAgentSessionSetupBase {
     }
 
     this.enqueueLocalExtensionEvent(mappedEvent);
+  }
+
+  protected isForwardableRemoteExtensionEvent(
+    value: unknown,
+  ): value is ForwardableRemoteExtensionEvent {
+    return isForwardableRemoteExtensionEvent(value);
+  }
+
+  protected forwardRemoteExtensionEventToLocalExtensions(
+    event: ForwardableRemoteExtensionEvent,
+  ): void {
+    if (event.type === "model_select") {
+      const resolvedModel = this.modelRegistry.find(event.model.provider, event.model.id);
+      this._model = resolvedModel ?? event.model;
+      this.state.model = this._model;
+    }
+
+    if (!this.localExtensionRunner || !this.localExtensionsStarted) {
+      this.bufferedLocalExtensionEvents.push(event);
+      return;
+    }
+
+    this.enqueueLocalExtensionEvent(event);
   }
 
   private enqueueLocalExtensionEvent(event: ForwardableRemoteExtensionEvent): void {

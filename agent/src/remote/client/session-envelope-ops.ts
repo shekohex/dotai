@@ -4,11 +4,15 @@ import type {
   ExtensionUiResolvedEventPayload,
   StreamEventEnvelope,
 } from "../schemas.js";
+import type { ForwardableRemoteExtensionEvent } from "./session/local-extension-runner.js";
 
 export async function routeRemoteSessionEnvelope(input: {
   envelope: StreamEventEnvelope;
   onAgentSessionPayload: (
     payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+  ) => void;
+  onExtensionEventPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "extension_event" }>["payload"],
   ) => void;
   onSessionStatePatchPayload: (
     payload: Extract<StreamEventEnvelope, { kind: "session_state_patch" }>["payload"],
@@ -21,6 +25,11 @@ export async function routeRemoteSessionEnvelope(input: {
 }): Promise<void> {
   if (input.envelope.kind === "agent_session_event") {
     input.onAgentSessionPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "extension_event") {
+    input.onExtensionEventPayload(input.envelope.payload);
     return;
   }
 
@@ -53,4 +62,15 @@ export function applyAgentSessionEnvelopePayload(input: {
     return;
   }
   input.applyAgentSessionEvent(input.payload);
+}
+
+export function applyExtensionEnvelopePayload(input: {
+  payload: unknown;
+  isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
+  applyExtensionEvent: (event: ForwardableRemoteExtensionEvent) => void;
+}): void {
+  if (!input.isForwardableRemoteExtensionEvent(input.payload)) {
+    return;
+  }
+  input.applyExtensionEvent(input.payload);
 }

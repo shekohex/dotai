@@ -18,6 +18,7 @@ import {
   getLastAppStreamOffsetForNewSession,
   getLastSessionStreamOffset,
   getSessionSnapshot,
+  installRemoteExtensionEventMirror,
   listSessionSummaries,
   registerCreatedSession,
   touchSessionPresence,
@@ -107,6 +108,13 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     if (!session) {
       return;
     }
+
+    installRemoteExtensionEventMirror({
+      runner: session.extensionRunner,
+      streams: this.streams,
+      record,
+      now: this.now,
+    });
 
     await session.bindExtensions({
       uiContext: this.createRemoteUiContext(record),

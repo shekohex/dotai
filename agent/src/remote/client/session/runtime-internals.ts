@@ -120,6 +120,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       applyAgentSessionEvent: (event) => {
         this.applyAgentSessionEvent(event);
       },
+      isForwardableRemoteExtensionEvent: (value) => {
+        return this.isForwardableRemoteExtensionEvent(value);
+      },
+      applyExtensionEvent: (event) => {
+        this.forwardRemoteExtensionEventToLocalExtensions(event);
+      },
       handleEnvelope: async (envelope) => {
         await this.handleEnvelope(envelope);
       },

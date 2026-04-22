@@ -155,6 +155,7 @@ class RecordingSession {
   extensionRunner:
     | {
         getCommand: (name: string) => unknown;
+        emit?: (event: unknown) => Promise<unknown>;
       }
     | undefined;
   remoteUiContext:
@@ -429,6 +430,62 @@ class RuntimeExtensionEventsPromptSession extends RecordingSession {
       success: false,
       attempt: 1,
       finalError: "simulated retry",
+    });
+  }
+}
+
+class PassiveExtensionEventsPromptSession extends RecordingSession {
+  constructor() {
+    super();
+    this.modelRegistry = {
+      ...this.modelRegistry,
+      find: (provider: string, id: string) => ({
+        ...this.model,
+        provider,
+        id,
+        name: `${provider}/${id}`,
+      }),
+    };
+    this.extensionRunner = {
+      getCommand: () => undefined,
+      emit: async () => undefined,
+    };
+  }
+
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    await super.prompt(text, options);
+    await this.extensionRunner?.emit?.({
+      type: "session_compact",
+      compactionEntry: {
+        id: "compaction-1",
+        type: "compaction",
+        parentId: null,
+        timestamp: Date.now(),
+        summary: "summary",
+        firstKeptEntryId: "message-1",
+        tokensBefore: 42,
+        details: undefined,
+        fromExtension: false,
+      },
+      fromExtension: false,
+    });
+    await this.extensionRunner?.emit?.({
+      type: "session_tree",
+      newLeafId: "leaf-2",
+      oldLeafId: "leaf-1",
+      summaryEntry: undefined,
+      fromExtension: false,
+    });
+  }
+
+  override async setModel(model: { provider: string; id: string }): Promise<void> {
+    const previousModel = this.model;
+    await super.setModel(model);
+    await this.extensionRunner?.emit?.({
+      type: "model_select",
+      model: this.model,
+      previousModel,
+      source: "set",
     });
   }
 }
@@ -3948,6 +4005,89 @@ timedTest("milestone 3 adapter forwards queue, compaction, and retry events", as
     assert.equal(compactionEndCount, 1);
     assert.equal(autoRetryStartCount, 1);
     assert.equal(autoRetryEndCount, 1);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter forwards passive extension events", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new PassiveExtensionEventsPromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  let modelSelectCount = 0;
+  let sessionCompactCount = 0;
+  let sessionTreeCount = 0;
+  let modelSeenByExtension: string | undefined;
+
+  const extension: ExtensionFactory = (pi) => {
+    pi.on("model_select", (_event, ctx) => {
+      modelSelectCount += 1;
+      modelSeenByExtension = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+    });
+    pi.on("session_compact", () => {
+      sessionCompactCount += 1;
+    });
+    pi.on("session_tree", () => {
+      sessionTreeCount += 1;
+    });
+  };
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      clientExtensionMetadata: [
+        {
+          id: "test-passive-events",
+          runtime: "client",
+          path: "client:test-passive-events",
+        },
+      ],
+      clientExtensionFactories: [extension],
+    });
+
+    await runtime.session.bindExtensions({});
+    await runtime.session.setModel({
+      ...session.model,
+      provider: "test-provider",
+      id: "updated-model",
+      name: "test-provider/updated-model",
+    });
+    await runtime.session.prompt("trigger passive extension events");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (modelSelectCount > 0 && sessionCompactCount > 0 && sessionTreeCount > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(modelSelectCount, 1);
+    assert.equal(modelSeenByExtension, "test-provider/updated-model");
+    assert.equal(sessionCompactCount, 1);
+    assert.equal(sessionTreeCount, 1);
   } finally {
     await runtime?.dispose();
     await remote.dispose();

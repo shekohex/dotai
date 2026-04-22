@@ -57,6 +57,13 @@ const AgentSessionEventPayloadSchema = Type.Object(
   { additionalProperties: true },
 );
 
+const ExtensionEventPayloadSchema = Type.Object(
+  {
+    type: Type.String(),
+  },
+  { additionalProperties: true },
+);
+
 const CommandAcceptedEventPayloadSchema = Type.Object({
   commandId: Type.String(),
   sessionId: Type.String(),
@@ -221,6 +228,11 @@ export const StreamEventEnvelopeSchema = Type.Union([
     ...StreamEventCommonProperties,
     kind: Type.Literal("agent_session_event"),
     payload: AgentSessionEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("extension_event"),
+    payload: ExtensionEventPayloadSchema,
   }),
   Type.Object({
     ...StreamEventCommonProperties,

@@ -123,7 +123,7 @@ function readWidgetPlacement(options: unknown): "aboveEditor" | "belowEditor" | 
     return undefined;
   }
 
-  const placement: unknown = Reflect.get(options, "placement");
+  const placement = "placement" in options ? options.placement : undefined;
   if (placement === "aboveEditor" || placement === "belowEditor") {
     return placement;
   }

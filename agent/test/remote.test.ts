@@ -82,6 +82,21 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
 class RecordingSession {
   cwd = "/tmp/pi-remote-recording-session";
   reloadCalls = 0;
+  resourceReadCounts = {
+    extensions: 0,
+    skills: 0,
+    prompts: 0,
+    themes: 0,
+    systemPrompt: 0,
+    appendSystemPrompt: 0,
+  };
+  settingsStore: {
+    global: Record<string, unknown>;
+    project: Record<string, unknown>;
+  } = {
+    global: {},
+    project: {},
+  };
   private resourceMode: "empty" | "versioned" = "empty";
   private resourceVersion = 1;
   activeTools = ["read", "bash", "edit", "write"];
@@ -160,10 +175,6 @@ class RecordingSession {
   clearQueueCalls = 0;
   bindExtensionsError: Error | undefined;
   setModelError: Error | undefined;
-  defaultProvider: string | undefined;
-  defaultModel: string | undefined;
-  defaultThinkingLevel: string | undefined;
-  enabledModels: string[] | undefined;
   extensionRunner:
     | {
         getCommand: (name: string) => unknown;
@@ -188,6 +199,22 @@ class RecordingSession {
     getDefaultModel: () => this.defaultModel,
     getDefaultThinkingLevel: () => this.defaultThinkingLevel,
     getEnabledModels: () => this.enabledModels,
+    getTheme: () => this.readGlobalSetting<string>("theme"),
+    getShowImages: () => this.readBooleanSetting("terminal", "showImages", true),
+    getClearOnShrink: () => this.readBooleanSetting("terminal", "clearOnShrink", false),
+    getEnableSkillCommands: () => this.readBooleanSetting("enableSkillCommands", undefined, true),
+    getSteeringMode: () => this.readModeSetting("steeringMode"),
+    getFollowUpMode: () => this.readModeSetting("followUpMode"),
+    getCompactionEnabled: () => this.readNestedBooleanSetting("compaction", "enabled", false),
+    getGlobalSettings: () => structuredClone(this.settingsStore.global),
+    getProjectSettings: () => structuredClone(this.settingsStore.project),
+    reload: async () => {},
+    setDefaultProvider: (provider: string) => {
+      this.defaultProvider = provider;
+    },
+    setDefaultModel: (modelId: string) => {
+      this.defaultModel = modelId;
+    },
     setDefaultModelAndProvider: (provider: string, modelId: string) => {
       this.defaultProvider = provider;
       this.defaultModel = modelId;
@@ -195,8 +222,65 @@ class RecordingSession {
     setDefaultThinkingLevel: (level: string) => {
       this.defaultThinkingLevel = level;
     },
+    setEnabledModels: (patterns: string[] | undefined) => {
+      this.enabledModels = patterns;
+    },
+    setTheme: (theme: string) => {
+      this.writeGlobalSetting("theme", theme);
+    },
+    setShowImages: (show: boolean) => {
+      this.writeNestedGlobalSetting("terminal", "showImages", show);
+    },
+    setClearOnShrink: (enabled: boolean) => {
+      this.writeNestedGlobalSetting("terminal", "clearOnShrink", enabled);
+    },
+    setEnableSkillCommands: (enabled: boolean) => {
+      this.writeGlobalSetting("enableSkillCommands", enabled);
+    },
+    setSteeringMode: (mode: "all" | "one-at-a-time") => {
+      this.writeGlobalSetting("steeringMode", mode);
+    },
+    setFollowUpMode: (mode: "all" | "one-at-a-time") => {
+      this.writeGlobalSetting("followUpMode", mode);
+    },
+    setCompactionEnabled: (enabled: boolean) => {
+      this.writeNestedGlobalSetting("compaction", "enabled", enabled);
+    },
   };
   resourceLoader: ResourceLoader = createRecordingResourceLoader(this);
+
+  get defaultProvider(): string | undefined {
+    return this.readGlobalSetting<string>("defaultProvider");
+  }
+
+  set defaultProvider(provider: string | undefined) {
+    this.writeGlobalSetting("defaultProvider", provider);
+  }
+
+  get defaultModel(): string | undefined {
+    return this.readGlobalSetting<string>("defaultModel");
+  }
+
+  set defaultModel(modelId: string | undefined) {
+    this.writeGlobalSetting("defaultModel", modelId);
+  }
+
+  get defaultThinkingLevel(): string | undefined {
+    return this.readGlobalSetting<string>("defaultThinkingLevel");
+  }
+
+  set defaultThinkingLevel(level: string | undefined) {
+    this.writeGlobalSetting("defaultThinkingLevel", level);
+  }
+
+  get enabledModels(): string[] | undefined {
+    const value = this.settingsStore.global.enabledModels;
+    return Array.isArray(value) ? [...value] : undefined;
+  }
+
+  set enabledModels(patterns: string[] | undefined) {
+    this.writeGlobalSetting("enabledModels", patterns ? [...patterns] : undefined);
+  }
 
   enableVersionedResources(): void {
     this.resourceMode = "versioned";
@@ -209,6 +293,20 @@ class RecordingSession {
 
   getResourceMode(): "empty" | "versioned" {
     return this.resourceMode;
+  }
+
+  snapshotResourceReadCounts(): typeof this.resourceReadCounts {
+    return { ...this.resourceReadCounts };
+  }
+
+  snapshotExpensiveResourceReadCounts(): Omit<typeof this.resourceReadCounts, "extensions"> {
+    return {
+      skills: this.resourceReadCounts.skills,
+      prompts: this.resourceReadCounts.prompts,
+      themes: this.resourceReadCounts.themes,
+      systemPrompt: this.resourceReadCounts.systemPrompt,
+      appendSystemPrompt: this.resourceReadCounts.appendSystemPrompt,
+    };
   }
 
   getActiveToolNames(): string[] {
@@ -314,6 +412,21 @@ class RecordingSession {
     this.thinkingLevel = level;
   }
 
+  setSteeringMode(mode: "all" | "one-at-a-time"): void {
+    this.steeringMode = mode;
+    this.settingsManager.setSteeringMode(mode);
+  }
+
+  setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+    this.followUpMode = mode;
+    this.settingsManager.setFollowUpMode(mode);
+  }
+
+  setAutoCompactionEnabled(enabled: boolean): void {
+    this.autoCompactionEnabled = enabled;
+    this.settingsManager.setCompactionEnabled(enabled);
+  }
+
   getContextUsage() {
     return this.sessionStats.contextUsage;
   }
@@ -335,6 +448,56 @@ class RecordingSession {
   }
 
   setSessionName(): void {}
+
+  private readGlobalSetting<T>(key: string): T | undefined {
+    const value = this.settingsStore.global[key];
+    return value as T | undefined;
+  }
+
+  private readModeSetting(key: string): "all" | "one-at-a-time" {
+    const value = this.settingsStore.global[key];
+    return value === "one-at-a-time" ? "one-at-a-time" : "all";
+  }
+
+  private readBooleanSetting(
+    key: string,
+    nestedKey: string | undefined,
+    fallback: boolean,
+  ): boolean {
+    if (nestedKey === undefined) {
+      return typeof this.settingsStore.global[key] === "boolean"
+        ? (this.settingsStore.global[key] as boolean)
+        : fallback;
+    }
+
+    return this.readNestedBooleanSetting(key, nestedKey, fallback);
+  }
+
+  private readNestedBooleanSetting(key: string, nestedKey: string, fallback: boolean): boolean {
+    const parent = this.settingsStore.global[key];
+    if (parent && typeof parent === "object" && !Array.isArray(parent) && nestedKey in parent) {
+      const value = (parent as Record<string, unknown>)[nestedKey];
+      return typeof value === "boolean" ? value : fallback;
+    }
+    return fallback;
+  }
+
+  private writeGlobalSetting(key: string, value: unknown): void {
+    if (value === undefined) {
+      delete this.settingsStore.global[key];
+      return;
+    }
+    this.settingsStore.global[key] = value;
+  }
+
+  private writeNestedGlobalSetting(key: string, nestedKey: string, value: unknown): void {
+    const current = this.settingsStore.global[key];
+    const parent = current && typeof current === "object" && !Array.isArray(current) ? current : {};
+    this.settingsStore.global[key] = {
+      ...parent,
+      [nestedKey]: value,
+    };
+  }
 }
 
 class RacyPromptSession extends RecordingSession {
@@ -553,31 +716,49 @@ class UiPrimitivesPromptSession extends RecordingSession {
 
 function createRecordingResourceLoader(session: RecordingSession): ResourceLoader {
   return {
-    getExtensions: (): LoadExtensionsResult => ({
-      extensions:
-        session.getResourceMode() === "versioned" ? [buildRecordingExtension(session)] : [],
-      errors: [],
-      runtime: createRecordingExtensionRuntime(),
-    }),
-    getSkills: () => ({
-      skills: session.getResourceMode() === "versioned" ? [buildRecordingSkill(session)] : [],
-      diagnostics: [],
-    }),
-    getPrompts: () => ({
-      prompts: session.getResourceMode() === "versioned" ? [buildRecordingPrompt(session)] : [],
-      diagnostics: [],
-    }),
-    getThemes: () => ({
-      themes: session.getResourceMode() === "versioned" ? [buildRecordingTheme(session)] : [],
-      diagnostics: [],
-    }),
+    getExtensions: (): LoadExtensionsResult => {
+      session.resourceReadCounts.extensions += 1;
+      return {
+        extensions:
+          session.getResourceMode() === "versioned" ? [buildRecordingExtension(session)] : [],
+        errors: [],
+        runtime: createRecordingExtensionRuntime(),
+      };
+    },
+    getSkills: () => {
+      session.resourceReadCounts.skills += 1;
+      return {
+        skills: session.getResourceMode() === "versioned" ? [buildRecordingSkill(session)] : [],
+        diagnostics: [],
+      };
+    },
+    getPrompts: () => {
+      session.resourceReadCounts.prompts += 1;
+      return {
+        prompts: session.getResourceMode() === "versioned" ? [buildRecordingPrompt(session)] : [],
+        diagnostics: [],
+      };
+    },
+    getThemes: () => {
+      session.resourceReadCounts.themes += 1;
+      return {
+        themes: session.getResourceMode() === "versioned" ? [buildRecordingTheme(session)] : [],
+        diagnostics: [],
+      };
+    },
     getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () =>
-      session.getResourceMode() === "versioned"
+    getSystemPrompt: () => {
+      session.resourceReadCounts.systemPrompt += 1;
+      return session.getResourceMode() === "versioned"
         ? `system-${session.getResourceVersion()}`
-        : undefined,
-    getAppendSystemPrompt: () =>
-      session.getResourceMode() === "versioned" ? [`append-${session.getResourceVersion()}`] : [],
+        : undefined;
+    },
+    getAppendSystemPrompt: () => {
+      session.resourceReadCounts.appendSystemPrompt += 1;
+      return session.getResourceMode() === "versioned"
+        ? [`append-${session.getResourceVersion()}`]
+        : [];
+    },
     extendResources: () => {},
     reload: async () => {
       await session.reload();
@@ -702,6 +883,29 @@ class RecordingRuntimeFactory implements RemoteRuntimeFactory {
   async create() {
     return {
       session: this.session,
+      dispose: async () => {
+        this.runtimeDisposeCalls += 1;
+      },
+    } as any;
+  }
+
+  async dispose(): Promise<void> {}
+}
+
+class SequencedRecordingRuntimeFactory implements RemoteRuntimeFactory {
+  readonly sessions: RecordingSession[];
+  runtimeDisposeCalls = 0;
+  createCalls = 0;
+
+  constructor(sessions: RecordingSession[]) {
+    this.sessions = sessions;
+  }
+
+  async create() {
+    const session = this.sessions[this.createCalls] ?? this.sessions[this.sessions.length - 1];
+    this.createCalls += 1;
+    return {
+      session,
       dispose: async () => {
         this.runtimeDisposeCalls += 1;
       },
@@ -1454,7 +1658,7 @@ timedTest("auth service rejects non-ed25519 public keys", () => {
   assert.equal(challenge.algorithm, "ed25519");
 });
 
-timedTest("session creation remains single-session under concurrent requests", async () => {
+timedTest("session creation remains stable under concurrent requests", async () => {
   const keys = generateKeyPairSync("ed25519");
   const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
   const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -1487,8 +1691,8 @@ timedTest("session creation remains single-session under concurrent requests", a
     ]);
 
     const statuses = [first.status, second.status].toSorted((a, b) => a - b);
-    assert.deepEqual(statuses, [201, 409]);
-    assert.equal(runtimeFactory.createCalls, 1);
+    assert.deepEqual(statuses, [201, 201]);
+    assert.equal(runtimeFactory.createCalls, 2);
 
     const snapshotResponse = await remote.app.request("/v1/app/snapshot", {
       headers: { authorization: `Bearer ${token}` },
@@ -1497,7 +1701,7 @@ timedTest("session creation remains single-session under concurrent requests", a
     const snapshot = (await snapshotResponse.json()) as {
       sessionSummaries: Array<{ sessionId: string }>;
     };
-    assert.equal(snapshot.sessionSummaries.length, 1);
+    assert.equal(snapshot.sessionSummaries.length, 2);
   } finally {
     await remote.dispose();
   }
@@ -4947,6 +5151,374 @@ timedTest("milestone 3.1 adapter hydrates catalog and syncs remote model setting
     await remote.dispose();
   }
 });
+
+timedTest("remote settings manager changes sync across sessions", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const sharedSettingsStore = {
+    global: {} as Record<string, unknown>,
+    project: {} as Record<string, unknown>,
+  };
+  const sessionA = new RecordingSession();
+  const sessionB = new RecordingSession();
+  sessionA.settingsStore = sharedSettingsStore;
+  sessionB.settingsStore = sharedSettingsStore;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new SequencedRecordingRuntimeFactory([sessionA, sessionB]),
+  });
+
+  let runtimeA: RemoteAgentSessionRuntime | undefined;
+  let runtimeB: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponseA = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const createResponseB = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(createResponseA.status, 201);
+    assert.equal(createResponseB.status, 201);
+
+    const createdA = (await createResponseA.json()) as { sessionId: string };
+    const createdB = (await createResponseB.json()) as { sessionId: string };
+
+    runtimeA = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: createdA.sessionId,
+    });
+    runtimeB = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: createdB.sessionId,
+    });
+
+    const beforeSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${createdB.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(beforeSnapshotResponse.status, 200);
+    const beforeSnapshot = (await beforeSnapshotResponse.json()) as {
+      lastSessionStreamOffset: string;
+    };
+
+    runtimeA.session.settingsManager.setTheme("light");
+
+    const sessionBPatch = await waitForSessionEvent(
+      remote.app,
+      token,
+      createdB.sessionId,
+      beforeSnapshot.lastSessionStreamOffset,
+      (event) =>
+        event.kind === "session_state_patch" && event.payload.patch?.settings?.theme === "light",
+    );
+    assert.equal(sessionBPatch.event.kind, "session_state_patch");
+    assert.equal(sessionBPatch.event.payload.patch.settings?.theme, "light");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (runtimeB.session.settingsManager.getTheme() === "light") {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(runtimeA.session.settingsManager.getTheme(), "light");
+    assert.equal(runtimeB.session.settingsManager.getTheme(), "light");
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${createdB.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = (await snapshotResponse.json()) as {
+      settings?: {
+        theme?: string;
+      };
+    };
+    assert.equal(snapshot.settings?.theme, "light");
+  } finally {
+    await runtimeA?.dispose();
+    await runtimeB?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote settings mutations do not rebuild resource snapshots", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const sharedSettingsStore = {
+    global: {} as Record<string, unknown>,
+    project: {} as Record<string, unknown>,
+  };
+  const sessionA = new RecordingSession();
+  const sessionB = new RecordingSession();
+  sessionA.settingsStore = sharedSettingsStore;
+  sessionB.settingsStore = sharedSettingsStore;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new SequencedRecordingRuntimeFactory([sessionA, sessionB]),
+  });
+
+  let runtimeA: RemoteAgentSessionRuntime | undefined;
+  let runtimeB: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponseA = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const createResponseB = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(createResponseA.status, 201);
+    assert.equal(createResponseB.status, 201);
+
+    const createdA = (await createResponseA.json()) as { sessionId: string };
+    const createdB = (await createResponseB.json()) as { sessionId: string };
+
+    runtimeA = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: createdA.sessionId,
+    });
+    runtimeB = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: createdB.sessionId,
+    });
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${createdB.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = (await snapshotResponse.json()) as {
+      lastSessionStreamOffset: string;
+    };
+
+    const resourceReadsBeforeA = sessionA.snapshotExpensiveResourceReadCounts();
+    const resourceReadsBeforeB = sessionB.snapshotExpensiveResourceReadCounts();
+
+    runtimeA.session.settingsManager.setTheme("light");
+
+    const sessionBPatch = await waitForSessionEvent(
+      remote.app,
+      token,
+      createdB.sessionId,
+      snapshot.lastSessionStreamOffset,
+      (event) =>
+        event.kind === "session_state_patch" && event.payload.patch?.settings?.theme === "light",
+    );
+    assert.equal(sessionBPatch.event.kind, "session_state_patch");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (runtimeB.session.settingsManager.getTheme() === "light") {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(runtimeB.session.settingsManager.getTheme(), "light");
+    assert.deepEqual(sessionA.snapshotExpensiveResourceReadCounts(), resourceReadsBeforeA);
+    assert.deepEqual(sessionB.snapshotExpensiveResourceReadCounts(), resourceReadsBeforeB);
+  } finally {
+    await runtimeA?.dispose();
+    await runtimeB?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote behavior settings sync across sessions", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const sharedSettingsStore = {
+    global: {} as Record<string, unknown>,
+    project: {} as Record<string, unknown>,
+  };
+  const sessionA = new RecordingSession();
+  const sessionB = new RecordingSession();
+  sessionA.settingsStore = sharedSettingsStore;
+  sessionB.settingsStore = sharedSettingsStore;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new SequencedRecordingRuntimeFactory([sessionA, sessionB]),
+  });
+
+  let runtimeA: RemoteAgentSessionRuntime | undefined;
+  let runtimeB: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponseA = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const createResponseB = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(createResponseA.status, 201);
+    assert.equal(createResponseB.status, 201);
+
+    const createdA = (await createResponseA.json()) as { sessionId: string };
+    const createdB = (await createResponseB.json()) as { sessionId: string };
+
+    runtimeA = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: createdA.sessionId,
+    });
+    runtimeB = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: createdB.sessionId,
+    });
+
+    const beforeSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${createdB.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(beforeSnapshotResponse.status, 200);
+    const beforeSnapshot = (await beforeSnapshotResponse.json()) as {
+      lastSessionStreamOffset: string;
+    };
+
+    runtimeA.session.setSteeringMode("one-at-a-time");
+    runtimeA.session.setAutoCompactionEnabled(true);
+
+    const sessionBPatch = await waitForSessionEvent(
+      remote.app,
+      token,
+      createdB.sessionId,
+      beforeSnapshot.lastSessionStreamOffset,
+      (event) =>
+        event.kind === "session_state_patch" &&
+        event.payload.patch?.steeringMode === "one-at-a-time" &&
+        event.payload.patch?.autoCompactionEnabled === true,
+    );
+    assert.equal(sessionBPatch.event.kind, "session_state_patch");
+    assert.equal(sessionBPatch.event.payload.patch.steeringMode, "one-at-a-time");
+    assert.equal(sessionBPatch.event.payload.patch.autoCompactionEnabled, true);
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (
+        runtimeB.session.steeringMode === "one-at-a-time" &&
+        runtimeB.session.autoCompactionEnabled === true
+      ) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.equal(runtimeA.session.steeringMode, "one-at-a-time");
+    assert.equal(runtimeB.session.steeringMode, "one-at-a-time");
+    assert.equal(runtimeA.session.autoCompactionEnabled, true);
+    assert.equal(runtimeB.session.autoCompactionEnabled, true);
+  } finally {
+    await runtimeA?.dispose();
+    await runtimeB?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "remote settings mutations rollback optimistic local state on server failure",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const session = new RecordingSession();
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+      });
+      const initialTheme = runtime.session.settingsManager.getTheme();
+
+      const originalSetTheme = session.settingsManager.setTheme;
+      session.settingsManager.setTheme = () => {
+        throw new Error("theme write denied");
+      };
+
+      runtime.session.settingsManager.setTheme("light");
+
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (runtime.session.settingsManager.getTheme() === undefined) {
+          break;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+
+      assert.equal(runtime.session.settingsManager.getTheme(), initialTheme);
+      assert.match(runtime.session.state.errorMessage ?? "", /theme write denied/);
+
+      session.settingsManager.setTheme = originalSetTheme;
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
 
 timedTest("milestone 3.2 snapshot and adapter use authoritative server cwd", async () => {
   const keys = generateKeyPairSync("ed25519");

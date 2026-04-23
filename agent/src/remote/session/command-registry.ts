@@ -1,5 +1,4 @@
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
-import { RemoteError } from "../errors.js";
 import type {
   AppSnapshot,
   CreateSessionRequest,
@@ -110,10 +109,6 @@ export async function createSingleSession(input: {
   ) => void;
   disposeFailedSessionCreation: (sessionId: string, runtime: AgentSessionRuntime) => Promise<void>;
 }): Promise<CreateSessionResponse> {
-  if (input.sessions.size > 0) {
-    throw new RemoteError("Milestone 1 supports only one in-memory session", 409);
-  }
-
   const createdAt = input.now();
   const sessionId = input.createSessionId();
   const runtime = await input.createRuntime();

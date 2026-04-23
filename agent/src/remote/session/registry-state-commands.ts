@@ -21,13 +21,13 @@ import type { SessionRecord } from "./types.js";
 type RuntimeSession = NonNullable<SessionRecord["runtime"]["session"]>;
 
 export class SessionRegistryStateCommands extends SessionRegistryPromptCommands {
-  updateActiveTools(
+  async updateActiveTools(
     sessionId: string,
     input: ActiveToolsUpdateRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     const session = this.requireRuntimeSession(record);
     const normalizedToolNames = [...new Set(input.toolNames)];
 
@@ -56,13 +56,13 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
     });
   }
 
-  updateModel(
+  async updateModel(
     sessionId: string,
     input: ModelUpdateRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     const session = this.requireRuntimeSession(record);
     return handleModelUpdateCommand({
       sessionId,
@@ -117,13 +117,13 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
     });
   }
 
-  updateSessionName(
+  async updateSessionName(
     sessionId: string,
     input: SessionNameUpdateRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     const session = this.getRuntimeSession(record);
     return handleSessionNameUpdateCommand({
       command: input,
@@ -156,19 +156,19 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
     });
   }
 
-  updateSettings(
+  async updateSettings(
     sessionId: string,
     input: SettingsUpdateRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     const session = this.requireRuntimeSession(record);
 
     return this.acceptCommand(record, client, connectionId, "settings", input, {
       beforeAccepted: async () => {
         applySettingsMutationToRuntimeSession(session, input);
-        for (const [targetSessionId, targetRecord] of this.sessions.entries()) {
+        for (const [targetSessionId, targetRecord] of this.getLoadedSessions().entries()) {
           if (targetSessionId === sessionId) {
             continue;
           }
@@ -181,7 +181,7 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
       },
       onAccepted: (accepted) => {
         const updatedAt = this.now();
-        for (const targetRecord of this.sessions.values()) {
+        for (const targetRecord of this.getLoadedSessions().values()) {
           this.syncFromRuntime(targetRecord, { updateTimestamp: false });
           targetRecord.updatedAt = updatedAt;
           this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
@@ -242,8 +242,12 @@ export class SessionRegistryStateCommands extends SessionRegistryPromptCommands 
     });
   }
 
-  clearQueue(sessionId: string, client: AuthSession, connectionId?: string): ClearQueueResponse {
-    const record = this.getRequired(sessionId);
+  async clearQueue(
+    sessionId: string,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<ClearQueueResponse> {
+    const record = await this.ensureLoaded(sessionId);
     this.touchPresence(sessionId, client, connectionId);
     const session = this.requireRuntimeSession(record);
     const cleared = session.clearQueue();

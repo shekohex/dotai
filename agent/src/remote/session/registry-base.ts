@@ -7,6 +7,9 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { createRemoteUiContext as createRemoteUiContextForSession } from "./ui-context.js";
 import type { AuthSession } from "../auth.js";
+import { RemoteError } from "../errors.js";
+import { LoadedRuntimeRegistry } from "../loaded-runtime-registry.js";
+import { flushPersistedSessionManagerToDisk } from "../session-manager-storage.js";
 import { SessionCatalog } from "../session-catalog.js";
 import type {
   CommandAcceptedResponse,
@@ -15,18 +18,20 @@ import type {
   RemoteExtensionMetadata,
   SessionSnapshot,
 } from "../schemas.js";
-import { InMemoryDurableStreamStore } from "../streams.js";
+import { appEventsStreamId, InMemoryDurableStreamStore } from "../streams.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import {
   ALLOWED_THINKING_LEVELS,
   acceptSessionCommandWithStreams,
   appendExtensionUiRequestEvent,
+  createSessionRecord,
   dispatchRuntimeCommandWithStreams,
   emitSessionSummaryUpdatedEvent,
   ensurePromptPreflight,
   getRequiredSessionRecord,
   getRuntimeSessionFromRecord,
   handleRegistrySessionEvent,
+  installRemoteExtensionEventMirror,
   isApiModel,
   parseModelRefStrict,
   parseResourceLoaderExtensionMetadata,
@@ -49,7 +54,7 @@ import {
 } from "./connection-capabilities.js";
 
 export abstract class SessionRegistryBase {
-  protected readonly sessions = new Map<string, SessionRecord>();
+  protected readonly loadedRuntimes = new LoadedRuntimeRegistry();
   protected readonly connectionCapabilities = new Map<
     string,
     {
@@ -82,7 +87,7 @@ export abstract class SessionRegistryBase {
     handleRegistrySessionEvent({
       sessionId,
       event,
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       streams: this.streams,
       now: this.now(),
       createRunId: () => randomUUID(),
@@ -268,7 +273,67 @@ export abstract class SessionRegistryBase {
   }
 
   protected getRequired(sessionId: string): SessionRecord {
-    return getRequiredSessionRecord(this.sessions, sessionId);
+    return getRequiredSessionRecord(this.getLoadedSessions(), sessionId);
+  }
+
+  protected getLoadedSessions(): Map<string, SessionRecord> {
+    return this.loadedRuntimes.asMap();
+  }
+
+  protected ensureLoaded(sessionId: string): Promise<SessionRecord> {
+    const loaded = this.loadedRuntimes.get(sessionId);
+    if (loaded) {
+      return Promise.resolve(loaded);
+    }
+
+    const catalogRecord = this.catalog.get(sessionId);
+    if (!catalogRecord) {
+      throw new RemoteError("Session not found", 404);
+    }
+
+    if (!this.runtimeFactory.load) {
+      throw new RemoteError("Session runtime is unavailable", 409);
+    }
+
+    return this.loadedRuntimes.load(sessionId, async () => {
+      const runtime = await this.runtimeFactory.load!({
+        sessionId: catalogRecord.sessionId,
+        sessionPath: catalogRecord.sessionPath,
+        cwd: catalogRecord.cwd,
+      });
+      try {
+        const runtimeSessionId = runtime.session?.sessionManager.getSessionId();
+        if (
+          typeof runtimeSessionId === "string" &&
+          runtimeSessionId.length > 0 &&
+          runtimeSessionId !== catalogRecord.sessionId
+        ) {
+          throw new RemoteError("Loaded session runtime did not match requested session", 500);
+        }
+        const loadedAt = this.now();
+        const record = createSessionRecord({
+          sessionId: catalogRecord.sessionId,
+          sessionName: catalogRecord.sessionName,
+          createdAt: catalogRecord.createdAt,
+          updatedAt: catalogRecord.modifiedAt,
+          runtime,
+          lastAppStreamOffsetSeenByServer: this.streams.getHeadOffset(appEventsStreamId()),
+          readRuntimeExtensionMetadata: (targetRuntime) =>
+            this.readRuntimeExtensionMetadata(targetRuntime),
+        });
+        await this.initializeRuntimeRecord(record, {
+          initializedAt: loadedAt,
+          syncSessionNameToRuntime: false,
+          flushPersistedSessionManager: false,
+        });
+        this.loadedRuntimes.set(record);
+        this.emitSessionSummaryUpdated(record, loadedAt);
+        return record;
+      } catch (error) {
+        await runtime.dispose();
+        throw error;
+      }
+    });
   }
 
   protected pruneExpiredPresence(record: SessionRecord, now: number): void {
@@ -279,6 +344,42 @@ export abstract class SessionRegistryBase {
     return toSessionSnapshotRecord(record, (streamId) => this.streams.getHeadOffset(streamId));
   }
 
+  protected async initializeRuntimeRecord(
+    record: SessionRecord,
+    input: {
+      initializedAt: number;
+      syncSessionNameToRuntime: boolean;
+      flushPersistedSessionManager: boolean;
+    },
+  ): Promise<void> {
+    const session = this.getRuntimeSession(record);
+    if (!session) {
+      return;
+    }
+
+    installRemoteExtensionEventMirror({
+      runner: session.extensionRunner,
+      streams: this.streams,
+      record,
+      now: this.now,
+    });
+
+    await session.bindExtensions({
+      uiContext: this.createRemoteUiContext(record),
+    });
+    if (input.syncSessionNameToRuntime && typeof session.setSessionName === "function") {
+      session.setSessionName(record.sessionName);
+    }
+    if (input.flushPersistedSessionManager) {
+      flushPersistedSessionManagerToDisk(session.sessionManager);
+    }
+    this.syncFromRuntime(record, { now: input.initializedAt, updateTimestamp: false });
+    this.catalog.registerPersistedRuntimeRecord(record);
+    record.runtimeSubscription = session.subscribe((event) => {
+      this.handleSessionEvent(record.sessionId, event);
+    });
+  }
+
   setConnectionCapabilities(
     connectionId: string,
     capabilities: ClientCapabilities,
@@ -286,7 +387,7 @@ export abstract class SessionRegistryBase {
   ): ConnectionCapabilitiesResponse {
     return setConnectionCapabilitiesForSessions({
       connectionCapabilities: this.connectionCapabilities,
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       connectionId,
       capabilities,
       client,

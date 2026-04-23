@@ -15,13 +15,13 @@ import {
 import { SessionRegistryManagement } from "./registry-management.js";
 
 export class SessionRegistryPromptCommands extends SessionRegistryManagement {
-  prompt(
+  async prompt(
     sessionId: string,
     input: PromptCommandRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     const session = this.requireRuntimeSession(record);
     return handlePromptCommand({
       sessionId,
@@ -41,13 +41,13 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
     });
   }
 
-  steer(
+  async steer(
     sessionId: string,
     input: SteerCommandRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     this.requireRuntimeSession(record);
     return handleSteerCommand({
       command: input,
@@ -70,13 +70,13 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
     });
   }
 
-  followUp(
+  async followUp(
     sessionId: string,
     input: FollowUpCommandRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     this.requireRuntimeSession(record);
     return handleFollowUpCommand({
       command: input,
@@ -99,13 +99,13 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
     });
   }
 
-  interrupt(
+  async interrupt(
     sessionId: string,
     input: InterruptCommandRequest,
     client: AuthSession,
     connectionId?: string,
   ): Promise<CommandAcceptedResponse> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     this.requireRuntimeSession(record);
     return handleInterruptCommand({
       command: input,

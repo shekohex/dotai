@@ -26,8 +26,15 @@ import {
 
 export interface RemoteRuntimeFactory {
   create(): Promise<AgentSessionRuntime>;
+  load?(request: LoadRemoteRuntimeRequest): Promise<AgentSessionRuntime>;
   dispose(): Promise<void>;
   getSessionCatalogRoot?(): string | undefined;
+}
+
+export interface LoadRemoteRuntimeRequest {
+  sessionId: string;
+  sessionPath: string;
+  cwd: string;
 }
 
 export interface RuntimeExtensionMetadata {
@@ -130,12 +137,33 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
   }
 
   create(): Promise<AgentSessionRuntime> {
-    const createRuntime: CreateAgentSessionRuntimeFactory = async ({
-      cwd,
-      agentDir,
+    return createAgentSessionRuntime(this.createRuntimeFactory(), {
+      cwd: this.cwd,
+      agentDir: this.agentDir,
+      sessionManager: SessionManager.create(this.cwd, this.sessionDir),
+    });
+  }
+
+  load(request: LoadRemoteRuntimeRequest): Promise<AgentSessionRuntime> {
+    const sessionManager = SessionManager.open(request.sessionPath);
+    return createAgentSessionRuntime(this.createRuntimeFactory(), {
+      cwd: sessionManager.getCwd(),
+      agentDir: this.agentDir,
       sessionManager,
-      sessionStartEvent,
-    }) => {
+      sessionStartEvent: { type: "session_start", reason: "resume" },
+    });
+  }
+
+  dispose(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  getSessionCatalogRoot(): string {
+    return this.sessionCatalogRoot;
+  }
+
+  private createRuntimeFactory(): CreateAgentSessionRuntimeFactory {
+    return async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
       const services = await createAgentSessionServices({
         cwd,
         agentDir,
@@ -155,20 +183,6 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
         remoteExtensionMetadata: [...this.extensionMetadata],
       };
     };
-
-    return createAgentSessionRuntime(createRuntime, {
-      cwd: this.cwd,
-      agentDir: this.agentDir,
-      sessionManager: SessionManager.create(this.cwd, this.sessionDir),
-    });
-  }
-
-  dispose(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  getSessionCatalogRoot(): string {
-    return this.sessionCatalogRoot;
   }
 }
 
@@ -208,6 +222,41 @@ async function createInMemoryRuntime(input: {
             getDefaultSessionDir(await input.cwdPromise, await input.agentDirPromise),
         )
       : SessionManager.inMemory(await input.cwdPromise),
+  });
+}
+
+async function loadInMemoryRuntime(input: {
+  sessionPath: string;
+  agentDirPromise: Promise<string>;
+  fauxRegistration: FauxProviderRegistration;
+  fauxSeededResponseCount: number;
+  fauxApiKey: string | null;
+  extensionFactories: ExtensionFactory[];
+  extensionMetadata: RuntimeExtensionMetadata[];
+}): Promise<AgentSessionRuntime> {
+  const pendingResponses = input.fauxRegistration.getPendingResponseCount();
+  if (pendingResponses < input.fauxSeededResponseCount) {
+    input.fauxRegistration.appendResponses(
+      Array.from({ length: input.fauxSeededResponseCount - pendingResponses }, () =>
+        fauxAssistantMessage("Remote faux response"),
+      ),
+    );
+  }
+
+  const model = input.fauxRegistration.getModel();
+  if (model === undefined) {
+    throw new Error("In-memory faux provider did not return a model");
+  }
+
+  const createRuntime = buildInMemoryCreateRuntime(input, model);
+  const agentDir = await input.agentDirPromise;
+  const sessionManager = SessionManager.open(input.sessionPath);
+
+  return createAgentSessionRuntime(createRuntime, {
+    cwd: sessionManager.getCwd(),
+    agentDir,
+    sessionManager,
+    sessionStartEvent: { type: "session_start", reason: "resume" },
   });
 }
 
@@ -307,6 +356,17 @@ export function InMemoryPiRuntimeFactory(
         agentDirPromise,
         sessionDirPromise,
         persistSessions,
+        fauxRegistration,
+        fauxSeededResponseCount,
+        fauxApiKey,
+        extensionFactories,
+        extensionMetadata,
+      });
+    },
+    load(request: LoadRemoteRuntimeRequest): Promise<AgentSessionRuntime> {
+      return loadInMemoryRuntime({
+        sessionPath: request.sessionPath,
+        agentDirPromise,
         fauxRegistration,
         fauxSeededResponseCount,
         fauxApiKey,

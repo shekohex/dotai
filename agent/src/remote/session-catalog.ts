@@ -101,6 +101,8 @@ export class SessionCatalog {
       return;
     }
 
+    const existing = this.recordsBySessionId.get(record.sessionId);
+
     this.upsert({
       sessionId: record.sessionId,
       sessionPath: resolve(sessionPath),
@@ -108,8 +110,8 @@ export class SessionCatalog {
       sessionName: record.sessionName,
       createdAt: record.createdAt,
       modifiedAt: record.updatedAt,
-      parentSessionId: null,
-      parentSessionPath: null,
+      parentSessionId: existing?.parentSessionId ?? null,
+      parentSessionPath: existing?.parentSessionPath ?? null,
       persistence: "persistent",
       lifecycleStatus: "active",
     });

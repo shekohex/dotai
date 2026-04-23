@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import type {
   ExtensionFactory,
@@ -78,6 +78,37 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
   }
 
   async dispose(): Promise<void> {}
+}
+
+class CountingRuntimeFactory implements RemoteRuntimeFactory {
+  readonly delegate: RemoteRuntimeFactory;
+  createCalls = 0;
+  loadCalls = 0;
+
+  constructor(delegate: RemoteRuntimeFactory) {
+    this.delegate = delegate;
+  }
+
+  async create() {
+    this.createCalls += 1;
+    return this.delegate.create();
+  }
+
+  async load(input: { sessionId: string; sessionPath: string; cwd: string }) {
+    this.loadCalls += 1;
+    if (!this.delegate.load) {
+      throw new Error("Delegate runtime factory cannot load sessions");
+    }
+    return this.delegate.load(input);
+  }
+
+  async dispose(): Promise<void> {
+    await this.delegate.dispose();
+  }
+
+  getSessionCatalogRoot(): string | undefined {
+    return this.delegate.getSessionCatalogRoot?.();
+  }
 }
 
 class RecordingSession {
@@ -879,12 +910,23 @@ function buildRecordingTheme(session: RecordingSession): Theme {
 class RecordingRuntimeFactory implements RemoteRuntimeFactory {
   readonly session: RecordingSession;
   runtimeDisposeCalls = 0;
+  loadCalls = 0;
 
   constructor(session: RecordingSession) {
     this.session = session;
   }
 
   async create() {
+    return {
+      session: this.session,
+      dispose: async () => {
+        this.runtimeDisposeCalls += 1;
+      },
+    } as any;
+  }
+
+  async load() {
+    this.loadCalls += 1;
     return {
       session: this.session,
       dispose: async () => {
@@ -2223,6 +2265,225 @@ timedTest(
     }
   },
 );
+
+timedTest("persistent remote session lazily loads runtime on attach after restart", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const originalCwd = process.cwd();
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-lazy-attach-"));
+  const agentDir = join(root, "agent");
+  const workspaceDir = join(root, "workspace");
+
+  await mkdir(workspaceDir, { recursive: true });
+
+  try {
+    const runtimeFactoryA = new CountingRuntimeFactory(
+      InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      }),
+    );
+    const remoteA = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: runtimeFactoryA,
+    });
+
+    let createdSessionId = "";
+
+    try {
+      const token = await authenticate(remoteA.app, privateKeyPem);
+      const createResponse = await remoteA.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionName: "Lazy Attach Session" }),
+      });
+
+      assert.equal(createResponse.status, 201);
+      createdSessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+      assert.equal(runtimeFactoryA.createCalls, 1);
+      assert.equal(runtimeFactoryA.loadCalls, 0);
+    } finally {
+      await remoteA.dispose();
+    }
+
+    const runtimeFactoryB = new CountingRuntimeFactory(
+      InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      }),
+    );
+    const remoteB = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: runtimeFactoryB,
+    });
+
+    try {
+      const token = await authenticate(remoteB.app, privateKeyPem);
+
+      const appSnapshotResponse = await remoteB.app.request("/v1/app/snapshot", {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(appSnapshotResponse.status, 200);
+      const appSnapshot = (await appSnapshotResponse.json()) as {
+        sessionSummaries: Array<{
+          sessionId: string;
+          cwd: string;
+          lifecycle: { loaded: boolean };
+        }>;
+      };
+
+      assert.equal(appSnapshot.sessionSummaries[0]?.sessionId, createdSessionId);
+      assert.equal(appSnapshot.sessionSummaries[0]?.cwd, workspaceDir);
+      assert.equal(appSnapshot.sessionSummaries[0]?.lifecycle.loaded, false);
+      assert.equal(runtimeFactoryB.createCalls, 0);
+      assert.equal(runtimeFactoryB.loadCalls, 0);
+
+      const sessionSnapshotResponse = await remoteB.app.request(
+        `/v1/sessions/${createdSessionId}/snapshot`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+        },
+      );
+      assert.equal(sessionSnapshotResponse.status, 200);
+      const sessionSnapshot = (await sessionSnapshotResponse.json()) as {
+        sessionId: string;
+        cwd: string;
+      };
+
+      assert.equal(sessionSnapshot.sessionId, createdSessionId);
+      assert.equal(sessionSnapshot.cwd, workspaceDir);
+      assert.equal(runtimeFactoryB.createCalls, 0);
+      assert.equal(runtimeFactoryB.loadCalls, 1);
+
+      const summaryResponse = await remoteB.app.request(
+        `/v1/sessions/${createdSessionId}/summary`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+        },
+      );
+      assert.equal(summaryResponse.status, 200);
+      const summary = (await summaryResponse.json()) as {
+        lifecycle: { loaded: boolean };
+      };
+
+      assert.equal(summary.lifecycle.loaded, true);
+
+      const secondSnapshotResponse = await remoteB.app.request(
+        `/v1/sessions/${createdSessionId}/snapshot`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+        },
+      );
+      assert.equal(secondSnapshotResponse.status, 200);
+      assert.equal(runtimeFactoryB.loadCalls, 1);
+    } finally {
+      await remoteB.dispose();
+    }
+  } finally {
+    process.chdir(originalCwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("persistent remote session lazily loads runtime for commands after restart", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const originalCwd = process.cwd();
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-lazy-command-"));
+  const agentDir = join(root, "agent");
+  const workspaceDir = join(root, "workspace");
+
+  await mkdir(workspaceDir, { recursive: true });
+
+  try {
+    const remoteA = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      }),
+    });
+
+    let createdSessionId = "";
+
+    try {
+      const token = await authenticate(remoteA.app, privateKeyPem);
+      const createResponse = await remoteA.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionName: "Lazy Command Session" }),
+      });
+
+      assert.equal(createResponse.status, 201);
+      createdSessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+    } finally {
+      await remoteA.dispose();
+    }
+
+    const runtimeFactoryB = new CountingRuntimeFactory(
+      InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      }),
+    );
+    const remoteB = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: runtimeFactoryB,
+    });
+
+    try {
+      const token = await authenticate(remoteB.app, privateKeyPem);
+
+      const promptResponse = await remoteB.app.request(`/v1/sessions/${createdSessionId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "load persisted runtime and prompt" }),
+      });
+      assert.equal(promptResponse.status, 202);
+      assert.equal(runtimeFactoryB.createCalls, 0);
+      assert.equal(runtimeFactoryB.loadCalls, 1);
+
+      const summaryResponse = await remoteB.app.request(
+        `/v1/sessions/${createdSessionId}/summary`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+        },
+      );
+      assert.equal(summaryResponse.status, 200);
+      const summary = (await summaryResponse.json()) as {
+        cwd: string;
+        lifecycle: { loaded: boolean };
+      };
+
+      assert.equal(summary.cwd, workspaceDir);
+      assert.equal(summary.lifecycle.loaded, true);
+    } finally {
+      await remoteB.dispose();
+    }
+  } finally {
+    process.chdir(originalCwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 timedTest("missing session summary returns 404", async () => {
   const keys = generateKeyPairSync("ed25519");
@@ -3900,6 +4161,65 @@ timedTest("createSession disposes runtime when session initialization fails", as
   }
 });
 
+timedTest("lazy-loaded session disposes runtime when initialization fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-lazy-load-failure-"));
+  const catalogDir = join(root, "catalog");
+  const workspaceDir = join(root, "workspace");
+  const sessionId = "lazy-load-bind-failure";
+  const sessionPath = join(catalogDir, "session.jsonl");
+
+  await mkdir(catalogDir, { recursive: true });
+  await mkdir(workspaceDir, { recursive: true });
+  await writeFile(
+    sessionPath,
+    `${JSON.stringify({
+      type: "session",
+      version: 3,
+      id: sessionId,
+      timestamp: new Date().toISOString(),
+      cwd: workspaceDir,
+    })}\n`,
+  );
+
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  session.bindExtensionsError = new Error("bind failed");
+  session.sessionStats = {
+    ...session.sessionStats,
+    sessionId,
+    sessionFile: sessionPath,
+  };
+  session.sessionManager = {
+    getCwd: () => workspaceDir,
+    getSessionId: () => sessionId,
+    isPersisted: () => true,
+    getSessionFile: () => sessionPath,
+    getSessionDir: () => catalogDir,
+  };
+
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: catalogDir }),
+  });
+  const auth = testAuthSession();
+
+  try {
+    await assert.rejects(registry.loadSessionSnapshot(sessionId, auth, "conn-a"), /bind failed/);
+    await assert.rejects(registry.loadSessionSnapshot(sessionId, auth, "conn-a"), /bind failed/);
+
+    assert.equal(runtimeFactory.loadCalls, 2);
+    assert.equal(runtimeFactory.runtimeDisposeCalls, 2);
+
+    const summary = registry.getSessionSummary(sessionId);
+    assert.equal(summary.lifecycle.loaded, false);
+  } finally {
+    await registry.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 timedTest("open stream responses omit Stream-Closed header", async () => {
   const keys = generateKeyPairSync("ed25519");
   const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -4446,6 +4766,48 @@ timedTest("in-memory runtime factory preserves explicit null fauxApiKey", async 
 
   await nullRuntime.dispose();
   await nullFactory.dispose();
+});
+
+timedTest("in-memory runtime load preserves source session directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-load-session-dir-"));
+  const workspaceDir = join(root, "workspace");
+  const agentDir = join(root, "agent");
+  const defaultSessionDir = join(root, "default-sessions");
+  const sourceSessionDir = join(root, "source-sessions");
+
+  await mkdir(workspaceDir, { recursive: true });
+  await mkdir(agentDir, { recursive: true });
+
+  const sourceManager = SessionManager.create(workspaceDir, sourceSessionDir);
+  const sourceSessionPath = sourceManager.getSessionFile();
+  assert.ok(sourceSessionPath);
+
+  const runtimeFactory = InMemoryPiRuntimeFactory({
+    cwd: workspaceDir,
+    agentDir,
+    sessionDir: defaultSessionDir,
+    persistSessions: true,
+  });
+  const runtime = await runtimeFactory.load?.({
+    sessionId: sourceManager.getSessionId(),
+    sessionPath: sourceSessionPath,
+    cwd: workspaceDir,
+  });
+
+  assert.ok(runtime);
+
+  try {
+    assert.equal(runtime.session.sessionManager.getSessionDir(), sourceSessionDir);
+
+    const next = await runtime.newSession();
+    assert.equal(next.cancelled, false);
+    assert.equal(runtime.session.sessionManager.getSessionDir(), sourceSessionDir);
+    assert.equal(dirname(runtime.session.sessionManager.getSessionFile() ?? ""), sourceSessionDir);
+  } finally {
+    await runtime.dispose();
+    await runtimeFactory.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 timedTest("milestone 3 remote runtime adapter replays snapshot and streams events", async () => {

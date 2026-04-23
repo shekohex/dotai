@@ -33,18 +33,18 @@ export function enqueueSessionCreation<T>(input: {
   return { pending, nextQueue };
 }
 
-function buildSessionRecord(input: {
+export function createSessionRecord(input: {
   sessionId: string;
-  request: CreateSessionRequest;
+  sessionName: string;
   createdAt: number;
+  updatedAt?: number;
   runtime: AgentSessionRuntime;
-  existingSessionCount: number;
   lastAppStreamOffsetSeenByServer: string;
   readRuntimeExtensionMetadata: (runtime: AgentSessionRuntime) => SessionRecord["extensions"];
 }): SessionRecord {
   return {
     sessionId: input.sessionId,
-    sessionName: input.request.sessionName ?? `Session ${input.existingSessionCount + 1}`,
+    sessionName: input.sessionName,
     status: "idle",
     cwd: "",
     model: "pi-remote-faux/pi-remote-faux-1",
@@ -70,7 +70,7 @@ function buildSessionRecord(input: {
     pendingToolCalls: [],
     errorMessage: null,
     createdAt: input.createdAt,
-    updatedAt: input.createdAt,
+    updatedAt: input.updatedAt ?? input.createdAt,
     lastAppStreamOffsetSeenByServer: input.lastAppStreamOffsetSeenByServer,
     presence: new Map(),
     runtime: input.runtime,
@@ -113,12 +113,12 @@ export async function createSingleSession(input: {
   const runtime = await input.createRuntime();
   const sessionId = readRuntimeSessionId(runtime) ?? input.createSessionId();
   try {
-    const record = buildSessionRecord({
+    const record = createSessionRecord({
       sessionId,
-      request: input.request,
+      sessionName: input.request.sessionName ?? `Session ${input.sessions.size + 1}`,
       createdAt,
+      updatedAt: createdAt,
       runtime,
-      existingSessionCount: input.sessions.size,
       lastAppStreamOffsetSeenByServer: input.getLastAppStreamOffset(),
       readRuntimeExtensionMetadata: input.readRuntimeExtensionMetadata,
     });

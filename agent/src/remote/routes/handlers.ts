@@ -109,9 +109,9 @@ export function handleSessionSnapshot(
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
 ): Promise<Response> {
-  return withAuthError(c, () => {
+  return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
-    const snapshot = dependencies.sessions.getSessionSnapshot(
+    const snapshot = await dependencies.sessions.loadSessionSnapshot(
       sessionId,
       c.get("auth"),
       connectionId,
@@ -148,9 +148,13 @@ export function handleSessionTools(
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
 ): Promise<Response> {
-  return withAuthError(c, () => {
+  return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
-    const tools = dependencies.sessions.getSessionTools(sessionId, c.get("auth"), connectionId);
+    const tools = await dependencies.sessions.getSessionTools(
+      sessionId,
+      c.get("auth"),
+      connectionId,
+    );
     return jsonWithSchema(
       c,
       SessionToolsResponseSchema,
@@ -190,9 +194,9 @@ export function handleClearSessionQueue(
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
 ): Promise<Response> {
-  return withAuthError(c, () => {
+  return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
-    const cleared = dependencies.sessions.clearQueue(sessionId, c.get("auth"), connectionId);
+    const cleared = await dependencies.sessions.clearQueue(sessionId, c.get("auth"), connectionId);
     return jsonWithSchema(
       c,
       ClearQueueResponseSchema,

@@ -125,20 +125,20 @@ In remote mode:
 
 ### Phase 1: Catalog Foundation
 
-- [ ] Add server `SessionCatalog` abstraction
-- [ ] Define catalog record schema and in-memory index
-- [ ] Scan server session storage on boot and build index
-- [ ] Map `sessionId -> sessionPath` internally on server
-- [ ] Add APIs for session listing and summary lookup from catalog
-- [ ] Return authoritative server `cwd` and lifecycle metadata in summaries
+- [x] Add server `SessionCatalog` abstraction
+- [x] Define catalog record schema and in-memory index
+- [x] Scan server session storage on boot and build index
+- [x] Map `sessionId -> sessionPath` internally on server
+- [x] Add APIs for session listing and summary lookup from catalog
+- [x] Return authoritative server `cwd` and lifecycle metadata in summaries
 
 ### Phase 2: Lazy Runtime Loading
 
-- [ ] Add `LoadedRuntimeRegistry`
-- [ ] Load runtime lazily from catalog on attach or command
-- [ ] Keep unloaded sessions listable and searchable
-- [ ] Rebuild cwd-bound services from server session `cwd`
-- [ ] Add runtime eviction for inactive sessions
+- [x] Add `LoadedRuntimeRegistry`
+- [x] Load runtime lazily from catalog on attach or command
+- [x] Keep unloaded sessions listable and searchable
+- [x] Rebuild cwd-bound services from server session `cwd`
+- [x] Add runtime eviction for inactive sessions
 
 ### Phase 3: Remote CLI Parity
 

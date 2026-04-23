@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
-import { flushPersistedSessionManagerToDisk } from "../session-manager-storage.js";
 import type {
   AppSnapshot,
   CreateSessionRequest,
@@ -20,7 +19,6 @@ import {
   getLastAppStreamOffsetForNewSession,
   getLastSessionStreamOffset,
   getSessionSnapshot,
-  installRemoteExtensionEventMirror,
   registerCreatedSession,
   touchSessionPresence,
   type SessionRecord,
@@ -50,7 +48,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       request,
       client,
       connectionId,
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       now: this.now,
       createSessionId: () => randomUUID(),
       createRuntime: () => this.runtimeFactory.create(),
@@ -58,14 +56,18 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       getLastAppStreamOffset: () =>
         getLastAppStreamOffsetForNewSession((streamId) => this.streams.getHeadOffset(streamId)),
       initializeRuntimeSession: async (record, createdAt) => {
-        await this.initializeRuntimeSession(record, createdAt);
+        await this.initializeRuntimeRecord(record, {
+          initializedAt: createdAt,
+          syncSessionNameToRuntime: true,
+          flushPersistedSessionManager: true,
+        });
       },
       registerCreatedSession: (record, targetClient, targetConnectionId, createdAt) => {
         this.registerCreatedSessionRecord(record, targetClient, targetConnectionId, createdAt);
       },
       disposeFailedSessionCreation: async (sessionId, runtime) => {
         await disposeFailedSessionCreation({
-          sessions: this.sessions,
+          sessions: this.getLoadedSessions(),
           sessionId,
           runtime,
         });
@@ -80,7 +82,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     createdAt: number,
   ): void {
     registerCreatedSession({
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       record,
       client,
       connectionId,
@@ -98,36 +100,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       touchPresence: (targetSessionId, presenceClient, presenceConnectionId) => {
         this.touchPresence(targetSessionId, presenceClient, presenceConnectionId);
       },
-    });
-  }
-
-  protected async initializeRuntimeSession(
-    record: SessionRecord,
-    createdAt: number,
-  ): Promise<void> {
-    const session = this.getRuntimeSession(record);
-    if (!session) {
-      return;
-    }
-
-    installRemoteExtensionEventMirror({
-      runner: session.extensionRunner,
-      streams: this.streams,
-      record,
-      now: this.now,
-    });
-
-    await session.bindExtensions({
-      uiContext: this.createRemoteUiContext(record),
-    });
-    if (typeof session.setSessionName === "function") {
-      session.setSessionName(record.sessionName);
-    }
-    flushPersistedSessionManagerToDisk(session.sessionManager);
-    this.syncFromRuntime(record, { now: createdAt, updateTimestamp: false });
-    this.catalog.registerPersistedRuntimeRecord(record);
-    record.runtimeSubscription = session.subscribe((event) => {
-      this.handleSessionEvent(record.sessionId, event);
     });
   }
 
@@ -152,12 +124,21 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     });
   }
 
+  async loadSessionSnapshot(
+    sessionId: string,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<SessionSnapshot> {
+    await this.ensureLoaded(sessionId);
+    return this.getSessionSnapshot(sessionId, client, connectionId);
+  }
+
   async reload(
     sessionId: string,
     client: AuthSession,
     connectionId?: string,
   ): Promise<SessionSnapshot> {
-    const record = this.getRequired(sessionId);
+    const record = await this.ensureLoaded(sessionId);
     this.touchPresence(sessionId, client, connectionId);
     this.syncFromRuntime(record, { updateTimestamp: false });
     const session = this.requireRuntimeSession(record);
@@ -174,17 +155,19 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     return this.getSessionSnapshot(sessionId, client, connectionId);
   }
 
-  getSessionTools(
+  async getSessionTools(
     sessionId: string,
     client: AuthSession,
     connectionId?: string,
-  ): Array<{
-    name: string;
-    description: string;
-    parameters: unknown;
-    sourceInfo: unknown;
-  }> {
-    const record = this.getRequired(sessionId);
+  ): Promise<
+    Array<{
+      name: string;
+      description: string;
+      parameters: unknown;
+      sourceInfo: unknown;
+    }>
+  > {
+    const record = await this.ensureLoaded(sessionId);
     this.touchPresence(sessionId, client, connectionId);
     this.syncFromRuntime(record, { updateTimestamp: false, syncResources: true });
     const session = this.getRuntimeSession(record);
@@ -217,7 +200,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
 
   listSessionSummaries(): SessionSummary[] {
     return this.catalog.listSummaries({
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       syncFromRuntime: (record) => {
         this.syncFromRuntime(record, { updateTimestamp: false });
       },
@@ -229,7 +212,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
   getSessionSummary(sessionId: string): SessionSummary {
     const summary = this.catalog.getSummary({
       sessionId,
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       syncFromRuntime: (record) => {
         this.syncFromRuntime(record, { updateTimestamp: false });
       },
@@ -271,7 +254,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
 
   async dispose(): Promise<void> {
     await disposeSessionRegistry({
-      sessions: this.sessions,
+      sessions: this.getLoadedSessions(),
       disposeRuntimeFactory: async () => {
         await this.runtimeFactory.dispose();
       },

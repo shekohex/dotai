@@ -8,11 +8,27 @@ import { RemoteAgentSessionInteractionApi } from "./interaction-api.js";
 
 export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessionInteractionApi {
   setSteeringMode(mode: "all" | "one-at-a-time"): void {
+    const previousMode = this._steeringMode;
     this._steeringMode = mode;
+    this.enqueueMutation(
+      () => this.client.updateSettings(this.sessionId, { method: "setSteeringMode", args: [mode] }),
+      () => {
+        this._steeringMode = previousMode;
+      },
+      "Update remote settings",
+    );
   }
 
   setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+    const previousMode = this._followUpMode;
     this._followUpMode = mode;
+    this.enqueueMutation(
+      () => this.client.updateSettings(this.sessionId, { method: "setFollowUpMode", args: [mode] }),
+      () => {
+        this._followUpMode = previousMode;
+      },
+      "Update remote settings",
+    );
   }
 
   compact(_customInstructions?: string): Promise<never> {
@@ -24,7 +40,19 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
   abortBranchSummary(): void {}
 
   setAutoCompactionEnabled(enabled: boolean): void {
+    const previousEnabled = this._autoCompactionEnabled;
     this._autoCompactionEnabled = enabled;
+    this.enqueueMutation(
+      () =>
+        this.client.updateSettings(this.sessionId, {
+          method: "setAutoCompactionEnabled",
+          args: [enabled],
+        }),
+      () => {
+        this._autoCompactionEnabled = previousEnabled;
+      },
+      "Update remote settings",
+    );
   }
 
   setAutoRetryEnabled(enabled: boolean): void {

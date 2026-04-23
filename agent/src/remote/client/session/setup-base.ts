@@ -30,6 +30,8 @@ import {
   handleRemoteUiRequest,
   initializeRemoteSessionMetadata,
   normalizeAvailableModels,
+  patchSettingsManagerForRemoteModelSettings,
+  patchSettingsManagerForRemoteSettingsSync,
   readRemoteSettingsSnapshot,
   resolveModel,
   resolveThinkingLevel,
@@ -193,6 +195,7 @@ export abstract class RemoteAgentSessionSetupBase {
       sourceInfo: { source: "remote" },
     }));
     this.agent = this.createAgentBindings();
+    this.installSettingsManagerBindings(this.settingsManager);
     initializeRemoteSessionMetadata(this.sessionManager, snapshot);
     this.extensionStateHydrationTask = hydrateExtensionStateFromKv({
       client: this.client,
@@ -371,7 +374,6 @@ export abstract class RemoteAgentSessionSetupBase {
       sessionId: this.sessionId,
       currentSessionName,
       remoteSettings: this.remoteSettings,
-      remoteModelSettings: this.remoteModelSettings,
     });
     if (!cwdResult) {
       return;
@@ -385,7 +387,29 @@ export abstract class RemoteAgentSessionSetupBase {
       messages: this.state.messages,
     });
     this.settingsManager = cwdResult.settingsManager;
+    this.installSettingsManagerBindings(this.settingsManager);
     void this.refreshLocalExtensionRunnerAfterCwdChange();
+  }
+
+  protected installSettingsManagerBindings(settingsManager: SettingsManager): void {
+    patchSettingsManagerForRemoteModelSettings(
+      settingsManager,
+      () => this.remoteModelSettings,
+      (request, rollback, label) => {
+        this.enqueueMutation(
+          () => this.client.updateSettings(this.sessionId, request),
+          rollback,
+          label,
+        );
+      },
+    );
+    patchSettingsManagerForRemoteSettingsSync({
+      settingsManager,
+      enqueueMutation: (execute, rollback, label) => {
+        this.enqueueMutation(execute, rollback, label);
+      },
+      clientUpdate: (request) => this.client.updateSettings(this.sessionId, request),
+    });
   }
 
   get model(): Model<Api> | undefined {
@@ -686,6 +710,11 @@ export abstract class RemoteAgentSessionSetupBase {
   abstract setActiveToolsByName(toolNames: string[]): void;
   abstract setModel(model: Model<Api>): Promise<void>;
   abstract setThinkingLevel(level: ThinkingLevel): void;
+  protected abstract enqueueMutation(
+    execute: () => Promise<void>,
+    rollback: () => void,
+    label: string,
+  ): void;
 
   abstract abort(): Promise<void>;
   abstract waitForIdle(): Promise<void>;

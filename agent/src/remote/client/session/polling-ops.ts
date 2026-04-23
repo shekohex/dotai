@@ -11,6 +11,7 @@ import type {
   ExtensionUiResolvedEventPayload,
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
+  RemoteSettingsSnapshot,
   StreamEventEnvelope,
 } from "../../schemas.js";
 import type { RemoteModelSettingsState } from "../contracts.js";
@@ -62,6 +63,7 @@ export type PollRemoteSessionRuntimeInput = {
   setAutoCompactionEnabled: (enabled: boolean) => void;
   setSteeringMode: (mode: "all" | "one-at-a-time") => void;
   setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
+  setRemoteSettings: (settings: RemoteSettingsSnapshot) => void;
   getUiContext: () => ExtensionUIContext | undefined;
   bufferUiRequest: (request: ExtensionUiRequestEventPayload) => void;
   pendingInteractiveRequests: Map<string, AbortController>;
@@ -86,6 +88,7 @@ type PollingStateHandlers = Pick<
   | "setAutoCompactionEnabled"
   | "setSteeringMode"
   | "setFollowUpMode"
+  | "setRemoteSettings"
   | "getUiContext"
   | "bufferUiRequest"
   | "pendingInteractiveRequests"
@@ -215,6 +218,7 @@ function handleSessionStatePatchPayload(
     setAutoCompactionEnabled: input.setAutoCompactionEnabled,
     setSteeringMode: input.setSteeringMode,
     setFollowUpMode: input.setFollowUpMode,
+    setRemoteSettings: input.setRemoteSettings,
   });
 }
 

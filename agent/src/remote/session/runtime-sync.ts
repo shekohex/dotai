@@ -3,7 +3,10 @@ import type { SessionSnapshot, SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import { parseResourceLoaderExtensionMetadata, parseRuntimeExtensionMetadata } from "./helpers.js";
-import { applyRuntimeResourcesSnapshot } from "./runtime-resources-sync.js";
+import {
+  applyRuntimeResourcesSnapshot,
+  readRuntimeSettingsSnapshot,
+} from "./runtime-resources-sync.js";
 import { buildSessionSnapshotParts } from "./runtime-sync-snapshot.js";
 import { createEmptySessionStats, type SessionRecord } from "./types.js";
 
@@ -53,6 +56,7 @@ function applyRuntimeSnapshot(
 ): void {
   record.cwd = session.sessionManager.getCwd();
   record.extensions = readRuntimeExtensionMetadata(record.runtime);
+  record.settings = readRuntimeSettingsSnapshot(session);
   if (syncResources) {
     applyRuntimeResourcesSnapshot(record, session);
   }

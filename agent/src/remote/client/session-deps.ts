@@ -17,6 +17,10 @@ export { applyRemoteSessionStatePatch } from "./session-patches.js";
 export { pollRemoteSessionEvents } from "./session-polling.js";
 export { createRemoteResourceLoader } from "./session-resource-loader.js";
 export {
+  applyRemoteSettingsSnapshotInPlace,
+  patchSettingsManagerForRemoteSettingsSync,
+} from "./session-settings.js";
+export {
   applyAuthoritativeCwd,
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,

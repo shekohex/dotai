@@ -17,6 +17,7 @@ import {
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
   PromptCommandRequestSchema,
+  SettingsUpdateRequestSchema,
   SessionNameUpdateRequestSchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
@@ -245,6 +246,10 @@ export const updateSessionModelRouteDescription = commandRouteDescription(
 export const updateSessionNameRouteDescription = commandRouteDescription(
   "updateSessionName",
   SessionNameUpdateRequestSchema,
+);
+export const updateSessionSettingsRouteDescription = commandRouteDescription(
+  "updateSessionSettings",
+  SettingsUpdateRequestSchema,
 );
 
 export const submitSessionUiResponseRouteDescription = {

@@ -4,6 +4,7 @@ import type {
   InterruptCommandRequest,
   ModelUpdateRequest,
   PromptCommandRequest,
+  SettingsUpdateRequest,
   SessionNameUpdateRequest,
   SteerCommandRequest,
 } from "../schemas.js";
@@ -132,6 +133,24 @@ export function handleUpdateSessionName(
   return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
     const accepted = await dependencies.sessions.updateSessionName(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return acceptedResponse(c, accepted, connectionId);
+  });
+}
+
+export function handleUpdateSessionSettings(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: SettingsUpdateRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const accepted = await dependencies.sessions.updateSettings(
       sessionId,
       payload,
       c.get("auth"),

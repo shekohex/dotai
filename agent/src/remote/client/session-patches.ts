@@ -1,7 +1,11 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ContextUsage, SessionStats } from "@mariozechner/pi-coding-agent";
-import type { RemoteExtensionMetadata, StreamEventEnvelope } from "../schemas.js";
+import type {
+  RemoteExtensionMetadata,
+  RemoteSettingsSnapshot,
+  StreamEventEnvelope,
+} from "../schemas.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
 import { normalizeAvailableModels } from "./session-models.js";
 import { isThinkingLevel, resolveOptionalThinkingLevel } from "./session-shared.js";
@@ -29,12 +33,14 @@ type ApplyRemoteSessionStatePatchInput = {
   setAutoCompactionEnabled: (enabled: boolean) => void;
   setSteeringMode: (mode: "all" | "one-at-a-time") => void;
   setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
+  setRemoteSettings: (settings: RemoteSettingsSnapshot) => void;
 };
 
 export function applyRemoteSessionStatePatch(input: ApplyRemoteSessionStatePatchInput): void {
   const patch = input.payload.patch;
 
   applyRemoteAvailableModelsPatch(input, patch);
+  applyRemoteSettingsPatch(input, patch);
   applyRemoteModelSettingsPatch(input, patch);
   applyRemoteModelAndThinkingPatch(input, patch);
   applyRemoteCwdAndExtensionsPatch(input, patch);
@@ -44,6 +50,17 @@ export function applyRemoteSessionStatePatch(input: ApplyRemoteSessionStatePatch
   applyRemoteContextUsagePatch(input, patch);
   applyRemoteUsageCostPatch(input, patch);
   applyRemoteSessionBehaviorPatch(input, patch);
+}
+
+function applyRemoteSettingsPatch(
+  input: ApplyRemoteSessionStatePatchInput,
+  patch: SessionStatePatch,
+): void {
+  if (patch.settings === undefined) {
+    return;
+  }
+
+  input.setRemoteSettings({ ...patch.settings });
 }
 
 function applyRemoteAvailableModelsPatch(

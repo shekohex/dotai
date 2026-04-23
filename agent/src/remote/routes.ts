@@ -11,6 +11,7 @@ import {
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
   PromptCommandRequestSchema,
+  SettingsUpdateRequestSchema,
   SessionParamsSchema,
   SessionNameUpdateRequestSchema,
   SteerCommandRequestSchema,
@@ -36,6 +37,7 @@ import {
   submitSessionUiResponseRouteDescription,
   updateSessionModelRouteDescription,
   updateSessionNameRouteDescription,
+  updateSessionSettingsRouteDescription,
   updateSessionActiveToolsRouteDescription,
 } from "./routes/descriptions.js";
 import {
@@ -59,8 +61,10 @@ import {
   handleUpdateSessionActiveTools,
   handleUpdateSessionModel,
   handleUpdateSessionName,
+  handleUpdateSessionSettings,
 } from "./routes/handlers-commands.js";
 import { handleAppEventsStreamRead, handleSessionEventsStreamRead } from "./routes/stream-read.js";
+import { assertType } from "./typebox.js";
 import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./routes/types.js";
 
 type AuthMiddleware = MiddlewareHandler<RemoteHonoEnv>;
@@ -231,6 +235,19 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
     },
   );
   const route13 = route12.post(
+    "/sessions/:sessionId/settings",
+    describeRoute(updateSessionSettingsRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", SettingsUpdateRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      const payload: unknown = c.req.valid("json");
+      assertType(SettingsUpdateRequestSchema, payload);
+      return handleUpdateSessionSettings(c, dependencies, sessionId, payload);
+    },
+  );
+  const route14 = route13.post(
     "/sessions/:sessionId/ui-response",
     describeRoute(submitSessionUiResponseRouteDescription),
     needsAuth,
@@ -241,7 +258,7 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
       return handleSubmitSessionUiResponse(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  return route13.post(
+  return route14.post(
     "/sessions/:sessionId/clear-queue",
     describeRoute(clearSessionQueueRouteDescription),
     needsAuth,

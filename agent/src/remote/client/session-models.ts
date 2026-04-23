@@ -2,7 +2,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { Value } from "@sinclair/typebox/value";
-import { RemoteModelSchema } from "../schemas.js";
+import { RemoteModelSchema, type SettingsUpdateRequest } from "../schemas.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
 
 function isModelLike(value: unknown): value is Model<Api> {
@@ -93,6 +93,7 @@ export function patchModelRegistryForRemoteCatalog(
 export function patchSettingsManagerForRemoteModelSettings(
   settingsManager: SettingsManager,
   getRemoteSettings: () => RemoteModelSettingsState,
+  applyMutation?: (request: SettingsUpdateRequest, rollback: () => void, label: string) => void,
 ): void {
   settingsManager.getDefaultProvider = () => getRemoteSettings().defaultProvider;
   settingsManager.getDefaultModel = () => getRemoteSettings().defaultModel;
@@ -102,20 +103,70 @@ export function patchSettingsManagerForRemoteModelSettings(
     return enabled ? [...enabled] : undefined;
   };
   settingsManager.setDefaultProvider = (provider: string) => {
+    const previous = { ...getRemoteSettings() };
     getRemoteSettings().defaultProvider = provider;
+    applyMutation?.(
+      { method: "setDefaultProvider", args: [provider] },
+      () => {
+        restoreRemoteModelSettings(getRemoteSettings(), previous);
+      },
+      "Update remote settings",
+    );
   };
   settingsManager.setDefaultModel = (modelId: string) => {
+    const previous = { ...getRemoteSettings() };
     getRemoteSettings().defaultModel = modelId;
+    applyMutation?.(
+      { method: "setDefaultModel", args: [modelId] },
+      () => {
+        restoreRemoteModelSettings(getRemoteSettings(), previous);
+      },
+      "Update remote settings",
+    );
   };
   settingsManager.setDefaultModelAndProvider = (provider: string, modelId: string) => {
+    const previous = { ...getRemoteSettings() };
     const remote = getRemoteSettings();
     remote.defaultProvider = provider;
     remote.defaultModel = modelId;
+    applyMutation?.(
+      { method: "setDefaultModelAndProvider", args: [provider, modelId] },
+      () => {
+        restoreRemoteModelSettings(getRemoteSettings(), previous);
+      },
+      "Update remote settings",
+    );
   };
   settingsManager.setDefaultThinkingLevel = (level: ThinkingLevel) => {
+    const previous = { ...getRemoteSettings() };
     getRemoteSettings().defaultThinkingLevel = level;
+    applyMutation?.(
+      { method: "setDefaultThinkingLevel", args: [level] },
+      () => {
+        restoreRemoteModelSettings(getRemoteSettings(), previous);
+      },
+      "Update remote settings",
+    );
   };
   settingsManager.setEnabledModels = (patterns: string[] | undefined) => {
+    const previous = { ...getRemoteSettings() };
     getRemoteSettings().enabledModels = patterns ? [...patterns] : undefined;
+    applyMutation?.(
+      { method: "setEnabledModels", args: [patterns ?? null] },
+      () => {
+        restoreRemoteModelSettings(getRemoteSettings(), previous);
+      },
+      "Update remote settings",
+    );
   };
+}
+
+function restoreRemoteModelSettings(
+  target: RemoteModelSettingsState,
+  previous: RemoteModelSettingsState,
+): void {
+  target.defaultProvider = previous.defaultProvider;
+  target.defaultModel = previous.defaultModel;
+  target.defaultThinkingLevel = previous.defaultThinkingLevel;
+  target.enabledModels = previous.enabledModels ? [...previous.enabledModels] : undefined;
 }

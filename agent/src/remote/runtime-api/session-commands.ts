@@ -1,6 +1,6 @@
 import { hc } from "hono/client";
 import type { createV1Routes } from "../routes.js";
-import type { ClearQueueResponse, UiResponseRequest } from "../schemas.js";
+import type { ClearQueueResponse, SettingsUpdateRequest, UiResponseRequest } from "../schemas.js";
 import { ClearQueueResponseSchema } from "../schemas.js";
 import { toRemoteHttpError } from "./utils.js";
 import { assertType } from "../typebox.js";
@@ -103,6 +103,20 @@ export function postSessionNameUpdateCommand(input: {
   return input.postSessionRoute((headers) =>
     input.rpcClient.sessions[":sessionId"]["session-name"].$post(
       { param: { sessionId: input.sessionId }, json: { sessionName: input.sessionName } },
+      { headers },
+    ),
+  );
+}
+
+export function postSettingsUpdateCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  body: SettingsUpdateRequest;
+  postSessionRoute: PostSessionRoute;
+}): Promise<void> {
+  return input.postSessionRoute((headers) =>
+    input.rpcClient.sessions[":sessionId"].settings.$post(
+      { param: { sessionId: input.sessionId }, json: input.body },
       { headers },
     ),
   );

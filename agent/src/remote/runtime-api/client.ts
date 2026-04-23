@@ -11,6 +11,7 @@ import type {
   RemoteKvScope,
   RemoteKvWriteResponse,
   SessionSnapshot,
+  SettingsUpdateRequest,
   UiResponseRequest,
 } from "../schemas.js";
 import {
@@ -30,6 +31,7 @@ import {
   postInterruptCommand,
   postModelUpdateCommand,
   postPromptCommand,
+  postSettingsUpdateCommand,
   postSessionNameUpdateCommand,
   postSteerCommand,
   postUiResponseCommand,
@@ -237,6 +239,15 @@ export class RemoteApiClient {
       rpcClient: this.rpcClient,
       sessionId,
       sessionName,
+      postSessionRoute: (request) => this.postSessionRoute(request),
+    });
+  }
+
+  updateSettings(sessionId: string, body: SettingsUpdateRequest): Promise<void> {
+    return postSettingsUpdateCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      body,
       postSessionRoute: (request) => this.postSessionRoute(request),
     });
   }

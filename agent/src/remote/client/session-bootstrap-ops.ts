@@ -11,11 +11,7 @@ import {
 } from "../schemas.js";
 import { assertType } from "../typebox.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
-import {
-  cloneModel,
-  createFallbackModel,
-  patchSettingsManagerForRemoteModelSettings,
-} from "./session-models.js";
+import { cloneModel, createFallbackModel } from "./session-models.js";
 import {
   normalizeTranscript,
   parseModelRef,
@@ -135,7 +131,6 @@ export function applyAuthoritativeCwd(input: {
   sessionId: string;
   currentSessionName: string | undefined;
   remoteSettings: RemoteAgentSettings;
-  remoteModelSettings: RemoteModelSettingsState;
 }): { sessionManager: SessionManager; settingsManager: SettingsManager } | undefined {
   if (!input.nextCwd || input.nextCwd === input.currentCwd) {
     return undefined;
@@ -147,7 +142,6 @@ export function applyAuthoritativeCwd(input: {
     sessionManager.appendSessionInfo(input.currentSessionName);
   }
   const settingsManager = SettingsManager.inMemory(input.remoteSettings);
-  patchSettingsManagerForRemoteModelSettings(settingsManager, () => input.remoteModelSettings);
   return { sessionManager, settingsManager };
 }
 

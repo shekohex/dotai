@@ -18,7 +18,6 @@ export type {
 import {
   createRemoteResourceLoader,
   patchModelRegistryForRemoteCatalog,
-  patchSettingsManagerForRemoteModelSettings,
   readRemoteSettingsSnapshot,
 } from "./session-deps.js";
 import { RemoteAgentSessionCapabilitiesApi } from "./session/capabilities-api.js";
@@ -49,7 +48,6 @@ export class RemoteAgentSession
     let session: RemoteAgentSession | undefined;
     configureRemoteModelStateBindings({
       modelRegistry,
-      settingsManager,
       sessionRef: () => session,
     });
     const sessionManager = SessionManager.inMemory(sessionCwd);
@@ -94,14 +92,10 @@ export class RemoteAgentSession
 
 function configureRemoteModelStateBindings(input: {
   modelRegistry: ModelRegistry;
-  settingsManager: SettingsManager;
   sessionRef: () => RemoteAgentSession | undefined;
 }): void {
   patchModelRegistryForRemoteCatalog(input.modelRegistry, () => {
     return input.sessionRef()?.getRemoteAvailableModels() ?? [];
-  });
-  patchSettingsManagerForRemoteModelSettings(input.settingsManager, () => {
-    return input.sessionRef()?.getRemoteModelSettings() ?? {};
   });
 }
 

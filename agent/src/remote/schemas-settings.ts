@@ -30,7 +30,7 @@ export const RemoteResourceBundleSchema = Type.Object({
   appendSystemPrompt: Type.Array(Type.String()),
 });
 
-const PackageSourceSchema = Type.Union([
+export const PackageSourceSchema = Type.Union([
   Type.String(),
   Type.Object({
     source: Type.String(),

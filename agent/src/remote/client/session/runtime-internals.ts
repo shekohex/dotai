@@ -3,12 +3,12 @@ import type { SessionStats } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { StreamEventEnvelope } from "../../schemas.js";
 import {
+  applyRemoteSettingsSnapshotInPlace,
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,
   cancelRemoteUiRequest,
   isAgentMessageLike,
   isAgentSessionEventLike,
-  patchSettingsManagerForRemoteModelSettings,
   readRemoteSettingsSnapshot,
   resolveThinkingLevel,
 } from "../session-deps.js";
@@ -35,10 +35,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
     this.remoteSettings = readRemoteSettingsSnapshot(snapshot);
     this.settingsManager = SettingsManager.inMemory(this.remoteSettings);
-    patchSettingsManagerForRemoteModelSettings(
-      this.settingsManager,
-      () => this.remoteModelSettings,
-    );
+    this.installSettingsManagerBindings(this.settingsManager);
     this.remoteExtensions = applyRemoteExtensionsSnapshot(snapshot);
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, this._thinkingLevel);
     this.state.thinkingLevel = this._thinkingLevel;
@@ -183,6 +180,10 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       },
       setFollowUpMode: (mode) => {
         this._followUpMode = mode;
+      },
+      setRemoteSettings: (settings) => {
+        this.remoteSettings = { ...settings };
+        applyRemoteSettingsSnapshotInPlace(this.settingsManager, this.remoteSettings);
       },
       getUiContext: () => this.uiContext,
       bufferUiRequest: (request) => {

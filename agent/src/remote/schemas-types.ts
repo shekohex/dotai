@@ -30,6 +30,7 @@ import {
   SteerCommandRequestSchema,
   UiResponseRequestSchema,
   UiResponseResponseSchema,
+  type SettingsUpdateRequestValue,
 } from "./schemas-core.js";
 import {
   RemoteKvDeleteResponseSchema,
@@ -62,6 +63,7 @@ export type InterruptCommandRequest = Static<typeof InterruptCommandRequestSchem
 export type ActiveToolsUpdateRequest = Static<typeof ActiveToolsUpdateRequestSchema>;
 export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
 export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
+export type SettingsUpdateRequest = SettingsUpdateRequestValue;
 export type SessionToolsResponse = Static<typeof SessionToolsResponseSchema>;
 export type UiResponseRequest = Static<typeof UiResponseRequestSchema>;
 export type UiResponseResponse = Static<typeof UiResponseResponseSchema>;

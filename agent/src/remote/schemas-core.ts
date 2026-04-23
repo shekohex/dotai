@@ -1,5 +1,9 @@
-import { Type } from "@sinclair/typebox";
-import { RemoteResourceBundleSchema, RemoteSettingsSnapshotSchema } from "./schemas-settings.js";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import {
+  PackageSourceSchema,
+  RemoteResourceBundleSchema,
+  RemoteSettingsSnapshotSchema,
+} from "./schemas-settings.js";
 import {
   ClientCapabilitiesSchema,
   ClientCapabilitiesPrimitivesSchema,
@@ -18,6 +22,7 @@ export {
   RemoteExtensionRuntimeSchema,
 } from "./schemas-capabilities.js";
 export {
+  PackageSourceSchema,
   RemotePromptResourceSchema,
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
@@ -206,6 +211,147 @@ export const SessionNameUpdateRequestSchema = Type.Object({
   requestId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
+const ThinkingLevelSettingSchema = Type.Union([
+  Type.Literal("off"),
+  Type.Literal("minimal"),
+  Type.Literal("low"),
+  Type.Literal("medium"),
+  Type.Literal("high"),
+  Type.Literal("xhigh"),
+]);
+
+const TransportSettingSchema = Type.Union([
+  Type.Literal("sse"),
+  Type.Literal("websocket"),
+  Type.Literal("auto"),
+]);
+
+const QueueModeSettingSchema = Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]);
+
+const DoubleEscapeActionSettingSchema = Type.Union([
+  Type.Literal("fork"),
+  Type.Literal("tree"),
+  Type.Literal("none"),
+]);
+
+const TreeFilterModeSettingSchema = Type.Union([
+  Type.Literal("default"),
+  Type.Literal("no-tools"),
+  Type.Literal("user-only"),
+  Type.Literal("labeled-only"),
+  Type.Literal("all"),
+]);
+
+type PackageSourceValue = Static<typeof PackageSourceSchema>;
+
+export type SettingsUpdateRequestValue =
+  | { method: "setLastChangelogVersion"; args: [string]; requestId?: string }
+  | { method: "setDefaultProvider"; args: [string]; requestId?: string }
+  | { method: "setDefaultModel"; args: [string]; requestId?: string }
+  | { method: "setDefaultModelAndProvider"; args: [string, string]; requestId?: string }
+  | {
+      method: "setDefaultThinkingLevel";
+      args: ["off" | "minimal" | "low" | "medium" | "high" | "xhigh"];
+      requestId?: string;
+    }
+  | { method: "setEnabledModels"; args: [string[] | null]; requestId?: string }
+  | { method: "setSteeringMode"; args: ["all" | "one-at-a-time"]; requestId?: string }
+  | { method: "setFollowUpMode"; args: ["all" | "one-at-a-time"]; requestId?: string }
+  | { method: "setAutoCompactionEnabled"; args: [boolean]; requestId?: string }
+  | { method: "setCompactionEnabled"; args: [boolean]; requestId?: string }
+  | { method: "setTheme"; args: [string]; requestId?: string }
+  | { method: "setTransport"; args: ["sse" | "websocket" | "auto"]; requestId?: string }
+  | { method: "setRetryEnabled"; args: [boolean]; requestId?: string }
+  | { method: "setHideThinkingBlock"; args: [boolean]; requestId?: string }
+  | { method: "setShellPath"; args: [string | null]; requestId?: string }
+  | { method: "setQuietStartup"; args: [boolean]; requestId?: string }
+  | { method: "setShellCommandPrefix"; args: [string | null]; requestId?: string }
+  | { method: "setNpmCommand"; args: [string[] | null]; requestId?: string }
+  | { method: "setCollapseChangelog"; args: [boolean]; requestId?: string }
+  | { method: "setEnableInstallTelemetry"; args: [boolean]; requestId?: string }
+  | { method: "setPackages"; args: [PackageSourceValue[]]; requestId?: string }
+  | { method: "setProjectPackages"; args: [PackageSourceValue[]]; requestId?: string }
+  | { method: "setExtensionPaths"; args: [string[]]; requestId?: string }
+  | { method: "setProjectExtensionPaths"; args: [string[]]; requestId?: string }
+  | { method: "setSkillPaths"; args: [string[]]; requestId?: string }
+  | { method: "setProjectSkillPaths"; args: [string[]]; requestId?: string }
+  | { method: "setPromptTemplatePaths"; args: [string[]]; requestId?: string }
+  | { method: "setProjectPromptTemplatePaths"; args: [string[]]; requestId?: string }
+  | { method: "setThemePaths"; args: [string[]]; requestId?: string }
+  | { method: "setProjectThemePaths"; args: [string[]]; requestId?: string }
+  | { method: "setEnableSkillCommands"; args: [boolean]; requestId?: string }
+  | { method: "setShowImages"; args: [boolean]; requestId?: string }
+  | { method: "setClearOnShrink"; args: [boolean]; requestId?: string }
+  | { method: "setImageAutoResize"; args: [boolean]; requestId?: string }
+  | { method: "setBlockImages"; args: [boolean]; requestId?: string }
+  | { method: "setDoubleEscapeAction"; args: ["fork" | "tree" | "none"]; requestId?: string }
+  | {
+      method: "setTreeFilterMode";
+      args: ["default" | "no-tools" | "user-only" | "labeled-only" | "all"];
+      requestId?: string;
+    }
+  | { method: "setShowHardwareCursor"; args: [boolean]; requestId?: string }
+  | { method: "setEditorPaddingX"; args: [number]; requestId?: string }
+  | { method: "setAutocompleteMaxVisible"; args: [number]; requestId?: string };
+
+function settingsMutationSchema<
+  const TMethod extends string,
+  const TArgs extends readonly TSchema[],
+>(method: TMethod, args: TArgs) {
+  return Type.Object({
+    method: Type.Literal(method),
+    args: Type.Tuple([...args]),
+    requestId: Type.Optional(Type.String({ minLength: 1 })),
+  });
+}
+
+export const SettingsUpdateRequestSchema = Type.Unsafe<SettingsUpdateRequestValue>(
+  Type.Union([
+    settingsMutationSchema("setLastChangelogVersion", [Type.String()]),
+    settingsMutationSchema("setDefaultProvider", [Type.String()]),
+    settingsMutationSchema("setDefaultModel", [Type.String()]),
+    settingsMutationSchema("setDefaultModelAndProvider", [Type.String(), Type.String()]),
+    settingsMutationSchema("setDefaultThinkingLevel", [ThinkingLevelSettingSchema]),
+    settingsMutationSchema("setEnabledModels", [
+      Type.Union([Type.Array(Type.String()), Type.Null()]),
+    ]),
+    settingsMutationSchema("setSteeringMode", [QueueModeSettingSchema]),
+    settingsMutationSchema("setFollowUpMode", [QueueModeSettingSchema]),
+    settingsMutationSchema("setAutoCompactionEnabled", [Type.Boolean()]),
+    settingsMutationSchema("setCompactionEnabled", [Type.Boolean()]),
+    settingsMutationSchema("setTheme", [Type.String()]),
+    settingsMutationSchema("setTransport", [TransportSettingSchema]),
+    settingsMutationSchema("setRetryEnabled", [Type.Boolean()]),
+    settingsMutationSchema("setHideThinkingBlock", [Type.Boolean()]),
+    settingsMutationSchema("setShellPath", [Type.Union([Type.String(), Type.Null()])]),
+    settingsMutationSchema("setQuietStartup", [Type.Boolean()]),
+    settingsMutationSchema("setShellCommandPrefix", [Type.Union([Type.String(), Type.Null()])]),
+    settingsMutationSchema("setNpmCommand", [Type.Union([Type.Array(Type.String()), Type.Null()])]),
+    settingsMutationSchema("setCollapseChangelog", [Type.Boolean()]),
+    settingsMutationSchema("setEnableInstallTelemetry", [Type.Boolean()]),
+    settingsMutationSchema("setPackages", [Type.Array(PackageSourceSchema)]),
+    settingsMutationSchema("setProjectPackages", [Type.Array(PackageSourceSchema)]),
+    settingsMutationSchema("setExtensionPaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setProjectExtensionPaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setSkillPaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setProjectSkillPaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setPromptTemplatePaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setProjectPromptTemplatePaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setThemePaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setProjectThemePaths", [Type.Array(Type.String())]),
+    settingsMutationSchema("setEnableSkillCommands", [Type.Boolean()]),
+    settingsMutationSchema("setShowImages", [Type.Boolean()]),
+    settingsMutationSchema("setClearOnShrink", [Type.Boolean()]),
+    settingsMutationSchema("setImageAutoResize", [Type.Boolean()]),
+    settingsMutationSchema("setBlockImages", [Type.Boolean()]),
+    settingsMutationSchema("setDoubleEscapeAction", [DoubleEscapeActionSettingSchema]),
+    settingsMutationSchema("setTreeFilterMode", [TreeFilterModeSettingSchema]),
+    settingsMutationSchema("setShowHardwareCursor", [Type.Boolean()]),
+    settingsMutationSchema("setEditorPaddingX", [Type.Number()]),
+    settingsMutationSchema("setAutocompleteMaxVisible", [Type.Number()]),
+  ]),
+);
+
 export const RemoteToolInfoSchema = Type.Object({
   name: Type.String(),
   description: Type.String(),
@@ -249,6 +395,7 @@ export const CommandKindSchema = Type.Union([
   Type.Literal("active-tools"),
   Type.Literal("model"),
   Type.Literal("session-name"),
+  Type.Literal("settings"),
 ]);
 
 export const CommandAcceptedResponseSchema = Type.Object({

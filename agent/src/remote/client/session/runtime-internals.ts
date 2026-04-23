@@ -29,7 +29,7 @@ import { RemoteAgentSessionSetupBase } from "./setup-base.js";
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   async reload(): Promise<void> {
     await this.waitForPendingMutations();
-    const snapshot = await this.client.getSessionSnapshot(this.sessionId);
+    const snapshot = await this.client.reloadSession(this.sessionId);
     this.applyAuthoritativeCwdUpdate(snapshot.cwd);
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
@@ -49,10 +49,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._autoCompactionEnabled = snapshot.autoCompactionEnabled;
     this._steeringMode = snapshot.steeringMode;
     this._followUpMode = snapshot.followUpMode;
+    this.reloadResourceLoader(snapshot);
     this.activeTools = [...snapshot.activeTools];
+    this.sessionManager.appendSessionInfo(snapshot.sessionName);
     await this.refreshRemoteToolCatalog();
     this.queueDepth = snapshot.queue.depth;
-    this.sessionManager.appendSessionInfo(snapshot.sessionName);
+    await this.replayLocalExtensionReloadLifecycle();
   }
 
   protected async waitForPendingMutations(): Promise<void> {

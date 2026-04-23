@@ -40,7 +40,7 @@ export function createRemoteLocalExtensionRunner(input: {
   cwd: string;
   sessionManager: SessionManager;
   modelRegistry: ModelRegistry;
-  promptTemplates: ReadonlyArray<PromptTemplate>;
+  getPromptTemplates: () => ReadonlyArray<PromptTemplate>;
   readSkills: () => ReadonlyArray<Skill>;
   readModel: () => Model<Api> | undefined;
   isIdle: () => boolean;
@@ -261,7 +261,7 @@ function createExtensionActions(
         });
       });
     },
-    getCommands: () => buildSlashCommands(runner, input.promptTemplates, input.readSkills()),
+    getCommands: () => buildSlashCommands(runner, input.getPromptTemplates(), input.readSkills()),
     setModel: async (model) => {
       const resolvedModel = input.resolveModel(model.provider, model.id);
       if (!resolvedModel || !input.hasConfiguredAuth(resolvedModel)) {

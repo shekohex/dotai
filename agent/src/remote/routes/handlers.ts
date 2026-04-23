@@ -119,6 +119,18 @@ export function handleSessionSnapshot(
   });
 }
 
+export function handleReloadSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const snapshot = await dependencies.sessions.reload(sessionId, c.get("auth"), connectionId);
+    return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, connectionHeader(connectionId));
+  });
+}
+
 export function handleSessionTools(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,

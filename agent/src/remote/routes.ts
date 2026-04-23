@@ -27,6 +27,7 @@ import {
   followUpSessionRouteDescription,
   interruptSessionRouteDescription,
   promptSessionRouteDescription,
+  reloadSessionRouteDescription,
   readAppEventsStreamRouteDescription,
   readSessionEventsStreamRouteDescription,
   sessionSnapshotRouteDescription,
@@ -45,6 +46,7 @@ import {
   handleCreateSession,
   handleSessionSnapshot,
   handleSessionTools,
+  handleReloadSession,
   handleSubmitSessionUiResponse,
 } from "./routes/handlers.js";
 import { createConnectionRoutes } from "./routes/connection-routes.js";
@@ -168,6 +170,16 @@ function registerSessionCommandRoutesB<S extends Schema, BasePath extends string
   needsAuth: AuthMiddleware,
 ) {
   const route9 = app.post(
+    "/sessions/:sessionId/reload",
+    describeRoute(reloadSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleReloadSession(c, dependencies, sessionId);
+    },
+  );
+  const route10 = route9.post(
     "/sessions/:sessionId/interrupt",
     describeRoute(interruptSessionRouteDescription),
     needsAuth,
@@ -178,7 +190,7 @@ function registerSessionCommandRoutesB<S extends Schema, BasePath extends string
       return handleInterruptSession(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  const route10 = route9.post(
+  const route11 = route10.post(
     "/sessions/:sessionId/active-tools",
     describeRoute(updateSessionActiveToolsRouteDescription),
     needsAuth,
@@ -189,7 +201,7 @@ function registerSessionCommandRoutesB<S extends Schema, BasePath extends string
       return handleUpdateSessionActiveTools(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  return route10.post(
+  return route11.post(
     "/sessions/:sessionId/model",
     describeRoute(updateSessionModelRouteDescription),
     needsAuth,

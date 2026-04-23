@@ -1,19 +1,15 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
 import {
   DefaultResourceLoader,
   createSyntheticSourceInfo,
-  type ExtensionFactory,
   type LoadExtensionsResult,
   type PromptTemplate,
   type ResourceLoader,
   type Skill,
   type Theme,
 } from "@mariozechner/pi-coding-agent";
-import { loadThemeFromPath } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import type { RemoteExtensionMetadata, RemoteResourceBundle, SessionSnapshot } from "../schemas.js";
 import { RemoteResourceBundleSchema } from "../schemas.js";
+import { createRemoteThemeFromContent } from "./remote-theme.js";
 import { assertType } from "../typebox.js";
 
 function toRemoteLoadedExtension(
@@ -103,34 +99,20 @@ function toRemotePrompts(resources: RemoteResourceBundle): PromptTemplate[] {
   }));
 }
 
-function toSafeFileName(input: string): string {
-  const normalized = input.trim().replaceAll(/[^a-zA-Z0-9._-]/g, "-");
-  if (normalized.length === 0) {
-    return "resource";
-  }
-  return normalized;
-}
-
-async function toRemoteThemes(resources: RemoteResourceBundle): Promise<Theme[]> {
+function toRemoteThemes(resources: RemoteResourceBundle): Theme[] {
   if (resources.themes.length === 0) {
     return [];
   }
 
-  const tmpRoot = await mkdtemp(join(tmpdir(), "pi-remote-themes-"));
-  const themesDir = join(tmpRoot, "themes");
-  await mkdir(themesDir, { recursive: true });
-
   const loaded: Theme[] = [];
-  for (let index = 0; index < resources.themes.length; index += 1) {
-    const theme = resources.themes[index];
-    const preferredName = basename(theme.sourcePath);
-    const safeName = toSafeFileName(preferredName.length > 0 ? preferredName : theme.name);
-    const extension = extname(safeName).length > 0 ? "" : ".json";
-    const filePath = join(themesDir, `${index + 1}-${safeName}${extension}`);
-    await writeFile(filePath, theme.content, "utf8");
-
+  for (const theme of resources.themes) {
     try {
-      loaded.push(loadThemeFromPath(filePath));
+      loaded.push(
+        createRemoteThemeFromContent({
+          sourcePath: theme.sourcePath,
+          content: theme.content,
+        }),
+      );
     } catch {
       continue;
     }
@@ -139,46 +121,22 @@ async function toRemoteThemes(resources: RemoteResourceBundle): Promise<Theme[]>
   return loaded;
 }
 
-export async function createRemoteResourceLoader(input: {
-  cwd: string;
-  agentDir: string;
+export function createRemoteResourceLoader(input: {
+  baseLoader: DefaultResourceLoader;
   snapshot: SessionSnapshot;
   getExtensionsMetadata: () => RemoteExtensionMetadata[];
-  clientExtensionFactories: ExtensionFactory[];
   clientExtensions: RemoteExtensionMetadata[];
-}): Promise<ResourceLoader> {
-  const baseLoader = await createBaseClientResourceLoader({
-    cwd: input.cwd,
-    agentDir: input.agentDir,
-    clientExtensionFactories: input.clientExtensionFactories,
-  });
+}): ResourceLoader {
   const remoteResources = readRemoteResources(input.snapshot);
-  const remoteThemes = await toRemoteThemes(remoteResources);
+  const remoteThemes = toRemoteThemes(remoteResources);
 
   return createRemoteResourceLoaderView({
-    baseLoader,
+    baseLoader: input.baseLoader,
     getExtensionsMetadata: input.getExtensionsMetadata,
     clientExtensions: input.clientExtensions,
     remoteResources,
     remoteThemes,
   });
-}
-
-async function createBaseClientResourceLoader(input: {
-  cwd: string;
-  agentDir: string;
-  clientExtensionFactories: ExtensionFactory[];
-}): Promise<DefaultResourceLoader> {
-  const baseLoader = new DefaultResourceLoader({
-    cwd: input.cwd,
-    agentDir: input.agentDir,
-    extensionFactories: input.clientExtensionFactories,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-  await baseLoader.reload();
-  return baseLoader;
 }
 
 function createRemoteResourceLoaderView(input: {
@@ -218,12 +176,9 @@ function createRemoteResourceLoaderView(input: {
       ...remoteAppendSystemPrompt,
     ],
     extendResources: (_paths: Parameters<ResourceLoader["extendResources"]>[0]) => {},
-    reload: async () => {
-      await input.baseLoader.reload();
-    },
+    reload: () => Promise.resolve(),
   };
 }
-
 function mergeRemoteAndClientExtensions(input: {
   loaded: LoadExtensionsResult;
   getExtensionsMetadata: () => RemoteExtensionMetadata[];

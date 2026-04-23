@@ -4,6 +4,7 @@ import type {
   AgentSessionEvent,
   AgentSessionEventListener,
   ContextUsage,
+  DefaultResourceLoader,
   ExtensionUIContext,
   ModelRegistry,
   PromptTemplate,
@@ -24,6 +25,7 @@ import {
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,
   createInitialRemoteSessionState,
+  createRemoteResourceLoader,
   getCombinedExtensionMetadata,
   handleRemoteUiRequest,
   initializeRemoteSessionMetadata,
@@ -75,7 +77,6 @@ export abstract class RemoteAgentSessionSetupBase {
   settingsManager: SettingsManager;
   readonly modelRegistry: ModelRegistry;
   resourceLoader: ResourceLoader;
-  promptTemplates: ReadonlyArray<PromptTemplate>;
   readonly state: {
     messages: AgentMessage[];
     pendingToolCalls: Set<string>;
@@ -131,7 +132,7 @@ export abstract class RemoteAgentSessionSetupBase {
   protected remoteSettings: RemoteAgentSettings = { ...defaultSettings };
   protected remoteExtensions: RemoteExtensionMetadata[] = [];
   protected readonly clientExtensions: RemoteExtensionMetadata[];
-  protected readonly agentDir: string;
+  protected readonly clientExtensionLoader: DefaultResourceLoader;
   protected localExtensionRunner: RemoteLocalExtensionRunner | undefined;
   protected localExtensionsStarted = false;
   protected extensionCommandContextActions: RemoteExtensionCommandContextActions | undefined;
@@ -152,8 +153,8 @@ export abstract class RemoteAgentSessionSetupBase {
     sessionManager: SessionManager,
     resourceLoader: ResourceLoader,
     options: {
-      agentDir: string;
       clientExtensions: RemoteExtensionMetadata[];
+      clientExtensionLoader: DefaultResourceLoader;
     },
   ) {
     this.client = client;
@@ -162,10 +163,9 @@ export abstract class RemoteAgentSessionSetupBase {
     this.settingsManager = settingsManager;
     this.modelRegistry = modelRegistry;
     this.sessionManager = sessionManager;
-    this.agentDir = options.agentDir;
     this.clientExtensions = options.clientExtensions;
+    this.clientExtensionLoader = options.clientExtensionLoader;
     this.resourceLoader = resourceLoader;
-    this.promptTemplates = this.resourceLoader.getPrompts().prompts;
 
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
@@ -201,13 +201,13 @@ export abstract class RemoteAgentSessionSetupBase {
     this.localExtensionRunner = this.createLocalExtensionRunner();
   }
 
-  private createLocalExtensionRunner(): RemoteLocalExtensionRunner | undefined {
+  protected createLocalExtensionRunner(): RemoteLocalExtensionRunner | undefined {
     return createRemoteLocalExtensionRunner({
       resourceLoader: this.resourceLoader,
       cwd: this.sessionManager.getCwd(),
       sessionManager: this.sessionManager,
       modelRegistry: this.modelRegistry,
-      promptTemplates: this.promptTemplates,
+      getPromptTemplates: () => this.resourceLoader.getPrompts().prompts,
       readSkills: () => this.resourceLoader.getSkills().skills,
       readModel: () => this.model,
       isIdle: () => !this.isStreaming,
@@ -278,12 +278,8 @@ export abstract class RemoteAgentSessionSetupBase {
     });
   }
 
-  private refreshLocalExtensionRunnerAfterCwdChange(): void {
-    const previousRunner = this.localExtensionRunner;
+  protected async refreshLocalExtensionRunnerAfterCwdChange(): Promise<void> {
     const wasStarted = this.localExtensionsStarted;
-    if (previousRunner && wasStarted) {
-      void previousRunner.emit({ type: "session_shutdown" });
-    }
 
     this.localExtensionErrorUnsubscriber?.();
     this.localExtensionErrorUnsubscriber = undefined;
@@ -294,8 +290,28 @@ export abstract class RemoteAgentSessionSetupBase {
     this.localExtensionTurnIndex = 0;
     this.applyLocalExtensionBindings();
     if (wasStarted) {
-      void this.ensureLocalExtensionsStarted();
+      await this.ensureLocalExtensionsStarted();
     }
+  }
+
+  protected async replayLocalExtensionReloadLifecycle(): Promise<void> {
+    if (this.localExtensionRunner === undefined || !this.localExtensionsStarted) {
+      return;
+    }
+
+    await this.localExtensionEventQueue;
+    await this.localExtensionRunner.emit({ type: "session_shutdown", reason: "reload" });
+    this.localExtensionsStarted = false;
+    await this.ensureLocalExtensionsStarted("reload");
+  }
+
+  protected reloadResourceLoader(snapshot: SessionSnapshot): void {
+    this.resourceLoader = createRemoteResourceLoader({
+      baseLoader: this.clientExtensionLoader,
+      snapshot,
+      getExtensionsMetadata: () => this.getCombinedExtensionsMetadata(),
+      clientExtensions: this.clientExtensions,
+    });
   }
 
   protected async refreshRemoteToolCatalog(): Promise<void> {
@@ -369,7 +385,7 @@ export abstract class RemoteAgentSessionSetupBase {
       messages: this.state.messages,
     });
     this.settingsManager = cwdResult.settingsManager;
-    this.refreshLocalExtensionRunnerAfterCwdChange();
+    void this.refreshLocalExtensionRunnerAfterCwdChange();
   }
 
   get model(): Model<Api> | undefined {
@@ -422,6 +438,10 @@ export abstract class RemoteAgentSessionSetupBase {
 
   get messages(): AgentMessage[] {
     return this.state.messages;
+  }
+
+  get promptTemplates(): ReadonlyArray<PromptTemplate> {
+    return this.resourceLoader.getPrompts().prompts;
   }
 
   get systemPrompt(): string {
@@ -547,12 +567,14 @@ export abstract class RemoteAgentSessionSetupBase {
       : undefined;
   }
 
-  private async ensureLocalExtensionsStarted(): Promise<void> {
+  private async ensureLocalExtensionsStarted(
+    reason: "startup" | "reload" = "startup",
+  ): Promise<void> {
     if (this.localExtensionRunner === undefined || this.localExtensionsStarted) {
       return;
     }
 
-    await this.localExtensionRunner.emit({ type: "session_start", reason: "startup" });
+    await this.localExtensionRunner.emit({ type: "session_start", reason });
     this.localExtensionsStarted = true;
 
     while (this.bufferedLocalExtensionEvents.length > 0) {

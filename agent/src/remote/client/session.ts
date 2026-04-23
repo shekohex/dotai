@@ -1,5 +1,6 @@
 import {
   AuthStorage,
+  DefaultResourceLoader,
   type ExtensionFactory,
   ModelRegistry,
   type ResourceLoader,
@@ -52,10 +53,18 @@ export class RemoteAgentSession
       sessionRef: () => session,
     });
     const sessionManager = SessionManager.inMemory(sessionCwd);
-    const resourceLoader = await createSessionResourceLoader({
-      sessionCwd,
+    const clientExtensionLoader = new DefaultResourceLoader({
+      cwd: sessionCwd,
       agentDir: options.agentDir,
+      extensionFactories: options.clientExtensionFactories ?? [],
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+    });
+    await clientExtensionLoader.reload();
+    const resourceLoader = createSessionResourceLoader({
       snapshot,
+      clientExtensionLoader,
       getExtensionsMetadata: () =>
         session
           ? session.getCombinedExtensionsMetadata()
@@ -64,7 +73,6 @@ export class RemoteAgentSession
               ...(options.clientExtensions ?? []).map((extension) => ({ ...extension })),
             ],
       clientExtensions: options.clientExtensions ?? [],
-      clientExtensionFactories: options.clientExtensionFactories ?? [],
     });
     session = new RemoteAgentSession(
       client,
@@ -75,8 +83,8 @@ export class RemoteAgentSession
       sessionManager,
       resourceLoader,
       {
-        agentDir: options.agentDir,
         clientExtensions: options.clientExtensions ?? [],
+        clientExtensionLoader,
       },
     );
     session.startPolling();
@@ -98,19 +106,15 @@ function configureRemoteModelStateBindings(input: {
 }
 
 function createSessionResourceLoader(input: {
-  sessionCwd: string;
-  agentDir: string;
   snapshot: SessionSnapshot;
+  clientExtensionLoader: DefaultResourceLoader;
   getExtensionsMetadata: () => RemoteExtensionMetadata[];
   clientExtensions: RemoteExtensionMetadata[];
-  clientExtensionFactories: ExtensionFactory[];
-}): Promise<ResourceLoader> {
+}): ResourceLoader {
   return createRemoteResourceLoader({
-    cwd: input.sessionCwd,
-    agentDir: input.agentDir,
+    baseLoader: input.clientExtensionLoader,
     snapshot: input.snapshot,
     getExtensionsMetadata: input.getExtensionsMetadata,
-    clientExtensionFactories: input.clientExtensionFactories,
     clientExtensions: input.clientExtensions,
   });
 }

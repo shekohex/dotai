@@ -21,6 +21,7 @@ import {
   updateTPSElapsedInState,
   type TPSRunState,
 } from "./tps-state.js";
+import { formatDurationHuman } from "../fetch/render.js";
 
 type RuntimeState = {
   run: TPSRunState | null;
@@ -82,7 +83,7 @@ function notifyTPSSummary(
 ): void {
   const elapsedSeconds = elapsedMs / 1000;
   const tokensPerSecond = usage.output / elapsedSeconds;
-  const message = `TPS ${tokensPerSecond.toFixed(1)} tok/s. out ${formatCompactCount(usage.output)}, in ${formatCompactCount(usage.input)}, cache r/w ${formatCompactCount(usage.cacheRead)}/${formatCompactCount(usage.cacheWrite)}, total ${formatCompactCount(usage.totalTokens)}, ${elapsedSeconds.toFixed(1)}s`;
+  const message = `TPS ${tokensPerSecond.toFixed(1)} tok/s. out ${formatCompactCount(usage.output)}, in ${formatCompactCount(usage.input)}, cache r/w ${formatCompactCount(usage.cacheRead)}/${formatCompactCount(usage.cacheWrite)}, total ${formatCompactCount(usage.totalTokens)}, ${formatDurationHuman(elapsedMs)}`;
   ctx.ui.notify(message, "info");
 }
 

@@ -1,12 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
-import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
-import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionFactory,
+  ExtensionUIContext,
+  LoadExtensionsResult,
+  PromptTemplate,
+  ResourceLoader,
+  Skill,
+  Theme,
+} from "@mariozechner/pi-coding-agent";
 import { AuthService, createChallengePayload } from "../src/remote/auth.ts";
 import { createRemoteApp } from "../src/remote/app.ts";
 import { REMOTE_DEFAULT_CLIENT_CAPABILITIES } from "../src/remote/capabilities.ts";
@@ -26,7 +33,9 @@ import {
   InMemoryPiRuntimeFactory,
   type RemoteRuntimeFactory,
 } from "../src/remote/runtime-factory.ts";
+import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
+import { loadThemeFromPath } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
@@ -72,6 +81,9 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
 
 class RecordingSession {
   cwd = "/tmp/pi-remote-recording-session";
+  reloadCalls = 0;
+  private resourceMode: "empty" | "versioned" = "empty";
+  private resourceVersion = 1;
   activeTools = ["read", "bash", "edit", "write"];
   model = {
     provider: "pi-remote-faux",
@@ -184,6 +196,20 @@ class RecordingSession {
       this.defaultThinkingLevel = level;
     },
   };
+  resourceLoader: ResourceLoader = createRecordingResourceLoader(this);
+
+  enableVersionedResources(): void {
+    this.resourceMode = "versioned";
+    this.resourceVersion = 1;
+  }
+
+  getResourceVersion(): number {
+    return this.resourceVersion;
+  }
+
+  getResourceMode(): "empty" | "versioned" {
+    return this.resourceMode;
+  }
 
   getActiveToolNames(): string[] {
     return [...this.activeTools];
@@ -249,6 +275,13 @@ class RecordingSession {
     this.followUpCalls.push({ text, images });
     this.queuedFollowUp.push(text);
     this.pendingMessageCount += 1;
+  }
+
+  async reload(): Promise<void> {
+    this.reloadCalls += 1;
+    if (this.resourceMode === "versioned") {
+      this.resourceVersion += 1;
+    }
   }
 
   clearQueue(): { steering: string[]; followUp: string[] } {
@@ -516,6 +549,146 @@ class UiPrimitivesPromptSession extends RecordingSession {
     }
     await super.prompt(text, options);
   }
+}
+
+function createRecordingResourceLoader(session: RecordingSession): ResourceLoader {
+  return {
+    getExtensions: (): LoadExtensionsResult => ({
+      extensions:
+        session.getResourceMode() === "versioned" ? [buildRecordingExtension(session)] : [],
+      errors: [],
+      runtime: createRecordingExtensionRuntime(),
+    }),
+    getSkills: () => ({
+      skills: session.getResourceMode() === "versioned" ? [buildRecordingSkill(session)] : [],
+      diagnostics: [],
+    }),
+    getPrompts: () => ({
+      prompts: session.getResourceMode() === "versioned" ? [buildRecordingPrompt(session)] : [],
+      diagnostics: [],
+    }),
+    getThemes: () => ({
+      themes: session.getResourceMode() === "versioned" ? [buildRecordingTheme(session)] : [],
+      diagnostics: [],
+    }),
+    getAgentsFiles: () => ({ agentsFiles: [] }),
+    getSystemPrompt: () =>
+      session.getResourceMode() === "versioned"
+        ? `system-${session.getResourceVersion()}`
+        : undefined,
+    getAppendSystemPrompt: () =>
+      session.getResourceMode() === "versioned" ? [`append-${session.getResourceVersion()}`] : [],
+    extendResources: () => {},
+    reload: async () => {
+      await session.reload();
+    },
+  };
+}
+
+function createRecordingExtensionRuntime(): LoadExtensionsResult["runtime"] {
+  return {
+    flagValues: new Map(),
+    pendingProviderRegistrations: [],
+    registerProvider: () => {},
+    unregisterProvider: () => {},
+    sendMessage: () => {},
+    sendUserMessage: () => {},
+    appendEntry: () => {},
+    setSessionName: () => {},
+    getSessionName: () => undefined,
+    setLabel: () => {},
+    getActiveTools: () => [],
+    getAllTools: () => [],
+    setActiveTools: () => {},
+    refreshTools: () => {},
+    getCommands: () => [],
+    setModel: async () => false,
+    getThinkingLevel: () => "off",
+    setThinkingLevel: () => {},
+  };
+}
+
+function buildRecordingExtension(
+  session: RecordingSession,
+): LoadExtensionsResult["extensions"][number] {
+  const version = session.getResourceVersion();
+  return {
+    path: `extension-v${version}`,
+    resolvedPath: `extension-v${version}`,
+    sourceInfo: {
+      path: `extension-v${version}`,
+      source: "test",
+      scope: "temporary",
+      origin: "top-level",
+    },
+    handlers: new Map(),
+    tools: new Map(),
+    messageRenderers: new Map(),
+    commands: new Map(),
+    flags: new Map(),
+    shortcuts: new Map(),
+  };
+}
+
+function buildRecordingSkill(session: RecordingSession): Skill {
+  const version = session.getResourceVersion();
+  return {
+    name: `skill-v${version}`,
+    description: `skill version ${version}`,
+    filePath: `/tmp/skill-v${version}/SKILL.md`,
+    baseDir: `/tmp/skill-v${version}`,
+    sourceInfo: {
+      path: `/tmp/skill-v${version}/SKILL.md`,
+      source: "test",
+      scope: "temporary",
+      origin: "top-level",
+    },
+    disableModelInvocation: false,
+  };
+}
+
+function buildRecordingPrompt(session: RecordingSession): PromptTemplate {
+  const version = session.getResourceVersion();
+  return {
+    name: `prompt-v${version}`,
+    description: `prompt version ${version}`,
+    filePath: `/tmp/prompt-v${version}.md`,
+    content: `prompt version ${version}`,
+    sourceInfo: {
+      path: `/tmp/prompt-v${version}.md`,
+      source: "test",
+      scope: "temporary",
+      origin: "top-level",
+    },
+  };
+}
+
+function buildRecordingTheme(session: RecordingSession): Theme {
+  const themePath =
+    session.getResourceVersion() % 2 === 0
+      ? join(
+          process.cwd(),
+          "node_modules",
+          "@mariozechner",
+          "pi-coding-agent",
+          "dist",
+          "modes",
+          "interactive",
+          "theme",
+          "light.json",
+        )
+      : join(
+          process.cwd(),
+          "node_modules",
+          "@mariozechner",
+          "pi-coding-agent",
+          "dist",
+          "modes",
+          "interactive",
+          "theme",
+          "dark.json",
+        );
+  return loadThemeFromPath(themePath);
 }
 
 class RecordingRuntimeFactory implements RemoteRuntimeFactory {
@@ -3597,6 +3770,214 @@ timedTest("default runtime factory hosts an in-memory Pi runtime", async () => {
     assert.ok(created.sessionId);
   } finally {
     await remote.dispose();
+  }
+});
+
+timedTest("remote theme parser matches bundled theme examples", async () => {
+  const bundledThemePaths = [
+    join(process.cwd(), "src", "resources", "themes", "catppuccin-latte.json"),
+    join(process.cwd(), "src", "resources", "themes", "catppuccin-mocha.json"),
+  ];
+
+  for (const themePath of bundledThemePaths) {
+    const content = await readFile(themePath, "utf8");
+    const remoteTheme = createRemoteThemeFromContent({
+      sourcePath: themePath,
+      content,
+    });
+    const upstreamTheme = loadThemeFromPath(themePath);
+
+    assert.equal(remoteTheme.name, upstreamTheme.name);
+    assert.equal(remoteTheme.sourcePath, themePath);
+    assert.equal(remoteTheme.getColorMode(), upstreamTheme.getColorMode());
+    assert.equal(remoteTheme.getFgAnsi("accent"), upstreamTheme.getFgAnsi("accent"));
+    assert.equal(remoteTheme.getFgAnsi("text"), upstreamTheme.getFgAnsi("text"));
+    assert.equal(remoteTheme.getFgAnsi("mdCode"), upstreamTheme.getFgAnsi("mdCode"));
+    assert.equal(remoteTheme.getFgAnsi("thinkingHigh"), upstreamTheme.getFgAnsi("thinkingHigh"));
+    assert.equal(remoteTheme.getBgAnsi("selectedBg"), upstreamTheme.getBgAnsi("selectedBg"));
+    assert.equal(remoteTheme.getBgAnsi("toolSuccessBg"), upstreamTheme.getBgAnsi("toolSuccessBg"));
+  }
+});
+
+timedTest(
+  "remote reload refreshes server resources and replays client extension lifecycle",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const session = new RecordingSession();
+    session.enableVersionedResources();
+    const events: string[] = [];
+    const eventRecorderExtension: ExtensionFactory = (pi) => {
+      pi.on("session_start", (event) => {
+        events.push(`start:${event.reason}`);
+      });
+      pi.on("session_shutdown", () => {
+        events.push("shutdown");
+      });
+    };
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+        clientExtensionFactories: [eventRecorderExtension],
+      });
+
+      await runtime.session.bindExtensions({});
+
+      const initialExtensions = runtime.services.resourceLoader.getExtensions().extensions;
+      const initialSkills = runtime.services.resourceLoader.getSkills().skills;
+      const initialPrompts = runtime.services.resourceLoader.getPrompts().prompts;
+      const initialThemes = runtime.services.resourceLoader.getThemes().themes;
+
+      assert.equal(session.reloadCalls, 0);
+      assert.equal(initialExtensions[0]?.path, "extension-v1");
+      assert.equal(initialSkills[0]?.name, "skill-v1");
+      assert.equal(initialPrompts[0]?.name, "prompt-v1");
+      assert.equal(initialThemes[0]?.name, "dark");
+      assert.equal(initialSkills.length, 1);
+      assert.equal(initialPrompts.length, 1);
+      assert.equal(initialThemes.length, 1);
+      assert.deepEqual(events, ["start:startup"]);
+
+      await runtime.session.reload();
+
+      const reloadedExtensions = runtime.services.resourceLoader.getExtensions().extensions;
+      const reloadedSkills = runtime.services.resourceLoader.getSkills().skills;
+      const reloadedPrompts = runtime.services.resourceLoader.getPrompts().prompts;
+      const reloadedThemes = runtime.services.resourceLoader.getThemes().themes;
+
+      assert.equal(session.reloadCalls, 1);
+      assert.equal(reloadedExtensions[0]?.path, "extension-v2");
+      assert.equal(reloadedSkills[0]?.name, "skill-v2");
+      assert.equal(reloadedPrompts[0]?.name, "prompt-v2");
+      assert.equal(reloadedThemes[0]?.name, "light");
+      assert.equal(reloadedSkills.length, 1);
+      assert.equal(reloadedPrompts.length, 1);
+      assert.equal(reloadedThemes.length, 1);
+      assert.deepEqual(events, ["start:startup", "shutdown", "start:reload"]);
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest(
+  "remote runtime session exposes server prompt templates before and after reload",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const session = new RecordingSession();
+    session.enableVersionedResources();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      assert.equal(runtime.session.promptTemplates.length, 1);
+      assert.equal(runtime.session.promptTemplates[0]?.name, "prompt-v1");
+
+      await runtime.session.reload();
+
+      assert.equal(runtime.session.promptTemplates.length, 1);
+      assert.equal(runtime.session.promptTemplates[0]?.name, "prompt-v2");
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("reload rejects while queued commands are still pending", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new BlockingPromptSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession({}, auth, "conn-a");
+
+    const promptAccepted = await registry.prompt(
+      created.sessionId,
+      {
+        text: "long startup",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(promptAccepted.sequence, 1);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const steerAccepted = await registry.steer(
+      created.sessionId,
+      {
+        text: "queued steer",
+      },
+      auth,
+      "conn-a",
+    );
+    assert.equal(steerAccepted.sequence, 2);
+
+    await assert.rejects(
+      registry.reload(created.sessionId, auth, "conn-a"),
+      /Wait for queued commands to finish before reloading\./,
+    );
+
+    assert.equal(session.reloadCalls, 0);
+  } finally {
+    session.releasePrompt();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await registry.dispose();
   }
 });
 

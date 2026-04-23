@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AuthSession } from "../auth.js";
+import { RemoteError } from "../errors.js";
 import type {
   AppSnapshot,
   CreateSessionRequest,
@@ -144,6 +145,28 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       },
       toSessionSnapshot: (targetRecord) => this.toSessionSnapshot(targetRecord),
     });
+  }
+
+  async reload(
+    sessionId: string,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<SessionSnapshot> {
+    const record = this.getRequired(sessionId);
+    this.touchPresence(sessionId, client, connectionId);
+    this.syncFromRuntime(record, { updateTimestamp: false });
+    const session = this.requireRuntimeSession(record);
+    if (session.isStreaming) {
+      throw new RemoteError("Wait for current response to finish before reloading.", 409);
+    }
+    if (session.isCompacting) {
+      throw new RemoteError("Wait for compaction to finish before reloading.", 409);
+    }
+    if (record.queue.depth > 0) {
+      throw new RemoteError("Wait for queued commands to finish before reloading.", 409);
+    }
+    await session.reload();
+    return this.getSessionSnapshot(sessionId, client, connectionId);
   }
 
   getSessionTools(

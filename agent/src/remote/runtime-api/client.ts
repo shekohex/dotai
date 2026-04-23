@@ -176,6 +176,18 @@ export class RemoteApiClient {
     return payload;
   }
 
+  async reloadSession(sessionId: string): Promise<SessionSnapshot> {
+    const response = await this.rpcClient.sessions[":sessionId"].reload.$post(
+      { param: { sessionId } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionSnapshotSchema, payload);
+    return payload;
+  }
+
   prompt(sessionId: string, body: { text: string; attachments?: string[] }): Promise<void> {
     return postPromptCommand({
       rpcClient: this.rpcClient,

@@ -206,6 +206,18 @@ export const sessionToolsRouteDescription = {
   },
 };
 
+export const reloadSessionRouteDescription = {
+  tags: ["command"],
+  operationId: "reloadSession",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session reloaded", SessionSnapshotSchema),
+    401: jsonResponse("Unauthorized", ErrorResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+    409: jsonResponse("Session cannot be reloaded right now", ErrorResponseSchema),
+  },
+};
+
 export const promptSessionRouteDescription = commandRouteDescription(
   "promptSession",
   PromptCommandRequestSchema,

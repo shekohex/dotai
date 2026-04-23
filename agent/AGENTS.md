@@ -13,42 +13,18 @@ This package provides:
 - A bundled prompt set
 - Custom extensions for web search, file operations, executor integration, and more
 
-## Directory Structure
-
-```
-.
-├── bin/                    # CLI entry points (pi.js, pi.cmd)
-├── dist/                   # Compiled JavaScript output
-├── patches/                # patch-package patches for upstream dependencies
-├── scripts/                # Build and utility scripts
-│   ├── copy-bundled-resources.mjs
-│   ├── generate-default-settings.mjs
-│   ├── postinstall.mjs
-│   ├── prepare-bin.mjs
-│   └── preview-tools.ts    # Tool preview harness
-├── src/                    # TypeScript source code
-│   ├── cli.ts              # Main entry point
-│   ├── extensions/         # Extension implementations
-│   │   ├── coreui/         # Core UI enhancements
-│   │   ├── executor/       # Executor/MCP integration
-│   │   ├── openusage/      # Usage tracking providers
-│   │   └── subagent/       # Subagent functionality
-│   └── resources/          # Bundled resources
-│       ├── modes/          # Mode configurations
-│       ├── prompts/        # Prompt templates
-│       ├── skills/         # Skill definitions
-│       ├── system/         # System prompts
-│       └── themes/         # Theme files
-├── test/                   # Test files
-└── package.json
-```
-
 ## Project Rules
 
 - You must use `@sinclair/typebox` package instead of manually parsing inputs and validation of data.
 - Prefere spliting your code into multiple modules so it can be reused.
 - Avoid dynamic imports when possible, and prefer type imports when possible.
 - Client and Server interaction Must be using Hono RPC instead of calling `fetch` directly.
+- No `any` types unless absolutely necessary
+- Check node_modules for external API type definitions instead of guessing
+- **NEVER use inline imports** - no `await import("./foo.js")`, no `import("pkg").Type` in type positions, no dynamic imports for types. Always use standard top-level imports.
+- NEVER remove or downgrade code to fix type errors from outdated dependencies; upgrade the dependency instead
+- Always ask before removing functionality or code that appears to be intentional
+- Do not preserve backward compatibility unless the user explicitly asks for it
 
 ### Type Safety Rules
 
@@ -156,24 +132,6 @@ npm run format:check
 
 If there any errors, please fix them and rerun the workflow again.
 
-## Testing
-
-### Run All Tests
-
-```bash
-npm test                      # Runs all test suites
-```
-
-### Individual Test Suites
-
-```bash
-npm run test:keys             # TUI keybindings tests
-npm run test:tool-preview     # Tool preview harness tests
-npm run test:executor         # Executor integration tests
-npm run test:harness          # pi-test-harness integration tests
-npm run test:subagent         # Subagent functionality tests
-```
-
 ### Test Framework
 
 Tests use **Node.js built-in test runner** (`node:test` and `node:assert/strict`).
@@ -237,22 +195,6 @@ Key testing patterns:
 - Test files: `*.test.ts`
 - Test utilities: `*.scenarios.ts`
 - Located in `/test` directory
-
-## Configuration
-
-### TypeScript
-
-- Target: ES2022
-- Module: NodeNext
-- Strict mode enabled
-- Output: `dist/`
-- Source: `src/`
-
-### Environment Variables
-
-- `PI_SKIP_VERSION_CHECK=1`: Skip version check (used in `npm run pi`)
-- `OPENAI_API_KEY`: Required for some tests (falls back to "test-key")
-- `LITELLM_API_KEY`: For LiteLLM gateway tests
 
 ## Extension Development
 

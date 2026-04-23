@@ -19,7 +19,9 @@ export function withAuthError(
   c: HonoContext,
   execute: () => Promise<Response> | Response,
 ): Promise<Response> {
-  return Promise.resolve(execute()).catch((error: unknown) => authError(c, error));
+  return Promise.resolve()
+    .then(execute)
+    .catch((error: unknown) => authError(c, error));
 }
 
 export function connectionHeader(connectionId: string): Record<string, string> {

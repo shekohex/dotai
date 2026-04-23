@@ -86,8 +86,15 @@ export const SessionSummarySchema = Type.Object({
   sessionId: Type.String(),
   sessionName: Type.String(),
   status: SessionStatusSchema,
+  cwd: Type.String(),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
+  parentSessionId: Type.Union([Type.String(), Type.Null()]),
+  lifecycle: Type.Object({
+    persistence: Type.Union([Type.Literal("persistent"), Type.Literal("ephemeral")]),
+    loaded: Type.Boolean(),
+    state: Type.Literal("active"),
+  }),
   lastSessionStreamOffset: Type.String(),
 });
 

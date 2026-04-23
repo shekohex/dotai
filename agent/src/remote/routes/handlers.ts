@@ -5,6 +5,7 @@ import {
   ConnectionCapabilitiesResponseSchema,
   ClearQueueResponseSchema,
   CreateSessionResponseSchema,
+  SessionSummarySchema,
   SessionToolsResponseSchema,
   SessionSnapshotSchema,
   UiResponseResponseSchema,
@@ -116,6 +117,17 @@ export function handleSessionSnapshot(
       connectionId,
     );
     return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, connectionHeader(connectionId));
+  });
+}
+
+export function handleSessionSummary(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, () => {
+    const summary = dependencies.sessions.getSessionSummary(sessionId);
+    return jsonWithSchema(c, SessionSummarySchema, summary);
   });
 }
 

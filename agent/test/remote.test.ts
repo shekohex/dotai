@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
@@ -40,6 +40,7 @@ import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
+import { SessionCatalog } from "../src/remote/session-catalog.ts";
 import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
 import { assertType } from "../src/remote/typebox.ts";
 
@@ -193,6 +194,9 @@ class RecordingSession {
     | undefined;
   sessionManager = {
     getCwd: () => this.cwd,
+    getSessionId: () => this.sessionStats.sessionId,
+    isPersisted: () => typeof this.sessionStats.sessionFile === "string",
+    getSessionFile: () => this.sessionStats.sessionFile,
   };
   settingsManager = {
     getDefaultProvider: () => this.defaultProvider,
@@ -2071,6 +2075,243 @@ timedTest("default json-file kv backend persists global and user namespaces", as
     await rm(kvRoot, { recursive: true, force: true });
   }
 });
+
+timedTest(
+  "persistent remote sessions rebuild catalog on restart with authoritative summaries",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const originalCwd = process.cwd();
+    const root = await mkdtemp(join(tmpdir(), "pi-remote-session-catalog-"));
+    const agentDir = join(root, "agent");
+    const workspaceDir = join(root, "workspace");
+
+    await mkdir(workspaceDir, { recursive: true });
+
+    try {
+      const remoteA = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: InMemoryPiRuntimeFactory({
+          cwd: workspaceDir,
+          agentDir,
+          persistSessions: true,
+        }),
+      });
+
+      let createdSessionId = "";
+
+      try {
+        const token = await authenticate(remoteA.app, privateKeyPem);
+        const createResponse = await remoteA.app.request("/v1/sessions", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ sessionName: "Persistent Catalog Session" }),
+        });
+
+        assert.equal(createResponse.status, 201);
+        const created = (await createResponse.json()) as { sessionId: string };
+        createdSessionId = created.sessionId;
+
+        const summaryResponse = await remoteA.app.request(
+          `/v1/sessions/${createdSessionId}/summary`,
+          {
+            headers: { authorization: `Bearer ${token}` },
+          },
+        );
+        assert.equal(summaryResponse.status, 200);
+        const summary = (await summaryResponse.json()) as {
+          sessionId: string;
+          sessionName: string;
+          cwd: string;
+          parentSessionId: string | null;
+          lifecycle: {
+            persistence: string;
+            loaded: boolean;
+            state: string;
+          };
+        };
+        assert.equal(summary.sessionId, createdSessionId);
+        assert.equal(summary.sessionName, "Persistent Catalog Session");
+        assert.equal(summary.cwd, workspaceDir);
+        assert.equal(summary.parentSessionId, null);
+        assert.equal(summary.lifecycle.persistence, "persistent");
+        assert.equal(summary.lifecycle.loaded, true);
+        assert.equal(summary.lifecycle.state, "active");
+      } finally {
+        await remoteA.dispose();
+      }
+
+      const remoteB = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: InMemoryPiRuntimeFactory({
+          cwd: workspaceDir,
+          agentDir,
+          persistSessions: true,
+        }),
+      });
+
+      try {
+        const token = await authenticate(remoteB.app, privateKeyPem);
+
+        const snapshotResponse = await remoteB.app.request("/v1/app/snapshot", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(snapshotResponse.status, 200);
+        const snapshot = (await snapshotResponse.json()) as {
+          defaultAttachSessionId?: string;
+          sessionSummaries: Array<{
+            sessionId: string;
+            sessionName: string;
+            cwd: string;
+            parentSessionId: string | null;
+            lifecycle: {
+              persistence: string;
+              loaded: boolean;
+              state: string;
+            };
+          }>;
+        };
+
+        assert.equal(snapshot.defaultAttachSessionId, undefined);
+        assert.equal(snapshot.sessionSummaries.length, 1);
+        assert.equal(snapshot.sessionSummaries[0]?.sessionId, createdSessionId);
+        assert.equal(snapshot.sessionSummaries[0]?.sessionName, "Persistent Catalog Session");
+        assert.equal(snapshot.sessionSummaries[0]?.cwd, workspaceDir);
+        assert.equal(snapshot.sessionSummaries[0]?.parentSessionId, null);
+        assert.equal(snapshot.sessionSummaries[0]?.lifecycle.persistence, "persistent");
+        assert.equal(snapshot.sessionSummaries[0]?.lifecycle.loaded, false);
+        assert.equal(snapshot.sessionSummaries[0]?.lifecycle.state, "active");
+
+        const summaryResponse = await remoteB.app.request(
+          `/v1/sessions/${createdSessionId}/summary`,
+          {
+            headers: { authorization: `Bearer ${token}` },
+          },
+        );
+        assert.equal(summaryResponse.status, 200);
+        const summary = (await summaryResponse.json()) as {
+          sessionId: string;
+          sessionName: string;
+          cwd: string;
+          parentSessionId: string | null;
+          lifecycle: {
+            persistence: string;
+            loaded: boolean;
+            state: string;
+          };
+        };
+        assert.equal(summary.sessionId, createdSessionId);
+        assert.equal(summary.sessionName, "Persistent Catalog Session");
+        assert.equal(summary.cwd, workspaceDir);
+        assert.equal(summary.parentSessionId, null);
+        assert.equal(summary.lifecycle.persistence, "persistent");
+        assert.equal(summary.lifecycle.loaded, false);
+        assert.equal(summary.lifecycle.state, "active");
+        assert.equal("sessionFile" in summary, false);
+      } finally {
+        await remoteB.dispose();
+      }
+    } finally {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest("missing session summary returns 404", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const response = await remote.app.request("/v1/sessions/missing/summary", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    assert.equal(response.status, 404);
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("session catalog rethrows unexpected scan failures", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-session-catalog-error-"));
+  const filePath = join(root, "not-a-directory");
+
+  await writeFile(filePath, "x");
+
+  try {
+    assert.throws(() => new SessionCatalog({ rootDir: filePath }), /ENOTDIR/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "custom runtime factory without catalog root does not expose cwd fallback sessions",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const originalCwd = process.cwd();
+    const root = await mkdtemp(join(tmpdir(), "pi-remote-custom-factory-"));
+    const catalogDir = join(root, ".pi", "remote-sessions");
+
+    await mkdir(catalogDir, { recursive: true });
+    await writeFile(
+      join(catalogDir, "orphan.jsonl"),
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "orphan-session",
+        timestamp: new Date().toISOString(),
+        cwd: "/srv/orphan",
+      })}\n`,
+    );
+
+    process.chdir(root);
+
+    try {
+      const remote = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: new FakeRuntimeFactory(),
+      });
+
+      try {
+        const token = await authenticate(remote.app, privateKeyPem);
+        const snapshotResponse = await remote.app.request("/v1/app/snapshot", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+
+        assert.equal(snapshotResponse.status, 200);
+        const snapshot = (await snapshotResponse.json()) as {
+          sessionSummaries: Array<{ sessionId: string }>;
+        };
+
+        assert.deepEqual(snapshot.sessionSummaries, []);
+      } finally {
+        await remote.dispose();
+      }
+    } finally {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("runtime api client exposes kv read write delete methods", async () => {
   const keys = generateKeyPairSync("ed25519");

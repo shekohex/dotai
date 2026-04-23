@@ -19,6 +19,7 @@ import {
   PromptCommandRequestSchema,
   SettingsUpdateRequestSchema,
   SessionNameUpdateRequestSchema,
+  SessionSummarySchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
   SteerCommandRequestSchema,
@@ -193,6 +194,16 @@ export const sessionSnapshotRouteDescription = {
   parameters: [sessionIdPathParameter],
   responses: {
     200: jsonResponse("Session snapshot", SessionSnapshotSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const sessionSummaryRouteDescription = {
+  tags: ["snapshot"],
+  operationId: "getSessionSummary",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session summary", SessionSummarySchema),
     404: jsonResponse("Session not found", ErrorResponseSchema),
   },
 };

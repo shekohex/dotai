@@ -31,6 +31,7 @@ import {
   reloadSessionRouteDescription,
   readAppEventsStreamRouteDescription,
   readSessionEventsStreamRouteDescription,
+  sessionSummaryRouteDescription,
   sessionSnapshotRouteDescription,
   sessionToolsRouteDescription,
   steerSessionRouteDescription,
@@ -46,6 +47,7 @@ import {
   handleAuthVerify,
   handleClearSessionQueue,
   handleCreateSession,
+  handleSessionSummary,
   handleSessionSnapshot,
   handleSessionTools,
   handleReloadSession,
@@ -106,6 +108,16 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
     (c) => handleCreateSession(c, dependencies, c.req.valid("json")),
   );
   return route4
+    .get(
+      "/sessions/:sessionId/summary",
+      describeRoute(sessionSummaryRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleSessionSummary(c, dependencies, sessionId);
+      },
+    )
     .get(
       "/sessions/:sessionId/snapshot",
       describeRoute(sessionSnapshotRouteDescription),

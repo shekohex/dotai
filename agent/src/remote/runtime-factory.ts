@@ -1,6 +1,6 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   fauxAssistantMessage,
   registerFauxProvider,
@@ -16,6 +16,7 @@ import {
   type CreateAgentSessionRuntimeFactory,
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
+import { getDefaultSessionDir } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
 import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
 import {
   bundledExtensionDefinitions,
@@ -26,6 +27,7 @@ import {
 export interface RemoteRuntimeFactory {
   create(): Promise<AgentSessionRuntime>;
   dispose(): Promise<void>;
+  getSessionCatalogRoot?(): string | undefined;
 }
 
 export interface RuntimeExtensionMetadata {
@@ -92,6 +94,8 @@ function selectRuntimeExtensions(
 export interface InMemoryPiRuntimeFactoryOptions {
   cwd?: string;
   agentDir?: string;
+  sessionDir?: string;
+  persistSessions?: boolean;
   fauxApiKey?: string | null;
   extensionDefinitions?: BundledExtensionDefinition[];
   extensionFactories?: ExtensionFactory[];
@@ -100,11 +104,14 @@ export interface InMemoryPiRuntimeFactoryOptions {
 export interface BundledPiRuntimeFactoryOptions extends RuntimeExtensionOptions {
   cwd?: string;
   agentDir?: string;
+  sessionDir?: string;
 }
 
 export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
   private readonly cwd: string;
   private readonly agentDir: string;
+  private readonly sessionDir: string;
+  private readonly sessionCatalogRoot: string;
   private readonly extensionFactories: ExtensionFactory[];
   private readonly extensionMetadata: RuntimeExtensionMetadata[];
 
@@ -113,6 +120,11 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
     const extensions = selectRuntimeExtensions(options, "server");
     this.cwd = options.cwd ?? process.cwd();
     this.agentDir = options.agentDir ?? getAgentDir();
+    this.sessionDir = options.sessionDir ?? getDefaultSessionDir(this.cwd, this.agentDir);
+    this.sessionCatalogRoot =
+      options.sessionDir !== undefined && options.sessionDir.length > 0
+        ? resolve(options.sessionDir)
+        : join(this.agentDir, "sessions");
     this.extensionFactories = extensions.factories;
     this.extensionMetadata = extensions.metadata;
   }
@@ -147,18 +159,24 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
     return createAgentSessionRuntime(createRuntime, {
       cwd: this.cwd,
       agentDir: this.agentDir,
-      sessionManager: SessionManager.inMemory(this.cwd),
+      sessionManager: SessionManager.create(this.cwd, this.sessionDir),
     });
   }
 
   dispose(): Promise<void> {
     return Promise.resolve();
   }
+
+  getSessionCatalogRoot(): string {
+    return this.sessionCatalogRoot;
+  }
 }
 
 async function createInMemoryRuntime(input: {
   cwdPromise: Promise<string>;
   agentDirPromise: Promise<string>;
+  sessionDirPromise: Promise<string | undefined>;
+  persistSessions: boolean;
   fauxRegistration: FauxProviderRegistration;
   fauxSeededResponseCount: number;
   fauxApiKey: string | null;
@@ -183,7 +201,13 @@ async function createInMemoryRuntime(input: {
   return createAgentSessionRuntime(createRuntime, {
     cwd: await input.cwdPromise,
     agentDir: await input.agentDirPromise,
-    sessionManager: SessionManager.inMemory(await input.cwdPromise),
+    sessionManager: input.persistSessions
+      ? SessionManager.create(
+          await input.cwdPromise,
+          (await input.sessionDirPromise) ??
+            getDefaultSessionDir(await input.cwdPromise, await input.agentDirPromise),
+        )
+      : SessionManager.inMemory(await input.cwdPromise),
   });
 }
 
@@ -221,6 +245,30 @@ function buildInMemoryCreateRuntime(
   };
 }
 
+function normalizeSessionDir(sessionDir: string | undefined): string | undefined {
+  if (sessionDir !== undefined && sessionDir.length > 0) {
+    return sessionDir;
+  }
+  return undefined;
+}
+
+function getSessionCatalogRoot(input: {
+  agentDir: string | undefined;
+  sessionDir: string | undefined;
+  persistSessions: boolean;
+}): string | undefined {
+  if (!input.persistSessions) {
+    return undefined;
+  }
+  if (input.sessionDir !== undefined && input.sessionDir.length > 0) {
+    return resolve(input.sessionDir);
+  }
+  if (input.agentDir !== undefined && input.agentDir.length > 0) {
+    return join(input.agentDir, "sessions");
+  }
+  return undefined;
+}
+
 export function InMemoryPiRuntimeFactory(
   options: InMemoryPiRuntimeFactoryOptions = {},
 ): RemoteRuntimeFactory {
@@ -234,6 +282,7 @@ export function InMemoryPiRuntimeFactory(
     options.agentDir !== undefined && options.agentDir.length > 0
       ? Promise.resolve(options.agentDir)
       : mkdtemp(join(tmpdir(), "pi-remote-agent-dir-"));
+  const sessionDirPromise = Promise.resolve(normalizeSessionDir(options.sessionDir));
   const fauxRegistration: FauxProviderRegistration = registerFauxProvider({
     provider: "pi-remote-faux",
     api: "responses",
@@ -242,6 +291,12 @@ export function InMemoryPiRuntimeFactory(
   const fauxApiKey =
     options.fauxApiKey === undefined ? "pi-remote-faux-local-key" : options.fauxApiKey;
   const fauxSeededResponseCount = 256;
+  const persistSessions = options.persistSessions ?? false;
+  const sessionCatalogRoot = getSessionCatalogRoot({
+    agentDir: options.agentDir,
+    sessionDir: options.sessionDir,
+    persistSessions,
+  });
   const extensionFactories = extensions.factories;
   const extensionMetadata = extensions.metadata;
 
@@ -250,6 +305,8 @@ export function InMemoryPiRuntimeFactory(
       return createInMemoryRuntime({
         cwdPromise,
         agentDirPromise,
+        sessionDirPromise,
+        persistSessions,
         fauxRegistration,
         fauxSeededResponseCount,
         fauxApiKey,
@@ -260,6 +317,9 @@ export function InMemoryPiRuntimeFactory(
     dispose(): Promise<void> {
       fauxRegistration.unregister();
       return Promise.resolve();
+    },
+    getSessionCatalogRoot(): string | undefined {
+      return sessionCatalogRoot;
     },
   };
 }

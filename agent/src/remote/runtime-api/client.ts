@@ -10,6 +10,7 @@ import type {
   RemoteKvReadResponse,
   RemoteKvScope,
   RemoteKvWriteResponse,
+  SessionSummary,
   SessionSnapshot,
   SettingsUpdateRequest,
   UiResponseRequest,
@@ -20,6 +21,7 @@ import {
   RemoteKvDeleteResponseSchema,
   RemoteKvReadResponseSchema,
   RemoteKvWriteResponseSchema,
+  SessionSummarySchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
 } from "../schemas.js";
@@ -163,6 +165,18 @@ export class RemoteApiClient {
     if (response.status !== 200) throw await toRemoteHttpError(response);
     const payload: unknown = await response.json();
     assertType(SessionSnapshotSchema, payload);
+    return payload;
+  }
+
+  async getSessionSummary(sessionId: string): Promise<SessionSummary> {
+    const response = await this.rpcClient.sessions[":sessionId"].summary.$get(
+      { param: { sessionId } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionSummarySchema, payload);
     return payload;
   }
 

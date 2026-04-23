@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
+import { flushPersistedSessionManagerToDisk } from "../session-manager-storage.js";
 import type {
   AppSnapshot,
   CreateSessionRequest,
@@ -20,7 +21,6 @@ import {
   getLastSessionStreamOffset,
   getSessionSnapshot,
   installRemoteExtensionEventMirror,
-  listSessionSummaries,
   registerCreatedSession,
   touchSessionPresence,
   type SessionRecord,
@@ -120,7 +120,12 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     await session.bindExtensions({
       uiContext: this.createRemoteUiContext(record),
     });
+    if (typeof session.setSessionName === "function") {
+      session.setSessionName(record.sessionName);
+    }
+    flushPersistedSessionManagerToDisk(session.sessionManager);
     this.syncFromRuntime(record, { now: createdAt, updateTimestamp: false });
+    this.catalog.registerPersistedRuntimeRecord(record);
     record.runtimeSubscription = session.subscribe((event) => {
       this.handleSessionEvent(record.sessionId, event);
     });
@@ -206,13 +211,12 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     return getAppSnapshot({
       client,
       now: this.now,
-      sessions: this.sessions,
       listSessionSummaries: () => this.listSessionSummaries(),
     });
   }
 
   listSessionSummaries(): SessionSummary[] {
-    return listSessionSummaries({
+    return this.catalog.listSummaries({
       sessions: this.sessions,
       syncFromRuntime: (record) => {
         this.syncFromRuntime(record, { updateTimestamp: false });
@@ -220,6 +224,25 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       getLastSessionStreamOffset: (sessionId) =>
         getLastSessionStreamOffset((streamId) => this.streams.getHeadOffset(streamId), sessionId),
     });
+  }
+
+  getSessionSummary(sessionId: string): SessionSummary {
+    const summary = this.catalog.getSummary({
+      sessionId,
+      sessions: this.sessions,
+      syncFromRuntime: (record) => {
+        this.syncFromRuntime(record, { updateTimestamp: false });
+      },
+      getLastSessionStreamOffset: (targetSessionId) =>
+        getLastSessionStreamOffset(
+          (streamId) => this.streams.getHeadOffset(streamId),
+          targetSessionId,
+        ),
+    });
+    if (!summary) {
+      throw new RemoteError("Session not found", 404);
+    }
+    return summary;
   }
 
   touchPresence(sessionId: string, client: AuthSession, connectionId?: string): void {

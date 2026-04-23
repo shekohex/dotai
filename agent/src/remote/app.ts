@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { join } from "node:path";
+import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { AllowedPublicKey } from "./auth.js";
 import { AuthService } from "./auth.js";
 import {
@@ -17,6 +18,7 @@ import type { RemoteKvStore } from "./kv/store.js";
 import type { RemoteRuntimeFactory } from "./runtime-factory.js";
 import { BundledPiRuntimeFactory } from "./runtime-factory.js";
 import { createV1Routes, type RemoteHonoEnv } from "./routes.js";
+import { SessionCatalog } from "./session-catalog.js";
 import { SessionRegistry } from "./session-registry.js";
 import { InMemoryDurableStreamStore } from "./streams.js";
 
@@ -26,6 +28,7 @@ export interface CreateRemoteAppOptions {
   runtimeFactory?: RemoteRuntimeFactory;
   kvStore?: RemoteKvStore;
   kvFilePath?: string;
+  sessionCatalogRoot?: string;
   enableLogger?: boolean;
   loggerOptions?: Partial<RemoteLoggerOptions>;
 }
@@ -71,6 +74,9 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     options.kvStore ??
     new JsonFileRemoteKvStore({ filePath: options.kvFilePath ?? defaultRemoteKvFilePath() });
   const runtimeFactory = options.runtimeFactory ?? new BundledPiRuntimeFactory();
+  const catalog = new SessionCatalog({
+    rootDir: options.sessionCatalogRoot ?? defaultSessionCatalogRoot(runtimeFactory),
+  });
   const auth = new AuthService({
     origin,
     allowedKeys: options.allowedKeys,
@@ -78,6 +84,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
   const sessions = new SessionRegistry({
     streams,
     runtimeFactory,
+    catalog,
   });
 
   const v1 = createV1Routes({
@@ -120,6 +127,16 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
 
 function defaultRemoteKvFilePath(): string {
   return process.env.PI_REMOTE_KV_FILE ?? join(process.cwd(), ".pi", "remote-kv.json");
+}
+
+function defaultSessionCatalogRoot(
+  runtimeFactory: RemoteRuntimeFactory | undefined,
+): string | undefined {
+  const runtimeCatalogRoot = runtimeFactory?.getSessionCatalogRoot?.();
+  if (runtimeCatalogRoot !== undefined && runtimeCatalogRoot.length > 0) {
+    return runtimeCatalogRoot;
+  }
+  return runtimeFactory === undefined ? join(getAgentDir(), "sessions") : undefined;
 }
 
 export type RemoteApiApp = ReturnType<typeof createRemoteApp>["app"];

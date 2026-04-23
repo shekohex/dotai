@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
   AgentSessionEvent,
@@ -6,6 +7,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { createRemoteUiContext as createRemoteUiContextForSession } from "./ui-context.js";
 import type { AuthSession } from "../auth.js";
+import { SessionCatalog } from "../session-catalog.js";
 import type {
   CommandAcceptedResponse,
   CommandKind,
@@ -59,6 +61,7 @@ export abstract class SessionRegistryBase {
   >();
   protected readonly streams: InMemoryDurableStreamStore;
   protected readonly runtimeFactory: RemoteRuntimeFactory;
+  protected readonly catalog: SessionCatalog;
   protected readonly presenceTtlMs: number;
   protected readonly now: () => number;
   protected sessionCreationQueue: Promise<void> = Promise.resolve();
@@ -66,6 +69,11 @@ export abstract class SessionRegistryBase {
   constructor(options: SessionRegistryOptions) {
     this.streams = options.streams;
     this.runtimeFactory = options.runtimeFactory;
+    this.catalog =
+      options.catalog ??
+      new SessionCatalog({
+        rootDir: join(process.cwd(), ".pi", "remote-sessions"),
+      });
     this.presenceTtlMs = options.presenceTtlMs ?? 120_000;
     this.now = options.now ?? (() => Date.now());
   }

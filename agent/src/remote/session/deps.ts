@@ -35,7 +35,6 @@ export {
   getLastAppStreamOffsetForNewSession,
   getLastSessionStreamOffset,
   getSessionSnapshot,
-  listSessionSummaries,
   registerCreatedSession,
 } from "./command-registry.js";
 export {

@@ -8,6 +8,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { defaultSettings } from "../../default-settings.js";
 import type { AuthSession } from "../auth.js";
+import type { SessionCatalog } from "../session-catalog.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import type {
   CommandKind,
@@ -111,6 +112,7 @@ export interface AcceptCommandHooks {
 export interface SessionRegistryOptions {
   streams: InMemoryDurableStreamStore;
   runtimeFactory: RemoteRuntimeFactory;
+  catalog?: SessionCatalog;
   presenceTtlMs?: number;
   now?: () => number;
 }

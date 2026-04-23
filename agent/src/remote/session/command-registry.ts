@@ -110,8 +110,8 @@ export async function createSingleSession(input: {
   disposeFailedSessionCreation: (sessionId: string, runtime: AgentSessionRuntime) => Promise<void>;
 }): Promise<CreateSessionResponse> {
   const createdAt = input.now();
-  const sessionId = input.createSessionId();
   const runtime = await input.createRuntime();
+  const sessionId = readRuntimeSessionId(runtime) ?? input.createSessionId();
   try {
     const record = buildSessionRecord({
       sessionId,
@@ -131,30 +131,20 @@ export async function createSingleSession(input: {
   }
 }
 
-export function listSessionSummaries(input: {
-  sessions: Map<string, SessionRecord>;
-  syncFromRuntime: (record: SessionRecord) => void;
-  getLastSessionStreamOffset: (sessionId: string) => string;
-}): SessionSummary[] {
-  return [...input.sessions.values()].map((record) => {
-    input.syncFromRuntime(record);
-    return {
-      sessionId: record.sessionId,
-      sessionName: record.sessionName,
-      status: record.status,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
-      lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),
-    };
-  });
+function readRuntimeSessionId(runtime: AgentSessionRuntime): string | undefined {
+  const sessionId = runtime.session?.sessionManager.getSessionId();
+  return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : undefined;
 }
 
 export function getAppSnapshot(input: {
   client: AuthSession;
   now: () => number;
-  sessions: Map<string, SessionRecord>;
   listSessionSummaries: () => SessionSummary[];
 }): AppSnapshot {
+  const sessionSummaries = input.listSessionSummaries();
+  const defaultAttachSessionId = sessionSummaries.find(
+    (sessionSummary) => sessionSummary.lifecycle.loaded,
+  )?.sessionId;
   return {
     serverInfo: {
       name: "pi-remote",
@@ -166,9 +156,9 @@ export function getAppSnapshot(input: {
       keyId: input.client.keyId,
       tokenExpiresAt: input.client.expiresAt,
     },
-    sessionSummaries: input.listSessionSummaries(),
+    sessionSummaries,
     recentNotices: [],
-    defaultAttachSessionId: input.sessions.values().next().value?.sessionId,
+    defaultAttachSessionId,
   };
 }
 

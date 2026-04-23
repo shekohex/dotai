@@ -47,6 +47,7 @@ DON'T:
 - Don't use unsafe type assertions like `as Foo`, double assertions, or broad casts to silence TypeScript.
 - Don't use `any` unless there is no alternative and user explicitly accepts it.
 - Don't use dynamic typing patterns for normal internal code paths.
+- Don't add runtime type guards, `in` checks, or defensive method-existence checks for public APIs that are already fully typed in our code path. Trust TypeScript unless data crossed an untyped boundary.
 - Don't parse structured payloads manually if a TypeBox schema should exist.
 - Don't use `Value.Parse(...)` on objects that may contain functions, class instances, timers, callbacks, or other non-cloneable runtime values.
 

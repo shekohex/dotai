@@ -34,6 +34,7 @@ In remote mode:
 - Loaded runtime hot-reload on external file changes is only safe when runtime is idle.
 - External file changes during active runs must mark session dirty/conflicted rather than auto-merging mid-turn.
 - Archive and delete are first-class server lifecycle operations, not client-local file operations.
+- Load the `librarian` skill and scoped files for this plan for `badlogic/pi-mono`.
 
 ## Target Architecture
 

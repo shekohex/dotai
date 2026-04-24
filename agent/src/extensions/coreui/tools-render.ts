@@ -1,5 +1,5 @@
-import { readToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+import { readToolDefinition } from "./builtins.js";
 
 type ToolTheme = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[1];
 

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 import { buildLaunchCommand } from "../subagent-sdk/launch.js";
 import { createDefaultSubagentRuntimeHooks } from "../subagent-sdk/runtime-hooks.js";

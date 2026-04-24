@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 
 export const STASH_VERSION = 1;
 export const MAX_STASH_ENTRIES = 50;

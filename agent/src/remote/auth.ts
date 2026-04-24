@@ -1,6 +1,6 @@
 import { createPublicKey, randomBytes, randomUUID, verify, type KeyObject } from "node:crypto";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { RemoteError } from "./errors.js";
 
 const AllowedPublicKeySchema = Type.Object(

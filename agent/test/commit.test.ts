@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 
 import { createCommitExtension } from "../src/extensions/commit.ts";
 

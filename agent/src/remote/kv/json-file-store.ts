@@ -1,6 +1,6 @@
 import { dirname } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import {
   RemoteKvStorageFileSchema,
   createEmptyRemoteKvStorageFile,

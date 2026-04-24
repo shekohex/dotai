@@ -1,8 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 import type { TruncationResult } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 
 const WEBFETCH_DESCRIPTION = [
   "- Fetches content from a specified URL",

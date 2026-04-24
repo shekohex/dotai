@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { hasRuntimePrimitive } from "../extensions/runtime-capabilities.js";
 
 import {
@@ -21,6 +22,16 @@ import {
   updateStructuredTurnStateFromResults,
 } from "./bootstrap-structured.js";
 
+function shutdownContextSafely(ctx: ExtensionContext): void {
+  try {
+    ctx.shutdown();
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
+}
+
 function cancelIdleShutdown(state: ChildBootstrapRuntimeState): void {
   if (!state.pendingIdleShutdown) {
     return;
@@ -36,7 +47,7 @@ function scheduleIdleShutdown(
 ): void {
   cancelIdleShutdown(state);
   if (!state.timeoutModeActive) {
-    ctx.shutdown();
+    shutdownContextSafely(ctx);
     return;
   }
   state.pendingIdleShutdown = setTimeout(() => {
@@ -44,7 +55,7 @@ function scheduleIdleShutdown(
     if (!state.autoExitEnabled || !isChildSession(currentChildState, ctx)) {
       return;
     }
-    ctx.shutdown();
+    shutdownContextSafely(ctx);
   }, currentChildState.autoExitTimeoutMs ?? 30_000);
   state.pendingIdleShutdown.unref?.();
 }
@@ -160,7 +171,7 @@ function registerChildAgentEndHandler(
     }
     const result = handleStructuredAgentEnd(pi, state);
     if (result === "shutdown") {
-      ctx.shutdown();
+      shutdownContextSafely(ctx);
       return;
     }
     if (result === "retry") {

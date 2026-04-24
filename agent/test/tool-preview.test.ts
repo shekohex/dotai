@@ -852,6 +852,7 @@ function createInteractiveModePreview(cwd: string) {
     getHideThinkingBlock: () => false,
     getTheme: () => "dark",
     getShowImages: () => false,
+    getImageWidthCells: () => 60,
     getCodeBlockIndent: () => 2,
   };
   const sessionManager = {
@@ -872,7 +873,12 @@ function createInteractiveModePreview(cwd: string) {
     state: { messages: [] },
   };
 
-  return new InteractiveMode({ session, dispose: async () => {} } as never);
+  return new InteractiveMode({
+    session,
+    dispose: async () => {},
+    setBeforeSessionInvalidate: () => {},
+    setRebindSession: () => {},
+  } as never);
 }
 
 function createAssistantToolCall(id: string, filePath: string) {

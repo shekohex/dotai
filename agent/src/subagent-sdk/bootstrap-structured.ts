@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 
 import {
   STRUCTURED_OUTPUT_FINAL_TOOL_ERROR,
@@ -7,6 +8,16 @@ import {
   persistStructuredOutputState,
   type ChildBootstrapRuntimeState,
 } from "./bootstrap-core.js";
+
+function sendUserMessageSafely(pi: ExtensionAPI, prompt: string): void {
+  try {
+    pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
+}
 
 function persistCapturedStructuredOutput(
   pi: ExtensionAPI,
@@ -32,9 +43,7 @@ function persistStructuredRetrying(pi: ExtensionAPI, state: ChildBootstrapRuntim
     updatedAt: Date.now(),
   });
   setTimeout(() => {
-    pi.sendUserMessage(buildStructuredOutputRetryPrompt(state.structuredState), {
-      deliverAs: "followUp",
-    });
+    sendUserMessageSafely(pi, buildStructuredOutputRetryPrompt(state.structuredState));
   }, 0);
 }
 

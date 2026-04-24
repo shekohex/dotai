@@ -1,5 +1,5 @@
 import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Static } from "@sinclair/typebox";
+import type { Static } from "typebox";
 
 import type { SubagentRuntimeEvent } from "./events.js";
 import type { PaneCapture } from "./mux.js";

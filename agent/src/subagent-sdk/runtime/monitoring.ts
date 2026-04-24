@@ -23,6 +23,10 @@ function pathDirname(inputPath: string): string {
 
 export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging {
   protected ensurePolling(): void {
+    if (this.disposed) {
+      return;
+    }
+
     if (this.pollTimer || this.activeSessionIds.size === 0) {
       return;
     }
@@ -34,6 +38,14 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
   }
 
   private ensureWidgetTimer(): void {
+    if (this.disposed) {
+      if (this.widgetTimer) {
+        clearInterval(this.widgetTimer);
+        this.widgetTimer = undefined;
+      }
+      return;
+    }
+
     if (this.ctx?.hasUI !== true) {
       if (this.widgetTimer) {
         clearInterval(this.widgetTimer);
@@ -70,6 +82,10 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
   }
 
   private async poll(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+
     if (this.activeSessionIds.size === 0 || this.restoring) {
       this.stopPollingIfIdle();
       this.refreshWidget();
@@ -84,6 +100,9 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       }
 
       const alive = await this.hasLivePane(state);
+      if (this.disposed) {
+        return;
+      }
       if (alive) {
         await this.syncLiveState(state, "updated");
         continue;
@@ -97,7 +116,15 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
   }
 
   protected async finalizeInactiveSubagent(state: RuntimeSubagent): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+
     const outcome = await readChildSessionOutcome(state.sessionPath);
+    if (this.disposed) {
+      return;
+    }
+
     const now = Date.now();
     const failed = outcome.failed || outcome.structuredError !== undefined;
     const terminal: RuntimeSubagent = {
@@ -145,6 +172,10 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
   }
 
   protected refreshWidget(): void {
+    if (this.disposed) {
+      return;
+    }
+
     if (this.ctx?.hasUI !== true) {
       this.ensureWidgetTimer();
       return;
@@ -163,7 +194,15 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
     state: RuntimeSubagent,
     event: RuntimeSubagent["event"],
   ): Promise<RuntimeSubagent> {
+    if (this.disposed) {
+      return state;
+    }
+
     const liveStatus = await readChildSessionStatusDetails(state.sessionPath);
+    if (this.disposed) {
+      return state;
+    }
+
     const autoExitTimeoutMs = state.autoExitTimeoutMs ?? 30_000;
     const autoExitTimeoutActive = state.autoExit && isAutoExitTimeoutModeActive(state.sessionId);
     const nextState: RuntimeSubagent = {

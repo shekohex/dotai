@@ -1,5 +1,5 @@
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { summarizePatchText } from "./parser.js";
 import type { ApplyPatchDetails } from "./types.js";
 

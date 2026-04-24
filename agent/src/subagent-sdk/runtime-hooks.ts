@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 
 import { renderSubagentWidget } from "./ui.js";
 import {
@@ -23,31 +24,55 @@ export type SubagentRuntimeHooks = {
 export function createDefaultSubagentRuntimeHooks(pi: ExtensionAPI): SubagentRuntimeHooks {
   return {
     persistState(state) {
-      pi.appendEntry(SUBAGENT_STATE_ENTRY, serializeSubagentStateEntry(state));
+      try {
+        pi.appendEntry(SUBAGENT_STATE_ENTRY, serializeSubagentStateEntry(state));
+      } catch (error) {
+        if (!isStaleSessionReplacementContextError(error)) {
+          throw error;
+        }
+      }
       return Promise.resolve();
     },
     persistMessage(entry) {
-      pi.appendEntry(SUBAGENT_MESSAGE_ENTRY, serializeSubagentMessageEntry(entry));
+      try {
+        pi.appendEntry(SUBAGENT_MESSAGE_ENTRY, serializeSubagentMessageEntry(entry));
+      } catch (error) {
+        if (!isStaleSessionReplacementContextError(error)) {
+          throw error;
+        }
+      }
       return Promise.resolve();
     },
     emitStatusMessage({ content, triggerTurn }) {
-      pi.sendMessage(
-        {
-          customType: SUBAGENT_STATUS_MESSAGE,
-          content,
-          display: true,
-        },
-        triggerTurn === true ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "steer" },
-      );
+      try {
+        pi.sendMessage(
+          {
+            customType: SUBAGENT_STATUS_MESSAGE,
+            content,
+            display: true,
+          },
+          triggerTurn === true ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "steer" },
+        );
+      } catch (error) {
+        if (!isStaleSessionReplacementContextError(error)) {
+          throw error;
+        }
+      }
     },
     renderWidget(ctx, subagents) {
       if (ctx?.hasUI !== true) {
         return;
       }
 
-      ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, renderSubagentWidget(subagents), {
-        placement: "belowEditor",
-      });
+      try {
+        ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, renderSubagentWidget(subagents), {
+          placement: "belowEditor",
+        });
+      } catch (error) {
+        if (!isStaleSessionReplacementContextError(error)) {
+          throw error;
+        }
+      }
     },
   };
 }

@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   buildLaunchCommand,
   createDefaultSubagentRuntimeHooks,
@@ -18,14 +19,20 @@ export function createReviewSubagentSdk(
   const reviewSubagentHooks = {
     ...defaultSubagentHooks,
     emitStatusMessage({ content }: { content: string; triggerTurn?: boolean }) {
-      pi.sendMessage(
-        {
-          customType: SUBAGENT_STATUS_MESSAGE,
-          content,
-          display: true,
-        },
-        { deliverAs: "steer", triggerTurn: false },
-      );
+      try {
+        pi.sendMessage(
+          {
+            customType: SUBAGENT_STATUS_MESSAGE,
+            content,
+            display: true,
+          },
+          { deliverAs: "steer", triggerTurn: false },
+        );
+      } catch (error) {
+        if (!isStaleSessionReplacementContextError(error)) {
+          throw error;
+        }
+      }
     },
   };
 
@@ -69,13 +76,27 @@ export function subscribeReviewSdkEvents(input: SubscribeReviewSdkEventsInput): 
       return;
     }
 
-    input.syncReviewWidget(ctx);
-    if (
-      input.isTerminalReviewStatus(event.state.status) &&
-      input.runtime.completionNotifiedSessionId !== event.state.sessionId
-    ) {
-      input.runtime.completionNotifiedSessionId = event.state.sessionId;
-      void input.finalizeReview(ctx, event.state.status, event.state.summary);
+    try {
+      input.syncReviewWidget(ctx);
+      if (
+        input.isTerminalReviewStatus(event.state.status) &&
+        input.runtime.completionNotifiedSessionId !== event.state.sessionId
+      ) {
+        input.runtime.completionNotifiedSessionId = event.state.sessionId;
+        void input.finalizeReview(ctx, event.state.status, event.state.summary).catch((error) => {
+          if (isStaleSessionReplacementContextError(error)) {
+            input.runtime.ctx = undefined;
+            return;
+          }
+          throw error;
+        });
+      }
+    } catch (error) {
+      if (isStaleSessionReplacementContextError(error)) {
+        input.runtime.ctx = undefined;
+        return;
+      }
+      throw error;
     }
   });
 }

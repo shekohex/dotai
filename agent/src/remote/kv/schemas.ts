@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 export const RemoteKvScopeSchema = Type.Union([Type.Literal("global"), Type.Literal("user")]);
 

@@ -3,6 +3,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { SubagentSDK } from "../../subagent-sdk/sdk.js";
 import {
   SubagentToolParamsSchema,
@@ -60,7 +61,15 @@ function registerSubagentRuntimeEvents(
   ).events;
   modesChangedEvents?.on?.("modes:changed", async () => {
     if (runtimeState.ctx) {
-      await syncSubagentToolRegistration(runtimeState.ctx);
+      try {
+        await syncSubagentToolRegistration(runtimeState.ctx);
+      } catch (error) {
+        if (isStaleSessionReplacementContextError(error)) {
+          runtimeState.ctx = undefined;
+          return;
+        }
+        throw error;
+      }
     }
   });
 
@@ -79,6 +88,7 @@ function registerSubagentRuntimeEvents(
     }
   });
   pi.on("session_shutdown", () => {
+    runtimeState.ctx = undefined;
     sdk.dispose();
   });
 }

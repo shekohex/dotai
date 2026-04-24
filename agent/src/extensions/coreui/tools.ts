@@ -1,10 +1,10 @@
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   bashToolDefinition,
   editToolDefinition,
   readToolDefinition,
   writeToolDefinition,
-  type ExtensionAPI,
-} from "@mariozechner/pi-coding-agent";
+} from "./builtins.js";
 import { bashToolParams, createBashToolOverrideDefinition } from "./tools-bash-render.js";
 import {
   createEditToolOverrideDefinition,

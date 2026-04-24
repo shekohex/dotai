@@ -1,4 +1,4 @@
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import { ClientCapabilitiesSchema, type ClientCapabilities } from "../remote/schemas.js";
 
 export const runtimeCapabilitiesSymbol = Symbol.for("@shekohex/agent/runtime-capabilities");

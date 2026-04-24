@@ -1,4 +1,5 @@
 import type { ContextEvent, ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   applyPendingSelection,
   getPendingCommandHandoff,
@@ -7,6 +8,16 @@ import {
   startNewSessionInPlace,
   type HandoffRuntimeState,
 } from "./shared.js";
+
+function sendUserMessageSafely(pi: ExtensionAPI, prompt: string): void {
+  try {
+    pi.sendUserMessage(prompt);
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
+}
 
 async function handleHandoffAgentEnd(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   const pending = pendingToolHandoffState.pending;
@@ -19,7 +30,7 @@ async function handleHandoffAgentEnd(pi: ExtensionAPI, ctx: ExtensionContext): P
   startNewSessionInPlace(ctx, pending.parentSession);
   await applyPendingSelection(pi, ctx, pending.overrides);
   setTimeout(() => {
-    pi.sendUserMessage(pending.prompt);
+    sendUserMessageSafely(pi, pending.prompt);
   }, 0);
 }
 
@@ -61,7 +72,7 @@ async function handleHandoffSessionStart(
   setPendingCommandHandoff(undefined);
   if (pendingCommandHandoff.autoSend) {
     setTimeout(() => {
-      pi.sendUserMessage(pendingCommandHandoff.prompt);
+      sendUserMessageSafely(pi, pendingCommandHandoff.prompt);
     }, 0);
     return;
   }

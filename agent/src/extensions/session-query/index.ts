@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { createSessionQueryRequest, executeSessionQueryRequest } from "./execution.js";
 import { renderSessionQueryCall, renderSessionQueryResult } from "./render.js";
 

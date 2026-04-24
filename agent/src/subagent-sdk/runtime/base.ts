@@ -84,6 +84,7 @@ export abstract class SubagentRuntimeBase {
   protected pollTimer?: NodeJS.Timeout;
   protected widgetTimer?: NodeJS.Timeout;
   protected restoring = false;
+  protected disposed = false;
 
   constructor(
     protected readonly pi: ExtensionAPI,
@@ -97,6 +98,9 @@ export abstract class SubagentRuntimeBase {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.ctx = undefined;
+
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
@@ -133,6 +137,7 @@ export abstract class SubagentRuntimeBase {
   }
 
   async restore(ctx: ExtensionContext): Promise<void> {
+    this.disposed = false;
     this.ctx = ctx;
     this.restoring = true;
 

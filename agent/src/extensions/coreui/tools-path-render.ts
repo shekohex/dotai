@@ -1,5 +1,5 @@
-import { readToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { Text } from "@mariozechner/pi-tui";
+import { readToolDefinition } from "./builtins.js";
 import { splitToolPath, type ToolPathDisplay } from "./path.js";
 import { countTextLines, summarizeLineCount } from "./tools-output.js";
 import { createTextComponent } from "./tools-render.js";

@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 export const SUBAGENT_STATE_ENTRY = "subagent-state";
 export const SUBAGENT_MESSAGE_ENTRY = "subagent-message";

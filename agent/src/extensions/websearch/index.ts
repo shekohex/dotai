@@ -1,6 +1,6 @@
 import { StringEnum } from "@mariozechner/pi-ai";
 import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { formatToolRail } from "../coreui/tools.js";
 import {
   DEFAULT_MODEL,

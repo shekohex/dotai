@@ -4,6 +4,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   buildContextTransferPrompt,
   generateContextTransferSummary,
@@ -24,6 +25,26 @@ import {
   type HandoffRuntimeState,
   type ResolvedHandoffOptions,
 } from "./shared.js";
+
+type SessionReplacementMessenger = {
+  sendUserMessage: (prompt: string) => Promise<void>;
+};
+
+function hasSessionReplacementMessenger(
+  ctx: ExtensionContext,
+): ctx is ExtensionContext & SessionReplacementMessenger {
+  return "sendUserMessage" in ctx && typeof ctx.sendUserMessage === "function";
+}
+
+function sendUserMessageSafely(pi: ExtensionAPI, prompt: string): void {
+  try {
+    pi.sendUserMessage(prompt);
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
+}
 
 function resolveHandoffOptions(
   ctx: ExtensionContext,
@@ -142,6 +163,12 @@ async function prepareHandoff(
   };
 }
 
+function clearPendingLaunch(state: HandoffRuntimeState): HandoffLaunchResult {
+  state.pendingNewSessionCtx = undefined;
+  setPendingCommandHandoff(undefined);
+  return { status: "cancelled" };
+}
+
 async function completePendingLaunch(
   input: {
     pi: ExtensionAPI;
@@ -158,18 +185,16 @@ async function completePendingLaunch(
   const targetCtx = state.ctx ?? input.ctx;
   await applyPendingSelection(input.pi, targetCtx, pendingCommandHandoff.overrides);
   setPendingCommandHandoff(undefined);
+  if (pendingCommandHandoff.autoSend && hasSessionReplacementMessenger(targetCtx)) {
+    await targetCtx.sendUserMessage(pendingCommandHandoff.prompt);
+    return { status: "started", warning };
+  }
   if (pendingCommandHandoff.autoSend) {
     setTimeout(() => {
-      input.pi.sendUserMessage(pendingCommandHandoff.prompt);
+      sendUserMessageSafely(input.pi, pendingCommandHandoff.prompt);
     }, 0);
   }
   return { status: "started", warning };
-}
-
-function clearPendingLaunch(state: HandoffRuntimeState): HandoffLaunchResult {
-  state.pendingNewSessionCtx = undefined;
-  setPendingCommandHandoff(undefined);
-  return { status: "cancelled" };
 }
 
 async function launchHandoffSession(input: {
@@ -200,6 +225,10 @@ async function launchHandoffSession(input: {
 
   const newSessionResult = await input.newSession({
     parentSession: result.parentSession,
+    withSession: async (replacementCtx) => {
+      state.ctx = replacementCtx;
+      await Promise.resolve();
+    },
   });
 
   if (newSessionResult.cancelled) {

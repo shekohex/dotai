@@ -1,12 +1,8 @@
-import {
-  bashToolDefinition,
-  type BashToolDetails,
-  readToolDefinition,
-  type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+import { type BashToolDetails, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
-import type { Static } from "@sinclair/typebox";
+import { Type } from "typebox";
+import type { Static } from "typebox";
+import { bashToolDefinition, readToolDefinition } from "./builtins.js";
 import {
   formatBashResultSummary,
   formatBashTimeoutSuffix,

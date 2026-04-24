@@ -695,6 +695,8 @@ function renderSessionChatLines(testSession: TestSession, width = 120): string[]
   const mode = new InteractiveMode({
     session: testSession.session,
     dispose: async () => {},
+    setBeforeSessionInvalidate: () => {},
+    setRebindSession: () => {},
   } as never);
 
   try {

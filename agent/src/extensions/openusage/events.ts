@@ -1,5 +1,5 @@
-import { type Static, Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { type Static, Type } from "typebox";
+import { Value } from "typebox/value";
 import { ModeSpecSchema } from "../../mode-utils.js";
 import type { OpenUsageAlertEvent, UsageSnapshot } from "./types.js";
 import { isSupportedProviderId } from "./types.js";

@@ -5,7 +5,7 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { Text, visibleWidth } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
 import { webFetchTool } from "../src/extensions/fetch.js";
 import { sessionQueryTool } from "../src/extensions/session-query.js";

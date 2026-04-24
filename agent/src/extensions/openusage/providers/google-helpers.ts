@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 
 const UnknownRecordSchema = Type.Record(Type.String(), Type.Unknown());
 

@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import type { Static } from "@sinclair/typebox";
+import type { Static } from "typebox";
 import { RemoteError } from "../errors.js";
 import { ErrorResponseSchema } from "../schemas.js";
 import { jsonWithSchema } from "../typebox.js";

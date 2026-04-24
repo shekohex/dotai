@@ -1,5 +1,5 @@
 import type { ThemeColor as PackageThemeColor } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 const themeColorNames = [
   "accent",
@@ -51,7 +51,10 @@ const themeColorNames = [
 
 export type ThemeColor = (typeof themeColorNames)[number];
 
-export const ThemeColorSchema = Type.Union(themeColorNames.map((name) => Type.Literal(name)));
+export const ThemeColorSchema = Type.Unsafe<ThemeColor>({
+  type: "string",
+  enum: [...themeColorNames],
+});
 
 export const ThinkingLevelSchema = Type.Union([
   Type.Literal("off"),

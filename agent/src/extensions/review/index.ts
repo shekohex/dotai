@@ -265,6 +265,8 @@ function reviewExtension(
     setCustomInstructions: setReviewCustomInstructions,
     applyAllReviewState,
     shutdownRuntime: () => {
+      runtime.ctx = undefined;
+      runtime.commandActions = undefined;
       stopSdkEvents?.();
       sdk.dispose();
     },

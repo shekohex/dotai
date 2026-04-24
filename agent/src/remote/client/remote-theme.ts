@@ -1,5 +1,5 @@
-import { Type } from "@sinclair/typebox";
-import { TypeCompiler } from "@sinclair/typebox/compiler";
+import { Type } from "typebox";
+import { Compile } from "typebox/compile";
 import { Theme } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 
 const colorValueSchema = Type.Union([Type.String(), Type.Integer({ minimum: 0, maximum: 255 })]);
@@ -91,7 +91,7 @@ type RemoteThemeJson = {
 
 type ColorMode = "truecolor" | "256color";
 
-const remoteThemeValidator = TypeCompiler.Compile(remoteThemeJsonSchema);
+const remoteThemeValidator = Compile(remoteThemeJsonSchema);
 
 function detectColorMode(): ColorMode {
   const colorterm = process.env.COLORTERM;
@@ -127,9 +127,11 @@ function parseRemoteThemeJson(label: string, content: string): RemoteThemeJson {
     return parsed;
   }
 
-  const firstError = remoteThemeValidator.Errors(parsed).First();
-  if (firstError) {
-    throw new Error(`Invalid theme ${label} at ${firstError.path}: ${firstError.message}`);
+  const firstError = remoteThemeValidator.Errors(parsed)[0];
+  if (firstError !== undefined) {
+    throw new Error(
+      `Invalid theme ${label} at ${firstError.instancePath || "/"}: ${firstError.message}`,
+    );
   }
 
   throw new Error(`Invalid theme ${label}`);

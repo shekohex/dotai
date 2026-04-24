@@ -4,7 +4,7 @@ import os from "node:os";
 import pathLib from "node:path";
 
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import type {
   ModeMap,
   ModeSpec,

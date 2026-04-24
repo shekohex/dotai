@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 
 import { REVIEW_SETTINGS_TYPE, REVIEW_STATE_TYPE, REVIEW_WIDGET_KEY } from "./constants.js";
 import type { ReviewSessionState, ReviewSettingsState } from "./types.js";

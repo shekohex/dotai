@@ -1,4 +1,5 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { RuntimeSubagent } from "../../subagent-sdk/index.js";
 import type { ReviewCheckoutTarget, ReviewSessionState, ReviewSettingsState } from "./deps.js";
 
@@ -109,15 +110,21 @@ export function syncReviewWidget(
   trackedState: RuntimeSubagent | undefined,
   setReviewWidget: RuntimeStateDeps<unknown>["setReviewWidget"],
 ): void {
-  if (!runtime.active) {
-    setReviewWidget(ctx, undefined);
-    return;
-  }
+  try {
+    if (!runtime.active) {
+      setReviewWidget(ctx, undefined);
+      return;
+    }
 
-  setReviewWidget(ctx, {
-    targetLabel: runtime.targetLabel,
-    statusText: reviewStatusText(trackedState),
-  });
+    setReviewWidget(ctx, {
+      targetLabel: runtime.targetLabel,
+      statusText: reviewStatusText(trackedState),
+    });
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
 }
 
 function applyReviewState<TChildState>(
@@ -179,27 +186,29 @@ export async function applyAllReviewState<TChildState>(
   ctx: ExtensionContext,
   deps: RuntimeStateDeps<TChildState>,
 ): Promise<void> {
-  deps.runtime.ctx = ctx;
-  deps.runtime.customInstructions = deps.getReviewSettings(ctx).customInstructions;
-  applyReviewState(ctx, deps);
   try {
+    deps.runtime.ctx = ctx;
+    deps.runtime.customInstructions = deps.getReviewSettings(ctx).customInstructions;
+    applyReviewState(ctx, deps);
     await restoreTrackedReviewSubagent(ctx, deps);
-  } catch {
-    return;
-  }
+    const trackedState = readTrackedReviewState(deps.runtime, deps.sdk);
+    syncReviewWidget(ctx, deps.runtime, trackedState, deps.setReviewWidget);
+    if (!deps.runtime.active || !isTrackedReviewTerminal(trackedState) || !trackedState) {
+      return;
+    }
 
-  const trackedState = readTrackedReviewState(deps.runtime, deps.sdk);
-  syncReviewWidget(ctx, deps.runtime, trackedState, deps.setReviewWidget);
-  if (!deps.runtime.active || !isTrackedReviewTerminal(trackedState) || !trackedState) {
-    return;
-  }
-
-  if (
-    deps.isTerminalReviewStatus(trackedState.status) &&
-    deps.runtime.completionNotifiedSessionId !== trackedState.sessionId
-  ) {
-    deps.runtime.completionNotifiedSessionId = trackedState.sessionId;
-    deps.onTerminalState(ctx, trackedState);
+    if (
+      deps.isTerminalReviewStatus(trackedState.status) &&
+      deps.runtime.completionNotifiedSessionId !== trackedState.sessionId
+    ) {
+      deps.runtime.completionNotifiedSessionId = trackedState.sessionId;
+      deps.onTerminalState(ctx, trackedState);
+    }
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+    deps.runtime.ctx = undefined;
   }
 }
 

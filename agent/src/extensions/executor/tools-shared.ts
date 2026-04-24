@@ -1,5 +1,5 @@
-import { type Static, Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { type Static, Type } from "typebox";
+import { Value } from "typebox/value";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import type { JsonObject, JsonValue } from "./http.js";
 import type { ResumeAction } from "./mcp-client.js";

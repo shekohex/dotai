@@ -1,6 +1,6 @@
 import type { CustomEntry } from "@mariozechner/pi-coding-agent";
-import type { Static, TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import type { Static, TSchema } from "typebox";
+import { Value } from "typebox/value";
 
 import {
   ChildBootstrapStateSchema,
@@ -59,6 +59,10 @@ export type SubagentMessageSessionEntry = CustomEntry<SubagentMessageEntry>;
 
 export type RuntimeSubagent = SubagentStateEntry & {
   modeLabel: string;
+};
+
+type PersistableSubagentStateEntry = SubagentStateEntry & {
+  modeLabel?: string;
 };
 
 type StartSubagentBaseParams = {
@@ -240,12 +244,21 @@ export function parseSubagentStateEntry(value: unknown): SubagentStateEntry | un
   return Value.Parse(SubagentStateEntrySchema, value);
 }
 
-export function serializeSubagentStateEntry(value: SubagentStateEntry): SubagentStateEntry {
-  return Value.Parse(SubagentStateEntrySchema, value);
+export function serializeSubagentStateEntry(
+  value: PersistableSubagentStateEntry,
+): SubagentStateEntry {
+  const { modeLabel: _modeLabel, ...entry } = value;
+  if (!Value.Check(SubagentStateEntrySchema, entry)) {
+    throw new Error("Invalid subagent state entry");
+  }
+  return entry;
 }
 
 export function serializeSubagentMessageEntry(value: SubagentMessageEntry): SubagentMessageEntry {
-  return Value.Parse(SubagentMessageEntrySchema, value);
+  if (!Value.Check(SubagentMessageEntrySchema, value)) {
+    throw new Error("Invalid subagent message entry");
+  }
+  return value;
 }
 
 export function parseSubagentStructuredOutputEntry(
@@ -260,5 +273,8 @@ export function parseSubagentStructuredOutputEntry(
 export function serializeSubagentStructuredOutputEntry(
   value: SubagentStructuredOutputEntry,
 ): SubagentStructuredOutputEntry {
-  return Value.Parse(SubagentStructuredOutputEntrySchema, value);
+  if (!Value.Check(SubagentStructuredOutputEntrySchema, value)) {
+    throw new Error("Invalid subagent structured output entry");
+  }
+  return value;
 }

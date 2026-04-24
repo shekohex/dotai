@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { TSchema } from "@sinclair/typebox";
+import type { TSchema } from "typebox";
 
 import {
   isAutoExitTimeoutModeActive,

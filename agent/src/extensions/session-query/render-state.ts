@@ -1,6 +1,6 @@
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { createTextComponent } from "../coreui/tools.js";
 
 export type SessionQueryRenderState = {

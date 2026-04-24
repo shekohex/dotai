@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { installChildBootstrap, isChildSession } from "../../subagent-sdk/bootstrap.js";
 import { buildLaunchCommand, readChildState } from "../../subagent-sdk/launch.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
@@ -27,12 +28,22 @@ function installEnabledSubagentExtension(
   const subagentTool = createSubagentToolDefinition(sdk);
   const syncSubagentToolRegistration = async (ctx: ExtensionContext): Promise<void> => {
     runtimeState.ctx = ctx;
-    const promptGuidelines = await buildSubagentPromptGuidelines(ctx);
-    const signature = promptGuidelines.join("\n\n");
-    if (runtimeState.toolPromptSignature !== signature) {
-      subagentTool.promptGuidelines = promptGuidelines;
-      runtimeState.toolPromptSignature = signature;
-      pi.registerTool(subagentTool);
+    try {
+      const promptGuidelines = await buildSubagentPromptGuidelines(ctx);
+      const signature = promptGuidelines.join("\n\n");
+      if (runtimeState.toolPromptSignature !== signature) {
+        subagentTool.promptGuidelines = promptGuidelines;
+        runtimeState.toolPromptSignature = signature;
+        pi.registerTool(subagentTool);
+      }
+    } catch (error) {
+      if (isStaleSessionReplacementContextError(error)) {
+        if (runtimeState.ctx === ctx) {
+          runtimeState.ctx = undefined;
+        }
+        return;
+      }
+      throw error;
     }
   };
 

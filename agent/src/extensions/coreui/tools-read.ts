@@ -1,4 +1,5 @@
-import { readToolDefinition, type ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import type { ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import { readToolDefinition } from "./builtins.js";
 import { getTextContent, summarizeTextLineCount } from "./tools-output.js";
 import {
   formatReadRangeSuffix,

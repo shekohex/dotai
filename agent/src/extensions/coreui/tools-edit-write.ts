@@ -1,11 +1,9 @@
 import {
   type AgentToolResult,
   type ToolRenderResultOptions,
-  editToolDefinition,
-  readToolDefinition,
   renderDiff,
-  writeToolDefinition,
 } from "@mariozechner/pi-coding-agent";
+import { editToolDefinition, readToolDefinition, writeToolDefinition } from "./builtins.js";
 import {
   formatDiffStats,
   formatOptionalDiffStats,

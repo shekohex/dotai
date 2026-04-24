@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import type { SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import type { AcceptedSessionCommand, SessionRecord } from "./types.js";

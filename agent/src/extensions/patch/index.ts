@@ -4,8 +4,8 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { createTextComponent } from "../coreui/tools.js";
 import { applyPatchHunks, getQueuePaths, parsePatchExecutionInput } from "./execution.js";
 import { getApplyPatchDetails, parseApplyPatchDetails } from "./render-details.js";

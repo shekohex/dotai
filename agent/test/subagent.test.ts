@@ -13,7 +13,7 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { setKeybindings } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import stripAnsi from "strip-ansi";
 
 import { createSubagentExtension } from "../src/extensions/subagent.ts";

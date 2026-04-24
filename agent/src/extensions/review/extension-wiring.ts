@@ -3,6 +3,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   buildReviewExecutionOptions,
   ensureReviewCommandCanRun,
@@ -97,11 +98,23 @@ function resolveRequestedTargetForCommand(
 
 function registerReviewSessionEvents(deps: ExtensionWiringDeps): void {
   deps.pi.on("session_start", async (_event, ctx) => {
-    await deps.applyAllReviewState(ctx);
+    try {
+      await deps.applyAllReviewState(ctx);
+    } catch (error) {
+      if (!isStaleSessionReplacementContextError(error)) {
+        throw error;
+      }
+    }
   });
 
   deps.pi.on("session_tree", async (_event, ctx) => {
-    await deps.applyAllReviewState(ctx);
+    try {
+      await deps.applyAllReviewState(ctx);
+    } catch (error) {
+      if (!isStaleSessionReplacementContextError(error)) {
+        throw error;
+      }
+    }
   });
 
   deps.pi.on("session_shutdown", () => {

@@ -1,5 +1,5 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import { RemoteExtensionMetadataSchema, type RemoteExtensionMetadata } from "../schemas.js";
 
 export function isApiModel(value: unknown): value is Model<Api> {

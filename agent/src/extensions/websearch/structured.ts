@@ -1,4 +1,4 @@
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import type { StructuredSearchResult } from "./types.js";
 import {
   MAX_SEARCH_QUERIES,

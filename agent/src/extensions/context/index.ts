@@ -3,8 +3,8 @@ import type {
   ExtensionContext,
   ToolResultEvent,
 } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import path from "node:path";
 import { handleContextCommand } from "./command.js";
 import {

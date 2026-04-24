@@ -1,8 +1,8 @@
 import type { SettingsManager } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Type, type Static } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 
 import { defineModesFile, ModesFileSchema } from "./mode-utils.js";
 
@@ -19,18 +19,24 @@ const packageJson = Value.Parse(
 
 export const defaultSettings = {
   defaultProvider: "codex-openai",
-  defaultModel: "gpt-5.3-codex",
+  defaultModel: "gpt-5.5",
   hideThinkingBlock: true,
-  defaultThinkingLevel: "high",
+  defaultThinkingLevel: "low",
   transport: "auto",
   quietStartup: true,
   editorPaddingX: 0,
   collapseChangelog: true,
+  enableInstallTelemetry: false,
   lastChangelogVersion: packageJson.version,
   theme: "catppuccin-mocha",
   retry: {
     enabled: true,
     maxRetries: 1024,
+  },
+  terminal: {
+    showImages: true,
+    clearOnShrink: false,
+    showTerminalProgress: true,
   },
 } satisfies AgentSettings;
 
@@ -38,9 +44,9 @@ export type DefaultModes = Static<typeof ModesFileSchema>;
 
 export const defaultModesSchema = ModesFileSchema;
 
-export const defaultModes = defineModesFile({
+export const defaultModes: DefaultModes = defineModesFile({
   version: 1,
-  currentMode: "deep",
+  currentMode: "build",
   modes: {
     rush: {
       provider: "codex-openai",
@@ -54,7 +60,7 @@ export const defaultModes = defineModesFile({
     },
     docs: {
       provider: "opencode-go",
-      modelId: "kimi-k2.5",
+      modelId: "kimi-k2.6",
       thinkingLevel: "high",
       color: "success",
       tmuxTarget: "window",
@@ -62,15 +68,25 @@ export const defaultModes = defineModesFile({
       description:
         "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes.",
     },
+    build: {
+      provider: "codex-openai",
+      modelId: "gpt-5.5",
+      thinkingLevel: "low",
+      color: "warning",
+      tmuxTarget: "window",
+      tools: ["*"],
+      description:
+        "Use me when you want fast, capable model for day to day coding tasks, I'm the default mode.",
+    },
     deep: {
       provider: "codex-openai",
-      modelId: "gpt-5.3-codex",
+      modelId: "gpt-5.5",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
       description:
-        "Use me when you want the highest-quality help for complex implementation, debugging, and code review; I’m the default mode.",
+        "Use me when you want the highest-quality help for complex implementation, debugging, and code review.",
     },
     review: {
       provider: "codex-openai",
@@ -125,7 +141,7 @@ export const defaultModes = defineModesFile({
       description: "Use me when you want a general-purpose worker for a focused task.",
     },
   },
-}) satisfies DefaultModes;
+});
 
 function modeSystemPrompt(mode: keyof DefaultModes["modes"]): string {
   return readFileSync(join(cwd, "resources", "modes", `${mode}.md`), {

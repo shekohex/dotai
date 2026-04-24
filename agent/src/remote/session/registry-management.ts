@@ -231,6 +231,42 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     return summary;
   }
 
+  async evictIdleRuntimes(): Promise<string[]> {
+    const evictedSessionIds: string[] = [];
+    const evictedAt = this.now();
+    const canReloadPersistedSessions = typeof this.runtimeFactory.load === "function";
+
+    for (const record of this.loadedRuntimes.values()) {
+      if (
+        !shouldEvictLoadedRuntime(
+          record,
+          evictedAt,
+          this.runtimeIdleTtlMs,
+          canReloadPersistedSessions,
+        )
+      ) {
+        continue;
+      }
+
+      await disposeSessionRecord(record);
+      this.loadedRuntimes.delete(record.sessionId);
+      evictedSessionIds.push(record.sessionId);
+      this.streams.append(appEventsStreamId(), {
+        sessionId: record.sessionId,
+        kind: "session_summary_updated",
+        payload: {
+          sessionId: record.sessionId,
+          sessionName: record.sessionName,
+          status: "idle",
+          updatedAt: evictedAt,
+        },
+        ts: evictedAt,
+      });
+    }
+
+    return evictedSessionIds;
+  }
+
   async reconcileCatalogFromDisk(): Promise<void> {
     const previousRecords = new Map(
       this.catalog.list().map((record) => [record.sessionId, record]),
@@ -548,4 +584,32 @@ function isRuntimeSessionBusy(
   session: NonNullable<SessionRecord["runtime"]>["session"],
 ): boolean {
   return session.isStreaming || session.isCompacting || record.queue.depth > 0;
+}
+
+function shouldEvictLoadedRuntime(
+  record: SessionRecord,
+  now: number,
+  runtimeIdleTtlMs: number | undefined,
+  canReloadPersistedSessions: boolean,
+): boolean {
+  if (record.persistence !== "persistent") {
+    return false;
+  }
+  if (!canReloadPersistedSessions) {
+    return false;
+  }
+  if (record.presence.size > 0) {
+    return false;
+  }
+  const session = record.runtime.session;
+  if (session === undefined) {
+    return false;
+  }
+  if (isRuntimeSessionBusy(record, session)) {
+    return false;
+  }
+  if (runtimeIdleTtlMs === undefined) {
+    return false;
+  }
+  return now - record.updatedAt >= runtimeIdleTtlMs;
 }

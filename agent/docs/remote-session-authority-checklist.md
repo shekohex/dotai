@@ -184,12 +184,12 @@ In remote mode:
 
 ### Phase 8: Hardening
 
-- [ ] Add boot-time recovery tests for persistent session catalog
-- [ ] Add watcher reconciliation tests for add/remove/change flows
-- [ ] Add CLI parity tests for remote session flags
-- [ ] Add archive/delete multi-client update tests
-- [ ] Add runtime eviction and reload tests
-- [ ] Add dirty/conflicted external-change tests
+- [x] Add boot-time recovery tests for persistent session catalog
+- [x] Add watcher reconciliation tests for add/remove/change flows
+- [x] Add CLI parity tests for remote session flags
+- [x] Add archive/delete multi-client update tests
+- [x] Add runtime eviction and reload tests
+- [x] Add dirty/conflicted external-change tests
 
 ## Explicit Non-Goals For First Iteration
 

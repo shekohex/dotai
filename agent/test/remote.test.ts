@@ -948,6 +948,29 @@ class RecordingRuntimeFactory implements RemoteRuntimeFactory {
   async dispose(): Promise<void> {}
 }
 
+class NoLoadRecordingRuntimeFactory implements RemoteRuntimeFactory {
+  readonly session: RecordingSession;
+  runtimeDisposeCalls = 0;
+
+  constructor(session: RecordingSession) {
+    this.session = session;
+  }
+
+  async create(request?: { cwd?: string; persistence?: "persistent" | "ephemeral" }) {
+    if (request?.cwd) {
+      this.session.cwd = request.cwd;
+    }
+    return {
+      session: this.session,
+      dispose: async () => {
+        this.runtimeDisposeCalls += 1;
+      },
+    } as any;
+  }
+
+  async dispose(): Promise<void> {}
+}
+
 class SequencedRecordingRuntimeFactory implements RemoteRuntimeFactory {
   readonly sessions: RecordingSession[];
   runtimeDisposeCalls = 0;
@@ -2921,6 +2944,128 @@ timedTest("remote app watcher reconciles external session add change and remove"
   }
 });
 
+timedTest("archive and delete updates are visible to multiple remote clients", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const originalCwd = process.cwd();
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-multi-client-lifecycle-"));
+  const agentDir = join(root, "agent");
+  const workspaceDir = join(root, "workspace");
+
+  await mkdir(workspaceDir, { recursive: true });
+
+  try {
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      }),
+    });
+
+    try {
+      const tokenA = await authenticate(remote.app, privateKeyPem);
+      const tokenB = await authenticate(remote.app, privateKeyPem);
+
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionName: "Shared Session" }),
+      });
+      assert.equal(createResponse.status, 201);
+      const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+      const archiveResponse = await remote.app.request(`/v1/sessions/${sessionId}/archive`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${tokenA}` },
+      });
+      assert.equal(archiveResponse.status, 200);
+
+      const archivedSnapshotA = await remote.app.request("/v1/app/snapshot", {
+        headers: { authorization: `Bearer ${tokenA}` },
+      });
+      const archivedSnapshotB = await remote.app.request("/v1/app/snapshot", {
+        headers: { authorization: `Bearer ${tokenB}` },
+      });
+      assert.equal(archivedSnapshotA.status, 200);
+      assert.equal(archivedSnapshotB.status, 200);
+      assert.equal(
+        (
+          (await archivedSnapshotA.json()) as {
+            sessionSummaries: Array<{ lifecycle: { state: string } }>;
+          }
+        ).sessionSummaries[0]?.lifecycle.state,
+        "archived",
+      );
+      assert.equal(
+        (
+          (await archivedSnapshotB.json()) as {
+            sessionSummaries: Array<{ lifecycle: { state: string } }>;
+          }
+        ).sessionSummaries[0]?.lifecycle.state,
+        "archived",
+      );
+
+      const deleteResponse = await remote.app.request(`/v1/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${tokenB}` },
+      });
+      assert.equal(deleteResponse.status, 200);
+
+      const deletedSnapshotA = await remote.app.request("/v1/app/snapshot", {
+        headers: { authorization: `Bearer ${tokenA}` },
+      });
+      const deletedSnapshotB = await remote.app.request("/v1/app/snapshot", {
+        headers: { authorization: `Bearer ${tokenB}` },
+      });
+      assert.equal(deletedSnapshotA.status, 200);
+      assert.equal(deletedSnapshotB.status, 200);
+      assert.deepEqual(
+        ((await deletedSnapshotA.json()) as { sessionSummaries: Array<{ sessionId: string }> })
+          .sessionSummaries,
+        [],
+      );
+      assert.deepEqual(
+        ((await deletedSnapshotB.json()) as { sessionSummaries: Array<{ sessionId: string }> })
+          .sessionSummaries,
+        [],
+      );
+
+      const [appEventsAResponse, appEventsBResponse] = await Promise.all([
+        remote.app.request("/v1/streams/app-events", {
+          headers: { authorization: `Bearer ${tokenA}` },
+        }),
+        remote.app.request("/v1/streams/app-events", {
+          headers: { authorization: `Bearer ${tokenB}` },
+        }),
+      ]);
+      assert.equal(appEventsAResponse.status, 200);
+      assert.equal(appEventsBResponse.status, 200);
+      const appEventsA = (await appEventsAResponse.json()) as { events: Array<{ kind: string }> };
+      const appEventsB = (await appEventsBResponse.json()) as { events: Array<{ kind: string }> };
+      assert.deepEqual(
+        appEventsA.events.map((event) => event.kind),
+        ["session_created", "session_summary_updated", "session_closed"],
+      );
+      assert.deepEqual(
+        appEventsB.events.map((event) => event.kind),
+        ["session_created", "session_summary_updated", "session_closed"],
+      );
+    } finally {
+      await remote.dispose();
+    }
+  } finally {
+    process.chdir(originalCwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 timedTest("session registry reloads idle runtime after external file change", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-idle-reload-"));
   const catalogRoot = join(root, "sessions");
@@ -2980,6 +3125,118 @@ timedTest("session registry reloads idle runtime after external file change", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+timedTest("session registry evicts idle persistent runtime and reloads on demand", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-idle-evict-"));
+  const catalogRoot = join(root, "sessions");
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  let currentTime = 1_000;
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: catalogRoot }),
+    now: () => currentTime,
+    runtimeIdleTtlMs: 10,
+  });
+  const auth = testAuthSession();
+  const sessionPath = join(catalogRoot, "evict-session.jsonl");
+
+  session.sessionStats.sessionId = "evict-session";
+  session.sessionStats.sessionFile = sessionPath;
+  session.sessionManager = {
+    ...session.sessionManager,
+    getSessionId: () => "evict-session",
+    getSessionFile: () => sessionPath,
+  };
+
+  try {
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "evict-session",
+      cwd: "/srv/evict",
+      sessionName: "Evict Session",
+    });
+
+    const created = await registry.createSession(
+      { workspaceCwd: "/srv/evict", sessionName: "Evict Session" },
+      auth,
+      "conn-a",
+    );
+    assert.equal(created.sessionId, "evict-session");
+
+    registry.detachPresence("evict-session", "conn-a");
+    currentTime += 25;
+
+    const evicted = await registry.evictIdleRuntimes();
+    assert.deepEqual(evicted, ["evict-session"]);
+    assert.equal(runtimeFactory.runtimeDisposeCalls, 1);
+    assert.equal(registry.getSessionSummary("evict-session").lifecycle.loaded, false);
+
+    const snapshot = await registry.loadSessionSnapshot("evict-session", auth, "conn-b");
+    assert.equal(snapshot.sessionId, "evict-session");
+    assert.equal(runtimeFactory.loadCalls, 1);
+    assert.equal(registry.getSessionSummary("evict-session").lifecycle.loaded, true);
+  } finally {
+    await registry.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "session registry keeps idle persistent runtime loaded when factory cannot reload",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-remote-idle-no-reload-"));
+    const catalogRoot = join(root, "sessions");
+    const session = new RecordingSession();
+    const runtimeFactory = new NoLoadRecordingRuntimeFactory(session);
+    let currentTime = 1_000;
+    const registry = new SessionRegistry({
+      streams: new InMemoryDurableStreamStore(),
+      runtimeFactory,
+      catalog: new SessionCatalog({ rootDir: catalogRoot }),
+      now: () => currentTime,
+      runtimeIdleTtlMs: 10,
+    });
+    const auth = testAuthSession();
+    const sessionPath = join(catalogRoot, "no-reload-session.jsonl");
+
+    session.sessionStats.sessionId = "no-reload-session";
+    session.sessionStats.sessionFile = sessionPath;
+    session.sessionManager = {
+      ...session.sessionManager,
+      getSessionId: () => "no-reload-session",
+      getSessionFile: () => sessionPath,
+    };
+
+    try {
+      await writeSessionFile({
+        sessionPath,
+        sessionId: "no-reload-session",
+        cwd: "/srv/no-reload",
+        sessionName: "No Reload Session",
+      });
+
+      const created = await registry.createSession(
+        { workspaceCwd: "/srv/no-reload", sessionName: "No Reload Session" },
+        auth,
+        "conn-a",
+      );
+      assert.equal(created.sessionId, "no-reload-session");
+
+      registry.detachPresence("no-reload-session", "conn-a");
+      currentTime += 25;
+
+      const evicted = await registry.evictIdleRuntimes();
+      assert.deepEqual(evicted, []);
+      assert.equal(runtimeFactory.runtimeDisposeCalls, 0);
+      assert.equal(registry.getSessionSummary("no-reload-session").lifecycle.loaded, true);
+    } finally {
+      await registry.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("session registry marks running runtime conflicted on external file change", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-busy-conflict-"));

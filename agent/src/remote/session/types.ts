@@ -116,6 +116,7 @@ export interface SessionRegistryOptions {
   runtimeFactory: RemoteRuntimeFactory;
   catalog?: SessionCatalog;
   presenceTtlMs?: number;
+  runtimeIdleTtlMs?: number;
   now?: () => number;
   watcherDebounceMs?: number;
 }

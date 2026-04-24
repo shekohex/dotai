@@ -68,6 +68,7 @@ export abstract class SessionRegistryBase {
   protected readonly runtimeFactory: RemoteRuntimeFactory;
   protected readonly catalog: SessionCatalog;
   protected readonly presenceTtlMs: number;
+  protected readonly runtimeIdleTtlMs: number | undefined;
   protected readonly now: () => number;
   protected sessionCreationQueue: Promise<void> = Promise.resolve();
 
@@ -80,6 +81,7 @@ export abstract class SessionRegistryBase {
         rootDir: join(process.cwd(), ".pi", "remote-sessions"),
       });
     this.presenceTtlMs = options.presenceTtlMs ?? 120_000;
+    this.runtimeIdleTtlMs = options.runtimeIdleTtlMs;
     this.now = options.now ?? (() => Date.now());
   }
 

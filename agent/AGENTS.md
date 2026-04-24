@@ -15,7 +15,7 @@ This package provides:
 
 ## Project Rules
 
-- You must use `@sinclair/typebox` package instead of manually parsing inputs and validation of data.
+- You must use `typebox` package instead of manually parsing inputs and validation of data.
 - Prefere spliting your code into multiple modules so it can be reused.
 - Avoid dynamic imports when possible, and prefer type imports when possible.
 - Client and Server interaction Must be using Hono RPC instead of calling `fetch` directly.
@@ -31,7 +31,7 @@ This package provides:
 DO:
 
 - Use TypeScript types and narrowing first for internal application code.
-- Use `@sinclair/typebox` schemas for payloads that cross boundaries:
+- Use `typebox` schemas for payloads that cross boundaries:
   - client/server RPC payloads
   - persisted JSON/JSONL state
   - tool inputs and outputs

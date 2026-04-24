@@ -80,6 +80,7 @@ const runtime: ReviewRuntimeState = {
   customInstructions: undefined,
   completionNotifiedSessionId: undefined,
   commandActions: undefined,
+  lastWidgetMessage: undefined,
 };
 
 function initializeReviewRuntime(

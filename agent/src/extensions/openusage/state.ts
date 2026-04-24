@@ -30,6 +30,7 @@ export function createRuntimeState(): OpenUsageRuntimeState {
     snapshots: new Map(),
     inFlight: new Map(),
     notifiedAlerts: new Set(),
+    lastPublishedStatusText: undefined,
   };
 }
 

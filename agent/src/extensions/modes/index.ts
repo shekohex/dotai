@@ -53,6 +53,7 @@ type ModeRuntime = {
   needsResyncAfterApply: boolean;
   error?: string;
   lastReportedError?: string;
+  lastStatusText?: string;
 };
 
 export type ModeChangedEvent = {
@@ -73,6 +74,7 @@ const runtime: ModeRuntime = {
   needsResyncAfterApply: false,
   error: undefined,
   lastReportedError: undefined,
+  lastStatusText: undefined,
 };
 
 const MODE_ERROR_WIDGET_KEY = "mode-config-error";
@@ -113,13 +115,15 @@ function notifyModeSwitch(
 
 function setStatus(ctx: ExtensionContext, modeName: string | undefined): void {
   if (!ctx.hasUI) return;
-  ctx.ui.setStatus(
-    MODE_STATUS_KEY,
-    ctx.ui.theme.fg(
-      hasText(modeName) ? "accent" : "warning",
-      `mode:${modeName ?? CUSTOM_MODE_LABEL}`,
-    ),
+  const text = ctx.ui.theme.fg(
+    hasText(modeName) ? "accent" : "warning",
+    `mode:${modeName ?? CUSTOM_MODE_LABEL}`,
   );
+  if (runtime.lastStatusText === text) {
+    return;
+  }
+  runtime.lastStatusText = text;
+  ctx.ui.setStatus(MODE_STATUS_KEY, text);
 }
 
 function emitModeChanged(

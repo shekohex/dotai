@@ -4,7 +4,7 @@ import {
   emitThresholdAlerts,
   formatAlertMessage,
   handleRefreshError,
-  publishUsageUpdate,
+  publishUsageUpdateIfChanged,
   resolveAndRefreshProvider,
 } from "./controller-utils.js";
 import { parseAlertEvent, parseModeChangedEvent } from "./events.js";
@@ -61,6 +61,7 @@ export class OpenUsageController {
   private async onSessionStart(ctx: ExtensionContext): Promise<void> {
     this.currentCtx = ctx;
     this.state.notifiedAlerts.clear();
+    this.state.lastPublishedStatusText = undefined;
     this.state.persisted = restorePersistedState(ctx.sessionManager.getBranch());
     await this.refreshActiveProvider(ctx, { force: false });
     this.schedulePublishCurrentModelUsage(ctx);
@@ -87,7 +88,7 @@ export class OpenUsageController {
         ctx,
         (providerId, targetCtx, options) => this.refreshProvider(providerId, targetCtx, options),
         (targetCtx, snapshot, active) => {
-          publishUsageUpdate(this.pi, targetCtx, snapshot, active);
+          publishUsageUpdateIfChanged(this.pi, this.state, targetCtx, snapshot, active);
         },
         { force: false },
       );
@@ -103,7 +104,8 @@ export class OpenUsageController {
     this.currentCtx = undefined;
     this.stopInterval();
     this.unsubscribeAlert?.();
-    publishUsageUpdate(this.pi, ctx, undefined, true);
+    this.state.lastPublishedStatusText = undefined;
+    publishUsageUpdateIfChanged(this.pi, this.state, ctx, undefined, true);
   }
 
   private async refreshActiveProvider(
@@ -118,7 +120,7 @@ export class OpenUsageController {
         (providerId, targetCtx, refreshOptions) =>
           this.refreshProvider(providerId, targetCtx, refreshOptions),
         (targetCtx, snapshot, active) => {
-          publishUsageUpdate(this.pi, targetCtx, snapshot, active);
+          publishUsageUpdateIfChanged(this.pi, this.state, targetCtx, snapshot, active);
         },
         options,
       );
@@ -142,7 +144,7 @@ export class OpenUsageController {
 
     const snapshot = this.state.snapshots.get(providerId);
     if (snapshot) {
-      publishUsageUpdate(this.pi, ctx, snapshot, true);
+      publishUsageUpdateIfChanged(this.pi, this.state, ctx, snapshot, true);
     }
   }
 
@@ -189,7 +191,7 @@ export class OpenUsageController {
     }
 
     const isActive = providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
-    publishUsageUpdate(this.pi, ctx, cached, isActive);
+    publishUsageUpdateIfChanged(this.pi, this.state, ctx, cached, isActive);
     if (isActive) {
       emitThresholdAlerts(this.pi, this.state, cached);
     }
@@ -209,7 +211,7 @@ export class OpenUsageController {
       const snapshot = await currentInFlight;
       const isActive =
         providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
-      publishUsageUpdate(this.pi, ctx, snapshot, isActive);
+      publishUsageUpdateIfChanged(this.pi, this.state, ctx, snapshot, isActive);
       if (isActive) {
         emitThresholdAlerts(this.pi, this.state, snapshot);
       }
@@ -232,7 +234,7 @@ export class OpenUsageController {
       this.state.snapshots.set(providerId, snapshot);
       const isActive =
         providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
-      publishUsageUpdate(this.pi, ctx, snapshot, isActive);
+      publishUsageUpdateIfChanged(this.pi, this.state, ctx, snapshot, isActive);
       if (isActive) {
         emitThresholdAlerts(this.pi, this.state, snapshot);
       }

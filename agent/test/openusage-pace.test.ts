@@ -8,6 +8,8 @@ import {
   getPaceStatusText,
   type PaceResult,
 } from "../src/extensions/openusage/status.ts";
+import { publishUsageUpdateIfChanged } from "../src/extensions/openusage/controller-utils.ts";
+import { createRuntimeState } from "../src/extensions/openusage/state.ts";
 import type { UsageMetric } from "../src/extensions/openusage/types.ts";
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
@@ -77,4 +79,41 @@ timedTest("early period pace details suppress classification until enough time e
   assert.equal(details.projectedText, null);
   assert.equal(details.runsOutText, null);
   assert.ok(details.elapsedPercent !== null && details.elapsedPercent < 5);
+});
+
+timedTest("openusage publishUsageUpdateIfChanged skips identical active status writes", () => {
+  const state = createRuntimeState();
+  const statuses: Array<string | undefined> = [];
+  const emitted: Array<unknown> = [];
+  const snapshot = {
+    providerId: "codex",
+    displayName: "Codex",
+    source: "host",
+    session5h: createMetric(5),
+    weekly: createMetric(16),
+    fetchedAt: RESETS_AT_MS,
+  } as const;
+  const ctx = {
+    ui: {
+      setStatus: (_key: string, text: string | undefined) => {
+        statuses.push(text);
+      },
+      theme: {
+        fg: (_color: string, text: string) => text,
+      },
+    },
+  } as const;
+  const pi = {
+    events: {
+      emit: (_event: string, payload: unknown) => {
+        emitted.push(payload);
+      },
+    },
+  } as const;
+
+  publishUsageUpdateIfChanged(pi as never, state, ctx as never, snapshot, true);
+  publishUsageUpdateIfChanged(pi as never, state, ctx as never, snapshot, true);
+
+  assert.equal(statuses.length, 1);
+  assert.equal(emitted.length, 1);
 });

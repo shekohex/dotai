@@ -18,6 +18,7 @@ export type ReviewRuntimeState = {
   customInstructions: string | undefined;
   completionNotifiedSessionId: string | undefined;
   commandActions: ReviewCommandActions | undefined;
+  lastWidgetMessage: string | undefined;
 };
 
 type RuntimeStateDeps<TChildState> = {
@@ -112,13 +113,25 @@ export function syncReviewWidget(
 ): void {
   try {
     if (!runtime.active) {
+      if (runtime.lastWidgetMessage === undefined) {
+        return;
+      }
+      runtime.lastWidgetMessage = undefined;
       setReviewWidget(ctx, undefined);
       return;
     }
 
+    const statusText = reviewStatusText(trackedState);
+    const nextWidgetMessage = ["Review session active", runtime.targetLabel, statusText]
+      .filter((value): value is string => value !== undefined && value.length > 0)
+      .join(" · ");
+    if (runtime.lastWidgetMessage === nextWidgetMessage) {
+      return;
+    }
+    runtime.lastWidgetMessage = nextWidgetMessage;
     setReviewWidget(ctx, {
       targetLabel: runtime.targetLabel,
-      statusText: reviewStatusText(trackedState),
+      statusText,
     });
   } catch (error) {
     if (!isStaleSessionReplacementContextError(error)) {
@@ -224,6 +237,7 @@ export function clearReviewState<TChildState>(
   deps.runtime.checkoutToRestore = undefined;
   deps.runtime.completionNotifiedSessionId = undefined;
   deps.runtime.commandActions = undefined;
+  deps.runtime.lastWidgetMessage = undefined;
   deps.persistReviewState({ active: false });
   syncReviewWidget(ctx, deps.runtime, undefined, deps.setReviewWidget);
 }

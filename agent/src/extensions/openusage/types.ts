@@ -53,6 +53,7 @@ export type OpenUsageRuntimeState = {
   snapshots: Map<SupportedProviderId, UsageSnapshot>;
   inFlight: Map<SupportedProviderId, Promise<UsageSnapshot>>;
   notifiedAlerts: Set<string>;
+  lastPublishedStatusText?: string;
   interval?: ReturnType<typeof setInterval>;
 };
 

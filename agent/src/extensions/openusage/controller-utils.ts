@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { resolveSupportedProviderId } from "./model-map.js";
-import { getRemainingPercent, setStatus } from "./status.js";
+import { getRemainingPercent, renderStatusText, setStatus } from "./status.js";
 import { createRuntimeState } from "./state.js";
 import {
   OPENUSAGE_ALERT_EVENT,
@@ -90,16 +90,33 @@ export function handleRefreshError(
   }
 
   if (isActive) {
-    const theme = ctx.ui.theme;
-    const labels = getMetricLabels(cached, providerId);
-    ctx.ui.setStatus(
-      "openusage",
-      `${theme.fg("dim", `${labels.session} `)}${theme.fg("warning", "n/a")}${theme.fg("dim", ` ${labels.weekly} `)}${theme.fg("warning", "n/a")}`,
-    );
+    const text = renderUnavailableStatusText(ctx, cached, providerId);
+    if (state.lastPublishedStatusText !== text) {
+      state.lastPublishedStatusText = text;
+      ctx.ui.setStatus("openusage", text);
+    }
     pi.events.emit(OPENUSAGE_UPDATED_EVENT, { active: true, providerId, snapshot: undefined });
   }
 
   void error;
+}
+
+export function publishUsageUpdateIfChanged(
+  pi: ExtensionAPI,
+  state: OpenUsageState,
+  ctx: ExtensionContext,
+  snapshot: UsageSnapshot | undefined,
+  active: boolean,
+): void {
+  if (active) {
+    const nextText = renderStatusText(ctx, snapshot);
+    if (state.lastPublishedStatusText === nextText) {
+      return;
+    }
+    state.lastPublishedStatusText = nextText;
+  }
+
+  publishUsageUpdate(pi, ctx, snapshot, active);
 }
 
 export function formatAlertMessage(alert: OpenUsageAlertEvent): string {
@@ -151,6 +168,16 @@ function getMetricLabels(
     session: snapshot?.metricShortLabels?.session5h ?? (providerId === "google" ? "P24" : "5h"),
     weekly: snapshot?.metricShortLabels?.weekly ?? (providerId === "google" ? "F24" : "wk"),
   };
+}
+
+function renderUnavailableStatusText(
+  ctx: ExtensionContext,
+  snapshot: UsageSnapshot | undefined,
+  providerId: SupportedProviderId,
+): string {
+  const theme = ctx.ui.theme;
+  const labels = getMetricLabels(snapshot, providerId);
+  return `${theme.fg("dim", `${labels.session} `)}${theme.fg("warning", "n/a")}${theme.fg("dim", ` ${labels.weekly} `)}${theme.fg("warning", "n/a")}`;
 }
 
 function formatPercent(value: number): string {

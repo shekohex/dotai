@@ -58,9 +58,15 @@ export function formatUsedPercent(metric: UsageMetric): string {
 }
 
 export function setStatus(ctx: ExtensionContext, snapshot: UsageSnapshot | undefined): void {
+  ctx.ui.setStatus(OPENUSAGE_STATUS_KEY, renderStatusText(ctx, snapshot));
+}
+
+export function renderStatusText(
+  ctx: ExtensionContext,
+  snapshot: UsageSnapshot | undefined,
+): string | undefined {
   if (!snapshot) {
-    ctx.ui.setStatus(OPENUSAGE_STATUS_KEY, undefined);
-    return;
+    return undefined;
   }
 
   const theme = ctx.ui.theme;
@@ -79,7 +85,7 @@ export function setStatus(ctx: ExtensionContext, snapshot: UsageSnapshot | undef
     ? colorForMetric(theme, weeklyMetric, formatRemainingPercent(weeklyMetric))
     : theme.fg("muted", "n/a");
 
-  ctx.ui.setStatus(OPENUSAGE_STATUS_KEY, text);
+  return text;
 }
 
 export function formatSnapshotSummary(

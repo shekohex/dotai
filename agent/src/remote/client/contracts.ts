@@ -20,6 +20,7 @@ export interface RemoteRuntimeOptions {
   sessionId?: string;
   sessionName?: string;
   createNewSession?: boolean;
+  workspaceCwd?: string;
   connectionId?: string;
   cwd?: string;
   agentDir?: string;

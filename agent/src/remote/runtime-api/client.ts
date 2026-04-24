@@ -144,9 +144,20 @@ export class RemoteApiClient {
     return payload;
   }
 
-  async createSession(sessionName?: string): Promise<CreateSessionResponse> {
+  async createSession(request?: {
+    sessionName?: string;
+    workspaceCwd?: string;
+  }): Promise<CreateSessionResponse> {
+    const body = {
+      ...(request?.sessionName !== undefined && request.sessionName.length > 0
+        ? { sessionName: request.sessionName }
+        : {}),
+      ...(request?.workspaceCwd !== undefined && request.workspaceCwd.length > 0
+        ? { workspaceCwd: request.workspaceCwd }
+        : {}),
+    };
     const response = await this.rpcClient.sessions.$post(
-      { json: sessionName !== undefined && sessionName.length > 0 ? { sessionName } : {} },
+      { json: body },
       { headers: await this.getAuthHeaders() },
     );
     this.captureConnectionId(response);

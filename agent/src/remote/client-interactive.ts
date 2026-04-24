@@ -56,6 +56,7 @@ interface ParsedRemoteArgs {
   exportPath?: string;
   sessionDir?: string;
   sessionName?: string;
+  workspaceCwd?: string;
   verbose: boolean;
   initialMessage?: string;
   initialMessages: string[];
@@ -110,6 +111,12 @@ const remoteFlagSetters = new Map<string, RemoteFlagSetter>([
     "--remote-session-name",
     (parsed, value) => {
       parsed.sessionName = value;
+    },
+  ],
+  [
+    "--workspace-cwd",
+    (parsed, value) => {
+      parsed.workspaceCwd = value;
     },
   ],
   [
@@ -218,6 +225,7 @@ export function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
     exportPath: undefined,
     sessionDir: undefined,
     sessionName: process.env.PI_REMOTE_SESSION_NAME,
+    workspaceCwd: process.env.PI_REMOTE_WORKSPACE_CWD,
     verbose: false,
     initialMessage: undefined,
     initialMessages: [],
@@ -285,9 +293,13 @@ function findMatchingRemoteSessions(snapshot: AppSnapshot, query: string) {
 export function resolveRemoteSessionId(input: {
   snapshot: AppSnapshot;
   parsed: ParsedRemoteArgs;
-  cwd: string;
+  cwd?: string;
 }): { sessionId?: string; createNewSession: boolean } {
+  const workspaceCwd = input.parsed.workspaceCwd ?? input.cwd;
   if (input.parsed.noSession) {
+    if (workspaceCwd === undefined || workspaceCwd.length === 0) {
+      throw new Error("Remote new session requires --workspace-cwd");
+    }
     return { createNewSession: true };
   }
 
@@ -324,8 +336,11 @@ export function resolveRemoteSessionId(input: {
   }
 
   if (input.parsed.continueSession) {
+    if (workspaceCwd === undefined || workspaceCwd.length === 0) {
+      throw new Error("Remote --continue requires --workspace-cwd");
+    }
     const workspaceMatches = input.snapshot.sessionSummaries
-      .filter((summary) => summary.cwd === input.cwd)
+      .filter((summary) => summary.cwd === workspaceCwd)
       .toSorted((left, right) => right.updatedAt - left.updatedAt);
     const latestWorkspaceSession = workspaceMatches[0];
     if (latestWorkspaceSession !== undefined) {
@@ -367,7 +382,7 @@ export async function runRemoteInteractiveMode(
   const selection = resolveRemoteSessionId({
     snapshot: appSnapshot,
     parsed,
-    cwd: process.cwd(),
+    cwd: undefined,
   });
 
   const runtimeCandidate: unknown = await RemoteAgentSessionRuntime.create({
@@ -379,6 +394,7 @@ export async function runRemoteInteractiveMode(
     sessionId: selection.sessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
     createNewSession: selection.createNewSession,
+    workspaceCwd: parsed.workspaceCwd,
     clientExtensionMetadata: options.clientExtensionMetadata,
     clientExtensionFactories: options.clientExtensionFactories,
     clientCapabilities: options.clientCapabilities,

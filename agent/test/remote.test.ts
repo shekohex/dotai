@@ -90,9 +90,9 @@ class CountingRuntimeFactory implements RemoteRuntimeFactory {
     this.delegate = delegate;
   }
 
-  async create() {
+  async create(request?: { cwd?: string }) {
     this.createCalls += 1;
-    return this.delegate.create();
+    return this.delegate.create(request);
   }
 
   async load(input: { sessionId: string; sessionPath: string; cwd: string }) {
@@ -921,7 +921,10 @@ class RecordingRuntimeFactory implements RemoteRuntimeFactory {
     this.session = session;
   }
 
-  async create() {
+  async create(request?: { cwd?: string }) {
+    if (request?.cwd) {
+      this.session.cwd = request.cwd;
+    }
     return {
       session: this.session,
       dispose: async () => {
@@ -952,9 +955,12 @@ class SequencedRecordingRuntimeFactory implements RemoteRuntimeFactory {
     this.sessions = sessions;
   }
 
-  async create() {
+  async create(request?: { cwd?: string }) {
     const session = this.sessions[this.createCalls] ?? this.sessions[this.sessions.length - 1];
     this.createCalls += 1;
+    if (request?.cwd) {
+      session.cwd = request.cwd;
+    }
     return {
       session,
       dispose: async () => {
@@ -994,6 +1000,7 @@ async function createRemoteRuntime(
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.cwd ? { workspaceCwd: options.cwd } : {}),
     ...(options.clientExtensionMetadata
       ? { clientExtensionMetadata: options.clientExtensionMetadata }
       : {}),
@@ -2739,6 +2746,19 @@ timedTest("remote CLI parser accepts standalone session UX flags", async () => {
   }
 });
 
+timedTest("remote CLI parser accepts explicit workspace target", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+
+  try {
+    const parsed = parseRemoteArgs(["--workspace-cwd", "/srv/workspace"]);
+    assert.equal(parsed.workspaceCwd, "/srv/workspace");
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+  }
+});
+
 timedTest("remote CLI parser rejects unsupported remote session-dir and export flags", async () => {
   process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
   process.env.PI_REMOTE_KEY_ID = "dev";
@@ -2871,11 +2891,12 @@ timedTest(
           exportPath: undefined,
           sessionDir: undefined,
           sessionName: undefined,
+          workspaceCwd: "/workspace/a",
           verbose: false,
           initialMessage: undefined,
           initialMessages: [],
         },
-        cwd: "/workspace/a",
+        cwd: undefined,
       }),
       { sessionId: "session-c", createNewSession: false },
     );
@@ -2896,16 +2917,116 @@ timedTest(
           exportPath: undefined,
           sessionDir: undefined,
           sessionName: undefined,
+          workspaceCwd: "/workspace/a",
           verbose: false,
           initialMessage: undefined,
           initialMessages: [],
         },
-        cwd: "/workspace/a",
+        cwd: undefined,
       }),
       { createNewSession: true },
     );
   },
 );
+
+timedTest(
+  "remote session resolution requires explicit workspace target for continue and new",
+  async () => {
+    const snapshot = {
+      serverInfo: {
+        name: "pi-remote",
+        version: "0.1.0",
+        now: 100,
+      },
+      currentClientAuthInfo: {
+        clientId: "client-1",
+        keyId: "dev",
+        tokenExpiresAt: 200,
+      },
+      sessionSummaries: [],
+      recentNotices: [],
+      defaultAttachSessionId: undefined,
+    } as const;
+
+    assert.throws(
+      () =>
+        resolveRemoteSessionId({
+          snapshot,
+          parsed: {
+            remoteOrigin: "http://localhost:3000",
+            keyId: "dev",
+            sessionId: undefined,
+            privateKey: undefined,
+            privateKeyPath: undefined,
+            resume: false,
+            continueSession: true,
+            forkSessionId: undefined,
+            noSession: false,
+            exportPath: undefined,
+            sessionDir: undefined,
+            sessionName: undefined,
+            workspaceCwd: undefined,
+            verbose: false,
+            initialMessage: undefined,
+            initialMessages: [],
+          },
+          cwd: undefined,
+        }),
+      /--workspace-cwd/,
+    );
+
+    assert.throws(
+      () =>
+        resolveRemoteSessionId({
+          snapshot,
+          parsed: {
+            remoteOrigin: "http://localhost:3000",
+            keyId: "dev",
+            sessionId: undefined,
+            privateKey: undefined,
+            privateKeyPath: undefined,
+            resume: false,
+            continueSession: false,
+            forkSessionId: undefined,
+            noSession: true,
+            exportPath: undefined,
+            sessionDir: undefined,
+            sessionName: undefined,
+            workspaceCwd: undefined,
+            verbose: false,
+            initialMessage: undefined,
+            initialMessages: [],
+          },
+          cwd: undefined,
+        }),
+      /--workspace-cwd/,
+    );
+  },
+);
+
+timedTest("session registry createSession uses requested workspace cwd", async () => {
+  const streams = new InMemoryDurableStreamStore();
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams,
+    runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      { workspaceCwd: "/srv/workspace-a" },
+      auth,
+      "conn-a",
+    );
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    assert.equal(snapshot.cwd, "/srv/workspace-a");
+    assert.equal(session.cwd, "/srv/workspace-a");
+  } finally {
+    await registry.dispose();
+  }
+});
 
 timedTest("remote snapshot and adapter expose runtime context usage", async () => {
   const keys = generateKeyPairSync("ed25519");

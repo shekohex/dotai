@@ -25,7 +25,7 @@ import {
 } from "../extensions/index.js";
 
 export interface RemoteRuntimeFactory {
-  create(): Promise<AgentSessionRuntime>;
+  create(request?: { cwd?: string }): Promise<AgentSessionRuntime>;
   load?(request: LoadRemoteRuntimeRequest): Promise<AgentSessionRuntime>;
   dispose(): Promise<void>;
   getSessionCatalogRoot?(): string | undefined;
@@ -136,11 +136,12 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
     this.extensionMetadata = extensions.metadata;
   }
 
-  create(): Promise<AgentSessionRuntime> {
+  create(request?: { cwd?: string }): Promise<AgentSessionRuntime> {
+    const cwd = request?.cwd ?? this.cwd;
     return createAgentSessionRuntime(this.createRuntimeFactory(), {
-      cwd: this.cwd,
+      cwd,
       agentDir: this.agentDir,
-      sessionManager: SessionManager.create(this.cwd, this.sessionDir),
+      sessionManager: SessionManager.create(cwd, this.sessionDir),
     });
   }
 
@@ -350,9 +351,9 @@ export function InMemoryPiRuntimeFactory(
   const extensionMetadata = extensions.metadata;
 
   return {
-    create(): Promise<AgentSessionRuntime> {
+    create(request?: { cwd?: string }): Promise<AgentSessionRuntime> {
       return createInMemoryRuntime({
-        cwdPromise,
+        cwdPromise: Promise.resolve(request?.cwd).then((cwd) => cwd ?? cwdPromise),
         agentDirPromise,
         sessionDirPromise,
         persistSessions,

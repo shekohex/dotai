@@ -97,7 +97,7 @@ export async function createSingleSession(input: {
   sessions: Map<string, SessionRecord>;
   now: () => number;
   createSessionId: () => string;
-  createRuntime: () => Promise<AgentSessionRuntime>;
+  createRuntime: (request?: { cwd?: string }) => Promise<AgentSessionRuntime>;
   readRuntimeExtensionMetadata: (runtime: AgentSessionRuntime) => SessionRecord["extensions"];
   getLastAppStreamOffset: () => string;
   initializeRuntimeSession: (record: SessionRecord, createdAt: number) => Promise<void>;
@@ -110,7 +110,7 @@ export async function createSingleSession(input: {
   disposeFailedSessionCreation: (sessionId: string, runtime: AgentSessionRuntime) => Promise<void>;
 }): Promise<CreateSessionResponse> {
   const createdAt = input.now();
-  const runtime = await input.createRuntime();
+  const runtime = await input.createRuntime({ cwd: input.request.workspaceCwd });
   const sessionId = readRuntimeSessionId(runtime) ?? input.createSessionId();
   try {
     const record = createSessionRecord({

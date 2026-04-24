@@ -60,7 +60,13 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
         ? undefined
         : (options.sessionId ?? appSnapshot.defaultAttachSessionId);
     const attachedSessionId =
-      resolvedSessionId ?? (await client.createSession(options.sessionName)).sessionId;
+      resolvedSessionId ??
+      (
+        await client.createSession({
+          sessionName: options.sessionName,
+          workspaceCwd: options.workspaceCwd,
+        })
+      ).sessionId;
     const snapshot = await client.getSessionSnapshot(attachedSessionId);
     const authoritativeCwd = snapshot.cwd ?? fallbackCwd;
     const session = await RemoteAgentSession.create(client, attachedSessionId, {
@@ -108,7 +114,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   async newSession(
     options?: Parameters<RemoteRuntimeContract["newSession"]>[0],
   ): Promise<{ cancelled: boolean }> {
-    const created = await this.client.createSession();
+    const created = await this.client.createSession({ workspaceCwd: this.cwd });
     await this.switchToSession(created.sessionId);
     if (options?.setup) {
       await options.setup(this._session.sessionManager);

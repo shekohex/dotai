@@ -168,6 +168,7 @@ export const AppSnapshotSchema = Type.Object({
 
 export const CreateSessionRequestSchema = Type.Object({
   sessionName: Type.Optional(Type.String({ minLength: 1 })),
+  workspaceCwd: Type.Optional(Type.String({ minLength: 1 })),
 });
 
 export const CreateSessionResponseSchema = Type.Object({

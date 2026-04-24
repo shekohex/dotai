@@ -51,7 +51,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       sessions: this.getLoadedSessions(),
       now: this.now,
       createSessionId: () => randomUUID(),
-      createRuntime: () => this.runtimeFactory.create(),
+      createRuntime: (runtimeRequest) => this.runtimeFactory.create(runtimeRequest),
       readRuntimeExtensionMetadata: (runtime) => this.readRuntimeExtensionMetadata(runtime),
       getLastAppStreamOffset: () =>
         getLastAppStreamOffsetForNewSession((streamId) => this.streams.getHeadOffset(streamId)),

@@ -153,9 +153,9 @@ In remote mode:
 
 ### Phase 4: Workspace Targeting
 
-- [ ] Define remote workspace identifier in API and CLI
-- [ ] Require workspace target for remote new-session and continue flows
-- [ ] Ensure server summaries and snapshots expose authoritative workspace cwd
+- [x] Define remote workspace identifier in API and CLI
+- [x] Require workspace target for remote new-session and continue flows
+- [x] Ensure server summaries and snapshots expose authoritative workspace cwd
 
 ### Phase 5: Archive And Delete
 

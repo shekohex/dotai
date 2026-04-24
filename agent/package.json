@@ -37,7 +37,7 @@
     "test:executor": "node --import tsx --test ./test/executor.test.ts",
     "test:keys": "node --import tsx --test ./test/pi-tui-keys.test.ts",
     "test:tool-preview": "node --import tsx --test ./test/tool-preview.test.ts",
-    "test:harness": "node --import tsx --test ./test/harness.test.ts ./test/review.test.ts ./test/coreui-editor.test.ts",
+    "test:harness": "node --import tsx --test ./test/harness.test.ts ./test/review.test.ts ./test/coreui-editor.test.ts ./test/coreui-builtins.test.ts",
     "test:subagent": "node --import tsx --test ./test/commit.test.ts ./test/subagent.test.ts ./test/subagent-sdk.test.ts",
     "test:remote": "node --import tsx --test ./test/remote.test.ts"
   },

@@ -93,6 +93,18 @@ export interface SessionRecord {
   runtimeUndispatchedCommandCount: number;
   hasLocalCommandError: boolean;
   pendingUiRequests: Map<string, { resolve: (value: UiResponseRequest) => void }>;
+  uiState: {
+    statuses: Map<string, string | undefined>;
+    widgets: Map<
+      string,
+      { lines: string[] | undefined; placement: "aboveEditor" | "belowEditor" | undefined }
+    >;
+    workingMessage: string | undefined;
+    hiddenThinkingLabel: string | undefined;
+    title: string | undefined;
+    toolsExpanded: boolean | undefined;
+    editorText: string | undefined;
+  };
 }
 
 export interface AcceptedSessionCommand {

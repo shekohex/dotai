@@ -81,6 +81,15 @@ export function createSessionRecord(input: {
     runtimeUndispatchedCommandCount: 0,
     hasLocalCommandError: false,
     pendingUiRequests: new Map(),
+    uiState: {
+      statuses: new Map(),
+      widgets: new Map(),
+      workingMessage: undefined,
+      hiddenThinkingLabel: undefined,
+      title: undefined,
+      toolsExpanded: undefined,
+      editorText: undefined,
+    },
   };
 }
 

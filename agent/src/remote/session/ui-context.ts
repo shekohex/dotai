@@ -61,9 +61,17 @@ function createRemoteUiEditorHandlers(
 > {
   return {
     pasteToEditor: (text) => {
+      if (input.record.uiState.editorText === text) {
+        return;
+      }
+      input.record.uiState.editorText = text;
       input.publishUiEvent(input.record, { id: randomUUID(), method: "set_editor_text", text });
     },
     setEditorText: (text) => {
+      if (input.record.uiState.editorText === text) {
+        return;
+      }
+      input.record.uiState.editorText = text;
       input.publishUiEvent(input.record, { id: randomUUID(), method: "set_editor_text", text });
     },
     getEditorText: () => "",

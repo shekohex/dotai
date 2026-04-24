@@ -60,6 +60,11 @@ function publishRemoteUiStatus(
   statusKey: string,
   statusText: string | undefined,
 ): void {
+  const currentStatus = input.record.uiState.statuses.get(statusKey);
+  if (currentStatus === statusText) {
+    return;
+  }
+  input.record.uiState.statuses.set(statusKey, statusText);
   input.publishUiEvent(input.record, {
     id: randomUUID(),
     method: "setStatus",
@@ -72,6 +77,10 @@ function publishRemoteUiWorkingMessage(
   input: RemoteUiContextInput,
   message: string | undefined,
 ): void {
+  if (input.record.uiState.workingMessage === message) {
+    return;
+  }
+  input.record.uiState.workingMessage = message;
   input.publishUiEvent(input.record, {
     id: randomUUID(),
     method: "setWorkingMessage",
@@ -83,6 +92,10 @@ function publishRemoteUiHiddenThinkingLabel(
   input: RemoteUiContextInput,
   label: string | undefined,
 ): void {
+  if (input.record.uiState.hiddenThinkingLabel === label) {
+    return;
+  }
+  input.record.uiState.hiddenThinkingLabel = label;
   input.publishUiEvent(input.record, {
     id: randomUUID(),
     method: "setHiddenThinkingLabel",
@@ -116,21 +129,76 @@ function publishRemoteUiWidget(
     throw new TypeError("ctx.ui.setWidget() expects string[] content in remote server runtime");
   }
   const placement = readWidgetPlacement(options);
+  const widgetLines = readWidgetLines(content);
+  const previousWidget = input.record.uiState.widgets.get(widgetKey);
+  if (
+    previousWidget?.placement === placement &&
+    areWidgetLinesEqual(previousWidget?.lines, widgetLines)
+  ) {
+    return;
+  }
+  input.record.uiState.widgets.set(widgetKey, {
+    lines: widgetLines,
+    placement,
+  });
   input.publishUiEvent(input.record, {
     id: randomUUID(),
     method: "setWidget",
     widgetKey,
-    widgetLines: Array.isArray(content) ? content : undefined,
+    widgetLines,
     ...(placement ? { widgetPlacement: placement } : {}),
   });
 }
 
+function readWidgetLines(content: unknown): string[] | undefined {
+  if (content === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(content)) {
+    throw new TypeError("ctx.ui.setWidget() expects string[] content in remote server runtime");
+  }
+  const widgetLines: string[] = [];
+  for (const line of content) {
+    if (typeof line !== "string") {
+      throw new TypeError("ctx.ui.setWidget() expects string[] content in remote server runtime");
+    }
+    widgetLines.push(line);
+  }
+  return widgetLines;
+}
+
 function publishRemoteUiTitle(input: RemoteUiContextInput, title: string): void {
+  if (input.record.uiState.title === title) {
+    return;
+  }
+  input.record.uiState.title = title;
   input.publishUiEvent(input.record, { id: randomUUID(), method: "setTitle", title });
 }
 
 function publishRemoteUiToolsExpanded(input: RemoteUiContextInput, expanded: boolean): void {
+  if (input.record.uiState.toolsExpanded === expanded) {
+    return;
+  }
+  input.record.uiState.toolsExpanded = expanded;
   input.publishUiEvent(input.record, { id: randomUUID(), method: "setToolsExpanded", expanded });
+}
+
+function areWidgetLinesEqual(left: string[] | undefined, right: string[] | undefined): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function readWidgetPlacement(options: unknown): "aboveEditor" | "belowEditor" | undefined {

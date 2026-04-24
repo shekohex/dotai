@@ -69,6 +69,8 @@ export interface RemoteRuntimeContract {
   >;
   newSession: AgentSessionRuntime["newSession"];
   switchSession: AgentSessionRuntime["switchSession"];
+  setRebindSession: (rebindSession?: (session: RemoteSessionContract) => Promise<void>) => void;
+  setBeforeSessionInvalidate: (beforeSessionInvalidate?: () => void) => void;
   fork: AgentSessionRuntime["fork"];
   importFromJsonl: AgentSessionRuntime["importFromJsonl"];
   dispose: AgentSessionRuntime["dispose"];

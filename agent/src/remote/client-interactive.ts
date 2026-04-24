@@ -33,6 +33,8 @@ function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRunt
   return (
     typeof runtime.newSession === "function" &&
     typeof runtime.switchSession === "function" &&
+    typeof runtime.setRebindSession === "function" &&
+    typeof runtime.setBeforeSessionInvalidate === "function" &&
     typeof runtime.fork === "function" &&
     typeof runtime.importFromJsonl === "function" &&
     typeof runtime.dispose === "function" &&

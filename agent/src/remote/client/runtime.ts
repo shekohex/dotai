@@ -21,6 +21,8 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   private readonly clientExtensionFactories: ExtensionFactory[];
   private _session: RemoteAgentSession;
   private latestExtensionBindings: RemoteExtensionBindings | undefined;
+  private rebindSessionHandler: ((session: RemoteAgentSession) => Promise<void>) | undefined;
+  private beforeSessionInvalidateHandler: (() => void) | undefined;
 
   private constructor(
     client: RemoteApiClient,
@@ -150,7 +152,16 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   }
 
   async dispose(): Promise<void> {
+    this.beforeSessionInvalidateHandler?.();
     await this._session.dispose();
+  }
+
+  setRebindSession(rebindSession?: (session: RemoteAgentSession) => Promise<void>): void {
+    this.rebindSessionHandler = rebindSession;
+  }
+
+  setBeforeSessionInvalidate(beforeSessionInvalidate?: () => void): void {
+    this.beforeSessionInvalidateHandler = beforeSessionInvalidate;
   }
 
   private async switchToSession(sessionId: string): Promise<void> {
@@ -168,7 +179,11 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       await next.bindExtensions(this.latestExtensionBindings);
     }
     this.cwd = snapshot.cwd ?? this.cwd;
+    this.beforeSessionInvalidateHandler?.();
     this._session = next;
+    if (this.rebindSessionHandler) {
+      await this.rebindSessionHandler(this._session);
+    }
     await previous.dispose();
   }
 

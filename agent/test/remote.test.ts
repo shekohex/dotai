@@ -4754,6 +4754,15 @@ timedTest("remote server ui addAutocompleteProvider fails loudly", () => {
   const uiContext = createRemoteUiContext({
     record: {
       presence: new Map(),
+      uiState: {
+        statuses: new Map(),
+        widgets: new Map(),
+        workingMessage: undefined,
+        hiddenThinkingLabel: undefined,
+        title: undefined,
+        toolsExpanded: undefined,
+        editorText: undefined,
+      },
     } as any,
     now: () => Date.now(),
     publishUiEvent: () => {},
@@ -4762,6 +4771,40 @@ timedTest("remote server ui addAutocompleteProvider fails loudly", () => {
   assert.throws(() => {
     uiContext.addAutocompleteProvider((current) => current);
   }, /addAutocompleteProvider\(\) is not supported/);
+});
+
+timedTest("remote server ui coalesces identical stateful ui writes", () => {
+  const published: Array<{ method: string; statusText?: string; widgetKey?: string }> = [];
+  const uiContext = createRemoteUiContext({
+    record: {
+      presence: new Map(),
+      uiState: {
+        statuses: new Map(),
+        widgets: new Map(),
+        workingMessage: undefined,
+        hiddenThinkingLabel: undefined,
+        title: undefined,
+        toolsExpanded: undefined,
+        editorText: undefined,
+      },
+    } as any,
+    now: () => Date.now(),
+    publishUiEvent: (_record, payload) => {
+      published.push(payload as { method: string; statusText?: string; widgetKey?: string });
+    },
+  });
+
+  uiContext.setStatus("openusage", "same");
+  uiContext.setStatus("openusage", "same");
+  uiContext.setWidget("review", ["same"]);
+  uiContext.setWidget("review", ["same"]);
+  uiContext.setEditorText("draft");
+  uiContext.setEditorText("draft");
+
+  assert.deepEqual(
+    published.map((payload) => payload.method),
+    ["setStatus", "setWidget", "set_editor_text"],
+  );
 });
 
 timedTest("editor ui request ignores late response after remote cancellation", async () => {

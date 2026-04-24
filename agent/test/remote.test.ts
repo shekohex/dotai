@@ -39,6 +39,10 @@ import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
 import { parseRemoteArgs, resolveRemoteSessionId } from "../src/remote/client-interactive.ts";
 import { loadThemeFromPath } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import {
+  createBashToolOverrideDefinition,
+  createReadToolOverrideDefinition,
+} from "../src/extensions/coreui/tools.ts";
 import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
@@ -6058,6 +6062,56 @@ timedTest("remote theme parser matches bundled theme examples", async () => {
     assert.equal(remoteTheme.getBgAnsi("toolSuccessBg"), upstreamTheme.getBgAnsi("toolSuccessBg"));
   }
 });
+
+timedTest(
+  "remote runtime exposes client tool override definitions for mirrored built-in tools",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    const overrideExtension: ExtensionFactory = (pi) => {
+      pi.registerTool(createBashToolOverrideDefinition());
+      pi.registerTool(createReadToolOverrideDefinition());
+    };
+
+    try {
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        cwd: "/srv/tool-override-workspace",
+        clientExtensionMetadata: [
+          {
+            id: "test-bash-override",
+            runtime: "client",
+            path: "client:test-bash-override",
+          },
+        ],
+        clientExtensionFactories: [overrideExtension],
+      });
+
+      await runtime.session.bindExtensions({});
+
+      for (const toolName of ["bash", "read"]) {
+        const toolDefinition = runtime.session.getToolDefinition(toolName);
+
+        assert.ok(toolDefinition);
+        assert.equal(toolDefinition?.name, toolName);
+        assert.equal(typeof toolDefinition?.renderCall, "function");
+        assert.equal(typeof toolDefinition?.renderResult, "function");
+      }
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
 
 timedTest(
   "remote reload refreshes server resources and replays client extension lifecycle",

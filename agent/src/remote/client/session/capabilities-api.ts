@@ -160,8 +160,8 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
       : getAllToolsRemoteSession(this.activeTools);
   }
 
-  getToolDefinition(_name: string): undefined {
-    return undefined;
+  getToolDefinition(name: string) {
+    return this.localExtensionRunner.getToolDefinition(name);
   }
 
   setActiveToolsByName(toolNames: string[]): void {

@@ -10,6 +10,7 @@ export function touchSessionPresence(input: {
   now: number;
   createConnectionId: () => string;
   pruneExpiredPresence: (record: SessionRecord, now: number) => void;
+  onPresencePrunedToZero?: (record: SessionRecord) => void;
   readConnectionCapabilities: (
     clientId: string,
     connectionId: string,
@@ -17,7 +18,11 @@ export function touchSessionPresence(input: {
   getLastAppOffset: () => string;
   getLastSessionOffset: (sessionId: string) => string;
 }): void {
+  const previousPresenceCount = input.record.presence.size;
   input.pruneExpiredPresence(input.record, input.now);
+  if (previousPresenceCount > 0 && input.record.presence.size === 0) {
+    input.onPresencePrunedToZero?.(input.record);
+  }
   const resolvedConnectionId = input.connectionId ?? input.createConnectionId();
   const capabilities = input.readConnectionCapabilities(
     input.client.clientId,

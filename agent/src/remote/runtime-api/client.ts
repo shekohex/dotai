@@ -149,24 +149,33 @@ export class RemoteApiClient {
   async createSession(request?: {
     sessionName?: string;
     workspaceCwd?: string;
+    persistence?: "persistent" | "ephemeral";
   }): Promise<CreateSessionResponse> {
-    const body = {
-      ...(request?.sessionName !== undefined && request.sessionName.length > 0
-        ? { sessionName: request.sessionName }
-        : {}),
-      ...(request?.workspaceCwd !== undefined && request.workspaceCwd.length > 0
-        ? { workspaceCwd: request.workspaceCwd }
-        : {}),
-    };
+    const body: {
+      sessionName?: string;
+      workspaceCwd?: string;
+      persistence?: "persistent" | "ephemeral";
+    } = {};
+    if (request?.sessionName !== undefined && request.sessionName.length > 0) {
+      body.sessionName = request.sessionName;
+    }
+    if (request?.workspaceCwd !== undefined && request.workspaceCwd.length > 0) {
+      body.workspaceCwd = request.workspaceCwd;
+    }
+    if (request?.persistence) {
+      body.persistence = request.persistence;
+    }
     const response = await this.rpcClient.sessions.$post(
       { json: body },
       { headers: await this.getAuthHeaders() },
     );
     this.captureConnectionId(response);
-    if (response.status !== 201) throw await toRemoteHttpError(response);
-    const payload: unknown = await response.json();
-    assertType(CreateSessionResponseSchema, payload);
-    return payload;
+    if (response.status === 201) {
+      const payload: unknown = await response.json();
+      assertType(CreateSessionResponseSchema, payload);
+      return payload;
+    }
+    throw await toRemoteHttpError(response);
   }
 
   async getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {

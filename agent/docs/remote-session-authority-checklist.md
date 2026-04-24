@@ -168,19 +168,19 @@ In remote mode:
 
 ### Phase 6: Watcher And Reconciliation
 
-- [ ] Add recursive watcher on server session storage
-- [ ] Debounce and reconcile add/remove/change events into catalog
-- [ ] Update summaries for externally modified files
-- [ ] Reload idle runtimes after external file changes
-- [ ] Mark running runtimes dirty/conflicted on external modifications
-- [ ] Emit app-stream refresh events for watcher-driven changes
+- [x] Add recursive watcher on server session storage
+- [x] Debounce and reconcile add/remove/change events into catalog
+- [x] Update summaries for externally modified files
+- [x] Reload idle runtimes after external file changes
+- [x] Mark running runtimes dirty/conflicted on external modifications
+- [x] Emit app-stream refresh events for watcher-driven changes
 
 ### Phase 7: Ephemeral Remote Sessions
 
-- [ ] Add explicit persistence mode to server session creation
-- [ ] Support server ephemeral sessions backed by in-memory `SessionManager`
-- [ ] Define list visibility rules for ephemeral sessions
-- [ ] Define cleanup policy for ephemeral sessions
+- [x] Add explicit persistence mode to server session creation
+- [x] Support server ephemeral sessions backed by in-memory `SessionManager`
+- [x] Define list visibility rules for ephemeral sessions
+- [x] Define cleanup policy for ephemeral sessions
 
 ### Phase 8: Hardening
 

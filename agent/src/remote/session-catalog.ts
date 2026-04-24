@@ -186,9 +186,7 @@ export class SessionCatalog {
       summaries.set(
         loadedRecord.sessionId,
         createSummaryFromRuntimeRecord(loadedRecord, {
-          persistence: isPersistentSessionFile(loadedRecord.sessionStats.sessionFile)
-            ? "persistent"
-            : "ephemeral",
+          persistence: loadedRecord.persistence,
           lifecycleStatus: "active",
           getLastSessionStreamOffset: input.getLastSessionStreamOffset,
           parentSessionId: null,
@@ -209,12 +207,8 @@ export class SessionCatalog {
     if (loadedRecord) {
       input.syncFromRuntime(loadedRecord);
       const catalogRecord = this.recordsBySessionId.get(input.sessionId);
-      let persistence: "persistent" | "ephemeral" = "ephemeral";
-      if (catalogRecord || isPersistentSessionFile(loadedRecord.sessionStats.sessionFile)) {
-        persistence = "persistent";
-      }
       return createSummaryFromRuntimeRecord(loadedRecord, {
-        persistence,
+        persistence: catalogRecord?.persistence ?? loadedRecord.persistence,
         lifecycleStatus: catalogRecord?.lifecycleStatus ?? "active",
         getLastSessionStreamOffset: input.getLastSessionStreamOffset,
         parentSessionId: catalogRecord?.parentSessionId ?? null,
@@ -331,10 +325,6 @@ function readSessionName(entries: FileEntry[], sessionId: string): string {
   }
 
   return sessionName ?? basename(sessionId);
-}
-
-function isPersistentSessionFile(value: string | undefined): value is string {
-  return typeof value === "string" && value.length > 0;
 }
 
 function createCatalogRecord(

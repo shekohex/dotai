@@ -397,6 +397,7 @@ export async function runRemoteInteractiveMode(
     sessionId: selection.sessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
     createNewSession: selection.createNewSession,
+    persistence: parsed.noSession ? "ephemeral" : "persistent",
     workspaceCwd: parsed.workspaceCwd,
     clientExtensionMetadata: options.clientExtensionMetadata,
     clientExtensionFactories: options.clientExtensionFactories,

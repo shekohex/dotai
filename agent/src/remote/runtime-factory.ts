@@ -25,7 +25,10 @@ import {
 } from "../extensions/index.js";
 
 export interface RemoteRuntimeFactory {
-  create(request?: { cwd?: string }): Promise<AgentSessionRuntime>;
+  create(request?: {
+    cwd?: string;
+    persistence?: "persistent" | "ephemeral";
+  }): Promise<AgentSessionRuntime>;
   load?(request: LoadRemoteRuntimeRequest): Promise<AgentSessionRuntime>;
   dispose(): Promise<void>;
   getSessionCatalogRoot?(): string | undefined;
@@ -136,12 +139,18 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
     this.extensionMetadata = extensions.metadata;
   }
 
-  create(request?: { cwd?: string }): Promise<AgentSessionRuntime> {
+  create(request?: {
+    cwd?: string;
+    persistence?: "persistent" | "ephemeral";
+  }): Promise<AgentSessionRuntime> {
     const cwd = request?.cwd ?? this.cwd;
     return createAgentSessionRuntime(this.createRuntimeFactory(), {
       cwd,
       agentDir: this.agentDir,
-      sessionManager: SessionManager.create(cwd, this.sessionDir),
+      sessionManager:
+        request?.persistence === "ephemeral"
+          ? SessionManager.inMemory(cwd)
+          : SessionManager.create(cwd, this.sessionDir),
     });
   }
 
@@ -351,12 +360,16 @@ export function InMemoryPiRuntimeFactory(
   const extensionMetadata = extensions.metadata;
 
   return {
-    create(request?: { cwd?: string }): Promise<AgentSessionRuntime> {
+    create(request?: {
+      cwd?: string;
+      persistence?: "persistent" | "ephemeral";
+    }): Promise<AgentSessionRuntime> {
+      const persistence = request?.persistence ?? (persistSessions ? "persistent" : "ephemeral");
       return createInMemoryRuntime({
         cwdPromise: Promise.resolve(request?.cwd).then((cwd) => cwd ?? cwdPromise),
         agentDirPromise,
         sessionDirPromise,
-        persistSessions,
+        persistSessions: persistence === "persistent",
         fauxRegistration,
         fauxSeededResponseCount,
         fauxApiKey,

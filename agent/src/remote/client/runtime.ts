@@ -69,6 +69,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
         await client.createSession({
           sessionName: options.sessionName,
           workspaceCwd,
+          persistence: options.persistence,
         })
       ).sessionId;
     const snapshot = await client.getSessionSnapshot(attachedSessionId);

@@ -174,6 +174,7 @@ export const AppSnapshotSchema = Type.Object({
 export const CreateSessionRequestSchema = Type.Object({
   sessionName: Type.Optional(Type.String({ minLength: 1 })),
   workspaceCwd: Type.Optional(Type.String({ minLength: 1 })),
+  persistence: Type.Optional(Type.Union([Type.Literal("persistent"), Type.Literal("ephemeral")])),
 });
 
 export const CreateSessionResponseSchema = Type.Object({

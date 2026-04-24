@@ -36,6 +36,7 @@ export function enqueueSessionCreation<T>(input: {
 export function createSessionRecord(input: {
   sessionId: string;
   sessionName: string;
+  persistence: "persistent" | "ephemeral";
   createdAt: number;
   updatedAt?: number;
   runtime: AgentSessionRuntime;
@@ -45,6 +46,7 @@ export function createSessionRecord(input: {
   return {
     sessionId: input.sessionId,
     sessionName: input.sessionName,
+    persistence: input.persistence,
     status: "idle",
     cwd: "",
     model: "pi-remote-faux/pi-remote-faux-1",
@@ -97,7 +99,10 @@ export async function createSingleSession(input: {
   sessions: Map<string, SessionRecord>;
   now: () => number;
   createSessionId: () => string;
-  createRuntime: (request?: { cwd?: string }) => Promise<AgentSessionRuntime>;
+  createRuntime: (request?: {
+    cwd?: string;
+    persistence?: "persistent" | "ephemeral";
+  }) => Promise<AgentSessionRuntime>;
   readRuntimeExtensionMetadata: (runtime: AgentSessionRuntime) => SessionRecord["extensions"];
   getLastAppStreamOffset: () => string;
   initializeRuntimeSession: (record: SessionRecord, createdAt: number) => Promise<void>;
@@ -110,12 +115,17 @@ export async function createSingleSession(input: {
   disposeFailedSessionCreation: (sessionId: string, runtime: AgentSessionRuntime) => Promise<void>;
 }): Promise<CreateSessionResponse> {
   const createdAt = input.now();
-  const runtime = await input.createRuntime({ cwd: input.request.workspaceCwd });
+  const requestedPersistence = input.request.persistence;
+  const runtime = await input.createRuntime({
+    cwd: input.request.workspaceCwd,
+    persistence: requestedPersistence,
+  });
   const sessionId = readRuntimeSessionId(runtime) ?? input.createSessionId();
   try {
     const record = createSessionRecord({
       sessionId,
       sessionName: input.request.sessionName ?? `Session ${input.sessions.size + 1}`,
+      persistence: requestedPersistence ?? readRuntimePersistence(runtime),
       createdAt,
       updatedAt: createdAt,
       runtime,
@@ -134,6 +144,10 @@ export async function createSingleSession(input: {
 function readRuntimeSessionId(runtime: AgentSessionRuntime): string | undefined {
   const sessionId = runtime.session?.sessionManager.getSessionId();
   return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : undefined;
+}
+
+function readRuntimePersistence(runtime: AgentSessionRuntime): "persistent" | "ephemeral" {
+  return runtime.session?.sessionManager.isPersisted() ? "persistent" : "ephemeral";
 }
 
 export function getAppSnapshot(input: {

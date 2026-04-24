@@ -29,6 +29,7 @@ import {
   type ExtensionStateKvClient,
 } from "../src/remote/client/session/extension-state-kv.ts";
 import { hasSessionPrimitiveCapability } from "../src/remote/session/capabilities.ts";
+import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
 import {
   InMemoryPiRuntimeFactory,
@@ -91,7 +92,7 @@ class CountingRuntimeFactory implements RemoteRuntimeFactory {
     this.delegate = delegate;
   }
 
-  async create(request?: { cwd?: string }) {
+  async create(request?: { cwd?: string; persistence?: "persistent" | "ephemeral" }) {
     this.createCalls += 1;
     return this.delegate.create(request);
   }
@@ -922,7 +923,7 @@ class RecordingRuntimeFactory implements RemoteRuntimeFactory {
     this.session = session;
   }
 
-  async create(request?: { cwd?: string }) {
+  async create(request?: { cwd?: string; persistence?: "persistent" | "ephemeral" }) {
     if (request?.cwd) {
       this.session.cwd = request.cwd;
     }
@@ -956,7 +957,7 @@ class SequencedRecordingRuntimeFactory implements RemoteRuntimeFactory {
     this.sessions = sessions;
   }
 
-  async create(request?: { cwd?: string }) {
+  async create(request?: { cwd?: string; persistence?: "persistent" | "ephemeral" }) {
     const session = this.sessions[this.createCalls] ?? this.sessions[this.sessions.length - 1];
     this.createCalls += 1;
     if (request?.cwd) {
@@ -971,6 +972,32 @@ class SequencedRecordingRuntimeFactory implements RemoteRuntimeFactory {
   }
 
   async dispose(): Promise<void> {}
+}
+
+class FailingDisposeRuntimeFactory implements RemoteRuntimeFactory {
+  async create(request?: { cwd?: string; persistence?: "persistent" | "ephemeral" }) {
+    const session = new RecordingSession();
+    if (request?.cwd) {
+      session.cwd = request.cwd;
+    }
+    return {
+      session,
+      dispose: async () => {
+        throw new Error("dispose failed");
+      },
+    } as any;
+  }
+
+  async dispose(): Promise<void> {}
+}
+
+class ThrowingAppEventStreamStore extends InMemoryDurableStreamStore {
+  override append(streamId: string, input: Parameters<InMemoryDurableStreamStore["append"]>[1]) {
+    if (streamId === "app-events" && input.kind === "session_closed") {
+      throw new Error("append failed");
+    }
+    return super.append(streamId, input);
+  }
 }
 
 function testAuthSession() {
@@ -3589,6 +3616,222 @@ timedTest(
     );
   },
 );
+
+timedTest("remote no-session creates ephemeral session summary", async () => {
+  const factory = InMemoryPiRuntimeFactory({ persistSessions: true });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory: factory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: "/workspace/ephemeral",
+        persistence: "ephemeral",
+      },
+      auth,
+      "conn-ephemeral",
+    );
+
+    const summary = registry.getSessionSummary(created.sessionId);
+    assert.equal(summary.lifecycle.persistence, "ephemeral");
+    assert.equal(summary.lifecycle.loaded, true);
+
+    const appSnapshot = registry.getAppSnapshot(auth);
+    assert.equal(appSnapshot.sessionSummaries.length, 1);
+    assert.equal(appSnapshot.sessionSummaries[0]?.lifecycle.persistence, "ephemeral");
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("ephemeral remote session cleans up after last detach", async () => {
+  const factory = InMemoryPiRuntimeFactory({ persistSessions: true });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory: factory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: "/workspace/ephemeral-cleanup",
+        persistence: "ephemeral",
+      },
+      auth,
+      "conn-cleanup",
+    );
+
+    registry.detachPresence(created.sessionId, "conn-cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.throws(() => registry.getSessionSummary(created.sessionId), /Session not found/);
+    assert.equal(registry.getAppSnapshot(auth).sessionSummaries.length, 0);
+  } finally {
+    await registry.dispose();
+  }
+});
+
+timedTest("ephemeral cleanup failure is contained and surfaces session error", async () => {
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory: new FailingDisposeRuntimeFactory(),
+  });
+  const auth = testAuthSession();
+  const unhandledRejections: unknown[] = [];
+  const onUnhandledRejection = (error: unknown) => {
+    unhandledRejections.push(error);
+  };
+  process.on("unhandledRejection", onUnhandledRejection);
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: "/workspace/ephemeral-dispose-failure",
+        persistence: "ephemeral",
+      },
+      auth,
+      "conn-cleanup-error",
+    );
+
+    registry.detachPresence(created.sessionId, "conn-cleanup-error");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(unhandledRejections, []);
+
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-recover");
+    assert.equal(snapshot.errorMessage, "Failed to clean up ephemeral session: dispose failed");
+  } finally {
+    process.off("unhandledRejection", onUnhandledRejection);
+    await registry.dispose().catch(() => {});
+  }
+});
+
+timedTest("touchSessionPresence reports prune-to-zero transitions", async () => {
+  const session = new RecordingSession();
+  const runtime = {
+    session,
+    dispose: async () => {},
+  } as any;
+  const record = {
+    sessionId: "ephemeral-prune",
+    sessionName: "ephemeral-prune",
+    persistence: "ephemeral",
+    status: "idle",
+    cwd: session.cwd,
+    model: "pi-remote-faux/pi-remote-faux-1",
+    thinkingLevel: "medium",
+    activeTools: [],
+    extensions: [],
+    resources: { skills: [], prompts: [], themes: [], systemPrompt: null, appendSystemPrompt: [] },
+    settings: {} as any,
+    availableModels: [],
+    modelSettings: {
+      defaultProvider: null,
+      defaultModel: null,
+      defaultThinkingLevel: null,
+      enabledModels: null,
+    },
+    contextUsage: undefined,
+    usageCost: 0,
+    sessionStats: {
+      sessionFile: undefined,
+      sessionId: "ephemeral-prune",
+      userMessages: 0,
+      assistantMessages: 0,
+      toolCalls: 0,
+      toolResults: 0,
+      totalMessages: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+      contextUsage: undefined,
+    },
+    autoCompactionEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
+    transcript: [],
+    queue: { depth: 0, nextSequence: 1 },
+    retry: { status: "idle" },
+    compaction: { status: "idle" },
+    activeRun: null,
+    streamingState: "idle",
+    pendingToolCalls: [],
+    errorMessage: null,
+    createdAt: 0,
+    updatedAt: 0,
+    lastAppStreamOffsetSeenByServer: "0000000000000000_0000000000000000",
+    presence: new Map([
+      [
+        "stale-conn",
+        {
+          clientId: "dev",
+          connectionId: "stale-conn",
+          connectedAt: 0,
+          lastSeenAt: 0,
+          lastSeenAppOffset: "0",
+          lastSeenSessionOffset: "0",
+        },
+      ],
+    ]),
+    runtime,
+    commandAcceptanceQueue: Promise.resolve(),
+    runtimeDispatchQueue: Promise.resolve(),
+    runtimeUndispatchedCommandCount: 0,
+    hasLocalCommandError: false,
+    pendingUiRequests: new Map(),
+  } as const;
+  const prunedToZero: string[] = [];
+
+  touchSessionPresence({
+    record: record as any,
+    client: testAuthSession(),
+    connectionId: "fresh-conn",
+    now: 100,
+    createConnectionId: () => "generated",
+    pruneExpiredPresence: (targetRecord) => {
+      targetRecord.presence.clear();
+    },
+    onPresencePrunedToZero: (targetRecord) => {
+      prunedToZero.push(targetRecord.sessionId);
+    },
+    readConnectionCapabilities: () => undefined,
+    getLastAppOffset: () => "1",
+    getLastSessionOffset: () => "1",
+  });
+
+  assert.deepEqual(prunedToZero, ["ephemeral-prune"]);
+  assert.equal(record.presence.has("fresh-conn"), true);
+});
+
+timedTest("ephemeral cleanup surfaces app stream append failures", async () => {
+  const registry = new SessionRegistry({
+    streams: new ThrowingAppEventStreamStore(),
+    runtimeFactory: InMemoryPiRuntimeFactory({ persistSessions: true }),
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: "/workspace/ephemeral-append-failure",
+        persistence: "ephemeral",
+      },
+      auth,
+      "conn-append-error",
+    );
+
+    registry.detachPresence(created.sessionId, "conn-append-error");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-append-recover");
+    assert.equal(snapshot.errorMessage, "Failed to clean up ephemeral session: append failed");
+  } finally {
+    await registry.dispose().catch(() => {});
+  }
+});
 
 timedTest("remote runtime create requires explicit workspace for new session", async () => {
   const keys = generateKeyPairSync("ed25519");

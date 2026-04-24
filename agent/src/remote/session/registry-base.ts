@@ -314,6 +314,7 @@ export abstract class SessionRegistryBase {
         const record = createSessionRecord({
           sessionId: catalogRecord.sessionId,
           sessionName: catalogRecord.sessionName,
+          persistence: catalogRecord.persistence,
           createdAt: catalogRecord.createdAt,
           updatedAt: catalogRecord.modifiedAt,
           runtime,

@@ -45,6 +45,7 @@ export type RemoteUiStatusHandlers = Pick<
 export interface SessionRecord {
   sessionId: string;
   sessionName: string;
+  persistence: "persistent" | "ephemeral";
   status: SessionStatus;
   cwd: string;
   model: string;

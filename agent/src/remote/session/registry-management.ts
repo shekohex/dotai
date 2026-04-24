@@ -373,6 +373,11 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       pruneExpiredPresence: (targetRecord, now) => {
         this.pruneExpiredPresence(targetRecord, now);
       },
+      onPresencePrunedToZero: (targetRecord) => {
+        if (targetRecord.persistence === "ephemeral") {
+          this.scheduleEphemeralSessionCleanup(targetRecord.sessionId);
+        }
+      },
       readConnectionCapabilities: (targetClientId, targetConnectionId) =>
         this.readConnectionCapabilities(targetClientId, targetConnectionId),
       getLastAppOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
@@ -384,6 +389,9 @@ export class SessionRegistryManagement extends SessionRegistryBase {
   detachPresence(sessionId: string, connectionId: string): void {
     const record = this.getRequired(sessionId);
     detachSessionPresence(record, connectionId);
+    if (record.persistence === "ephemeral" && record.presence.size === 0) {
+      this.scheduleEphemeralSessionCleanup(sessionId);
+    }
   }
 
   async dispose(): Promise<void> {
@@ -471,6 +479,44 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     record.updatedAt = reconciledAt;
     return true;
   }
+
+  private async deleteEphemeralSession(sessionId: string): Promise<void> {
+    const record = this.loadedRuntimes.get(sessionId);
+    if (!record || record.persistence !== "ephemeral" || record.presence.size > 0) {
+      return;
+    }
+
+    await disposeSessionRecord(record);
+    this.streams.append(appEventsStreamId(), {
+      sessionId,
+      kind: "session_closed",
+      payload: { sessionId },
+      ts: this.now(),
+    });
+    this.loadedRuntimes.delete(sessionId);
+  }
+
+  private scheduleEphemeralSessionCleanup(sessionId: string): void {
+    void this.deleteEphemeralSession(sessionId).catch((error: unknown) => {
+      const record = this.loadedRuntimes.get(sessionId);
+      if (!record) {
+        return;
+      }
+
+      const updatedAt = this.now();
+      record.errorMessage = formatEphemeralCleanupError(error);
+      record.hasLocalCommandError = true;
+      record.updatedAt = updatedAt;
+      this.emitSessionSummaryUpdated(record, updatedAt);
+    });
+  }
+}
+
+function formatEphemeralCleanupError(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return `Failed to clean up ephemeral session: ${error.message}`;
+  }
+  return "Failed to clean up ephemeral session.";
 }
 
 function didCatalogRecordChange(

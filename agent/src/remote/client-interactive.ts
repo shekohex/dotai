@@ -9,7 +9,8 @@ import {
   defaultSessionNameFromCwd,
   readRemotePrivateKey,
 } from "./client-runtime.js";
-import type { ClientCapabilities, RemoteExtensionMetadata } from "./schemas.js";
+import type { AppSnapshot, ClientCapabilities, RemoteExtensionMetadata } from "./schemas.js";
+import { RemoteApiClient } from "./remote-api-client.js";
 
 function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRuntime {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -48,6 +49,12 @@ interface ParsedRemoteArgs {
   privateKey?: string;
   privateKeyPath?: string;
   sessionId?: string;
+  resume: boolean;
+  continueSession: boolean;
+  forkSessionId?: string;
+  noSession: boolean;
+  exportPath?: string;
+  sessionDir?: string;
   sessionName?: string;
   verbose: boolean;
   initialMessage?: string;
@@ -94,9 +101,33 @@ const remoteFlagSetters = new Map<string, RemoteFlagSetter>([
     },
   ],
   [
+    "--session",
+    (parsed, value) => {
+      parsed.sessionId = value;
+    },
+  ],
+  [
     "--remote-session-name",
     (parsed, value) => {
       parsed.sessionName = value;
+    },
+  ],
+  [
+    "--fork",
+    (parsed, value) => {
+      parsed.forkSessionId = value;
+    },
+  ],
+  [
+    "--session-dir",
+    (parsed, value) => {
+      parsed.sessionDir = value;
+    },
+  ],
+  [
+    "--export",
+    (parsed, value) => {
+      parsed.exportPath = value;
     },
   ],
   [
@@ -131,6 +162,18 @@ function applyRemoteFlag(
     parsed.verbose = true;
     return { consumed: true, nextIndex: index };
   }
+  if (arg === "--resume") {
+    parsed.resume = true;
+    return { consumed: true, nextIndex: index };
+  }
+  if (arg === "--continue") {
+    parsed.continueSession = true;
+    return { consumed: true, nextIndex: index };
+  }
+  if (arg === "--no-session") {
+    parsed.noSession = true;
+    return { consumed: true, nextIndex: index };
+  }
 
   const setter = remoteFlagSetters.get(arg);
   if (!setter) {
@@ -151,13 +194,29 @@ export function shouldUseRemoteMode(args: string[]): boolean {
   return args.includes("--remote") || args.includes("--remote-origin");
 }
 
-function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
+function readSelectedSessionModeCount(parsed: ParsedRemoteArgs): number {
+  return [
+    parsed.sessionId !== undefined,
+    parsed.resume,
+    parsed.continueSession,
+    parsed.forkSessionId !== undefined,
+    parsed.noSession,
+  ].filter(Boolean).length;
+}
+
+export function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
   const parsed: ParsedRemoteArgs = {
     remoteOrigin: process.env.PI_REMOTE_ORIGIN ?? "",
     keyId: process.env.PI_REMOTE_KEY_ID ?? "",
     privateKey: process.env.PI_REMOTE_PRIVATE_KEY,
     privateKeyPath: process.env.PI_REMOTE_PRIVATE_KEY_PATH,
     sessionId: process.env.PI_REMOTE_SESSION_ID,
+    resume: false,
+    continueSession: false,
+    forkSessionId: undefined,
+    noSession: false,
+    exportPath: undefined,
+    sessionDir: undefined,
     sessionName: process.env.PI_REMOTE_SESSION_NAME,
     verbose: false,
     initialMessage: undefined,
@@ -186,8 +245,96 @@ function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
   if (parsed.keyId.length === 0) {
     throw new Error("Missing PI_REMOTE_KEY_ID or --remote-key-id");
   }
+  if (parsed.sessionDir !== undefined) {
+    throw new Error("Remote mode does not support --session-dir");
+  }
+  if (parsed.exportPath !== undefined) {
+    throw new Error("Remote mode does not support --export yet");
+  }
+  if (parsed.forkSessionId !== undefined) {
+    throw new Error("Remote mode does not support --fork yet");
+  }
+  if (readSelectedSessionModeCount(parsed) > 1) {
+    throw new Error(
+      "Remote mode session selection flags are mutually exclusive: use one of --session, --resume, --continue, --fork, or --no-session",
+    );
+  }
 
   return parsed;
+}
+
+function findMatchingRemoteSessions(snapshot: AppSnapshot, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.length === 0) {
+    return [];
+  }
+  return snapshot.sessionSummaries.filter((summary) => {
+    const sessionId = summary.sessionId.toLowerCase();
+    const sessionName = summary.sessionName.toLowerCase();
+    const cwd = summary.cwd.toLowerCase();
+    return (
+      sessionId === normalizedQuery ||
+      sessionName === normalizedQuery ||
+      sessionId.includes(normalizedQuery) ||
+      sessionName.includes(normalizedQuery) ||
+      cwd.includes(normalizedQuery)
+    );
+  });
+}
+
+export function resolveRemoteSessionId(input: {
+  snapshot: AppSnapshot;
+  parsed: ParsedRemoteArgs;
+  cwd: string;
+}): { sessionId?: string; createNewSession: boolean } {
+  if (input.parsed.noSession) {
+    return { createNewSession: true };
+  }
+
+  if (input.parsed.sessionId !== undefined) {
+    const matches = findMatchingRemoteSessions(input.snapshot, input.parsed.sessionId);
+    if (matches.length === 0) {
+      throw new Error(`Remote session not found: ${input.parsed.sessionId}`);
+    }
+    if (matches.length > 1) {
+      const labels = matches.map((summary) => `${summary.sessionId} (${summary.sessionName})`);
+      throw new Error(
+        `Remote session query is ambiguous: ${input.parsed.sessionId}. Matches: ${labels.join(", ")}`,
+      );
+    }
+    const selectedMatch = matches[0];
+    if (selectedMatch === undefined) {
+      throw new Error(`Remote session not found: ${input.parsed.sessionId}`);
+    }
+    return { sessionId: selectedMatch.sessionId, createNewSession: false };
+  }
+
+  if (input.parsed.resume) {
+    const defaultSessionId = input.snapshot.defaultAttachSessionId;
+    if (defaultSessionId !== undefined) {
+      return { sessionId: defaultSessionId, createNewSession: false };
+    }
+    const latest = input.snapshot.sessionSummaries.toSorted(
+      (left, right) => right.updatedAt - left.updatedAt,
+    )[0];
+    if (latest !== undefined) {
+      return { sessionId: latest.sessionId, createNewSession: false };
+    }
+    return { createNewSession: true };
+  }
+
+  if (input.parsed.continueSession) {
+    const workspaceMatches = input.snapshot.sessionSummaries
+      .filter((summary) => summary.cwd === input.cwd)
+      .toSorted((left, right) => right.updatedAt - left.updatedAt);
+    const latestWorkspaceSession = workspaceMatches[0];
+    if (latestWorkspaceSession !== undefined) {
+      return { sessionId: latestWorkspaceSession.sessionId, createNewSession: false };
+    }
+    return { createNewSession: true };
+  }
+
+  return { sessionId: input.parsed.sessionId, createNewSession: false };
 }
 
 export interface RunRemoteInteractiveModeOptions {
@@ -206,14 +353,32 @@ export async function runRemoteInteractiveMode(
     privateKeyPath: parsed.privateKeyPath,
   });
 
+  const client = new RemoteApiClient({
+    origin: parsed.remoteOrigin,
+    auth: {
+      keyId: parsed.keyId,
+      privateKey,
+    },
+    clientCapabilities: options.clientCapabilities,
+  });
+
+  await client.authenticate();
+  const appSnapshot = await client.getAppSnapshot();
+  const selection = resolveRemoteSessionId({
+    snapshot: appSnapshot,
+    parsed,
+    cwd: process.cwd(),
+  });
+
   const runtimeCandidate: unknown = await RemoteAgentSessionRuntime.create({
     origin: parsed.remoteOrigin,
     auth: {
       keyId: parsed.keyId,
       privateKey,
     },
-    sessionId: parsed.sessionId,
+    sessionId: selection.sessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
+    createNewSession: selection.createNewSession,
     clientExtensionMetadata: options.clientExtensionMetadata,
     clientExtensionFactories: options.clientExtensionFactories,
     clientCapabilities: options.clientCapabilities,

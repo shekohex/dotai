@@ -19,6 +19,7 @@ export interface RemoteRuntimeOptions {
   auth: RemoteRuntimeAuthOptions;
   sessionId?: string;
   sessionName?: string;
+  createNewSession?: boolean;
   connectionId?: string;
   cwd?: string;
   agentDir?: string;

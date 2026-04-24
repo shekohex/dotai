@@ -35,6 +35,7 @@ import {
 } from "../src/remote/runtime-factory.ts";
 import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
+import { parseRemoteArgs, resolveRemoteSessionId } from "../src/remote/client-interactive.ts";
 import { loadThemeFromPath } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
@@ -2722,6 +2723,189 @@ timedTest("extension state kv persistence writes managed state only", async () =
     },
   ]);
 });
+
+timedTest("remote CLI parser accepts standalone session UX flags", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+
+  try {
+    const parsed = parseRemoteArgs(["--session", "session-123", "--resume"]);
+    assert.fail(`Expected parser conflict error, got ${JSON.stringify(parsed)}`);
+  } catch (error) {
+    assert.match(String(error), /mutually exclusive/);
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+  }
+});
+
+timedTest("remote CLI parser rejects unsupported remote session-dir and export flags", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+
+  try {
+    assert.throws(() => parseRemoteArgs(["--session-dir", "/tmp/sessions"]), /--session-dir/);
+    assert.throws(() => parseRemoteArgs(["--export", "session.jsonl"]), /--export/);
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+  }
+});
+
+timedTest(
+  "remote session resolution supports session query resume continue and no-session",
+  async () => {
+    const snapshot = {
+      serverInfo: {
+        name: "pi-remote",
+        version: "0.1.0",
+        now: 100,
+      },
+      currentClientAuthInfo: {
+        clientId: "client-1",
+        keyId: "dev",
+        tokenExpiresAt: 200,
+      },
+      sessionSummaries: [
+        {
+          sessionId: "session-a",
+          sessionName: "Alpha",
+          status: "idle",
+          cwd: "/workspace/a",
+          createdAt: 10,
+          updatedAt: 20,
+          parentSessionId: null,
+          lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+          lastSessionStreamOffset: "1-0",
+        },
+        {
+          sessionId: "session-b",
+          sessionName: "Beta",
+          status: "idle",
+          cwd: "/workspace/b",
+          createdAt: 30,
+          updatedAt: 40,
+          parentSessionId: null,
+          lifecycle: { persistence: "persistent", loaded: true, state: "active" },
+          lastSessionStreamOffset: "2-0",
+        },
+        {
+          sessionId: "session-c",
+          sessionName: "Gamma",
+          status: "idle",
+          cwd: "/workspace/a",
+          createdAt: 50,
+          updatedAt: 60,
+          parentSessionId: null,
+          lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+          lastSessionStreamOffset: "3-0",
+        },
+      ],
+      recentNotices: [],
+      defaultAttachSessionId: "session-b",
+    } as const;
+
+    assert.deepEqual(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: "Gamma",
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: undefined,
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: "/workspace/a",
+      }),
+      { sessionId: "session-c", createNewSession: false },
+    );
+
+    assert.deepEqual(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: undefined,
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: true,
+          continueSession: false,
+          forkSessionId: undefined,
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: "/workspace/a",
+      }),
+      { sessionId: "session-b", createNewSession: false },
+    );
+
+    assert.deepEqual(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: undefined,
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: true,
+          forkSessionId: undefined,
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: "/workspace/a",
+      }),
+      { sessionId: "session-c", createNewSession: false },
+    );
+
+    assert.deepEqual(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: undefined,
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: undefined,
+          noSession: true,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: "/workspace/a",
+      }),
+      { createNewSession: true },
+    );
+  },
+);
 
 timedTest("remote snapshot and adapter expose runtime context usage", async () => {
   const keys = generateKeyPairSync("ed25519");

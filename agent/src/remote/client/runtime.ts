@@ -55,7 +55,10 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
 
     await client.authenticate();
     const appSnapshot = await client.getAppSnapshot();
-    const resolvedSessionId = options.sessionId ?? appSnapshot.defaultAttachSessionId;
+    const resolvedSessionId =
+      options.createNewSession === true
+        ? undefined
+        : (options.sessionId ?? appSnapshot.defaultAttachSessionId);
     const attachedSessionId =
       resolvedSessionId ?? (await client.createSession(options.sessionName)).sessionId;
     const snapshot = await client.getSessionSnapshot(attachedSessionId);

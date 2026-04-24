@@ -142,14 +142,14 @@ In remote mode:
 
 ### Phase 3: Remote CLI Parity
 
-- [ ] Extend remote CLI parser to accept same session UX flags as standalone mode
-- [ ] Map remote `--session` to server session attach by `sessionId` or search result
-- [ ] Map remote `--resume` to server-backed picker
-- [ ] Map remote `--continue` to server latest-session lookup for workspace
-- [ ] Map remote `--fork` to server fork endpoint
-- [ ] Map remote `--no-session` to server ephemeral session creation
-- [ ] Reject remote `--session-dir`
-- [ ] Reject or defer remote `--export`
+- [x] Extend remote CLI parser to accept same session UX flags as standalone mode
+- [x] Map remote `--session` to server session attach by `sessionId` or search result
+- [x] Map remote `--resume` to server-backed picker
+- [x] Map remote `--continue` to server latest-session lookup for workspace
+- [x] Map remote `--fork` to server fork endpoint
+- [x] Map remote `--no-session` to server ephemeral session creation
+- [x] Reject remote `--session-dir`
+- [x] Reject or defer remote `--export`
 
 ### Phase 4: Workspace Targeting
 

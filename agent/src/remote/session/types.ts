@@ -116,6 +116,7 @@ export interface SessionRegistryOptions {
   catalog?: SessionCatalog;
   presenceTtlMs?: number;
   now?: () => number;
+  watcherDebounceMs?: number;
 }
 
 export function createEmptyModelSettings(): SessionRecord["modelSettings"] {

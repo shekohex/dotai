@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
@@ -17,6 +17,7 @@ import type {
 import { AuthService, createChallengePayload } from "../src/remote/auth.ts";
 import { createRemoteApp } from "../src/remote/app.ts";
 import { REMOTE_DEFAULT_CLIENT_CAPABILITIES } from "../src/remote/capabilities.ts";
+import { SessionCatalogWatcher } from "../src/remote/session-catalog-watcher.ts";
 import { cancelRemoteUiRequest, handleRemoteUiRequest } from "../src/remote/client/session-ui.ts";
 import { InMemoryRemoteKvStore } from "../src/remote/kv/in-memory-store.ts";
 import { RemoteApiClient } from "../src/remote/runtime-api/client.ts";
@@ -1181,6 +1182,51 @@ async function waitForSessionEvent(
     }
   }
   throw new Error("Timed out waiting for session event");
+}
+
+async function waitForValue<T>(
+  read: () => Promise<T> | T,
+  predicate: (value: T) => boolean,
+  attempts = 30,
+  delayMs = 50,
+): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const value = await read();
+    if (predicate(value)) {
+      return value;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  throw new Error("Timed out waiting for value");
+}
+
+async function writeSessionFile(input: {
+  sessionPath: string;
+  sessionId: string;
+  cwd: string;
+  sessionName?: string;
+  parentSessionPath?: string;
+}): Promise<void> {
+  await mkdir(dirname(input.sessionPath), { recursive: true });
+  await writeFile(
+    input.sessionPath,
+    [
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: input.sessionId,
+        timestamp: new Date().toISOString(),
+        cwd: input.cwd,
+        ...(input.parentSessionPath ? { parentSession: input.parentSessionPath } : {}),
+      }),
+      JSON.stringify({
+        type: "session_info",
+        name: input.sessionName ?? input.sessionId,
+      }),
+      "",
+    ].join("\n"),
+  );
 }
 
 timedTest("milestone 1 flow works end to end", async () => {
@@ -2750,6 +2796,298 @@ timedTest("session catalog scan marks archived files as archived", async () => {
     assert.ok(record);
     assert.equal(record?.lifecycleStatus, "archived");
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("remote app watcher reconciles external session add change and remove", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-watcher-reconcile-"));
+  const catalogRoot = join(root, "sessions");
+  const sessionPath = join(catalogRoot, "external.jsonl");
+
+  await mkdir(catalogRoot, { recursive: true });
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+    sessionCatalogRoot: catalogRoot,
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "external-session",
+      cwd: "/srv/external",
+      sessionName: "External Session",
+    });
+
+    const addedSnapshot = await waitForValue(
+      async () => {
+        const response = await remote.app.request("/v1/app/snapshot", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()) as {
+          sessionSummaries: Array<{ sessionId: string; sessionName: string; cwd: string }>;
+        };
+      },
+      (snapshot) =>
+        snapshot.sessionSummaries.some((summary) => summary.sessionId === "external-session"),
+    );
+
+    assert.equal(addedSnapshot.sessionSummaries[0]?.sessionName, "External Session");
+    assert.equal(addedSnapshot.sessionSummaries[0]?.cwd, "/srv/external");
+
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "external-session",
+      cwd: "/srv/external-updated",
+      sessionName: "External Session Updated",
+    });
+
+    const updatedSummary = await waitForValue(
+      async () => {
+        const response = await remote.app.request("/v1/sessions/external-session/summary", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()) as { sessionName: string; cwd: string };
+      },
+      (summary) =>
+        summary.sessionName === "External Session Updated" &&
+        summary.cwd === "/srv/external-updated",
+    );
+
+    assert.equal(updatedSummary.sessionName, "External Session Updated");
+    assert.equal(updatedSummary.cwd, "/srv/external-updated");
+
+    await rm(sessionPath, { force: true });
+
+    await waitForValue(
+      async () => {
+        const response = await remote.app.request("/v1/sessions/external-session/summary", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        return response.status;
+      },
+      (status) => status === 404,
+    );
+
+    const appEventsResponse = await remote.app.request("/v1/streams/app-events", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(appEventsResponse.status, 200);
+    const appEvents = (await appEventsResponse.json()) as { events: Array<{ kind: string }> };
+    assert.deepEqual(
+      appEvents.events.map((event) => event.kind),
+      ["session_summary_updated", "session_summary_updated", "session_closed"],
+    );
+  } finally {
+    await remote.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("session registry reloads idle runtime after external file change", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-idle-reload-"));
+  const catalogRoot = join(root, "sessions");
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const catalog = new SessionCatalog({ rootDir: catalogRoot });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory,
+    catalog,
+  });
+  const auth = testAuthSession();
+  const sessionPath = join(catalogRoot, "idle-session.jsonl");
+
+  session.sessionStats.sessionId = "idle-session";
+  session.sessionStats.sessionFile = sessionPath;
+  session.sessionManager = {
+    ...session.sessionManager,
+    getSessionId: () => "idle-session",
+    getSessionFile: () => sessionPath,
+  };
+  session.enableVersionedResources();
+
+  try {
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "idle-session",
+      cwd: "/srv/idle-v1",
+      sessionName: "Idle Session",
+    });
+
+    const created = await registry.createSession(
+      { workspaceCwd: "/srv/idle-v1", sessionName: "Idle Session" },
+      auth,
+      "conn-a",
+    );
+
+    assert.equal(created.sessionId, "idle-session");
+    assert.equal(session.reloadCalls, 0);
+
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "idle-session",
+      cwd: "/srv/idle-v2",
+      sessionName: "Idle Session Updated",
+    });
+    session.cwd = "/srv/idle-v2";
+
+    await registry.reconcileCatalogFromDisk();
+
+    const summary = registry.getSessionSummary("idle-session");
+    assert.equal(session.reloadCalls, 1);
+    assert.equal(summary.sessionName, "Idle Session Updated");
+    assert.equal(summary.cwd, "/srv/idle-v2");
+  } finally {
+    await registry.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("session registry marks running runtime conflicted on external file change", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-busy-conflict-"));
+  const catalogRoot = join(root, "sessions");
+  const catalog = new SessionCatalog({ rootDir: catalogRoot });
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory,
+    catalog,
+  });
+  const auth = testAuthSession();
+  const sessionPath = join(catalogRoot, "busy-session.jsonl");
+
+  session.sessionStats.sessionId = "busy-session";
+  session.sessionStats.sessionFile = sessionPath;
+  session.sessionManager = {
+    ...session.sessionManager,
+    getSessionId: () => "busy-session",
+    getSessionFile: () => sessionPath,
+  };
+  session.isStreaming = true;
+
+  try {
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "busy-session",
+      cwd: "/srv/busy-v1",
+      sessionName: "Busy Session",
+    });
+
+    const created = await registry.createSession(
+      { workspaceCwd: "/srv/busy-v1", sessionName: "Busy Session" },
+      auth,
+      "conn-a",
+    );
+
+    assert.equal(created.sessionId, "busy-session");
+
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "busy-session",
+      cwd: "/srv/busy-v2",
+      sessionName: "Busy Session Updated",
+    });
+
+    await registry.reconcileCatalogFromDisk();
+
+    const snapshot = registry.getSessionSnapshot("busy-session", auth, "conn-a");
+    assert.equal(session.reloadCalls, 0);
+    assert.equal(
+      snapshot.errorMessage,
+      "Session changed externally while runtime active. Reload required.",
+    );
+  } finally {
+    await registry.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "session registry preserves busy runtime when durable file disappears externally",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-remote-busy-delete-conflict-"));
+    const catalogRoot = join(root, "sessions");
+    const catalog = new SessionCatalog({ rootDir: catalogRoot });
+    const session = new RecordingSession();
+    const runtimeFactory = new RecordingRuntimeFactory(session);
+    const registry = new SessionRegistry({
+      streams: new InMemoryDurableStreamStore(),
+      runtimeFactory,
+      catalog,
+    });
+    const auth = testAuthSession();
+    const sessionPath = join(catalogRoot, "busy-delete-session.jsonl");
+
+    session.sessionStats.sessionId = "busy-delete-session";
+    session.sessionStats.sessionFile = sessionPath;
+    session.sessionManager = {
+      ...session.sessionManager,
+      getSessionId: () => "busy-delete-session",
+      getSessionFile: () => sessionPath,
+    };
+    session.isStreaming = true;
+
+    try {
+      await writeSessionFile({
+        sessionPath,
+        sessionId: "busy-delete-session",
+        cwd: "/srv/busy-delete",
+        sessionName: "Busy Delete Session",
+      });
+
+      const created = await registry.createSession(
+        { workspaceCwd: "/srv/busy-delete", sessionName: "Busy Delete Session" },
+        auth,
+        "conn-a",
+      );
+
+      assert.equal(created.sessionId, "busy-delete-session");
+
+      await rm(sessionPath, { force: true });
+      await registry.reconcileCatalogFromDisk();
+
+      const snapshot = registry.getSessionSnapshot("busy-delete-session", auth, "conn-a");
+      assert.equal(runtimeFactory.runtimeDisposeCalls, 0);
+      assert.equal(snapshot.sessionId, "busy-delete-session");
+      assert.equal(
+        snapshot.errorMessage,
+        "Session changed externally while runtime active. Reload required.",
+      );
+    } finally {
+      await registry.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest("session catalog watcher rethrows non-transient directory read errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-watcher-errors-"));
+  const blockedDir = join(root, "blocked");
+
+  await mkdir(blockedDir, { recursive: true });
+  await chmod(blockedDir, 0o000);
+
+  try {
+    const watcher = new SessionCatalogWatcher({
+      rootDir: root,
+      onChange: () => {},
+    });
+
+    assert.throws(() => watcher.start());
+  } finally {
+    await chmod(blockedDir, 0o755);
     await rm(root, { recursive: true, force: true });
   }
 });

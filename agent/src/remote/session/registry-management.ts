@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
+import type { SessionCatalogRecord } from "../session-catalog.js";
 import type {
   AppSnapshot,
   CreateSessionRequest,
@@ -230,6 +231,70 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     return summary;
   }
 
+  async reconcileCatalogFromDisk(): Promise<void> {
+    const previousRecords = new Map(
+      this.catalog.list().map((record) => [record.sessionId, record]),
+    );
+    this.catalog.scan();
+    const nextRecords = new Map(this.catalog.list().map((record) => [record.sessionId, record]));
+    const reconciledAt = this.now();
+
+    for (const [sessionId, previousRecord] of previousRecords.entries()) {
+      const nextRecord = nextRecords.get(sessionId);
+      if (nextRecord) {
+        if (!didCatalogRecordChange(previousRecord, nextRecord)) {
+          continue;
+        }
+        await this.handleChangedCatalogRecord(sessionId, previousRecord, nextRecord, reconciledAt);
+        continue;
+      }
+
+      const loaded = this.loadedRuntimes.get(sessionId);
+      if (loaded) {
+        if (this.markLoadedRuntimeConflictedIfBusy(loaded, reconciledAt)) {
+          this.streams.append(appEventsStreamId(), {
+            sessionId,
+            kind: "session_summary_updated",
+            payload: {
+              sessionId,
+              sessionName: loaded.sessionName,
+              status: loaded.status,
+              updatedAt: loaded.updatedAt,
+            },
+            ts: reconciledAt,
+          });
+          continue;
+        }
+
+        await disposeSessionRecord(loaded);
+        this.loadedRuntimes.delete(sessionId);
+      }
+      this.streams.append(appEventsStreamId(), {
+        sessionId,
+        kind: "session_closed",
+        payload: { sessionId },
+        ts: reconciledAt,
+      });
+    }
+
+    for (const [sessionId, nextRecord] of nextRecords.entries()) {
+      if (previousRecords.has(sessionId)) {
+        continue;
+      }
+      this.streams.append(appEventsStreamId(), {
+        sessionId,
+        kind: "session_summary_updated",
+        payload: {
+          sessionId,
+          sessionName: nextRecord.sessionName,
+          status: "idle",
+          updatedAt: nextRecord.modifiedAt,
+        },
+        ts: reconciledAt,
+      });
+    }
+  }
+
   async archiveSession(sessionId: string): Promise<SessionSummary> {
     if (!this.catalog.get(sessionId)) {
       throw new RemoteError("Session not found", 404);
@@ -329,4 +394,112 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       },
     });
   }
+
+  private async handleChangedCatalogRecord(
+    sessionId: string,
+    previousRecord: SessionCatalogRecord,
+    nextRecord: SessionCatalogRecord,
+    reconciledAt: number,
+  ): Promise<void> {
+    const loaded = this.loadedRuntimes.get(sessionId);
+    if (loaded) {
+      await this.reconcileLoadedRuntimeForCatalogChange(
+        loaded,
+        previousRecord,
+        nextRecord,
+        reconciledAt,
+      );
+    }
+
+    const summary = loaded ? this.getSessionSummary(sessionId) : undefined;
+    this.streams.append(appEventsStreamId(), {
+      sessionId,
+      kind: "session_summary_updated",
+      payload: {
+        sessionId,
+        sessionName: summary?.sessionName ?? nextRecord.sessionName,
+        status: summary?.status ?? "idle",
+        updatedAt: summary?.updatedAt ?? nextRecord.modifiedAt,
+      },
+      ts: reconciledAt,
+    });
+  }
+
+  private async reconcileLoadedRuntimeForCatalogChange(
+    record: SessionRecord,
+    previousRecord: SessionCatalogRecord,
+    nextRecord: SessionCatalogRecord,
+    reconciledAt: number,
+  ): Promise<void> {
+    const session = this.requireRuntimeSession(record);
+    if (didCatalogLocationChange(previousRecord, nextRecord)) {
+      if (this.markLoadedRuntimeConflictedIfBusy(record, reconciledAt)) {
+        return;
+      }
+
+      await disposeSessionRecord(record);
+      this.loadedRuntimes.delete(record.sessionId);
+      return;
+    }
+
+    if (this.markLoadedRuntimeConflictedIfBusy(record, reconciledAt)) {
+      return;
+    }
+
+    await session.reload();
+    this.syncFromRuntime(record, {
+      now: Math.max(reconciledAt, nextRecord.modifiedAt),
+      updateTimestamp: false,
+      syncResources: true,
+    });
+    record.sessionName = nextRecord.sessionName;
+    record.cwd = nextRecord.cwd;
+    record.createdAt = nextRecord.createdAt;
+    record.updatedAt = Math.max(record.updatedAt, nextRecord.modifiedAt);
+    record.errorMessage = null;
+    record.hasLocalCommandError = false;
+  }
+
+  private markLoadedRuntimeConflictedIfBusy(record: SessionRecord, reconciledAt: number): boolean {
+    const session = this.requireRuntimeSession(record);
+    if (!isRuntimeSessionBusy(record, session)) {
+      return false;
+    }
+
+    record.errorMessage = "Session changed externally while runtime active. Reload required.";
+    record.hasLocalCommandError = true;
+    record.updatedAt = reconciledAt;
+    return true;
+  }
+}
+
+function didCatalogRecordChange(
+  previousRecord: SessionCatalogRecord,
+  nextRecord: SessionCatalogRecord,
+): boolean {
+  return (
+    previousRecord.sessionPath !== nextRecord.sessionPath ||
+    previousRecord.cwd !== nextRecord.cwd ||
+    previousRecord.sessionName !== nextRecord.sessionName ||
+    previousRecord.modifiedAt !== nextRecord.modifiedAt ||
+    previousRecord.parentSessionId !== nextRecord.parentSessionId ||
+    previousRecord.lifecycleStatus !== nextRecord.lifecycleStatus
+  );
+}
+
+function didCatalogLocationChange(
+  previousRecord: SessionCatalogRecord,
+  nextRecord: SessionCatalogRecord,
+): boolean {
+  return (
+    previousRecord.sessionPath !== nextRecord.sessionPath ||
+    previousRecord.lifecycleStatus !== nextRecord.lifecycleStatus
+  );
+}
+
+function isRuntimeSessionBusy(
+  record: SessionRecord,
+  session: NonNullable<SessionRecord["runtime"]>["session"],
+): boolean {
+  return session.isStreaming || session.isCompacting || record.queue.depth > 0;
 }

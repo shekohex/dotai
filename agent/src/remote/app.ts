@@ -19,6 +19,7 @@ import type { RemoteRuntimeFactory } from "./runtime-factory.js";
 import { BundledPiRuntimeFactory } from "./runtime-factory.js";
 import { createV1Routes, type RemoteHonoEnv } from "./routes.js";
 import { SessionCatalog } from "./session-catalog.js";
+import { SessionCatalogWatcher } from "./session-catalog-watcher.js";
 import { SessionRegistry } from "./session-registry.js";
 import { InMemoryDurableStreamStore } from "./streams.js";
 
@@ -52,8 +53,12 @@ function createOpenApiHandler(app: Hono<RemoteHonoEnv>, origin: string) {
   });
 }
 
-function createDispose(sessions: SessionRegistry): () => Promise<void> {
+function createDispose(
+  sessions: SessionRegistry,
+  watcher: SessionCatalogWatcher | undefined,
+): () => Promise<void> {
   return async () => {
+    await watcher?.dispose();
     await sessions.dispose();
   };
 }
@@ -86,6 +91,11 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     runtimeFactory,
     catalog,
   });
+  const watcher = new SessionCatalogWatcher({
+    rootDir: options.sessionCatalogRoot ?? defaultSessionCatalogRoot(runtimeFactory),
+    onChange: () => sessions.reconcileCatalogFromDisk(),
+  });
+  watcher.start();
 
   const v1 = createV1Routes({
     auth,
@@ -121,7 +131,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
 
   return {
     app,
-    dispose: createDispose(sessions),
+    dispose: createDispose(sessions, watcher),
   };
 }
 

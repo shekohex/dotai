@@ -1,9 +1,9 @@
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
-index 41555b5..a011de5 100644
+index b57b6ae..3408d50 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
-@@ -37,7 +37,6 @@ export class ToolExecutionComponent extends Container {
-         this.showImages = options.showImages ?? true;
+@@ -39,7 +39,6 @@ export class ToolExecutionComponent extends Container {
+         this.imageWidthCells = options.imageWidthCells ?? 60;
          this.ui = ui;
          this.cwd = cwd;
 -        this.addChild(new Spacer(1));
@@ -11,12 +11,12 @@ index 41555b5..a011de5 100644
          // selfRenderContainer is used when the tool renders its own framing.
          // contentText is reserved for generic fallback rendering when no tool definition exists.
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-index f219693..d4403e8 100644
+index 468f916..93ad18c 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-@@ -64,6 +64,36 @@ function isTruthyEnvFlag(value) {
-         return false;
-     return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+@@ -118,6 +118,36 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
+ export function getApiKeyProviderDisplayName(providerId) {
+     return API_KEY_LOGIN_PROVIDERS[providerId] ?? providerId;
  }
 +function getVisibleChatChildKind(component, width) {
 +    if (component instanceof Spacer) {
@@ -33,8 +33,8 @@ index f219693..d4403e8 100644
 +}
 +function getLastVisibleChatChildKind(interactiveMode) {
 +    const width = interactiveMode.ui.terminal.columns;
-+    for (let i = interactiveMode.chatContainer.children.length - 1; i >= 0; i--) {
-+        const kind = getVisibleChatChildKind(interactiveMode.chatContainer.children[i], width);
++    for (let index = interactiveMode.chatContainer.children.length - 1; index >= 0; index--) {
++        const kind = getVisibleChatChildKind(interactiveMode.chatContainer.children[index], width);
 +        if (kind) {
 +            return kind;
 +        }
@@ -51,8 +51,8 @@ index f219693..d4403e8 100644
  export class InteractiveMode {
      options;
      runtimeHost;
-@@ -1982,7 +2012,7 @@ export class InteractiveMode {
-                                     showImages: this.settingsManager.getShowImages(),
+@@ -2194,7 +2224,7 @@ export class InteractiveMode {
+                                     imageWidthCells: this.settingsManager.getImageWidthCells(),
                                  }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
                                  component.setExpanded(this.toolOutputExpanded);
 -                                this.chatContainer.addChild(component);
@@ -60,8 +60,8 @@ index f219693..d4403e8 100644
                                  this.pendingTools.set(content.id, component);
                              }
                              else {
-@@ -2042,7 +2072,7 @@ export class InteractiveMode {
-                         showImages: this.settingsManager.getShowImages(),
+@@ -2255,7 +2285,7 @@ export class InteractiveMode {
+                         imageWidthCells: this.settingsManager.getImageWidthCells(),
                      }, this.getRegisteredToolDefinition(event.toolName), this.ui, this.sessionManager.getCwd());
                      component.setExpanded(this.toolOutputExpanded);
 -                    this.chatContainer.addChild(component);
@@ -69,9 +69,9 @@ index f219693..d4403e8 100644
                      this.pendingTools.set(event.toolCallId, component);
                  }
                  component.markExecutionStarted();
-@@ -2306,7 +2336,7 @@ export class InteractiveMode {
-                     if (content.type === "toolCall") {
-                         const component = new ToolExecutionComponent(content.name, content.id, content.arguments, { showImages: this.settingsManager.getShowImages() }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+@@ -2533,7 +2563,7 @@ export class InteractiveMode {
+                             imageWidthCells: this.settingsManager.getImageWidthCells(),
+                         }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
                          component.setExpanded(this.toolOutputExpanded);
 -                        this.chatContainer.addChild(component);
 +                        addToolExecutionToChat(this, component);

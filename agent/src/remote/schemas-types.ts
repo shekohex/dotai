@@ -23,6 +23,7 @@ import {
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
   SessionNameUpdateRequestSchema,
+  SessionDeletedResponseSchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
   SessionStatusSchema,
@@ -77,6 +78,7 @@ export type ClearQueueResponse = Static<typeof ClearQueueResponseSchema>;
 export type CommandKind = Static<typeof CommandKindSchema>;
 export type CommandAcceptedResponse = Static<typeof CommandAcceptedResponseSchema>;
 export type SessionStatus = Static<typeof SessionStatusSchema>;
+export type SessionDeletedResponse = Static<typeof SessionDeletedResponseSchema>;
 export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;
 export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;

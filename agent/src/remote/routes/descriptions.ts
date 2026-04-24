@@ -19,6 +19,7 @@ import {
   PromptCommandRequestSchema,
   SettingsUpdateRequestSchema,
   SessionNameUpdateRequestSchema,
+  SessionDeletedResponseSchema,
   SessionSummarySchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
@@ -214,6 +215,36 @@ export const sessionToolsRouteDescription = {
   parameters: [sessionIdPathParameter],
   responses: {
     200: jsonResponse("Session tools", SessionToolsResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const archiveSessionRouteDescription = {
+  tags: ["command"],
+  operationId: "archiveSession",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session archived", SessionSummarySchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const restoreSessionRouteDescription = {
+  tags: ["command"],
+  operationId: "restoreSession",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session restored", SessionSummarySchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const deleteSessionRouteDescription = {
+  tags: ["command"],
+  operationId: "deleteSession",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session deleted", SessionDeletedResponseSchema),
     404: jsonResponse("Session not found", ErrorResponseSchema),
   },
 };

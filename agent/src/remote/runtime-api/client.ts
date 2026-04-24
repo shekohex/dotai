@@ -6,6 +6,7 @@ import type {
   ClientCapabilities,
   ConnectionCapabilitiesResponse,
   CreateSessionResponse,
+  SessionDeletedResponse,
   RemoteKvDeleteResponse,
   RemoteKvReadResponse,
   RemoteKvScope,
@@ -21,6 +22,7 @@ import {
   RemoteKvDeleteResponseSchema,
   RemoteKvReadResponseSchema,
   RemoteKvWriteResponseSchema,
+  SessionDeletedResponseSchema,
   SessionSummarySchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
@@ -188,6 +190,42 @@ export class RemoteApiClient {
     if (response.status !== 200) throw await toRemoteHttpError(response);
     const payload: unknown = await response.json();
     assertType(SessionSummarySchema, payload);
+    return payload;
+  }
+
+  async archiveSession(sessionId: string): Promise<SessionSummary> {
+    const response = await this.rpcClient.sessions[":sessionId"].archive.$post(
+      { param: { sessionId } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionSummarySchema, payload);
+    return payload;
+  }
+
+  async restoreSession(sessionId: string): Promise<SessionSummary> {
+    const response = await this.rpcClient.sessions[":sessionId"].restore.$post(
+      { param: { sessionId } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionSummarySchema, payload);
+    return payload;
+  }
+
+  async deleteSession(sessionId: string): Promise<SessionDeletedResponse> {
+    const response = await this.rpcClient.sessions[":sessionId"].$delete(
+      { param: { sessionId } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionDeletedResponseSchema, payload);
     return payload;
   }
 

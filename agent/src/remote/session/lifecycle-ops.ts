@@ -1,6 +1,6 @@
 import type { SessionRecord } from "./types.js";
 
-async function disposeSessionRecord(record: SessionRecord): Promise<void> {
+export async function disposeSessionRecord(record: SessionRecord): Promise<void> {
   for (const [requestId, pending] of record.pendingUiRequests) {
     record.pendingUiRequests.delete(requestId);
     pending.resolve({ id: requestId, cancelled: true });

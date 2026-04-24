@@ -5,6 +5,7 @@ import {
   ConnectionCapabilitiesResponseSchema,
   ClearQueueResponseSchema,
   CreateSessionResponseSchema,
+  SessionDeletedResponseSchema,
   SessionSummarySchema,
   SessionToolsResponseSchema,
   SessionSnapshotSchema,
@@ -128,6 +129,39 @@ export function handleSessionSummary(
   return withAuthError(c, () => {
     const summary = dependencies.sessions.getSessionSummary(sessionId);
     return jsonWithSchema(c, SessionSummarySchema, summary);
+  });
+}
+
+export function handleArchiveSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const summary = await dependencies.sessions.archiveSession(sessionId);
+    return jsonWithSchema(c, SessionSummarySchema, summary);
+  });
+}
+
+export function handleRestoreSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, () => {
+    const summary = dependencies.sessions.restoreSession(sessionId);
+    return jsonWithSchema(c, SessionSummarySchema, summary);
+  });
+}
+
+export function handleDeleteSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const response = await dependencies.sessions.deleteSession(sessionId);
+    return jsonWithSchema(c, SessionDeletedResponseSchema, response);
   });
 }
 

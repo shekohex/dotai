@@ -2520,6 +2520,154 @@ timedTest("missing session summary returns 404", async () => {
   }
 });
 
+timedTest(
+  "remote session archive restore and delete lifecycle works for loaded and unloaded sessions",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const originalCwd = process.cwd();
+    const root = await mkdtemp(join(tmpdir(), "pi-remote-lifecycle-"));
+    const agentDir = join(root, "agent");
+    const workspaceDir = join(root, "workspace");
+
+    await mkdir(workspaceDir, { recursive: true });
+
+    try {
+      const runtimeFactory = InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      });
+      const catalogRoot = runtimeFactory.getSessionCatalogRoot?.();
+      const remote = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory,
+      });
+
+      try {
+        const token = await authenticate(remote.app, privateKeyPem);
+
+        const createAResponse = await remote.app.request("/v1/sessions", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ sessionName: "Archive Me" }),
+        });
+        assert.equal(createAResponse.status, 201);
+        const sessionAId = ((await createAResponse.json()) as { sessionId: string }).sessionId;
+
+        const archivedResponse = await remote.app.request(`/v1/sessions/${sessionAId}/archive`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(archivedResponse.status, 200);
+        const archivedSummary = (await archivedResponse.json()) as {
+          lifecycle: { loaded: boolean; state: string };
+        };
+        assert.equal(archivedSummary.lifecycle.loaded, false);
+        assert.equal(archivedSummary.lifecycle.state, "archived");
+
+        const archivedCatalog = new SessionCatalog({ rootDir: catalogRoot });
+        const archivedRecord = archivedCatalog.get(sessionAId);
+        assert.ok(archivedRecord);
+        assert.match(archivedRecord?.sessionPath ?? "", /\.archive/);
+        await assert.doesNotReject(() => readFile(archivedRecord?.sessionPath ?? ""));
+
+        const restoredResponse = await remote.app.request(`/v1/sessions/${sessionAId}/restore`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(restoredResponse.status, 200);
+        const restoredSummary = (await restoredResponse.json()) as {
+          lifecycle: { loaded: boolean; state: string };
+        };
+        assert.equal(restoredSummary.lifecycle.loaded, false);
+        assert.equal(restoredSummary.lifecycle.state, "active");
+
+        const restoredCatalog = new SessionCatalog({ rootDir: catalogRoot });
+        const restoredRecord = restoredCatalog.get(sessionAId);
+        assert.ok(restoredRecord);
+        assert.doesNotMatch(restoredRecord?.sessionPath ?? "", /\.archive/);
+
+        const deleteUnloadedResponse = await remote.app.request(`/v1/sessions/${sessionAId}`, {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(deleteUnloadedResponse.status, 200);
+        assert.deepEqual(await deleteUnloadedResponse.json(), {
+          sessionId: sessionAId,
+          deleted: true,
+        });
+
+        const deletedSummaryResponse = await remote.app.request(
+          `/v1/sessions/${sessionAId}/summary`,
+          {
+            headers: { authorization: `Bearer ${token}` },
+          },
+        );
+        assert.equal(deletedSummaryResponse.status, 404);
+
+        const createBResponse = await remote.app.request("/v1/sessions", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ sessionName: "Delete Me Loaded" }),
+        });
+        assert.equal(createBResponse.status, 201);
+        const sessionBId = ((await createBResponse.json()) as { sessionId: string }).sessionId;
+
+        const deleteLoadedResponse = await remote.app.request(`/v1/sessions/${sessionBId}`, {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(deleteLoadedResponse.status, 200);
+        assert.deepEqual(await deleteLoadedResponse.json(), {
+          sessionId: sessionBId,
+          deleted: true,
+        });
+
+        const snapshotResponse = await remote.app.request("/v1/app/snapshot", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(snapshotResponse.status, 200);
+        const snapshot = (await snapshotResponse.json()) as {
+          sessionSummaries: Array<{ sessionId: string }>;
+        };
+        assert.deepEqual(snapshot.sessionSummaries, []);
+
+        const appEventsResponse = await remote.app.request("/v1/streams/app-events", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(appEventsResponse.status, 200);
+        const appEventsBody = await appEventsResponse.json();
+        assertType(StreamReadResponseSchema, appEventsBody);
+        assert.deepEqual(
+          appEventsBody.events.map((event) => event.kind),
+          [
+            "session_created",
+            "session_summary_updated",
+            "session_summary_updated",
+            "session_closed",
+            "session_created",
+            "session_closed",
+          ],
+        );
+      } finally {
+        await remote.dispose();
+      }
+    } finally {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 timedTest("session catalog rethrows unexpected scan failures", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-session-catalog-error-"));
   const filePath = join(root, "not-a-directory");
@@ -2528,6 +2676,79 @@ timedTest("session catalog rethrows unexpected scan failures", async () => {
 
   try {
     assert.throws(() => new SessionCatalog({ rootDir: filePath }), /ENOTDIR/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("session catalog preserves parent linkage across archive and restore", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-session-parent-linkage-"));
+  const sessionRoot = join(root, "sessions");
+  const parentPath = join(sessionRoot, "parent.jsonl");
+  const childPath = join(sessionRoot, "child.jsonl");
+  const timestamp = new Date().toISOString();
+
+  await mkdir(sessionRoot, { recursive: true });
+  await writeFile(
+    parentPath,
+    `${JSON.stringify({
+      type: "session",
+      version: 3,
+      id: "parent-session",
+      timestamp,
+      cwd: "/srv/workspace",
+    })}\n`,
+  );
+  await writeFile(
+    childPath,
+    `${JSON.stringify({
+      type: "session",
+      version: 3,
+      id: "child-session",
+      timestamp,
+      cwd: "/srv/workspace",
+      parentSession: parentPath,
+    })}\n`,
+  );
+
+  try {
+    const catalog = new SessionCatalog({ rootDir: sessionRoot });
+    assert.equal(catalog.get("child-session")?.parentSessionId, "parent-session");
+
+    const archived = catalog.archive("child-session");
+    assert.equal(archived.parentSessionId, "parent-session");
+    assert.equal(archived.lifecycleStatus, "archived");
+
+    const restored = catalog.restore("child-session");
+    assert.equal(restored.parentSessionId, "parent-session");
+    assert.equal(restored.lifecycleStatus, "active");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("session catalog scan marks archived files as archived", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-session-archived-scan-"));
+  const archivedRoot = join(root, ".archive", "nested");
+  const archivedPath = join(archivedRoot, "archived.jsonl");
+
+  await mkdir(archivedRoot, { recursive: true });
+  await writeFile(
+    archivedPath,
+    `${JSON.stringify({
+      type: "session",
+      version: 3,
+      id: "archived-session",
+      timestamp: new Date().toISOString(),
+      cwd: "/srv/workspace",
+    })}\n`,
+  );
+
+  try {
+    const catalog = new SessionCatalog({ rootDir: root });
+    const record = catalog.get("archived-session");
+    assert.ok(record);
+    assert.equal(record?.lifecycleStatus, "archived");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

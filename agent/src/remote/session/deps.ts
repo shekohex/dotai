@@ -18,7 +18,7 @@ export {
   acceptSessionCommandWithStreams,
   dispatchRuntimeCommandWithStreams,
 } from "./command-dispatch-ops.js";
-export { disposeSessionRegistry } from "./lifecycle-ops.js";
+export { disposeSessionRecord, disposeSessionRegistry } from "./lifecycle-ops.js";
 export {
   appendExtensionUiRequestEvent,
   appendExtensionUiResolvedEvent,

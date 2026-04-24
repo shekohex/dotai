@@ -5,6 +5,7 @@ import type {
   AppSnapshot,
   CreateSessionRequest,
   CreateSessionResponse,
+  SessionDeletedResponse,
   SessionSnapshot,
   SessionSummary,
 } from "../schemas.js";
@@ -12,6 +13,7 @@ import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import {
   createSingleSession,
   detachSessionPresence,
+  disposeSessionRecord,
   disposeFailedSessionCreation,
   disposeSessionRegistry,
   enqueueSessionCreation,
@@ -226,6 +228,73 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       throw new RemoteError("Session not found", 404);
     }
     return summary;
+  }
+
+  async archiveSession(sessionId: string): Promise<SessionSummary> {
+    if (!this.catalog.get(sessionId)) {
+      throw new RemoteError("Session not found", 404);
+    }
+    const loaded = this.loadedRuntimes.get(sessionId);
+    if (loaded) {
+      await disposeSessionRecord(loaded);
+      this.loadedRuntimes.delete(sessionId);
+    }
+    const archivedRecord = this.catalog.archive(sessionId);
+    this.streams.append(appEventsStreamId(), {
+      sessionId,
+      kind: "session_summary_updated",
+      payload: {
+        sessionId,
+        sessionName: archivedRecord.sessionName,
+        status: "idle",
+        updatedAt: archivedRecord.modifiedAt,
+      },
+      ts: this.now(),
+    });
+    return this.getSessionSummary(sessionId);
+  }
+
+  restoreSession(sessionId: string): SessionSummary {
+    if (!this.catalog.get(sessionId)) {
+      throw new RemoteError("Session not found", 404);
+    }
+    const restoredRecord = this.catalog.restore(sessionId);
+    this.streams.append(appEventsStreamId(), {
+      sessionId,
+      kind: "session_summary_updated",
+      payload: {
+        sessionId,
+        sessionName: restoredRecord.sessionName,
+        status: "idle",
+        updatedAt: restoredRecord.modifiedAt,
+      },
+      ts: this.now(),
+    });
+    return this.getSessionSummary(sessionId);
+  }
+
+  async deleteSession(sessionId: string): Promise<SessionDeletedResponse> {
+    if (!this.catalog.get(sessionId) && !this.loadedRuntimes.get(sessionId)) {
+      throw new RemoteError("Session not found", 404);
+    }
+    const loaded = this.loadedRuntimes.get(sessionId);
+    if (loaded) {
+      await disposeSessionRecord(loaded);
+      this.loadedRuntimes.delete(sessionId);
+    }
+    if (this.catalog.get(sessionId)) {
+      this.catalog.delete(sessionId);
+    }
+    this.streams.append(appEventsStreamId(), {
+      sessionId,
+      kind: "session_closed",
+      payload: { sessionId },
+      ts: this.now(),
+    });
+    return {
+      sessionId,
+      deleted: true,
+    };
   }
 
   touchPresence(sessionId: string, client: AuthSession, connectionId?: string): void {

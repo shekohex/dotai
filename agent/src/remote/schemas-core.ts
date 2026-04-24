@@ -93,9 +93,14 @@ export const SessionSummarySchema = Type.Object({
   lifecycle: Type.Object({
     persistence: Type.Union([Type.Literal("persistent"), Type.Literal("ephemeral")]),
     loaded: Type.Boolean(),
-    state: Type.Literal("active"),
+    state: Type.Union([Type.Literal("active"), Type.Literal("archived")]),
   }),
   lastSessionStreamOffset: Type.String(),
+});
+
+export const SessionDeletedResponseSchema = Type.Object({
+  sessionId: Type.String(),
+  deleted: Type.Boolean(),
 });
 
 export const RemoteModelSchema = Type.Object({

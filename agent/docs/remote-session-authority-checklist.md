@@ -159,12 +159,12 @@ In remote mode:
 
 ### Phase 5: Archive And Delete
 
-- [ ] Add archive endpoint and catalog state
-- [ ] Add restore endpoint and catalog state
-- [ ] Add delete endpoint and catalog state
-- [ ] Support archive/delete for loaded sessions
-- [ ] Support archive/delete for unloaded sessions
-- [ ] Emit app-stream events for archive/restore/delete changes
+- [x] Add archive endpoint and catalog state
+- [x] Add restore endpoint and catalog state
+- [x] Add delete endpoint and catalog state
+- [x] Support archive/delete for loaded sessions
+- [x] Support archive/delete for unloaded sessions
+- [x] Emit app-stream events for archive/restore/delete changes
 
 ### Phase 6: Watcher And Reconciliation
 

@@ -1,5 +1,5 @@
-import { readdirSync, statSync } from "node:fs";
-import { basename, extname, resolve } from "node:path";
+import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import {
   loadEntriesFromFile,
   type FileEntry,
@@ -18,7 +18,7 @@ export interface SessionCatalogRecord {
   parentSessionId: string | null;
   parentSessionPath: string | null;
   persistence: "persistent";
-  lifecycleStatus: "active";
+  lifecycleStatus: "active" | "archived";
 }
 
 interface RawCatalogRecord {
@@ -64,22 +64,7 @@ export class SessionCatalog {
     this.sessionPathById.clear();
 
     for (const rawRecord of rawRecords) {
-      const record: SessionCatalogRecord = {
-        sessionId: rawRecord.sessionId,
-        sessionPath: rawRecord.sessionPath,
-        cwd: rawRecord.cwd,
-        sessionName: rawRecord.sessionName,
-        createdAt: rawRecord.createdAt,
-        modifiedAt: rawRecord.modifiedAt,
-        parentSessionPath: rawRecord.parentSessionPath,
-        parentSessionId:
-          rawRecord.parentSessionPath === null
-            ? null
-            : (sessionIdByPath.get(resolve(rawRecord.parentSessionPath)) ?? null),
-        persistence: "persistent",
-        lifecycleStatus: "active",
-      };
-      this.upsert(record);
+      this.upsert(createCatalogRecord(rawRecord, sessionIdByPath, this.rootDir));
     }
   }
 
@@ -93,6 +78,49 @@ export class SessionCatalog {
 
   getSessionPath(sessionId: string): string | undefined {
     return this.sessionPathById.get(sessionId);
+  }
+
+  archive(sessionId: string): SessionCatalogRecord {
+    const record = this.requireRecord(sessionId);
+    if (record.lifecycleStatus === "archived") {
+      return record;
+    }
+
+    const archivedPath = archiveSessionPath(this.rootDir, record.sessionPath);
+    mkdirSync(resolve(archivedPath, ".."), { recursive: true });
+    renameSync(record.sessionPath, archivedPath);
+    const archivedRecord = buildRawCatalogRecord(archivedPath);
+    if (!archivedRecord) {
+      throw new Error(`Failed to archive session ${sessionId}`);
+    }
+    const nextRecord = createMovedCatalogRecord(archivedRecord, record, this.rootDir);
+    this.upsert(nextRecord);
+    return nextRecord;
+  }
+
+  restore(sessionId: string): SessionCatalogRecord {
+    const record = this.requireRecord(sessionId);
+    if (record.lifecycleStatus === "active") {
+      return record;
+    }
+
+    const restoredPath = restoreSessionPath(this.rootDir, record.sessionPath);
+    mkdirSync(resolve(restoredPath, ".."), { recursive: true });
+    renameSync(record.sessionPath, restoredPath);
+    const restoredRecord = buildRawCatalogRecord(restoredPath);
+    if (!restoredRecord) {
+      throw new Error(`Failed to restore session ${sessionId}`);
+    }
+    const nextRecord = createMovedCatalogRecord(restoredRecord, record, this.rootDir);
+    this.upsert(nextRecord);
+    return nextRecord;
+  }
+
+  delete(sessionId: string): void {
+    const record = this.requireRecord(sessionId);
+    rmSync(record.sessionPath, { force: true });
+    this.recordsBySessionId.delete(sessionId);
+    this.sessionPathById.delete(sessionId);
   }
 
   registerPersistedRuntimeRecord(record: SessionRecord): void {
@@ -113,7 +141,8 @@ export class SessionCatalog {
       parentSessionId: existing?.parentSessionId ?? null,
       parentSessionPath: existing?.parentSessionPath ?? null,
       persistence: "persistent",
-      lifecycleStatus: "active",
+      lifecycleStatus:
+        existing?.lifecycleStatus ?? resolveLifecycleStatus(sessionPath, this.rootDir),
     });
   }
 
@@ -132,6 +161,7 @@ export class SessionCatalog {
           catalogRecord.sessionId,
           createSummaryFromRuntimeRecord(loadedRecord, {
             persistence: "persistent",
+            lifecycleStatus: catalogRecord.lifecycleStatus,
             getLastSessionStreamOffset: input.getLastSessionStreamOffset,
             parentSessionId: catalogRecord.parentSessionId,
           }),
@@ -159,6 +189,7 @@ export class SessionCatalog {
           persistence: isPersistentSessionFile(loadedRecord.sessionStats.sessionFile)
             ? "persistent"
             : "ephemeral",
+          lifecycleStatus: "active",
           getLastSessionStreamOffset: input.getLastSessionStreamOffset,
           parentSessionId: null,
         }),
@@ -184,6 +215,7 @@ export class SessionCatalog {
       }
       return createSummaryFromRuntimeRecord(loadedRecord, {
         persistence,
+        lifecycleStatus: catalogRecord?.lifecycleStatus ?? "active",
         getLastSessionStreamOffset: input.getLastSessionStreamOffset,
         parentSessionId: catalogRecord?.parentSessionId ?? null,
       });
@@ -207,6 +239,14 @@ export class SessionCatalog {
 
     this.recordsBySessionId.set(record.sessionId, record);
     this.sessionPathById.set(record.sessionId, record.sessionPath);
+  }
+
+  private requireRecord(sessionId: string): SessionCatalogRecord {
+    const record = this.recordsBySessionId.get(sessionId);
+    if (!record) {
+      throw new Error(`Session catalog record not found for ${sessionId}`);
+    }
+    return record;
   }
 }
 
@@ -297,6 +337,79 @@ function isPersistentSessionFile(value: string | undefined): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function createCatalogRecord(
+  rawRecord: RawCatalogRecord,
+  sessionIdByPath: Map<string, string>,
+  rootDir?: string,
+): SessionCatalogRecord {
+  return {
+    sessionId: rawRecord.sessionId,
+    sessionPath: rawRecord.sessionPath,
+    cwd: rawRecord.cwd,
+    sessionName: rawRecord.sessionName,
+    createdAt: rawRecord.createdAt,
+    modifiedAt: rawRecord.modifiedAt,
+    parentSessionPath: rawRecord.parentSessionPath,
+    parentSessionId:
+      rawRecord.parentSessionPath === null
+        ? null
+        : (sessionIdByPath.get(resolve(rawRecord.parentSessionPath)) ?? null),
+    persistence: "persistent",
+    lifecycleStatus: resolveLifecycleStatus(rawRecord.sessionPath, rootDir),
+  };
+}
+
+function createMovedCatalogRecord(
+  rawRecord: RawCatalogRecord,
+  existingRecord: SessionCatalogRecord,
+  rootDir?: string,
+): SessionCatalogRecord {
+  return {
+    sessionId: rawRecord.sessionId,
+    sessionPath: rawRecord.sessionPath,
+    cwd: rawRecord.cwd,
+    sessionName: rawRecord.sessionName,
+    createdAt: rawRecord.createdAt,
+    modifiedAt: rawRecord.modifiedAt,
+    parentSessionId: existingRecord.parentSessionId,
+    parentSessionPath: existingRecord.parentSessionPath ?? rawRecord.parentSessionPath,
+    persistence: existingRecord.persistence,
+    lifecycleStatus: resolveLifecycleStatus(rawRecord.sessionPath, rootDir),
+  };
+}
+
+function resolveLifecycleStatus(
+  sessionPath: string,
+  rootDir: string | undefined,
+): SessionCatalogRecord["lifecycleStatus"] {
+  if (rootDir === undefined) {
+    return "active";
+  }
+  const archiveRoot = resolve(rootDir, ".archive");
+  const normalizedSessionPath = resolve(sessionPath);
+  return isPathWithinRoot(normalizedSessionPath, archiveRoot) ? "archived" : "active";
+}
+
+function archiveSessionPath(rootDir: string | undefined, sessionPath: string): string {
+  if (rootDir === undefined) {
+    throw new Error("Session catalog root is required to archive sessions");
+  }
+  return resolve(rootDir, ".archive", relative(rootDir, resolve(sessionPath)));
+}
+
+function restoreSessionPath(rootDir: string | undefined, sessionPath: string): string {
+  if (rootDir === undefined) {
+    throw new Error("Session catalog root is required to restore sessions");
+  }
+  const archiveRoot = resolve(rootDir, ".archive");
+  return resolve(rootDir, relative(archiveRoot, resolve(sessionPath)));
+}
+
+function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
+  const relativePath = relative(rootPath, targetPath);
+  return relativePath.length === 0 || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
 function createSummaryFromCatalogRecord(
   record: SessionCatalogRecord,
   input: { getLastSessionStreamOffset: (sessionId: string) => string },
@@ -322,6 +435,7 @@ function createSummaryFromRuntimeRecord(
   record: SessionRecord,
   input: {
     persistence: "persistent" | "ephemeral";
+    lifecycleStatus: "active" | "archived";
     getLastSessionStreamOffset: (sessionId: string) => string;
     parentSessionId: string | null;
   },
@@ -337,7 +451,7 @@ function createSummaryFromRuntimeRecord(
     lifecycle: {
       persistence: input.persistence,
       loaded: true,
-      state: "active",
+      state: input.lifecycleStatus,
     },
     lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),
   };

@@ -21,16 +21,19 @@ import {
 import { requireAuth } from "./routes/auth.js";
 import {
   appSnapshotRouteDescription,
+  archiveSessionRouteDescription,
   authChallengeRouteDescription,
   authVerifyRouteDescription,
   clearSessionQueueRouteDescription,
   createSessionRouteDescription,
+  deleteSessionRouteDescription,
   followUpSessionRouteDescription,
   interruptSessionRouteDescription,
   promptSessionRouteDescription,
   reloadSessionRouteDescription,
   readAppEventsStreamRouteDescription,
   readSessionEventsStreamRouteDescription,
+  restoreSessionRouteDescription,
   sessionSummaryRouteDescription,
   sessionSnapshotRouteDescription,
   sessionToolsRouteDescription,
@@ -43,10 +46,13 @@ import {
 } from "./routes/descriptions.js";
 import {
   handleAppSnapshot,
+  handleArchiveSession,
   handleAuthChallenge,
   handleAuthVerify,
   handleClearSessionQueue,
   handleCreateSession,
+  handleDeleteSession,
+  handleRestoreSession,
   handleSessionSummary,
   handleSessionSnapshot,
   handleSessionTools,
@@ -126,6 +132,36 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
       (c) => {
         const { sessionId } = c.req.valid("param");
         return handleSessionSnapshot(c, dependencies, sessionId);
+      },
+    )
+    .post(
+      "/sessions/:sessionId/archive",
+      describeRoute(archiveSessionRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleArchiveSession(c, dependencies, sessionId);
+      },
+    )
+    .post(
+      "/sessions/:sessionId/restore",
+      describeRoute(restoreSessionRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleRestoreSession(c, dependencies, sessionId);
+      },
+    )
+    .delete(
+      "/sessions/:sessionId",
+      describeRoute(deleteSessionRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleDeleteSession(c, dependencies, sessionId);
       },
     )
     .get(

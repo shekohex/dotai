@@ -727,6 +727,10 @@ class UiPrimitivesPromptSession extends RecordingSession {
 
   override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
     this.remoteUiContext?.setWorkingMessage?.("remote-working");
+    this.remoteUiContext?.setWorkingIndicator?.({
+      frames: ["remote-indicator"],
+      intervalMs: 321,
+    });
     this.remoteUiContext?.setHiddenThinkingLabel?.("remote-hidden-thinking");
     this.remoteUiContext?.setToolsExpanded?.(false);
     try {
@@ -3310,6 +3314,20 @@ timedTest("remote server ui getEditorText returns empty string fallback", () => 
   });
 
   assert.equal(uiContext.getEditorText(), "");
+});
+
+timedTest("remote server ui addAutocompleteProvider fails loudly", () => {
+  const uiContext = createRemoteUiContext({
+    record: {
+      presence: new Map(),
+    } as any,
+    now: () => Date.now(),
+    publishUiEvent: () => {},
+  });
+
+  assert.throws(() => {
+    uiContext.addAutocompleteProvider((current) => current);
+  }, /addAutocompleteProvider\(\) is not supported/);
 });
 
 timedTest("editor ui request ignores late response after remote cancellation", async () => {
@@ -6216,12 +6234,21 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
     });
 
     let workingMessage: string | undefined;
+    let workingIndicator:
+      | {
+          frames?: string[];
+          intervalMs?: number;
+        }
+      | undefined;
     let hiddenThinkingLabel: string | undefined;
     let toolsExpanded = true;
 
     const uiContext = {
       setWorkingMessage: (message?: string) => {
         workingMessage = message;
+      },
+      setWorkingIndicator: (options?: { frames?: string[]; intervalMs?: number }) => {
+        workingIndicator = options;
       },
       setHiddenThinkingLabel: (label?: string) => {
         hiddenThinkingLabel = label;
@@ -6265,6 +6292,7 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
     }
 
     assert.equal(workingMessage, "remote-working");
+    assert.deepEqual(workingIndicator, { frames: ["remote-indicator"], intervalMs: 321 });
     assert.equal(hiddenThinkingLabel, "remote-hidden-thinking");
     assert.equal(toolsExpanded, false);
     assert.match(session.headerError ?? "", /setHeader\(factory\) is not supported/);
@@ -6274,6 +6302,174 @@ timedTest("milestone 3.2 adapter handles extended remote ui bridge primitives", 
     await remote.dispose();
   }
 });
+
+timedTest("remote runtime newSession runs withSession on replacement context", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+    });
+
+    let statusKey: string | undefined;
+    let statusText: string | undefined;
+    await runtime.session.bindExtensions({
+      uiContext: {
+        select: async () => undefined,
+        confirm: async () => false,
+        input: async () => undefined,
+        editor: async () => undefined,
+        custom: async () => undefined,
+        notify: () => {},
+        onTerminalInput: () => () => {},
+        setStatus: (nextStatusKey: string, nextStatusText: string | undefined) => {
+          statusKey = nextStatusKey;
+          statusText = nextStatusText;
+        },
+        setWorkingMessage: () => {},
+        setWorkingIndicator: () => {},
+        setHiddenThinkingLabel: () => {},
+        setWidget: () => {},
+        setFooter: () => {},
+        setHeader: () => {},
+        setTitle: () => {},
+        pasteToEditor: () => {},
+        setEditorText: () => {},
+        getEditorText: () => "",
+        addAutocompleteProvider: () => {},
+        setEditorComponent: () => {},
+        theme: sessionTheme(),
+        getAllThemes: () => [],
+        getTheme: () => undefined,
+        setTheme: () => ({ success: false }),
+        getToolsExpanded: () => false,
+        setToolsExpanded: () => {},
+      },
+    });
+
+    const previousSessionId = runtime.session.sessionManager.getSessionId();
+    let replacementSessionId: string | undefined;
+    let replacementHasUi: boolean | undefined;
+
+    const result = await runtime.newSession({
+      withSession: async (ctx) => {
+        replacementSessionId = ctx.sessionManager.getSessionId();
+        replacementHasUi = ctx.hasUI;
+        ctx.ui.setStatus("replacement", "ready");
+        await ctx.sendUserMessage("replacement-session-message");
+      },
+    });
+
+    assert.equal(result.cancelled, false);
+    assert.notEqual(replacementSessionId, previousSessionId);
+    assert.equal(replacementSessionId, runtime.session.sessionManager.getSessionId());
+    assert.equal(replacementHasUi, true);
+    assert.equal(statusKey, "replacement");
+    assert.equal(statusText, "ready");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote runtime switchSession runs withSession on target session", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sessionName: "switch-target" }),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+    });
+
+    let notified = false;
+    await runtime.session.bindExtensions({
+      uiContext: {
+        select: async () => undefined,
+        confirm: async () => false,
+        input: async () => undefined,
+        editor: async () => undefined,
+        custom: async () => undefined,
+        notify: () => {
+          notified = true;
+        },
+        onTerminalInput: () => () => {},
+        setStatus: () => {},
+        setWorkingMessage: () => {},
+        setWorkingIndicator: () => {},
+        setHiddenThinkingLabel: () => {},
+        setWidget: () => {},
+        setFooter: () => {},
+        setHeader: () => {},
+        setTitle: () => {},
+        pasteToEditor: () => {},
+        setEditorText: () => {},
+        getEditorText: () => "",
+        addAutocompleteProvider: () => {},
+        setEditorComponent: () => {},
+        theme: sessionTheme(),
+        getAllThemes: () => [],
+        getTheme: () => undefined,
+        setTheme: () => ({ success: false }),
+        getToolsExpanded: () => false,
+        setToolsExpanded: () => {},
+      },
+    });
+
+    let replacementSessionId: string | undefined;
+    const result = await runtime.switchSession(created.sessionId, {
+      withSession: async (ctx) => {
+        replacementSessionId = ctx.sessionManager.getSessionId();
+        ctx.ui.notify("switched", "info");
+        await ctx.sendUserMessage("switched-session-message");
+      },
+    });
+
+    assert.equal(result.cancelled, false);
+    assert.equal(replacementSessionId, created.sessionId);
+    assert.equal(runtime.session.sessionManager.getSessionId(), created.sessionId);
+    assert.equal(notified, true);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+function sessionTheme() {
+  return {
+    fg: (_style: string, text: string) => text,
+    bg: (_style: string, text: string) => text,
+    getBgAnsi: () => "",
+  };
+}
 
 timedTest("milestone 3 adapter reads session stream via sse", async () => {
   const keys = generateKeyPairSync("ed25519");

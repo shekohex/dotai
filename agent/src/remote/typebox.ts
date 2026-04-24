@@ -1,13 +1,13 @@
-import type { TSchema, Static } from "@sinclair/typebox";
-import type { TypeCheck } from "@sinclair/typebox/compiler";
-import { TypeCompiler } from "@sinclair/typebox/compiler";
+import type { TSchema, Static } from "typebox";
+import type { Validator } from "typebox/compile";
+import { Compile } from "typebox/compile";
 import type { Context, TypedResponse } from "hono";
 
 type JsonResponseStatus = 200 | 201 | 202 | 400 | 401 | 403 | 404 | 409 | 500;
 type JsonResponseHeaders = Record<string, string | string[]>;
 
-function getValidator<T extends TSchema>(schema: T): TypeCheck<T> {
-  return TypeCompiler.Compile(schema);
+function getValidator<T extends TSchema>(schema: T): Validator<Record<string, never>, T> {
+  return Compile(schema);
 }
 
 export function assertType<T extends TSchema>(
@@ -18,9 +18,11 @@ export function assertType<T extends TSchema>(
   if (validator.Check(value)) {
     return;
   }
-  const firstError = validator.Errors(value).First();
-  if (firstError) {
-    throw new Error(`Schema validation failed at ${firstError.path}: ${firstError.message}`);
+  const firstError = validator.Errors(value)[0];
+  if (firstError !== undefined) {
+    throw new Error(
+      `Schema validation failed at ${firstError.instancePath || "/"}: ${firstError.message}`,
+    );
   }
   throw new Error("Schema validation failed");
 }

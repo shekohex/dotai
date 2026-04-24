@@ -3,12 +3,13 @@ import {
   type ExtensionFactory,
   type ModelRegistry,
   type ResourceLoader,
-  type SessionManager,
   type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import { RemoteApiClient } from "../remote-api-client.js";
 import type { RemoteRuntimeContract, RemoteRuntimeOptions } from "./contracts.js";
 import { RemoteAgentSession } from "./session.js";
+
+type RemoteExtensionBindings = Parameters<RemoteAgentSession["bindExtensions"]>[0];
 
 export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   private readonly client: RemoteApiClient;
@@ -19,6 +20,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   >;
   private readonly clientExtensionFactories: ExtensionFactory[];
   private _session: RemoteAgentSession;
+  private latestExtensionBindings: RemoteExtensionBindings | undefined;
 
   private constructor(
     client: RemoteApiClient,
@@ -65,13 +67,15 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       clientExtensions: clientExtensionMetadata,
       clientExtensionFactories,
     });
-
-    return new RemoteAgentSessionRuntime(client, session, {
+    const runtime = new RemoteAgentSessionRuntime(client, session, {
       cwd: authoritativeCwd,
       agentDir,
       clientExtensionMetadata,
       clientExtensionFactories,
     });
+    runtime.instrumentSessionBindings(session);
+
+    return runtime;
   }
 
   get session(): RemoteAgentSession {
@@ -98,20 +102,28 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     };
   }
 
-  async newSession(options?: {
-    parentSession?: string;
-    setup?: (sessionManager: SessionManager) => Promise<void>;
-  }): Promise<{ cancelled: boolean }> {
+  async newSession(
+    options?: Parameters<RemoteRuntimeContract["newSession"]>[0],
+  ): Promise<{ cancelled: boolean }> {
     const created = await this.client.createSession();
     await this.switchToSession(created.sessionId);
     if (options?.setup) {
       await options.setup(this._session.sessionManager);
     }
+    if (options?.withSession) {
+      await options.withSession(this._session.createReplacedSessionContext());
+    }
     return { cancelled: false };
   }
 
-  async switchSession(sessionPath: string, _cwdOverride?: string): Promise<{ cancelled: boolean }> {
+  async switchSession(
+    sessionPath: string,
+    options?: Parameters<RemoteRuntimeContract["switchSession"]>[1],
+  ): Promise<{ cancelled: boolean }> {
     await this.switchToSession(sessionPath);
+    if (options?.withSession) {
+      await options.withSession(this._session.createReplacedSessionContext());
+    }
     return { cancelled: false };
   }
 
@@ -137,8 +149,20 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       clientExtensions: this.clientExtensionMetadata,
       clientExtensionFactories: this.clientExtensionFactories,
     });
+    this.instrumentSessionBindings(next);
+    if (this.latestExtensionBindings) {
+      await next.bindExtensions(this.latestExtensionBindings);
+    }
     this.cwd = snapshot.cwd ?? this.cwd;
     this._session = next;
     await previous.dispose();
+  }
+
+  private instrumentSessionBindings(session: RemoteAgentSession): void {
+    const originalBindExtensions = session.bindExtensions.bind(session);
+    session.bindExtensions = async (bindings) => {
+      this.latestExtensionBindings = bindings;
+      await originalBindExtensions(bindings);
+    };
   }
 }

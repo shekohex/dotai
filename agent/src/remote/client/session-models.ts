@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry, SettingsManager } from "@mariozechner/pi-coding-agent";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import { RemoteModelSchema, type SettingsUpdateRequest } from "../schemas.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
 

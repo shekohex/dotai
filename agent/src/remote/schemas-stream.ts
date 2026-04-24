@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import {
   CommandKindSchema,
   ContextUsageSchema,
@@ -12,6 +12,11 @@ import {
   SessionStatusSchema,
   UiResponseRequestSchema,
 } from "./schemas-core.js";
+
+const WorkingIndicatorOptionsSchema = Type.Object({
+  frames: Type.Optional(Type.Array(Type.String())),
+  intervalMs: Type.Optional(Type.Number()),
+});
 
 const StreamEventCommonProperties = {
   eventId: Type.String(),
@@ -147,6 +152,11 @@ export const ExtensionUiRequestEventPayloadSchema = Type.Union([
     id: Type.String({ minLength: 1 }),
     method: Type.Literal("setWorkingMessage"),
     message: Type.Optional(Type.String()),
+  }),
+  Type.Object({
+    id: Type.String({ minLength: 1 }),
+    method: Type.Literal("setWorkingIndicator"),
+    options: Type.Optional(WorkingIndicatorOptionsSchema),
   }),
   Type.Object({
     id: Type.String({ minLength: 1 }),

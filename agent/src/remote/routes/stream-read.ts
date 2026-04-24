@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import type { Static } from "@sinclair/typebox";
+import type { Static } from "typebox";
 import { generateResponseCursor } from "../cursor.js";
 import { RemoteError } from "../errors.js";
 import { StreamReadQuerySchema, StreamReadResponseSchema } from "../schemas.js";

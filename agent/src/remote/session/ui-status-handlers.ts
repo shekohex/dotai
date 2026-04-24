@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { WorkingIndicatorOptions } from "@mariozechner/pi-coding-agent";
 import type { RemoteUiStatusHandlers } from "./types.js";
 import type { RemoteUiContextInput } from "./ui-context-types.js";
 
@@ -17,6 +18,9 @@ export function createRemoteUiStatusHandlers(input: RemoteUiContextInput): Remot
     },
     setWorkingMessage: (message) => {
       publishRemoteUiWorkingMessage(input, message);
+    },
+    setWorkingIndicator: (options) => {
+      publishRemoteUiWorkingIndicator(input, options);
     },
     setHiddenThinkingLabel: (label) => {
       publishRemoteUiHiddenThinkingLabel(input, label);
@@ -83,6 +87,17 @@ function publishRemoteUiHiddenThinkingLabel(
     id: randomUUID(),
     method: "setHiddenThinkingLabel",
     ...(label === undefined ? {} : { label }),
+  });
+}
+
+function publishRemoteUiWorkingIndicator(
+  input: RemoteUiContextInput,
+  options: WorkingIndicatorOptions | undefined,
+): void {
+  input.publishUiEvent(input.record, {
+    id: randomUUID(),
+    method: "setWorkingIndicator",
+    ...(options === undefined ? {} : { options }),
   });
 }
 

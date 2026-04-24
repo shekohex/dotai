@@ -34,6 +34,7 @@ export type RemoteUiStatusHandlers = Pick<
   | "onTerminalInput"
   | "setStatus"
   | "setWorkingMessage"
+  | "setWorkingIndicator"
   | "setHiddenThinkingLabel"
   | "setWidget"
   | "setTitle"

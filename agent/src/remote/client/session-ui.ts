@@ -29,6 +29,10 @@ function applyImmediateUiRequest(
     uiContext.setWorkingMessage(request.message);
     return true;
   }
+  if (request.method === "setWorkingIndicator") {
+    uiContext.setWorkingIndicator(request.options);
+    return true;
+  }
   if (request.method === "setHiddenThinkingLabel") {
     uiContext.setHiddenThinkingLabel(request.label);
     return true;

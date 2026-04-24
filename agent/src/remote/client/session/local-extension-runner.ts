@@ -72,11 +72,8 @@ export function createRemoteLocalExtensionRunner(input: {
   hasConfiguredAuth: (model: Model<Api>) => boolean;
   getThinkingLevel: () => ThinkingLevel;
   setThinkingLevel: (level: ThinkingLevel) => void;
-}): RemoteLocalExtensionRunner | undefined {
+}): RemoteLocalExtensionRunner {
   const extensionsResult = input.resourceLoader.getExtensions();
-  if (extensionsResult.extensions.length === 0) {
-    return undefined;
-  }
 
   const runner = new ExtensionRunner(
     extensionsResult.extensions,

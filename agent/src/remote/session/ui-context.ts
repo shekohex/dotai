@@ -15,6 +15,7 @@ export function createRemoteUiContext(input: RemoteUiContextInput): ExtensionUIC
   const uiContext: ExtensionUIContext = {
     ...createRemoteUiInputHandlers(input),
     ...createRemoteUiStatusHandlers(input),
+    ...createRemoteUiAutocompleteHandlers(),
     ...createRemoteUiLayoutHandlers(),
     ...createRemoteUiEditorHandlers(input),
     ...createRemoteUiThemeHandlers(defaultTheme),
@@ -38,6 +39,16 @@ function createRemoteUiLayoutHandlers(): Pick<ExtensionUIContext, "setFooter" | 
           "ctx.ui.setHeader(factory) is not supported in remote server runtime. Send header data and render on client runtime.",
         );
       }
+    },
+  };
+}
+
+function createRemoteUiAutocompleteHandlers(): Pick<ExtensionUIContext, "addAutocompleteProvider"> {
+  return {
+    addAutocompleteProvider: () => {
+      throw new TypeError(
+        "ctx.ui.addAutocompleteProvider() is not supported in remote server runtime.",
+      );
     },
   };
 }

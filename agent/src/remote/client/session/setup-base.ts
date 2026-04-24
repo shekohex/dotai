@@ -1,5 +1,5 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
 import type {
   AgentSessionEvent,
   AgentSessionEventListener,
@@ -13,6 +13,7 @@ import type {
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
+import type { ReplacedSessionContext } from "../../../../node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.js";
 import { defaultSettings } from "../../../default-settings.js";
 import type { RemoteApiClient } from "../../remote-api-client.js";
 import type {
@@ -53,6 +54,13 @@ import {
   isKvManagedExtensionState,
   persistManagedExtensionState,
 } from "./extension-state-kv.js";
+
+type ReplacementSessionMessage = Parameters<ReplacedSessionContext["sendMessage"]>[0];
+type ReplacementSessionMessageOptions = Parameters<ReplacedSessionContext["sendMessage"]>[1];
+type ReplacementSessionUserMessage = string | (TextContent | ImageContent)[];
+type ReplacementSessionUserMessageOptions = Parameters<
+  ReplacedSessionContext["sendUserMessage"]
+>[1];
 
 type RemoteExtensionCommandContextActions = {
   waitForIdle: () => Promise<void>;
@@ -135,7 +143,7 @@ export abstract class RemoteAgentSessionSetupBase {
   protected remoteExtensions: RemoteExtensionMetadata[] = [];
   protected readonly clientExtensions: RemoteExtensionMetadata[];
   protected readonly clientExtensionLoader: DefaultResourceLoader;
-  protected localExtensionRunner: RemoteLocalExtensionRunner | undefined;
+  protected localExtensionRunner!: RemoteLocalExtensionRunner;
   protected localExtensionsStarted = false;
   protected extensionCommandContextActions: RemoteExtensionCommandContextActions | undefined;
   protected extensionShutdownHandler: (() => void) | undefined;
@@ -204,7 +212,7 @@ export abstract class RemoteAgentSessionSetupBase {
     this.localExtensionRunner = this.createLocalExtensionRunner();
   }
 
-  protected createLocalExtensionRunner(): RemoteLocalExtensionRunner | undefined {
+  protected createLocalExtensionRunner(): RemoteLocalExtensionRunner {
     return createRemoteLocalExtensionRunner({
       resourceLoader: this.resourceLoader,
       cwd: this.sessionManager.getCwd(),
@@ -522,6 +530,25 @@ export abstract class RemoteAgentSessionSetupBase {
     };
   }
 
+  createReplacedSessionContext(): ReplacedSessionContext {
+    const commandContext = this.localExtensionRunner.createCommandContext();
+    return {
+      ...commandContext,
+      sendMessage: async (
+        message: ReplacementSessionMessage,
+        options: ReplacementSessionMessageOptions,
+      ) => {
+        await this.sendCustomMessage(message, options);
+      },
+      sendUserMessage: async (
+        content: ReplacementSessionUserMessage,
+        options: ReplacementSessionUserMessageOptions,
+      ) => {
+        await this.sendUserMessage(content, options);
+      },
+    };
+  }
+
   protected async handleUiRequest(request: ExtensionUiRequestEventPayload): Promise<void> {
     if (!this.uiContext) {
       return;
@@ -565,13 +592,9 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   protected async shutdownLocalExtensions(): Promise<void> {
-    if (this.localExtensionRunner === undefined) {
-      return;
-    }
-
     await this.localExtensionEventQueue;
     if (this.localExtensionsStarted) {
-      await this.localExtensionRunner.emit({ type: "session_shutdown" });
+      await this.localExtensionRunner.emit({ type: "session_shutdown", reason: "quit" });
       this.localExtensionsStarted = false;
     }
     this.localExtensionErrorUnsubscriber?.();
@@ -579,10 +602,6 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   private applyLocalExtensionBindings(): void {
-    if (this.localExtensionRunner === undefined) {
-      return;
-    }
-
     this.localExtensionRunner.setUIContext(this.uiContext);
     this.localExtensionRunner.bindCommandContext(this.extensionCommandContextActions);
     this.localExtensionErrorUnsubscriber?.();
@@ -594,7 +613,7 @@ export abstract class RemoteAgentSessionSetupBase {
   private async ensureLocalExtensionsStarted(
     reason: "startup" | "reload" = "startup",
   ): Promise<void> {
-    if (this.localExtensionRunner === undefined || this.localExtensionsStarted) {
+    if (this.localExtensionsStarted) {
       return;
     }
 
@@ -628,7 +647,7 @@ export abstract class RemoteAgentSessionSetupBase {
       this.localExtensionTurnIndex += 1;
     }
 
-    if (!this.localExtensionRunner || !this.localExtensionsStarted) {
+    if (!this.localExtensionsStarted) {
       this.bufferedLocalExtensionEvents.push(mappedEvent);
       return;
     }
@@ -651,7 +670,7 @@ export abstract class RemoteAgentSessionSetupBase {
       this.state.model = this._model;
     }
 
-    if (!this.localExtensionRunner || !this.localExtensionsStarted) {
+    if (!this.localExtensionsStarted) {
       this.bufferedLocalExtensionEvents.push(event);
       return;
     }
@@ -667,7 +686,7 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   private async emitLocalExtensionEvent(event: ForwardableRemoteExtensionEvent): Promise<void> {
-    if (!this.localExtensionRunner || !this.localExtensionsStarted) {
+    if (!this.localExtensionsStarted) {
       return;
     }
 

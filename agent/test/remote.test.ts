@@ -3001,8 +3001,78 @@ timedTest(
         }),
       /--workspace-cwd/,
     );
+
+    assert.throws(
+      () =>
+        resolveRemoteSessionId({
+          snapshot,
+          parsed: {
+            remoteOrigin: "http://localhost:3000",
+            keyId: "dev",
+            sessionId: undefined,
+            privateKey: undefined,
+            privateKeyPath: undefined,
+            resume: true,
+            continueSession: false,
+            forkSessionId: undefined,
+            noSession: false,
+            exportPath: undefined,
+            sessionDir: undefined,
+            sessionName: undefined,
+            workspaceCwd: undefined,
+            verbose: false,
+            initialMessage: undefined,
+            initialMessages: [],
+          },
+          cwd: undefined,
+        }),
+      /--workspace-cwd/,
+    );
   },
 );
+
+timedTest("remote runtime create requires explicit workspace for new session", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(new RecordingSession()),
+  });
+
+  try {
+    await assert.rejects(
+      RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+        createNewSession: true,
+        fetchImpl: createInProcessFetch(remote.app),
+      }),
+      /workspaceCwd/,
+    );
+
+    await assert.rejects(
+      RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+        fetchImpl: createInProcessFetch(remote.app),
+      }),
+      /workspaceCwd/,
+    );
+  } finally {
+    await remote.dispose();
+  }
+});
 
 timedTest("session registry createSession uses requested workspace cwd", async () => {
   const streams = new InMemoryDurableStreamStore();
@@ -5307,6 +5377,7 @@ timedTest("milestone 3 adapter forwards turn_end to client extensions", async ()
   try {
     runtime = await createRemoteRuntime(remote.app, {
       privateKeyPem,
+      cwd: "/srv/turn-end-workspace",
       clientExtensionMetadata: [
         {
           id: "test-turn-end",
@@ -5378,6 +5449,7 @@ timedTest(
     try {
       runtime = await createRemoteRuntime(remote.app, {
         privateKeyPem,
+        cwd: "/srv/message-end-workspace",
         clientExtensionMetadata: [
           {
             id: "test-mutating-message-end",
@@ -6418,6 +6490,7 @@ timedTest(
     try {
       runtime = await createRemoteRuntime(remote.app, {
         privateKeyPem,
+        cwd: "/srv/settings-rollback-workspace",
       });
       const initialTheme = runtime.session.settingsManager.getTheme();
 
@@ -6623,6 +6696,7 @@ timedTest("remote runtime newSession runs withSession on replacement context", a
   try {
     runtime = await createRemoteRuntime(remote.app, {
       privateKeyPem,
+      cwd: "/srv/new-session-workspace",
     });
 
     let statusKey: string | undefined;

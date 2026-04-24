@@ -59,12 +59,16 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       options.createNewSession === true
         ? undefined
         : (options.sessionId ?? appSnapshot.defaultAttachSessionId);
+    const workspaceCwd = requireWorkspaceCwdForCreate({
+      createNewSession: options.createNewSession === true || resolvedSessionId === undefined,
+      workspaceCwd: options.workspaceCwd,
+    });
     const attachedSessionId =
       resolvedSessionId ??
       (
         await client.createSession({
           sessionName: options.sessionName,
-          workspaceCwd: options.workspaceCwd,
+          workspaceCwd,
         })
       ).sessionId;
     const snapshot = await client.getSessionSnapshot(attachedSessionId);
@@ -174,4 +178,17 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       await originalBindExtensions(bindings);
     };
   }
+}
+
+function requireWorkspaceCwdForCreate(input: {
+  createNewSession: boolean;
+  workspaceCwd?: string;
+}): string | undefined {
+  if (!input.createNewSession) {
+    return input.workspaceCwd;
+  }
+  if (input.workspaceCwd === undefined || input.workspaceCwd.length === 0) {
+    throw new Error("Remote new session requires workspaceCwd");
+  }
+  return input.workspaceCwd;
 }

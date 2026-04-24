@@ -332,6 +332,9 @@ export function resolveRemoteSessionId(input: {
     if (latest !== undefined) {
       return { sessionId: latest.sessionId, createNewSession: false };
     }
+    if (workspaceCwd === undefined || workspaceCwd.length === 0) {
+      throw new Error("Remote new session requires --workspace-cwd");
+    }
     return { createNewSession: true };
   }
 

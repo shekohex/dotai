@@ -13,12 +13,15 @@ CLIENT_SESSION_NAME="${PI_REMOTE_E2E_CLIENT_SESSION_NAME:-Remote E2E}"
 STATE_DIR="${ROOT_DIR}/.pi/remote-e2e/${SESSION_NAME}"
 KEY_DIR="${STATE_DIR}/keys"
 LOG_DIR="${STATE_DIR}/logs"
+TMP_DIR="${STATE_DIR}/tmp"
 PRIVATE_KEY_FILE="${KEY_DIR}/dev-private.pem"
 PUBLIC_KEY_FILE="${KEY_DIR}/dev-public.pem"
 SERVER_LOG_FILE="${LOG_DIR}/server.log"
 CLIENT_LOG_FILE="${LOG_DIR}/client.log"
 SERVER_CAPTURE_FILE="${LOG_DIR}/server.capture.log"
 CLIENT_CAPTURE_FILE="${LOG_DIR}/client.capture.log"
+SERVER_CWD_FILE="${STATE_DIR}/server-cwd.path"
+WORKSPACE_CWD_FILE="${STATE_DIR}/workspace-cwd.path"
 
 usage() {
   cat <<EOF
@@ -37,6 +40,8 @@ Env overrides:
   PI_REMOTE_E2E_PORT
   PI_REMOTE_E2E_ORIGIN
   PI_REMOTE_E2E_CLIENT_SESSION_NAME
+  PI_REMOTE_E2E_SERVER_CWD
+  PI_REMOTE_E2E_WORKSPACE_CWD
   PI_REMOTE_E2E_HEALTH_TIMEOUT_SECONDS
 EOF
 }
@@ -95,7 +100,30 @@ attach_session() {
 }
 
 ensure_state_dirs() {
-  mkdir -p "$KEY_DIR" "$LOG_DIR"
+  mkdir -p "$KEY_DIR" "$LOG_DIR" "$TMP_DIR"
+}
+
+ensure_runtime_paths() {
+  if [[ -n "${PI_REMOTE_E2E_SERVER_CWD:-}" ]]; then
+    mkdir -p "$PI_REMOTE_E2E_SERVER_CWD"
+    printf '%s\n' "$PI_REMOTE_E2E_SERVER_CWD" >"$SERVER_CWD_FILE"
+  elif [[ ! -s "$SERVER_CWD_FILE" ]]; then
+    mktemp -d "${TMP_DIR}/server-cwd.XXXXXX" >"$SERVER_CWD_FILE"
+  fi
+
+  if [[ -n "${PI_REMOTE_E2E_WORKSPACE_CWD:-}" ]]; then
+    mkdir -p "$PI_REMOTE_E2E_WORKSPACE_CWD"
+    printf '%s\n' "$PI_REMOTE_E2E_WORKSPACE_CWD" >"$WORKSPACE_CWD_FILE"
+  elif [[ ! -s "$WORKSPACE_CWD_FILE" ]]; then
+    mktemp -d "${TMP_DIR}/workspace-cwd.XXXXXX" >"$WORKSPACE_CWD_FILE"
+  fi
+}
+
+read_runtime_path() {
+  local file_path="$1"
+  if [[ -s "$file_path" ]]; then
+    head -n 1 "$file_path"
+  fi
 }
 
 ensure_keys() {
@@ -132,27 +160,33 @@ EOF
 start_session() {
   ensure_state_dirs
   ensure_keys
+  ensure_runtime_paths
 
   : >"$SERVER_LOG_FILE"
   : >"$CLIENT_LOG_FILE"
 
   local allowed_keys_json
-  local root_q origin_q keys_q private_q client_session_q
+  local root_q origin_q keys_q private_q client_session_q server_cwd_q workspace_cwd_q
+  local server_cwd workspace_cwd
   allowed_keys_json="$(build_allowed_keys_json)"
+  server_cwd="$(read_runtime_path "$SERVER_CWD_FILE")"
+  workspace_cwd="$(read_runtime_path "$WORKSPACE_CWD_FILE")"
   printf -v root_q '%q' "$ROOT_DIR"
   printf -v origin_q '%q' "$ORIGIN"
   printf -v keys_q '%q' "$allowed_keys_json"
   printf -v private_q '%q' "$PRIVATE_KEY_FILE"
   printf -v client_session_q '%q' "$CLIENT_SESSION_NAME"
+  printf -v server_cwd_q '%q' "$server_cwd"
+  printf -v workspace_cwd_q '%q' "$workspace_cwd"
 
   local server_cmd
   local client_cmd
-  server_cmd="cd ${root_q} && PI_REMOTE_PORT=${PORT} PI_REMOTE_ORIGIN=${origin_q} PI_REMOTE_ALLOWED_KEYS=${keys_q} npm run remote"
-  client_cmd="cd ${root_q} && npm run pi -- --mode-rush --remote-origin ${origin_q} --remote-key-id dev --remote-private-key-path ${private_q} --remote-session-name ${client_session_q}"
+  server_cmd="cd ${server_cwd_q} && PI_REMOTE_PORT=${PORT} PI_REMOTE_ORIGIN=${origin_q} PI_REMOTE_ALLOWED_KEYS=${keys_q} npm --prefix ${root_q} run remote"
+  client_cmd="cd ${root_q} && npm run pi -- --mode-rush --remote-origin ${origin_q} --remote-key-id dev --remote-private-key-path ${private_q} --remote-session-name ${client_session_q} --workspace-cwd ${workspace_cwd_q}"
 
   local server_pane_id client_pane_id
 
-  tmux new-session -d -s "$SESSION_NAME" -n "$WINDOW_NAME" -c "$ROOT_DIR"
+  tmux new-session -d -s "$SESSION_NAME" -n "$WINDOW_NAME" -c "$server_cwd"
   server_pane_id="$(tmux display-message -p -t "$(window_target)" "#{pane_id}")"
   client_pane_id="$(tmux split-window -h -P -F "#{pane_id}" -t "$server_pane_id" -c "$ROOT_DIR")"
   tmux select-layout -t "$(window_target)" even-horizontal
@@ -174,6 +208,8 @@ status() {
     echo "session: $SESSION_NAME (missing)"
   fi
   echo "origin:  $ORIGIN"
+  echo "server cwd: $(read_runtime_path "$SERVER_CWD_FILE")"
+  echo "workspace:  $(read_runtime_path "$WORKSPACE_CWD_FILE")"
   echo "logs:    $LOG_DIR"
   echo "server:  $SERVER_LOG_FILE"
   echo "client:  $CLIENT_LOG_FILE"

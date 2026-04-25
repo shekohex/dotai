@@ -61,10 +61,10 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   dispose(): Promise<void> {
     this.closed = true;
     for (const pendingRequest of this.pendingInteractiveRequests.values()) {
-      pendingRequest.abort();
+      abortControllerSafely(pendingRequest);
     }
     this.pendingInteractiveRequests.clear();
-    this.activeReadAbortController?.abort();
+    abortControllerSafely(this.activeReadAbortController);
     this.activeReadAbortController = undefined;
     const task = this.pollingTask;
     if (!task) {
@@ -263,6 +263,28 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._retryAttempt = next.retryAttempt;
     this._isCompacting = next.isCompacting;
   }
+}
+
+function abortControllerSafely(controller: AbortController | undefined): void {
+  if (!controller) {
+    return;
+  }
+
+  try {
+    controller.abort();
+  } catch (error) {
+    if (isAbortError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }
 
 function cloneSessionStats(

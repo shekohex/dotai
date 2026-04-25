@@ -138,7 +138,7 @@ export async function* parseSseStream(
 
   const onAbort = () => {
     aborted = true;
-    void reader.cancel();
+    void reader.cancel().catch(() => {});
   };
 
   signal?.addEventListener("abort", onAbort, { once: true });

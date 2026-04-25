@@ -13,6 +13,7 @@ export interface SessionCatalogRecord {
   sessionPath: string;
   cwd: string;
   sessionName: string;
+  messageCount: number;
   createdAt: number;
   modifiedAt: number;
   parentSessionId: string | null;
@@ -26,6 +27,7 @@ interface RawCatalogRecord {
   sessionPath: string;
   cwd: string;
   sessionName: string;
+  messageCount: number;
   createdAt: number;
   modifiedAt: number;
   parentSessionPath: string | null;
@@ -136,6 +138,7 @@ export class SessionCatalog {
       sessionPath: resolve(sessionPath),
       cwd: record.cwd,
       sessionName: record.sessionName,
+      messageCount: record.sessionStats.totalMessages,
       createdAt: record.createdAt,
       modifiedAt: record.updatedAt,
       parentSessionId: existing?.parentSessionId ?? null,
@@ -294,6 +297,7 @@ function buildRawCatalogRecord(sessionPath: string): RawCatalogRecord | null {
       sessionPath: resolve(sessionPath),
       cwd: header.cwd,
       sessionName: readSessionName(entries, header.id),
+      messageCount: entries.filter((entry) => entry.type === "message").length,
       createdAt: new Date(header.timestamp).getTime(),
       modifiedAt: Math.trunc(stats.mtimeMs),
       parentSessionPath: typeof header.parentSession === "string" ? header.parentSession : null,
@@ -337,6 +341,7 @@ function createCatalogRecord(
     sessionPath: rawRecord.sessionPath,
     cwd: rawRecord.cwd,
     sessionName: rawRecord.sessionName,
+    messageCount: rawRecord.messageCount,
     createdAt: rawRecord.createdAt,
     modifiedAt: rawRecord.modifiedAt,
     parentSessionPath: rawRecord.parentSessionPath,
@@ -359,6 +364,7 @@ function createMovedCatalogRecord(
     sessionPath: rawRecord.sessionPath,
     cwd: rawRecord.cwd,
     sessionName: rawRecord.sessionName,
+    messageCount: rawRecord.messageCount,
     createdAt: rawRecord.createdAt,
     modifiedAt: rawRecord.modifiedAt,
     parentSessionId: existingRecord.parentSessionId,
@@ -407,6 +413,7 @@ function createSummaryFromCatalogRecord(
   return {
     sessionId: record.sessionId,
     sessionName: record.sessionName,
+    messageCount: record.messageCount,
     status: "idle",
     cwd: record.cwd,
     createdAt: record.createdAt,
@@ -433,6 +440,7 @@ function createSummaryFromRuntimeRecord(
   return {
     sessionId: record.sessionId,
     sessionName: record.sessionName,
+    messageCount: record.sessionStats.totalMessages,
     status: record.status,
     cwd: record.cwd,
     createdAt: record.createdAt,

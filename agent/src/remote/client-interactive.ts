@@ -11,6 +11,7 @@ import {
 } from "./client-runtime.js";
 import type { AppSnapshot, ClientCapabilities, RemoteExtensionMetadata } from "./schemas.js";
 import { RemoteApiClient } from "./remote-api-client.js";
+import { selectRemoteSessionId } from "./client/session-picker.js";
 
 function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRuntime {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -172,6 +173,10 @@ function applyRemoteFlag(
     return { consumed: true, nextIndex: index };
   }
   if (arg === "--resume") {
+    parsed.resume = true;
+    return { consumed: true, nextIndex: index };
+  }
+  if (arg === "-r") {
     parsed.resume = true;
     return { consumed: true, nextIndex: index };
   }
@@ -361,6 +366,37 @@ export interface RunRemoteInteractiveModeOptions {
   clientExtensionMetadata?: RemoteExtensionMetadata[];
   clientExtensionFactories?: ExtensionFactory[];
   clientCapabilities?: ClientCapabilities;
+  selectSessionId?: (snapshot: AppSnapshot, workspaceCwd?: string) => Promise<string | undefined>;
+}
+
+export async function resolveRemoteStartupSelection(input: {
+  snapshot: AppSnapshot;
+  parsed: ParsedRemoteArgs;
+  cwd?: string;
+  selectSessionId?: (snapshot: AppSnapshot, workspaceCwd?: string) => Promise<string | undefined>;
+}): Promise<{ sessionId?: string; createNewSession: boolean } | undefined> {
+  const selectedResumeSessionId = input.parsed.resume
+    ? await (input.selectSessionId ?? selectRemoteSessionId)(
+        input.snapshot,
+        input.parsed.workspaceCwd,
+      )
+    : undefined;
+  if (input.parsed.resume && selectedResumeSessionId === undefined) {
+    return undefined;
+  }
+
+  return resolveRemoteSessionId({
+    snapshot: input.snapshot,
+    parsed:
+      selectedResumeSessionId === undefined
+        ? input.parsed
+        : {
+            ...input.parsed,
+            sessionId: selectedResumeSessionId,
+            resume: false,
+          },
+    cwd: input.cwd,
+  });
 }
 
 export async function runRemoteInteractiveMode(
@@ -384,11 +420,15 @@ export async function runRemoteInteractiveMode(
 
   await client.authenticate();
   const appSnapshot = await client.getAppSnapshot();
-  const selection = resolveRemoteSessionId({
+  const selection = await resolveRemoteStartupSelection({
     snapshot: appSnapshot,
     parsed,
     cwd: undefined,
+    selectSessionId: options.selectSessionId,
   });
+  if (selection === undefined) {
+    return;
+  }
 
   const runtimeCandidate: unknown = await RemoteAgentSessionRuntime.create({
     origin: parsed.remoteOrigin,

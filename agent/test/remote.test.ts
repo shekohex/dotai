@@ -37,7 +37,11 @@ import {
 } from "../src/remote/runtime-factory.ts";
 import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
-import { parseRemoteArgs, resolveRemoteSessionId } from "../src/remote/client-interactive.ts";
+import {
+  parseRemoteArgs,
+  resolveRemoteSessionId,
+  resolveRemoteStartupSelection,
+} from "../src/remote/client-interactive.ts";
 import { loadThemeFromPath } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import {
   createBashToolOverrideDefinition,
@@ -2336,6 +2340,7 @@ timedTest(
         assert.equal(snapshot.sessionSummaries.length, 1);
         assert.equal(snapshot.sessionSummaries[0]?.sessionId, createdSessionId);
         assert.equal(snapshot.sessionSummaries[0]?.sessionName, "Persistent Catalog Session");
+        assert.equal(snapshot.sessionSummaries[0]?.messageCount, 0);
         assert.equal(snapshot.sessionSummaries[0]?.cwd, workspaceDir);
         assert.equal(snapshot.sessionSummaries[0]?.parentSessionId, null);
         assert.equal(snapshot.sessionSummaries[0]?.lifecycle.persistence, "persistent");
@@ -2453,6 +2458,7 @@ timedTest("persistent remote session lazily loads runtime on attach after restar
       };
 
       assert.equal(appSnapshot.sessionSummaries[0]?.sessionId, createdSessionId);
+      assert.equal(appSnapshot.sessionSummaries[0]?.messageCount, 0);
       assert.equal(appSnapshot.sessionSummaries[0]?.cwd, workspaceDir);
       assert.equal(appSnapshot.sessionSummaries[0]?.lifecycle.loaded, false);
       assert.equal(runtimeFactoryB.createCalls, 0);
@@ -2888,7 +2894,12 @@ timedTest("remote app watcher reconciles external session add change and remove"
         });
         assert.equal(response.status, 200);
         return (await response.json()) as {
-          sessionSummaries: Array<{ sessionId: string; sessionName: string; cwd: string }>;
+          sessionSummaries: Array<{
+            sessionId: string;
+            sessionName: string;
+            messageCount: number;
+            cwd: string;
+          }>;
         };
       },
       (snapshot) =>
@@ -2896,6 +2907,7 @@ timedTest("remote app watcher reconciles external session add change and remove"
     );
 
     assert.equal(addedSnapshot.sessionSummaries[0]?.sessionName, "External Session");
+    assert.equal(addedSnapshot.sessionSummaries[0]?.messageCount, 0);
     assert.equal(addedSnapshot.sessionSummaries[0]?.cwd, "/srv/external");
 
     await writeSessionFile({
@@ -3606,6 +3618,19 @@ timedTest("remote CLI parser accepts explicit workspace target", async () => {
   }
 });
 
+timedTest("remote CLI parser accepts short resume flag", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+
+  try {
+    const parsed = parseRemoteArgs(["-r"]);
+    assert.equal(parsed.resume, true);
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+  }
+});
+
 timedTest("remote CLI parser rejects unsupported remote session-dir and export flags", async () => {
   process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
   process.env.PI_REMOTE_KEY_ID = "dev";
@@ -3637,6 +3662,7 @@ timedTest(
         {
           sessionId: "session-a",
           sessionName: "Alpha",
+          messageCount: 1,
           status: "idle",
           cwd: "/workspace/a",
           createdAt: 10,
@@ -3648,6 +3674,7 @@ timedTest(
         {
           sessionId: "session-b",
           sessionName: "Beta",
+          messageCount: 2,
           status: "idle",
           cwd: "/workspace/b",
           createdAt: 30,
@@ -3659,6 +3686,7 @@ timedTest(
         {
           sessionId: "session-c",
           sessionName: "Gamma",
+          messageCount: 3,
           status: "idle",
           cwd: "/workspace/a",
           createdAt: 50,
@@ -3775,6 +3803,79 @@ timedTest(
     );
   },
 );
+
+timedTest("remote startup selection uses resume picker choice", async () => {
+  const snapshot = {
+    serverInfo: {
+      name: "pi-remote",
+      version: "0.1.0",
+      now: 100,
+    },
+    currentClientAuthInfo: {
+      clientId: "client-1",
+      keyId: "dev",
+      tokenExpiresAt: 200,
+    },
+    sessionSummaries: [
+      {
+        sessionId: "session-a",
+        sessionName: "Alpha",
+        messageCount: 1,
+        status: "idle",
+        cwd: "/workspace/a",
+        createdAt: 10,
+        updatedAt: 20,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+        lastSessionStreamOffset: "1-0",
+      },
+      {
+        sessionId: "session-b",
+        sessionName: "Beta",
+        messageCount: 2,
+        status: "idle",
+        cwd: "/workspace/b",
+        createdAt: 30,
+        updatedAt: 40,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: true, state: "active" },
+        lastSessionStreamOffset: "2-0",
+      },
+    ],
+    recentNotices: [],
+    defaultAttachSessionId: "session-b",
+  } as const;
+
+  let selectedWorkspaceCwd: string | undefined;
+  const selection = await resolveRemoteStartupSelection({
+    snapshot,
+    parsed: {
+      remoteOrigin: "http://localhost:3000",
+      keyId: "dev",
+      sessionId: undefined,
+      privateKey: undefined,
+      privateKeyPath: undefined,
+      resume: true,
+      continueSession: false,
+      forkSessionId: undefined,
+      noSession: false,
+      exportPath: undefined,
+      sessionDir: undefined,
+      sessionName: undefined,
+      workspaceCwd: "/workspace/a",
+      verbose: false,
+      initialMessage: undefined,
+      initialMessages: [],
+    },
+    selectSessionId: async (_appSnapshot, workspaceCwd) => {
+      selectedWorkspaceCwd = workspaceCwd;
+      return "session-a";
+    },
+  });
+
+  assert.equal(selectedWorkspaceCwd, "/workspace/a");
+  assert.deepEqual(selection, { sessionId: "session-a", createNewSession: false });
+});
 
 timedTest(
   "remote session resolution requires explicit workspace target for continue and new",
@@ -7997,6 +8098,100 @@ timedTest("remote runtime switchSession runs withSession on target session", asy
     await remote.dispose();
   }
 });
+
+timedTest("remote runtime switchSession accepts session file path from resume picker", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const sessionFilePath = `/home/coder/.pi/agent/sessions/--workspace--/2026-04-24T23-41-56-774Z_${created.sessionId}.jsonl`;
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+    });
+
+    const result = await runtime.switchSession(sessionFilePath);
+
+    assert.equal(result.cancelled, false);
+    assert.equal(runtime.session.sessionManager.getSessionId(), created.sessionId);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "remote runtime switchSession ignores abort errors from previous session shutdown",
+  async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      assert.equal(createResponse.status, 201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+      });
+
+      const sessionAny = runtime.session as {
+        activeReadAbortController?: AbortController;
+        pollingTask?: Promise<void>;
+      };
+      const abortController = new AbortController();
+      abortController.abort = () => {
+        const abortError = new Error("This operation was aborted");
+        abortError.name = "AbortError";
+        throw abortError;
+      };
+      sessionAny.activeReadAbortController = abortController;
+      sessionAny.pollingTask = Promise.resolve();
+
+      await assert.doesNotReject(() => runtime!.switchSession(created.sessionId));
+      assert.equal(runtime.session.sessionManager.getSessionId(), created.sessionId);
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
 
 function sessionTheme() {
   return {

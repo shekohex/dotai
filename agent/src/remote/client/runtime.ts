@@ -8,6 +8,7 @@ import {
 import { RemoteApiClient } from "../remote-api-client.js";
 import type { RemoteRuntimeContract, RemoteRuntimeOptions } from "./contracts.js";
 import { RemoteAgentSession } from "./session.js";
+import { resolveRemoteSessionTarget } from "./session-target.js";
 
 type RemoteExtensionBindings = Parameters<RemoteAgentSession["bindExtensions"]>[0];
 
@@ -136,7 +137,7 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     sessionPath: string,
     options?: Parameters<RemoteRuntimeContract["switchSession"]>[1],
   ): Promise<{ cancelled: boolean }> {
-    await this.switchToSession(sessionPath);
+    await this.switchToSession(resolveRemoteSessionTarget(sessionPath));
     if (options?.withSession) {
       await options.withSession(this._session.createReplacedSessionContext());
     }

@@ -139,8 +139,8 @@ export function registerModeEventHandlers(
       event: ModeSelectionApplyEvent,
     ) => Promise<void>;
   },
-): void {
-  pi.events.on(deps.modeActivateEvent, (data) => {
+): () => void {
+  const unsubscribeActivate = pi.events.on(deps.modeActivateEvent, (data) => {
     const event = deps.parseModeActivateEvent(data);
     if (!event) {
       return;
@@ -148,7 +148,7 @@ export function registerModeEventHandlers(
     void deps.activateMode(pi, event.ctx, event);
   });
 
-  pi.events.on(deps.modeSelectionApplyEvent, (data) => {
+  const unsubscribeApplySelection = pi.events.on(deps.modeSelectionApplyEvent, (data) => {
     const event = deps.parseModeSelectionApplyEvent(data);
     if (!event) {
       return;
@@ -163,4 +163,9 @@ export function registerModeEventHandlers(
       }
     })();
   });
+
+  return () => {
+    unsubscribeActivate();
+    unsubscribeApplySelection();
+  };
 }

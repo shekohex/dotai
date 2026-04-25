@@ -250,12 +250,16 @@ export default function modesExtension(pi: ExtensionAPI): void {
     getActiveMode: () => runtime.activeMode,
     setStatus,
   });
-  registerModeEventHandlers(pi, {
+  const unregisterModeEventHandlers = registerModeEventHandlers(pi, {
     modeActivateEvent: MODE_ACTIVATE_EVENT,
     modeSelectionApplyEvent: MODE_SELECTION_APPLY_EVENT,
     parseModeActivateEvent,
     activateMode,
     parseModeSelectionApplyEvent,
     applySelection,
+  });
+
+  pi.on("session_shutdown", () => {
+    unregisterModeEventHandlers();
   });
 }

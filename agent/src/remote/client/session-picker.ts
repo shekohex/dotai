@@ -1,5 +1,10 @@
-import { SessionSelectorComponent, type SessionInfo } from "@mariozechner/pi-coding-agent";
+import {
+  SessionSelectorComponent,
+  initTheme,
+  type SessionInfo,
+} from "@mariozechner/pi-coding-agent";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
+import { defaultSettings } from "../../default-settings.js";
 import type { AppSnapshot, SessionSummary } from "../schemas.js";
 import { resolveRemoteSessionTarget } from "./session-target.js";
 
@@ -38,6 +43,7 @@ export function selectRemoteSessionId(
   workspaceCwd?: string,
 ): Promise<string | undefined> {
   const { currentSessions, allSessions } = buildRemoteSessionLists(snapshot, workspaceCwd);
+  initTheme(defaultSettings.theme, true);
 
   return new Promise<string | undefined>((resolve) => {
     const ui = new TUI(new ProcessTerminal());

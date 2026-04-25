@@ -142,6 +142,15 @@ export function handleUpdateSessionName(
   });
 }
 
+export function handleRenameSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: SessionNameUpdateRequest,
+): Promise<Response> {
+  return handleUpdateSessionName(c, dependencies, sessionId, payload);
+}
+
 export function handleUpdateSessionSettings(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,

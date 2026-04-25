@@ -21,6 +21,7 @@ import { SessionCatalogWatcher } from "../src/remote/session-catalog-watcher.ts"
 import { cancelRemoteUiRequest, handleRemoteUiRequest } from "../src/remote/client/session-ui.ts";
 import { InMemoryRemoteKvStore } from "../src/remote/kv/in-memory-store.ts";
 import { RemoteApiClient } from "../src/remote/runtime-api/client.ts";
+import { toRemoteSessionInfo } from "../src/remote/client/session-picker.ts";
 import {
   hydrateExtensionStateFromKv,
   isKvManagedExtensionState,
@@ -38,6 +39,7 @@ import {
 import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
 import {
+  createRemoteRenameSessionHandler,
   parseRemoteArgs,
   resolveRemoteSessionId,
   resolveRemoteStartupSelection,
@@ -1264,27 +1266,36 @@ async function writeSessionFile(input: {
   sessionId: string;
   cwd: string;
   sessionName?: string;
+  firstUserMessage?: string;
   parentSessionPath?: string;
 }): Promise<void> {
   await mkdir(dirname(input.sessionPath), { recursive: true });
-  await writeFile(
-    input.sessionPath,
-    [
+  const lines = [
+    JSON.stringify({
+      type: "session",
+      version: 3,
+      id: input.sessionId,
+      timestamp: new Date().toISOString(),
+      cwd: input.cwd,
+      ...(input.parentSessionPath ? { parentSession: input.parentSessionPath } : {}),
+    }),
+    JSON.stringify({
+      type: "session_info",
+      name: input.sessionName ?? input.sessionId,
+    }),
+  ];
+  if (input.firstUserMessage !== undefined) {
+    lines.push(
       JSON.stringify({
-        type: "session",
-        version: 3,
-        id: input.sessionId,
-        timestamp: new Date().toISOString(),
-        cwd: input.cwd,
-        ...(input.parentSessionPath ? { parentSession: input.parentSessionPath } : {}),
+        type: "message",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: input.firstUserMessage }],
+        },
       }),
-      JSON.stringify({
-        type: "session_info",
-        name: input.sessionName ?? input.sessionId,
-      }),
-      "",
-    ].join("\n"),
-  );
+    );
+  }
+  await writeFile(input.sessionPath, [...lines, ""].join("\n"));
 }
 
 timedTest("milestone 1 flow works end to end", async () => {
@@ -1295,7 +1306,7 @@ timedTest("milestone 1 flow works end to end", async () => {
   const remote = createRemoteApp({
     origin: "http://localhost:3000",
     allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: new FakeRuntimeFactory(),
+    runtimeFactory: new InMemoryPiRuntimeFactory(),
   });
 
   try {
@@ -1405,6 +1416,7 @@ timedTest("milestone 1 flow works end to end", async () => {
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/follow-up"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/interrupt"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/model"]);
+    assert.ok(openApi.paths["/v1/sessions/{sessionId}/rename"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/session-name"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/ui-response"]);
     assert.ok(openApi.paths["/v1/sessions/{sessionId}/clear-queue"]);
@@ -1423,7 +1435,7 @@ timedTest("health endpoint reports ready status", async () => {
   const remote = createRemoteApp({
     origin: "http://localhost:3000",
     allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: new FakeRuntimeFactory(),
+    runtimeFactory: new InMemoryPiRuntimeFactory(),
   });
 
   try {
@@ -2885,6 +2897,7 @@ timedTest("remote app watcher reconciles external session add change and remove"
       sessionId: "external-session",
       cwd: "/srv/external",
       sessionName: "External Session",
+      firstUserMessage: "Inspect external session summary",
     });
 
     const addedSnapshot = await waitForValue(
@@ -2897,6 +2910,7 @@ timedTest("remote app watcher reconciles external session add change and remove"
           sessionSummaries: Array<{
             sessionId: string;
             sessionName: string;
+            firstUserMessage?: string;
             messageCount: number;
             cwd: string;
           }>;
@@ -2907,7 +2921,11 @@ timedTest("remote app watcher reconciles external session add change and remove"
     );
 
     assert.equal(addedSnapshot.sessionSummaries[0]?.sessionName, "External Session");
-    assert.equal(addedSnapshot.sessionSummaries[0]?.messageCount, 0);
+    assert.equal(
+      addedSnapshot.sessionSummaries[0]?.firstUserMessage,
+      "Inspect external session summary",
+    );
+    assert.equal(addedSnapshot.sessionSummaries[0]?.messageCount, 1);
     assert.equal(addedSnapshot.sessionSummaries[0]?.cwd, "/srv/external");
 
     await writeSessionFile({
@@ -3804,6 +3822,63 @@ timedTest(
   },
 );
 
+timedTest("remote session resolution normalizes workspace cwd for continue", async () => {
+  const snapshot = {
+    serverInfo: {
+      name: "pi-remote",
+      version: "0.1.0",
+      now: 100,
+    },
+    currentClientAuthInfo: {
+      clientId: "client-1",
+      keyId: "dev",
+      tokenExpiresAt: 200,
+    },
+    sessionSummaries: [
+      {
+        sessionId: "session-a",
+        sessionName: "Alpha",
+        messageCount: 1,
+        status: "idle",
+        cwd: "/workspace/a",
+        createdAt: 10,
+        updatedAt: 20,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+        lastSessionStreamOffset: "1-0",
+      },
+    ],
+    recentNotices: [],
+    defaultAttachSessionId: undefined,
+  } as const;
+
+  assert.deepEqual(
+    resolveRemoteSessionId({
+      snapshot,
+      parsed: {
+        remoteOrigin: "http://localhost:3000",
+        keyId: "dev",
+        sessionId: undefined,
+        privateKey: undefined,
+        privateKeyPath: undefined,
+        resume: false,
+        continueSession: true,
+        forkSessionId: undefined,
+        noSession: false,
+        exportPath: undefined,
+        sessionDir: undefined,
+        sessionName: undefined,
+        workspaceCwd: "/workspace/a/",
+        verbose: false,
+        initialMessage: undefined,
+        initialMessages: [],
+      },
+      cwd: undefined,
+    }),
+    { sessionId: "session-a", createNewSession: false },
+  );
+});
+
 timedTest("remote startup selection uses resume picker choice", async () => {
   const snapshot = {
     serverInfo: {
@@ -3876,6 +3951,73 @@ timedTest("remote startup selection uses resume picker choice", async () => {
   assert.equal(selectedWorkspaceCwd, "/workspace/a");
   assert.deepEqual(selection, { sessionId: "session-a", createNewSession: false });
 });
+
+timedTest("remote picker session info prefers firstUserMessage for firstMessage", async () => {
+  const sessionInfo = toRemoteSessionInfo({
+    sessionId: "session-a",
+    sessionName: "Session 1",
+    firstUserMessage: "Inspect failing remote picker",
+    messageCount: 1,
+    status: "idle",
+    cwd: "/workspace/a",
+    createdAt: 1,
+    updatedAt: 2,
+    parentSessionId: null,
+    lifecycle: {
+      persistence: "persistent",
+      loaded: true,
+      state: "active",
+    },
+    lastSessionStreamOffset: "1-0",
+  });
+
+  assert.equal(sessionInfo.name, "Session 1");
+  assert.equal(sessionInfo.firstMessage, "Inspect failing remote picker");
+});
+
+timedTest("remote picker session info maps parentSessionId for threaded rendering", async () => {
+  const sessionInfo = toRemoteSessionInfo({
+    sessionId: "child-session",
+    sessionName: "Child",
+    messageCount: 1,
+    status: "idle",
+    cwd: "/workspace/a",
+    createdAt: 1,
+    updatedAt: 2,
+    parentSessionId: "parent-session",
+    lifecycle: {
+      persistence: "persistent",
+      loaded: true,
+      state: "active",
+    },
+    lastSessionStreamOffset: "1-0",
+  });
+
+  assert.equal(sessionInfo.path, "child-session");
+  assert.equal(sessionInfo.parentSessionPath, "parent-session");
+});
+
+timedTest(
+  "remote interactive rename handler resolves session file path to session id",
+  async () => {
+    let renamedSession: { sessionId: string; sessionName: string } | undefined;
+    const renameSession = createRemoteRenameSessionHandler({
+      renameSession: async (sessionId: string, sessionName: string) => {
+        renamedSession = { sessionId, sessionName };
+      },
+    });
+
+    await renameSession(
+      "/home/coder/.pi/agent/sessions/--workspace--/2026-04-24T23-41-56-774Z_019dc1df-18a5-727a-a0e4-4ec70d65b0b2.jsonl",
+      "  renamed session  ",
+    );
+
+    assert.deepEqual(renamedSession, {
+      sessionId: "019dc1df-18a5-727a-a0e4-4ec70d65b0b2",
+      sessionName: "renamed session",
+    });
+  },
+);
 
 timedTest(
   "remote session resolution requires explicit workspace target for continue and new",
@@ -8136,6 +8278,122 @@ timedTest("remote runtime switchSession accepts session file path from resume pi
     assert.equal(runtime.session.sessionManager.getSessionId(), created.sessionId);
   } finally {
     await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote rename endpoint updates session name", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const renameResponse = await remote.app.request(`/v1/sessions/${created.sessionId}/rename`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionName: "renamed-via-endpoint",
+      }),
+    });
+    assert.equal(renameResponse.status, 202);
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    assert.equal(snapshotResponse.status, 200);
+    const snapshot = (await snapshotResponse.json()) as { sessionName: string };
+    assert.equal(snapshot.sessionName, "renamed-via-endpoint");
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("loaded remote app snapshot includes firstUserMessage in session summaries", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new InMemoryPiRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const promptResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/prompt`,
+      token,
+      {
+        text: "Summarize picker parity",
+      },
+    );
+    assert.equal(promptResponse.status, 202);
+
+    const snapshot = await waitForValue(
+      async () => {
+        const appSnapshotResponse = await remote.app.request("/v1/app/snapshot", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(appSnapshotResponse.status, 200);
+        return (await appSnapshotResponse.json()) as {
+          sessionSummaries: Array<{
+            sessionId: string;
+            firstUserMessage?: string;
+          }>;
+        };
+      },
+      (appSnapshot) =>
+        appSnapshot.sessionSummaries.some(
+          (summary) =>
+            summary.sessionId === created.sessionId &&
+            summary.firstUserMessage === "Summarize picker parity",
+        ),
+    );
+
+    const summary = snapshot.sessionSummaries.find(
+      (sessionSummary) => sessionSummary.sessionId === created.sessionId,
+    );
+    assert.equal(summary?.firstUserMessage, "Summarize picker parity");
+  } finally {
     await remote.dispose();
   }
 });

@@ -11,7 +11,9 @@ import {
 } from "./client-runtime.js";
 import type { AppSnapshot, ClientCapabilities, RemoteExtensionMetadata } from "./schemas.js";
 import { RemoteApiClient } from "./remote-api-client.js";
-import { selectRemoteSessionId } from "./client/session-picker.js";
+import { buildRemoteSessionLists, selectRemoteSessionId } from "./client/session-picker.js";
+import { resolveRemoteSessionTarget } from "./client/session-target.js";
+import { normalizeRemoteWorkspaceCwd } from "./workspace-cwd.js";
 
 function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRuntime {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -302,7 +304,7 @@ export function resolveRemoteSessionId(input: {
   parsed: ParsedRemoteArgs;
   cwd?: string;
 }): { sessionId?: string; createNewSession: boolean } {
-  const workspaceCwd = input.parsed.workspaceCwd ?? input.cwd;
+  const workspaceCwd = normalizeRemoteWorkspaceCwd(input.parsed.workspaceCwd ?? input.cwd);
   if (input.parsed.noSession) {
     if (workspaceCwd === undefined || workspaceCwd.length === 0) {
       throw new Error("Remote new session requires --workspace-cwd");
@@ -350,7 +352,7 @@ export function resolveRemoteSessionId(input: {
       throw new Error("Remote --continue requires --workspace-cwd");
     }
     const workspaceMatches = input.snapshot.sessionSummaries
-      .filter((summary) => summary.cwd === workspaceCwd)
+      .filter((summary) => normalizeRemoteWorkspaceCwd(summary.cwd) === workspaceCwd)
       .toSorted((left, right) => right.updatedAt - left.updatedAt);
     const latestWorkspaceSession = workspaceMatches[0];
     if (latestWorkspaceSession !== undefined) {
@@ -367,6 +369,18 @@ export interface RunRemoteInteractiveModeOptions {
   clientExtensionFactories?: ExtensionFactory[];
   clientCapabilities?: ClientCapabilities;
   selectSessionId?: (snapshot: AppSnapshot, workspaceCwd?: string) => Promise<string | undefined>;
+}
+
+export function createRemoteRenameSessionHandler(client: {
+  renameSession: (sessionId: string, sessionName: string) => Promise<void>;
+}) {
+  return async (sessionPath: string, nextName: string | undefined): Promise<void> => {
+    const trimmedName = nextName?.trim();
+    if (trimmedName === undefined || trimmedName.length === 0) {
+      return;
+    }
+    await client.renameSession(resolveRemoteSessionTarget(sessionPath), trimmedName);
+  };
 }
 
 export async function resolveRemoteStartupSelection(input: {
@@ -457,6 +471,18 @@ export async function runRemoteInteractiveMode(
     verbose: parsed.verbose,
     initialMessage: parsed.initialMessage,
     initialMessages: parsed.initialMessages,
+    sessionSelectorLoaders: {
+      currentSessionsLoader: async () => {
+        const snapshot = await client.getAppSnapshot();
+        return buildRemoteSessionLists(snapshot, parsed.workspaceCwd).currentSessions;
+      },
+      allSessionsLoader: async () => {
+        const snapshot = await client.getAppSnapshot();
+        return buildRemoteSessionLists(snapshot, parsed.workspaceCwd).allSessions;
+      },
+      renameSession: createRemoteRenameSessionHandler(client),
+      showRenameHint: true,
+    },
   });
 
   await interactiveMode.run();

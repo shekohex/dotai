@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type {
   AgentSessionRuntime,
@@ -67,7 +67,7 @@ export interface SessionRecord {
   autoCompactionEnabled: boolean;
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
-  transcript: unknown[];
+  transcript: AgentMessage[];
   queue: {
     depth: number;
     nextSequence: number;

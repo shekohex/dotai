@@ -17,6 +17,7 @@ import {
   createEmptySessionStats,
   type SessionRecord,
 } from "./types.js";
+import { normalizeRemoteWorkspaceCwd } from "../workspace-cwd.js";
 
 export function enqueueSessionCreation<T>(input: {
   currentQueue: Promise<void>;
@@ -126,7 +127,7 @@ export async function createSingleSession(input: {
   const createdAt = input.now();
   const requestedPersistence = input.request.persistence;
   const runtime = await input.createRuntime({
-    cwd: input.request.workspaceCwd,
+    cwd: normalizeRemoteWorkspaceCwd(input.request.workspaceCwd),
     persistence: requestedPersistence,
   });
   const sessionId = readRuntimeSessionId(runtime) ?? input.createSessionId();

@@ -7,22 +7,25 @@ import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import { defaultSettings } from "../../default-settings.js";
 import type { AppSnapshot, SessionSummary } from "../schemas.js";
 import { resolveRemoteSessionTarget } from "./session-target.js";
+import { normalizeRemoteWorkspaceCwd } from "../workspace-cwd.js";
 
-function toRemoteSessionInfo(summary: SessionSummary): SessionInfo {
+export function toRemoteSessionInfo(summary: SessionSummary): SessionInfo {
+  const firstMessage = summary.firstUserMessage ?? summary.sessionName;
   return {
     path: summary.sessionId,
     id: summary.sessionId,
     cwd: summary.cwd,
     name: summary.sessionName,
+    parentSessionPath: summary.parentSessionId ?? undefined,
     created: new Date(summary.createdAt),
     modified: new Date(summary.updatedAt),
     messageCount: summary.messageCount,
-    firstMessage: summary.sessionName,
-    allMessagesText: `${summary.sessionName} ${summary.cwd} ${summary.sessionId}`,
+    firstMessage,
+    allMessagesText: `${summary.sessionName} ${firstMessage} ${summary.cwd} ${summary.sessionId}`,
   };
 }
 
-function buildRemoteSessionLists(
+export function buildRemoteSessionLists(
   snapshot: AppSnapshot,
   workspaceCwd?: string,
 ): {
@@ -30,10 +33,13 @@ function buildRemoteSessionLists(
   allSessions: SessionInfo[];
 } {
   const allSessions = snapshot.sessionSummaries.map(toRemoteSessionInfo);
+  const normalizedWorkspaceCwd = normalizeRemoteWorkspaceCwd(workspaceCwd);
   const currentSessions =
-    workspaceCwd === undefined || workspaceCwd.length === 0
+    normalizedWorkspaceCwd === undefined
       ? allSessions
-      : allSessions.filter((session) => session.cwd === workspaceCwd);
+      : allSessions.filter(
+          (session) => normalizeRemoteWorkspaceCwd(session.cwd) === normalizedWorkspaceCwd,
+        );
 
   return { currentSessions, allSessions };
 }

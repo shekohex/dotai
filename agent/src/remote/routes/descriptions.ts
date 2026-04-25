@@ -289,6 +289,10 @@ export const updateSessionNameRouteDescription = commandRouteDescription(
   "updateSessionName",
   SessionNameUpdateRequestSchema,
 );
+export const renameSessionRouteDescription = commandRouteDescription(
+  "renameSession",
+  SessionNameUpdateRequestSchema,
+);
 export const updateSessionSettingsRouteDescription = commandRouteDescription(
   "updateSessionSettings",
   SettingsUpdateRequestSchema,

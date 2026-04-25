@@ -33,6 +33,7 @@ import {
   reloadSessionRouteDescription,
   readAppEventsStreamRouteDescription,
   readSessionEventsStreamRouteDescription,
+  renameSessionRouteDescription,
   restoreSessionRouteDescription,
   sessionSummaryRouteDescription,
   sessionSnapshotRouteDescription,
@@ -65,6 +66,7 @@ import {
   handleFollowUpSession,
   handleInterruptSession,
   handlePromptSession,
+  handleRenameSession,
   handleSteerSession,
   handleUpdateSessionActiveTools,
   handleUpdateSessionModel,
@@ -272,6 +274,17 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
   needsAuth: AuthMiddleware,
 ) {
   const route12 = app.post(
+    "/sessions/:sessionId/rename",
+    describeRoute(renameSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", SessionNameUpdateRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleRenameSession(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  const route13 = route12.post(
     "/sessions/:sessionId/session-name",
     describeRoute(updateSessionNameRouteDescription),
     needsAuth,
@@ -282,7 +295,7 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
       return handleUpdateSessionName(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  const route13 = route12.post(
+  const route14 = route13.post(
     "/sessions/:sessionId/settings",
     describeRoute(updateSessionSettingsRouteDescription),
     needsAuth,
@@ -295,7 +308,7 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
       return handleUpdateSessionSettings(c, dependencies, sessionId, payload);
     },
   );
-  const route14 = route13.post(
+  const route15 = route14.post(
     "/sessions/:sessionId/ui-response",
     describeRoute(submitSessionUiResponseRouteDescription),
     needsAuth,
@@ -306,7 +319,7 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
       return handleSubmitSessionUiResponse(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  return route14.post(
+  return route15.post(
     "/sessions/:sessionId/clear-queue",
     describeRoute(clearSessionQueueRouteDescription),
     needsAuth,

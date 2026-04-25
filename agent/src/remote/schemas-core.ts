@@ -85,6 +85,7 @@ export const PresenceSchema = Type.Object({
 export const SessionSummarySchema = Type.Object({
   sessionId: Type.String(),
   sessionName: Type.String(),
+  firstUserMessage: Type.Optional(Type.String()),
   messageCount: Type.Number(),
   status: SessionStatusSchema,
   cwd: Type.String(),

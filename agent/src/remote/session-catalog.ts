@@ -1,3 +1,5 @@
+import type { TextContent } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import {
@@ -13,6 +15,7 @@ export interface SessionCatalogRecord {
   sessionPath: string;
   cwd: string;
   sessionName: string;
+  firstUserMessage?: string;
   messageCount: number;
   createdAt: number;
   modifiedAt: number;
@@ -27,6 +30,7 @@ interface RawCatalogRecord {
   sessionPath: string;
   cwd: string;
   sessionName: string;
+  firstUserMessage?: string;
   messageCount: number;
   createdAt: number;
   modifiedAt: number;
@@ -138,6 +142,7 @@ export class SessionCatalog {
       sessionPath: resolve(sessionPath),
       cwd: record.cwd,
       sessionName: record.sessionName,
+      firstUserMessage: readFirstUserMessageFromTranscript(record.transcript),
       messageCount: record.sessionStats.totalMessages,
       createdAt: record.createdAt,
       modifiedAt: record.updatedAt,
@@ -297,6 +302,7 @@ function buildRawCatalogRecord(sessionPath: string): RawCatalogRecord | null {
       sessionPath: resolve(sessionPath),
       cwd: header.cwd,
       sessionName: readSessionName(entries, header.id),
+      firstUserMessage: readFirstUserMessageFromEntries(entries),
       messageCount: entries.filter((entry) => entry.type === "message").length,
       createdAt: new Date(header.timestamp).getTime(),
       modifiedAt: Math.trunc(stats.mtimeMs),
@@ -331,6 +337,54 @@ function readSessionName(entries: FileEntry[], sessionId: string): string {
   return sessionName ?? basename(sessionId);
 }
 
+function readFirstUserMessageFromEntries(entries: FileEntry[]): string | undefined {
+  for (const entry of entries) {
+    if (entry.type !== "message" || entry.message.role !== "user") {
+      continue;
+    }
+    const text = readMessageText(entry.message);
+    if (text !== undefined) {
+      return text;
+    }
+  }
+
+  return undefined;
+}
+
+function readFirstUserMessageFromTranscript(messages: AgentMessage[]): string | undefined {
+  for (const message of messages) {
+    if (message.role !== "user") {
+      continue;
+    }
+    const text = readMessageText(message);
+    if (text !== undefined) {
+      return text;
+    }
+  }
+
+  return undefined;
+}
+
+function readMessageText(message: AgentMessage): string | undefined {
+  if (!hasMessageContent(message)) {
+    return undefined;
+  }
+
+  const text = message.content
+    .filter((part): part is TextContent => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+
+  return text.length > 0 ? text : undefined;
+}
+
+function hasMessageContent(
+  message: AgentMessage,
+): message is Extract<AgentMessage, { content: unknown[] }> {
+  return "content" in message && Array.isArray(message.content);
+}
+
 function createCatalogRecord(
   rawRecord: RawCatalogRecord,
   sessionIdByPath: Map<string, string>,
@@ -341,6 +395,7 @@ function createCatalogRecord(
     sessionPath: rawRecord.sessionPath,
     cwd: rawRecord.cwd,
     sessionName: rawRecord.sessionName,
+    firstUserMessage: rawRecord.firstUserMessage,
     messageCount: rawRecord.messageCount,
     createdAt: rawRecord.createdAt,
     modifiedAt: rawRecord.modifiedAt,
@@ -364,6 +419,7 @@ function createMovedCatalogRecord(
     sessionPath: rawRecord.sessionPath,
     cwd: rawRecord.cwd,
     sessionName: rawRecord.sessionName,
+    firstUserMessage: rawRecord.firstUserMessage,
     messageCount: rawRecord.messageCount,
     createdAt: rawRecord.createdAt,
     modifiedAt: rawRecord.modifiedAt,
@@ -410,7 +466,7 @@ function createSummaryFromCatalogRecord(
   record: SessionCatalogRecord,
   input: { getLastSessionStreamOffset: (sessionId: string) => string },
 ): SessionSummary {
-  return {
+  const summary: SessionSummary = {
     sessionId: record.sessionId,
     sessionName: record.sessionName,
     messageCount: record.messageCount,
@@ -426,6 +482,10 @@ function createSummaryFromCatalogRecord(
     },
     lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),
   };
+  if (record.firstUserMessage === undefined) {
+    return summary;
+  }
+  return { ...summary, firstUserMessage: record.firstUserMessage };
 }
 
 function createSummaryFromRuntimeRecord(
@@ -437,7 +497,8 @@ function createSummaryFromRuntimeRecord(
     parentSessionId: string | null;
   },
 ): SessionSummary {
-  return {
+  const firstUserMessage = readFirstUserMessageFromTranscript(record.transcript);
+  const summary: SessionSummary = {
     sessionId: record.sessionId,
     sessionName: record.sessionName,
     messageCount: record.sessionStats.totalMessages,
@@ -453,4 +514,8 @@ function createSummaryFromRuntimeRecord(
     },
     lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),
   };
+  if (firstUserMessage === undefined) {
+    return summary;
+  }
+  return { ...summary, firstUserMessage };
 }

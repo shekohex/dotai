@@ -315,6 +315,10 @@ export class RemoteApiClient {
     });
   }
 
+  renameSession(sessionId: string, sessionName: string): Promise<void> {
+    return this.postRenameSessionRoute(sessionId, sessionName);
+  }
+
   updateSettings(sessionId: string, body: SettingsUpdateRequest): Promise<void> {
     return postSettingsUpdateCommand({
       rpcClient: this.rpcClient,
@@ -447,6 +451,21 @@ export class RemoteApiClient {
     const response = await request(await this.getAuthHeaders());
     this.captureConnectionId(response);
     if (!response.ok) throw await toRemoteHttpError(response);
+  }
+
+  private async postRenameSessionRoute(sessionId: string, sessionName: string): Promise<void> {
+    const response = await this.fetchImpl(`${this.origin}/v1/sessions/${sessionId}/rename`, {
+      method: "POST",
+      headers: {
+        ...(await this.getAuthHeaders()),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sessionName }),
+    });
+    this.captureConnectionId(response);
+    if (!response.ok) {
+      throw await toRemoteHttpError(response);
+    }
   }
 
   private updateSessionStreamCursor(sessionId: string, cursor: string | undefined): void {

@@ -16,6 +16,7 @@ POST /v1/sessions/:sessionId/interrupt
 POST /v1/sessions/:sessionId/ui-response
 POST /v1/sessions/:sessionId/clear-queue
 POST /v1/sessions/:sessionId/model
+POST /v1/sessions/:sessionId/rename
 POST /v1/sessions/:sessionId/session-name
 GET /v1/kv/:scope/:namespace/:key
 PUT /v1/kv/:scope/:namespace/:key

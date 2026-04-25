@@ -24,6 +24,7 @@ export class OpenUsageController {
   private readonly state: OpenUsageState;
   private currentCtx: ExtensionContext | undefined;
   private unsubscribeAlert: (() => void) | undefined;
+  private unsubscribeModeChanged: (() => void) | undefined;
 
   constructor(private readonly pi: ExtensionAPI) {
     this.state = createRuntimeState();
@@ -35,7 +36,7 @@ export class OpenUsageController {
     });
     this.pi.on("session_start", (_event, ctx) => this.onSessionStart(ctx));
     this.pi.on("model_select", (_event, ctx) => this.onModelSelect(ctx));
-    this.pi.events.on("modes:changed", (data) => {
+    this.unsubscribeModeChanged = this.pi.events.on("modes:changed", (data) => {
       void this.onModeChanged(data);
     });
     this.pi.on("agent_end", (_event, ctx) => this.refreshActiveProvider(ctx, { force: false }));
@@ -104,6 +105,7 @@ export class OpenUsageController {
     this.currentCtx = undefined;
     this.stopInterval();
     this.unsubscribeAlert?.();
+    this.unsubscribeModeChanged?.();
     this.state.lastPublishedStatusText = undefined;
     publishUsageUpdateIfChanged(this.pi, this.state, ctx, undefined, true);
   }

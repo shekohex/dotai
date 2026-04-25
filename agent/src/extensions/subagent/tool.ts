@@ -59,7 +59,7 @@ function registerSubagentRuntimeEvents(
       };
     }
   ).events;
-  modesChangedEvents?.on?.("modes:changed", async () => {
+  const maybeUnsubscribeModesChanged = modesChangedEvents?.on?.("modes:changed", async () => {
     if (runtimeState.ctx) {
       try {
         await syncSubagentToolRegistration(runtimeState.ctx);
@@ -72,6 +72,8 @@ function registerSubagentRuntimeEvents(
       }
     }
   });
+  const unsubscribeModesChanged =
+    typeof maybeUnsubscribeModesChanged === "function" ? maybeUnsubscribeModesChanged : undefined;
 
   scheduleParentSubagentToolActivation(pi);
   pi.on("session_start", async (_event, ctx) => {
@@ -89,6 +91,7 @@ function registerSubagentRuntimeEvents(
   });
   pi.on("session_shutdown", () => {
     runtimeState.ctx = undefined;
+    unsubscribeModesChanged?.();
     sdk.dispose();
   });
 }

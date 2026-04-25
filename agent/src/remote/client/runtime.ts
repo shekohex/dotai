@@ -176,14 +176,13 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       clientExtensionFactories: this.clientExtensionFactories,
     });
     this.instrumentSessionBindings(next);
-    if (this.latestExtensionBindings) {
-      await next.bindExtensions(this.latestExtensionBindings);
-    }
     this.cwd = snapshot.cwd ?? this.cwd;
     this.beforeSessionInvalidateHandler?.();
     this._session = next;
     if (this.rebindSessionHandler) {
       await this.rebindSessionHandler(this._session);
+    } else if (this.latestExtensionBindings) {
+      await next.bindExtensions(this.latestExtensionBindings);
     }
     await previous.dispose();
   }

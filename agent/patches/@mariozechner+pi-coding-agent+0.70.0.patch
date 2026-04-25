@@ -10,8 +10,34 @@ index b57b6ae..3408d50 100644
          // Always create all shell variants. contentBox is used for default renderer-based composition.
          // selfRenderContainer is used when the tool renders its own framing.
          // contentText is reserved for generic fallback rendering when no tool definition exists.
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
+index 01919db..6122ae3 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
+@@ -4,6 +4,7 @@
+  */
+ import { type ImageContent } from "@mariozechner/pi-ai";
+ import { type AgentSessionRuntime } from "../../core/agent-session-runtime.js";
++import type { SessionInfo, SessionListProgress } from "../../core/session-manager.js";
+ export declare function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>, builtInProviderIds?: ReadonlySet<string>): boolean;
+ export declare function getApiKeyProviderDisplayName(providerId: string): string;
+ /**
+@@ -22,6 +23,13 @@ export interface InteractiveModeOptions {
+     initialMessages?: string[];
+     /** Force verbose startup (overrides quietStartup setting) */
+     verbose?: boolean;
++    /** Optional override for session resume picker data sources and mutations */
++    sessionSelectorLoaders?: {
++        currentSessionsLoader: (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
++        allSessionsLoader: (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
++        renameSession?: ((sessionPath: string, nextName: string | undefined) => Promise<void>) | null;
++        showRenameHint?: boolean;
++    };
+ }
+ export declare class InteractiveMode {
+     private options;
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-index 468f916..93ad18c 100644
+index 468f916..aa5f8f3 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
 @@ -118,6 +118,36 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
@@ -78,3 +104,41 @@ index 468f916..93ad18c 100644
                          if (message.stopReason === "aborted" || message.stopReason === "error") {
                              let errorMessage;
                              if (message.stopReason === "aborted") {
+@@ -3527,7 +3557,19 @@ export class InteractiveMode {
+     }
+     showSessionSelector() {
+         this.showSelector((done) => {
+-            const selector = new SessionSelectorComponent((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress), SessionManager.listAll, async (sessionPath) => {
++            const currentSessionsLoader = this.options.sessionSelectorLoaders?.currentSessionsLoader ??
++                ((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress));
++            const allSessionsLoader = this.options.sessionSelectorLoaders?.allSessionsLoader ?? SessionManager.listAll;
++            const renameSession = this.options.sessionSelectorLoaders?.renameSession === undefined
++                ? async (sessionFilePath, nextName) => {
++                    const next = (nextName ?? "").trim();
++                    if (!next)
++                        return;
++                    const mgr = SessionManager.open(sessionFilePath);
++                    mgr.appendSessionInfo(next);
++                }
++                : this.options.sessionSelectorLoaders.renameSession ?? undefined;
++            const selector = new SessionSelectorComponent(currentSessionsLoader, allSessionsLoader, async (sessionPath) => {
+                 done();
+                 await this.handleResumeSession(sessionPath);
+             }, () => {
+@@ -3536,14 +3578,8 @@ export class InteractiveMode {
+             }, () => {
+                 void this.shutdown();
+             }, () => this.ui.requestRender(), {
+-                renameSession: async (sessionFilePath, nextName) => {
+-                    const next = (nextName ?? "").trim();
+-                    if (!next)
+-                        return;
+-                    const mgr = SessionManager.open(sessionFilePath);
+-                    mgr.appendSessionInfo(next);
+-                },
+-                showRenameHint: true,
++                renameSession,
++                showRenameHint: this.options.sessionSelectorLoaders?.showRenameHint ?? true,
+                 keybindings: this.keybindings,
+             }, this.sessionManager.getSessionFile());
+             return { component: selector, focus: selector };

@@ -79,6 +79,13 @@ DON'T:
 - Don't replace Hono RPC with raw `fetch`.
 - Don't manually assemble RPC URLs when a typed Hono client can represent the route.
 
+### Bug workflow (Debugging)
+
+- Start by writing a failing unit test that reproduces the bug.
+- Then fix the bug and prove it with passing tests.
+- If the bug is in a workflow, create a new end to end test that reproduces the bug and fix it.
+- Follow Red, Green, Refactor (TDD).
+
 ## Development Commands
 
 ### Build

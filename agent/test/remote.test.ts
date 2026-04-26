@@ -1566,8 +1566,12 @@ timedTest("milestone 1 flow works end to end", async () => {
       nextOffset: string;
       streamClosed: boolean;
     };
-    assert.deepEqual(firstAttachBody.events, []);
-    assert.equal(firstAttachBody.nextOffset, "0000000000000000_0000000000000000");
+    assert.equal(firstAttachBody.events.length, 1);
+    assert.equal(
+      (firstAttachBody.events[0] as { kind?: string } | undefined)?.kind,
+      "extension_ui_request",
+    );
+    assert.equal(firstAttachBody.nextOffset, "0000000000000000_0000000000000001");
     assert.equal(firstAttachBody.streamClosed, false);
 
     const reconnect = await remote.app.request(

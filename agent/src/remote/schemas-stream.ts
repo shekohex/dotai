@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import {
+  BashResultSchema,
   CommandKindSchema,
   ContextUsageSchema,
   PresenceSchema,
@@ -98,6 +99,8 @@ const SessionStatePatchEventPayloadSchema = Type.Object({
       sessionStats: Type.Optional(SessionStatsSchema),
       contextUsage: Type.Optional(ContextUsageSchema),
       usageCost: Type.Optional(Type.Number()),
+      isBashRunning: Type.Optional(Type.Boolean()),
+      hasPendingBashMessages: Type.Optional(Type.Boolean()),
       autoCompactionEnabled: Type.Optional(Type.Boolean()),
       steeringMode: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")])),
       followUpMode: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")])),
@@ -203,6 +206,43 @@ const ExtensionErrorEventPayloadSchema = Type.Object({
   error: Type.String(),
 });
 
+const BashStartEventPayloadSchema = Type.Object({
+  executionId: Type.String({ minLength: 1 }),
+  command: Type.String({ minLength: 1 }),
+  clientRequestId: Type.Optional(Type.String({ minLength: 1 })),
+  excludeFromContext: Type.Optional(Type.Boolean()),
+});
+
+const BashChunkEventPayloadSchema = Type.Object({
+  executionId: Type.String({ minLength: 1 }),
+  chunk: Type.String(),
+  clientRequestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+const BashExecutionMessagePayloadSchema = Type.Object({
+  role: Type.Literal("bashExecution"),
+  command: Type.String(),
+  output: Type.String(),
+  exitCode: Type.Optional(Type.Number()),
+  cancelled: Type.Boolean(),
+  truncated: Type.Boolean(),
+  fullOutputPath: Type.Optional(Type.String()),
+  timestamp: Type.Number(),
+  excludeFromContext: Type.Optional(Type.Boolean()),
+});
+
+const BashEndEventPayloadSchema = Type.Object({
+  executionId: Type.String({ minLength: 1 }),
+  clientRequestId: Type.Optional(Type.String({ minLength: 1 })),
+  result: BashResultSchema,
+  deferredUntilTurnEnd: Type.Boolean(),
+  message: Type.Optional(BashExecutionMessagePayloadSchema),
+});
+
+const BashFlushEventPayloadSchema = Type.Object({
+  messages: Type.Array(BashExecutionMessagePayloadSchema),
+});
+
 export const StreamEventEnvelopeSchema = Type.Union([
   Type.Object({
     ...StreamEventCommonProperties,
@@ -268,6 +308,26 @@ export const StreamEventEnvelopeSchema = Type.Union([
     ...StreamEventCommonProperties,
     kind: Type.Literal("extension_error"),
     payload: ExtensionErrorEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("bash_start"),
+    payload: BashStartEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("bash_chunk"),
+    payload: BashChunkEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("bash_end"),
+    payload: BashEndEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("bash_flush"),
+    payload: BashFlushEventPayloadSchema,
   }),
 ]);
 

@@ -2,20 +2,31 @@ import type { Static } from "typebox";
 import {
   AppSnapshotSchema,
   ActiveToolsUpdateRequestSchema,
+  AbortOperationResponseSchema,
   AuthChallengeRequestSchema,
   AuthChallengeResponseSchema,
   AuthVerifyRequestSchema,
   AuthVerifyResponseSchema,
+  BashExecuteRequestSchema,
+  BashExecuteResponseSchema,
+  BashRecordRequestSchema,
+  BashRecordResponseSchema,
   ClientCapabilitiesSchema,
   ClearQueueResponseSchema,
+  CompactRequestSchema,
+  CompactResponseSchema,
   CommandAcceptedResponseSchema,
   CommandKindSchema,
   ConnectionCapabilitiesResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
+  ForkSessionRequestSchema,
+  ForkSessionResponseSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
+  NavigateTreeRequestSchema,
+  NavigateTreeResponseSchema,
   PresenceSchema,
   PromptCommandRequestSchema,
   RemoteExtensionMetadataSchema,
@@ -24,11 +35,13 @@ import {
   RemoteSettingsSnapshotSchema,
   SessionNameUpdateRequestSchema,
   SessionDeletedResponseSchema,
+  SessionForkMessagesResponseSchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
   SessionStatusSchema,
   SessionSummarySchema,
   SteerCommandRequestSchema,
+  ToolDefinitionMetadataSchema,
   UiResponseRequestSchema,
   UiResponseResponseSchema,
   type SettingsUpdateRequestValue,
@@ -54,8 +67,19 @@ export type AuthVerifyRequest = Static<typeof AuthVerifyRequestSchema>;
 export type AuthVerifyResponse = Static<typeof AuthVerifyResponseSchema>;
 export type ClientCapabilities = Static<typeof ClientCapabilitiesSchema>;
 export type AppSnapshot = Static<typeof AppSnapshotSchema>;
+export type AbortOperationResponse = Static<typeof AbortOperationResponseSchema>;
 export type CreateSessionRequest = Static<typeof CreateSessionRequestSchema>;
 export type CreateSessionResponse = Static<typeof CreateSessionResponseSchema>;
+export type ForkSessionRequest = Static<typeof ForkSessionRequestSchema>;
+export type ForkSessionResponse = Static<typeof ForkSessionResponseSchema>;
+export type NavigateTreeRequest = Static<typeof NavigateTreeRequestSchema>;
+export type NavigateTreeResponse = Static<typeof NavigateTreeResponseSchema>;
+export type CompactRequest = Static<typeof CompactRequestSchema>;
+export type CompactResponse = Static<typeof CompactResponseSchema>;
+export type BashExecuteRequest = Static<typeof BashExecuteRequestSchema>;
+export type BashExecuteResponse = Static<typeof BashExecuteResponseSchema>;
+export type BashRecordRequest = Static<typeof BashRecordRequestSchema>;
+export type BashRecordResponse = Static<typeof BashRecordResponseSchema>;
 export type ConnectionCapabilitiesResponse = Static<typeof ConnectionCapabilitiesResponseSchema>;
 export type PromptCommandRequest = Static<typeof PromptCommandRequestSchema>;
 export type SteerCommandRequest = Static<typeof SteerCommandRequestSchema>;
@@ -66,6 +90,7 @@ export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
 export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
 export type SettingsUpdateRequest = SettingsUpdateRequestValue;
 export type SessionToolsResponse = Static<typeof SessionToolsResponseSchema>;
+export type ToolDefinitionMetadata = Static<typeof ToolDefinitionMetadataSchema>;
 export type UiResponseRequest = Static<typeof UiResponseRequestSchema>;
 export type UiResponseResponse = Static<typeof UiResponseResponseSchema>;
 export type RemoteKvScope = Static<typeof RemoteKvScopeSchema>;
@@ -79,6 +104,7 @@ export type CommandKind = Static<typeof CommandKindSchema>;
 export type CommandAcceptedResponse = Static<typeof CommandAcceptedResponseSchema>;
 export type SessionStatus = Static<typeof SessionStatusSchema>;
 export type SessionDeletedResponse = Static<typeof SessionDeletedResponseSchema>;
+export type SessionForkMessagesResponse = Static<typeof SessionForkMessagesResponseSchema>;
 export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;
 export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;

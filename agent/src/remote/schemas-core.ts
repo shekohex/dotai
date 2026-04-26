@@ -185,8 +185,118 @@ export const CreateSessionResponseSchema = Type.Object({
   status: SessionStatusSchema,
 });
 
+export const ForkPositionSchema = Type.Union([Type.Literal("before"), Type.Literal("at")]);
+
+export const SessionForkMessageSchema = Type.Object({
+  entryId: Type.String(),
+  text: Type.String(),
+});
+
+export const SessionForkMessagesResponseSchema = Type.Object({
+  messages: Type.Array(SessionForkMessageSchema),
+});
+
+export const ToolDefinitionMetadataSchema = Type.Object({
+  name: Type.String(),
+  label: Type.String(),
+  description: Type.String(),
+  promptSnippet: Type.Optional(Type.String()),
+  promptGuidelines: Type.Optional(Type.Array(Type.String())),
+  parameters: Type.Unknown(),
+  renderShell: Type.Optional(Type.Union([Type.Literal("default"), Type.Literal("self")])),
+  executionMode: Type.Optional(Type.Union([Type.Literal("sequential"), Type.Literal("parallel")])),
+  sourceInfo: Type.Optional(Type.Unknown()),
+});
+
+export const NavigateTreeRequestSchema = Type.Object({
+  targetId: Type.String({ minLength: 1 }),
+  summarize: Type.Optional(Type.Boolean()),
+  customInstructions: Type.Optional(Type.String()),
+  replaceInstructions: Type.Optional(Type.Boolean()),
+  label: Type.Optional(Type.String()),
+});
+
+export const NavigateTreeResponseSchema = Type.Object({
+  editorText: Type.Optional(Type.String()),
+  cancelled: Type.Boolean(),
+  aborted: Type.Optional(Type.Boolean()),
+  summaryEntry: Type.Optional(Type.Unknown()),
+  snapshot: Type.Optional(Type.Unknown()),
+});
+
+export const CompactRequestSchema = Type.Object({
+  customInstructions: Type.Optional(Type.String()),
+});
+
+export const CompactResponseSchema = Type.Object({
+  summary: Type.String(),
+  firstKeptEntryId: Type.String(),
+  tokensBefore: Type.Number(),
+  details: Type.Optional(Type.Unknown()),
+  snapshot: Type.Optional(Type.Unknown()),
+});
+
+export const BashExecuteRequestSchema = Type.Object({
+  command: Type.String({ minLength: 1 }),
+  timeout: Type.Optional(Type.Number()),
+  excludeFromContext: Type.Optional(Type.Boolean()),
+  clientRequestId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const BashResultSchema = Type.Object({
+  output: Type.String(),
+  exitCode: Type.Optional(Type.Number()),
+  cancelled: Type.Boolean(),
+  truncated: Type.Boolean(),
+  fullOutputPath: Type.Optional(Type.String()),
+});
+
+export const BashExecuteResponseSchema = Type.Object({
+  ...BashResultSchema.properties,
+  clientRequestId: Type.Optional(Type.String()),
+  snapshot: Type.Optional(Type.Unknown()),
+});
+
+export const BashRecordRequestSchema = Type.Object({
+  command: Type.String({ minLength: 1 }),
+  result: Type.Object({
+    output: Type.String(),
+    exitCode: Type.Optional(Type.Number()),
+    cancelled: Type.Boolean(),
+    truncated: Type.Boolean(),
+    fullOutputPath: Type.Optional(Type.String()),
+  }),
+  excludeFromContext: Type.Optional(Type.Boolean()),
+});
+
+export const BashRecordResponseSchema = Type.Object({
+  snapshot: Type.Optional(Type.Unknown()),
+});
+
+export const AbortOperationResponseSchema = Type.Object({
+  ok: Type.Boolean(),
+});
+
+export const ForkSessionRequestSchema = Type.Object({
+  entryId: Type.Optional(Type.String({ minLength: 1 })),
+  position: Type.Optional(ForkPositionSchema),
+  workspaceCwd: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export const ForkSessionResponseSchema = Type.Object({
+  sessionId: Type.String(),
+  sessionName: Type.String(),
+  status: SessionStatusSchema,
+  selectedText: Type.Optional(Type.String()),
+});
+
 export const SessionParamsSchema = Type.Object({
   sessionId: Type.String({ minLength: 1 }),
+});
+
+export const SessionToolParamsSchema = Type.Object({
+  sessionId: Type.String({ minLength: 1 }),
+  toolName: Type.String({ minLength: 1 }),
 });
 
 export const PromptCommandRequestSchema = Type.Object({
@@ -373,6 +483,7 @@ export const RemoteToolInfoSchema = Type.Object({
   description: Type.String(),
   parameters: Type.Unknown(),
   sourceInfo: Type.Unknown(),
+  definition: Type.Optional(ToolDefinitionMetadataSchema),
 });
 
 export const SessionToolsResponseSchema = Type.Object({
@@ -468,6 +579,8 @@ export const SessionSnapshotSchema = Type.Object({
   lastSessionStreamOffset: Type.String(),
   lastAppStreamOffsetSeenByServer: Type.String(),
   streamingState: Type.String(),
+  isBashRunning: Type.Boolean(),
+  hasPendingBashMessages: Type.Boolean(),
   pendingToolCalls: Type.Array(Type.Unknown()),
   errorMessage: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.Number(),

@@ -90,8 +90,8 @@ export const defaultModes: DefaultModes = defineModesFile({
     },
     review: {
       provider: "codex-openai",
-      modelId: "gpt-5.3-codex",
-      thinkingLevel: "high",
+      modelId: "gpt-5.5",
+      thinkingLevel: "medium",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch"],
@@ -115,8 +115,8 @@ export const defaultModes: DefaultModes = defineModesFile({
       systemPromptMode: "append",
     },
     search: {
-      provider: "gemini",
-      modelId: "gemini-3-flash-preview",
+      provider: "openai",
+      modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       color: "borderMuted",
       tmuxTarget: "window",

@@ -218,6 +218,46 @@ class RecordingSession {
   queuedSteering: string[] = [];
   queuedFollowUp: string[] = [];
   clearQueueCalls = 0;
+  compactCalls: string[] = [];
+  navigateTreeCalls: Array<{
+    targetId: string;
+    summarize?: boolean;
+    customInstructions?: string;
+    replaceInstructions?: boolean;
+    label?: string;
+  }> = [];
+  bashCalls: Array<{
+    command: string;
+    options?: { excludeFromContext?: boolean; operations?: unknown };
+  }> = [];
+  recordedBashResults: Array<{
+    command: string;
+    result: {
+      output: string;
+      exitCode: number | undefined;
+      cancelled: boolean;
+      truncated: boolean;
+      fullOutputPath?: string;
+    };
+    options?: { excludeFromContext?: boolean };
+  }> = [];
+  pendingBashMessage:
+    | {
+        role: "bashExecution";
+        command: string;
+        output: string;
+        exitCode: number | undefined;
+        cancelled: boolean;
+        truncated: boolean;
+        fullOutputPath?: string;
+        timestamp: number;
+        excludeFromContext?: boolean;
+      }
+    | undefined;
+  abortCompactionCalls = 0;
+  abortBashCalls = 0;
+  isBashRunning = false;
+  hasPendingBashMessages = false;
   bindExtensionsError: Error | undefined;
   setModelError: Error | undefined;
   extensionRunner:
@@ -379,6 +419,24 @@ class RecordingSession {
     this.activeTools = [...toolNames];
   }
 
+  getToolDefinition(name: string) {
+    if (name === "read") {
+      return createReadToolOverrideDefinition();
+    }
+    if (name === "bash") {
+      return createBashToolOverrideDefinition();
+    }
+    return {
+      name,
+      label: name,
+      description: `${name} tool`,
+      parameters: {},
+      async execute() {
+        return { content: [] };
+      },
+    };
+  }
+
   async bindExtensions(bindings?: {
     uiContext?: {
       input: (title: string, placeholder?: string) => Promise<string | undefined>;
@@ -397,6 +455,12 @@ class RecordingSession {
   async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
     if (this.promptError) {
       throw this.promptError;
+    }
+    if (this.pendingBashMessage) {
+      this.messages.push(this.pendingBashMessage);
+      this.sessionStats.totalMessages += 1;
+      this.pendingBashMessage = undefined;
+      this.hasPendingBashMessages = false;
     }
     this.promptCalls.push({ text, options });
     if (options?.streamingBehavior === "followUp") {
@@ -444,6 +508,133 @@ class RecordingSession {
   }
 
   async abort(): Promise<void> {}
+
+  async compact(customInstructions?: string): Promise<{
+    summary: string;
+    firstKeptEntryId: string;
+    tokensBefore: number;
+    details?: unknown;
+  }> {
+    this.compactCalls.push(customInstructions ?? "");
+    this.isCompacting = true;
+    this.sessionStats.totalMessages += 1;
+    this.isCompacting = false;
+    return {
+      summary: customInstructions ?? "compacted",
+      firstKeptEntryId: "entry-1",
+      tokensBefore: 42,
+      details: { source: "test" },
+    };
+  }
+
+  abortCompaction(): void {
+    this.abortCompactionCalls += 1;
+    this.isCompacting = false;
+  }
+
+  async navigateTree(
+    targetId: string,
+    options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    },
+  ): Promise<{
+    editorText?: string;
+    cancelled: boolean;
+    aborted?: boolean;
+    summaryEntry?: unknown;
+  }> {
+    this.navigateTreeCalls.push({
+      targetId,
+      summarize: options?.summarize,
+      customInstructions: options?.customInstructions,
+      replaceInstructions: options?.replaceInstructions,
+      label: options?.label,
+    });
+    return {
+      editorText: `navigated:${targetId}`,
+      cancelled: false,
+      summaryEntry: options?.summarize ? { id: "summary-1" } : undefined,
+    };
+  }
+
+  async executeBash(
+    command: string,
+    onChunk?: (chunk: string) => void,
+    options?: { excludeFromContext?: boolean; operations?: unknown },
+  ): Promise<{
+    output: string;
+    exitCode: number | undefined;
+    cancelled: boolean;
+    truncated: boolean;
+    fullOutputPath?: string;
+  }> {
+    this.bashCalls.push({ command, options });
+    this.isBashRunning = true;
+    onChunk?.("ran:");
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    onChunk?.(command);
+    this.sessionStats.totalMessages += 1;
+    this.messages.push({
+      role: "bashExecution",
+      command,
+      output: `ran:${command}`,
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+      timestamp: Date.now(),
+      excludeFromContext: options?.excludeFromContext,
+    });
+    this.isBashRunning = false;
+    this.hasPendingBashMessages = false;
+    return {
+      output: `ran:${command}`,
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+    };
+  }
+
+  abortBash(): void {
+    this.abortBashCalls += 1;
+    this.isBashRunning = false;
+  }
+
+  recordBashResult(
+    command: string,
+    result: {
+      output: string;
+      exitCode: number | undefined;
+      cancelled: boolean;
+      truncated: boolean;
+      fullOutputPath?: string;
+    },
+    options?: { excludeFromContext?: boolean },
+  ): void {
+    this.recordedBashResults.push({ command, result, options });
+    const bashMessage = {
+      role: "bashExecution" as const,
+      command,
+      output: result.output,
+      exitCode: result.exitCode,
+      cancelled: result.cancelled,
+      truncated: result.truncated,
+      fullOutputPath: result.fullOutputPath,
+      timestamp: Date.now(),
+      excludeFromContext: options?.excludeFromContext,
+    };
+    if (this.isStreaming) {
+      this.pendingBashMessage = bashMessage;
+      this.hasPendingBashMessages = true;
+      return;
+    }
+
+    this.messages.push(bashMessage);
+    this.sessionStats.totalMessages += 1;
+    this.hasPendingBashMessages = false;
+  }
 
   async setModel(model: { provider: string; id: string }): Promise<void> {
     if (this.setModelError) {
@@ -675,6 +866,29 @@ class RuntimeExtensionEventsPromptSession extends RecordingSession {
       attempt: 1,
       finalError: "simulated retry",
     });
+  }
+}
+
+class AgentLifecyclePromptSession extends RecordingSession {
+  private readonly listeners = new Set<(event: unknown) => void>();
+
+  override subscribe(listener: (event: unknown) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emit(event: unknown): void {
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
+
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    await super.prompt(text, options);
+    this.emit({ type: "agent_start" });
+    this.emit({ type: "agent_end", messages: [] });
   }
 }
 

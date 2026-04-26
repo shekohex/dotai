@@ -1,4 +1,5 @@
 import type { AuthSession } from "../auth.js";
+import { sessionEventsStreamId } from "../streams.js";
 import type {
   CommandAcceptedResponse,
   FollowUpCommandRequest,
@@ -37,6 +38,36 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
       ensurePromptPreflight: (targetSession) => this.ensurePromptPreflight(targetSession),
       dispatchRuntimeCommand: (targetRecord, command, operation) => {
         this.dispatchRuntimeCommand(targetRecord, command, operation);
+      },
+      beforePromptDispatch: (targetRecord) => ({
+        previousHasPendingBashMessages: targetRecord.hasPendingBashMessages,
+        previousTranscriptLength: targetRecord.transcript.length,
+      }),
+      afterPromptDispatch: (targetRecord, targetSession, state) => {
+        if (!state.previousHasPendingBashMessages) {
+          return;
+        }
+        const messages = targetSession.messages
+          .slice(state.previousTranscriptLength)
+          .filter(
+            (
+              message,
+            ): message is Extract<
+              (typeof targetSession.messages)[number],
+              { role: "bashExecution" }
+            > => message.role === "bashExecution",
+          );
+        if (messages.length === 0) {
+          return;
+        }
+        this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
+          sessionId: targetRecord.sessionId,
+          kind: "bash_flush",
+          payload: {
+            messages,
+          },
+          ts: this.now(),
+        });
       },
     });
   }

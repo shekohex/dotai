@@ -65,11 +65,17 @@ function hasSessionBehaviorChange(input: {
   nextSteeringMode: SessionRecord["steeringMode"];
   previousFollowUpMode: SessionRecord["followUpMode"];
   nextFollowUpMode: SessionRecord["followUpMode"];
+  previousIsBashRunning: boolean;
+  nextIsBashRunning: boolean;
+  previousHasPendingBashMessages: boolean;
+  nextHasPendingBashMessages: boolean;
 }): boolean {
   return (
     input.previousAutoCompactionEnabled !== input.nextAutoCompactionEnabled ||
     input.previousSteeringMode !== input.nextSteeringMode ||
-    input.previousFollowUpMode !== input.nextFollowUpMode
+    input.previousFollowUpMode !== input.nextFollowUpMode ||
+    input.previousIsBashRunning !== input.nextIsBashRunning ||
+    input.previousHasPendingBashMessages !== input.nextHasPendingBashMessages
   );
 }
 
@@ -106,6 +112,8 @@ function appendSessionStatePatchIfChanged(input: {
   previousAutoCompactionEnabled: SessionRecord["autoCompactionEnabled"];
   previousSteeringMode: SessionRecord["steeringMode"];
   previousFollowUpMode: SessionRecord["followUpMode"];
+  previousIsBashRunning: boolean;
+  previousHasPendingBashMessages: boolean;
   now: number;
   hasExtensionMetadataChange: (
     previous: SessionRecord["extensions"],
@@ -119,6 +127,8 @@ function appendSessionStatePatchIfChanged(input: {
       contextUsage?: SessionRecord["contextUsage"];
       usageCost?: SessionRecord["usageCost"];
       sessionStats?: SessionRecord["sessionStats"];
+      isBashRunning?: boolean;
+      hasPendingBashMessages?: boolean;
       autoCompactionEnabled?: SessionRecord["autoCompactionEnabled"];
       steeringMode?: SessionRecord["steeringMode"];
       followUpMode?: SessionRecord["followUpMode"];
@@ -147,6 +157,10 @@ function appendSessionStatePatchIfChanged(input: {
     nextSteeringMode: input.record.steeringMode,
     previousFollowUpMode: input.previousFollowUpMode,
     nextFollowUpMode: input.record.followUpMode,
+    previousIsBashRunning: input.previousIsBashRunning,
+    nextIsBashRunning: input.record.isBashRunning,
+    previousHasPendingBashMessages: input.previousHasPendingBashMessages,
+    nextHasPendingBashMessages: input.record.hasPendingBashMessages,
   });
   if (
     !cwdChanged &&
@@ -172,6 +186,8 @@ function appendSessionStatePatchIfChanged(input: {
       ...(sessionBehaviorChanged
         ? {
             autoCompactionEnabled: input.record.autoCompactionEnabled,
+            isBashRunning: input.record.isBashRunning,
+            hasPendingBashMessages: input.record.hasPendingBashMessages,
             steeringMode: input.record.steeringMode,
             followUpMode: input.record.followUpMode,
           }
@@ -203,6 +219,8 @@ export function handleSessionEventForRecord(input: {
       contextUsage?: SessionRecord["contextUsage"];
       usageCost?: SessionRecord["usageCost"];
       sessionStats?: SessionRecord["sessionStats"];
+      isBashRunning?: boolean;
+      hasPendingBashMessages?: boolean;
       autoCompactionEnabled?: SessionRecord["autoCompactionEnabled"];
       steeringMode?: SessionRecord["steeringMode"];
       followUpMode?: SessionRecord["followUpMode"];
@@ -226,6 +244,8 @@ export function handleSessionEventForRecord(input: {
   const previousAutoCompactionEnabled = input.record.autoCompactionEnabled;
   const previousSteeringMode = input.record.steeringMode;
   const previousFollowUpMode = input.record.followUpMode;
+  const previousIsBashRunning = input.record.isBashRunning;
+  const previousHasPendingBashMessages = input.record.hasPendingBashMessages;
   input.syncFromRuntime(input.record, { now: input.now, updateTimestamp: true });
   input.appendAgentEvent(input.record, input.event, input.now);
 
@@ -239,6 +259,8 @@ export function handleSessionEventForRecord(input: {
     previousAutoCompactionEnabled,
     previousSteeringMode,
     previousFollowUpMode,
+    previousIsBashRunning,
+    previousHasPendingBashMessages,
     now: input.now,
     hasExtensionMetadataChange: input.hasExtensionMetadataChange,
     appendSessionStatePatch: input.appendSessionStatePatch,

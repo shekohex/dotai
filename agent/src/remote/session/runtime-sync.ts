@@ -63,6 +63,8 @@ function applyRuntimeSnapshot(
   applyRuntimeModelSnapshot(record, session);
   record.transcript = [...session.messages];
   record.streamingState = session.isStreaming ? "streaming" : "idle";
+  record.isBashRunning = session.isBashRunning;
+  record.hasPendingBashMessages = session.hasPendingBashMessages;
   record.pendingToolCalls = [...session.state.pendingToolCalls.values()];
   applyRuntimeErrorSnapshot(record, session.state.errorMessage ?? null);
   record.retry.status = session.isRetrying ? "running" : "idle";

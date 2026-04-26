@@ -15,12 +15,12 @@ import {
   handleSessionNameUpdateCommand,
   submitUiResponseCommand,
 } from "./deps.js";
-import { SessionRegistryPromptCommands } from "./registry-prompt-commands.js";
+import { SessionRegistryRuntimeOps } from "./registry-runtime-ops.js";
 import type { SessionRecord } from "./types.js";
 
 type RuntimeSession = NonNullable<SessionRecord["runtime"]["session"]>;
 
-export class SessionRegistryStateCommands extends SessionRegistryPromptCommands {
+export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
   async updateActiveTools(
     sessionId: string,
     input: ActiveToolsUpdateRequest,

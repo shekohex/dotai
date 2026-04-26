@@ -177,6 +177,9 @@ function runRuntimeCommandOperation(input: {
       if (!failed) {
         input.record.hasLocalCommandError = false;
       }
+      if (!failed && input.command.kind === "prompt") {
+        return;
+      }
       input.syncFromRuntime(input.record, {
         updateTimestamp: !failed,
       });

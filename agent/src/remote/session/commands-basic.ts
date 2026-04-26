@@ -58,6 +58,18 @@ export function handlePromptCommand(input: {
     command: AcceptedSessionCommand,
     operation: () => Promise<void>,
   ) => void;
+  beforePromptDispatch: (record: SessionRecord) => {
+    previousHasPendingBashMessages: boolean;
+    previousTranscriptLength: number;
+  };
+  afterPromptDispatch: (
+    record: SessionRecord,
+    session: AgentSessionRuntime["session"],
+    state: {
+      previousHasPendingBashMessages: boolean;
+      previousTranscriptLength: number;
+    },
+  ) => void;
 }): Promise<CommandAcceptedResponse> {
   return input.acceptCommand(
     input.record,
@@ -80,6 +92,18 @@ function buildPromptHooks(input: {
     command: AcceptedSessionCommand,
     operation: () => Promise<void>,
   ) => void;
+  beforePromptDispatch: (record: SessionRecord) => {
+    previousHasPendingBashMessages: boolean;
+    previousTranscriptLength: number;
+  };
+  afterPromptDispatch: (
+    record: SessionRecord,
+    session: AgentSessionRuntime["session"],
+    state: {
+      previousHasPendingBashMessages: boolean;
+      previousTranscriptLength: number;
+    },
+  ) => void;
 }): {
   beforeAccepted: () => Promise<void>;
   onAccepted: (accepted: AcceptedSessionCommand) => void;
@@ -96,10 +120,12 @@ function buildPromptHooks(input: {
     },
     onAccepted: (accepted) => {
       input.dispatchRuntimeCommand(input.record, accepted, async () => {
+        const promptDispatchState = input.beforePromptDispatch(input.record);
         await input.session.prompt(
           input.command.text,
           toPromptOptions(input.session.isStreaming, input.command.attachments),
         );
+        input.afterPromptDispatch(input.record, input.session, promptDispatchState);
       });
     },
   };

@@ -80,6 +80,8 @@ export interface SessionRecord {
   };
   activeRun: SessionSnapshot["activeRun"];
   streamingState: string;
+  isBashRunning: boolean;
+  hasPendingBashMessages: boolean;
   pendingToolCalls: unknown[];
   errorMessage: string | null;
   createdAt: number;

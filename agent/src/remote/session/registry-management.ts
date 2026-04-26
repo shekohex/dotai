@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
 import type { SessionCatalogRecord } from "../session-catalog.js";
@@ -6,9 +7,12 @@ import type {
   AppSnapshot,
   CreateSessionRequest,
   CreateSessionResponse,
+  ForkSessionRequest,
+  ForkSessionResponse,
   SessionDeletedResponse,
   SessionSnapshot,
   SessionSummary,
+  ToolDefinitionMetadata,
 } from "../schemas.js";
 import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import {
@@ -26,7 +30,13 @@ import {
   touchSessionPresence,
   type SessionRecord,
 } from "./deps.js";
+import {
+  forkEphemeralLoadedSessionRecord,
+  forkPersistentSessionRecord,
+  readForkMessagesFromSessionManager,
+} from "./fork-ops.js";
 import { SessionRegistryBase } from "./registry-base.js";
+import { serializeToolDefinition } from "./tool-definition-metadata.js";
 
 export class SessionRegistryManagement extends SessionRegistryBase {
   createSession(
@@ -168,6 +178,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       description: string;
       parameters: unknown;
       sourceInfo: unknown;
+      definition?: ToolDefinitionMetadata;
     }>
   > {
     const record = await this.ensureLoaded(sessionId);
@@ -182,6 +193,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
         sourceInfo: {
           source: "remote",
         },
+        definition: undefined,
       }));
     }
 
@@ -190,7 +202,63 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       description: tool.description,
       parameters: tool.parameters,
       sourceInfo: tool.sourceInfo,
+      definition: serializeToolDefinition(session.getToolDefinition(tool.name), tool.sourceInfo),
     }));
+  }
+
+  getSessionForkMessages(
+    sessionId: string,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<Array<{ entryId: string; text: string }>> {
+    const loaded = this.loadedRuntimes.get(sessionId);
+    if (loaded) {
+      this.touchPresence(sessionId, client, connectionId);
+      this.syncFromRuntime(loaded, { updateTimestamp: false });
+      const runtimeSession = this.getRuntimeSession(loaded);
+      if (runtimeSession && typeof runtimeSession.getUserMessagesForForking === "function") {
+        return Promise.resolve(runtimeSession.getUserMessagesForForking());
+      }
+    }
+
+    const catalogRecord = this.catalog.get(sessionId);
+    if (catalogRecord) {
+      return this.ensureLoaded(sessionId).then((record) => {
+        this.touchPresence(sessionId, client, connectionId);
+        this.syncFromRuntime(record, { updateTimestamp: false });
+        const runtimeSession = this.getRuntimeSession(record);
+        if (runtimeSession && typeof runtimeSession.getUserMessagesForForking === "function") {
+          return runtimeSession.getUserMessagesForForking();
+        }
+
+        const sourceManager = SessionManager.open(catalogRecord.sessionPath);
+        return readForkMessagesFromSessionManager(sourceManager);
+      });
+    }
+
+    return this.ensureLoaded(sessionId).then((record) => {
+      this.touchPresence(sessionId, client, connectionId);
+      this.syncFromRuntime(record, { updateTimestamp: false });
+      const session = this.getRuntimeSession(record);
+      if (session === undefined || typeof session.getUserMessagesForForking !== "function") {
+        return [];
+      }
+      return session.getUserMessagesForForking();
+    });
+  }
+
+  forkSession(
+    sessionId: string,
+    request: ForkSessionRequest,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<ForkSessionResponse> {
+    const existingRecord = this.loadedRuntimes.get(sessionId);
+    if (existingRecord?.persistence === "ephemeral") {
+      return this.forkEphemeralLoadedSession(existingRecord, request, client, connectionId);
+    }
+
+    return this.forkPersistentSession(sessionId, request, client, connectionId);
   }
 
   getAppSnapshot(client: AuthSession): AppSnapshot {
@@ -396,6 +464,75 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       sessionId,
       deleted: true,
     };
+  }
+
+  private forkPersistentSession(
+    sessionId: string,
+    request: ForkSessionRequest,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<ForkSessionResponse> {
+    const catalogRecord = this.catalog.get(sessionId);
+    if (catalogRecord === undefined) {
+      throw new RemoteError("Session not found", 404);
+    }
+    const loadedRecord = this.loadedRuntimes.get(sessionId);
+    const loadedRuntimeSession =
+      loadedRecord === undefined ? undefined : this.getRuntimeSession(loadedRecord);
+    const runtimeFactoryLoad =
+      this.runtimeFactory.load === undefined
+        ? undefined
+        : (requestInput: { sessionId: string; sessionPath: string; cwd: string }) =>
+            this.runtimeFactory.load!(requestInput);
+
+    return forkPersistentSessionRecord({
+      sessionId,
+      request,
+      client,
+      connectionId,
+      catalogRecord,
+      loadedRuntimeSession,
+      runtimeFactoryLoad,
+      readRuntimeExtensionMetadata: (runtime) => this.readRuntimeExtensionMetadata(runtime),
+      initializeRuntimeRecord: (record, input) => this.initializeRuntimeRecord(record, input),
+      registerCreatedSessionRecord: (record, targetClient, targetConnectionId, createdAt) => {
+        this.registerCreatedSessionRecord(record, targetClient, targetConnectionId, createdAt);
+      },
+      getAppStreamOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
+      now: this.now,
+    });
+  }
+
+  private forkEphemeralLoadedSession(
+    record: SessionRecord,
+    request: ForkSessionRequest,
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<ForkSessionResponse> {
+    return forkEphemeralLoadedSessionRecord({
+      record,
+      request,
+      client,
+      connectionId,
+      syncFromRuntime: (targetRecord, options) => {
+        this.syncFromRuntime(targetRecord, options);
+      },
+      deleteLoadedRuntime: (targetSessionId) => {
+        this.loadedRuntimes.delete(targetSessionId);
+      },
+      registerPersistedRuntimeRecord: (targetRecord) => {
+        this.catalog.registerPersistedRuntimeRecord(targetRecord);
+      },
+      registerCreatedSessionRecord: (targetRecord, targetClient, targetConnectionId, createdAt) => {
+        this.registerCreatedSessionRecord(
+          targetRecord,
+          targetClient,
+          targetConnectionId,
+          createdAt,
+        );
+      },
+      now: this.now,
+    });
   }
 
   touchPresence(sessionId: string, client: AuthSession, connectionId?: string): void {

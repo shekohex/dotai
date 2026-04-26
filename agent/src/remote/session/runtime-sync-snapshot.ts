@@ -45,6 +45,8 @@ export function buildSessionSnapshotParts(
     presence: [...record.presence.values()],
     activeRun: record.activeRun,
     streamingState: record.streamingState,
+    isBashRunning: record.isBashRunning,
+    hasPendingBashMessages: record.hasPendingBashMessages,
     pendingToolCalls: [...record.pendingToolCalls],
     errorMessage: record.errorMessage,
     createdAt: record.createdAt,

@@ -70,6 +70,8 @@ export function createSessionRecord(input: {
     compaction: createIdleTaskState(),
     activeRun: null,
     streamingState: "idle",
+    isBashRunning: false,
+    hasPendingBashMessages: false,
     pendingToolCalls: [],
     errorMessage: null,
     createdAt: input.createdAt,

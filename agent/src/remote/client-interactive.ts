@@ -268,9 +268,6 @@ export function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
   if (parsed.exportPath !== undefined) {
     throw new Error("Remote mode does not support --export yet");
   }
-  if (parsed.forkSessionId !== undefined) {
-    throw new Error("Remote mode does not support --fork yet");
-  }
   if (readSelectedSessionModeCount(parsed) > 1) {
     throw new Error(
       "Remote mode session selection flags are mutually exclusive: use one of --session, --resume, --continue, --fork, or --no-session",
@@ -361,6 +358,24 @@ export function resolveRemoteSessionId(input: {
     return { createNewSession: true };
   }
 
+  if (input.parsed.forkSessionId !== undefined) {
+    const matches = findMatchingRemoteSessions(input.snapshot, input.parsed.forkSessionId);
+    if (matches.length === 0) {
+      throw new Error(`Remote session not found: ${input.parsed.forkSessionId}`);
+    }
+    if (matches.length > 1) {
+      const labels = matches.map((summary) => `${summary.sessionId} (${summary.sessionName})`);
+      throw new Error(
+        `Remote session query is ambiguous: ${input.parsed.forkSessionId}. Matches: ${labels.join(", ")}`,
+      );
+    }
+    const selectedMatch = matches[0];
+    if (selectedMatch === undefined) {
+      throw new Error(`Remote session not found: ${input.parsed.forkSessionId}`);
+    }
+    return { sessionId: selectedMatch.sessionId, createNewSession: false };
+  }
+
   return { sessionId: input.parsed.sessionId, createNewSession: false };
 }
 
@@ -444,13 +459,19 @@ export async function runRemoteInteractiveMode(
     return;
   }
 
+  const selectedSessionId =
+    parsed.forkSessionId !== undefined && selection.sessionId !== undefined
+      ? (await client.forkSession(selection.sessionId, { workspaceCwd: parsed.workspaceCwd }))
+          .sessionId
+      : selection.sessionId;
+
   const runtimeCandidate: unknown = await RemoteAgentSessionRuntime.create({
     origin: parsed.remoteOrigin,
     auth: {
       keyId: parsed.keyId,
       privateKey,
     },
-    sessionId: selection.sessionId,
+    sessionId: selectedSessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
     createNewSession: selection.createNewSession,
     persistence: parsed.noSession ? "ephemeral" : "persistent",

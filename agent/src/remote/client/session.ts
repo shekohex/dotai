@@ -85,6 +85,7 @@ export class RemoteAgentSession
         clientExtensionLoader,
       },
     );
+    await session.refreshForkMessages();
     session.startPolling();
     return session;
   }

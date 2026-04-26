@@ -1,12 +1,21 @@
-import type { SessionStats } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, SessionStats } from "@mariozechner/pi-coding-agent";
+import { SessionSnapshotSchema } from "../../schemas.js";
+import { assertType } from "../../typebox.js";
 import { getAllToolsRemoteSession, getLastAssistantTextRemoteSession } from "../session-ops.js";
 import {
   setActiveToolsRemoteSessionMethod,
   setSessionNameRemoteSessionMethod,
 } from "./command-methods-ops.js";
+import { buildRemoteToolDefinition } from "./remote-tool-definitions.js";
 import { RemoteAgentSessionInteractionApi } from "./interaction-api.js";
 
 export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessionInteractionApi {
+  private surfaceAsyncAbortFailure(action: "compaction" | "bash", error: unknown): void {
+    this.handleRemoteError(
+      error instanceof Error ? error.message : `Failed to abort remote ${action}`,
+    );
+  }
+
   setSteeringMode(mode: "all" | "one-at-a-time"): void {
     const previousMode = this._steeringMode;
     this._steeringMode = mode;
@@ -31,11 +40,27 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
     );
   }
 
-  compact(_customInstructions?: string): Promise<never> {
-    return Promise.reject(new Error("Compaction is not supported by remote adapter yet"));
+  async compact(
+    customInstructions?: Parameters<AgentSession["compact"]>[0],
+  ): ReturnType<AgentSession["compact"]> {
+    const result = await this.client.compactSession(this.sessionId, { customInstructions });
+    if (result.snapshot !== undefined) {
+      assertType(SessionSnapshotSchema, result.snapshot);
+      this.applySnapshot(result.snapshot);
+    }
+    return {
+      summary: result.summary,
+      firstKeptEntryId: result.firstKeptEntryId,
+      tokensBefore: result.tokensBefore,
+      details: result.details,
+    };
   }
 
-  abortCompaction(): void {}
+  abortCompaction(): void {
+    void this.client.abortCompaction(this.sessionId).catch((error: unknown) => {
+      this.surfaceAsyncAbortFailure("compaction", error);
+    });
+  }
 
   abortBranchSummary(): void {}
 
@@ -62,32 +87,88 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
   abortRetry(): void {}
 
   executeBash(
-    _command: string,
-    _onChunk?: (chunk: string) => void,
-    _options?: {
+    command: string,
+    onChunk?: (chunk: string) => void,
+    options?: {
       excludeFromContext?: boolean;
       operations?: unknown;
     },
-  ): Promise<never> {
-    return Promise.reject(
-      new Error("Direct local bash execution is not supported by remote adapter"),
-    );
+  ): ReturnType<AgentSession["executeBash"]> {
+    if (options?.operations !== undefined) {
+      return Promise.reject(
+        new Error("Remote adapter does not support custom bash operations transport"),
+      );
+    }
+    const clientRequestId = `bash-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    this.activeBashRequests.set(clientRequestId, { onChunk });
+    this._isBashRunning = true;
+    return this.client
+      .executeBash(this.sessionId, {
+        command,
+        excludeFromContext: options?.excludeFromContext,
+        clientRequestId,
+      })
+      .then((result) => {
+        if (result.snapshot !== undefined) {
+          assertType(SessionSnapshotSchema, result.snapshot);
+          this.applySnapshot(result.snapshot);
+        }
+        return {
+          output: result.output,
+          exitCode: result.exitCode,
+          cancelled: result.cancelled,
+          truncated: result.truncated,
+          fullOutputPath: result.fullOutputPath,
+        };
+      })
+      .finally(() => {
+        this.activeBashRequests.delete(clientRequestId);
+        this._isBashRunning = false;
+      });
   }
 
   recordBashResult(
-    _command: string,
-    _result: unknown,
-    _options?: { excludeFromContext?: boolean },
-  ): void {}
+    command: string,
+    result: {
+      output: string;
+      exitCode: number | undefined;
+      cancelled: boolean;
+      truncated: boolean;
+      fullOutputPath?: string;
+    },
+    options?: { excludeFromContext?: boolean },
+  ): void {
+    void this.client
+      .recordBashResult(this.sessionId, {
+        command,
+        result,
+        excludeFromContext: options?.excludeFromContext,
+      })
+      .then((response) => {
+        if (response.snapshot !== undefined) {
+          assertType(SessionSnapshotSchema, response.snapshot);
+          this.applySnapshot(response.snapshot);
+        }
+      })
+      .catch((error: unknown) => {
+        this.handleRemoteError(
+          error instanceof Error ? error.message : "Failed to record remote bash result",
+        );
+      });
+  }
 
-  abortBash(): void {}
+  abortBash(): void {
+    void this.client.abortBash(this.sessionId).catch((error: unknown) => {
+      this.surfaceAsyncAbortFailure("bash", error);
+    });
+  }
 
   get isBashRunning(): boolean {
-    return false;
+    return this._isBashRunning;
   }
 
   get hasPendingBashMessages(): boolean {
-    return false;
+    return this._hasPendingBashMessages;
   }
 
   setSessionName(name: string): void {
@@ -106,19 +187,34 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
   }
 
   navigateTree(
-    _targetId: string,
-    _options?: {
+    targetId: string,
+    options?: {
       summarize?: boolean;
       customInstructions?: string;
       replaceInstructions?: boolean;
       label?: string;
     },
-  ): Promise<{ cancelled: boolean }> {
-    return Promise.resolve({ cancelled: true });
+  ): ReturnType<AgentSession["navigateTree"]> {
+    return this.client
+      .navigateTree(this.sessionId, {
+        targetId,
+        summarize: options?.summarize,
+        customInstructions: options?.customInstructions,
+        replaceInstructions: options?.replaceInstructions,
+        label: options?.label,
+      })
+      .then(async (result) => {
+        await this.reload();
+        return {
+          editorText: result.editorText,
+          cancelled: result.cancelled,
+          aborted: result.aborted,
+        };
+      });
   }
 
   getUserMessagesForForking(): Array<{ entryId: string; text: string }> {
-    return [];
+    return this.forkMessages.map((message) => ({ ...message }));
   }
 
   getSessionStats(): SessionStats {
@@ -141,8 +237,8 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
     return getLastAssistantTextRemoteSession(this.state.messages);
   }
 
-  hasExtensionHandlers(_eventType: string): boolean {
-    return false;
+  hasExtensionHandlers(eventType: string): boolean {
+    return this.localExtensionRunner.hasHandlers(eventType);
   }
 
   getActiveToolNames(): string[] {
@@ -161,7 +257,12 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
   }
 
   getToolDefinition(name: string) {
-    return this.localExtensionRunner.getToolDefinition(name);
+    const localDefinition = this.localExtensionRunner.getToolDefinition(name);
+    if (localDefinition) {
+      return localDefinition;
+    }
+    const remoteDefinition = this.getRemoteToolDefinition(name);
+    return remoteDefinition ? buildRemoteToolDefinition(remoteDefinition) : undefined;
   }
 
   setActiveToolsByName(toolNames: string[]): void {

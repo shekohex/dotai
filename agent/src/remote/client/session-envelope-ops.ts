@@ -22,6 +22,18 @@ export async function routeRemoteSessionEnvelope(input: {
   ) => void;
   onExtensionUiRequestPayload: (payload: ExtensionUiRequestEventPayload) => Promise<void>;
   onExtensionUiResolvedPayload: (payload: ExtensionUiResolvedEventPayload) => void;
+  onBashStartPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_start" }>["payload"],
+  ) => void;
+  onBashChunkPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_chunk" }>["payload"],
+  ) => void;
+  onBashEndPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_end" }>["payload"],
+  ) => void;
+  onBashFlushPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_flush" }>["payload"],
+  ) => void;
 }): Promise<void> {
   if (input.envelope.kind === "agent_session_event") {
     input.onAgentSessionPayload(input.envelope.payload);
@@ -50,6 +62,26 @@ export async function routeRemoteSessionEnvelope(input: {
 
   if (input.envelope.kind === "extension_ui_resolved") {
     input.onExtensionUiResolvedPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "bash_start") {
+    input.onBashStartPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "bash_chunk") {
+    input.onBashChunkPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "bash_end") {
+    input.onBashEndPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "bash_flush") {
+    input.onBashFlushPayload(input.envelope.payload);
   }
 }
 
@@ -73,4 +105,38 @@ export function applyExtensionEnvelopePayload(input: {
     return;
   }
   input.applyExtensionEvent(input.payload);
+}
+
+export function applyBashStartEnvelopePayload(input: {
+  payload: Extract<StreamEventEnvelope, { kind: "bash_start" }>["payload"];
+  handleBashStart: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_start" }>["payload"],
+  ) => void;
+}): void {
+  input.handleBashStart(input.payload);
+}
+
+export function applyBashChunkEnvelopePayload(input: {
+  payload: Extract<StreamEventEnvelope, { kind: "bash_chunk" }>["payload"];
+  handleBashChunk: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_chunk" }>["payload"],
+  ) => void;
+}): void {
+  input.handleBashChunk(input.payload);
+}
+
+export function applyBashEndEnvelopePayload(input: {
+  payload: Extract<StreamEventEnvelope, { kind: "bash_end" }>["payload"];
+  handleBashEnd: (payload: Extract<StreamEventEnvelope, { kind: "bash_end" }>["payload"]) => void;
+}): void {
+  input.handleBashEnd(input.payload);
+}
+
+export function applyBashFlushEnvelopePayload(input: {
+  payload: Extract<StreamEventEnvelope, { kind: "bash_flush" }>["payload"];
+  handleBashFlush: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_flush" }>["payload"],
+  ) => void;
+}): void {
+  input.handleBashFlush(input.payload);
 }

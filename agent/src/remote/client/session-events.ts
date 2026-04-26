@@ -49,7 +49,11 @@ function applyAgentMessageState(state: RemoteAgentSessionState, event: AgentSess
     if (event.message.role === "assistant") {
       state.streamingMessage = event.message;
     }
-    if (event.message.role === "user" || event.message.role === "custom") {
+    if (
+      event.message.role === "user" ||
+      event.message.role === "custom" ||
+      event.message.role === "bashExecution"
+    ) {
       state.messages = [...state.messages, event.message];
     }
   }

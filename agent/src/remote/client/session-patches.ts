@@ -30,6 +30,8 @@ type ApplyRemoteSessionStatePatchInput = {
   setContextUsage: (contextUsage: ContextUsage | undefined) => void;
   setSessionStats: (sessionStats: SessionStats) => void;
   setUsageCost: (usageCost: number) => void;
+  setIsBashRunning: (isBashRunning: boolean) => void;
+  setHasPendingBashMessages: (hasPendingBashMessages: boolean) => void;
   setAutoCompactionEnabled: (enabled: boolean) => void;
   setSteeringMode: (mode: "all" | "one-at-a-time") => void;
   setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
@@ -49,6 +51,7 @@ export function applyRemoteSessionStatePatch(input: ApplyRemoteSessionStatePatch
   applyRemoteSessionStatsPatch(input, patch);
   applyRemoteContextUsagePatch(input, patch);
   applyRemoteUsageCostPatch(input, patch);
+  applyRemoteBashStatePatch(input, patch);
   applyRemoteSessionBehaviorPatch(input, patch);
 }
 
@@ -170,6 +173,18 @@ function applyRemoteUsageCostPatch(
     return;
   }
   input.setUsageCost(patch.usageCost);
+}
+
+function applyRemoteBashStatePatch(
+  input: ApplyRemoteSessionStatePatchInput,
+  patch: SessionStatePatch,
+): void {
+  if (patch.isBashRunning !== undefined) {
+    input.setIsBashRunning(patch.isBashRunning);
+  }
+  if (patch.hasPendingBashMessages !== undefined) {
+    input.setHasPendingBashMessages(patch.hasPendingBashMessages);
+  }
 }
 
 function applyRemoteSessionBehaviorPatch(

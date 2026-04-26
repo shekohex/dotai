@@ -144,8 +144,19 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     return { cancelled: false };
   }
 
-  fork(_entryId: string): Promise<{ cancelled: boolean; selectedText?: string }> {
-    return Promise.resolve({ cancelled: true });
+  async fork(
+    entryId: string,
+    options?: Parameters<RemoteRuntimeContract["fork"]>[1],
+  ): Promise<{ cancelled: boolean; selectedText?: string }> {
+    const forked = await this.client.forkSession(this._session.sessionManager.getSessionId(), {
+      entryId,
+      position: options?.position,
+    });
+    await this.switchToSession(forked.sessionId);
+    if (options?.withSession) {
+      await options.withSession(this._session.createReplacedSessionContext());
+    }
+    return { cancelled: false, selectedText: forked.selectedText };
   }
 
   importFromJsonl(_inputPath: string, _cwdOverride?: string): Promise<{ cancelled: boolean }> {
@@ -191,7 +202,30 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     const originalBindExtensions = session.bindExtensions.bind(session);
     session.bindExtensions = async (bindings) => {
       this.latestExtensionBindings = bindings;
-      await originalBindExtensions(bindings);
+      await originalBindExtensions({
+        ...bindings,
+        commandContextActions: {
+          ...bindings?.commandContextActions,
+          waitForIdle: () => {
+            return session.waitForIdle();
+          },
+          newSession: (options) => {
+            return this.newSession(options);
+          },
+          fork: (entryId, options) => {
+            return this.fork(entryId, options);
+          },
+          navigateTree: (targetId, options) => {
+            return session.navigateTree(targetId, options);
+          },
+          switchSession: (sessionPath, options) => {
+            return this.switchSession(sessionPath, options);
+          },
+          reload: () => {
+            return session.reload();
+          },
+        },
+      });
     };
   }
 }

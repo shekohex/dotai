@@ -17,6 +17,10 @@ import type {
 import type { RemoteModelSettingsState } from "../contracts.js";
 import {
   applyAgentSessionEnvelopePayload,
+  applyBashChunkEnvelopePayload,
+  applyBashEndEnvelopePayload,
+  applyBashFlushEnvelopePayload,
+  applyBashStartEnvelopePayload,
   applyExtensionEnvelopePayload,
   routeRemoteSessionEnvelope,
 } from "../session-envelope-ops.js";
@@ -60,6 +64,8 @@ export type PollRemoteSessionRuntimeInput = {
   setContextUsage: (contextUsage: ContextUsage | undefined) => void;
   setSessionStats: (sessionStats: SessionStats) => void;
   setUsageCost: (usageCost: number) => void;
+  setIsBashRunning: (isBashRunning: boolean) => void;
+  setHasPendingBashMessages: (hasPendingBashMessages: boolean) => void;
   setAutoCompactionEnabled: (enabled: boolean) => void;
   setSteeringMode: (mode: "all" | "one-at-a-time") => void;
   setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
@@ -70,6 +76,16 @@ export type PollRemoteSessionRuntimeInput = {
   cancelUiRequest: (requestId: string) => void;
   client: RemoteApiClient;
   sessionId: string;
+  handleBashStart: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_start" }>["payload"],
+  ) => void;
+  handleBashChunk: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_chunk" }>["payload"],
+  ) => void;
+  handleBashEnd: (payload: Extract<StreamEventEnvelope, { kind: "bash_end" }>["payload"]) => void;
+  handleBashFlush: (
+    payload: Extract<StreamEventEnvelope, { kind: "bash_flush" }>["payload"],
+  ) => void;
   handleEnvelope?: (envelope: StreamEventEnvelope) => Promise<void>;
 };
 
@@ -85,6 +101,8 @@ type PollingStateHandlers = Pick<
   | "setContextUsage"
   | "setSessionStats"
   | "setUsageCost"
+  | "setIsBashRunning"
+  | "setHasPendingBashMessages"
   | "setAutoCompactionEnabled"
   | "setSteeringMode"
   | "setFollowUpMode"
@@ -113,6 +131,10 @@ export function createRemoteSessionPollingInput(input: {
   stateHandlers: PollingStateHandlers;
   client: PollRemoteSessionRuntimeInput["client"];
   sessionId: PollRemoteSessionRuntimeInput["sessionId"];
+  handleBashStart: PollRemoteSessionRuntimeInput["handleBashStart"];
+  handleBashChunk: PollRemoteSessionRuntimeInput["handleBashChunk"];
+  handleBashEnd: PollRemoteSessionRuntimeInput["handleBashEnd"];
+  handleBashFlush: PollRemoteSessionRuntimeInput["handleBashFlush"];
 }): PollRemoteSessionRuntimeInput {
   return {
     isClosed: input.isClosed,
@@ -132,6 +154,10 @@ export function createRemoteSessionPollingInput(input: {
     ...input.stateHandlers,
     client: input.client,
     sessionId: input.sessionId,
+    handleBashStart: input.handleBashStart,
+    handleBashChunk: input.handleBashChunk,
+    handleBashEnd: input.handleBashEnd,
+    handleBashFlush: input.handleBashFlush,
   };
 }
 
@@ -195,6 +221,18 @@ export async function handleRemoteSessionEnvelope(
     onExtensionUiResolvedPayload: (payload) => {
       handleExtensionUiResolvedPayload(input, payload);
     },
+    onBashStartPayload: (payload) => {
+      applyBashStartEnvelopePayload({ payload, handleBashStart: input.handleBashStart });
+    },
+    onBashChunkPayload: (payload) => {
+      applyBashChunkEnvelopePayload({ payload, handleBashChunk: input.handleBashChunk });
+    },
+    onBashEndPayload: (payload) => {
+      applyBashEndEnvelopePayload({ payload, handleBashEnd: input.handleBashEnd });
+    },
+    onBashFlushPayload: (payload) => {
+      applyBashFlushEnvelopePayload({ payload, handleBashFlush: input.handleBashFlush });
+    },
   });
 }
 
@@ -215,6 +253,8 @@ function handleSessionStatePatchPayload(
     setContextUsage: input.setContextUsage,
     setSessionStats: input.setSessionStats,
     setUsageCost: input.setUsageCost,
+    setIsBashRunning: input.setIsBashRunning,
+    setHasPendingBashMessages: input.setHasPendingBashMessages,
     setAutoCompactionEnabled: input.setAutoCompactionEnabled,
     setSteeringMode: input.setSteeringMode,
     setFollowUpMode: input.setFollowUpMode,

@@ -9,7 +9,9 @@ import {
   cancelRemoteUiRequest,
   isAgentMessageLike,
   isAgentSessionEventLike,
+  normalizeTranscript,
   readRemoteSettingsSnapshot,
+  readPendingToolCallId,
   resolveThinkingLevel,
 } from "../session-deps.js";
 import { mirrorSessionEventMessage } from "../session-manager-mirror.js";
@@ -30,6 +32,13 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   async reload(): Promise<void> {
     await this.waitForPendingMutations();
     const snapshot = await this.client.reloadSession(this.sessionId);
+    this.applySnapshot(snapshot);
+    await this.refreshRemoteToolCatalog();
+    await this.refreshForkMessages();
+    await this.replayLocalExtensionReloadLifecycle();
+  }
+
+  protected applySnapshot(snapshot: Parameters<typeof applyRemoteSettingsSnapshot>[1]): void {
     this.applyAuthoritativeCwdUpdate(snapshot.cwd);
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
@@ -40,18 +49,26 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, this._thinkingLevel);
     this.state.thinkingLevel = this._thinkingLevel;
     this.setResolvedModel(snapshot.model);
+    this.state.messages = normalizeTranscript(snapshot.transcript);
+    this.state.pendingToolCalls = new Set(
+      snapshot.pendingToolCalls
+        .map((call) => readPendingToolCallId(call))
+        .filter((value): value is string => value !== undefined),
+    );
+    this.state.isStreaming = snapshot.streamingState === "streaming";
+    this._isBashRunning = snapshot.isBashRunning;
+    this._hasPendingBashMessages = snapshot.hasPendingBashMessages;
     this.state.sessionStats = cloneSessionStats(snapshot.sessionStats);
     this.state.contextUsage = this.state.sessionStats.contextUsage ?? snapshot.contextUsage;
     this.state.usageCost = this.state.sessionStats.cost;
+    this.state.errorMessage = snapshot.errorMessage ?? undefined;
     this._autoCompactionEnabled = snapshot.autoCompactionEnabled;
     this._steeringMode = snapshot.steeringMode;
     this._followUpMode = snapshot.followUpMode;
     this.reloadResourceLoader(snapshot);
     this.activeTools = [...snapshot.activeTools];
     this.sessionManager.appendSessionInfo(snapshot.sessionName);
-    await this.refreshRemoteToolCatalog();
     this.queueDepth = snapshot.queue.depth;
-    await this.replayLocalExtensionReloadLifecycle();
   }
 
   protected async waitForPendingMutations(): Promise<void> {
@@ -132,6 +149,51 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       stateHandlers: this.createPollingStateHandlers(),
       client: this.client,
       sessionId: this.sessionId,
+      handleBashStart: (payload) => {
+        this._isBashRunning = true;
+        this.activeBashExecutions.set(payload.executionId, {
+          executionId: payload.executionId,
+          command: payload.command,
+          output: "",
+          clientRequestId: payload.clientRequestId,
+        });
+        if (payload.clientRequestId === undefined) {
+          return;
+        }
+        if (!this.activeBashRequests.has(payload.clientRequestId)) {
+          this.activeBashRequests.set(payload.clientRequestId, {});
+        }
+      },
+      handleBashChunk: (payload) => {
+        const currentExecution = this.activeBashExecutions.get(payload.executionId);
+        if (currentExecution) {
+          currentExecution.output += payload.chunk;
+        }
+        if (payload.clientRequestId === undefined) {
+          return;
+        }
+        this.activeBashRequests.get(payload.clientRequestId)?.onChunk?.(payload.chunk);
+      },
+      handleBashEnd: (payload) => {
+        this._isBashRunning = false;
+        this.activeBashExecutions.delete(payload.executionId);
+        if (payload.message !== undefined) {
+          const message = toBashExecutionMessage(payload.message);
+          this.state.messages = [...this.state.messages, message];
+          this.sessionManager.appendMessage(message);
+        }
+        if (payload.clientRequestId !== undefined) {
+          this.activeBashRequests.delete(payload.clientRequestId);
+        }
+      },
+      handleBashFlush: (payload) => {
+        this._hasPendingBashMessages = false;
+        for (const message of payload.messages) {
+          const bashExecutionMessage = toBashExecutionMessage(message);
+          this.state.messages = [...this.state.messages, bashExecutionMessage];
+          this.sessionManager.appendMessage(bashExecutionMessage);
+        }
+      },
     });
   }
 
@@ -171,6 +233,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       },
       setUsageCost: (usageCost) => {
         this.state.usageCost = usageCost;
+      },
+      setIsBashRunning: (isBashRunning) => {
+        this._isBashRunning = isBashRunning;
+      },
+      setHasPendingBashMessages: (hasPendingBashMessages) => {
+        this._hasPendingBashMessages = hasPendingBashMessages;
       },
       setAutoCompactionEnabled: (enabled) => {
         this._autoCompactionEnabled = enabled;
@@ -235,6 +303,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   protected applyAgentSessionEvent(event: AgentSessionEvent): void {
     mirrorSessionEventMessage(this.sessionManager, event);
+    if (event.type === "message_start" && event.message.role === "bashExecution") {
+      this._hasPendingBashMessages = false;
+    }
+    if (event.type === "turn_end") {
+      void this.refreshForkMessages();
+    }
     this.forwardAgentSessionEventToLocalExtensions(event);
     const next = applyRemoteAgentEventAndEmit({
       event,
@@ -263,7 +337,27 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._retryAttempt = next.retryAttempt;
     this._isCompacting = next.isCompacting;
   }
+
+  getActiveBashExecutions(): Array<{
+    executionId: string;
+    command: string;
+    output: string;
+    clientRequestId?: string;
+  }> {
+    return [...this.activeBashExecutions.values()].map((execution) => ({ ...execution }));
+  }
 }
+
+type BashExecutionMessagePayload = {
+  command: string;
+  output: string;
+  exitCode?: number;
+  cancelled: boolean;
+  truncated: boolean;
+  fullOutputPath?: string;
+  timestamp: number;
+  excludeFromContext?: boolean;
+};
 
 function abortControllerSafely(controller: AbortController | undefined): void {
   if (!controller) {
@@ -301,5 +395,26 @@ function cloneSessionStats(
       total: stats.tokens.total,
     },
     ...(stats.contextUsage ? { contextUsage: { ...stats.contextUsage } } : {}),
+  };
+}
+
+function toBashExecutionMessage(
+  payload: BashExecutionMessagePayload,
+): Extract<
+  RemoteAgentSessionRuntimeInternals["state"]["messages"][number],
+  { role: "bashExecution" }
+> {
+  return {
+    role: "bashExecution",
+    command: payload.command,
+    output: payload.output,
+    exitCode: payload.exitCode,
+    cancelled: payload.cancelled,
+    truncated: payload.truncated,
+    timestamp: payload.timestamp,
+    ...(payload.fullOutputPath === undefined ? {} : { fullOutputPath: payload.fullOutputPath }),
+    ...(payload.excludeFromContext === undefined
+      ? {}
+      : { excludeFromContext: payload.excludeFromContext }),
   };
 }

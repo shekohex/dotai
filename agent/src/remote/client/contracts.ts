@@ -49,6 +49,22 @@ export interface RemoteSessionContract {
   setSessionName: AgentSession["setSessionName"];
   getActiveToolNames: AgentSession["getActiveToolNames"];
   getToolDefinition: AgentSession["getToolDefinition"];
+  compact: AgentSession["compact"];
+  abortCompaction: AgentSession["abortCompaction"];
+  executeBash: AgentSession["executeBash"];
+  recordBashResult: AgentSession["recordBashResult"];
+  abortBash: AgentSession["abortBash"];
+  readonly isBashRunning: AgentSession["isBashRunning"];
+  readonly hasPendingBashMessages: AgentSession["hasPendingBashMessages"];
+  getActiveBashExecutions: () => Array<{
+    executionId: string;
+    command: string;
+    output: string;
+    clientRequestId?: string;
+  }>;
+  navigateTree: AgentSession["navigateTree"];
+  getUserMessagesForForking: AgentSession["getUserMessagesForForking"];
+  hasExtensionHandlers: AgentSession["hasExtensionHandlers"];
   reload: AgentSession["reload"];
 }
 

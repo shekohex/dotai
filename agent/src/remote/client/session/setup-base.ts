@@ -20,6 +20,7 @@ import type {
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
   SessionSnapshot,
+  ToolDefinitionMetadata,
 } from "../../schemas.js";
 import {
   applyAuthoritativeCwd,
@@ -68,7 +69,13 @@ type RemoteExtensionCommandContextActions = {
     parentSession?: string;
     setup?: (sessionManager: SessionManager) => Promise<void>;
   }) => Promise<{ cancelled: boolean }>;
-  fork: (entryId: string) => Promise<{ cancelled: boolean; selectedText?: string }>;
+  fork: (
+    entryId: string,
+    options?: {
+      position?: "before" | "at";
+      withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+    },
+  ) => Promise<{ cancelled: boolean; selectedText?: string }>;
   navigateTree: (
     targetId: string,
     options?: {
@@ -78,7 +85,10 @@ type RemoteExtensionCommandContextActions = {
       label?: string;
     },
   ) => Promise<{ cancelled: boolean }>;
-  switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+  switchSession: (
+    sessionPath: string,
+    options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+  ) => Promise<{ cancelled: boolean }>;
   reload: () => Promise<void>;
 };
 
@@ -119,12 +129,14 @@ export abstract class RemoteAgentSessionSetupBase {
   protected queuedFollowUpMessages: string[] = [];
   protected queueDepth = 0;
   protected activeTools: string[] = [];
+  protected forkMessages: Array<{ entryId: string; text: string }> = [];
   protected allTools: Array<{
     name: string;
     description: string;
     parameters: unknown;
     sourceInfo: unknown;
   }> = [];
+  protected remoteToolDefinitions = new Map<string, ToolDefinitionMetadata>();
   protected emitQueue: Promise<void> = Promise.resolve();
   protected mutationQueue: Promise<void> = Promise.resolve();
   protected idleResolvers = new Set<() => void>();
@@ -137,6 +149,13 @@ export abstract class RemoteAgentSessionSetupBase {
   protected _model: Model<Api> | undefined;
   protected _thinkingLevel: ThinkingLevel = "medium";
   protected _retryAttempt = 0;
+  protected _isBashRunning = false;
+  protected _hasPendingBashMessages = false;
+  protected readonly activeBashExecutions = new Map<
+    string,
+    { executionId: string; command: string; output: string; clientRequestId?: string }
+  >();
+  protected readonly activeBashRequests = new Map<string, { onChunk?: (chunk: string) => void }>();
   protected remoteAvailableModels: Model<Api>[] = [];
   protected readonly remoteModelSettings: RemoteModelSettingsState = {};
   protected remoteSettings: RemoteAgentSettings = { ...defaultSettings };
@@ -212,6 +231,20 @@ export abstract class RemoteAgentSessionSetupBase {
     this.localExtensionRunner = this.createLocalExtensionRunner();
   }
 
+  async refreshForkMessages(): Promise<void> {
+    const previousForkMessages = this.forkMessages.map((message) => ({ ...message }));
+    try {
+      const response = await this.client.getSessionForkMessages(this.sessionId);
+      this.forkMessages = response.messages.map((message) => ({ ...message }));
+    } catch {
+      this.forkMessages = previousForkMessages;
+      this.uiContext?.notify(
+        "Failed to refresh remote fork messages; keeping last known list.",
+        "warning",
+      );
+    }
+  }
+
   protected createLocalExtensionRunner(): RemoteLocalExtensionRunner {
     return createRemoteLocalExtensionRunner({
       resourceLoader: this.resourceLoader,
@@ -231,7 +264,19 @@ export abstract class RemoteAgentSessionSetupBase {
         this.extensionShutdownHandler?.();
       },
       getContextUsage: () => this.getContextUsage(),
-      compact: () => {},
+      compact: (compactOptions) => {
+        void this.client
+          .compactSession(this.sessionId, {
+            customInstructions: compactOptions?.customInstructions,
+          })
+          .catch((error: unknown) => {
+            this.localExtensionRunner?.emitError({
+              extensionPath: "<runtime>",
+              event: "compact",
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+      },
       getSystemPrompt: () => this.systemPrompt,
       sendCustomMessage: async (message, sendOptions) => {
         await this.sendCustomMessage(message, sendOptions);
@@ -327,12 +372,22 @@ export abstract class RemoteAgentSessionSetupBase {
 
   protected async refreshRemoteToolCatalog(): Promise<void> {
     const response = await this.client.getSessionTools(this.sessionId);
-    this.allTools = response.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-      sourceInfo: tool.sourceInfo,
-    }));
+    this.remoteToolDefinitions.clear();
+    this.allTools = response.tools.map((tool) => {
+      if (tool.definition) {
+        this.remoteToolDefinitions.set(tool.name, tool.definition);
+      }
+      return {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        sourceInfo: tool.sourceInfo,
+      };
+    });
+  }
+
+  protected getRemoteToolDefinition(name: string): ToolDefinitionMetadata | undefined {
+    return this.remoteToolDefinitions.get(name);
   }
 
   protected createAgentBindings(): RemoteAgentSessionSetupBase["agent"] {

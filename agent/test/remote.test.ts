@@ -3721,6 +3721,70 @@ timedTest("runtime api client exposes kv read write delete methods", async () =>
   }
 });
 
+timedTest("remote runtime exposes fork messages and can fork persisted session", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const workspaceCwd = await mkdtemp(join(tmpdir(), "remote-fork-workspace-"));
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new InMemoryPiRuntimeFactory({ persistSessions: true }),
+  });
+
+  try {
+    const runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: privateKeyPem,
+      },
+      createNewSession: true,
+      workspaceCwd,
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+
+    try {
+      await runtime.session.prompt("Say hello");
+      await runtime.session.agent.waitForIdle();
+      await runtime.session.reload();
+
+      const appClient = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remote.app),
+      });
+      await appClient.authenticate();
+      const remoteForkMessages = await appClient.getSessionForkMessages(
+        runtime.session.sessionManager.getSessionId(),
+      );
+      assert.equal(remoteForkMessages.messages.length, 1);
+      assert.equal(remoteForkMessages.messages[0]?.text, "Say hello");
+
+      const forkMessages = runtime.session.getUserMessagesForForking();
+      assert.equal(forkMessages.length, 1);
+      assert.equal(forkMessages[0]?.text, "Say hello");
+
+      const originalSessionId = runtime.session.sessionManager.getSessionId();
+      const result = await runtime.fork(forkMessages[0]!.entryId);
+      assert.equal(result.cancelled, false);
+      assert.equal(result.selectedText, "Say hello");
+      assert.notEqual(runtime.session.sessionManager.getSessionId(), originalSessionId);
+      const snapshot = await appClient.getAppSnapshot();
+      assert.equal(snapshot.sessionSummaries.length, 2);
+    } finally {
+      await runtime.dispose();
+    }
+  } finally {
+    await remote.dispose();
+    await rm(workspaceCwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("extension state kv hydration restores managed custom entries", async () => {
   const sessionManager = SessionManager.inMemory("/tmp/pi-remote-kv-hydration");
   sessionManager.newSession({ id: "kv-hydration" });
@@ -3861,6 +3925,19 @@ timedTest("remote CLI parser accepts short resume flag", async () => {
   try {
     const parsed = parseRemoteArgs(["-r"]);
     assert.equal(parsed.resume, true);
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+  }
+});
+
+timedTest("remote CLI parser accepts fork flag", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+
+  try {
+    const parsed = parseRemoteArgs(["--fork", "session-123"]);
+    assert.equal(parsed.forkSessionId, "session-123");
   } finally {
     delete process.env.PI_REMOTE_ORIGIN;
     delete process.env.PI_REMOTE_KEY_ID;
@@ -4036,6 +4113,31 @@ timedTest(
         cwd: undefined,
       }),
       { createNewSession: true },
+    );
+
+    assert.deepEqual(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: undefined,
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: "Alpha",
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: undefined,
+      }),
+      { sessionId: "session-a", createNewSession: false },
     );
   },
 );
@@ -4606,6 +4708,7 @@ timedTest("session registry createSession uses requested workspace cwd", async (
     streams,
     runtimeFactory,
   });
+  const registryAny = registry as any;
   const auth = testAuthSession();
 
   try {
@@ -5473,6 +5576,7 @@ timedTest("accepted command failure persists error state in snapshots", async ()
     streams,
     runtimeFactory,
   });
+  const registryAny = registry as any;
   const auth = testAuthSession();
 
   try {
@@ -5597,6 +5701,7 @@ timedTest("failed model update does not emit command_accepted or consume sequenc
     streams,
     runtimeFactory,
   });
+  const registryAny = registry as any;
   const auth = testAuthSession();
 
   try {
@@ -5633,6 +5738,7 @@ timedTest("invalid thinkingLevel is rejected before command acceptance", async (
     streams,
     runtimeFactory,
   });
+  const registryAny = registry as any;
   const auth = testAuthSession();
 
   try {
@@ -6573,6 +6679,710 @@ timedTest(
     }
   },
 );
+
+timedTest("remote tools endpoint includes authoritative tool definition metadata", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  try {
+    const client = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: privateKeyPem,
+      },
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+    await client.authenticate();
+
+    const created = await client.createSession({ workspaceCwd: session.cwd });
+    const tools = await client.getSessionTools(created.sessionId);
+    const readTool = tools.tools.find((tool) => tool.name === "read");
+
+    assert.ok(readTool?.definition);
+    assert.equal(readTool.definition?.name, "read");
+    assert.equal(readTool.definition?.label, "read");
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("remote session supports compact bash and navigateTree", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const compactResult = await runtime.session.compact("focus");
+    assert.equal(compactResult.summary, "focus");
+    assert.deepEqual(session.compactCalls, ["focus"]);
+
+    runtime.session.abortCompaction();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(session.abortCompactionCalls, 1);
+
+    const bashResult = await runtime.session.executeBash("pwd", undefined, {
+      excludeFromContext: true,
+    });
+    assert.equal(bashResult.output, "ran:pwd");
+    assert.deepEqual(session.bashCalls, [
+      { command: "pwd", options: { excludeFromContext: true } },
+    ]);
+
+    runtime.session.abortBash();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(session.abortBashCalls, 1);
+
+    const navigateResult = await runtime.session.navigateTree("entry-123", {
+      summarize: true,
+      customInstructions: "sum",
+      replaceInstructions: true,
+      label: "branch",
+    });
+    assert.equal(navigateResult.cancelled, false);
+    assert.equal(navigateResult.editorText, "navigated:entry-123");
+    assert.deepEqual(session.navigateTreeCalls, [
+      {
+        targetId: "entry-123",
+        summarize: true,
+        customInstructions: "sum",
+        replaceInstructions: true,
+        label: "branch",
+      },
+    ]);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote abort failures surface to session error state", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const client = (
+      runtime.session as unknown as {
+        client: {
+          abortBash: (sessionId: string) => Promise<unknown>;
+          abortCompaction: (sessionId: string) => Promise<unknown>;
+        };
+        sessionId: string;
+      }
+    ).client;
+
+    client.abortBash = async () => {
+      throw new Error("remote bash abort failed");
+    };
+    client.abortCompaction = async () => {
+      throw new Error("remote compaction abort failed");
+    };
+
+    runtime.session.abortBash();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(runtime.session.state.errorMessage, "remote bash abort failed");
+
+    runtime.session.abortCompaction();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(runtime.session.state.errorMessage, "remote compaction abort failed");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote bash execute honors timeout from api request", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const cwd = await mkdtemp(join(tmpdir(), "pi-remote-bash-timeout-"));
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory(),
+  });
+
+  try {
+    const client = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+    await client.authenticate();
+    const { sessionId } = await client.createSession({ workspaceCwd: cwd });
+
+    await assert.rejects(
+      () =>
+        client.executeBash(sessionId, {
+          command: "sleep 2",
+          timeout: 1,
+        }),
+      /Command timed out after 1 seconds/,
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await remote.dispose();
+  }
+});
+
+timedTest("remote executeBash streams durable chunks to client callback", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const chunks: string[] = [];
+    const bashPromise = runtime.session.executeBash("pwd", (chunk) => {
+      chunks.push(chunk);
+    });
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (chunks.length > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.deepEqual(chunks, ["ran:"]);
+
+    const bashResult = await bashPromise;
+
+    assert.equal(bashResult.output, "ran:pwd");
+    assert.deepEqual(chunks, ["ran:", "pwd"]);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote bash stream state is visible to all attached clients", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtimeA: RemoteAgentSessionRuntime | undefined;
+  let runtimeB: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtimeA = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+    runtimeB = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const bashPromise = runtimeA.session.executeBash("pwd");
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const activeExecutions = runtimeB.session.getActiveBashExecutions();
+      if (activeExecutions.length > 0 && activeExecutions[0]?.output === "ran:") {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    const activeExecutions = runtimeB.session.getActiveBashExecutions();
+    assert.equal(activeExecutions.length, 1);
+    assert.equal(activeExecutions[0]?.command, "pwd");
+    assert.equal(activeExecutions[0]?.output, "ran:");
+
+    await bashPromise;
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (runtimeB.session.getActiveBashExecutions().length === 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.deepEqual(runtimeB.session.getActiveBashExecutions(), []);
+  } finally {
+    await runtimeA?.dispose();
+    await runtimeB?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote compact does not replay client extension reload lifecycle", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  const lifecycleEvents: string[] = [];
+  const extension: ExtensionFactory = (pi) => {
+    pi.on("session_start", (event) => {
+      lifecycleEvents.push(`start:${event.reason}`);
+    });
+    pi.on("session_shutdown", (event) => {
+      lifecycleEvents.push(`shutdown:${event.reason}`);
+    });
+  };
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      clientExtensionMetadata: [
+        {
+          id: "test-compact-lifecycle",
+          runtime: "client",
+          path: "client:test-compact-lifecycle",
+        },
+      ],
+      clientExtensionFactories: [extension],
+    });
+
+    await runtime.session.bindExtensions({});
+    assert.deepEqual(lifecycleEvents, ["start:startup"]);
+
+    await runtime.session.compact("focus");
+
+    assert.deepEqual(lifecycleEvents, ["start:startup"]);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote recordBashResult mirrors local immediate and pending semantics", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    runtime.session.recordBashResult(
+      "pwd",
+      {
+        output: "ran:pwd",
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+      },
+      { excludeFromContext: true },
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(session.recordedBashResults, [
+      {
+        command: "pwd",
+        result: {
+          output: "ran:pwd",
+          exitCode: 0,
+          cancelled: false,
+          truncated: false,
+        },
+        options: { excludeFromContext: true },
+      },
+    ]);
+    assert.equal(runtime.session.hasPendingBashMessages, false);
+    assert.equal(
+      runtime.session.messages.some(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          "role" in message &&
+          message.role === "bashExecution",
+      ),
+      true,
+    );
+
+    session.isStreaming = true;
+    runtime.session.recordBashResult("ls", {
+      output: "ran:ls",
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(runtime.session.hasPendingBashMessages, true);
+    assert.equal(
+      runtime.session.messages.filter(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          "role" in message &&
+          message.role === "bashExecution",
+      ).length,
+      1,
+    );
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote deferred bash message flushes before next prompt for all clients", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new AgentLifecyclePromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtimeA: RemoteAgentSessionRuntime | undefined;
+  let runtimeB: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtimeA = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+    runtimeB = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    session.isStreaming = true;
+    runtimeA.session.recordBashResult("ls", {
+      output: "ran:ls",
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(runtimeA.session.hasPendingBashMessages, true);
+    assert.equal(runtimeB.session.hasPendingBashMessages, true);
+
+    session.isStreaming = false;
+    (runtimeA.session as unknown as { state: { isStreaming: boolean } }).state.isStreaming = false;
+    (runtimeB.session as unknown as { state: { isStreaming: boolean } }).state.isStreaming = false;
+    await runtimeA.session.prompt("next turn");
+
+    const streamEvents = await waitForValue(
+      () => readSessionEvents(remote.app, token, created.sessionId, "-1", 1_000),
+      (value) => value.events.some((event) => event.kind === "bash_flush"),
+      20,
+      25,
+    );
+    const flushEvent = streamEvents.events.find((event) => event.kind === "bash_flush");
+    assert.ok(flushEvent);
+    assert.equal(flushEvent.payload.messages.length, 1);
+    assert.equal(flushEvent.payload.messages[0]?.role, "bashExecution");
+    assert.equal(flushEvent.payload.messages[0]?.command, "ls");
+    assert.equal(flushEvent.payload.messages[0]?.output, "ran:ls");
+
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const bashCount = runtimeB.session.messages.filter(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          "role" in message &&
+          message.role === "bashExecution",
+      ).length;
+      if (bashCount > 0 && runtimeB.session.hasPendingBashMessages === false) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    assert.equal(runtimeA.session.hasPendingBashMessages, false);
+    assert.equal(runtimeB.session.hasPendingBashMessages, false);
+    const runtimeABashMessages = runtimeA.session.messages.filter(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        "role" in message &&
+        message.role === "bashExecution",
+    );
+    const runtimeBBashMessages = runtimeB.session.messages.filter(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        "role" in message &&
+        message.role === "bashExecution",
+    );
+    assert.equal(runtimeABashMessages.length, 1);
+    assert.equal(runtimeBBashMessages.length, 1);
+    assert.equal((runtimeABashMessages[0] as { command: string }).command, "ls");
+    assert.equal((runtimeBBashMessages[0] as { command: string }).command, "ls");
+  } finally {
+    await runtimeA?.dispose();
+    await runtimeB?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote abort surfaces transport failures to session error state", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    const client = (
+      runtime.session as unknown as {
+        client: { abortBash: () => Promise<void>; abortCompaction: () => Promise<void> };
+      }
+    ).client;
+    client.abortBash = async () => {
+      throw new Error("abort bash denied");
+    };
+    runtime.session.abortBash();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.match(runtime.session.state.errorMessage ?? "", /abort bash denied/);
+
+    client.abortCompaction = async () => {
+      throw new Error("abort compaction denied");
+    };
+    runtime.session.abortCompaction();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.match(runtime.session.state.errorMessage ?? "", /abort compaction denied/);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("refreshForkMessages keeps cached entries on transient failure", async () => {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKeyPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+
+  const session = new RecordingSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createResponse.status, 201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+    });
+
+    (
+      runtime.session as unknown as {
+        forkMessages: Array<{ entryId: string; text: string }>;
+        client: { getSessionForkMessages: (sessionId: string) => Promise<unknown> };
+      }
+    ).forkMessages = [{ entryId: "entry-1", text: "cached" }];
+
+    const client = (
+      runtime.session as unknown as {
+        client: { getSessionForkMessages: (sessionId: string) => Promise<unknown> };
+      }
+    ).client;
+    client.getSessionForkMessages = async () => {
+      throw new Error("temporary failure");
+    };
+
+    await (
+      runtime.session as unknown as { refreshForkMessages: () => Promise<void> }
+    ).refreshForkMessages();
+
+    assert.deepEqual(runtime.session.getUserMessagesForForking(), [
+      { entryId: "entry-1", text: "cached" },
+    ]);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
 
 timedTest(
   "remote reload refreshes server resources and replays client extension lifecycle",

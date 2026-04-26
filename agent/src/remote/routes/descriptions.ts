@@ -2,6 +2,12 @@ import type { TSchema } from "typebox";
 import {
   ActiveToolsUpdateRequestSchema,
   AppSnapshotSchema,
+  BashExecuteRequestSchema,
+  BashExecuteResponseSchema,
+  BashRecordRequestSchema,
+  BashRecordResponseSchema,
+  CompactRequestSchema,
+  CompactResponseSchema,
   AuthChallengeRequestSchema,
   AuthChallengeResponseSchema,
   AuthVerifyRequestSchema,
@@ -13,20 +19,27 @@ import {
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
   ErrorResponseSchema,
+  ForkSessionRequestSchema,
+  ForkSessionResponseSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
+  NavigateTreeRequestSchema,
+  NavigateTreeResponseSchema,
   PromptCommandRequestSchema,
   SettingsUpdateRequestSchema,
   SessionNameUpdateRequestSchema,
   SessionDeletedResponseSchema,
+  SessionForkMessagesResponseSchema,
   SessionSummarySchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
   SteerCommandRequestSchema,
   StreamReadResponseSchema,
+  ToolDefinitionMetadataSchema,
   UiResponseRequestSchema,
   UiResponseResponseSchema,
+  AbortOperationResponseSchema,
 } from "../schemas.js";
 
 const sessionIdPathParameter = {
@@ -219,6 +232,49 @@ export const sessionToolsRouteDescription = {
   },
 };
 
+export const sessionToolDefinitionRouteDescription = {
+  tags: ["snapshot"],
+  operationId: "getSessionToolDefinition",
+  parameters: [
+    sessionIdPathParameter,
+    {
+      in: "path" as const,
+      name: "toolName",
+      schema: { type: "string" as const },
+      required: true,
+    },
+  ],
+  responses: {
+    200: jsonResponse("Session tool definition", ToolDefinitionMetadataSchema),
+    404: jsonResponse("Session or tool not found", ErrorResponseSchema),
+  },
+};
+
+export const sessionForkMessagesRouteDescription = {
+  tags: ["snapshot"],
+  operationId: "getSessionForkMessages",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session fork messages", SessionForkMessagesResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const forkSessionRouteDescription = {
+  tags: ["command"],
+  operationId: "forkSession",
+  parameters: [sessionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(ForkSessionRequestSchema),
+  },
+  responses: {
+    200: jsonResponse("Session forked", ForkSessionResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+    409: jsonResponse("Session cannot be forked right now", ErrorResponseSchema),
+  },
+};
+
 export const archiveSessionRouteDescription = {
   tags: ["command"],
   operationId: "archiveSession",
@@ -319,6 +375,86 @@ export const clearSessionQueueRouteDescription = {
   responses: {
     200: jsonResponse("Queue cleared", ClearQueueResponseSchema),
     404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const navigateTreeRouteDescription = {
+  tags: ["command"],
+  operationId: "navigateTree",
+  parameters: [sessionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(NavigateTreeRequestSchema),
+  },
+  responses: {
+    200: jsonResponse("Tree navigation result", NavigateTreeResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+    409: jsonResponse("Session cannot navigate right now", ErrorResponseSchema),
+  },
+};
+
+export const compactSessionRouteDescription = {
+  tags: ["command"],
+  operationId: "compactSession",
+  parameters: [sessionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(CompactRequestSchema),
+  },
+  responses: {
+    200: jsonResponse("Compaction result", CompactResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+    409: jsonResponse("Session cannot compact right now", ErrorResponseSchema),
+  },
+};
+
+export const abortCompactionRouteDescription = {
+  tags: ["command"],
+  operationId: "abortCompaction",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Compaction aborted", AbortOperationResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const executeBashRouteDescription = {
+  tags: ["command"],
+  operationId: "executeSessionBash",
+  parameters: [sessionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(BashExecuteRequestSchema),
+  },
+  responses: {
+    200: jsonResponse("Bash execution result", BashExecuteResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+    409: jsonResponse("Session cannot run bash right now", ErrorResponseSchema),
+  },
+};
+
+export const abortBashRouteDescription = {
+  tags: ["command"],
+  operationId: "abortSessionBash",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Bash aborted", AbortOperationResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const recordBashResultRouteDescription = {
+  tags: ["command"],
+  operationId: "recordSessionBashResult",
+  parameters: [sessionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(BashRecordRequestSchema),
+  },
+  responses: {
+    200: jsonResponse("Bash result recorded", BashRecordResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+    409: jsonResponse("Session cannot record bash result right now", ErrorResponseSchema),
   },
 };
 

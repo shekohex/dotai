@@ -1,7 +1,27 @@
 import { hc } from "hono/client";
 import type { createV1Routes } from "../routes.js";
-import type { ClearQueueResponse, SettingsUpdateRequest, UiResponseRequest } from "../schemas.js";
-import { ClearQueueResponseSchema } from "../schemas.js";
+import type {
+  ClearQueueResponse,
+  SettingsUpdateRequest,
+  UiResponseRequest,
+  NavigateTreeRequest,
+  NavigateTreeResponse,
+  CompactRequest,
+  CompactResponse,
+  BashExecuteRequest,
+  BashExecuteResponse,
+  BashRecordRequest,
+  BashRecordResponse,
+  AbortOperationResponse,
+} from "../schemas.js";
+import {
+  AbortOperationResponseSchema,
+  BashExecuteResponseSchema,
+  BashRecordResponseSchema,
+  ClearQueueResponseSchema,
+  CompactResponseSchema,
+  NavigateTreeResponseSchema,
+} from "../schemas.js";
 import { toRemoteHttpError } from "./utils.js";
 import { assertType } from "../typebox.js";
 
@@ -152,5 +172,123 @@ export async function clearRemoteSessionQueue(input: {
   }
   const payload: unknown = await response.json();
   assertType(ClearQueueResponseSchema, payload);
+  return payload;
+}
+
+export async function postNavigateTreeCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  body: NavigateTreeRequest;
+  headers: Record<string, string>;
+  captureConnectionId: (response: Response) => void;
+}): Promise<NavigateTreeResponse> {
+  const response = await input.rpcClient.sessions[":sessionId"]["navigate-tree"].$post(
+    { param: { sessionId: input.sessionId }, json: input.body },
+    { headers: input.headers },
+  );
+  input.captureConnectionId(response);
+  if (response.status !== 200) {
+    throw await toRemoteHttpError(response);
+  }
+  const payload: unknown = await response.json();
+  assertType(NavigateTreeResponseSchema, payload);
+  return payload;
+}
+
+export async function postCompactSessionCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  body: CompactRequest;
+  headers: Record<string, string>;
+  captureConnectionId: (response: Response) => void;
+}): Promise<CompactResponse> {
+  const response = await input.rpcClient.sessions[":sessionId"].compact.$post(
+    { param: { sessionId: input.sessionId }, json: input.body },
+    { headers: input.headers },
+  );
+  input.captureConnectionId(response);
+  if (response.status !== 200) {
+    throw await toRemoteHttpError(response);
+  }
+  const payload: unknown = await response.json();
+  assertType(CompactResponseSchema, payload);
+  return payload;
+}
+
+export async function postAbortCompactionCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  headers: Record<string, string>;
+  captureConnectionId: (response: Response) => void;
+}): Promise<AbortOperationResponse> {
+  const response = await input.rpcClient.sessions[":sessionId"]["abort-compaction"].$post(
+    { param: { sessionId: input.sessionId } },
+    { headers: input.headers },
+  );
+  input.captureConnectionId(response);
+  if (response.status !== 200) {
+    throw await toRemoteHttpError(response);
+  }
+  const payload: unknown = await response.json();
+  assertType(AbortOperationResponseSchema, payload);
+  return payload;
+}
+
+export async function postExecuteBashCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  body: BashExecuteRequest;
+  headers: Record<string, string>;
+  captureConnectionId: (response: Response) => void;
+}): Promise<BashExecuteResponse> {
+  const response = await input.rpcClient.sessions[":sessionId"].bash.$post(
+    { param: { sessionId: input.sessionId }, json: input.body },
+    { headers: input.headers },
+  );
+  input.captureConnectionId(response);
+  if (response.status !== 200) {
+    throw await toRemoteHttpError(response);
+  }
+  const payload: unknown = await response.json();
+  assertType(BashExecuteResponseSchema, payload);
+  return payload;
+}
+
+export async function postAbortBashCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  headers: Record<string, string>;
+  captureConnectionId: (response: Response) => void;
+}): Promise<AbortOperationResponse> {
+  const response = await input.rpcClient.sessions[":sessionId"]["abort-bash"].$post(
+    { param: { sessionId: input.sessionId } },
+    { headers: input.headers },
+  );
+  input.captureConnectionId(response);
+  if (response.status !== 200) {
+    throw await toRemoteHttpError(response);
+  }
+  const payload: unknown = await response.json();
+  assertType(AbortOperationResponseSchema, payload);
+  return payload;
+}
+
+export async function postRecordBashResultCommand(input: {
+  rpcClient: ReturnType<typeof hc<RemoteV1Routes>>;
+  sessionId: string;
+  body: BashRecordRequest;
+  headers: Record<string, string>;
+  captureConnectionId: (response: Response) => void;
+}): Promise<BashRecordResponse> {
+  const response = await input.rpcClient.sessions[":sessionId"].bash.result.$post(
+    { param: { sessionId: input.sessionId }, json: input.body },
+    { headers: input.headers },
+  );
+  input.captureConnectionId(response);
+  if (response.status !== 200) {
+    throw await toRemoteHttpError(response);
+  }
+  const payload: unknown = await response.json();
+  assertType(BashRecordResponseSchema, payload);
   return payload;
 }

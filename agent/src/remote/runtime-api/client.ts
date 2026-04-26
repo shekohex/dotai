@@ -1,39 +1,61 @@
 import { hc } from "hono/client";
 import type { createV1Routes } from "../routes.js";
 import type {
+  AbortOperationResponse,
+  BashExecuteRequest,
+  BashExecuteResponse,
+  BashRecordRequest,
+  BashRecordResponse,
   SessionToolsResponse,
   AppSnapshot,
   ClientCapabilities,
   ConnectionCapabilitiesResponse,
   CreateSessionResponse,
+  ForkSessionRequest,
+  ForkSessionResponse,
   SessionDeletedResponse,
   RemoteKvDeleteResponse,
   RemoteKvReadResponse,
   RemoteKvScope,
   RemoteKvWriteResponse,
+  SessionForkMessagesResponse,
   SessionSummary,
   SessionSnapshot,
   SettingsUpdateRequest,
+  ToolDefinitionMetadata,
   UiResponseRequest,
+  NavigateTreeRequest,
+  NavigateTreeResponse,
+  CompactRequest,
+  CompactResponse,
 } from "../schemas.js";
 import {
   AppSnapshotSchema,
   CreateSessionResponseSchema,
+  ForkSessionResponseSchema,
   RemoteKvDeleteResponseSchema,
   RemoteKvReadResponseSchema,
   RemoteKvWriteResponseSchema,
   SessionDeletedResponseSchema,
+  SessionForkMessagesResponseSchema,
   SessionSummarySchema,
   SessionSnapshotSchema,
+  ToolDefinitionMetadataSchema,
   SessionToolsResponseSchema,
 } from "../schemas.js";
 import { registerRemoteConnectionCapabilities } from "./capabilities.js";
 import {
   clearRemoteSessionQueue,
+  postAbortBashCommand,
+  postAbortCompactionCommand,
   postActiveToolsUpdateCommand,
+  postCompactSessionCommand,
+  postExecuteBashCommand,
+  postRecordBashResultCommand,
   postFollowUpCommand,
   postInterruptCommand,
   postModelUpdateCommand,
+  postNavigateTreeCommand,
   postPromptCommand,
   postSettingsUpdateCommand,
   postSessionNameUpdateCommand,
@@ -250,6 +272,48 @@ export class RemoteApiClient {
     return payload;
   }
 
+  async getSessionToolDefinition(
+    sessionId: string,
+    toolName: string,
+  ): Promise<ToolDefinitionMetadata> {
+    const response = await this.rpcClient.sessions[":sessionId"].tools[":toolName"].$get(
+      { param: { sessionId, toolName } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(ToolDefinitionMetadataSchema, payload);
+    return payload;
+  }
+
+  async getSessionForkMessages(sessionId: string): Promise<SessionForkMessagesResponse> {
+    const response = await this.rpcClient.sessions[":sessionId"]["fork-messages"].$get(
+      { param: { sessionId } },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionForkMessagesResponseSchema, payload);
+    return payload;
+  }
+
+  async forkSession(
+    sessionId: string,
+    request: ForkSessionRequest = {},
+  ): Promise<ForkSessionResponse> {
+    const response = await this.rpcClient.sessions[":sessionId"].fork.$post(
+      { param: { sessionId }, json: request },
+      { headers: await this.getAuthHeaders() },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(ForkSessionResponseSchema, payload);
+    return payload;
+  }
+
   async reloadSession(sessionId: string): Promise<SessionSnapshot> {
     const response = await this.rpcClient.sessions[":sessionId"].reload.$post(
       { param: { sessionId } },
@@ -260,6 +324,76 @@ export class RemoteApiClient {
     const payload: unknown = await response.json();
     assertType(SessionSnapshotSchema, payload);
     return payload;
+  }
+
+  async navigateTree(sessionId: string, body: NavigateTreeRequest): Promise<NavigateTreeResponse> {
+    return postNavigateTreeCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      body,
+      headers: await this.getAuthHeaders(),
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+    });
+  }
+
+  async compactSession(sessionId: string, body: CompactRequest = {}): Promise<CompactResponse> {
+    return postCompactSessionCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      body,
+      headers: await this.getAuthHeaders(),
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+    });
+  }
+
+  async abortCompaction(sessionId: string): Promise<AbortOperationResponse> {
+    return postAbortCompactionCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      headers: await this.getAuthHeaders(),
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+    });
+  }
+
+  async executeBash(sessionId: string, body: BashExecuteRequest): Promise<BashExecuteResponse> {
+    return postExecuteBashCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      body,
+      headers: await this.getAuthHeaders(),
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+    });
+  }
+
+  async abortBash(sessionId: string): Promise<AbortOperationResponse> {
+    return postAbortBashCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      headers: await this.getAuthHeaders(),
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+    });
+  }
+
+  async recordBashResult(sessionId: string, body: BashRecordRequest): Promise<BashRecordResponse> {
+    return postRecordBashResultCommand({
+      rpcClient: this.rpcClient,
+      sessionId,
+      body,
+      headers: await this.getAuthHeaders(),
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+    });
   }
 
   prompt(sessionId: string, body: { text: string; attachments?: string[] }): Promise<void> {

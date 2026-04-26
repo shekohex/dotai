@@ -1,12 +1,20 @@
 import {
+  AbortOperationResponseSchema,
   AppSnapshotSchema,
   AuthChallengeResponseSchema,
   AuthVerifyResponseSchema,
+  BashExecuteResponseSchema,
+  BashRecordResponseSchema,
   ConnectionCapabilitiesResponseSchema,
   ClearQueueResponseSchema,
+  CompactResponseSchema,
   CreateSessionResponseSchema,
+  ForkSessionResponseSchema,
+  NavigateTreeResponseSchema,
   SessionDeletedResponseSchema,
+  SessionForkMessagesResponseSchema,
   SessionSummarySchema,
+  ToolDefinitionMetadataSchema,
   SessionToolsResponseSchema,
   SessionSnapshotSchema,
   UiResponseResponseSchema,
@@ -14,8 +22,13 @@ import {
 import type {
   AuthChallengeRequest,
   AuthVerifyRequest,
+  BashExecuteRequest,
+  BashRecordRequest,
   ClientCapabilities,
+  CompactRequest,
   CreateSessionRequest,
+  ForkSessionRequest,
+  NavigateTreeRequest,
   UiResponseRequest,
 } from "../schemas.js";
 import { jsonWithSchema } from "../typebox.js";
@@ -199,6 +212,70 @@ export function handleSessionTools(
   });
 }
 
+export function handleSessionToolDefinition(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  toolName: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const definition = await dependencies.sessions.getSessionToolDefinition(
+      sessionId,
+      toolName,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(
+      c,
+      ToolDefinitionMetadataSchema,
+      definition,
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
+export function handleSessionForkMessages(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const messages = await dependencies.sessions.getSessionForkMessages(
+      sessionId,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(c, SessionForkMessagesResponseSchema, { messages });
+  });
+}
+
+export function handleForkSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: ForkSessionRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const forked = await dependencies.sessions.forkSession(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(
+      c,
+      ForkSessionResponseSchema,
+      forked,
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
 export function handleSubmitSessionUiResponse(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,
@@ -238,5 +315,125 @@ export function handleClearSessionQueue(
       200,
       connectionHeader(connectionId),
     );
+  });
+}
+
+export function handleNavigateTree(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: NavigateTreeRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const result = await dependencies.sessions.navigateTree(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(
+      c,
+      NavigateTreeResponseSchema,
+      result,
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
+export function handleCompactSession(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: CompactRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const result = await dependencies.sessions.compactSession(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(c, CompactResponseSchema, result, 200, connectionHeader(connectionId));
+  });
+}
+
+export function handleAbortCompaction(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    await dependencies.sessions.abortCompaction(sessionId, c.get("auth"), connectionId);
+    return jsonWithSchema(
+      c,
+      AbortOperationResponseSchema,
+      { ok: true },
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
+export function handleExecuteBash(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: BashExecuteRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const result = await dependencies.sessions.executeBash(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(
+      c,
+      BashExecuteResponseSchema,
+      result,
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
+export function handleAbortBash(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    await dependencies.sessions.abortBash(sessionId, c.get("auth"), connectionId);
+    return jsonWithSchema(
+      c,
+      AbortOperationResponseSchema,
+      { ok: true },
+      200,
+      connectionHeader(connectionId),
+    );
+  });
+}
+
+export function handleRecordBashResult(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: BashRecordRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const result = await dependencies.sessions.recordBashResult(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(c, BashRecordResponseSchema, result, 200, connectionHeader(connectionId));
   });
 }

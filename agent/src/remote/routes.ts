@@ -6,13 +6,19 @@ import {
   ActiveToolsUpdateRequestSchema,
   AuthChallengeRequestSchema,
   AuthVerifyRequestSchema,
+  BashExecuteRequestSchema,
+  BashRecordRequestSchema,
+  CompactRequestSchema,
   CreateSessionRequestSchema,
+  ForkSessionRequestSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
   ModelUpdateRequestSchema,
+  NavigateTreeRequestSchema,
   PromptCommandRequestSchema,
   SettingsUpdateRequestSchema,
   SessionParamsSchema,
+  SessionToolParamsSchema,
   SessionNameUpdateRequestSchema,
   SteerCommandRequestSchema,
   StreamReadQuerySchema,
@@ -27,19 +33,28 @@ import {
   clearSessionQueueRouteDescription,
   createSessionRouteDescription,
   deleteSessionRouteDescription,
+  executeBashRouteDescription,
+  forkSessionRouteDescription,
   followUpSessionRouteDescription,
   interruptSessionRouteDescription,
+  navigateTreeRouteDescription,
   promptSessionRouteDescription,
   reloadSessionRouteDescription,
   readAppEventsStreamRouteDescription,
   readSessionEventsStreamRouteDescription,
+  recordBashResultRouteDescription,
   renameSessionRouteDescription,
   restoreSessionRouteDescription,
   sessionSummaryRouteDescription,
   sessionSnapshotRouteDescription,
+  sessionToolDefinitionRouteDescription,
+  sessionForkMessagesRouteDescription,
   sessionToolsRouteDescription,
   steerSessionRouteDescription,
   submitSessionUiResponseRouteDescription,
+  abortBashRouteDescription,
+  abortCompactionRouteDescription,
+  compactSessionRouteDescription,
   updateSessionModelRouteDescription,
   updateSessionNameRouteDescription,
   updateSessionSettingsRouteDescription,
@@ -48,14 +63,23 @@ import {
 import {
   handleAppSnapshot,
   handleArchiveSession,
+  handleAbortBash,
+  handleAbortCompaction,
   handleAuthChallenge,
   handleAuthVerify,
   handleClearSessionQueue,
+  handleCompactSession,
   handleCreateSession,
   handleDeleteSession,
+  handleExecuteBash,
+  handleForkSession,
+  handleNavigateTree,
+  handleRecordBashResult,
   handleRestoreSession,
   handleSessionSummary,
+  handleSessionForkMessages,
   handleSessionSnapshot,
+  handleSessionToolDefinition,
   handleSessionTools,
   handleReloadSession,
   handleSubmitSessionUiResponse,
@@ -167,6 +191,27 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
       },
     )
     .get(
+      "/sessions/:sessionId/fork-messages",
+      describeRoute(sessionForkMessagesRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleSessionForkMessages(c, dependencies, sessionId);
+      },
+    )
+    .post(
+      "/sessions/:sessionId/fork",
+      describeRoute(forkSessionRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      tbValidator("json", ForkSessionRequestSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleForkSession(c, dependencies, sessionId, c.req.valid("json"));
+      },
+    )
+    .get(
       "/sessions/:sessionId/tools",
       describeRoute(sessionToolsRouteDescription),
       needsAuth,
@@ -174,6 +219,16 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
       (c) => {
         const { sessionId } = c.req.valid("param");
         return handleSessionTools(c, dependencies, sessionId);
+      },
+    )
+    .get(
+      "/sessions/:sessionId/tools/:toolName",
+      describeRoute(sessionToolDefinitionRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionToolParamsSchema),
+      (c) => {
+        const { sessionId, toolName } = c.req.valid("param");
+        return handleSessionToolDefinition(c, dependencies, sessionId, toolName);
       },
     );
 }
@@ -255,7 +310,7 @@ function registerSessionCommandRoutesB<S extends Schema, BasePath extends string
       return handleUpdateSessionActiveTools(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  return route11.post(
+  const route12 = route11.post(
     "/sessions/:sessionId/model",
     describeRoute(updateSessionModelRouteDescription),
     needsAuth,
@@ -264,6 +319,28 @@ function registerSessionCommandRoutesB<S extends Schema, BasePath extends string
     (c) => {
       const { sessionId } = c.req.valid("param");
       return handleUpdateSessionModel(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  const route13 = route12.post(
+    "/sessions/:sessionId/navigate-tree",
+    describeRoute(navigateTreeRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", NavigateTreeRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleNavigateTree(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  return route13.post(
+    "/sessions/:sessionId/compact",
+    describeRoute(compactSessionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", CompactRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleCompactSession(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
 }
@@ -319,7 +396,7 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
       return handleSubmitSessionUiResponse(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  return route15.post(
+  const route16 = route15.post(
     "/sessions/:sessionId/clear-queue",
     describeRoute(clearSessionQueueRouteDescription),
     needsAuth,
@@ -327,6 +404,48 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
     (c) => {
       const { sessionId } = c.req.valid("param");
       return handleClearSessionQueue(c, dependencies, sessionId);
+    },
+  );
+  const route17 = route16.post(
+    "/sessions/:sessionId/abort-compaction",
+    describeRoute(abortCompactionRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleAbortCompaction(c, dependencies, sessionId);
+    },
+  );
+  const route18 = route17.post(
+    "/sessions/:sessionId/bash",
+    describeRoute(executeBashRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", BashExecuteRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleExecuteBash(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  const route19 = route18.post(
+    "/sessions/:sessionId/bash/result",
+    describeRoute(recordBashResultRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    tbValidator("json", BashRecordRequestSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleRecordBashResult(c, dependencies, sessionId, c.req.valid("json"));
+    },
+  );
+  return route19.post(
+    "/sessions/:sessionId/abort-bash",
+    describeRoute(abortBashRouteDescription),
+    needsAuth,
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleAbortBash(c, dependencies, sessionId);
     },
   );
 }

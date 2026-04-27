@@ -2628,6 +2628,32 @@ timedTest("remote picker session info prefers firstUserMessage for firstMessage"
   expect(sessionInfo.firstMessage).toBe("Inspect failing remote picker");
 });
 
+timedTest(
+  "remote picker session info hides fallback id name so first message renders",
+  async () => {
+    const sessionInfo = toRemoteSessionInfo({
+      sessionId: "019dced9-0684-755e-868c-92603fabb984",
+      sessionName: "019dced9-0684-755e-868c-92603fabb984",
+      firstUserMessage: "Investigate resume picker label",
+      messageCount: 1,
+      status: "idle",
+      cwd: "/workspace/a",
+      createdAt: 1,
+      updatedAt: 2,
+      parentSessionId: null,
+      lifecycle: {
+        persistence: "persistent",
+        loaded: true,
+        state: "active",
+      },
+      lastSessionStreamOffset: "1-0",
+    });
+
+    expect(sessionInfo.name).toBeUndefined();
+    expect(sessionInfo.firstMessage).toBe("Investigate resume picker label");
+  },
+);
+
 timedTest("remote picker session info maps parentSessionId for threaded rendering", async () => {
   const sessionInfo = toRemoteSessionInfo({
     sessionId: "child-session",

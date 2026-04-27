@@ -2,19 +2,10 @@
 
 A TypeScript-based wrapper around `@mariozechner/pi-coding-agent` that bundles team defaults, custom extensions, and additional providers.
 
-## Project Overview
-
-This package provides:
-
-- The upstream `pi` TUI experience
-- Built-in LiteLLM support with automatic gateway selection
-- Bundled providers for `codex-openai` and `zai-coding-plan`
-- Bundled themes (including Catppuccin)
-- A bundled prompt set
-- Custom extensions for web search, file operations, executor integration, and more
-
 ## Project Rules
 
+- I use speech to text occasionally so if sentences are weird / words aren't right that's why
+- code is very cheap to write. do not give time estimates with agents code is practically instant to generate therefore unless stated otherwise time to implement is not a blocker
 - You must use `typebox` package instead of manually parsing inputs and validation of data.
 - Prefere spliting your code into multiple modules so it can be reused.
 - Avoid dynamic imports when possible, and prefer type imports when possible.
@@ -86,46 +77,22 @@ DON'T:
 - If the bug is in a workflow, create a new end to end test that reproduces the bug and fix it.
 - Follow Red, Green, Refactor (TDD).
 
-## Development Commands
+## Upstream Patches
 
-### Build
+Uses `patch-package` to maintain patches on `@mariozechner/pi-coding-agent`. After upgrading:
 
-```bash
-npm run build
-```
+1. Reapply patches: `npm run patch:deps`
+2. Test: `npm run test:tool-preview && npm run test:harness`
+3. Rebuild: `npm run build`
 
-Compiles TypeScript, copies bundled resources, generates default settings, and prepares CLI binaries.
+## External Repos.
 
-### Run Locally
+When the user mentions upstream pi, assume it is `badlogic/pi-mono` repo, and use the `librarian` skill and then you an search the following repos:
 
-```bash
-npm run pi                    # Run pi locally
-npm run pi -- -p "hello"      # Run with a prompt
-```
-
-### Linting
-
-```bash
-npm run lint                  # Run oxlint
-npm run lint:fix              # Run oxlint with auto-fix
-```
-
-Uses [oxlint](https://oxc.rs/docs/guide/usage/linter.html) with TypeScript, Unicorn, and OXC plugins. Configuration in `.oxlintrc.json`.
-
-### Formatting
-
-```bash
-npm run format                # Format with oxfmt
-npm run format:check          # Check formatting without modifying files
-```
-
-Uses [oxfmt](https://github.com/oxc-project/oxc) for formatting.
-
-### Typechecking
-
-```bash
-npm run typecheck
-```
+- `badlogic/pi-mono`: whenever you need to get the source code for the pi coding agent and any other package releated to pi.
+- `durable-streams/durable-streams`: when you need to learn anything about `durable-streams`
+- `honojs/hono`: anything hono http server, client or middleware releated.
+- `anomalyco/opencode`: when the user mention opencode, or any opencode releated things.
 
 ## Task Completion
 
@@ -139,101 +106,3 @@ npm run format:check
 ```
 
 If there any errors, please fix them and rerun the workflow again.
-
-### Test Framework
-
-Tests use **Node.js built-in test runner** (`node:test` and `node:assert/strict`).
-
-Key testing patterns:
-
-1. **Test Harness**: Uses `@marcfargas/pi-test-harness` for integration testing
-
-   ```typescript
-   import { createTestSession, calls, says, when } from "@marcfargas/pi-test-harness";
-
-   const session = await createTestSession({
-     cwd: "/tmp/test",
-     extensionFactories: [myExtension],
-   });
-
-   await session.run(
-     when("Test scenario", [calls("toolName", { arg: "value" }), says("Expected response")]),
-   );
-   ```
-
-2. **Mocking Tools**: Mock specific tools while keeping others real
-
-   ```typescript
-   const session = await createTestSession({
-     mockTools: {
-       bash: ({ command }) => `ran: ${command}`,
-     },
-   });
-   ```
-
-3. **HTTP Servers for Integration**: Create local HTTP servers to test external API calls
-
-   ```typescript
-   const server = createServer((req, res) => { ... });
-   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-   // Test against server
-   await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
-   ```
-
-4. **Timeout Pattern**: Tests use a 15-second timeout
-
-   ```typescript
-   const TEST_TIMEOUT_MS = 15_000;
-   const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
-     test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
-   ```
-
-5. **Temp Directory Pattern**: Use `mkdtemp` for isolated test environments
-   ```typescript
-   const cwd = await mkdtemp(join(tmpdir(), "test-prefix-"));
-   try {
-     // ... test code
-   } finally {
-     await rm(cwd, { recursive: true, force: true });
-   }
-   ```
-
-### Test File Naming
-
-- Test files: `*.test.ts`
-- Test utilities: `*.scenarios.ts`
-- Located in `/test` directory
-
-## Extension Development
-
-Extensions follow the `@mariozechner/pi-coding-agent` Extension API:
-
-```typescript
-import type { ExtensionAPI, ExtensionFactory } from "@mariozechner/pi-coding-agent";
-
-const myExtension: ExtensionFactory = () => (pi: ExtensionAPI) => {
-  pi.registerTool({
-    name: "myTool",
-    execute: async (id, args, ctx) => { ... },
-  });
-
-  pi.on("session_start", async (event, ctx) => { ... });
-};
-```
-
-## Upstream Patches
-
-Uses `patch-package` to maintain patches on `@mariozechner/pi-coding-agent`. After upgrading:
-
-1. Reapply patches: `npm run patch:deps`
-2. Test: `npm run test:tool-preview && npm run test:harness`
-3. Rebuild: `npm run build`
-
-## External Repos.
-
-Load the `librarian` skill and then you an search the following repos:
-
-- `badlogic/pi-mono`: whenever you need to get the source code for the pi coding agent and any other package releated to pi.
-- `durable-streams/durable-streams`: when you need to learn anything about `durable-streams`
-- `honojs/hono`: anything hono http server, client or middleware releated.
-- `anomalyco/opencode`: when the user mention opencode, or any opencode releated things.

@@ -1,4 +1,7 @@
-type PreviewScenariosModule = Awaited<typeof import("../test/tool-preview-scenarios.js")>;
+import { readString } from "../src/utils/unknown-data.js";
+import type * as PreviewScenariosModuleNamespace from "../test/tool-preview-scenarios.js";
+
+type PreviewScenariosModule = typeof PreviewScenariosModuleNamespace;
 type PreviewScenario = ReturnType<PreviewScenariosModule["getToolPreviewScenarios"]>[number];
 
 type PreviewThemeRegistry = {
@@ -43,10 +46,6 @@ function toStringMap(value: unknown): Record<string, string> {
     (entry): entry is [string, string] => typeof entry[1] === "string",
   );
   return Object.fromEntries(entries);
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 function parsePreviewState(value: unknown): PreviewState {

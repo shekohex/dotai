@@ -3,9 +3,11 @@ import { ProcessTerminal, Spacer, Text, TUI, setKeybindings } from "@mariozechne
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
+import { errorMessage } from "../src/utils/error-message.js";
 import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
 import { setThemeInstance } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import * as previewScenariosModule from "../test/tool-preview-scenarios.ts";
 import { ToolPreviewApp } from "./preview-tools-app.js";
 import {
   isPreviewScenariosModule,
@@ -31,8 +33,17 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const shouldList = args.includes("--list");
   const shouldWatch = args.includes("--watch");
-  const filters = args.filter((arg) => arg !== "--list" && arg !== "--watch");
-  return { shouldList, shouldWatch, query: filters.join(" ").trim().toLowerCase() };
+  const isChildProcess = args.includes("--child-process");
+  const filters = args.filter(
+    (arg) => arg !== "--list" && arg !== "--watch" && arg !== "--child-process",
+  );
+  return {
+    isChildProcess,
+    shouldList,
+    shouldWatch,
+    query: filters.join(" ").trim().toLowerCase(),
+    rawFilters: filters,
+  };
 }
 
 function createThemeRegistry(): PreviewThemeRegistry {
@@ -103,9 +114,8 @@ function watchPreviewSources(onChange: () => void): void {
   }
 }
 
-async function loadPreviewScenariosModule(): Promise<PreviewScenariosModule> {
-  const moduleUrl = pathToFileURL(resolve("test/tool-preview-scenarios.ts")).href;
-  const module: unknown = await import(`${moduleUrl}?ts=${Date.now()}`);
+function loadPreviewScenariosModule(): PreviewScenariosModule {
+  const module = previewScenariosModule;
   if (!isPreviewScenariosModule(module)) {
     throw new TypeError("Invalid preview scenarios module shape");
   }
@@ -197,12 +207,12 @@ function createReloadScheduler(
       clearTimeout(reloadTimer);
     }
     reloadTimer = setTimeout(() => {
-      void reloadPreviewScenarios(tui, app, query, state);
+      reloadPreviewScenarios(tui, app, query, state);
     }, 80);
   };
 }
 
-async function reloadPreviewScenarios(
+function reloadPreviewScenarios(
   tui: TUI,
   app: ToolPreviewApp,
   query: string,
@@ -211,14 +221,14 @@ async function reloadPreviewScenarios(
     getCurrentScenarios: () => PreviewScenario[];
     setCurrent: (previewModule: PreviewScenariosModule, scenarios: PreviewScenario[]) => void;
   },
-): Promise<void> {
+): void {
   try {
-    const nextPreviewModule = await loadPreviewScenariosModule();
+    const nextPreviewModule = loadPreviewScenariosModule();
     const nextScenarios = filterScenarios(nextPreviewModule, query);
     state.setCurrent(nextPreviewModule, nextScenarios);
     app.setPreviewData(nextPreviewModule, nextScenarios);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     app.setPreviewData(state.getCurrentModule(), state.getCurrentScenarios());
     app.addChild(new Spacer(1));
     app.addChild(new Text(`Reload failed: ${message}`, 1, 0));
@@ -226,11 +236,78 @@ async function reloadPreviewScenarios(
   }
 }
 
+function createChildArgs(filters: string[]): string[] {
+  return ["--import", "tsx", "./scripts/preview-tools.ts", "--child-process", ...filters];
+}
+
+function runWatchSupervisor(filters: string[]): Promise<never> {
+  let child = spawn(process.execPath, createChildArgs(filters), {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+  let restartTimer: NodeJS.Timeout | undefined;
+  let childStoppingForRestart = false;
+
+  const restartChild = () => {
+    if (restartTimer) {
+      clearTimeout(restartTimer);
+    }
+    restartTimer = setTimeout(() => {
+      childStoppingForRestart = true;
+      child.kill("SIGTERM");
+    }, 80);
+  };
+
+  const startChild = () => {
+    child = spawn(process.execPath, createChildArgs(filters), {
+      cwd: process.cwd(),
+      stdio: "inherit",
+    });
+    child.on("exit", (code, signal) => {
+      if (childStoppingForRestart) {
+        childStoppingForRestart = false;
+        startChild();
+        return;
+      }
+      if (signal === "SIGINT") {
+        process.kill(process.pid, "SIGINT");
+        return;
+      }
+      process.exit(code ?? 0);
+    });
+  };
+
+  child.on("exit", (code, signal) => {
+    if (childStoppingForRestart) {
+      childStoppingForRestart = false;
+      startChild();
+      return;
+    }
+    if (signal === "SIGINT") {
+      process.kill(process.pid, "SIGINT");
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+
+  watchLocalThemes(restartChild);
+  watchPreviewSources(restartChild);
+
+  process.once("SIGINT", () => child.kill("SIGINT"));
+  process.once("SIGTERM", () => child.kill("SIGTERM"));
+
+  return new Promise(() => {});
+}
+
 async function main() {
-  const { shouldList, shouldWatch, query } = parseArgs();
+  const { isChildProcess, shouldList, shouldWatch, query, rawFilters } = parseArgs();
+  if (shouldWatch && !isChildProcess) {
+    await runWatchSupervisor(rawFilters);
+    return;
+  }
   const themeRegistry = createThemeRegistry();
   const persistedState = await loadPreviewState();
-  let previewModule = await loadPreviewScenariosModule();
+  let previewModule = loadPreviewScenariosModule();
   let scenarios = filterScenarios(previewModule, query ?? "");
 
   if (shouldList) {
@@ -266,7 +343,7 @@ async function main() {
   watchLocalThemes(() => {
     app.setThemeRegistry(createThemeRegistry());
   });
-  if (shouldWatch) {
+  if (shouldWatch && isChildProcess) {
     watchPreviewSources(scheduleReload);
   }
   tui.start();

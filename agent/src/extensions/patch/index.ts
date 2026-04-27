@@ -89,7 +89,7 @@ export const applyPatchTool = defineTool<
   label: "patch",
   renderShell: "self",
   description: APPLY_PATCH_DESCRIPTION,
-  promptSnippet: `use \`apply_patch\` to edit/patch files`,
+  promptSnippet: `edit/patch files`,
   parameters: applyPatchParams,
   execute(_toolCallId, params, _signal, onUpdate, ctx) {
     const { hunks, targets } = parsePatchExecutionInput(params.patchText);

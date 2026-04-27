@@ -15,6 +15,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function safeStringify(value: unknown): string {
   const seen = new WeakSet<object>();
   return JSON.stringify(
@@ -35,37 +39,84 @@ function safeStringify(value: unknown): string {
   );
 }
 
+function readTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : undefined;
+}
+
+function extractStringContentFromInputParts(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return readTrimmedString(value);
+  }
+
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const textParts = value.flatMap((part) => {
+    if (!isPlainObject(part)) {
+      return [];
+    }
+
+    const partType = readTrimmedString(part.type);
+    if (partType !== "input_text" && partType !== "text") {
+      return [];
+    }
+
+    const textPart = readTrimmedString(part.text);
+    return textPart === undefined ? [] : [textPart];
+  });
+
+  return textParts.length > 0 ? textParts.join("\n\n") : undefined;
+}
+
 function extractSystemPrompt(payload: unknown): string | undefined {
-  const candidateKeys = new Set([
+  if (!isPlainObject(payload)) {
+    return undefined;
+  }
+
+  const directCandidateKeys = [
     "systemPrompt",
     "systemInstruction",
     "instructions",
     "instruction",
     "system",
-  ]);
-  const visited = new WeakSet<object>();
-  const queue: unknown[] = [payload];
+  ] as const;
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!isPlainObject(current)) {
+  for (const key of directCandidateKeys) {
+    const directValue = readTrimmedString(payload[key]);
+    if (directValue !== undefined) {
+      return directValue;
+    }
+
+    if (key === "system") {
+      const systemList = payload[key];
+      if (isStringArray(systemList) && systemList.length > 0) {
+        return systemList.join("\n\n");
+      }
+    }
+  }
+
+  const input = payload.input;
+  if (!Array.isArray(input)) {
+    return undefined;
+  }
+
+  for (const message of input) {
+    if (!isPlainObject(message)) {
       continue;
     }
 
-    if (visited.has(current)) {
+    const role = readTrimmedString(message.role);
+    if (role !== "developer" && role !== "system") {
       continue;
     }
-    visited.add(current);
 
-    for (const [key, value] of Object.entries(current)) {
-      if (candidateKeys.has(key) && typeof value === "string" && value.trim().length > 0) {
-        return value;
-      }
-
-      if (typeof value === "object" && value !== null) {
-        queue.push(value);
-      }
-    }
+    return extractStringContentFromInputParts(message.content);
   }
 
   return undefined;
@@ -83,7 +134,7 @@ function getLogPath(): string {
   return join(process.cwd(), ".pi", "debug", "provider-requests.jsonl");
 }
 
-function buildProviderRequestRecord(input: {
+export function buildProviderRequestRecord(input: {
   payload: unknown;
   turnSystemPrompt: string | undefined;
   ctx: ExtensionContext;

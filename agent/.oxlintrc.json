@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "node", "jsdoc", "import"],
+  "jsPlugins": ["./support/oxlint-plugin-project-rules/index.mjs"],
   "categories": {
     "correctness": "error",
     "pedantic": "error",
@@ -38,8 +39,48 @@
     "typescript/no-explicit-any": "error",
     "typescript/no-unsafe-type-assertion": "error",
     "typescript/no-unsafe-assignment": "error",
-    "no-nested-ternary": "error"
+    "no-nested-ternary": "error",
+    "project-rules/no-dynamic-import": "error",
+    "project-rules/no-inline-import-type": "error",
+    "project-rules/no-reflect-outside-allowlist": [
+      "error",
+      {
+        "allowFiles": [
+          "src/extensions/bundled-resources.ts",
+          "src/extensions/model-family-system-prompt.ts",
+          "src/remote/client/session-settings.ts",
+          "src/remote/session-manager-storage.ts",
+          "src/remote/runtime-api/capabilities.ts",
+          "src/remote/session/registry-runtime-ops.ts"
+        ]
+      }
+    ],
+    "project-rules/no-redundant-runtime-narrowing": [
+      "error",
+      {
+        "checks": ["typeof", "array", "in"],
+        "allowFiles": [
+          "src/remote/http-adapters.ts",
+          "src/remote/runtime-api/utils.ts",
+          "src/extensions/subagent/render-state.ts",
+          "src/extensions/modes/events.ts"
+        ]
+      }
+    ],
+    "project-rules/no-redundant-check-after-typebox": "error",
+    "project-rules/no-object-shape-cast-from-unknown": "error",
+    "project-rules/no-unsafe-json-parse": "error",
+    "project-rules/no-inline-error-message-extraction": "error",
+    "project-rules/no-local-unknown-record-helper": "error"
   },
+  "overrides": [
+    {
+      "files": ["src/remote/**/*.ts"],
+      "rules": {
+        "project-rules/no-direct-fetch-in-remote": "error"
+      }
+    }
+  ],
   "env": {
     "builtin": true
   }

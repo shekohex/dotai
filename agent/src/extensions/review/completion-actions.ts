@@ -3,6 +3,7 @@ import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 import type { HandoffLaunchResult } from "../handoff.js";
 import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { REVIEW_ADDRESS_FINDINGS_PROMPT, type CreateReviewExtensionOptions } from "./deps.js";
+import { errorMessage } from "../../utils/error-message.js";
 
 type CompletionAction = "address" | "copy" | "fork" | "handoff" | undefined;
 
@@ -111,10 +112,7 @@ async function handleCopyCompletionAction(
     await (deps.options.clipboardWriter ?? deps.copyTextToClipboard)(summary);
     ctx.ui.notify("Copied review summary to clipboard.", "info");
   } catch (error) {
-    ctx.ui.notify(
-      `Failed to copy review summary: ${error instanceof Error ? error.message : String(error)}`,
-      "error",
-    );
+    ctx.ui.notify(`Failed to copy review summary: ${errorMessage(error)}`, "error");
   }
 }
 
@@ -147,10 +145,7 @@ async function handleHandoffCompletionAction(
           goal: handoffGoal,
         });
   } catch (error) {
-    ctx.ui.notify(
-      `Failed to start review handoff: ${error instanceof Error ? error.message : String(error)}`,
-      "error",
-    );
+    ctx.ui.notify(`Failed to start review handoff: ${errorMessage(error)}`, "error");
     return;
   }
 

@@ -2,6 +2,9 @@ import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { RemoteExtensionMetadata } from "../schemas.js";
+import { isRecord } from "../../utils/unknown-data.js";
+
+export { isRecord };
 
 export function parseModelRef(value: string): { provider: string; modelId: string } {
   const separator = value.indexOf("/");
@@ -35,10 +38,6 @@ export function resolveThinkingLevel(value: unknown, fallback: ThinkingLevel): T
 
 export function resolveOptionalThinkingLevel(value: unknown): ThinkingLevel | undefined {
   return isThinkingLevel(value) ? value : undefined;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function readObject(value: unknown): Record<string, unknown> | undefined {

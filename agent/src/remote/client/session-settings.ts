@@ -1,5 +1,6 @@
 import type { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { SettingsUpdateRequest } from "../schemas.js";
+import { isRecord } from "../../utils/unknown-data.js";
 
 type SettingsSnapshotState = {
   globalSettings: ReturnType<SettingsManager["getGlobalSettings"]>;
@@ -13,10 +14,6 @@ type SettingsMutationQueue = (
 ) => void;
 
 type RecordLike = Record<string, unknown>;
-
-function isRecord(value: unknown): value is RecordLike {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function deepMergeSettings(base: RecordLike, overrides: RecordLike): RecordLike {
   const result: RecordLike = { ...base };

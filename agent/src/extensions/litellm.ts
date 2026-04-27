@@ -1,6 +1,7 @@
 import { getModels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { errorMessage } from "../utils/error-message.js";
 
 type LiteLLMCandidate = {
   label: string;
@@ -196,5 +197,5 @@ function createGeminiModels(): ProviderModelConfig[] {
 }
 
 function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }

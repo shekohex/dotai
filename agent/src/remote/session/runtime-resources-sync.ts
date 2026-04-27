@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
 import { defaultSettings } from "../../default-settings.js";
+import { isRecord } from "../../utils/unknown-data.js";
 import type { SessionRecord } from "./types.js";
 
 type RuntimeSession = NonNullable<AgentSessionRuntime["session"]>;
@@ -82,10 +83,6 @@ type SettingsSnapshotReader = {
   getGlobalSettings: () => Record<string, unknown>;
   getProjectSettings: () => Record<string, unknown>;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function isSettingsSnapshotReader(value: unknown): value is SettingsSnapshotReader {
   if (!isRecord(value)) {

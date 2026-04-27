@@ -30,8 +30,7 @@ export class ExecutorUnavailableError extends Error {
   }
 }
 
-const formatError = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+const formatError = (error: unknown): string => errorMessage(error);
 
 const assertMcpUrl = (mcpUrl: string): string => {
   try {
@@ -67,3 +66,4 @@ export async function resolveExecutorEndpoint(): Promise<ExecutorEndpoint> {
 
   throw new ExecutorUnavailableError(attempts);
 }
+import { errorMessage } from "../../utils/error-message.js";

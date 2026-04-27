@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import { isRecord } from "../../utils/unknown-data.js";
 import type { FileReference } from "./model.js";
 import { formatDisplayPath } from "./path-utils.js";
 
@@ -15,9 +16,6 @@ type ContentBlock = {
 const FILE_TAG_REGEX = /<file\s+name=["']([^"']+)["']>/g;
 const FILE_URL_REGEX = /file:\/\/[^\s"'<>]+/g;
 const PATH_REGEX = /(?:^|[\s"'`([{<])((?:~|\/)[^\s"'`<>)}\]]+)/g;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
 
 const extractFileReferencesFromText = (text: string): string[] => {
   const refs: string[] = [];

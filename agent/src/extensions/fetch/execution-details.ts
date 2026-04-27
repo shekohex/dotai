@@ -165,9 +165,10 @@ function isTimeoutError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
-  const code = (error as Error & { code?: string }).code;
+  const code = isRecord(error) ? error.code : undefined;
   const message = error.message.toLowerCase();
   return code === "ETIMEDOUT" || message.includes("timed out") || message.includes("timeout");
 }
 
 export { buildDetails, isTimeoutError };
+import { isRecord } from "../../utils/unknown-data.js";

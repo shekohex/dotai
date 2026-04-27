@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import type { ModeSpec } from "../../mode-utils.js";
+import { asRecord } from "../../utils/unknown-data.js";
 
 export type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -42,8 +43,6 @@ const ThinkingLevelSchema = Type.Union([
   Type.Literal("high"),
   Type.Literal("xhigh"),
 ]);
-const UnknownRecordSchema = Type.Record(Type.String(), Type.Unknown());
-
 const ModeStateEntrySchema = Type.Object(
   {
     data: Type.Optional(
@@ -102,14 +101,6 @@ const ModeSelectionApplyEventSchema = Type.Object(
   },
   { additionalProperties: true },
 );
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!Value.Check(UnknownRecordSchema, value)) {
-    return undefined;
-  }
-
-  return Value.Parse(UnknownRecordSchema, value);
-}
 
 export function isThinkingLevel(value: unknown): value is NonNullable<ModeSpec["thinkingLevel"]> {
   return Value.Check(ThinkingLevelSchema, value);
@@ -201,10 +192,6 @@ export function parseModeActivateEvent(data: unknown): ModeActivateEvent | undef
     return undefined;
   }
 
-  if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    return undefined;
-  }
-
   const ctx = "ctx" in data ? data.ctx : undefined;
   if (!isExtensionContextLike(ctx)) {
     return undefined;
@@ -229,10 +216,6 @@ export function parseModeActivateEvent(data: unknown): ModeActivateEvent | undef
 
 export function parseModeSelectionApplyEvent(data: unknown): ModeSelectionApplyEvent | undefined {
   if (!Value.Check(ModeSelectionApplyEventSchema, data)) {
-    return undefined;
-  }
-
-  if (data === null || typeof data !== "object" || Array.isArray(data)) {
     return undefined;
   }
 

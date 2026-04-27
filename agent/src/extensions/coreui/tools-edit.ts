@@ -14,11 +14,10 @@ export function summarizeEditProgress(args: { edits?: unknown }): string {
 }
 
 export function getDiffText(details: unknown): string {
-  if (details === undefined || details === null || typeof details !== "object") {
+  if (!isRecord(details)) {
     return "";
   }
-
-  const diff = (details as { diff?: unknown }).diff;
+  const diff = details.diff;
   return typeof diff === "string" ? diff : "";
 }
 
@@ -76,3 +75,4 @@ export function formatOptionalDiffStats(
 
   return `${theme.fg("muted", " · ")}${formatDiffStats(theme, stats.additions, stats.deletions)}`;
 }
+import { isRecord } from "../../utils/unknown-data.js";

@@ -1,13 +1,13 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { Value } from "typebox/value";
 import { RemoteExtensionMetadataSchema, type RemoteExtensionMetadata } from "../schemas.js";
+import { isRecord } from "../../utils/unknown-data.js";
 
 export function isApiModel(value: unknown): value is Model<Api> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return false;
   }
-
-  const candidate = value as { provider?: unknown; id?: unknown; api?: unknown };
+  const candidate = value;
   return (
     typeof candidate.provider === "string" &&
     typeof candidate.id === "string" &&

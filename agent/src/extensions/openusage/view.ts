@@ -1,5 +1,6 @@
 import { DynamicBorder, type Theme } from "@mariozechner/pi-coding-agent";
 import { Container, Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
+import { errorMessage } from "../../utils/error-message.js";
 import { setResetTimeFormat, setSelectedAccount } from "./state.js";
 import type { ResetTimeFormat, SupportedProviderId, UsageSnapshot } from "./types.js";
 import { buildOpenUsageLines, type OpenUsageAccountOption } from "./view-layout.js";
@@ -131,7 +132,7 @@ class OpenUsageView implements Component {
     try {
       await this.data.refreshProvider(providerId, { force });
     } catch (error) {
-      this.errorMessage = error instanceof Error ? error.message : String(error);
+      this.errorMessage = errorMessage(error);
     } finally {
       this.busyMessage = undefined;
       this.invalidateAndRender();
@@ -166,7 +167,7 @@ class OpenUsageView implements Component {
     } catch (error) {
       setSelectedAccount(this.data.state, providerId, previousValue);
       this.data.persistState();
-      this.errorMessage = error instanceof Error ? error.message : String(error);
+      this.errorMessage = errorMessage(error);
     } finally {
       this.busyMessage = undefined;
       this.invalidateAndRender();

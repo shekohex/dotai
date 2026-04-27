@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isRecord, readNumber as readOptionalNumber } from "../../utils/unknown-data.js";
 import type { CoreUIState, CoreUITPSStats } from "./types.js";
 import { buildTPSStats, calculateIntervalTPS, formatCompactCount } from "./tps-metrics.js";
 
@@ -141,26 +142,26 @@ function hasSameTPSStats(current: CoreUITPSStats | undefined, next: CoreUITPSSta
 }
 
 function readTPSSessionEntry(value: unknown): TPSSessionEntry | undefined {
-  if (value === undefined || value === null || typeof value !== "object") {
+  if (!isRecord(value)) {
     return undefined;
   }
-  const candidate = value as Partial<TPSSessionEntry>;
-  if (!candidate.stats || typeof candidate.stats !== "object") {
+  const candidate = value;
+  if (!isRecord(candidate.stats)) {
     return undefined;
   }
   const stats = parseTPSStats(candidate.stats as Partial<CoreUITPSStats>);
   if (!stats) {
     return undefined;
   }
-  const elapsedMs = readNumber(candidate.elapsedMs, 0);
+  const elapsedMs = readNumberOrFallback(candidate.elapsedMs, 0);
   return {
     stats,
     elapsedMs,
-    input: readNumber(candidate.input, 0),
-    output: readNumber(candidate.output, 0),
-    cacheRead: readNumber(candidate.cacheRead, 0),
-    cacheWrite: readNumber(candidate.cacheWrite, 0),
-    totalTokens: readNumber(candidate.totalTokens, 0),
+    input: readNumberOrFallback(candidate.input, 0),
+    output: readNumberOrFallback(candidate.output, 0),
+    cacheRead: readNumberOrFallback(candidate.cacheRead, 0),
+    cacheWrite: readNumberOrFallback(candidate.cacheWrite, 0),
+    totalTokens: readNumberOrFallback(candidate.totalTokens, 0),
   };
 }
 
@@ -177,8 +178,8 @@ function parseTPSStats(stats: Partial<CoreUITPSStats>): CoreUITPSStats | undefin
     min,
     median,
     max,
-    sampleCount: readNumber(stats.sampleCount, 1),
-    bufferSize: readNumber(stats.bufferSize, TPS_SAMPLE_BUFFER_SIZE),
+    sampleCount: readNumberOrFallback(stats.sampleCount, 1),
+    bufferSize: readNumberOrFallback(stats.bufferSize, TPS_SAMPLE_BUFFER_SIZE),
   };
 }
 
@@ -186,15 +187,15 @@ function readRequiredNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function readNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function readNumberOrFallback(value: unknown, fallback: number): number {
+  return readOptionalNumber(value) ?? fallback;
 }
 
 function readTPSVisibilityEntry(value: unknown): TPSVisibilityEntry | undefined {
-  if (value === undefined || value === null || typeof value !== "object") {
+  if (!isRecord(value)) {
     return undefined;
   }
-  const candidate = value as Partial<TPSVisibilityEntry>;
+  const candidate = value;
   if (typeof candidate.visible !== "boolean") {
     return undefined;
   }

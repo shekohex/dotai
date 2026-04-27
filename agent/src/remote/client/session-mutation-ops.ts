@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { errorMessage } from "../../utils/error-message.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventListener,
@@ -20,7 +21,7 @@ export function enqueueRemoteSessionMutation(input: {
 }): void {
   const nextQueue = input.currentMutationQueue.then(input.execute).catch((error) => {
     input.rollback();
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     input.handleRemoteError(`${input.label}: ${message}`);
   });
   input.setMutationQueue(nextQueue);

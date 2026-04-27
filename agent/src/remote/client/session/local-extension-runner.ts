@@ -162,11 +162,11 @@ export function toForwardableRemoteExtensionEvent(
 export function isForwardableRemoteExtensionEvent(
   value: unknown,
 ): value is ForwardableRemoteExtensionEvent {
-  if (value === null || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
 
-  const type = (value as { type?: unknown }).type;
+  const type = value.type;
   return (
     type === "model_select" ||
     type === "session_compact" ||
@@ -194,11 +194,10 @@ type ForwardableExtensionRunner = {
 };
 
 function isForwardableExtensionRunner(value: unknown): value is ForwardableExtensionRunner {
-  if (value === null || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const maybeRunner = value as { emit?: unknown };
-  return typeof maybeRunner.emit === "function";
+  return typeof value.emit === "function";
 }
 
 export async function emitForwardableRemoteExtensionEvent(
@@ -221,7 +220,7 @@ function createExtensionActions(
         runner.emitError({
           extensionPath: "<runtime>",
           event: "send_message",
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
       });
     },
@@ -230,7 +229,7 @@ function createExtensionActions(
         runner.emitError({
           extensionPath: "<runtime>",
           event: "send_user_message",
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
       });
     },
@@ -254,7 +253,7 @@ function createExtensionActions(
         runner.emitError({
           extensionPath: "<runtime>",
           event: "refresh_tools",
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
       });
     },
@@ -274,14 +273,19 @@ function createExtensionActions(
   };
 }
 
-function isToolInfoLike(tool: RemoteToolInfo): tool is ReturnType<GetAllToolsHandler>[number] {
+function isToolInfoLike(tool: unknown): tool is ReturnType<GetAllToolsHandler>[number] {
+  if (tool === null || typeof tool !== "object") {
+    return false;
+  }
   return (
-    tool !== null &&
-    typeof tool === "object" &&
+    "name" in tool &&
     typeof tool.name === "string" &&
+    "description" in tool &&
     typeof tool.description === "string" &&
+    "parameters" in tool &&
     tool.parameters !== null &&
     typeof tool.parameters === "object" &&
+    "sourceInfo" in tool &&
     tool.sourceInfo !== null &&
     typeof tool.sourceInfo === "object"
   );
@@ -335,3 +339,5 @@ function buildSlashCommands(
 
   return [...extensionCommands, ...templateCommands, ...skillCommands];
 }
+import { errorMessage } from "../../../utils/error-message.js";
+import { isRecord } from "../../../utils/unknown-data.js";

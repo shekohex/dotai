@@ -2,6 +2,7 @@ import type { StreamEventEnvelope } from "../schemas.js";
 import { StreamEventEnvelopeSchema } from "../schemas.js";
 import { parseSseStream } from "../sse.js";
 import { assertType } from "../typebox.js";
+import { isRecord } from "../../utils/unknown-data.js";
 
 export type StreamReadResult = {
   events: StreamEventEnvelope[];
@@ -25,10 +26,6 @@ export type SessionSseReadState = {
   streamCursor?: string;
   streamClosed: boolean;
 };
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 export function readObject(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined;

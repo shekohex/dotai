@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { isRecord } from "../../utils/unknown-data.js";
 
 function formatUsd(cost: number): string {
   if (!Number.isFinite(cost) || cost <= 0) return "$0.00";
@@ -50,10 +51,6 @@ function getAgentDir(): string {
     return envDir;
   }
   return path.join(os.homedir(), ".pi", "agent");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 async function readFileIfExists(

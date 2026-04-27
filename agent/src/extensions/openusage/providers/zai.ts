@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { downloadCliproxyAuthFile, resolveCliproxySelectedAccount } from "../cliproxy.js";
 import type { OpenUsageRuntimeState, UsageProvider, UsageSnapshot } from "../types.js";
 import { asRecord, clampPercent, readNumber, readString, toIsoTimestamp } from "./shared.js";
+import { readDeepString } from "../../../utils/unknown-data.js";
 
 const SUBSCRIPTION_URL = "https://api.z.ai/api/biz/subscription/list";
 const QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
@@ -266,29 +267,4 @@ function listLimits(payload: Record<string, unknown>): unknown[] {
   }
 
   return Array.isArray(record.limits) ? record.limits : [];
-}
-
-function readDeepString(value: unknown, paths: string[][]): string | undefined {
-  for (const path of paths) {
-    let current: unknown = value;
-    for (const key of path) {
-      if (
-        current === undefined ||
-        current === null ||
-        typeof current !== "object" ||
-        Array.isArray(current)
-      ) {
-        current = undefined;
-        break;
-      }
-      current = asRecord(current)?.[key];
-    }
-
-    const found = readString(current);
-    if (found !== undefined && found.length > 0) {
-      return found;
-    }
-  }
-
-  return undefined;
 }

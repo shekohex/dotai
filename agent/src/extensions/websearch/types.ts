@@ -1,5 +1,6 @@
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { asRecord } from "../../utils/unknown-data.js";
 
 const WEBSEARCH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"] as const;
 const WEBSEARCH_PROVIDER = "gemini";
@@ -92,15 +93,6 @@ const WebSearchRenderStateSchema = Type.Object(
   },
   { additionalProperties: true },
 );
-
-const UnknownRecordSchema = Type.Record(Type.String(), Type.Unknown());
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!Value.Check(UnknownRecordSchema, value)) {
-    return undefined;
-  }
-  return Value.Parse(UnknownRecordSchema, value);
-}
 
 function parseWebSearchDetails(details: unknown): WebSearchDetails | undefined {
   if (!Value.Check(WebSearchDetailsSchema, details)) {

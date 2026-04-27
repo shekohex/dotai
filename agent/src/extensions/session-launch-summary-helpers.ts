@@ -8,6 +8,7 @@ import {
   CONTEXT_TRANSFER_MODEL,
   CONTEXT_TRANSFER_PROVIDER,
 } from "./session-launch-utils.constants.js";
+import { isRecord } from "../utils/unknown-data.js";
 
 type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -19,11 +20,10 @@ export type SummaryGenerationConfig = {
 };
 
 function isApiModel(value: unknown): value is Model<Api> {
-  if (value === null || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-
-  const candidate = value as { provider?: unknown; id?: unknown; api?: unknown };
+  const candidate = value;
   return (
     typeof candidate.provider === "string" &&
     typeof candidate.id === "string" &&

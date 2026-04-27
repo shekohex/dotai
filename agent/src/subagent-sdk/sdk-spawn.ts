@@ -53,7 +53,7 @@ function toSpawnAbortedError(
   error: unknown,
   retryCount = DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT,
 ): StructuredOutputError {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return { code: "aborted", message, retryCount, attempts: 0 };
 }
 
@@ -129,3 +129,4 @@ export function createSpawnFunction(input: SpawnFunctionFactoryInput): SubagentS
   }
   return spawn;
 }
+import { errorMessage } from "../utils/error-message.js";

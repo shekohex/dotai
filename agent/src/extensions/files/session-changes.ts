@@ -1,10 +1,8 @@
 import path from "node:path";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import { isRecord } from "../../utils/unknown-data.js";
 import type { FileToolName, SessionFileChange } from "./model.js";
 import { toCanonicalPath } from "./path-utils.js";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
 
 const isFileToolName = (value: unknown): value is FileToolName =>
   value === "write" || value === "edit";

@@ -5,6 +5,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { errorMessage } from "../utils/error-message.js";
 
 const COMPACTION_PROVIDER = "gemini" as const;
 const COMPACTION_MODEL = "gemini-3.1-flash-lite-preview" as const;
@@ -54,10 +55,7 @@ export default function (pi: ExtensionAPI) {
         },
       };
     } catch (error) {
-      ctx.ui.notify(
-        `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
+      ctx.ui.notify(`Compaction failed: ${errorMessage(error)}`, "error");
       return {};
     }
   });

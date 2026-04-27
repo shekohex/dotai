@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { errorMessage } from "../../utils/error-message.js";
 import type { JsonObject } from "./http.js";
 import type { ResumeAction } from "./mcp-client.js";
 import { parseJsonContent } from "./executor-adapter.js";
@@ -65,7 +66,7 @@ const promptForBrowserInteraction = async (
     await openBrowserTarget(url);
     ctx.ui.notify(`Opened ${url}`, "info");
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     ctx.ui.notify(`Open this URL manually: ${url}\n\n${message}`, "warning");
   }
 

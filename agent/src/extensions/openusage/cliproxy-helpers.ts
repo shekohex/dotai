@@ -1,5 +1,5 @@
-import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { errorMessage } from "../../utils/error-message.js";
+import { asRecord, readString } from "../../utils/unknown-data.js";
 import type {
   CliproxyAccount,
   CliproxyAccountsByProvider,
@@ -23,8 +23,6 @@ export const CLIPROXY_CANDIDATES = [
   { label: "tail", origin: "http://100.100.1.116:8317" },
   { label: "public", origin: "https://ai-gateway.0iq.xyz/proxy" },
 ] as const;
-
-const UnknownRecordSchema = Type.Record(Type.String(), Type.Unknown());
 
 export type CliproxyState = {
   healthy: boolean;
@@ -200,25 +198,10 @@ function mapCliproxyProvider(value: string): SupportedProviderId | undefined {
   return undefined;
 }
 
-function readString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed || undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!Value.Check(UnknownRecordSchema, value)) {
-    return undefined;
-  }
-  return Value.Parse(UnknownRecordSchema, value);
-}
-
 function readBoolean(value: unknown): boolean {
   return value === true || value === 1 || value === "true";
 }
 
 function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }

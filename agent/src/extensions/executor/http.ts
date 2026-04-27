@@ -158,7 +158,7 @@ function toHttpError(baseUrl: string, path: string, error: unknown): HttpError {
     });
   }
 
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return new HttpError({
     baseUrl,
     path,
@@ -208,3 +208,4 @@ export const waitForHealthyScope = async (
     message: `Executor did not become healthy for ${expectedDir} within ${timeoutMs}ms`,
   });
 };
+import { errorMessage } from "../../utils/error-message.js";

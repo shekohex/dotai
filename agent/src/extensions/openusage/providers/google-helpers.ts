@@ -1,43 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { Type } from "typebox";
-import { Value } from "typebox/value";
-
-const UnknownRecordSchema = Type.Record(Type.String(), Type.Unknown());
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!Value.Check(UnknownRecordSchema, value)) {
-    return undefined;
-  }
-
-  return Value.Parse(UnknownRecordSchema, value);
-}
-
-function readString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed || undefined;
-}
-
-function readNumber(value: unknown): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : undefined;
-  }
-
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
+import { errorMessage } from "../../../utils/error-message.js";
+import {
+  asRecord,
+  readDeepNumber,
+  readDeepString,
+  readNumber,
+  readString,
+} from "../../../utils/unknown-data.js";
 
 function hasText(value: string | undefined): value is string {
   return value !== undefined && value.length > 0;
@@ -70,48 +39,6 @@ function readFirstStringDeep(
   for (const nested of Object.values(value)) {
     const found = readFirstStringDeep(asRecord(nested), keys);
     if (hasText(found)) {
-      return found;
-    }
-  }
-
-  return undefined;
-}
-
-function readDeepString(value: unknown, paths: string[][]): string | undefined {
-  for (const pathKeys of paths) {
-    let current: unknown = value;
-    for (const key of pathKeys) {
-      const record = asRecord(current);
-      if (!record) {
-        current = undefined;
-        break;
-      }
-      current = record[key];
-    }
-
-    const found = readString(current);
-    if (hasText(found)) {
-      return found;
-    }
-  }
-
-  return undefined;
-}
-
-function readDeepNumber(value: unknown, paths: string[][]): number | undefined {
-  for (const pathKeys of paths) {
-    let current: unknown = value;
-    for (const key of pathKeys) {
-      const record = asRecord(current);
-      if (!record) {
-        current = undefined;
-        break;
-      }
-      current = record[key];
-    }
-
-    const found = readNumber(current);
-    if (found !== undefined) {
       return found;
     }
   }
@@ -153,7 +80,7 @@ function joinSummary(...values: Array<string | undefined>): string | undefined {
 }
 
 function isAuthError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return /session expired|auth unavailable|401|403/i.test(message);
 }
 

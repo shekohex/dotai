@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { errorMessage } from "../../utils/error-message.js";
 import { registerExecutorCommands } from "./commands.js";
 import { getExecutorSettings } from "./settings.js";
 import { clearExecutorState, connectExecutor } from "./status.js";
@@ -14,7 +15,7 @@ export default function (pi: ExtensionAPI): void {
       try {
         await connectExecutor(pi, ctx);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         ctx.ui.notify(`Executor auto-start failed: ${message}`, "warning");
       }
     } else {

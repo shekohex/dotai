@@ -1,4 +1,5 @@
 import type { ExecutorMcpInspection } from "./mcp-client.js";
+import { resolveExecutorEndpoint } from "./connection.js";
 import { inspectExecutorMcp } from "./mcp-client.js";
 import { trimToUndefined } from "./tools-text.js";
 
@@ -26,7 +27,6 @@ const inspectConfiguredExecutor = async (
   cwd: string,
   hasUI: boolean,
 ): Promise<ExecutorMcpInspection | undefined> => {
-  const { resolveExecutorEndpoint } = await import("./connection.js");
   let endpoint;
   try {
     endpoint = await resolveExecutorEndpoint();

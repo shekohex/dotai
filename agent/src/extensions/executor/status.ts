@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { errorMessage } from "../../utils/error-message.js";
 import type { ExecutorEndpoint } from "./connection.js";
 import { resolveExecutorEndpoint } from "./connection.js";
 
@@ -67,7 +68,7 @@ export async function connectExecutor(
     setExecutorState(pi, ctx.cwd, toReadyState(endpoint));
     return endpoint;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     setExecutorState(pi, ctx.cwd, { kind: "error", message });
     throw error;
   }

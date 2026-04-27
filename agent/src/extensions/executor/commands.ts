@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
+import { errorMessage } from "../../utils/error-message.js";
 import { openBrowserTarget } from "./browser.js";
 import { ExecutorUnavailableError } from "./connection.js";
 import { connectExecutor } from "./status.js";
@@ -75,7 +76,7 @@ const handleExecutorWeb = async (pi: ExtensionAPI, ctx: ExtensionCommandContext)
     await openBrowserTarget(endpoint.webUrl);
     await showExecutorWebView(ctx, endpoint);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     await showExecutorWebView(ctx, endpoint, message);
   }
 };

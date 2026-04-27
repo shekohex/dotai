@@ -10,13 +10,11 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Markdown, type MarkdownTheme } from "@mariozechner/pi-tui";
+import { isRecord } from "../utils/unknown-data.js";
 
 const notify = (title: string, body: string): void => {
   process.stdout.write(`\u001B]777;notify;${title};${body}\u0007`);
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
 
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
   isRecord(part) && part.type === "text" && typeof part.text === "string";

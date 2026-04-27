@@ -273,7 +273,7 @@ export abstract class RemoteAgentSessionSetupBase {
             this.localExtensionRunner?.emitError({
               extensionPath: "<runtime>",
               event: "compact",
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             });
           });
       },
@@ -297,8 +297,7 @@ export abstract class RemoteAgentSessionSetupBase {
           value: data,
         }).catch((error) => {
           const stateLabel = describeManagedExtensionState(customType) ?? customType;
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const message = `Failed to persist managed extension state (${stateLabel}): ${errorMessage}`;
+          const message = `Failed to persist managed extension state (${stateLabel}): ${errorMessage(error)}`;
           this.uiContext?.notify(message, "error");
           this.localExtensionRunner?.emitError({
             extensionPath: "<runtime>",
@@ -640,7 +639,7 @@ export abstract class RemoteAgentSessionSetupBase {
       this.localExtensionRunner.emitError({
         extensionPath: `command:${commandName}`,
         event: "command",
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
       return true;
     }
@@ -751,7 +750,7 @@ export abstract class RemoteAgentSessionSetupBase {
       this.localExtensionRunner.emitError({
         extensionPath: "<runtime>",
         event: event.type,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }
@@ -793,3 +792,4 @@ export abstract class RemoteAgentSessionSetupBase {
   abstract abort(): Promise<void>;
   abstract waitForIdle(): Promise<void>;
 }
+import { errorMessage } from "../../../utils/error-message.js";

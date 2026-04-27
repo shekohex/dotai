@@ -5,6 +5,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { isChildSession, readChildState, type RuntimeSubagent } from "../../subagent-sdk/index.js";
 import { copyTextToClipboard } from "../../utils/clipboard.js";
+import { errorMessage } from "../../utils/error-message.js";
 import {
   generateContextTransferSummary,
   generateContextTransferSummaryWithLoader,
@@ -54,7 +55,7 @@ export {
 };
 
 function formatErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }
 
 export function createReviewExtension(extensionOptions?: CreateReviewExtensionOptions) {

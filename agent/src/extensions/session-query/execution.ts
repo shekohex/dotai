@@ -7,7 +7,10 @@ import {
   serializeConversation,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { errorMessage } from "../../utils/error-message.js";
+import { isRecord } from "../../utils/unknown-data.js";
 
 const QUERY_PROVIDER = "gemini" as const;
 const QUERY_MODEL = "gemini-3.1-flash-lite-preview" as const;
@@ -32,19 +35,15 @@ type SessionQueryDetails = {
 type SessionMessages = Parameters<typeof convertToLlm>[0];
 
 function isApiModel(value: unknown): value is Model<Api> {
-  if (value === null || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as { provider?: unknown; id?: unknown; api?: unknown };
+  const candidate = value;
   return (
     typeof candidate.provider === "string" &&
     typeof candidate.id === "string" &&
     typeof candidate.api === "string"
   );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function getAssistantText(
@@ -121,7 +120,7 @@ export async function executeSessionQueryRequest(
   return runSessionQuery(model, messages, request, signal, onUpdate, ctx, errorResult);
 }
 
-async function loadSessionMessages(
+function loadSessionMessages(
   sessionPath: string,
   errorResult: (text: string) => {
     content: Array<{ type: "text"; text: string }>;
@@ -129,28 +128,31 @@ async function loadSessionMessages(
   },
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details: unknown } | SessionMessages> {
   if (!sessionPath.endsWith(".jsonl")) {
-    return errorResult(`Invalid session path. Expected a .jsonl file, got: ${sessionPath}`);
+    return Promise.resolve(
+      errorResult(`Invalid session path. Expected a .jsonl file, got: ${sessionPath}`),
+    );
   }
   try {
-    const fs = await import("node:fs");
-    if (!fs.existsSync(sessionPath)) {
-      return errorResult(`Session file not found: ${sessionPath}`);
+    if (!existsSync(sessionPath)) {
+      return Promise.resolve(errorResult(`Session file not found: ${sessionPath}`));
     }
   } catch (err) {
-    return errorResult(`Error checking session file: ${errorMessage(err)}`);
+    return Promise.resolve(errorResult(`Error checking session file: ${errorMessage(err)}`));
   }
 
   let sessionManager: SessionManager;
   try {
     sessionManager = SessionManager.open(sessionPath);
   } catch (err) {
-    return errorResult(`Error loading session: ${errorMessage(err)}`);
+    return Promise.resolve(errorResult(`Error loading session: ${errorMessage(err)}`));
   }
 
-  return sessionManager
-    .getBranch()
-    .filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message")
-    .map((entry) => entry.message);
+  return Promise.resolve(
+    sessionManager
+      .getBranch()
+      .filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message")
+      .map((entry) => entry.message),
+  );
 }
 
 async function runSessionQuery(

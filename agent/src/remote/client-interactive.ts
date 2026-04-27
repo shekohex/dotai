@@ -14,22 +14,16 @@ import { RemoteApiClient } from "./remote-api-client.js";
 import { buildRemoteSessionLists, selectRemoteSessionId } from "./client/session-picker.js";
 import { resolveRemoteSessionTarget } from "./client/session-target.js";
 import { normalizeRemoteWorkspaceCwd } from "./workspace-cwd.js";
+import { isRecord } from "../utils/unknown-data.js";
 
 function isInteractiveRuntimeContract(value: unknown): value is AgentSessionRuntime {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return false;
   }
 
-  const runtime = value as Partial<AgentSessionRuntime> & {
-    session?: {
-      prompt?: unknown;
-      sendUserMessage?: unknown;
-      setModel?: unknown;
-      reload?: unknown;
-    };
-  };
+  const runtime = value;
   const session = runtime.session;
-  if (session === null || typeof session !== "object" || Array.isArray(session)) {
+  if (!isRecord(session)) {
     return false;
   }
 

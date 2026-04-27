@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { errorMessage } from "../../utils/error-message.js";
 import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { listCliproxyAccounts } from "./cliproxy.js";
 import { handleDebug } from "./command-debug.js";
@@ -279,7 +280,7 @@ function persistState(pi: ExtensionAPI, state: OpenUsageRuntimeState): void {
   pi.appendEntry(OPENUSAGE_STATE_ENTRY, state.persisted);
 }
 function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }
 
 export { createOpenUsageCommandHandler };

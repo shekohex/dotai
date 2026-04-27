@@ -14,6 +14,7 @@ import {
   streamSummaryUpdates,
 } from "./session-launch-summary-helpers.js";
 import { hasRuntimePrimitive } from "./runtime-capabilities.js";
+import { errorMessage } from "../utils/error-message.js";
 
 export type SessionModel = NonNullable<ExtensionContext["model"]>;
 
@@ -203,7 +204,7 @@ export async function generateContextTransferSummary(
       warning: generation.config.warning,
     };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: errorMessage(error) };
   }
 }
 
@@ -226,7 +227,7 @@ export function generateContextTransferSummaryWithLoader(
     generateContextTransferSummary(ctx, goal, messages, loader.signal)
       .then(done)
       .catch((error) => {
-        done({ error: error instanceof Error ? error.message : String(error) });
+        done({ error: errorMessage(error) });
       });
 
     return loader;

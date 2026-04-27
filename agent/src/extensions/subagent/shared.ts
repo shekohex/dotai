@@ -91,7 +91,7 @@ function normalizeSubagentExecutionError(
   action: SubagentToolParams["action"],
   error: unknown,
 ): Error {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   if (message.startsWith("Invalid subagent ") || message.startsWith(`subagent ${action} failed:`)) {
     return error instanceof Error ? error : new Error(message);
   }
@@ -247,3 +247,4 @@ export type {
   SubagentRuntimeState,
   SubagentStartValue,
 };
+import { errorMessage } from "../../utils/error-message.js";

@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { Compile } from "typebox/compile";
+import { errorMessage } from "../../utils/error-message.js";
 import { Theme } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 
 const colorValueSchema = Type.Union([Type.String(), Type.Integer({ minimum: 0, maximum: 255 })]);
@@ -119,8 +120,8 @@ function parseRemoteThemeJson(label: string, content: string): RemoteThemeJson {
   try {
     parsed = JSON.parse(content);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to parse theme ${label}: ${errorMessage}`, { cause: error });
+    const message = errorMessage(error);
+    throw new Error(`Failed to parse theme ${label}: ${message}`, { cause: error });
   }
 
   if (remoteThemeValidator.Check(parsed)) {

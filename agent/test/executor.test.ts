@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, afterEach, test } from "vitest";
 import { createServer } from "node:http";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@mariozechner/pi-coding-agent";
 import createExecutorExtension from "../src/extensions/executor/index.ts";
@@ -15,7 +14,7 @@ const TEST_TIMEOUT_MS = 15_000;
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
-test.afterEach(() => {
+afterEach(() => {
   setExecutorSettingsForTests(undefined);
   clearExecutorInspectionCache();
 });
@@ -94,8 +93,8 @@ async function createExecutorProbeServer(
 }
 
 timedTest("getExecutorWebUrl strips the /mcp suffix", () => {
-  assert.equal(getExecutorWebUrl("http://127.0.0.1:4788/mcp"), "http://127.0.0.1:4788/");
-  assert.equal(getExecutorWebUrl("http://127.0.0.1:4788/mcp/"), "http://127.0.0.1:4788/");
+  expect(getExecutorWebUrl("http://127.0.0.1:4788/mcp")).toBe("http://127.0.0.1:4788/");
+  expect(getExecutorWebUrl("http://127.0.0.1:4788/mcp/")).toBe("http://127.0.0.1:4788/");
 });
 
 timedTest("resolveExecutorEndpoint falls back to the next healthy candidate", async () => {
@@ -113,11 +112,11 @@ timedTest("resolveExecutorEndpoint falls back to the next healthy candidate", as
 
     const endpoint = await resolveExecutorEndpoint();
 
-    assert.equal(endpoint.label, "online");
-    assert.equal(endpoint.mcpUrl, server.url);
-    assert.equal(endpoint.webUrl, server.url.replace(/\/mcp$/, "/"));
-    assert.equal(endpoint.scope.id, "scope_test");
-    assert.equal(endpoint.scope.dir, "/tmp/executor-scope");
+    expect(endpoint.label).toBe("online");
+    expect(endpoint.mcpUrl).toBe(server.url);
+    expect(endpoint.webUrl).toBe(server.url.replace(/\/mcp$/, "/"));
+    expect(endpoint.scope.id).toBe("scope_test");
+    expect(endpoint.scope.dir).toBe("/tmp/executor-scope");
   } finally {
     await server.close();
   }
@@ -137,16 +136,16 @@ timedTest("executor tools re-register after session restart with same cwd", asyn
 
   await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
 
-  assert.deepEqual(fakePi.registerToolCalls, ["execute", "resume"]);
-  assert.ok(fakePi.registeredTools.has("execute"));
-  assert.ok(fakePi.registeredTools.has("resume"));
+  expect(fakePi.registerToolCalls).toEqual(["execute", "resume"]);
+  expect(fakePi.registeredTools.has("execute")).toBeTruthy();
+  expect(fakePi.registeredTools.has("resume")).toBeTruthy();
 
   fakePi.registeredTools.clear();
 
   await emitHandlers(fakePi, "session_shutdown", { reason: "new" }, ctx);
   await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
 
-  assert.deepEqual(fakePi.registerToolCalls, ["execute", "resume", "execute", "resume"]);
-  assert.ok(fakePi.registeredTools.has("execute"));
-  assert.ok(fakePi.registeredTools.has("resume"));
+  expect(fakePi.registerToolCalls).toEqual(["execute", "resume", "execute", "resume"]);
+  expect(fakePi.registeredTools.has("execute")).toBeTruthy();
+  expect(fakePi.registeredTools.has("resume")).toBeTruthy();
 });

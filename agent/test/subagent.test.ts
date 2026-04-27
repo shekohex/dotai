@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -251,7 +250,7 @@ timedTest("resolveModeTools inherits parent tools and denies subagent", () => {
     ["read", "bash", "subagent", "session_query"],
     ["read", "bash", "subagent", "session_query"],
   );
-  assert.deepEqual(resolved, ["bash", "read", "session_query"]);
+  expect(resolved).toEqual(["bash", "read", "session_query"]);
 });
 
 timedTest("resolveModeTools supports explicit allow and deny rules", () => {
@@ -260,7 +259,7 @@ timedTest("resolveModeTools supports explicit allow and deny rules", () => {
     ["read", "bash", "subagent"],
     ["read", "bash", "subagent", "session_query"],
   );
-  assert.deepEqual(resolved, ["read", "session_query"]);
+  expect(resolved).toEqual(["read", "session_query"]);
 });
 
 timedTest("resolveSubagentMode loads mode config from the child cwd", async () => {
@@ -296,14 +295,14 @@ timedTest("resolveSubagentMode loads mode config from the child cwd", async () =
       createFakeContext({ cwd: parentCwd }),
       { mode: "reviewer", cwd: childCwd },
     );
-    assert.ok(mode.value);
-    assert.equal(mode.value?.cwd, childCwd);
-    assert.equal(mode.value?.model, "mode-provider/review-model");
-    assert.deepEqual(mode.value?.tools, ["read"]);
-    assert.equal(mode.value?.autoExit, false);
-    assert.equal(mode.value?.tmuxTarget, "window");
-    assert.equal(mode.value?.systemPrompt, "Review only");
-    assert.equal(mode.value?.systemPromptMode, "replace");
+    expect(mode.value).toBeTruthy();
+    expect(mode.value?.cwd).toBe(childCwd);
+    expect(mode.value?.model).toBe("mode-provider/review-model");
+    expect(mode.value?.tools).toEqual(["read"]);
+    expect(mode.value?.autoExit).toBe(false);
+    expect(mode.value?.tmuxTarget).toBe("window");
+    expect(mode.value?.systemPrompt).toBe("Review only");
+    expect(mode.value?.systemPromptMode).toBe("replace");
   } finally {
     await fs.rm(parentCwd, { recursive: true, force: true });
   }
@@ -349,9 +348,9 @@ timedTest(
         { mode: "reviewer" },
       );
 
-      assert.ok(mode.value);
-      assert.equal(mode.value?.systemPrompt, "Review only\nEscalate blockers\n");
-      assert.equal(mode.value?.systemPromptMode, "append");
+      expect(mode.value).toBeTruthy();
+      expect(mode.value?.systemPrompt).toBe("Review only\nEscalate blockers\n");
+      expect(mode.value?.systemPromptMode).toBe("append");
     } finally {
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;
       await fs.rm(agentDir, { recursive: true, force: true });
@@ -407,17 +406,17 @@ timedTest(
         { mode: "manual", cwd: childCwd },
       );
 
-      assert.ok(defaultWorker.value);
-      assert.equal(defaultWorker.value?.autoExit, true);
-      assert.equal(defaultWorker.value?.autoExitTimeoutMs, 30_000);
+      expect(defaultWorker.value).toBeTruthy();
+      expect(defaultWorker.value?.autoExit).toBe(true);
+      expect(defaultWorker.value?.autoExitTimeoutMs).toBe(30_000);
 
-      assert.ok(configured.value);
-      assert.equal(configured.value?.autoExit, true);
-      assert.equal(configured.value?.autoExitTimeoutMs, 45_000);
+      expect(configured.value).toBeTruthy();
+      expect(configured.value?.autoExit).toBe(true);
+      expect(configured.value?.autoExitTimeoutMs).toBe(45_000);
 
-      assert.ok(disabled.value);
-      assert.equal(disabled.value?.autoExit, false);
-      assert.equal(disabled.value?.autoExitTimeoutMs, undefined);
+      expect(disabled.value).toBeTruthy();
+      expect(disabled.value?.autoExit).toBe(false);
+      expect(disabled.value?.autoExitTimeoutMs).toBe(undefined);
     } finally {
       await fs.rm(parentCwd, { recursive: true, force: true });
     }
@@ -458,8 +457,7 @@ timedTest(
 
       await emitHandlers(fakePi, "session_start", { reason: "resume" }, ctx);
 
-      assert.equal(
-        fakePi.sessionNames.at(-1),
+      expect(fakePi.sessionNames.at(-1)).toBe(
         "[worker-one] Continue the review Inspect failing tests and summarize root cause",
       );
     } finally {
@@ -505,9 +503,9 @@ timedTest("child bootstrap installs when subagent extension is disabled", async 
     const fakePi = new FakePi();
     createSubagentExtension({ enabled: false })(fakePi as unknown as ExtensionAPI);
 
-    assert.ok(fakePi.registeredTools.has("StructuredOutput"));
-    assert.equal(fakePi.registeredTools.has("subagent"), false);
-    assert.ok((fakePi.handlers.get("agent_end") ?? []).length > 0);
+    expect(fakePi.registeredTools.has("StructuredOutput")).toBeTruthy();
+    expect(fakePi.registeredTools.has("subagent")).toBe(false);
+    expect((fakePi.handlers.get("agent_end") ?? []).length > 0).toBeTruthy();
   } finally {
     if (previousChildState === undefined) {
       delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -563,8 +561,8 @@ timedTest(
       await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
 
       await emitHandlers(fakePi, "agent_end", {}, ctx);
-      assert.equal(shutdownCount, 1);
-      assert.deepEqual(notifications, []);
+      expect(shutdownCount).toBe(1);
+      expect(notifications).toEqual([]);
     } finally {
       if (previousChildState === undefined) {
         delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -621,19 +619,19 @@ timedTest(
 
       await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
       terminalInputHandler?.("manual follow-up");
-      assert.equal(isAutoExitTimeoutModeActive("child-session-id"), true);
+      expect(isAutoExitTimeoutModeActive("child-session-id")).toBe(true);
 
       await emitHandlers(fakePi, "agent_end", {}, ctx);
       await new Promise((resolve) => setTimeout(resolve, 10));
-      assert.equal(shutdownCount, 0);
+      expect(shutdownCount).toBe(0);
 
       await emitHandlers(fakePi, "before_agent_start", {}, ctx);
       await new Promise((resolve) => setTimeout(resolve, 30));
-      assert.equal(shutdownCount, 0);
+      expect(shutdownCount).toBe(0);
 
       await emitHandlers(fakePi, "agent_end", {}, ctx);
       await new Promise((resolve) => setTimeout(resolve, 35));
-      assert.equal(shutdownCount, 1);
+      expect(shutdownCount).toBe(1);
     } finally {
       if (previousChildState === undefined) {
         delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -698,10 +696,10 @@ timedTest("child bootstrap ignores parent-injected input for timeout mode activa
     );
 
     terminalInputHandler?.("parent follow-up");
-    assert.equal(isAutoExitTimeoutModeActive("child-session-id"), false);
+    expect(isAutoExitTimeoutModeActive("child-session-id")).toBe(false);
 
     await emitHandlers(fakePi, "agent_end", {}, ctx);
-    assert.equal(shutdownCount, 1);
+    expect(shutdownCount).toBe(1);
   } finally {
     if (previousChildState === undefined) {
       delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -766,7 +764,7 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
     await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
 
     const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
-    assert.ok(structuredOutputTool);
+    expect(structuredOutputTool).toBeTruthy();
     await structuredOutputTool.execute(
       "structured-tool-call",
       { answer: "done" },
@@ -808,15 +806,14 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
     const structuredEntries = fakePi.appendedEntries.filter(
       (entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
     );
-    assert.equal(structuredEntries.length, 1);
+    expect(structuredEntries.length).toBe(1);
     const structuredEntry = structuredEntries[0];
-    assert.ok(structuredEntry);
-    assert.equal((structuredEntry.data as { status: string }).status, "error");
-    assert.equal(
-      (structuredEntry.data as { error?: { code?: string } }).error?.code,
+    expect(structuredEntry).toBeTruthy();
+    expect((structuredEntry.data as { status: string }).status).toBe("error");
+    expect((structuredEntry.data as { error?: { code?: string } }).error?.code).toBe(
       "validation_failed",
     );
-    assert.equal(shutdownCount, 1);
+    expect(shutdownCount).toBe(1);
   } finally {
     if (previousChildState === undefined) {
       delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -882,7 +879,7 @@ timedTest(
       await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
 
       const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
-      assert.ok(structuredOutputTool);
+      expect(structuredOutputTool).toBeTruthy();
       await structuredOutputTool.execute(
         "structured-tool-call",
         { answer: "done" },
@@ -928,12 +925,12 @@ timedTest(
       const structuredEntries = fakePi.appendedEntries.filter(
         (entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
       );
-      assert.equal(structuredEntries.length, 1);
+      expect(structuredEntries.length).toBe(1);
       const structuredEntry = structuredEntries[0];
-      assert.ok(structuredEntry);
-      assert.equal((structuredEntry.data as { status: string }).status, "captured");
-      assert.equal(shutdownCount, 1);
-      assert.equal(fakePi.sentUserMessages.length, 0);
+      expect(structuredEntry).toBeTruthy();
+      expect((structuredEntry.data as { status: string }).status).toBe("captured");
+      expect(shutdownCount).toBe(1);
+      expect(fakePi.sentUserMessages.length).toBe(0);
     } finally {
       if (previousChildState === undefined) {
         delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -1010,15 +1007,13 @@ timedTest("child bootstrap treats retryCount as total allowed turns", async () =
       .filter((entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY)
       .map((entry) => entry.data as { status: string; attempts: number });
 
-    assert.deepEqual(
-      structuredEntries.map((entry) => entry.status),
-      ["retrying", "retrying", "error"],
-    );
-    assert.deepEqual(
-      structuredEntries.map((entry) => entry.attempts),
-      [1, 2, 3],
-    );
-    assert.equal(fakePi.sentUserMessages.length, 2);
+    expect(structuredEntries.map((entry) => entry.status)).toEqual([
+      "retrying",
+      "retrying",
+      "error",
+    ]);
+    expect(structuredEntries.map((entry) => entry.attempts)).toEqual([1, 2, 3]);
+    expect(fakePi.sentUserMessages.length).toBe(2);
   } finally {
     if (previousChildState === undefined) {
       delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -1118,15 +1113,9 @@ timedTest("child bootstrap resumes structured retry counters from persisted stat
       .filter((entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY)
       .map((entry) => entry.data as { status: string; attempts: number });
 
-    assert.deepEqual(
-      structuredEntries.map((entry) => entry.status),
-      ["error"],
-    );
-    assert.deepEqual(
-      structuredEntries.map((entry) => entry.attempts),
-      [3],
-    );
-    assert.equal(fakePi.sentUserMessages.length, 0);
+    expect(structuredEntries.map((entry) => entry.status)).toEqual(["error"]);
+    expect(structuredEntries.map((entry) => entry.attempts)).toEqual([3]);
+    expect(fakePi.sentUserMessages.length).toBe(0);
   } finally {
     if (previousChildState === undefined) {
       delete process.env.PI_SUBAGENT_CHILD_STATE;
@@ -1162,21 +1151,21 @@ timedTest("subagent widget shows idle auto-exit countdown only while idle", () =
   };
 
   const idleWidget = renderSubagentWidget([widgetState]);
-  assert.ok(idleWidget);
-  assert.match(idleWidget.join("\n"), /auto-exit/);
-  assert.match(idleWidget.join("\n"), /1m 30s|1m 29s/);
+  expect(idleWidget).toBeTruthy();
+  expect(idleWidget.join("\n")).toMatch(/auto-exit/);
+  expect(idleWidget.join("\n")).toMatch(/1m 30s|1m 29s/);
 
   const runningWidget = renderSubagentWidget([
     { ...widgetState, status: "running", autoExitDeadlineAt: undefined },
   ]);
-  assert.ok(runningWidget);
-  assert.doesNotMatch(runningWidget.join("\n"), /auto-exit/);
+  expect(runningWidget).toBeTruthy();
+  expect(runningWidget.join("\n")).not.toMatch(/auto-exit/);
 
   const idleImmediateExitWidget = renderSubagentWidget([
     { ...widgetState, autoExitTimeoutActive: false, autoExitDeadlineAt: undefined },
   ]);
-  assert.ok(idleImmediateExitWidget);
-  assert.doesNotMatch(idleImmediateExitWidget.join("\n"), /auto-exit/);
+  expect(idleImmediateExitWidget).toBeTruthy();
+  expect(idleImmediateExitWidget.join("\n")).not.toMatch(/auto-exit/);
 });
 
 timedTest("subagent manager arms idle countdown only after timeout mode activates", async () => {
@@ -1243,9 +1232,9 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
       baseState,
       "updated",
     )) as RuntimeSubagent;
-    assert.equal(immediateExitState.status, "idle");
-    assert.equal(immediateExitState.autoExitTimeoutActive, false);
-    assert.equal(immediateExitState.autoExitDeadlineAt, undefined);
+    expect(immediateExitState.status).toBe("idle");
+    expect(immediateExitState.autoExitTimeoutActive).toBe(false);
+    expect(immediateExitState.autoExitDeadlineAt).toBe(undefined);
 
     activateAutoExitTimeoutMode(sessionId);
 
@@ -1253,9 +1242,9 @@ timedTest("subagent manager arms idle countdown only after timeout mode activate
       baseState,
       "updated",
     )) as RuntimeSubagent;
-    assert.equal(delayedExitState.status, "idle");
-    assert.equal(delayedExitState.autoExitTimeoutActive, true);
-    assert.equal(delayedExitState.autoExitDeadlineAt, Date.parse(idleAt) + 90_000);
+    expect(delayedExitState.status).toBe("idle");
+    expect(delayedExitState.autoExitTimeoutActive).toBe(true);
+    expect(delayedExitState.autoExitDeadlineAt).toBe(Date.parse(idleAt) + 90_000);
   } finally {
     await fs.rm(getAutoExitTimeoutModeMarkerPath(sessionId), { force: true });
     await fs.rm(dir, { recursive: true, force: true });
@@ -1280,25 +1269,22 @@ timedTest("TmuxAdapter creates a new tmux window when requested", async () => {
     target: "window",
   });
 
-  assert.equal(created.paneId, "%7");
-  assert.deepEqual(
-    calls.map((call) => call.args),
+  expect(created.paneId).toBe("%7");
+  expect(calls.map((call) => call.args)).toEqual([
     [
-      [
-        "new-window",
-        "-d",
-        "-c",
-        "/tmp/project",
-        "-n",
-        "worker-window",
-        "-P",
-        "-F",
-        "#{pane_id}",
-        "pi --session fake",
-      ],
-      ["select-pane", "-t", "%7", "-T", "worker-window"],
+      "new-window",
+      "-d",
+      "-c",
+      "/tmp/project",
+      "-n",
+      "worker-window",
+      "-P",
+      "-F",
+      "#{pane_id}",
+      "pi --session fake",
     ],
-  );
+    ["select-pane", "-t", "%7", "-T", "worker-window"],
+  ]);
 });
 
 timedTest("subagent tool metadata explains tmux inspection and wait-for-summary flow", () => {
@@ -1307,34 +1293,34 @@ timedTest("subagent tool metadata explains tmux inspection and wait-for-summary 
     fakePi as unknown as ExtensionAPI,
   );
   const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
+  expect(tool).toBeTruthy();
 
-  assert.match(tool.description, /no subagent read action/i);
-  assert.match(tool.description, /wait for the automatic completion summary/i);
-  assert.match(tool.promptSnippet ?? "", /no subagent read action/i);
-  assert.match(tool.promptSnippet ?? "", /automatic completion summary/i);
-  assert.ok(
+  expect(tool.description).toMatch(/no subagent read action/i);
+  expect(tool.description).toMatch(/wait for the automatic completion summary/i);
+  expect(tool.promptSnippet ?? "").toMatch(/no subagent read action/i);
+  expect(tool.promptSnippet ?? "").toMatch(/automatic completion summary/i);
+  expect(
     tool.promptGuidelines?.some((guideline) =>
       /tmux pane\/window output directly/i.test(guideline),
     ),
-  );
-  assert.ok(
+  ).toBe(true);
+  expect(
     tool.promptGuidelines?.some((guideline) =>
       /do not poll with `list` just to get the final result/i.test(guideline),
     ),
-  );
+  ).toBe(true);
 
   const parameterDescriptions =
     (tool.parameters as { properties?: Record<string, { description?: string }> }).properties ?? {};
-  assert.match(parameterDescriptions.action?.description ?? "", /no subagent read action/i);
-  assert.match(parameterDescriptions.name?.description ?? "", /title shown immediately on launch/i);
-  assert.match(
-    parameterDescriptions.task?.description ?? "",
+  expect(parameterDescriptions.action?.description ?? "").toMatch(/no subagent read action/i);
+  expect(parameterDescriptions.name?.description ?? "").toMatch(
+    /title shown immediately on launch/i,
+  );
+  expect(parameterDescriptions.task?.description ?? "").toMatch(
     /inspect tmux pane\/window output directly/i,
   );
-  assert.match(parameterDescriptions.sessionId?.description ?? "", /UUID v4/i);
-  assert.match(
-    parameterDescriptions.message?.description ?? "",
+  expect(parameterDescriptions.sessionId?.description ?? "").toMatch(/UUID v4/i);
+  expect(parameterDescriptions.message?.description ?? "").toMatch(
     /inspect the reply, read the tmux output directly/i,
   );
 });
@@ -1379,20 +1365,20 @@ timedTest(
       await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
 
       const initialTool = fakePi.registeredTools.get("subagent");
-      assert.ok(initialTool);
-      assert.ok(
+      expect(initialTool).toBeTruthy();
+      expect(
         initialTool.promptGuidelines?.some((guideline) =>
           /Available subagent modes/i.test(guideline),
         ),
-      );
-      assert.ok(
+      ).toBe(true);
+      expect(
         initialTool.promptGuidelines?.some((guideline) => /<available_modes>/i.test(guideline)),
-      );
-      assert.ok(
+      ).toBe(true);
+      expect(
         initialTool.promptGuidelines?.some((guideline) =>
           /description="Review &amp; verify"/i.test(guideline),
         ),
-      );
+      ).toBe(true);
 
       await fs.writeFile(
         path.join(cwd, ".pi", "modes.json"),
@@ -1423,14 +1409,14 @@ timedTest(
       await emitEventBus(fakePi, "modes:changed");
 
       const updatedTool = fakePi.registeredTools.get("subagent");
-      assert.ok(updatedTool);
-      assert.ok(
+      expect(updatedTool).toBeTruthy();
+      expect(
         updatedTool.promptGuidelines?.some((guideline) =>
           /<mode name="docs" model="mode-provider\/docs-model" thinkingLevel="low" description="Fast &lt;writing&gt;" \/>/i.test(
             guideline,
           ),
         ),
-      );
+      ).toBe(true);
     } finally {
       await fs.rm(cwd, { recursive: true, force: true });
     }
@@ -1461,8 +1447,7 @@ timedTest("formatAvailableModesXml sorts unsorted modes deterministically", () =
     },
   ]);
 
-  assert.equal(
-    xml,
+  expect(xml).toBe(
     [
       "<available_modes>",
       '  <mode name="alpha" model="mode-provider/alpha-model" />',
@@ -1515,7 +1500,7 @@ timedTest(
       await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
 
       const initialTool = fakePi.registeredTools.get("subagent");
-      assert.ok(initialTool);
+      expect(initialTool).toBeTruthy();
       const initialPrompt = initialTool.promptGuidelines?.join("\n\n") ?? "";
 
       await fs.writeFile(
@@ -1543,9 +1528,9 @@ timedTest(
       await emitEventBus(fakePi, "modes:changed");
 
       const updatedTool = fakePi.registeredTools.get("subagent");
-      assert.ok(updatedTool);
+      expect(updatedTool).toBeTruthy();
       const updatedPrompt = updatedTool.promptGuidelines?.join("\n\n") ?? "";
-      assert.equal(updatedPrompt, initialPrompt);
+      expect(updatedPrompt).toBe(initialPrompt);
     } finally {
       await fs.rm(cwd, { recursive: true, force: true });
     }
@@ -1623,8 +1608,8 @@ timedTest("reduceRuntimeSubagents keeps latest state for the current parent sess
     "parent-a",
   );
 
-  assert.equal(states.size, 1);
-  assert.equal(states.get("child-1")?.status, "completed");
+  expect(states.size).toBe(1);
+  expect(states.get("child-1")?.status).toBe("completed");
 });
 
 timedTest("reduceRuntimeSubagents ignores malformed and unexpected state entries", () => {
@@ -1698,8 +1683,8 @@ timedTest("reduceRuntimeSubagents ignores malformed and unexpected state entries
     "parent-a",
   );
 
-  assert.equal(states.size, 1);
-  assert.deepEqual(Array.from(states.keys()), ["child-valid"]);
+  expect(states.size).toBe(1);
+  expect(Array.from(states.keys())).toEqual(["child-valid"]);
 });
 
 timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
@@ -1745,13 +1730,12 @@ timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
   ).schema.properties.result.type = "number";
   (cloned.structuredError as { message: string }).message = "mutated error";
 
-  assert.equal((original.structured as { result: string }).result, "ok");
-  assert.equal(
+  expect((original.structured as { result: string }).result).toBe("ok");
+  expect(
     (original.outputFormat as { schema: { properties: { result: { type: string } } } }).schema
       .properties.result.type,
-    "string",
-  );
-  assert.equal((original.structuredError as { message: string }).message, "error");
+  ).toBe("string");
+  expect((original.structuredError as { message: string }).message).toBe("error");
 });
 
 timedTest("createChildSessionFile bootstraps a persisted child session header", async () => {
@@ -1769,10 +1753,10 @@ timedTest("createChildSessionFile bootstraps a persisted child session header", 
 
     const sessionManager = SessionManager.open(sessionPath);
     const header = sessionManager.getHeader();
-    assert.ok(header);
-    assert.equal(header?.id, "child-session-id");
-    assert.equal(header?.cwd, cwd);
-    assert.equal(header?.parentSession, "/tmp/parent-session.jsonl");
+    expect(header).toBeTruthy();
+    expect(header?.id).toBe("child-session-id");
+    expect(header?.cwd).toBe(cwd);
+    expect(header?.parentSession).toBe("/tmp/parent-session.jsonl");
   } finally {
     process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await fs.rm(agentDir, { recursive: true, force: true });
@@ -1810,8 +1794,8 @@ timedTest("readChildSessionOutcome extracts the last assistant summary", async (
 
   try {
     const outcome = await readChildSessionOutcome(sessionPath);
-    assert.equal(outcome.failed, false);
-    assert.equal(outcome.summary, "Finished successfully");
+    expect(outcome.failed).toBe(false);
+    expect(outcome.summary).toBe("Finished successfully");
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -1865,8 +1849,8 @@ timedTest("readChildSessionStatus distinguishes running and idle child sessions"
   );
 
   try {
-    assert.equal(await readChildSessionStatus(idlePath), "idle");
-    assert.equal(await readChildSessionStatus(runningPath), "running");
+    expect(await readChildSessionStatus(idlePath)).toBe("idle");
+    expect(await readChildSessionStatus(runningPath)).toBe("running");
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -1878,7 +1862,7 @@ timedTest("subagent tool renders compact collapsed success and expanded metadata
     fakePi as unknown as ExtensionAPI,
   );
   const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
+  expect(tool).toBeTruthy();
 
   const task = "Continue the review\nInspect failing tests";
 
@@ -1943,29 +1927,28 @@ timedTest("subagent tool renders compact collapsed success and expanded metadata
   );
 
   const collapsedLines = collapsed.split("\n").filter((line) => line.trim().length > 0);
-  assert.equal(collapsedLines.length, 1);
-  assert.match(
-    collapsed,
+  expect(collapsedLines.length).toBe(1);
+  expect(collapsed).toMatch(
     /π start · worker-one · reviewer · Continue the review Inspect failing tests · worker-one · idle/,
   );
-  assert.doesNotMatch(collapsed, /sessionPath:/);
-  assert.doesNotMatch(collapsed, /paneId:/);
-  assert.doesNotMatch(collapsed, /prompt:/);
-  assert.match(expanded, /π start/);
-  assert.match(expanded, /name: worker-one/);
-  assert.match(expanded, /sessionId: 12345678-1234-1234-1234-123456789abc/);
-  assert.match(expanded, /mode: reviewer/);
-  assert.match(expanded, /task:/);
-  assert.match(expanded, /Continue the review/);
-  assert.match(expanded, /Inspect failing tests/);
-  assert.match(expanded, /prompt:/);
-  assert.match(expanded, /sessionId: 12345678-1234-1234-1234-123456789abc/);
-  assert.match(expanded, /paneId: %5/);
-  assert.match(expanded, /status: idle/);
-  assert.match(expanded, /sessionPath: \/tmp\/subagent\.jsonl/);
-  assert.match(expanded, /parentSessionId: parent-session-id/);
-  assert.match(expanded, /startedAt: 1970-01-01T00:00:00\.001Z/);
-  assert.match(expanded, /updatedAt: 1970-01-01T00:00:00\.002Z/);
+  expect(collapsed).not.toMatch(/sessionPath:/);
+  expect(collapsed).not.toMatch(/paneId:/);
+  expect(collapsed).not.toMatch(/prompt:/);
+  expect(expanded).toMatch(/π start/);
+  expect(expanded).toMatch(/name: worker-one/);
+  expect(expanded).toMatch(/sessionId: 12345678-1234-1234-1234-123456789abc/);
+  expect(expanded).toMatch(/mode: reviewer/);
+  expect(expanded).toMatch(/task:/);
+  expect(expanded).toMatch(/Continue the review/);
+  expect(expanded).toMatch(/Inspect failing tests/);
+  expect(expanded).toMatch(/prompt:/);
+  expect(expanded).toMatch(/sessionId: 12345678-1234-1234-1234-123456789abc/);
+  expect(expanded).toMatch(/paneId: %5/);
+  expect(expanded).toMatch(/status: idle/);
+  expect(expanded).toMatch(/sessionPath: \/tmp\/subagent\.jsonl/);
+  expect(expanded).toMatch(/parentSessionId: parent-session-id/);
+  expect(expanded).toMatch(/startedAt: 1970-01-01T00:00:00\.001Z/);
+  expect(expanded).toMatch(/updatedAt: 1970-01-01T00:00:00\.002Z/);
 });
 
 timedTest("subagent tool renders collapsed list summary counts and cancel status", () => {
@@ -1974,7 +1957,7 @@ timedTest("subagent tool renders collapsed list summary counts and cancel status
     fakePi as unknown as ExtensionAPI,
   );
   const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
+  expect(tool).toBeTruthy();
 
   const baseState = {
     event: "restored" as const,
@@ -2035,9 +2018,9 @@ timedTest("subagent tool renders collapsed list summary counts and cancel status
     false,
   );
 
-  assert.match(listCollapsed, /π list · 3 agents · 1 running · 1 idle · 1 completed/);
-  assert.doesNotMatch(listCollapsed, /cancelled/);
-  assert.doesNotMatch(listCollapsed, /failed/);
+  expect(listCollapsed).toMatch(/π list · 3 agents · 1 running · 1 idle · 1 completed/);
+  expect(listCollapsed).not.toMatch(/cancelled/);
+  expect(listCollapsed).not.toMatch(/failed/);
 
   const cancelledState: RuntimeSubagent = {
     ...baseState,
@@ -2069,7 +2052,7 @@ timedTest("subagent tool renders collapsed list summary counts and cancel status
     false,
   );
 
-  assert.match(cancelCollapsed, /π cancel · cancelle · worker-stop · cancelled/);
+  expect(cancelCollapsed).toMatch(/π cancel · cancelle · worker-stop · cancelled/);
 });
 
 timedTest("subagent tool execute preserves prompt and expanded start details", async () => {
@@ -2082,7 +2065,7 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
   const fakeMux = new FakeMuxAdapter();
   createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
   const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
+  expect(tool).toBeTruthy();
 
   try {
     const ctx = createFakeContext({
@@ -2099,19 +2082,17 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
       ctx,
     );
 
-    assert.equal((started.details as { prompt: string }).prompt, startTask);
-    assert.match(
-      started.content[0]?.text ?? "",
+    expect((started.details as { prompt: string }).prompt).toBe(startTask);
+    expect(started.content[0]?.text ?? "").toMatch(
       /will return with a summary automatically when it finishes/i,
     );
-    assert.match(started.content[0]?.text ?? "", /Use subagent message only to steer the work/i);
+    expect(started.content[0]?.text ?? "").toMatch(/Use subagent message only to steer the work/i);
     const startedDetails = started.details as { prompt: string; state: RuntimeSubagent };
-    assert.match(
-      started.content[0]?.text ?? "",
+    expect(started.content[0]?.text ?? "").toMatch(
       new RegExp(`sessionId: ${startedDetails.state.sessionId}`),
     );
-    assert.equal(startedDetails.state.task, startTask);
-    assert.match(started.content[0]?.text ?? "", /subagent cancel to stop it/i);
+    expect(startedDetails.state.task).toBe(startTask);
+    expect(started.content[0]?.text ?? "").toMatch(/subagent cancel to stop it/i);
 
     const listed = await tool.execute(
       "tool-call-list",
@@ -2120,9 +2101,8 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
       undefined,
       ctx,
     );
-    assert.match(listed.content[0]?.text ?? "", /count: 1/);
-    assert.match(
-      listed.content[0]?.text ?? "",
+    expect(listed.content[0]?.text ?? "").toMatch(/count: 1/);
+    expect(listed.content[0]?.text ?? "").toMatch(
       new RegExp(`sessionId: ${startedDetails.state.sessionId}`),
     );
 
@@ -2137,12 +2117,12 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
       true,
     );
 
-    assert.match(expanded, /sessionId: /);
-    assert.match(expanded, /prompt:/);
-    assert.match(expanded, /promptGuidance:/);
-    assert.match(expanded, /will return with a summary automatically when it finishes/i);
-    assert.match(expanded, /Inspect the failing tests/);
-    assert.match(expanded, /sessionPath: /);
+    expect(expanded).toMatch(/sessionId: /);
+    expect(expanded).toMatch(/prompt:/);
+    expect(expanded).toMatch(/promptGuidance:/);
+    expect(expanded).toMatch(/will return with a summary automatically when it finishes/i);
+    expect(expanded).toMatch(/Inspect the failing tests/);
+    expect(expanded).toMatch(/sessionPath: /);
   } finally {
     process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await fs.rm(agentDir, { recursive: true, force: true });
@@ -2164,7 +2144,7 @@ timedTest(
     const fakeMux = new FakeMuxAdapter();
     createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
     const tool = fakePi.registeredTools.get("subagent");
-    assert.ok(tool);
+    expect(tool).toBeTruthy();
 
     try {
       const ctx = createFakeContext({
@@ -2208,8 +2188,8 @@ timedTest(
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
 
-      assert.ok(sessionPath);
-      assert.ok(paneId);
+      expect(sessionPath).toBeTruthy();
+      expect(paneId).toBeTruthy();
 
       const timestamp = new Date().toISOString();
       await fs.appendFile(
@@ -2254,8 +2234,8 @@ timedTest(
       fakeMux.existingPanes.delete(paneId);
 
       const started = await startedPromise;
-      assert.equal(started.content.length, 1);
-      assert.deepEqual(JSON.parse(started.content[0]?.text ?? "{}"), {
+      expect(started.content.length).toBe(1);
+      expect(JSON.parse(started.content[0]?.text ?? "{}")).toEqual({
         summary: "All clear",
         risk: "low",
       });
@@ -2273,31 +2253,29 @@ timedTest("subagent tool surfaces invalid params with actionable guidance", asyn
     fakePi as unknown as ExtensionAPI,
   );
   const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
+  expect(tool).toBeTruthy();
 
-  await assert.rejects(
-    () =>
-      tool.execute(
-        "tool-call-invalid-start",
-        { action: "start", name: "worker-one" },
-        undefined,
-        undefined,
-        createFakeContext({ cwd: process.cwd() }),
-      ),
+  await expect(
+    tool.execute(
+      "tool-call-invalid-start",
+      { action: "start", name: "worker-one" },
+      undefined,
+      undefined,
+      createFakeContext({ cwd: process.cwd() }),
+    ),
+  ).rejects.toThrow(
     /Invalid subagent start params: `task` is required.*There is no subagent read action later/i,
   );
 
-  await assert.rejects(
-    () =>
-      tool.execute(
-        "tool-call-invalid-message",
-        { action: "message", sessionId: "child-1" },
-        undefined,
-        undefined,
-        createFakeContext({ cwd: process.cwd() }),
-      ),
-    /Invalid subagent message params: `message` is required/i,
-  );
+  await expect(
+    tool.execute(
+      "tool-call-invalid-message",
+      { action: "message", sessionId: "child-1" },
+      undefined,
+      undefined,
+      createFakeContext({ cwd: process.cwd() }),
+    ),
+  ).rejects.toThrow(/Invalid subagent message params: `message` is required/i);
 });
 
 timedTest(
@@ -2362,17 +2340,17 @@ timedTest(
         },
         ctx,
       );
-      assert.equal(started.state.status, "running");
-      assert.equal(fakeMux.created.length, 1);
-      assert.equal(fakeMux.created[0]?.target, "window");
-      assert.equal(launched.length, 1);
+      expect(started.state.status).toBe("running");
+      expect(fakeMux.created.length).toBe(1);
+      expect(fakeMux.created[0]?.target).toBe("window");
+      expect(launched.length).toBe(1);
       const launch = launched[0]!;
-      assert.equal(launch.prompt, "Inspect the failing tests");
-      assert.equal(fakeMux.sent.length, 0);
-      assert.deepEqual((launch.childState as { tools: string[] }).tools, ["read"]);
-      assert.equal((launch.childState as { prompt: string }).prompt, "Inspect the failing tests");
-      assert.equal((launch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs, 30_000);
-      assert.deepEqual(launch.options, {
+      expect(launch.prompt).toBe("Inspect the failing tests");
+      expect(fakeMux.sent.length).toBe(0);
+      expect((launch.childState as { tools: string[] }).tools).toEqual(["read"]);
+      expect((launch.childState as { prompt: string }).prompt).toBe("Inspect the failing tests");
+      expect((launch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs).toBe(30_000);
+      expect(launch.options).toEqual({
         launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
         tmuxTarget: "window",
         mode: "reviewer",
@@ -2381,23 +2359,22 @@ timedTest(
         systemPrompt: "Review only",
         systemPromptMode: "append",
       });
-      assert.equal(
+      expect(
         fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_STATE_ENTRY).length,
-        1,
-      );
+      ).toBe(1);
       const persistedStartedState = fakePi.appendedEntries.find(
         (entry) => entry.customType === SUBAGENT_STATE_ENTRY,
       )?.data as Record<string, unknown> | undefined;
-      assert.ok(persistedStartedState);
-      assert.equal("modeLabel" in persistedStartedState, false);
-      assert.equal(runtime.listStates().length, 1);
+      expect(persistedStartedState).toBeTruthy();
+      expect("modeLabel" in persistedStartedState).toBe(false);
+      expect(runtime.listStates().length).toBe(1);
 
       const runtimeSnapshot = runtime.listStates()[0];
-      assert.ok(runtimeSnapshot);
+      expect(runtimeSnapshot).toBeTruthy();
       runtimeSnapshot.status = "failed";
       runtimeSnapshot.paneId = "%999";
-      assert.equal(runtime.listStates()[0]?.status, "running");
-      assert.notEqual(runtime.listStates()[0]?.paneId, "%999");
+      expect(runtime.listStates()[0]?.status).toBe("running");
+      expect(runtime.listStates()[0]?.paneId).not.toBe("%999");
 
       const delivered = await runtime.message(
         {
@@ -2407,26 +2384,25 @@ timedTest(
         },
         ctx,
       );
-      assert.equal(delivered.state.status, "running");
-      assert.equal(delivered.autoResumed, false);
-      assert.equal(fakeMux.sent.length, 1);
-      assert.equal(fakeMux.sent[0]?.submitMode, "steer");
-      assert.equal(
+      expect(delivered.state.status).toBe("running");
+      expect(delivered.autoResumed).toBe(false);
+      expect(fakeMux.sent.length).toBe(1);
+      expect(fakeMux.sent[0]?.submitMode).toBe("steer");
+      expect(
         fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY)
           .length,
-        2,
-      );
+      ).toBe(2);
       const parentInputMarker = JSON.parse(
         await fs.readFile(getParentInjectedInputMarkerPath(started.state.sessionId), "utf8"),
       ) as { expiresAt: number };
-      assert.ok(parentInputMarker.expiresAt > Date.now());
+      expect(parentInputMarker.expiresAt > Date.now()).toBeTruthy();
 
       const cancelled = await runtime.cancel({ sessionId: started.state.sessionId });
-      assert.equal(cancelled.status, "cancelled");
-      assert.equal(fakeMux.killed.length, 1);
-      assert.equal(runtime.listStates().length, 1);
-      assert.equal(runtime.listStates()[0]?.status, "cancelled");
-      assert.equal(fakePi.sentMessages.length, 1);
+      expect(cancelled.status).toBe("cancelled");
+      expect(fakeMux.killed.length).toBe(1);
+      expect(runtime.listStates().length).toBe(1);
+      expect(runtime.listStates()[0]?.status).toBe("cancelled");
+      expect(fakePi.sentMessages.length).toBe(1);
 
       const resumed = await runtime.resume(
         {
@@ -2436,24 +2412,22 @@ timedTest(
         },
         ctx,
       );
-      assert.equal(resumed.state.status, "running");
-      assert.equal(resumed.state.sessionId, started.state.sessionId);
-      assert.equal(resumed.state.paneId, "%2");
-      assert.equal(fakeMux.created.length, 2);
-      assert.equal(fakeMux.created[1]?.target, "window");
-      assert.equal(launched.length, 2);
+      expect(resumed.state.status).toBe("running");
+      expect(resumed.state.sessionId).toBe(started.state.sessionId);
+      expect(resumed.state.paneId).toBe("%2");
+      expect(fakeMux.created.length).toBe(2);
+      expect(fakeMux.created[1]?.target).toBe("window");
+      expect(launched.length).toBe(2);
       const resumedLaunch = launched[1];
-      assert.ok(resumedLaunch);
-      assert.equal(resumedLaunch.prompt, "Address the review feedback");
-      assert.equal(
-        (resumedLaunch.childState as { prompt: string }).prompt,
+      expect(resumedLaunch).toBeTruthy();
+      expect(resumedLaunch.prompt).toBe("Address the review feedback");
+      expect((resumedLaunch.childState as { prompt: string }).prompt).toBe(
         "Address the review feedback",
       );
-      assert.equal(
-        (resumedLaunch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs,
+      expect((resumedLaunch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs).toBe(
         30_000,
       );
-      assert.deepEqual(resumedLaunch.options, {
+      expect(resumedLaunch.options).toEqual({
         launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
         tmuxTarget: "window",
         mode: "reviewer",
@@ -2472,21 +2446,20 @@ timedTest(
         },
         ctx,
       );
-      assert.equal(deliveredAfterAutoResume.autoResumed, true);
-      assert.equal(deliveredAfterAutoResume.resumePrompt, "Address the review feedback");
-      assert.equal(deliveredAfterAutoResume.state.status, "running");
-      assert.equal(deliveredAfterAutoResume.state.paneId, "%3");
-      assert.equal(fakeMux.created.length, 3);
-      assert.equal(fakeMux.sent.length, 2);
-      assert.equal(fakeMux.sent[1]?.paneId, "%3");
-      assert.equal(fakeMux.sent[1]?.submitMode, "followUp");
-      assert.equal(launched.length, 3);
-      assert.equal(launched[2]?.prompt, "Address the review feedback");
-      assert.equal(
+      expect(deliveredAfterAutoResume.autoResumed).toBe(true);
+      expect(deliveredAfterAutoResume.resumePrompt).toBe("Address the review feedback");
+      expect(deliveredAfterAutoResume.state.status).toBe("running");
+      expect(deliveredAfterAutoResume.state.paneId).toBe("%3");
+      expect(fakeMux.created.length).toBe(3);
+      expect(fakeMux.sent.length).toBe(2);
+      expect(fakeMux.sent[1]?.paneId).toBe("%3");
+      expect(fakeMux.sent[1]?.submitMode).toBe("followUp");
+      expect(launched.length).toBe(3);
+      expect(launched[2]?.prompt).toBe("Address the review feedback");
+      expect(
         fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY)
           .length,
-        4,
-      );
+      ).toBe(4);
 
       const restoredSessionId = "restored-child";
       const childSessionDir = getDefaultSessionDir(cwd);
@@ -2550,16 +2523,15 @@ timedTest(
       });
 
       await runtime.restore(restoreCtx);
-      assert.equal(
+      expect(
         runtime.listStates().find((state) => state.sessionId === restoredSessionId)?.status,
-        "completed",
-      );
+      ).toBe("completed");
       const completedStates = fakePi.appendedEntries.filter(
         (entry) => entry.customType === SUBAGENT_STATE_ENTRY,
       ) as Array<{ customType: string; data: RuntimeSubagent }>;
-      assert.equal(completedStates.at(-1)?.data.status, "completed");
-      assert.equal(fakePi.sentMessages.length, 2);
-      assert.deepEqual(fakePi.sentMessages[1]?.options, { deliverAs: "steer", triggerTurn: true });
+      expect(completedStates.at(-1)?.data.status).toBe("completed");
+      expect(fakePi.sentMessages.length).toBe(2);
+      expect(fakePi.sentMessages[1]?.options).toEqual({ deliverAs: "steer", triggerTurn: true });
     } finally {
       runtime.dispose();
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -2581,7 +2553,7 @@ timedTest(
     const fakeMux = new FakeMuxAdapter();
     createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
     const tool = fakePi.registeredTools.get("subagent");
-    assert.ok(tool);
+    expect(tool).toBeTruthy();
 
     try {
       const ctx = createFakeContext({
@@ -2612,9 +2584,8 @@ timedTest(
         ctx,
       );
 
-      assert.match(messaged.content[0]?.text ?? "", /sessionId: /);
-      assert.match(
-        messaged.content[0]?.text ?? "",
+      expect(messaged.content[0]?.text ?? "").toMatch(/sessionId: /);
+      expect(messaged.content[0]?.text ?? "").toMatch(
         /Previous task resumed and followUp message delivered/i,
       );
       const details = messaged.details as {
@@ -2624,13 +2595,13 @@ timedTest(
         delivery: string;
         message: string;
       };
-      assert.equal(details.autoResumed, true);
-      assert.equal(details.resumePrompt, "Inspect the failing tests");
-      assert.equal(details.state.status, "running");
-      assert.equal(fakeMux.created.length, 2);
-      assert.equal(fakeMux.sent.length, 1);
-      assert.equal(fakeMux.sent[0]?.paneId, details.state.paneId);
-      assert.equal(fakeMux.sent[0]?.submitMode, "followUp");
+      expect(details.autoResumed).toBe(true);
+      expect(details.resumePrompt).toBe("Inspect the failing tests");
+      expect(details.state.status).toBe("running");
+      expect(fakeMux.created.length).toBe(2);
+      expect(fakeMux.sent.length).toBe(1);
+      expect(fakeMux.sent[0]?.paneId).toBe(details.state.paneId);
+      expect(fakeMux.sent[0]?.submitMode).toBe("followUp");
 
       const collapsed = renderToolText(
         tool,
@@ -2663,14 +2634,13 @@ timedTest(
         true,
       );
 
-      assert.match(
-        collapsed,
+      expect(collapsed).toMatch(
         /worker-one · running · resumed · followUp · Focus on the root cause/,
       );
-      assert.match(expanded, /autoResumed: true/);
-      assert.match(expanded, /resumePrompt:[\s\S]*Inspect the failing tests/);
-      assert.match(expanded, /delivery: followUp/);
-      assert.match(expanded, /message:/);
+      expect(expanded).toMatch(/autoResumed: true/);
+      expect(expanded).toMatch(/resumePrompt:[\s\S]*Inspect the failing tests/);
+      expect(expanded).toMatch(/delivery: followUp/);
+      expect(expanded).toMatch(/message:/);
     } finally {
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;
       await fs.rm(agentDir, { recursive: true, force: true });
@@ -2685,17 +2655,17 @@ timedTest("subagent tool execute reports unknown message sessions clearly", asyn
     fakePi as unknown as ExtensionAPI,
   );
   const tool = fakePi.registeredTools.get("subagent");
-  assert.ok(tool);
+  expect(tool).toBeTruthy();
 
-  await assert.rejects(
-    () =>
-      tool.execute(
-        "tool-call-message-unknown-session",
-        { action: "message", sessionId: "missing-child", message: "Ping", delivery: "steer" },
-        undefined,
-        undefined,
-        createFakeContext({ cwd: process.cwd() }),
-      ),
+  await expect(
+    tool.execute(
+      "tool-call-message-unknown-session",
+      { action: "message", sessionId: "missing-child", message: "Ping", delivery: "steer" },
+      undefined,
+      undefined,
+      createFakeContext({ cwd: process.cwd() }),
+    ),
+  ).rejects.toThrow(
     /subagent message failed: sessionId missing-child was not found in this parent session\. Use subagent list or a prior result to get the full UUID v4 sessionId\./i,
   );
 });

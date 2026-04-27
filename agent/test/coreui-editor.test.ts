@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import { initTheme, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
 import { theme as activeTheme } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
@@ -52,7 +51,7 @@ timedTest("coreui editor placeholder timer ignores stale replacement context", (
     } as unknown as ExtensionAPI;
 
     coreUIExtension(fakePi);
-    assert.ok(sessionStartHandlers.length > 0);
+    expect(sessionStartHandlers.length > 0).toBeTruthy();
 
     const fakeContext = {
       cwd: process.cwd(),
@@ -83,7 +82,7 @@ timedTest("coreui editor placeholder timer ignores stale replacement context", (
     for (const handler of sessionStartHandlers) {
       handler({}, fakeContext);
     }
-    assert.ok(editorFactory);
+    expect(editorFactory).toBeTruthy();
 
     const editor = editorFactory!(
       { requestRender: () => {} },
@@ -91,9 +90,9 @@ timedTest("coreui editor placeholder timer ignores stale replacement context", (
       KeybindingsManager.create(),
     );
 
-    assert.doesNotThrow(() => {
+    expect(() => {
       intervalCallback?.();
-    });
+    }).not.toThrow();
 
     editor.dispose?.();
   } finally {

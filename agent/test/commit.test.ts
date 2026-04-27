@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Value } from "typebox/value";
@@ -91,21 +90,19 @@ timedTest("commit command spawns commiter mode with structured output", async ()
   })(fakePi as ExtensionAPI);
 
   const command = fakePi.commands.get("commit");
-  assert.ok(command);
+  expect(command).toBeTruthy();
 
   await command.handler("include docs too", createCommandContext(notifications));
 
-  assert.equal(spawnCalls.length, 1);
-  assert.equal(spawnCalls[0]?.params.mode, "commiter");
-  assert.equal(spawnCalls[0]?.params.outputFormat?.type, "json_schema");
-  assert.match(spawnCalls[0]?.params.task ?? "", /Additional user details:\ninclude docs too/);
-  assert.equal(fakePi.sentMessages.length, 1);
-  assert.equal(
+  expect(spawnCalls.length).toBe(1);
+  expect(spawnCalls[0]?.params.mode).toBe("commiter");
+  expect(spawnCalls[0]?.params.outputFormat?.type).toBe("json_schema");
+  expect(spawnCalls[0]?.params.task ?? "").toMatch(/Additional user details:\ninclude docs too/);
+  expect(fakePi.sentMessages.length).toBe(1);
+  expect(
     (fakePi.sentMessages[0]?.options as { triggerTurn?: boolean } | undefined)?.triggerTurn,
-    false,
-  );
-  assert.equal(
-    (fakePi.sentMessages[0]?.message as { customType?: string } | undefined)?.customType,
+  ).toBe(false);
+  expect((fakePi.sentMessages[0]?.message as { customType?: string } | undefined)?.customType).toBe(
     "commit-summary",
   );
 });
@@ -127,12 +124,12 @@ timedTest("commit command stops when cwd is not a git repository", async () => {
   })(fakePi as ExtensionAPI);
 
   const command = fakePi.commands.get("commit");
-  assert.ok(command);
+  expect(command).toBeTruthy();
 
   await command.handler("", createCommandContext(notifications));
 
-  assert.equal(spawnCalled, false);
-  assert.deepEqual(notifications.at(-1), { message: "Not a git repository", level: "error" });
+  expect(spawnCalled).toBe(false);
+  expect(notifications.at(-1)).toEqual({ message: "Not a git repository", level: "error" });
 });
 
 timedTest("commit command prevents concurrent runs", async () => {
@@ -163,7 +160,7 @@ timedTest("commit command prevents concurrent runs", async () => {
   })(fakePi as ExtensionAPI);
 
   const command = fakePi.commands.get("commit");
-  assert.ok(command);
+  expect(command).toBeTruthy();
 
   const first = command.handler("", createCommandContext(notifications));
   while (!resolveSpawn) {
@@ -172,12 +169,12 @@ timedTest("commit command prevents concurrent runs", async () => {
   const second = command.handler("", createCommandContext(notifications));
   await second;
 
-  assert.equal(spawnCalls, 1);
-  assert.ok(
+  expect(spawnCalls).toBe(1);
+  expect(
     notifications.some(
       (entry) => entry.message === "A commit job is already running." && entry.level === "warning",
     ),
-  );
+  ).toBeTruthy();
 
   resolveSpawn?.();
   await first;
@@ -208,36 +205,36 @@ timedTest("commit schema validates rich constraints and required fields", async 
   })(fakePi as ExtensionAPI);
 
   const command = fakePi.commands.get("commit");
-  assert.ok(command);
+  expect(command).toBeTruthy();
 
   await command.handler("", createCommandContext(notifications));
 
-  assert.ok(capturedSchema);
+  expect(capturedSchema).toBeTruthy();
 
   const valid = createValidStructuredSummary();
-  assert.equal(Value.Check(capturedSchema, valid), true);
+  expect(Value.Check(capturedSchema, valid)).toBe(true);
 
   const invalidShaUpper = {
     ...valid,
     commits: [{ ...valid.commits[0], sha: "ABC1234" }],
   };
-  assert.equal(Value.Check(capturedSchema, invalidShaUpper), false);
+  expect(Value.Check(capturedSchema, invalidShaUpper)).toBe(false);
 
   const invalidShaShort = {
     ...valid,
     commits: [{ ...valid.commits[0], sha: "abc" }],
   };
-  assert.equal(Value.Check(capturedSchema, invalidShaShort), false);
+  expect(Value.Check(capturedSchema, invalidShaShort)).toBe(false);
 
   const { remainingChanges, ...missingRequired } = valid;
   void remainingChanges;
-  assert.equal(Value.Check(capturedSchema, missingRequired), false);
+  expect(Value.Check(capturedSchema, missingRequired)).toBe(false);
 
   const withUnexpectedField = {
     ...valid,
     unknown: true,
   };
-  assert.equal(Value.Check(capturedSchema, withUnexpectedField), false);
+  expect(Value.Check(capturedSchema, withUnexpectedField)).toBe(false);
 });
 
 timedTest("commit command renders warning and remaining-change sections", async () => {
@@ -266,16 +263,16 @@ timedTest("commit command renders warning and remaining-change sections", async 
   })(fakePi as ExtensionAPI);
 
   const command = fakePi.commands.get("commit");
-  assert.ok(command);
+  expect(command).toBeTruthy();
 
   await command.handler("", createCommandContext(notifications));
 
   const sentMessage = fakePi.sentMessages[0]?.message as { content?: string } | undefined;
-  assert.ok(sentMessage?.content);
-  assert.match(sentMessage.content, /## Warnings/);
-  assert.match(sentMessage.content, /Pre-commit hook skipped markdown formatting/);
-  assert.match(sentMessage.content, /## Remaining Changes/);
-  assert.match(sentMessage.content, /README\.md/);
+  expect(sentMessage?.content).toBeTruthy();
+  expect(sentMessage.content).toMatch(/## Warnings/);
+  expect(sentMessage.content).toMatch(/Pre-commit hook skipped markdown formatting/);
+  expect(sentMessage.content).toMatch(/## Remaining Changes/);
+  expect(sentMessage.content).toMatch(/README\.md/);
 });
 
 timedTest("commit command surfaces structured spawn errors", async () => {
@@ -298,17 +295,17 @@ timedTest("commit command surfaces structured spawn errors", async () => {
   })(fakePi as ExtensionAPI);
 
   const command = fakePi.commands.get("commit");
-  assert.ok(command);
+  expect(command).toBeTruthy();
 
   await command.handler("", createCommandContext(notifications));
 
-  assert.ok(
+  expect(
     notifications.some(
       (entry) =>
         entry.level === "error" &&
         entry.message ===
           "Commit failed (validation_failed): Structured output validation failed and retry budget was exhausted.",
     ),
-  );
-  assert.equal(fakePi.sentMessages.length, 0);
+  ).toBeTruthy();
+  expect(fakePi.sentMessages.length).toBe(0);
 });

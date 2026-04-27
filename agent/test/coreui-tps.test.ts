@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import {
   buildTPSStats,
@@ -64,7 +63,7 @@ timedTest("summarizeAssistantUsage aggregates assistant usage only", () => {
     assistantB,
   ] as any);
 
-  assert.deepEqual(summary, {
+  expect(summary).toEqual({
     input: 11,
     output: 22,
     cacheRead: 33,
@@ -84,8 +83,7 @@ timedTest("estimateAssistantOutputTokens falls back to streamed content size", (
 
   const expectedCharacters =
     4 + 8 + "read".length + JSON.stringify({ path: "src/index.ts" }).length;
-  assert.equal(
-    estimateAssistantOutputTokens(message),
+  expect(estimateAssistantOutputTokens(message)).toBe(
     Math.max(1, Math.round(expectedCharacters / 4)),
   );
 });
@@ -103,11 +101,11 @@ timedTest("resolveAssistantOutputTokens prefers provider usage when available", 
     },
   });
 
-  assert.equal(resolveAssistantOutputTokens(message), 42);
+  expect(resolveAssistantOutputTokens(message)).toBe(42);
 });
 
 timedTest("buildTPSStats returns current max median and min", () => {
-  assert.deepEqual(buildTPSStats([42.1, 55.4, 39.2, 48.6]), {
+  expect(buildTPSStats([42.1, 55.4, 39.2, 48.6])).toEqual({
     current: 48.6,
     max: 55.4,
     median: 45.4,
@@ -118,9 +116,9 @@ timedTest("buildTPSStats returns current max median and min", () => {
 });
 
 timedTest("calculateIntervalTPS uses interval deltas rather than cumulative averages", () => {
-  assert.equal(calculateIntervalTPS(20, 500), 40);
-  assert.equal(calculateIntervalTPS(10, 1000), 10);
-  assert.equal(calculateIntervalTPS(0, 1000), undefined);
+  expect(calculateIntervalTPS(20, 500)).toBe(40);
+  expect(calculateIntervalTPS(10, 1000)).toBe(10);
+  expect(calculateIntervalTPS(0, 1000)).toBe(undefined);
 });
 
 timedTest("restoreTPSState rehydrates latest stats and visibility from custom entries", () => {
@@ -158,7 +156,7 @@ timedTest("restoreTPSState rehydrates latest stats and visibility from custom en
     },
   ] as any);
 
-  assert.deepEqual(restored, {
+  expect(restored).toEqual({
     tps: { current: 42.1, max: 55.4, median: 45.4, min: 39.2, sampleCount: 50, bufferSize: 50 },
     tpsVisible: false,
     tpsElapsedMs: 1000,
@@ -185,7 +183,7 @@ timedTest("restoreTPSState accepts older persisted TPS entries without buffer me
     },
   ] as any);
 
-  assert.deepEqual(restored, {
+  expect(restored).toEqual({
     tps: { current: 40.5, max: 45.4, median: 33.3, min: 0.6, sampleCount: 50, bufferSize: 50 },
     tpsVisible: true,
     tpsElapsedMs: 13320,
@@ -242,6 +240,6 @@ timedTest("restoreTPSState accumulates elapsed time across all persisted TPS ent
     },
   ] as any);
 
-  assert.equal(restored.tpsElapsedMs, 4600);
-  assert.equal(restored.tps?.current, 20);
+  expect(restored.tpsElapsedMs).toBe(4600);
+  expect(restored.tps?.current).toBe(20);
 });

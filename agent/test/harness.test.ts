@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -120,7 +119,7 @@ async function createExecutorProbeServer(
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const address = server.address();
-  assert.ok(address && typeof address !== "string");
+  expect(address && typeof address !== "string").toBeTruthy();
 
   return {
     mcpUrl: `http://127.0.0.1:${address.port}/mcp`,
@@ -244,14 +243,12 @@ function createHandoffTestProviders(summaryText: string): {
 
   registrations[0].setResponses([fauxAssistantMessage(summaryText)]);
   registrations[1].setResponses([fauxAssistantMessage(summaryText)]);
-  registrations[2].setResponses([
-    fauxAssistantMessage("mode-provider response"),
-    fauxAssistantMessage("mode-provider response"),
-  ]);
-  registrations[3].setResponses([
-    fauxAssistantMessage("override-provider response"),
-    fauxAssistantMessage("override-provider response"),
-  ]);
+  registrations[2].setResponses(
+    Array.from({ length: 8 }, () => fauxAssistantMessage("mode-provider response")),
+  );
+  registrations[3].setResponses(
+    Array.from({ length: 8 }, () => fauxAssistantMessage("override-provider response")),
+  );
   const modelById = new Map(
     registrations.flatMap((registration) => {
       const providerModel = registration.getModel();
@@ -291,7 +288,7 @@ function createHandoffTestProviders(summaryText: string): {
     },
     getModel(id: string) {
       const model = modelById.get(id);
-      assert.ok(model, `Missing model ${id}`);
+      expect(model, `Missing model ${id}`).toBeTruthy();
       return model as { provider: string; id: string } & Record<string, unknown>;
     },
     dispose() {
@@ -414,7 +411,7 @@ function createModelFamilyTestProviders(): {
     },
     getModel(id: string) {
       const model = modelById.get(id);
-      assert.ok(model, `Missing model ${id}`);
+      expect(model, `Missing model ${id}`).toBeTruthy();
       return model as { provider: string; id: string } & Record<string, unknown>;
     },
     setResponses(response) {
@@ -682,7 +679,7 @@ async function getCommandArgumentCompletions(
   const command = extensionRunner
     .getRegisteredCommands()
     .find((registeredCommand) => registeredCommand.invocationName === commandName);
-  assert.ok(command?.getArgumentCompletions);
+  expect(command?.getArgumentCompletions).toBeTruthy();
   return await command.getArgumentCompletions(prefix);
 }
 
@@ -786,13 +783,13 @@ timedTest("pi-test-harness runs apply_patch against the real tool implementation
       ]),
     );
 
-    assert.equal(await readFile(filePath, "utf8"), "export const value = 2;\n");
-    assert.equal(session.events.toolCallsFor("apply_patch").length, 1);
+    expect(await readFile(filePath, "utf8")).toBe("export const value = 2;\n");
+    expect(session.events.toolCallsFor("apply_patch").length).toBe(1);
     const toolExecutionEnd = session.events.all.find(
       (event) => event.type === "tool_execution_end" && event.toolName === "apply_patch",
     );
-    assert.ok(toolExecutionEnd);
-    assert.equal(toolExecutionEnd.isError, false);
+    expect(toolExecutionEnd).toBeTruthy();
+    expect(toolExecutionEnd.isError).toBe(false);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -817,10 +814,9 @@ timedTest("pi-test-harness captures mocked built-in tool events", async () => {
       ]),
     );
 
-    assert.deepEqual(session.events.toolSequence(), ["bash"]);
-    assert.equal(session.events.toolResultsFor("bash")[0]?.mocked, true);
-    assert.match(
-      session.events.toolResultsFor("bash")[0]?.text ?? "",
+    expect(session.events.toolSequence()).toEqual(["bash"]);
+    expect(session.events.toolResultsFor("bash")[0]?.mocked).toBe(true);
+    expect(session.events.toolResultsFor("bash")[0]?.text ?? "").toMatch(
       /ran: npm run test:tool-preview/,
     );
   } finally {
@@ -847,9 +843,9 @@ timedTest("pi-test-harness runs webfetch against the real tool implementation", 
       formats?: string[];
     };
 
-    assert.equal(req.headers.authorization, "Bearer fc-free");
-    assert.equal(body.url, "https://example.com/harness");
-    assert.deepEqual(body.formats, ["markdown"]);
+    expect(req.headers.authorization).toBe("Bearer fc-free");
+    expect(body.url).toBe("https://example.com/harness");
+    expect(body.formats).toEqual(["markdown"]);
 
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
@@ -871,7 +867,7 @@ timedTest("pi-test-harness runs webfetch against the real tool implementation", 
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  assert.ok(address && typeof address === "object");
+  expect(address && typeof address === "object").toBeTruthy();
   const originalApiUrl = process.env.WEBFETCH_FIRECRAWL_API_URL;
   const originalFirecrawlApiKey = process.env.FIRECRAWL_API_KEY;
   process.env.WEBFETCH_FIRECRAWL_API_URL = `http://127.0.0.1:${address.port}`;
@@ -893,13 +889,13 @@ timedTest("pi-test-harness runs webfetch against the real tool implementation", 
     const toolExecutionEnd = session.events.all.find(
       (event) => event.type === "tool_execution_end" && event.toolName === "webfetch",
     );
-    assert.ok(toolExecutionEnd);
-    assert.equal(toolExecutionEnd.isError, false);
+    expect(toolExecutionEnd).toBeTruthy();
+    expect(toolExecutionEnd.isError).toBe(false);
 
     const toolResult = session.events.toolResultsFor("webfetch")[0]?.text ?? "";
-    assert.match(toolResult, /URL: https:\/\/example\.com\/harness/);
-    assert.match(toolResult, /Status: 200 OK/);
-    assert.match(toolResult, /# Fetch harness/);
+    expect(toolResult).toMatch(/URL: https:\/\/example\.com\/harness/);
+    expect(toolResult).toMatch(/Status: 200 OK/);
+    expect(toolResult).toMatch(/# Fetch harness/);
   } finally {
     if (originalApiUrl === undefined) {
       delete process.env.WEBFETCH_FIRECRAWL_API_URL;
@@ -941,7 +937,7 @@ timedTest("websearch emits streaming updates before the final result", async () 
     }
 
     if (url.includes(":streamGenerateContent")) {
-      assert.ok(getHeader("x-goog-api-key").length > 0);
+      expect(getHeader("x-goog-api-key").length > 0).toBeTruthy();
       const stream = new ReadableStream({
         start(controller) {
           const events = [
@@ -1028,7 +1024,7 @@ timedTest("websearch emits streaming updates before the final result", async () 
       {
         modelRegistry: {
           find(provider: string, modelId: string) {
-            assert.equal(provider, "gemini");
+            expect(provider).toBe("gemini");
             return {
               id: modelId,
               name: modelId,
@@ -1049,15 +1045,15 @@ timedTest("websearch emits streaming updates before the final result", async () 
       } as never,
     );
 
-    assert.ok(updates.length > 1);
+    expect(updates.length > 1).toBeTruthy();
 
     const toolResult = result.content
       .filter((part) => part.type === "text" && typeof part.text === "string")
       .map((part) => part.text)
       .join("\n");
-    assert.match(toolResult, /Next\.js 16 released in October 2025\./);
-    assert.match(toolResult, /Sources:/);
-    assert.match(toolResult, /https:\/\/nextjs\.org\/blog\/next-16/);
+    expect(toolResult).toMatch(/Next\.js 16 released in October 2025\./);
+    expect(toolResult).toMatch(/Sources:/);
+    expect(toolResult).toMatch(/https:\/\/nextjs\.org\/blog\/next-16/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1085,7 +1081,7 @@ timedTest("websearch uses the LiteLLM api key with the gemini model provider", a
     }
 
     if (url.includes(":streamGenerateContent")) {
-      assert.equal(getHeader("x-goog-api-key"), "litellm-test-key");
+      expect(getHeader("x-goog-api-key")).toBe("litellm-test-key");
       return new Response(
         JSON.stringify([
           {
@@ -1155,12 +1151,14 @@ timedTest("bundled themes are available before reload", async () => {
     session = await createTestSession();
 
     const bundledThemes = session.session.resourceLoader.getThemes().themes;
-    assert.ok(bundledThemes.some((loadedTheme) => loadedTheme.name === "catppuccin-mocha"));
+    expect(
+      bundledThemes.some((loadedTheme) => loadedTheme.name === "catppuccin-mocha"),
+    ).toBeTruthy();
 
     setRegisteredThemes(bundledThemes);
     initTheme("catppuccin-mocha");
 
-    assert.equal(activeTheme.name, "catppuccin-mocha");
+    expect(activeTheme.name).toBe("catppuccin-mocha");
   } finally {
     session?.dispose();
   }
@@ -1205,36 +1203,36 @@ timedTest("handoff command starts the new session in the requested mode", async 
 
     await session.session.prompt("/handoff -mode docs finish the implementation");
     await session.session.agent.waitForIdle();
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
-    assert.equal(session.playbook.consumed, consumedBeforeCommand);
-    assert.equal(session.events.uiCallsFor("editor").length, 0);
-    assert.equal(session.events.uiCallsFor("setEditorText").length, 0);
+    expect(session.playbook.consumed).toBe(consumedBeforeCommand);
+    expect(session.events.uiCallsFor("editor").length).toBe(0);
+    expect(session.events.uiCallsFor("setEditorText").length).toBe(0);
 
     const model = session.session as {
       model: { provider: string; id: string };
       thinkingLevel: string;
     };
-    assert.equal(model.model.provider, "mode-provider");
-    assert.equal(model.model.id, "mode-model");
-    assert.equal(model.thinkingLevel, "high");
-    assert.equal(getLatestModeState(session), "docs");
-    assert.equal(loader.calls.count, 1);
+    expect(model.model.provider).toBe("mode-provider");
+    expect(model.model.id).toBe("mode-model");
+    expect(model.thinkingLevel).toBe("high");
+    expect(getLatestModeState(session)).toBe("docs");
+    expect(loader.calls.count).toBe(1);
 
     const userMessages = getBranchTextMessages(session).filter((entry) => entry.role === "user");
-    assert.ok(
+    expect(
       userMessages.some((entry) =>
         entry.text.includes("Parent session: /tmp/parent-session.jsonl"),
       ),
-    );
+    ).toBe(true);
 
     const restoreEvents = observedModeChanges.filter((event) => event.reason === "restore");
-    assert.equal(restoreEvents.length, 1, JSON.stringify(observedModeChanges));
-    assert.equal(restoreEvents[0]?.mode, "docs");
-    assert.equal(restoreEvents[0]?.source, "session_start");
-    assert.equal(restoreEvents[0]?.spec?.provider, "mode-provider");
-    assert.equal(restoreEvents[0]?.spec?.modelId, "mode-model");
-    assert.equal(restoreEvents[0]?.spec?.thinkingLevel, "high");
+    expect(restoreEvents.length).toBe(1, JSON.stringify(observedModeChanges));
+    expect(restoreEvents[0]?.mode).toBe("docs");
+    expect(restoreEvents[0]?.source).toBe("session_start");
+    expect(restoreEvents[0]?.spec?.provider).toBe("mode-provider");
+    expect(restoreEvents[0]?.spec?.modelId).toBe("mode-model");
+    expect(restoreEvents[0]?.spec?.thinkingLevel).toBe("high");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -1282,22 +1280,22 @@ timedTest("handoff command with mode and model applies the startup selection onc
       "/handoff -mode docs -model override-provider/override-model finish the implementation",
     );
     await session.session.agent.waitForIdle();
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
     const model = session.session as {
       model: { provider: string; id: string };
       thinkingLevel: string;
     };
-    assert.equal(model.model.provider, "override-provider");
-    assert.equal(model.model.id, "override-model");
-    assert.equal(model.thinkingLevel, "high");
-    assert.equal(getLatestModeState(session), undefined);
-    assert.equal(loader.calls.count, 1);
+    expect(model.model.provider).toBe("override-provider");
+    expect(model.model.id).toBe("override-model");
+    expect(model.thinkingLevel).toBe("high");
+    expect(getLatestModeState(session)).toBe(undefined);
+    expect(loader.calls.count).toBe(1);
 
-    assert.equal(observedModeChanges.length, 1, JSON.stringify(observedModeChanges));
-    assert.equal(observedModeChanges[0]?.mode, undefined);
-    assert.equal(observedModeChanges[0]?.reason, "restore");
-    assert.equal(observedModeChanges[0]?.source, "session_start");
+    expect(observedModeChanges.length).toBe(1, JSON.stringify(observedModeChanges));
+    expect(observedModeChanges[0]?.mode).toBe(undefined);
+    expect(observedModeChanges[0]?.reason).toBe("restore");
+    expect(observedModeChanges[0]?.source).toBe("session_start");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -1320,20 +1318,15 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
     patchHarnessAgent(session);
 
     const flagCompletions = await getCommandArgumentCompletions(session, "handoff", "-");
-    assert.deepEqual(
-      flagCompletions?.map((item) => item.label),
-      ["-mode", "-model"],
-    );
+    expect(flagCompletions?.map((item) => item.label)).toEqual(["-mode", "-model"]);
 
     const modeCompletions = await getCommandArgumentCompletions(session, "handoff", "-mode ");
-    assert.ok(modeCompletions?.some((item) => item.label === "docs"));
-    assert.ok(modeCompletions?.some((item) => item.label === "smart"));
-    assert.match(
-      modeCompletions?.find((item) => item.label === "docs")?.description ?? "",
+    expect(modeCompletions?.some((item) => item.label === "docs")).toBeTruthy();
+    expect(modeCompletions?.some((item) => item.label === "smart")).toBeTruthy();
+    expect(modeCompletions?.find((item) => item.label === "docs")?.description ?? "").toMatch(
       /mode-provider\/mode-model/,
     );
-    assert.match(
-      modeCompletions?.find((item) => item.label === "docs")?.description ?? "",
+    expect(modeCompletions?.find((item) => item.label === "docs")?.description ?? "").toMatch(
       /thinking:high/,
     );
 
@@ -1342,19 +1335,16 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
       "handoff",
       "-mode docs -",
     );
-    assert.deepEqual(
-      remainingFlagCompletions?.map((item) => item.label),
-      ["-model"],
-    );
+    expect(remainingFlagCompletions?.map((item) => item.label)).toEqual(["-model"]);
 
     const modelCompletions = await getCommandArgumentCompletions(
       session,
       "handoff",
       "-model override",
     );
-    assert.equal(modelCompletions?.[0]?.value, "-model override-provider/override-model");
-    assert.equal(modelCompletions?.[0]?.label, "override-model");
-    assert.equal(modelCompletions?.[0]?.description, "override-provider");
+    expect(modelCompletions?.[0]?.value).toBe("-model override-provider/override-model");
+    expect(modelCompletions?.[0]?.label).toBe("override-model");
+    expect(modelCompletions?.[0]?.description).toBe("override-provider");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -1380,14 +1370,11 @@ timedTest("executor command autocompletes subcommands with fuzzy search", async 
     });
 
     const rootCompletions = await getCommandArgumentCompletions(session, "executor", "");
-    assert.deepEqual(
-      rootCompletions?.map((item) => item.label),
-      ["status", "web"],
-    );
+    expect(rootCompletions?.map((item) => item.label)).toEqual(["status", "web"]);
 
     const fuzzyCompletions = await getCommandArgumentCompletions(session, "executor", "w");
-    assert.equal(fuzzyCompletions?.[0]?.label, "web");
-    assert.ok(fuzzyCompletions?.some((item) => item.label === "status"));
+    expect(fuzzyCompletions?.[0]?.label).toBe("web");
+    expect(fuzzyCompletions?.some((item) => item.label === "status")).toBeTruthy();
   } finally {
     setExecutorSettingsForTests(undefined);
     await server.close();
@@ -1418,7 +1405,7 @@ timedTest("executor command without arguments shows status", async () => {
         _extensionUIContext?: { custom?: (...args: unknown[]) => Promise<unknown> };
       }
     )._extensionUIContext;
-    assert.ok(uiContext);
+    expect(uiContext).toBeTruthy();
 
     const customCalls: Array<{ args: unknown[] }> = [];
     const originalCustom = uiContext.custom?.bind(uiContext) ?? (async () => {});
@@ -1430,9 +1417,9 @@ timedTest("executor command without arguments shows status", async () => {
     await session.session.prompt("/executor");
     await session.session.agent.waitForIdle();
 
-    assert.equal(customCalls.length, 1);
-    assert.equal(typeof customCalls[0]?.args[0], "function");
-    assert.equal(customCalls[0]?.args[1], undefined);
+    expect(customCalls.length).toBe(1);
+    expect(typeof customCalls[0]?.args[0]).toBe("function");
+    expect(customCalls[0]?.args[1]).toBe(undefined);
 
     const branchEntries = (
       session.session as {
@@ -1451,7 +1438,7 @@ timedTest("executor command without arguments shows status", async () => {
       (entry) => entry.type === "custom_message" && entry.customType === "executor",
     );
 
-    assert.equal(executorMessages.length, 0);
+    expect(executorMessages.length).toBe(0);
   } finally {
     setExecutorSettingsForTests(undefined);
     await server.close();
@@ -1477,13 +1464,11 @@ timedTest(
       patchHarnessAgent(session);
 
       const initialPrompt = getCurrentSystemPrompt(session);
-      assert.match(initialPrompt, /<available_modes>/);
-      assert.match(
-        initialPrompt,
+      expect(initialPrompt).toMatch(/<available_modes>/);
+      expect(initialPrompt).toMatch(
         /<mode name="docs" model="mode-provider\/mode-model" thinkingLevel="high" description="Fast technical writing" \/>/,
       );
-      assert.match(
-        initialPrompt,
+      expect(initialPrompt).toMatch(
         /<mode name="smart" model="mode-provider\/smart-model" thinkingLevel="low" \/>/,
       );
 
@@ -1491,7 +1476,7 @@ timedTest(
       await session.session.agent.waitForIdle();
 
       const updatedPrompt = getCurrentSystemPrompt(session);
-      assert.match(updatedPrompt, /<mode name="deep"/);
+      expect(updatedPrompt).toMatch(/<mode name="deep"/);
     } finally {
       session?.dispose();
       providers.dispose();
@@ -1519,9 +1504,9 @@ timedTest("modes extension registers CLI flags from discovered modes", async () 
         .getExtensions()
         .extensions.flatMap((extension) => Array.from(extension.flags.keys()));
 
-      assert.ok(flags.includes("mode-deep-work"));
-      assert.ok(flags.includes("mode-mini-max"));
-      assert.ok(flags.includes("mode-docs-fast"));
+      expect(flags.includes("mode-deep-work")).toBeTruthy();
+      expect(flags.includes("mode-mini-max")).toBeTruthy();
+      expect(flags.includes("mode-docs-fast")).toBeTruthy();
     });
   } finally {
     providers.dispose();
@@ -1561,19 +1546,19 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
         model: { provider: string; id: string };
         thinkingLevel: string;
       };
-      assert.equal(model.model.provider, "mode-provider");
-      assert.equal(model.model.id, "mode-model");
-      assert.equal(model.thinkingLevel, "high");
-      assert.equal(getLatestModeState(session!), "docs");
+      expect(model.model.provider).toBe("mode-provider");
+      expect(model.model.id).toBe("mode-model");
+      expect(model.thinkingLevel).toBe("high");
+      expect(getLatestModeState(session!)).toBe("docs");
 
-      assert.ok(observedModeChanges.length > 0, JSON.stringify(observedModeChanges));
+      expect(observedModeChanges.length > 0, JSON.stringify(observedModeChanges)).toBeTruthy();
       const latestModeChange = observedModeChanges.at(-1);
-      assert.equal(latestModeChange?.mode, "docs");
-      assert.equal(latestModeChange?.reason, "restore");
-      assert.equal(latestModeChange?.source, "session_start");
-      assert.equal(latestModeChange?.spec?.provider, "mode-provider");
-      assert.equal(latestModeChange?.spec?.modelId, "mode-model");
-      assert.equal(latestModeChange?.spec?.thinkingLevel, "high");
+      expect(latestModeChange?.mode).toBe("docs");
+      expect(latestModeChange?.reason).toBe("restore");
+      expect(latestModeChange?.source).toBe("session_start");
+      expect(latestModeChange?.spec?.provider).toBe("mode-provider");
+      expect(latestModeChange?.spec?.modelId).toBe("mode-model");
+      expect(latestModeChange?.spec?.thinkingLevel).toBe("high");
     });
   } finally {
     session?.dispose();
@@ -1615,19 +1600,19 @@ timedTest(
           model: { provider: string; id: string };
           thinkingLevel: string;
         };
-        assert.equal(model.model.provider, "mode-provider");
-        assert.equal(model.model.id, "mode-model");
-        assert.equal(model.thinkingLevel, "high");
-        assert.equal(getLatestModeState(session!), "review");
+        expect(model.model.provider).toBe("mode-provider");
+        expect(model.model.id).toBe("mode-model");
+        expect(model.thinkingLevel).toBe("high");
+        expect(getLatestModeState(session!)).toBe("review");
 
         observedModeChanges.length = 0;
 
         await session!.session.prompt("hello");
         await session!.session.agent.waitForIdle();
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        await new Promise((resolve) => setTimeout(resolve, 5));
 
-        assert.equal(getLatestModeState(session!), "review");
-        assert.equal(observedModeChanges.length, 0, JSON.stringify(observedModeChanges));
+        expect(getLatestModeState(session!)).toBe("review");
+        expect(observedModeChanges.length).toBe(0, JSON.stringify(observedModeChanges));
       });
     } finally {
       session?.dispose();
@@ -1652,12 +1637,14 @@ timedTest("LiteLLM provider registrations add the gemini provider via v1beta", (
     (registration) => registration.provider === "gemini",
   );
 
-  assert.ok(geminiRegistration);
-  assert.equal(geminiRegistration.provider, "gemini");
-  assert.equal(geminiRegistration.config.baseUrl, "https://litellm.example.test/v1beta");
-  assert.equal(geminiRegistration.config.apiKey, "TEST_KEY");
-  assert.ok(Array.isArray(geminiRegistration.config.models));
-  assert.ok(geminiRegistration.config.models!.some((model) => model.id === "gemini-2.5-flash"));
+  expect(geminiRegistration).toBeTruthy();
+  expect(geminiRegistration.provider).toBe("gemini");
+  expect(geminiRegistration.config.baseUrl).toBe("https://litellm.example.test/v1beta");
+  expect(geminiRegistration.config.apiKey).toBe("TEST_KEY");
+  expect(Array.isArray(geminiRegistration.config.models)).toBeTruthy();
+  expect(
+    geminiRegistration.config.models!.some((model) => model.id === "gemini-2.5-flash"),
+  ).toBeTruthy();
 });
 
 timedTest(
@@ -1675,33 +1662,32 @@ timedTest(
       await session.session.setModel(providers.getModel("gpt-5.4") as never);
 
       const initialPrompt = getCurrentSystemPrompt(session);
-      assert.equal(initialPrompt, buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4"));
+      expect(initialPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4"));
       const initialTail = extractPiDynamicTail(initialPrompt);
 
       await session.session.setModel(providers.getModel("gpt-5.4-mini") as never);
-      assert.equal(getCurrentSystemPrompt(session), initialPrompt);
+      expect(getCurrentSystemPrompt(session)).toBe(initialPrompt);
 
       await session.session.setModel(providers.getModel("gpt-5.4-codex") as never);
       const codexSystemPrompt = getCurrentSystemPrompt(session);
-      assert.equal(codexSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4-codex"));
-      assert.equal(extractPiDynamicTail(codexSystemPrompt), initialTail);
+      expect(codexSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4-codex"));
+      expect(extractPiDynamicTail(codexSystemPrompt)).toBe(initialTail);
 
       await session.session.setModel(providers.getModel("gemini-2.5-pro") as never);
       const geminiSystemPrompt = getCurrentSystemPrompt(session);
-      assert.equal(
-        geminiSystemPrompt,
+      expect(geminiSystemPrompt).toBe(
         buildModelFamilySystemPrompt(initialPrompt, "gemini-2.5-pro"),
       );
-      assert.equal(extractPiDynamicTail(geminiSystemPrompt), initialTail);
+      expect(extractPiDynamicTail(geminiSystemPrompt)).toBe(initialTail);
 
       await session.session.setModel(providers.getModel("kimi-k2.5") as never);
       const kimiSystemPrompt = getCurrentSystemPrompt(session);
-      assert.equal(kimiSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "kimi-k2.5"));
+      expect(kimiSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "kimi-k2.5"));
 
       await session.session.setModel(providers.getModel("router-1") as never);
       const defaultSystemPrompt = getCurrentSystemPrompt(session);
-      assert.equal(defaultSystemPrompt, buildModelFamilySystemPrompt(initialPrompt, "router-1"));
-      assert.equal(extractPiDynamicTail(defaultSystemPrompt), initialTail);
+      expect(defaultSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "router-1"));
+      expect(extractPiDynamicTail(defaultSystemPrompt)).toBe(initialTail);
     } finally {
       session?.dispose();
       providers.dispose();
@@ -1745,12 +1731,10 @@ timedTest(
       await session.session.prompt("hello again");
       await session.session.agent.waitForIdle();
 
-      assert.equal(
-        seenSystemPrompts[0],
+      expect(seenSystemPrompts[0]).toBe(
         buildModelFamilySystemPrompt(seenSystemPrompts[0]!, "gpt-5.4"),
       );
-      assert.equal(
-        seenSystemPrompts[1],
+      expect(seenSystemPrompts[1]).toBe(
         buildModelFamilySystemPrompt(seenSystemPrompts[0]!, "gemini-2.5-pro"),
       );
     } finally {
@@ -1785,7 +1769,7 @@ timedTest(
       await session.session.agent.waitForIdle();
 
       const currentPrompt = getCurrentSystemPrompt(session);
-      assert.equal(currentPrompt, buildModelFamilySystemPrompt(gptPrompt, "gemini-2.5-pro"));
+      expect(currentPrompt).toBe(buildModelFamilySystemPrompt(gptPrompt, "gemini-2.5-pro"));
     } finally {
       session?.dispose();
       providers.dispose();
@@ -1817,23 +1801,23 @@ timedTest(
       await session.session.agent.waitForIdle();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      assert.deepEqual(capturedToolSets.at(-1), ["bash", "read"]);
+      expect(capturedToolSets.at(-1)).toEqual(["bash", "read"]);
 
       await session.session.prompt("/mode review");
       await session.session.agent.waitForIdle();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      assert.deepEqual(capturedToolSets.at(-1), ["read"]);
+      expect(capturedToolSets.at(-1)).toEqual(["read"]);
 
       await session.session.setModel(providers.getModel("smart-model") as never);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       const restoredToolNames = capturedToolSets.at(-1) ?? [];
-      assert.ok(restoredToolNames.includes("bash"));
-      assert.ok(restoredToolNames.includes("read"));
-      assert.ok(restoredToolNames.includes("edit"));
-      assert.ok(restoredToolNames.includes("write"));
-      assert.ok(!restoredToolNames.includes("apply_patch"));
+      expect(restoredToolNames.includes("bash")).toBeTruthy();
+      expect(restoredToolNames.includes("read")).toBeTruthy();
+      expect(restoredToolNames.includes("edit")).toBeTruthy();
+      expect(restoredToolNames.includes("write")).toBeTruthy();
+      expect(!restoredToolNames.includes("apply_patch")).toBeTruthy();
     } finally {
       session?.dispose();
       providers.dispose();
@@ -1892,17 +1876,17 @@ timedTest(
       const customMermaidMessages = branchEntries.filter(
         (entry) => entry.type === "custom_message" && entry.customType === "pi-mermaid",
       );
-      assert.equal(customMermaidMessages.length, 0);
+      expect(customMermaidMessages.length).toBe(0);
 
       const renderedText = renderSessionChatLines(session).join("\n");
-      assert.match(renderedText, /Release flow:/);
-      assert.match(renderedText, /Done\./);
-      assert.match(renderedText, /Start/);
-      assert.match(renderedText, /Validate/);
-      assert.doesNotMatch(renderedText, /```mermaid/);
-      assert.doesNotMatch(renderedText, /graph TD/);
-      assert.doesNotMatch(renderedText, /parser validation isn.?t usable/i);
-      assert.doesNotMatch(renderedText, /more lines, to expand/i);
+      expect(renderedText).toMatch(/Release flow:/);
+      expect(renderedText).toMatch(/Done\./);
+      expect(renderedText).toMatch(/Start/);
+      expect(renderedText).toMatch(/Validate/);
+      expect(renderedText).not.toMatch(/```mermaid/);
+      expect(renderedText).not.toMatch(/graph TD/);
+      expect(renderedText).not.toMatch(/parser validation isn.?t usable/i);
+      expect(renderedText).not.toMatch(/more lines, to expand/i);
     } finally {
       session?.dispose();
     }
@@ -1962,29 +1946,27 @@ timedTest(
               .join("\n"),
           );
 
-        assert.equal(readResults.length, 2);
-        assert.match(readResults[0] ?? "", /export const Button = \(\) => null;/);
-        assert.match(
-          readResults[0] ?? "",
+        expect(readResults.length).toBe(2);
+        expect(readResults[0] ?? "").toMatch(/export const Button = \(\) => null;/);
+        expect(readResults[0] ?? "").toMatch(
           /Loaded subdirectory context from .*src\/AGENTS\.override\.md/,
         );
-        assert.match(readResults[0] ?? "", /override src rule/);
-        assert.match(readResults[0] ?? "", /second override line/);
-        assert.match(
-          readResults[0] ?? "",
+        expect(readResults[0] ?? "").toMatch(/override src rule/);
+        expect(readResults[0] ?? "").toMatch(/second override line/);
+        expect(readResults[0] ?? "").toMatch(
           /Loaded subdirectory context from .*src\/components\/AGENTS\.md/,
         );
-        assert.match(readResults[0] ?? "", /component rule/);
-        assert.doesNotMatch(readResults[0] ?? "", /plain src rule/);
-        assert.doesNotMatch(readResults[0] ?? "", /root rule/);
+        expect(readResults[0] ?? "").toMatch(/component rule/);
+        expect(readResults[0] ?? "").not.toMatch(/plain src rule/);
+        expect(readResults[0] ?? "").not.toMatch(/root rule/);
 
-        assert.match(readResults[1] ?? "", /export const Button = \(\) => null;/);
-        assert.doesNotMatch(readResults[1] ?? "", /Loaded subdirectory context from/);
-        assert.doesNotMatch(readResults[1] ?? "", /override src rule/);
-        assert.doesNotMatch(readResults[1] ?? "", /component rule/);
+        expect(readResults[1] ?? "").toMatch(/export const Button = \(\) => null;/);
+        expect(readResults[1] ?? "").not.toMatch(/Loaded subdirectory context from/);
+        expect(readResults[1] ?? "").not.toMatch(/override src rule/);
+        expect(readResults[1] ?? "").not.toMatch(/component rule/);
 
         const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
-        assert.deepEqual(notifications, [
+        expect(notifications).toEqual([
           "Loaded src/AGENTS.override.md into context (2 lines)",
           "Loaded src/components/AGENTS.md into context (1 line)",
         ]);
@@ -2006,7 +1988,7 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
       skillPath.endsWith("/executor/SKILL.md"),
     );
 
-    assert.ok(executorSkillPath);
+    expect(executorSkillPath).toBeTruthy();
 
     session = await createTestSession({
       cwd,
@@ -2034,11 +2016,11 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
       )
       .join("\n");
 
-    assert.match(readResult, /name: executor/);
-    assert.doesNotMatch(readResult, /Loaded subdirectory context from/);
+    expect(readResult).toMatch(/name: executor/);
+    expect(readResult).not.toMatch(/Loaded subdirectory context from/);
 
     const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
-    assert.deepEqual(notifications, []);
+    expect(notifications).toEqual([]);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -2092,19 +2074,19 @@ timedTest("agents-md extension loads AGENTS only within the session git root", a
           .join("\n"),
       );
 
-    assert.equal(readResults.length, 2);
-    assert.match(readResults[0] ?? "", /export const util = 1;/);
-    assert.match(readResults[0] ?? "", /Loaded subdirectory context from .*shared\/AGENTS\.md/);
-    assert.match(readResults[0] ?? "", /shared rule/);
-    assert.doesNotMatch(readResults[0] ?? "", /repo root rule/);
+    expect(readResults.length).toBe(2);
+    expect(readResults[0] ?? "").toMatch(/export const util = 1;/);
+    expect(readResults[0] ?? "").toMatch(/Loaded subdirectory context from .*shared\/AGENTS\.md/);
+    expect(readResults[0] ?? "").toMatch(/shared rule/);
+    expect(readResults[0] ?? "").not.toMatch(/repo root rule/);
 
-    assert.match(readResults[1] ?? "", /outside file/);
-    assert.doesNotMatch(readResults[1] ?? "", /Loaded subdirectory context from/);
-    assert.doesNotMatch(readResults[1] ?? "", /external rule/);
+    expect(readResults[1] ?? "").toMatch(/outside file/);
+    expect(readResults[1] ?? "").not.toMatch(/Loaded subdirectory context from/);
+    expect(readResults[1] ?? "").not.toMatch(/external rule/);
 
     const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
-    assert.equal(notifications.length, 1);
-    assert.match(notifications[0] ?? "", /shared\/AGENTS\.md/);
+    expect(notifications.length).toBe(1);
+    expect(notifications[0] ?? "").toMatch(/shared\/AGENTS\.md/);
   } finally {
     session?.dispose();
     await rm(repoRoot, { recursive: true, force: true });
@@ -2192,81 +2174,71 @@ timedTest(
       const sessionId = startedState?.sessionId ?? "";
       const sessionPath = startedState?.sessionPath ?? "";
 
-      assert.match(sessionId, /^[0-9a-f-]{36}$/i);
-      assert.equal(executionEnds.length, 5);
-      assert.ok(executionEnds.every((event) => event.isError === false));
-      assert.match(
-        executionEnds[0]?.result?.content?.[0]?.text ?? "",
+      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(executionEnds.length).toBe(5);
+      expect(executionEnds.every((event) => event.isError === false)).toBeTruthy();
+      expect(executionEnds[0]?.result?.content?.[0]?.text ?? "").toMatch(
         /The subagent will return with a summary automatically when it finishes/i,
       );
-      assert.match(executionEnds[1]?.result?.content?.[0]?.text ?? "", /count: 1/);
-      assert.match(
-        executionEnds[1]?.result?.content?.[0]?.text ?? "",
+      expect(executionEnds[1]?.result?.content?.[0]?.text ?? "").toMatch(/count: 1/);
+      expect(executionEnds[1]?.result?.content?.[0]?.text ?? "").toMatch(
         new RegExp(`sessionId: ${sessionId}`),
       );
-      assert.match(
-        executionEnds[2]?.result?.content?.[0]?.text ?? "",
+      expect(executionEnds[2]?.result?.content?.[0]?.text ?? "").toMatch(
         new RegExp(`sessionId: ${sessionId}`),
       );
-      assert.match(executionEnds[2]?.result?.content?.[0]?.text ?? "", /delivery: steer/);
-      assert.match(
-        executionEnds[3]?.result?.content?.[0]?.text ?? "",
+      expect(executionEnds[2]?.result?.content?.[0]?.text ?? "").toMatch(/delivery: steer/);
+      expect(executionEnds[3]?.result?.content?.[0]?.text ?? "").toMatch(
         new RegExp(`sessionId: ${sessionId}`),
       );
-      assert.match(executionEnds[3]?.result?.content?.[0]?.text ?? "", /cancelled/i);
-      assert.match(
-        executionEnds[4]?.result?.content?.[0]?.text ?? "",
+      expect(executionEnds[3]?.result?.content?.[0]?.text ?? "").toMatch(/cancelled/i);
+      expect(executionEnds[4]?.result?.content?.[0]?.text ?? "").toMatch(
         new RegExp(`sessionId: ${sessionId}`),
       );
-      assert.match(
-        executionEnds[4]?.result?.content?.[0]?.text ?? "",
+      expect(executionEnds[4]?.result?.content?.[0]?.text ?? "").toMatch(
         /Previous task resumed and followUp message delivered/i,
       );
 
-      assert.equal(mux.created.length, 2);
-      assert.equal(mux.sent.length, 2);
-      assert.equal(mux.killed.length, 1);
-      assert.equal(mux.created[0]?.title, "worker-one");
-      assert.equal(mux.created[1]?.title, "worker-one");
-      assert.match(mux.created[0]?.command ?? "", /--session/);
-      assert.match(mux.created[1]?.command ?? "", /--session/);
-      assert.ok((mux.created[1]?.command ?? "").includes(sessionPath));
-      assert.match(mux.created[0]?.command ?? "", /Inspect failing tests/);
-      assert.match(mux.created[1]?.command ?? "", /Inspect failing tests/);
-      assert.match(mux.created[0]?.command ?? "", /"prompt":"Inspect failing tests"/);
-      assert.match(mux.created[1]?.command ?? "", /"prompt":"Inspect failing tests"/);
-      assert.match(mux.created[0]?.command ?? "", /"autoExitTimeoutMs":30000/);
-      assert.match(mux.created[1]?.command ?? "", /"autoExitTimeoutMs":30000/);
+      expect(mux.created.length).toBe(2);
+      expect(mux.sent.length).toBe(2);
+      expect(mux.killed.length).toBe(1);
+      expect(mux.created[0]?.title).toBe("worker-one");
+      expect(mux.created[1]?.title).toBe("worker-one");
+      expect(mux.created[0]?.command ?? "").toMatch(/--session/);
+      expect(mux.created[1]?.command ?? "").toMatch(/--session/);
+      expect((mux.created[1]?.command ?? "").includes(sessionPath)).toBeTruthy();
+      expect(mux.created[0]?.command ?? "").toMatch(/Inspect failing tests/);
+      expect(mux.created[1]?.command ?? "").toMatch(/Inspect failing tests/);
+      expect(mux.created[0]?.command ?? "").toMatch(/"prompt":"Inspect failing tests"/);
+      expect(mux.created[1]?.command ?? "").toMatch(/"prompt":"Inspect failing tests"/);
+      expect(mux.created[0]?.command ?? "").toMatch(/"autoExitTimeoutMs":30000/);
+      expect(mux.created[1]?.command ?? "").toMatch(/"autoExitTimeoutMs":30000/);
       {
         const command = mux.created[0]?.command ?? "";
         const promptIndex = command.indexOf("Inspect failing tests");
         const modeFlagIndex = command.indexOf("--mode-worker");
-        assert.ok(modeFlagIndex === -1 || promptIndex < modeFlagIndex);
+        expect(modeFlagIndex === -1 || promptIndex < modeFlagIndex).toBeTruthy();
       }
-      assert.equal(mux.sent[0]?.text, "Focus on src/extensions first");
-      assert.equal(mux.sent[0]?.submitMode, "steer");
-      assert.equal(mux.sent[1]?.text, "Address review feedback");
-      assert.equal(mux.sent[1]?.submitMode, "followUp");
-      assert.ok(session.events.uiCallsFor("setWidget").length > 0);
+      expect(mux.sent[0]?.text).toBe("Focus on src/extensions first");
+      expect(mux.sent[0]?.submitMode).toBe("steer");
+      expect(mux.sent[1]?.text).toBe("Address review feedback");
+      expect(mux.sent[1]?.submitMode).toBe("followUp");
+      expect(session.events.uiCallsFor("setWidget").length > 0).toBeTruthy();
 
       const renderedText = renderSessionChatLines(session).join("\n");
-      assert.match(
-        renderedText,
+      expect(renderedText).toMatch(
         /π start · worker-one · worker · Inspect failing tests · worker-one · running/,
       );
-      assert.match(renderedText, /π list · 1 agent · 1 running/);
-      assert.match(
-        renderedText,
+      expect(renderedText).toMatch(/π list · 1 agent · 1 running/);
+      expect(renderedText).toMatch(
         /π message · [0-9a-f]{8} · steer · Focus on src\/extensions first/i,
       );
-      assert.match(
-        renderedText,
+      expect(renderedText).toMatch(
         /worker-one · running · steer · Focus on src\/extensions[\s\S]*first/i,
       );
-      assert.match(renderedText, /π cancel · [0-9a-f]{8} · worker-one · cancelled/i);
-      assert.match(renderedText, /π message · [0-9a-f]{8} · followUp · Address review feedback/i);
-      assert.match(
-        renderedText,
+      expect(renderedText).toMatch(/π cancel · [0-9a-f]{8} · worker-one · cancelled/i);
+      expect(renderedText).toMatch(/π message · [0-9a-f]{8} · followUp · Address review feedback/i);
+      expect(renderedText).toMatch(
         /worker-one · running · resumed · followUp · Address[\s\S]*review\s+feedback/i,
       );
     } finally {
@@ -2319,10 +2291,10 @@ timedTest("subagent extension launches into a tmux window when the mode requests
       ]),
     );
 
-    assert.equal(mux.created.length, 1);
-    assert.equal(mux.created[0]?.target, "window");
-    assert.equal(mux.created[0]?.title, "worker-window");
-    assert.match(mux.created[0]?.command ?? "", /Inspect failing tests/);
+    expect(mux.created.length).toBe(1);
+    expect(mux.created[0]?.target).toBe("window");
+    expect(mux.created[0]?.title).toBe("worker-window");
+    expect(mux.created[0]?.command ?? "").toMatch(/Inspect failing tests/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -2375,10 +2347,10 @@ timedTest(
         ]),
       );
 
-      assert.equal(mux.created.length, 1);
-      assert.equal(mux.created[0]?.title, "worker-timeout");
-      assert.match(mux.created[0]?.command ?? "", /"prompt":"Inspect failing tests"/);
-      assert.match(mux.created[0]?.command ?? "", /"autoExitTimeoutMs":45/);
+      expect(mux.created.length).toBe(1);
+      expect(mux.created[0]?.title).toBe("worker-timeout");
+      expect(mux.created[0]?.command ?? "").toMatch(/"prompt":"Inspect failing tests"/);
+      expect(mux.created[0]?.command ?? "").toMatch(/"autoExitTimeoutMs":45/);
     } finally {
       session?.dispose();
       await rm(cwd, { recursive: true, force: true });
@@ -2418,18 +2390,16 @@ timedTest(
         ]),
       );
 
-      assert.equal(mux.created.length, 1);
-      assert.match(mux.created[0]?.command ?? "", /Shared summary from handoff helper/);
-      assert.match(mux.created[0]?.command ?? "", /Parent session/);
-      assert.doesNotMatch(
-        mux.created[0]?.command ?? "",
+      expect(mux.created.length).toBe(1);
+      expect(mux.created[0]?.command ?? "").toMatch(/Shared summary from handoff helper/);
+      expect(mux.created[0]?.command ?? "").toMatch(/Parent session/);
+      expect(mux.created[0]?.command ?? "").not.toMatch(
         /--mode-worker .*Shared summary from handoff helper/,
       );
       const toolExecutionEnd = session.events.all.find(
         (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
       ) as { result?: { content?: Array<{ type: string; text?: string }> } } | undefined;
-      assert.match(
-        toolExecutionEnd?.result?.content?.[0]?.text ?? "",
+      expect(toolExecutionEnd?.result?.content?.[0]?.text ?? "").toMatch(
         /will return with a summary automatically when it finishes/i,
       );
     } finally {
@@ -2464,15 +2434,14 @@ timedTest("subagent extension reports standard tool errors for invalid operation
     const toolExecutionEnd = session.events.all.find(
       (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
     );
-    assert.ok(toolExecutionEnd);
-    assert.equal(toolExecutionEnd.isError, true);
+    expect(toolExecutionEnd).toBeTruthy();
+    expect(toolExecutionEnd.isError).toBe(true);
     const errorText =
       toolExecutionEnd.result?.content
         ?.filter((part) => part.type === "text")
         .map((part) => part.text ?? "")
         .join("\n") ?? "";
-    assert.match(
-      errorText,
+    expect(errorText).toMatch(
       /subagent message failed: sessionId missing-session was not found in this parent session/,
     );
   } finally {
@@ -2504,15 +2473,15 @@ timedTest("subagent extension reports actionable invalid param errors", async ()
     const toolExecutionEnd = session.events.all.find(
       (event) => event.type === "tool_execution_end" && event.toolName === "subagent",
     );
-    assert.ok(toolExecutionEnd);
-    assert.equal(toolExecutionEnd.isError, true);
+    expect(toolExecutionEnd).toBeTruthy();
+    expect(toolExecutionEnd.isError).toBe(true);
     const errorText =
       toolExecutionEnd.result?.content
         ?.filter((part) => part.type === "text")
         .map((part) => part.text ?? "")
         .join("\n") ?? "";
-    assert.match(errorText, /Invalid subagent start params: `task` is required/);
-    assert.match(errorText, /There is no subagent read action later/i);
+    expect(errorText).toMatch(/Invalid subagent start params: `task` is required/);
+    expect(errorText).toMatch(/There is no subagent read action later/i);
   } finally {
     session?.dispose();
   }
@@ -2565,8 +2534,8 @@ timedTest("mermaid command still emits a standalone preview message", async () =
       (entry) => entry.type === "custom_message" && entry.customType === "pi-mermaid",
     );
 
-    assert.equal(customMermaidMessages.length, 1);
-    assert.match(customMermaidMessages[0]?.details?.source ?? "", /sequenceDiagram/);
+    expect(customMermaidMessages.length).toBe(1);
+    expect(customMermaidMessages[0]?.details?.source ?? "").toMatch(/sequenceDiagram/);
   } finally {
     session?.dispose();
   }
@@ -2625,12 +2594,12 @@ timedTest(
 
     const blocks = extractMermaidBlocks(content);
 
-    assert.equal(blocks.length, 3);
-    assert.match(blocks[0] ?? "", /flowchart LR/);
-    assert.match(blocks[0] ?? "", /contains ```mermaid``` fence/);
-    assert.match(blocks[1] ?? "", /flowchart LR/);
-    assert.match(blocks[2] ?? "", /sequenceDiagram/);
-    assert.ok(blocks.every((block) => !block.includes("Start --> Validate")));
+    expect(blocks.length).toBe(3);
+    expect(blocks[0] ?? "").toMatch(/flowchart LR/);
+    expect(blocks[0] ?? "").toMatch(/contains ```mermaid``` fence/);
+    expect(blocks[1] ?? "").toMatch(/flowchart LR/);
+    expect(blocks[2] ?? "").toMatch(/sequenceDiagram/);
+    expect(blocks.every((block) => !block.includes("Start --> Validate"))).toBeTruthy();
   },
 );
 
@@ -2646,12 +2615,11 @@ timedTest("prompt stash persistence round-trips clean JSONL entries", async () =
     await withTempAgentDir(agentDir, async () => {
       await saveStashEntries(cwd, entries);
 
-      assert.equal(
-        await readFile(getStashFilePath(), "utf8"),
+      expect(await readFile(getStashFilePath(), "utf8")).toBe(
         entries.map((entry) => JSON.stringify(entry)).join("\n"),
       );
 
-      assert.deepEqual(await loadStashEntries(cwd), entries);
+      expect(await loadStashEntries(cwd)).toEqual(entries);
     });
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -2682,9 +2650,8 @@ timedTest("prompt stash load self-heals malformed JSONL lines", async () => {
         "utf8",
       );
 
-      assert.deepEqual(await loadStashEntries(cwd), [entries[0], entries[1]]);
-      assert.equal(
-        await readFile(getStashFilePath(), "utf8"),
+      expect(await loadStashEntries(cwd)).toEqual([entries[0], entries[1]]);
+      expect(await readFile(getStashFilePath(), "utf8")).toBe(
         [JSON.stringify(entries[0]), JSON.stringify(entries[1])].join("\n"),
       );
     });
@@ -2710,13 +2677,11 @@ timedTest("prompt stash normalizes oversized JSONL files on load", async () => {
       );
 
       const loaded = await loadStashEntries(cwd);
-      assert.equal(loaded.length, 50);
-      assert.deepEqual(
-        loaded.map((entry) => entry.id),
+      expect(loaded.length).toBe(50);
+      expect(loaded.map((entry) => entry.id)).toEqual(
         entries.slice(0, 50).map((entry) => entry.id),
       );
-      assert.equal(
-        await readFile(getStashFilePath(), "utf8"),
+      expect(await readFile(getStashFilePath(), "utf8")).toBe(
         entries
           .slice(0, 50)
           .map((entry) => JSON.stringify(entry))
@@ -2741,12 +2706,11 @@ timedTest("prompt stash caps persisted entries at fifty", async () => {
       await saveStashEntries(cwd, entries);
 
       const loaded = await loadStashEntries(cwd);
-      assert.equal(loaded.length, 50);
-      assert.deepEqual(
-        loaded.map((entry) => entry.id),
+      expect(loaded.length).toBe(50);
+      expect(loaded.map((entry) => entry.id)).toEqual(
         entries.slice(0, 50).map((entry) => entry.id),
       );
-      assert.equal((await readFile(getStashFilePath(), "utf8")).split("\n").length, 50);
+      expect((await readFile(getStashFilePath(), "utf8")).split("\n").length).toBe(50);
     });
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -2771,8 +2735,8 @@ timedTest("prompt stash registers the stash command when loaded", async () => {
     ).extensionRunner.getRegisteredCommands();
 
     const stashCommand = registeredCommands.find((command) => command.invocationName === "stash");
-    assert.ok(stashCommand);
-    assert.equal(stashCommand?.description, "Manage stashed prompts");
+    expect(stashCommand).toBeTruthy();
+    expect(stashCommand?.description).toBe("Manage stashed prompts");
   } finally {
     session?.dispose();
   }
@@ -2796,9 +2760,9 @@ timedTest("prompt stash registers a non-conflicting shortcut", async () => {
       }
     ).extensionRunner.getShortcuts(KeybindingsManager.create().getEffectiveConfig());
 
-    assert.equal(shortcuts.get("ctrl+alt+s")?.description, "Stash current prompt");
-    assert.equal(shortcuts.get("ctrl+alt+p")?.description, "Select prompt mode");
-    assert.equal(shortcuts.get("ctrl+alt+m")?.description, "Cycle prompt mode");
+    expect(shortcuts.get("ctrl+alt+s")?.description).toBe("Stash current prompt");
+    expect(shortcuts.get("ctrl+alt+p")?.description).toBe("Select prompt mode");
+    expect(shortcuts.get("ctrl+alt+m")?.description).toBe("Cycle prompt mode");
   } finally {
     session?.dispose();
   }
@@ -2822,12 +2786,11 @@ timedTest("files extension registers alt-based shortcuts", async () => {
       }
     ).extensionRunner.getShortcuts(KeybindingsManager.create().getEffectiveConfig());
 
-    assert.equal(shortcuts.get("ctrl+alt+o")?.description, "Browse files mentioned in the session");
-    assert.equal(
-      shortcuts.get("ctrl+alt+f")?.description,
+    expect(shortcuts.get("ctrl+alt+o")?.description).toBe("Browse files mentioned in the session");
+    expect(shortcuts.get("ctrl+alt+f")?.description).toBe(
       "Reveal the latest file reference in Finder",
     );
-    assert.equal(shortcuts.get("ctrl+alt+r")?.description, "Quick Look the latest file reference");
+    expect(shortcuts.get("ctrl+alt+r")?.description).toBe("Quick Look the latest file reference");
   } finally {
     session?.dispose();
   }
@@ -2855,9 +2818,8 @@ timedTest("/stash pop applies the latest entry and removes it from disk", async 
       await session.session.prompt("/stash pop");
       await session.session.agent.waitForIdle();
 
-      assert.equal(session.events.uiCallsFor("setEditorText").at(-1)?.args[0], entries[0]?.text);
-      assert.equal(
-        session.events.uiCallsFor("notify").at(-1)?.args[0],
+      expect(session.events.uiCallsFor("setEditorText").at(-1)?.args[0]).toBe(entries[0]?.text);
+      expect(session.events.uiCallsFor("notify").at(-1)?.args[0]).toBe(
         "Applied latest stash entry (2 lines)",
       );
       const latestPromptStashState = (
@@ -2870,8 +2832,8 @@ timedTest("/stash pop applies the latest entry and removes it from disk", async 
         .getEntries()
         .filter((entry) => entry.type === "custom" && entry.customType === "prompt-stash-state")
         .at(-1);
-      assert.ok(latestPromptStashState);
-      assert.deepEqual(await loadStashEntries(cwd), [entries[1]]);
+      expect(latestPromptStashState).toBeTruthy();
+      expect(await loadStashEntries(cwd)).toEqual([entries[1]]);
     });
   } finally {
     session?.dispose();

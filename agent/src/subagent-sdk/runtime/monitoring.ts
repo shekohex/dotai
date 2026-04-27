@@ -10,6 +10,8 @@ import {
 import { formatStructuredOutputError } from "./base.js";
 import { SubagentRuntimeMessaging } from "./messaging.js";
 
+const SUBAGENT_POLL_INTERVAL_MS = 250;
+
 function pathDirname(inputPath: string): string {
   const slashIndex = inputPath.lastIndexOf("/");
   const backslashIndex = inputPath.lastIndexOf("\\");
@@ -33,7 +35,7 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
 
     this.pollTimer = setInterval(() => {
       void this.poll();
-    }, 2000);
+    }, SUBAGENT_POLL_INTERVAL_MS);
     this.pollTimer.unref?.();
   }
 

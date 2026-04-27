@@ -1484,7 +1484,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         content: [
           {
             type: "text",
-            text: "\n> @shekohex/agent@0.65.2 test:tool-preview\n> node --import tsx --test ./test/tool-preview.test.ts\n",
+            text: "\n> @shekohex/agent@0.70.0 test:tool-preview\n> vitest run ./test/tool-preview.test.ts\n",
           },
         ],
       },
@@ -1492,15 +1492,15 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         frameDurationMs: 1000,
         partialFrames: [
           {
-            content: [{ type: "text", text: "> @shekohex/agent@0.65.2 test:tool-preview" }],
+            content: [{ type: "text", text: "> @shekohex/agent@0.70.0 test:tool-preview" }],
           },
           {
             content: [
               {
                 type: "text",
                 text: [
-                  "> @shekohex/agent@0.65.2 test:tool-preview",
-                  "> node --import tsx --test ./test/tool-preview.test.ts",
+                  "> @shekohex/agent@0.70.0 test:tool-preview",
+                  "> vitest run ./test/tool-preview.test.ts",
                 ].join("\n"),
               },
             ],
@@ -1510,8 +1510,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
               {
                 type: "text",
                 text: [
-                  "> @shekohex/agent@0.65.2 test:tool-preview",
-                  "> node --import tsx --test ./test/tool-preview.test.ts",
+                  "> @shekohex/agent@0.70.0 test:tool-preview",
+                  "> vitest run ./test/tool-preview.test.ts",
                   "",
                   "✔ apply_patch preview renders collapsed and expanded states",
                 ].join("\n"),
@@ -1523,8 +1523,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
               {
                 type: "text",
                 text: [
-                  "> @shekohex/agent@0.65.2 test:tool-preview",
-                  "> node --import tsx --test ./test/tool-preview.test.ts",
+                  "> @shekohex/agent@0.70.0 test:tool-preview",
+                  "> vitest run ./test/tool-preview.test.ts",
                   "",
                   "✔ apply_patch preview renders collapsed and expanded states",
                   "✔ all preview scenarios render within width 120",
@@ -1539,8 +1539,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
           {
             type: "text",
             text: [
-              "> @shekohex/agent@0.65.2 test:tool-preview",
-              "> node --import tsx --test ./test/tool-preview.test.ts",
+              "> @shekohex/agent@0.70.0 test:tool-preview",
+              "> vitest run ./test/tool-preview.test.ts",
               "",
               "✔ apply_patch preview renders collapsed and expanded states",
               "✔ all preview scenarios render within width 120",

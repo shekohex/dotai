@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import { initTheme, InteractiveMode } from "@mariozechner/pi-coding-agent";
 import { setKeybindings } from "@mariozechner/pi-tui";
 import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
@@ -28,7 +27,7 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
 
 timedTest("apply_patch preview renders collapsed and expanded states", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:multi-file");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
@@ -37,10 +36,10 @@ timedTest("apply_patch preview renders collapsed and expanded states", () => {
   const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-expanded");
   const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
 
-  assert.ok(collapsed);
-  assert.ok(partial);
-  assert.ok(error);
-  assert.ok(expanded);
+  expect(collapsed).toBeTruthy();
+  expect(partial).toBeTruthy();
+  expect(error).toBeTruthy();
+  expect(expanded).toBeTruthy();
 
   const collapsedText = renderPreviewText(scenario, collapsed, 120);
   const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter(
@@ -50,59 +49,58 @@ timedTest("apply_patch preview renders collapsed and expanded states", () => {
   const errorText = renderPreviewText(scenario, error, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
-  assert.match(stripAnsi(partialText), /patching 4 files/);
-  assert.match(stripAnsi(partialText), /0\/4/);
-  assert.match(stripAnsi(partialText), /src\/extensions\/patch.ts/);
-  assert.equal(collapsedLines.length, 1);
-  assert.match(stripAnsi(collapsedText), /patched 4 files/);
-  assert.match(stripAnsi(collapsedText), /\+\d+ -\d+/);
-  assert.doesNotMatch(stripAnsi(collapsedText), /↳/);
-  assert.doesNotMatch(stripAnsi(collapsedText), /A src\/tool-preview-demo.ts/);
-  assert.doesNotMatch(stripAnsi(collapsedText), /D src\/tool-preview-old.ts/);
-  assert.match(stripAnsi(errorText), /patch 4 files/);
-  assert.match(stripAnsi(errorText), /src\/tool-preview-modern.ts/);
-  assert.match(stripAnsi(expandedText), /M src\/extensions\/patch.ts/);
-  assert.match(stripAnsi(expandedText), /A src\/tool-preview-demo.ts/);
-  assert.match(
-    stripAnsi(expandedText),
+  expect(stripAnsi(partialText)).toMatch(/patching 4 files/);
+  expect(stripAnsi(partialText)).toMatch(/0\/4/);
+  expect(stripAnsi(partialText)).toMatch(/src\/extensions\/patch.ts/);
+  expect(collapsedLines.length).toBe(1);
+  expect(stripAnsi(collapsedText)).toMatch(/patched 4 files/);
+  expect(stripAnsi(collapsedText)).toMatch(/\+\d+ -\d+/);
+  expect(stripAnsi(collapsedText)).not.toMatch(/↳/);
+  expect(stripAnsi(collapsedText)).not.toMatch(/A src\/tool-preview-demo.ts/);
+  expect(stripAnsi(collapsedText)).not.toMatch(/D src\/tool-preview-old.ts/);
+  expect(stripAnsi(errorText)).toMatch(/patch 4 files/);
+  expect(stripAnsi(errorText)).toMatch(/src\/tool-preview-modern.ts/);
+  expect(stripAnsi(expandedText)).toMatch(/M src\/extensions\/patch.ts/);
+  expect(stripAnsi(expandedText)).toMatch(/A src\/tool-preview-demo.ts/);
+  expect(stripAnsi(expandedText)).toMatch(
     /diff --git a\/src\/extensions\/patch.ts b\/src\/extensions\/patch.ts/,
   );
-  assert.doesNotMatch(stripAnsi(expandedText), /\*\*\* Update File:/);
+  expect(stripAnsi(expandedText)).not.toMatch(/\*\*\* Update File:/);
 });
 
 timedTest("single-file patch collapsed success avoids duplicate summary line", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:single-file");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
   );
-  assert.ok(collapsed);
+  expect(collapsed).toBeTruthy();
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
-  assert.match(text, /patched patch\.ts \.\/src\/extensions\/ · \+\d+ -\d+/);
-  assert.doesNotMatch(text, /↳/);
+  expect(text).toMatch(/patched patch\.ts \.\/src\/extensions\/ · \+\d+ -\d+/);
+  expect(text).not.toMatch(/↳/);
 });
 
 timedTest("streaming apply_patch call shows incoming patch lines", () => {
   const scenario = getToolPreviewScenarios().find(
     (item) => item.id === "apply_patch:streaming-call",
   );
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
-  assert.ok(collapsed);
+  expect(collapsed).toBeTruthy();
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
-  assert.match(text, /patching 2 files/);
-  assert.match(text, /\*\*\* Update File: src\/extensions\/patch.ts/);
-  assert.match(text, /\+export const preview = true;/);
+  expect(text).toMatch(/patching 2 files/);
+  expect(text).toMatch(/\*\*\* Update File: src\/extensions\/patch.ts/);
+  expect(text).toMatch(/\+export const preview = true;/);
 });
 
 timedTest("rehydrated apply_patch result stays collapsed", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:single-file");
-  assert.ok(scenario);
-  assert.ok(scenario.successResult);
+  expect(scenario).toBeTruthy();
+  expect(scenario.successResult).toBeTruthy();
 
   const component = new ToolExecutionComponent(
     scenario.toolName,
@@ -126,14 +124,14 @@ timedTest("rehydrated apply_patch result stays collapsed", () => {
 
   const text = stripAnsi(component.render(120).join("\n"));
 
-  assert.match(text, /patched patch\.ts \.\/src\/extensions\/ · \+\d+ -\d+/);
-  assert.doesNotMatch(text, /\bpatching\b/);
-  assert.doesNotMatch(text, /\*\*\* Update File:/);
+  expect(text).toMatch(/patched patch\.ts \.\/src\/extensions\/ · \+\d+ -\d+/);
+  expect(text).not.toMatch(/\bpatching\b/);
+  expect(text).not.toMatch(/\*\*\* Update File:/);
 });
 
 timedTest("session_query preview appends collapsed result inline", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "session_query:compact");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
@@ -141,9 +139,9 @@ timedTest("session_query preview appends collapsed result inline", () => {
   const partial = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-collapsed");
   const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
 
-  assert.ok(collapsed);
-  assert.ok(partial);
-  assert.ok(expanded);
+  expect(collapsed).toBeTruthy();
+  expect(partial).toBeTruthy();
+  expect(expanded).toBeTruthy();
 
   const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
   const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter(
@@ -152,17 +150,16 @@ timedTest("session_query preview appends collapsed result inline", () => {
   const partialText = stripAnsi(renderPreviewText(scenario, partial, 120));
   const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
 
-  assert.equal(collapsedLines.length, 1);
-  assert.match(
-    collapsedText,
+  expect(collapsedLines.length).toBe(1);
+  expect(collapsedText).toMatch(
     /queried 0e990a27 → What files were modified in the parent session\?/,
   );
-  assert.match(collapsedText, /answered · took \d+s/);
-  assert.doesNotMatch(collapsedText, /↳/);
-  assert.match(partialText, /Modified files included src\/extensions\/coreui\/tools.ts/);
-  assert.match(partialText, /1 line so far \(0s\)/);
-  assert.match(expandedText, /Question:/);
-  assert.match(expandedText, /test\/tool-preview.test.ts/);
+  expect(collapsedText).toMatch(/answered · took \d+s/);
+  expect(collapsedText).not.toMatch(/↳/);
+  expect(partialText).toMatch(/Modified files included src\/extensions\/coreui\/tools.ts/);
+  expect(partialText).toMatch(/1 line so far \(0s\)/);
+  expect(expandedText).toMatch(/Question:/);
+  expect(expandedText).toMatch(/test\/tool-preview.test.ts/);
 });
 
 timedTest("subagent previews render representative action summaries and expanded metadata", () => {
@@ -171,10 +168,10 @@ timedTest("subagent previews render representative action summaries and expanded
   const listScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:list");
   const cancelScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:cancel");
 
-  assert.ok(startScenario);
-  assert.ok(messageScenario);
-  assert.ok(listScenario);
-  assert.ok(cancelScenario);
+  expect(startScenario).toBeTruthy();
+  expect(messageScenario).toBeTruthy();
+  expect(listScenario).toBeTruthy();
+  expect(cancelScenario).toBeTruthy();
 
   const startCollapsed = getToolPreviewPanels(startScenario).find(
     (panel) => panel.id === "success-collapsed",
@@ -213,18 +210,18 @@ timedTest("subagent previews render representative action summaries and expanded
     (panel) => panel.id === "success-expanded",
   );
 
-  assert.ok(startCollapsed);
-  assert.ok(startExpanded);
-  assert.ok(startPartialCollapsed);
-  assert.ok(startPartialExpanded);
-  assert.ok(messagePartialCollapsed);
-  assert.ok(messagePartialExpanded);
-  assert.ok(messageCollapsed);
-  assert.ok(messageExpanded);
-  assert.ok(listCollapsed);
-  assert.ok(listExpanded);
-  assert.ok(cancelCollapsed);
-  assert.ok(cancelExpanded);
+  expect(startCollapsed).toBeTruthy();
+  expect(startExpanded).toBeTruthy();
+  expect(startPartialCollapsed).toBeTruthy();
+  expect(startPartialExpanded).toBeTruthy();
+  expect(messagePartialCollapsed).toBeTruthy();
+  expect(messagePartialExpanded).toBeTruthy();
+  expect(messageCollapsed).toBeTruthy();
+  expect(messageExpanded).toBeTruthy();
+  expect(listCollapsed).toBeTruthy();
+  expect(listExpanded).toBeTruthy();
+  expect(cancelCollapsed).toBeTruthy();
+  expect(cancelExpanded).toBeTruthy();
 
   const startCollapsedText = stripAnsi(renderPreviewText(startScenario, startCollapsed, 120));
   const startExpandedText = stripAnsi(renderPreviewText(startScenario, startExpanded, 120));
@@ -267,68 +264,63 @@ timedTest("subagent previews render representative action summaries and expanded
   const cancelCollapsedText = stripAnsi(renderPreviewText(cancelScenario, cancelCollapsed, 120));
   const cancelExpandedText = stripAnsi(renderPreviewText(cancelScenario, cancelExpanded, 120));
 
-  assert.match(
-    startCollapsedText,
+  expect(startCollapsedText).toMatch(
     /π start · reviewer-two · review · Review preview renderer and note UI gaps · reviewer-two · running/,
   );
-  assert.match(startPartialCollapsedText, /π start .* · handoff/s);
-  assert.match(startPartialExpandedText, /Preparing handoff for reviewer-two/);
-  assert.match(startPartialExpandedText, /0s/);
-  assert.match(animatedStartPartialCollapsedText, /\.\.\. \(2 earlier lines\)/);
-  assert.match(animatedStartPartialCollapsedText, /7 lines so far \(2s\) · handoff/);
-  assert.match(animatedStartPartialCollapsedText, /SUBAGENT-TAIL-MARKER/);
-  assert.match(animatedStartPartialCollapsedText, /visible\./);
-  assert.doesNotMatch(
-    animatedStartPartialCollapsedText,
+  expect(startPartialCollapsedText).toMatch(/π start .* · handoff/s);
+  expect(startPartialExpandedText).toMatch(/Preparing handoff for reviewer-two/);
+  expect(startPartialExpandedText).toMatch(/0s/);
+  expect(animatedStartPartialCollapsedText).toMatch(/\.\.\. \(2 earlier lines\)/);
+  expect(animatedStartPartialCollapsedText).toMatch(/7 lines so far \(2s\) · handoff/);
+  expect(animatedStartPartialCollapsedText).toMatch(/SUBAGENT-TAIL-MARKER/);
+  expect(animatedStartPartialCollapsedText).toMatch(/visible\./);
+  expect(animatedStartPartialCollapsedText).not.toMatch(
     /We implemented tmux-backed subagents with session-backed persistence\./,
   );
-  assert.match(animatedStartPartialExpandedText, /## Context/);
-  assert.match(
-    animatedStartPartialExpandedText,
+  expect(animatedStartPartialExpandedText).toMatch(/## Context/);
+  expect(animatedStartPartialExpandedText).toMatch(
     /We implemented tmux-backed subagents with session-backed persistence\./,
   );
-  assert.match(animatedStartPartialExpandedText, /handoff · 2s/);
-  assert.match(animatedStartPartialExpandedText, /keep SUBAGENT-TAIL-MARKER/);
-  assert.match(animatedStartPartialExpandedText, /visible\./);
-  assert.match(startExpandedText, /name: reviewer-two/);
-  assert.match(startExpandedText, /handoff: true/);
-  assert.match(startExpandedText, /prompt:/);
-  assert.match(startExpandedText, /promptGuidance:/);
-  assert.match(
-    startExpandedText,
+  expect(animatedStartPartialExpandedText).toMatch(/handoff · 2s/);
+  expect(animatedStartPartialExpandedText).toMatch(/keep SUBAGENT-TAIL-MARKER/);
+  expect(animatedStartPartialExpandedText).toMatch(/visible\./);
+  expect(startExpandedText).toMatch(/name: reviewer-two/);
+  expect(startExpandedText).toMatch(/handoff: true/);
+  expect(startExpandedText).toMatch(/prompt:/);
+  expect(startExpandedText).toMatch(/promptGuidance:/);
+  expect(startExpandedText).toMatch(
     /The subagent will return with a summary automatically when it.*finishes/is,
   );
-  assert.match(startExpandedText, /sessionPath: .*2d2c7b0c\.jsonl/);
+  expect(startExpandedText).toMatch(/sessionPath: .*2d2c7b0c\.jsonl/);
 
-  assert.match(messagePartialCollapsedText, /1 line so far \(0s\) · message followUp/);
-  assert.match(messagePartialExpandedText, /Ping/);
-  assert.match(animatedMessagePartialCollapsedText, /2 lines so far \(1s\) · message followUp/);
-  assert.match(animatedMessagePartialExpandedText, /Ping/);
-  assert.match(animatedMessagePartialExpandedText, /Spacing\?/);
-  assert.match(animatedMessagePartialExpandedText, /message followUp · 1s/);
+  expect(messagePartialCollapsedText).toMatch(/1 line so far \(0s\) · message followUp/);
+  expect(messagePartialExpandedText).toMatch(/Ping/);
+  expect(animatedMessagePartialCollapsedText).toMatch(/2 lines so far \(1s\) · message followUp/);
+  expect(animatedMessagePartialExpandedText).toMatch(/Ping/);
+  expect(animatedMessagePartialExpandedText).toMatch(/Spacing\?/);
+  expect(animatedMessagePartialExpandedText).toMatch(/message followUp · 1s/);
   const messageCollapsedLines = renderPreviewLines(messageScenario, messageCollapsed, 120).filter(
     (line) => stripAnsi(line).trim().length > 0,
   );
-  assert.equal(messageCollapsedLines.length, 1);
-  assert.match(messageCollapsedText, /π message · 92ad1c07 · followUp · Ping Spacing\?/);
-  assert.match(messageCollapsedText, /doc-writer · running · followUp · Ping Spacing\?/);
-  assert.match(messageExpandedText, /delivery: followUp/);
-  assert.match(messageExpandedText, /message:/);
-  assert.match(messageExpandedText, /Ping/);
-  assert.match(messageExpandedText, /Spacing\?/);
+  expect(messageCollapsedLines.length).toBe(1);
+  expect(messageCollapsedText).toMatch(/π message · 92ad1c07 · followUp · Ping Spacing\?/);
+  expect(messageCollapsedText).toMatch(/doc-writer · running · followUp · Ping Spacing\?/);
+  expect(messageExpandedText).toMatch(/delivery: followUp/);
+  expect(messageExpandedText).toMatch(/message:/);
+  expect(messageExpandedText).toMatch(/Ping/);
+  expect(messageExpandedText).toMatch(/Spacing\?/);
 
-  assert.match(
-    listCollapsedText,
+  expect(listCollapsedText).toMatch(
     /π list · 5 agents · 1 running · 1 idle · 1 completed · 1 cancelled · 1 failed/,
   );
-  assert.match(listExpandedText, /count: 5/);
-  assert.match(listExpandedText, /subagent 1:/);
-  assert.match(listExpandedText, /name: worker-epsilon/);
-  assert.match(listExpandedText, /exitCode: 1/);
+  expect(listExpandedText).toMatch(/count: 5/);
+  expect(listExpandedText).toMatch(/subagent 1:/);
+  expect(listExpandedText).toMatch(/name: worker-epsilon/);
+  expect(listExpandedText).toMatch(/exitCode: 1/);
 
-  assert.match(cancelCollapsedText, /π cancel · c91e7f44 · stuck-worker · cancelled/);
-  assert.match(cancelExpandedText, /status: cancelled/);
-  assert.match(cancelExpandedText, /completedAt: 2026-04-11T18:16:00.000Z/);
+  expect(cancelCollapsedText).toMatch(/π cancel · c91e7f44 · stuck-worker · cancelled/);
+  expect(cancelExpandedText).toMatch(/status: cancelled/);
+  expect(cancelExpandedText).toMatch(/completedAt: 2026-04-11T18:16:00.000Z/);
 });
 
 timedTest("subagent preview error panels render action context and failure text", () => {
@@ -353,12 +345,12 @@ timedTest("subagent preview error panels render action context and failure text"
 
   for (const [scenarioId, headerPattern, bodyPattern] of expectations) {
     const scenario = getToolPreviewScenarios().find((item) => item.id === scenarioId);
-    assert.ok(scenario);
+    expect(scenario).toBeTruthy();
     const panel = getToolPreviewPanels(scenario).find((item) => item.id === "error-collapsed");
-    assert.ok(panel);
+    expect(panel).toBeTruthy();
     const text = stripAnsi(renderPreviewText(scenario, panel, 120));
-    assert.match(text, headerPattern);
-    assert.match(text, bodyPattern);
+    expect(text).toMatch(headerPattern);
+    expect(text).toMatch(bodyPattern);
   }
 });
 
@@ -373,7 +365,7 @@ timedTest("all preview scenarios render within width 120", () => {
 
 timedTest("compact bash preview renders condensed collapsed result", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:compact");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
@@ -381,9 +373,9 @@ timedTest("compact bash preview renders condensed collapsed result", () => {
   const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
   const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
 
-  assert.ok(collapsed);
-  assert.ok(error);
-  assert.ok(expanded);
+  expect(collapsed).toBeTruthy();
+  expect(error).toBeTruthy();
+  expect(expanded).toBeTruthy();
 
   const collapsedText = renderPreviewText(scenario, collapsed, 120);
   const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter(
@@ -392,23 +384,22 @@ timedTest("compact bash preview renders condensed collapsed result", () => {
   const errorText = renderPreviewText(scenario, error, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
-  assert.equal(collapsedLines.length, 1);
-  assert.match(stripAnsi(collapsedText), /Runs tool preview tests/);
-  assert.match(stripAnsi(collapsedText), /Runs tool preview tests · ok took 2s \(2 lines\)/);
-  assert.doesNotMatch(stripAnsi(collapsedText), /\n.*ok took 2s/);
-  assert.match(stripAnsi(errorText), /exit 1/);
-  assert.match(stripAnsi(errorText), /Runs tool preview tests · exit 1 took 2s \(4 lines\)/);
-  assert.doesNotMatch(stripAnsi(collapsedText), /apply_patch preview renders collapsed/);
-  assert.match(stripAnsi(expandedText), /npm run test:tool-preview/);
-  assert.match(
-    stripAnsi(expandedText),
+  expect(collapsedLines.length).toBe(1);
+  expect(stripAnsi(collapsedText)).toMatch(/Runs tool preview tests/);
+  expect(stripAnsi(collapsedText)).toMatch(/Runs tool preview tests · ok took 2s \(2 lines\)/);
+  expect(stripAnsi(collapsedText)).not.toMatch(/\n.*ok took 2s/);
+  expect(stripAnsi(errorText)).toMatch(/exit 1/);
+  expect(stripAnsi(errorText)).toMatch(/Runs tool preview tests · exit 1 took 2s \(4 lines\)/);
+  expect(stripAnsi(collapsedText)).not.toMatch(/apply_patch preview renders collapsed/);
+  expect(stripAnsi(expandedText)).toMatch(/npm run test:tool-preview/);
+  expect(stripAnsi(expandedText)).toMatch(
     /apply_patch preview renders collapsed and expanded states/,
   );
 });
 
 timedTest("webfetch preview renders pending, collapsed status, and expanded body", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "webfetch:compact");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const pending = getToolPreviewPanels(scenario).find((panel) => panel.id === "partial-collapsed");
   const collapsed = getToolPreviewPanels(scenario).find(
@@ -417,10 +408,10 @@ timedTest("webfetch preview renders pending, collapsed status, and expanded body
   const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
   const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
 
-  assert.ok(pending);
-  assert.ok(collapsed);
-  assert.ok(expanded);
-  assert.ok(error);
+  expect(pending).toBeTruthy();
+  expect(collapsed).toBeTruthy();
+  expect(expanded).toBeTruthy();
+  expect(error).toBeTruthy();
 
   const pendingText = stripAnsi(renderPreviewText(scenario, pending, 120));
   const animatedPendingText = stripAnsi(
@@ -430,18 +421,17 @@ timedTest("webfetch preview renders pending, collapsed status, and expanded body
   const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
   const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
 
-  assert.match(pendingText, /fetching https:\/\/example\.com\/docs\/pi\/fetch-preview \(10s\)/);
-  assert.match(pendingText, /Fetch preview/);
-  assert.match(animatedPendingText, /Streaming body chunk/);
-  assert.match(animatedPendingText, /line[s]? so far \(2s\)/);
-  assert.match(collapsedText, /fetched https:\/\/example\.com\/docs\/pi\/fetch-preview in 4s/);
-  assert.match(expandedText, /Fetch preview/);
-  assert.match(expandedText, /=============|# Fetch preview/);
-  assert.match(
-    expandedText,
+  expect(pendingText).toMatch(/fetching https:\/\/example\.com\/docs\/pi\/fetch-preview \(10s\)/);
+  expect(pendingText).toMatch(/Fetch preview/);
+  expect(animatedPendingText).toMatch(/Streaming body chunk/);
+  expect(animatedPendingText).toMatch(/line[s]? so far \(2s\)/);
+  expect(collapsedText).toMatch(/fetched https:\/\/example\.com\/docs\/pi\/fetch-preview in 4s/);
+  expect(expandedText).toMatch(/Fetch preview/);
+  expect(expandedText).toMatch(/=============|# Fetch preview/);
+  expect(expandedText).toMatch(
     /Full output saved to: \/tmp\/pi-fetch-preview\.txt|Full output saved to: \/tmp\/pi-webfetch-/,
   );
-  assert.match(errorText, /fetch https:\/\/example\.com\/docs\/pi\/fetch-preview/);
+  expect(errorText).toMatch(/fetch https:\/\/example\.com\/docs\/pi\/fetch-preview/);
 });
 
 timedTest(
@@ -450,7 +440,7 @@ timedTest(
     const scenario = getToolPreviewScenarios().find(
       (item) => item.id === "websearch:grounded-answer",
     );
-    assert.ok(scenario);
+    expect(scenario).toBeTruthy();
 
     const call = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
     const pending = getToolPreviewPanels(scenario).find(
@@ -467,12 +457,12 @@ timedTest(
     );
     const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
 
-    assert.ok(call);
-    assert.ok(pending);
-    assert.ok(pendingExpanded);
-    assert.ok(collapsed);
-    assert.ok(expanded);
-    assert.ok(error);
+    expect(call).toBeTruthy();
+    expect(pending).toBeTruthy();
+    expect(pendingExpanded).toBeTruthy();
+    expect(collapsed).toBeTruthy();
+    expect(expanded).toBeTruthy();
+    expect(error).toBeTruthy();
 
     const callText = stripAnsi(renderPreviewText(scenario, call, 120));
     const pendingText = stripAnsi(renderPreviewText(scenario, pending, 120));
@@ -487,53 +477,54 @@ timedTest(
     const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
     const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
 
-    assert.match(callText, /googling When did Next\.js 16 release and what changed\?/);
-    assert.match(callText, /gemini-2\.5-flash/);
-    assert.match(callText, /30s/);
-    assert.match(pendingText, /googling When did Next\.js 16 release and what changed\?/);
-    assert.match(pendingText, /Next\.js 16 released in October 2025/);
-    assert.match(pendingText, /1 line so far \(0s\)/);
-    assert.match(animatedPendingText, /\.{3} \(2 earlier lines\)/);
-    assert.match(animatedPendingText, /7 lines so far \(2s\)/);
-    assert.match(pendingExpandedText, /Next\.js 16 released in October 2025/);
-    assert.match(
-      animatedPendingExpandedText,
+    expect(callText).toMatch(/googling When did Next\.js 16 release and what changed\?/);
+    expect(callText).toMatch(/gemini-2\.5-flash/);
+    expect(callText).toMatch(/30s/);
+    expect(pendingText).toMatch(/googling When did Next\.js 16 release and what changed\?/);
+    expect(pendingText).toMatch(/Next\.js 16 released in October 2025/);
+    expect(pendingText).toMatch(/1 line so far \(0s\)/);
+    expect(animatedPendingText).toMatch(/\.{3} \(2 earlier lines\)/);
+    expect(animatedPendingText).toMatch(/7 lines so far \(2s\)/);
+    expect(pendingExpandedText).toMatch(/Next\.js 16 released in October 2025/);
+    expect(animatedPendingExpandedText).toMatch(
       /The upgrade guide also replaces ppr with cacheComponents/,
     );
-    assert.match(animatedPendingExpandedText, /Teams should re-run production build verification/);
-    assert.match(animatedPendingExpandedText, /↳ 2s/);
-    assert.match(collapsedText, /googled When did Next\.js 16 release and what changed\?/);
-    assert.match(collapsedText, /answered · 3 grounded results · took 5s/);
-    assert.doesNotMatch(collapsedText, /Next\.js 16 is the current major release/);
-    assert.match(expandedText, /answered · 3 grounded results · took 5s/);
-    assert.match(expandedText, /Sources/);
-    assert.match(expandedText, /https:\/\/nextjs\.org\/blog\/next-16/);
-    assert.match(expandedText, /Search queries/);
-    assert.match(errorText, /googled When did Next\.js 16 release and what changed\?/);
+    expect(animatedPendingExpandedText).toMatch(
+      /Teams should re-run production build verification/,
+    );
+    expect(animatedPendingExpandedText).toMatch(/↳ 2s/);
+    expect(collapsedText).toMatch(/googled When did Next\.js 16 release and what changed\?/);
+    expect(collapsedText).toMatch(/answered · 3 grounded results · took 5s/);
+    expect(collapsedText).not.toMatch(/Next\.js 16 is the current major release/);
+    expect(expandedText).toMatch(/answered · 3 grounded results · took 5s/);
+    expect(expandedText).toMatch(/Sources/);
+    expect(expandedText).toMatch(/https:\/\/nextjs\.org\/blog\/next-16/);
+    expect(expandedText).toMatch(/Search queries/);
+    expect(errorText).toMatch(/googled When did Next\.js 16 release and what changed\?/);
   },
 );
 
 timedTest("websearch minimal preview omits source and query counts", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "websearch:minimal-answer");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
   );
-  assert.ok(collapsed);
+  expect(collapsed).toBeTruthy();
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
 
-  assert.match(text, /googled Has Bun 1\.3\.0 released yet\?/);
-  assert.match(text, /gemini-2\.5-flash-lite/);
-  assert.match(text, /answered · 0 grounded results · took 3s/);
+  expect(text).toMatch(/googled Has Bun 1\.3\.0 released yet\?/);
+  expect(text).toMatch(/gemini-2\.5-flash-lite/);
+  expect(text).toMatch(/answered · 0 grounded results · took 3s/);
 });
 
 timedTest(
   "executor preview renders compact call, highlighted code, json result, and error states",
   () => {
     const scenario = getToolPreviewScenarios().find((item) => item.id === "executor:compact");
-    assert.ok(scenario);
+    expect(scenario).toBeTruthy();
 
     const call = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
     const callExpanded = getToolPreviewPanels(scenario).find(
@@ -556,14 +547,14 @@ timedTest(
       (panel) => panel.id === "error-expanded",
     );
 
-    assert.ok(call);
-    assert.ok(callExpanded);
-    assert.ok(partial);
-    assert.ok(partialExpanded);
-    assert.ok(success);
-    assert.ok(successExpanded);
-    assert.ok(error);
-    assert.ok(errorExpanded);
+    expect(call).toBeTruthy();
+    expect(callExpanded).toBeTruthy();
+    expect(partial).toBeTruthy();
+    expect(partialExpanded).toBeTruthy();
+    expect(success).toBeTruthy();
+    expect(successExpanded).toBeTruthy();
+    expect(error).toBeTruthy();
+    expect(errorExpanded).toBeTruthy();
 
     const callText = stripAnsi(renderPreviewText(scenario, call, 120));
     const callExpandedText = stripAnsi(renderPreviewText(scenario, callExpanded, 120));
@@ -580,34 +571,34 @@ timedTest(
     const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
     const errorExpandedText = stripAnsi(renderPreviewText(scenario, errorExpanded, 120));
 
-    assert.match(callText, /executing List GitHub issues via executor/);
-    assert.match(callText, /17 lines so far/);
-    assert.match(callText, /status: "completed"/);
-    assert.match(callExpandedText, /const matches = await tools\.search/);
-    assert.match(callExpandedText, /const marker = "row\\x07";/);
-    assert.match(callExpandedText, /issues\.listForRepo/);
-    assert.doesNotMatch(callExpandedText, /\t/);
+    expect(callText).toMatch(/executing List GitHub issues via executor/);
+    expect(callText).toMatch(/17 lines so far/);
+    expect(callText).toMatch(/status: "completed"/);
+    expect(callExpandedText).toMatch(/const matches = await tools\.search/);
+    expect(callExpandedText).toMatch(/const marker = "row\\x07";/);
+    expect(callExpandedText).toMatch(/issues\.listForRepo/);
+    expect(callExpandedText).not.toMatch(/\t/);
 
-    assert.match(partialText, /executing List GitHub issues via executor/);
-    assert.match(partialText, /"step": "search"|"step": "issues\.listForRepo"/);
-    assert.match(partialText, /executing · object · took 1s/);
-    assert.match(animatedPartialText, /issues\.listForRepo/);
-    assert.match(partialExpandedText, /"status": "executing"/);
-    assert.match(partialExpandedText, /"step": "search"|"step": "issues\.listForRepo"/);
-    assert.match(animatedPartialExpandedText, /"step": "issues\.listForRepo"/);
+    expect(partialText).toMatch(/executing List GitHub issues via executor/);
+    expect(partialText).toMatch(/"step": "search"|"step": "issues\.listForRepo"/);
+    expect(partialText).toMatch(/executing · object · took 1s/);
+    expect(animatedPartialText).toMatch(/issues\.listForRepo/);
+    expect(partialExpandedText).toMatch(/"status": "executing"/);
+    expect(partialExpandedText).toMatch(/"step": "search"|"step": "issues\.listForRepo"/);
+    expect(animatedPartialExpandedText).toMatch(/"step": "issues\.listForRepo"/);
 
-    assert.match(successText, /executed List GitHub issues via executor/);
-    assert.match(successText, /completed · object · took 4s/);
-    assert.doesNotMatch(successText, /"content"/);
-    assert.match(successExpandedText, /const matches = await tools\.search/);
-    assert.match(successExpandedText, /"markdown": "Example Domain/);
-    assert.match(successExpandedText, /"statusCode": 200/);
-    assert.doesNotMatch(successExpandedText, /"content": \[/);
+    expect(successText).toMatch(/executed List GitHub issues via executor/);
+    expect(successText).toMatch(/completed · object · took 4s/);
+    expect(successText).not.toMatch(/"content"/);
+    expect(successExpandedText).toMatch(/const matches = await tools\.search/);
+    expect(successExpandedText).toMatch(/"markdown": "Example Domain/);
+    expect(successExpandedText).toMatch(/"statusCode": 200/);
+    expect(successExpandedText).not.toMatch(/"content": \[/);
 
-    assert.match(errorText, /execute List GitHub issues via executor/);
-    assert.match(errorText, /failed · took 2s/);
-    assert.match(errorExpandedText, /ToolInvocationError/);
-    assert.match(errorExpandedText, /"error": "403 Forbidden"/);
+    expect(errorText).toMatch(/execute List GitHub issues via executor/);
+    expect(errorText).toMatch(/failed · took 2s/);
+    expect(errorExpandedText).toMatch(/ToolInvocationError/);
+    expect(errorExpandedText).toMatch(/"error": "403 Forbidden"/);
   },
 );
 
@@ -617,7 +608,7 @@ timedTest(
     const scenario = getToolPreviewScenarios().find(
       (item) => item.id === "executor:search-results",
     );
-    assert.ok(scenario);
+    expect(scenario).toBeTruthy();
 
     const collapsed = getToolPreviewPanels(scenario).find(
       (panel) => panel.id === "success-collapsed",
@@ -626,54 +617,54 @@ timedTest(
       (panel) => panel.id === "success-expanded",
     );
 
-    assert.ok(collapsed);
-    assert.ok(expanded);
+    expect(collapsed).toBeTruthy();
+    expect(expanded).toBeTruthy();
 
     const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
     const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
 
-    assert.match(collapsedText, /executed Search firecrawl tools via executor/);
-    assert.match(collapsedText, /completed · matches\(2\)/);
-    assert.doesNotMatch(collapsedText, /took 0s/);
+    expect(collapsedText).toMatch(/executed Search firecrawl tools via executor/);
+    expect(collapsedText).toMatch(/completed · matches\(2\)/);
+    expect(collapsedText).not.toMatch(/took 0s/);
 
-    assert.match(expandedText, /1\. firecrawl_scrape/);
-    assert.match(expandedText, /Path: firecrawl\.firecrawl_scrape/);
-    assert.match(expandedText, /Source: firecrawl/);
-    assert.match(expandedText, /Score: 310/);
-    assert.match(expandedText, /Scrape content from a single URL\./);
-    assert.match(expandedText, /"url": "https:\/\/example\.com"/);
-    assert.match(expandedText, /2\. firecrawl_search/);
-    assert.doesNotMatch(expandedText, /"path": "firecrawl\.firecrawl_scrape"/);
+    expect(expandedText).toMatch(/1\. firecrawl_scrape/);
+    expect(expandedText).toMatch(/Path: firecrawl\.firecrawl_scrape/);
+    expect(expandedText).toMatch(/Source: firecrawl/);
+    expect(expandedText).toMatch(/Score: 310/);
+    expect(expandedText).toMatch(/Scrape content from a single URL\./);
+    expect(expandedText).toMatch(/"url": "https:\/\/example\.com"/);
+    expect(expandedText).toMatch(/2\. firecrawl_search/);
+    expect(expandedText).not.toMatch(/"path": "firecrawl\.firecrawl_scrape"/);
   },
 );
 
 timedTest("multiline bash call preview truncates middle lines in collapsed mode", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
   const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-expanded");
 
-  assert.ok(collapsed);
-  assert.ok(expanded);
+  expect(collapsed).toBeTruthy();
+  expect(expanded).toBeTruthy();
 
   const collapsedText = stripAnsi(renderPreviewText(scenario, collapsed, 120));
   const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
 
-  assert.match(collapsedText, /Reads package.json using multiline script/);
-  assert.match(expandedText, /node --import tsx - <<'EOF'/);
+  expect(collapsedText).toMatch(/Reads package.json using multiline script/);
+  expect(expandedText).toMatch(/node --import tsx - <<'EOF'/);
 });
 
 timedTest("failed multiline bash preview shows exit code on collapsed error", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:multiline-call");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-collapsed");
-  assert.ok(error);
+  expect(error).toBeTruthy();
 
   const text = stripAnsi(renderPreviewText(scenario, error, 120));
 
-  assert.match(text, /exit 1/);
+  expect(text).toMatch(/exit 1/);
 });
 
 timedTest("bash preview completion is sticky even when start marker is missing", () => {
@@ -727,23 +718,23 @@ timedTest("bash preview completion is sticky even when start marker is missing",
     .map((line) => stripAnsi(line))
     .filter((line) => line.trim().length > 0);
 
-  assert.match(renderedText, /finished · ok/);
-  assert.doesNotMatch(renderedText, /so far/);
-  assert.equal(nonEmptyLines.length, 1);
+  expect(renderedText).toMatch(/finished · ok/);
+  expect(renderedText).not.toMatch(/so far/);
+  expect(nonEmptyLines.length).toBe(1);
 });
 
 timedTest("tool previews render a bare left rail instead of a box wrapper", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "bash:compact");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
   );
-  assert.ok(collapsed);
+  expect(collapsed).toBeTruthy();
 
   const text = stripAnsi(renderPreviewText(scenario, collapsed, 120));
 
-  assert.match(text, /^\s*▏\s*\$/m);
+  expect(text).toMatch(/^\s*▏\s*\$/m);
 });
 
 timedTest(
@@ -774,12 +765,12 @@ timedTest(
       );
       const thirdToolIndex = lines.findIndex((line: string) => line.includes("c.ts"));
 
-      assert.notEqual(firstToolIndex, -1);
-      assert.notEqual(secondToolIndex, -1);
-      assert.notEqual(interruptIndex, -1);
-      assert.notEqual(thirdToolIndex, -1);
-      assert.equal(secondToolIndex - firstToolIndex, 1);
-      assert.equal(thirdToolIndex - interruptIndex, 2);
+      expect(firstToolIndex).not.toBe(-1);
+      expect(secondToolIndex).not.toBe(-1);
+      expect(interruptIndex).not.toBe(-1);
+      expect(thirdToolIndex).not.toBe(-1);
+      expect(secondToolIndex - firstToolIndex).toBe(1);
+      expect(thirdToolIndex - interruptIndex).toBe(2);
     } finally {
       (mode as any).footerDataProvider.dispose();
     }
@@ -796,50 +787,50 @@ timedTest("compact tool previews use verb-first bold+dim statuses", () => {
 
   for (const [scenarioId, panelId, pattern] of expectations) {
     const scenario = getToolPreviewScenarios().find((item) => item.id === scenarioId);
-    assert.ok(scenario);
+    expect(scenario).toBeTruthy();
     const panel = getToolPreviewPanels(scenario).find((item) => item.id === panelId);
-    assert.ok(panel);
-    assert.match(stripAnsi(renderPreviewText(scenario, panel, 120)), pattern);
+    expect(panel).toBeTruthy();
+    expect(stripAnsi(renderPreviewText(scenario, panel, 120))).toMatch(pattern);
   }
 });
 
 timedTest("grouped read batch preview renders collapsed and expanded summaries", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "read:batch");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const collapsed = getToolPreviewPanels(scenario).find(
     (panel) => panel.id === "success-collapsed",
   );
   const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
 
-  assert.ok(collapsed);
-  assert.ok(expanded);
+  expect(collapsed).toBeTruthy();
+  expect(expanded).toBeTruthy();
 
   const collapsedText = renderPreviewText(scenario, collapsed, 120);
   const expandedText = renderPreviewText(scenario, expanded, 120);
 
-  assert.match(stripAnsi(collapsedText), /batched 3 reads/);
-  assert.match(stripAnsi(collapsedText), /README\.md/);
-  assert.match(stripAnsi(expandedText), /read \.\/README\.md/);
-  assert.match(stripAnsi(expandedText), /read \.\/src\/extensions\/patch\.ts/);
+  expect(stripAnsi(collapsedText)).toMatch(/batched 3 reads/);
+  expect(stripAnsi(collapsedText)).toMatch(/README\.md/);
+  expect(stripAnsi(expandedText)).toMatch(/read \.\/README\.md/);
+  expect(stripAnsi(expandedText)).toMatch(/read \.\/src\/extensions\/patch\.ts/);
 });
 
 timedTest("read SKILL.md renders as skill verb with skill name", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "read:skill-file");
-  assert.ok(scenario);
+  expect(scenario).toBeTruthy();
 
   const call = getToolPreviewPanels(scenario).find((panel) => panel.id === "call-collapsed");
   const success = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-collapsed");
-  assert.ok(call);
-  assert.ok(success);
+  expect(call).toBeTruthy();
+  expect(success).toBeTruthy();
 
   const callText = stripAnsi(renderPreviewText(scenario, call, 120));
   const successText = stripAnsi(renderPreviewText(scenario, success, 120));
 
-  assert.match(callText, /reading.*git-commiting/);
-  assert.match(successText, /skill git-commiting/);
-  assert.doesNotMatch(callText, /SKILL\.md/);
-  assert.doesNotMatch(successText, /SKILL\.md/);
+  expect(callText).toMatch(/reading.*git-commiting/);
+  expect(successText).toMatch(/skill git-commiting/);
+  expect(callText).not.toMatch(/SKILL\.md/);
+  expect(successText).not.toMatch(/SKILL\.md/);
 });
 
 function createInteractiveModePreview(cwd: string) {

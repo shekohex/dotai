@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import {
   calculatePaceStatus,
   formatProjectedResetText,
@@ -30,55 +29,54 @@ function createMetric(used: number): UsageMetric {
 }
 
 timedTest("pace classification covers ahead, on-track, and behind", () => {
-  assert.deepEqual(calculatePaceStatus(30, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS), {
+  expect(calculatePaceStatus(30, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS)).toEqual({
     status: "ahead",
     projectedUsage: 60,
   });
-  assert.deepEqual(calculatePaceStatus(45, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS), {
+  expect(calculatePaceStatus(45, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS)).toEqual({
     status: "on-track",
     projectedUsage: 90,
   });
-  assert.deepEqual(calculatePaceStatus(60, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS), {
+  expect(calculatePaceStatus(60, 100, RESETS_AT_MS, FIVE_HOURS_MS, MID_PERIOD_NOW_MS)).toEqual({
     status: "behind",
     projectedUsage: 120,
   });
 });
 
 timedTest("pace status labels match upstream copy", () => {
-  assert.equal(getPaceStatusText("ahead"), "Plenty of room");
-  assert.equal(getPaceStatusText("on-track"), "Right on target");
-  assert.equal(getPaceStatusText("behind"), "Will run out");
+  expect(getPaceStatusText("ahead")).toBe("Plenty of room");
+  expect(getPaceStatusText("on-track")).toBe("Right on target");
+  expect(getPaceStatusText("behind")).toBe("Will run out");
 });
 
 timedTest("projected reset text respects display mode", () => {
   const paceResult: PaceResult = { status: "on-track", projectedUsage: 90 };
-  assert.equal(formatProjectedResetText(paceResult, 100, "used"), "90% used at reset");
-  assert.equal(formatProjectedResetText(paceResult, 100, "left"), "10% left at reset");
+  expect(formatProjectedResetText(paceResult, 100, "used")).toBe("90% used at reset");
+  expect(formatProjectedResetText(paceResult, 100, "left")).toBe("10% left at reset");
 });
 
 timedTest("behind pace ETA uses runs-out wording", () => {
   const paceResult: PaceResult = { status: "behind", projectedUsage: 120 };
-  assert.equal(
-    formatRunsOutText(paceResult, createMetric(60), MID_PERIOD_NOW_MS),
+  expect(formatRunsOutText(paceResult, createMetric(60), MID_PERIOD_NOW_MS)).toBe(
     "Runs out in 1h 40m",
   );
 });
 
 timedTest("metric pace details expose projection, eta, and elapsed marker position", () => {
   const details = getMetricPaceDetails(createMetric(60), "used", MID_PERIOD_NOW_MS);
-  assert.equal(details.statusText, "Will run out");
-  assert.equal(details.projectedText, "100% used at reset");
-  assert.equal(details.runsOutText, "Runs out in 1h 40m");
-  assert.equal(details.elapsedPercent, 50);
+  expect(details.statusText).toBe("Will run out");
+  expect(details.projectedText).toBe("100% used at reset");
+  expect(details.runsOutText).toBe("Runs out in 1h 40m");
+  expect(details.elapsedPercent).toBe(50);
 });
 
 timedTest("early period pace details suppress classification until enough time elapsed", () => {
   const earlyNowMs = RESETS_AT_MS - FIVE_HOURS_MS + Math.floor(FIVE_HOURS_MS * 0.04);
   const details = getMetricPaceDetails(createMetric(10), "left", earlyNowMs);
-  assert.equal(details.statusText, null);
-  assert.equal(details.projectedText, null);
-  assert.equal(details.runsOutText, null);
-  assert.ok(details.elapsedPercent !== null && details.elapsedPercent < 5);
+  expect(details.statusText).toBe(null);
+  expect(details.projectedText).toBe(null);
+  expect(details.runsOutText).toBe(null);
+  expect(details.elapsedPercent !== null && details.elapsedPercent < 5).toBeTruthy();
 });
 
 timedTest("openusage publishUsageUpdateIfChanged skips identical active status writes", () => {
@@ -114,6 +112,6 @@ timedTest("openusage publishUsageUpdateIfChanged skips identical active status w
   publishUsageUpdateIfChanged(pi as never, state, ctx as never, snapshot, true);
   publishUsageUpdateIfChanged(pi as never, state, ctx as never, snapshot, true);
 
-  assert.equal(statuses.length, 1);
-  assert.equal(emitted.length, 1);
+  expect(statuses.length).toBe(1);
+  expect(emitted.length).toBe(1);
 });

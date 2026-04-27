@@ -178,7 +178,10 @@ function parseTPSStats(stats: Partial<CoreUITPSStats>): CoreUITPSStats | undefin
     min,
     median,
     max,
-    sampleCount: readNumberOrFallback(stats.sampleCount, 1),
+    sampleCount: readNumberOrFallback(
+      stats.sampleCount,
+      readNumberOrFallback(stats.bufferSize, TPS_SAMPLE_BUFFER_SIZE),
+    ),
     bufferSize: readNumberOrFallback(stats.bufferSize, TPS_SAMPLE_BUFFER_SIZE),
   };
 }

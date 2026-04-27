@@ -1,8 +1,7 @@
-import assert from "node:assert/strict";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { expect, test } from "vitest";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { createWriteToolOverrideDefinition } from "../src/extensions/coreui/tools.ts";
 
@@ -30,9 +29,9 @@ timedTest("write tool execute resolves relative paths from context cwd", async (
     );
 
     const written = await readFile(join(workspaceDir, "note.txt"), "utf8");
-    assert.equal(written, "hello workspace");
+    expect(written).toBe("hello workspace");
 
-    await assert.rejects(access(join(serverDir, "note.txt")));
+    await expect(access(join(serverDir, "note.txt"))).rejects.toThrow();
   } finally {
     process.chdir(originalCwd);
     await rm(rootDir, { recursive: true, force: true });

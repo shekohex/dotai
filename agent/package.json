@@ -33,7 +33,7 @@
     "pi": "PI_SKIP_VERSION_CHECK=1 tsx src/cli.ts",
     "pi:remote": "bash ./scripts/pi-remote.sh client",
     "pi:server": "bash ./scripts/pi-remote.sh server",
-    "remote": "tsx watch src/remote/index.ts",
+    "remote": "tsx src/remote/index.ts",
     "preview:tools": "node --import tsx ./scripts/preview-tools.ts --watch",
     "preview:tools:once": "node --import tsx ./scripts/preview-tools.ts",
     "preview:tools:watch": "node --import tsx ./scripts/preview-tools.ts --watch",

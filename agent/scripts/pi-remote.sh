@@ -257,7 +257,6 @@ run_client() {
   cd "${ROOT_DIR}"
   PI_REMOTE_PRIVATE_KEY="${private_key}" \
   npm run pi -- \
-    --mode-rush \
     --remote-origin "${remote_origin}" \
     --remote-key-id "${identity}" \
     "${passthrough_args[@]}"

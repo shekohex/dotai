@@ -43,7 +43,66 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
         previousHasPendingBashMessages: targetRecord.hasPendingBashMessages,
         previousTranscriptLength: targetRecord.transcript.length,
       }),
-      afterPromptDispatch: (targetRecord, targetSession, state) => {
+      afterPromptDispatch: (targetRecord, targetSession, accepted, state) => {
+        if (this.isRegisteredExtensionCommand(targetSession, input.text)) {
+          const updatedAt = this.now();
+          this.syncFromRuntime(targetRecord, { updateTimestamp: false, syncResources: true });
+          targetRecord.updatedAt = updatedAt;
+          this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
+            sessionId: targetRecord.sessionId,
+            kind: "session_state_patch",
+            payload: {
+              commandId: accepted.commandId,
+              sequence: accepted.sequence,
+              patch: {
+                model: targetRecord.model,
+                thinkingLevel: targetRecord.thinkingLevel,
+                activeTools: [...targetRecord.activeTools],
+                cwd: targetRecord.cwd,
+                extensions: targetRecord.extensions,
+                resources: {
+                  skills: targetRecord.resources.skills.map((skill) => ({ ...skill })),
+                  prompts: targetRecord.resources.prompts.map((prompt) => ({ ...prompt })),
+                  themes: targetRecord.resources.themes.map((theme) => ({ ...theme })),
+                  ...(targetRecord.resources.modes === undefined
+                    ? {}
+                    : { modes: structuredClone(targetRecord.resources.modes) }),
+                  systemPrompt: targetRecord.resources.systemPrompt,
+                  appendSystemPrompt: [...targetRecord.resources.appendSystemPrompt],
+                },
+                availableModels: targetRecord.availableModels.map((model) => ({ ...model })),
+                modelSettings: {
+                  defaultProvider: targetRecord.modelSettings.defaultProvider,
+                  defaultModel: targetRecord.modelSettings.defaultModel,
+                  defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
+                  enabledModels: targetRecord.modelSettings.enabledModels
+                    ? [...targetRecord.modelSettings.enabledModels]
+                    : null,
+                },
+                sessionStats: {
+                  ...targetRecord.sessionStats,
+                  tokens: {
+                    input: targetRecord.sessionStats.tokens.input,
+                    output: targetRecord.sessionStats.tokens.output,
+                    cacheRead: targetRecord.sessionStats.tokens.cacheRead,
+                    cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
+                    total: targetRecord.sessionStats.tokens.total,
+                  },
+                  ...(targetRecord.sessionStats.contextUsage
+                    ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
+                    : {}),
+                },
+                ...(targetRecord.contextUsage
+                  ? { contextUsage: { ...targetRecord.contextUsage } }
+                  : {}),
+                usageCost: targetRecord.usageCost,
+              },
+            },
+            ts: updatedAt,
+          });
+          this.emitSessionSummaryUpdated(targetRecord, updatedAt);
+        }
+
         if (!state.previousHasPendingBashMessages) {
           return;
         }

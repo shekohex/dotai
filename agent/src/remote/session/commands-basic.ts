@@ -65,11 +65,12 @@ export function handlePromptCommand(input: {
   afterPromptDispatch: (
     record: SessionRecord,
     session: AgentSessionRuntime["session"],
+    accepted: AcceptedSessionCommand,
     state: {
       previousHasPendingBashMessages: boolean;
       previousTranscriptLength: number;
     },
-  ) => void;
+  ) => Promise<void> | void;
 }): Promise<CommandAcceptedResponse> {
   return input.acceptCommand(
     input.record,
@@ -99,11 +100,12 @@ function buildPromptHooks(input: {
   afterPromptDispatch: (
     record: SessionRecord,
     session: AgentSessionRuntime["session"],
+    accepted: AcceptedSessionCommand,
     state: {
       previousHasPendingBashMessages: boolean;
       previousTranscriptLength: number;
     },
-  ) => void;
+  ) => Promise<void> | void;
 }): {
   beforeAccepted: () => Promise<void>;
   onAccepted: (accepted: AcceptedSessionCommand) => void;
@@ -125,7 +127,7 @@ function buildPromptHooks(input: {
           input.command.text,
           toPromptOptions(input.session.isStreaming, input.command.attachments),
         );
-        input.afterPromptDispatch(input.record, input.session, promptDispatchState);
+        await input.afterPromptDispatch(input.record, input.session, accepted, promptDispatchState);
       });
     },
   };

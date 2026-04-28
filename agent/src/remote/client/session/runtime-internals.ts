@@ -80,7 +80,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   dispose(): Promise<void> {
     this.closed = true;
-    clearRemoteModesSnapshot(this.sessionId);
+    clearRemoteModesSnapshot(this.sessionManager);
     for (const pendingRequest of this.pendingInteractiveRequests.values()) {
       abortControllerSafely(pendingRequest);
     }
@@ -222,7 +222,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         this.remoteExtensions = extensions;
       },
       setRemoteResources: (resources) => {
-        setRemoteModesSnapshot(this.sessionId, resources.modes);
+        setRemoteModesSnapshot(this.sessionManager, resources.modes);
       },
       setSessionName: (sessionName) => {
         if (sessionName !== undefined) {

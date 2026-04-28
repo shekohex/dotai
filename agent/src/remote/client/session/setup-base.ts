@@ -201,7 +201,7 @@ export abstract class RemoteAgentSessionSetupBase {
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
     this.remoteSettings = readRemoteSettingsSnapshot(snapshot);
     this.remoteExtensions = applyRemoteExtensionsSnapshot(snapshot);
-    setRemoteModesSnapshot(this.sessionId, snapshot.resources?.modes);
+    setRemoteModesSnapshot(this.sessionManager, snapshot.resources?.modes);
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, "medium");
     this._model = resolveModel({
       modelRef: snapshot.model,

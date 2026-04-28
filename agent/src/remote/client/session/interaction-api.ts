@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
+import { normalizeAttachments } from "../session-shared.js";
 import {
   abortRemoteSessionMethod,
   clearQueueRemoteSessionMethod,
@@ -21,6 +22,16 @@ export abstract class RemoteAgentSessionInteractionApi extends RemoteAgentSessio
     options?: { images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" },
   ): Promise<void> {
     if (text.startsWith("/") && (await this.tryExecuteLocalExtensionCommand(text))) {
+      try {
+        await this.waitForPendingMutations();
+        await this.client.prompt(this.sessionId, {
+          text,
+          attachments: normalizeAttachments(options?.images),
+        });
+      } catch (error) {
+        await this.reload();
+        throw error;
+      }
       return;
     }
 

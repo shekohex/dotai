@@ -1208,6 +1208,140 @@ timedTest("remote snapshot and reload stream include server modes", async () => 
   }
 });
 
+timedTest("remote slash mode command persists on server and emits resources patch", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const cwd = await mkdtemp(join(tmpdir(), "pi-remote-mode-command-"));
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory(),
+  });
+
+  try {
+    await mkdir(join(cwd, ".pi"), { recursive: true });
+    await writeFile(
+      join(cwd, ".pi", "modes.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          currentMode: "builder",
+          modes: {
+            builder: {
+              provider: "pi-remote-faux",
+              modelId: "pi-remote-faux-1",
+              thinkingLevel: "medium",
+            },
+            reviewer: {
+              provider: "pi-remote-faux",
+              modelId: "pi-remote-faux-1",
+              thinkingLevel: "high",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspaceCwd: cwd }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    expect(snapshotResponse.status).toBe(200);
+    const snapshot = (await snapshotResponse.json()) as { lastSessionStreamOffset: string };
+
+    const modeResponse = await remote.app.request(`/v1/sessions/${created.sessionId}/prompt`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "/mode reviewer" }),
+    });
+    expect(modeResponse.status).toBe(202);
+
+    const updatedSnapshot = await waitForValue(
+      async () => {
+        const updatedSnapshotResponse = await remote.app.request(
+          `/v1/sessions/${created.sessionId}/snapshot`,
+          {
+            headers: { authorization: `Bearer ${token}` },
+          },
+        );
+        expect(updatedSnapshotResponse.status).toBe(200);
+        return (await updatedSnapshotResponse.json()) as {
+          resources?: {
+            modes?: {
+              currentMode?: string;
+            };
+          };
+        };
+      },
+      (value) => value.resources?.modes?.currentMode === "reviewer",
+    );
+
+    expect(updatedSnapshot.resources?.modes?.currentMode).toBe("reviewer");
+
+    const persisted = await waitForValue(
+      async () => {
+        return JSON.parse(await readFile(join(cwd, ".pi", "modes.json"), "utf8")) as {
+          currentMode?: string;
+        };
+      },
+      (value) => value.currentMode === "reviewer",
+    );
+    expect(persisted.currentMode).toBe("reviewer");
+
+    const replayResponse = await remote.app.request(
+      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(snapshot.lastSessionStreamOffset)}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    expect(replayResponse.status).toBe(200);
+    const replay = (await replayResponse.json()) as {
+      events: Array<{
+        kind: string;
+        payload: {
+          patch?: {
+            resources?: {
+              modes?: {
+                currentMode?: string;
+              };
+            };
+          };
+        };
+      }>;
+    };
+
+    expect(
+      replay.events.some(
+        (event) =>
+          event.kind === "session_state_patch" &&
+          event.payload.patch?.resources?.modes?.currentMode === "reviewer",
+      ),
+    ).toBe(true);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await remote.dispose();
+  }
+});
+
 timedTest(
   "remote reload refreshes server resources and replays client extension lifecycle",
   async () => {

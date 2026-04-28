@@ -1,9 +1,13 @@
+import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot } from "../schemas.js";
 import type { SessionRecord } from "./types.js";
 
 export function buildSessionSnapshotParts(
   record: SessionRecord,
 ): Omit<SessionSnapshot, "lastSessionStreamOffset" | "lastAppStreamOffsetSeenByServer"> {
+  const session = readRuntimeSession(record.runtime);
+  const sessionEntries = session?.sessionManager.getEntries() ?? [];
+  const leafId = session?.sessionManager.getLeafId() ?? null;
   const modelSettings = buildModelSettingsSnapshot(record);
   const queue = {
     depth: record.queue.depth,
@@ -34,6 +38,8 @@ export function buildSessionSnapshotParts(
     autoCompactionEnabled: record.autoCompactionEnabled,
     steeringMode: record.steeringMode,
     followUpMode: record.followUpMode,
+    entries: sessionEntries.map((entry) => cloneSessionEntry(entry)),
+    leafId,
     transcript: [...record.transcript],
     queue,
     retry: {
@@ -51,6 +57,33 @@ export function buildSessionSnapshotParts(
     errorMessage: record.errorMessage,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  };
+}
+
+function readRuntimeSession(
+  runtime: SessionRecord["runtime"],
+): SessionRecord["runtime"]["session"] | undefined {
+  if (!("session" in runtime)) {
+    return undefined;
+  }
+
+  return runtime.session;
+}
+
+function cloneSessionEntry(entry: SessionEntry): SessionEntry {
+  return {
+    ...entry,
+    ...(entry.type === "message" ? { message: structuredClone(entry.message) } : {}),
+    ...(entry.type === "compaction" || entry.type === "branch_summary"
+      ? { details: structuredClone(entry.details) }
+      : {}),
+    ...(entry.type === "custom" ? { data: structuredClone(entry.data) } : {}),
+    ...(entry.type === "custom_message"
+      ? {
+          content: structuredClone(entry.content),
+          details: structuredClone(entry.details),
+        }
+      : {}),
   };
 }
 

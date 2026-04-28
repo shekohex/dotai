@@ -91,7 +91,8 @@ export function initializeRemoteSessionMetadata(
     sessionManager,
     sessionId: snapshot.sessionId,
     sessionName: snapshot.sessionName,
-    messages: normalizeTranscript(snapshot.transcript),
+    entries: snapshot.entries,
+    leafId: snapshot.leafId,
   });
 }
 

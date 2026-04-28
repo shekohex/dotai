@@ -27,6 +27,7 @@ import {
   waitForValue,
   type ExtensionFactory,
 } from "./remote-adapter.shared.ts";
+import { initializeMirroredSessionManager } from "../src/remote/client/session-manager-mirror.ts";
 
 timedTest("in-memory runtime load preserves source session directory", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-load-session-dir-"));
@@ -535,6 +536,60 @@ timedTest("milestone 3 adapter forwards passive extension events", async () => {
   } finally {
     await runtime?.dispose();
     await remote.dispose();
+  }
+});
+
+timedTest("remote tree navigation uses authoritative server entry ids", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-tree-nav-"));
+  const workspaceDir = join(root, "workspace");
+
+  await mkdir(workspaceDir, { recursive: true });
+
+  const sourceManager = SessionManager.inMemory(workspaceDir);
+  sourceManager.appendMessage({ role: "user", content: "first message" });
+  sourceManager.appendMessage({ role: "user", content: "second message" });
+
+  try {
+    const authoritativeEntries = sourceManager.getEntries();
+    const authoritativeUserEntryId = authoritativeEntries.find(
+      (entry) => entry.type === "message" && entry.message.role === "user",
+    )?.id;
+
+    expect(authoritativeUserEntryId).toBeTruthy();
+
+    const legacyMirroredManager = SessionManager.inMemory(workspaceDir);
+    legacyMirroredManager.newSession({ id: sourceManager.getSessionId() });
+    legacyMirroredManager.appendSessionInfo(sourceManager.getSessionName() ?? "");
+    for (const entry of authoritativeEntries) {
+      if (entry.type === "message") {
+        legacyMirroredManager.appendMessage(entry.message);
+      }
+    }
+
+    const legacyMirroredUserEntryId = legacyMirroredManager
+      .getEntries()
+      .find((entry) => entry.type === "message" && entry.message.role === "user")?.id;
+
+    expect(legacyMirroredUserEntryId).toBeTruthy();
+    expect(legacyMirroredUserEntryId).not.toBe(authoritativeUserEntryId);
+
+    const mirroredManager = SessionManager.inMemory(workspaceDir);
+    initializeMirroredSessionManager({
+      sessionManager: mirroredManager,
+      sessionId: sourceManager.getSessionId(),
+      sessionName: sourceManager.getSessionName() ?? "",
+      entries: authoritativeEntries,
+      leafId: sourceManager.getLeafId(),
+    });
+
+    const mirroredUserEntryId = mirroredManager
+      .getEntries()
+      .find((entry) => entry.type === "message" && entry.message.role === "user")?.id;
+
+    expect(mirroredUserEntryId).toBe(authoritativeUserEntryId);
+    expect(mirroredManager.getLeafId()).toBe(sourceManager.getLeafId());
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

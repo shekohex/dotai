@@ -204,11 +204,20 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
         label: options?.label,
       })
       .then(async (result) => {
-        await this.reload();
+        if (result.snapshot === undefined) {
+          await this.reload();
+        } else {
+          assertType(SessionSnapshotSchema, result.snapshot);
+          this.applySnapshot(result.snapshot);
+          await this.refreshRemoteToolCatalog();
+          await this.refreshForkMessages();
+          await this.replayLocalExtensionReloadLifecycle();
+        }
         return {
           editorText: result.editorText,
           cancelled: result.cancelled,
           aborted: result.aborted,
+          summaryEntry: result.summaryEntry,
         };
       });
   }

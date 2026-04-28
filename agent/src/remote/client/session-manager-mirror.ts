@@ -1,31 +1,77 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AgentSessionEvent, SessionManager } from "@mariozechner/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  SessionEntry,
+  SessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 type SessionManagerMessage = Parameters<SessionManager["appendMessage"]>[0];
 type SessionManagerCustomMessage = Extract<AgentMessage, { role: "custom" }>;
+
+type SessionManagerInternals = {
+  fileEntries: unknown[];
+  byId: Map<string, SessionEntry>;
+  labelsById: Map<string, string>;
+  labelTimestampsById: Map<string, string>;
+  leafId: string | null;
+};
 
 export function initializeMirroredSessionManager(input: {
   sessionManager: SessionManager;
   sessionId: string;
   sessionName: string;
-  messages: AgentMessage[];
+  entries: SessionEntry[];
+  leafId: string | null;
 }): void {
   input.sessionManager.newSession({ id: input.sessionId });
-  input.sessionManager.appendSessionInfo(input.sessionName);
-  appendMessages(input.sessionManager, input.messages);
+  rehydrateMirroredSessionManager({
+    sessionManager: input.sessionManager,
+    sessionId: input.sessionId,
+    sessionName: input.sessionName,
+    entries: input.entries,
+    leafId: input.leafId,
+  });
 }
 
 export function rehydrateMirroredSessionManager(input: {
   sessionManager: SessionManager;
   sessionId: string;
   sessionName?: string;
-  messages: AgentMessage[];
+  entries: SessionEntry[];
+  leafId: string | null;
 }): void {
   input.sessionManager.newSession({ id: input.sessionId });
-  if (input.sessionName !== undefined && input.sessionName.length > 0) {
-    input.sessionManager.appendSessionInfo(input.sessionName);
+  const header = input.sessionManager.getHeader();
+  if (!header) {
+    return;
   }
-  appendMessages(input.sessionManager, input.messages);
+
+  const entries = input.entries;
+
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const labelsById = new Map<string, string>();
+  const labelTimestampsById = new Map<string, string>();
+
+  for (const entry of entries) {
+    if (entry.type !== "label") {
+      continue;
+    }
+    if (entry.label !== undefined && entry.label.length > 0) {
+      labelsById.set(entry.targetId, entry.label);
+      labelTimestampsById.set(entry.targetId, entry.timestamp);
+      continue;
+    }
+    labelsById.delete(entry.targetId);
+    labelTimestampsById.delete(entry.targetId);
+  }
+
+  setSessionManagerInternals(input.sessionManager, {
+    fileEntries: [header, ...entries],
+    byId,
+    labelsById,
+    labelTimestampsById,
+    leafId: input.leafId,
+  });
 }
 
 export function mirrorSessionEventMessage(
@@ -37,12 +83,6 @@ export function mirrorSessionEventMessage(
   }
 
   appendSessionManagerMessage(sessionManager, event.message);
-}
-
-function appendMessages(sessionManager: SessionManager, messages: AgentMessage[]): void {
-  for (const message of messages) {
-    appendSessionManagerMessage(sessionManager, message);
-  }
 }
 
 function appendSessionManagerMessage(sessionManager: SessionManager, message: AgentMessage): void {
@@ -75,4 +115,17 @@ function isSessionManagerMessage(message: AgentMessage): message is SessionManag
     message.role === "custom" ||
     message.role === "bashExecution"
   );
+}
+
+function setSessionManagerInternals(
+  sessionManager: SessionManager,
+  internals: SessionManagerInternals,
+): void {
+  Object.assign(sessionManager, {
+    fileEntries: internals.fileEntries,
+    byId: internals.byId,
+    labelsById: internals.labelsById,
+    labelTimestampsById: internals.labelTimestampsById,
+    leafId: internals.leafId,
+  });
 }

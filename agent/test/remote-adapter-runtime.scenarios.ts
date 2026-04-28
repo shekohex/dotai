@@ -17,6 +17,7 @@ import {
   timedTest,
   waitForSessionEvent,
   waitForValue,
+  type ExtensionFactory,
 } from "./remote-adapter.shared.ts";
 
 timedTest("milestone 3.1 snapshot includes model catalog and remote model settings", async () => {
@@ -1017,6 +1018,401 @@ timedTest("loaded remote app snapshot includes firstUserMessage in session summa
     await remote.dispose();
   }
 });
+
+timedTest("remote adapter keeps authoritative tree ids across repeated navigation", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new InMemoryPiRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspaceCwd: process.cwd() }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      cwd: process.cwd(),
+    });
+
+    await runtime.session.prompt("first message");
+    await runtime.session.prompt("second message");
+    await runtime.session.waitForIdle();
+
+    const beforeNavigateSnapshot = await waitForValue(
+      async () => {
+        const snapshotResponse = await remote.app.request(
+          `/v1/sessions/${created.sessionId}/snapshot`,
+          {
+            headers: {
+              authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        expect(snapshotResponse.status).toBe(200);
+        return (await snapshotResponse.json()) as {
+          entries: Array<{ type: string; id: string; message?: { role?: string } }>;
+        };
+      },
+      (snapshot) =>
+        snapshot.entries.some(
+          (entry) => entry.type === "message" && entry.message?.role === "user",
+        ),
+    );
+
+    const firstUserEntryId = beforeNavigateSnapshot.entries.find(
+      (entry) => entry.type === "message" && entry.message?.role === "user",
+    )?.id;
+    const secondMessageEntryIdBeforeNavigate = beforeNavigateSnapshot.entries
+      .filter((entry) => entry.type === "message")
+      .map((entry) => entry.id)[1];
+    expect(firstUserEntryId).toBeTruthy();
+    expect(secondMessageEntryIdBeforeNavigate).toBeTruthy();
+
+    const firstNavigation = await runtime.session.navigateTree(firstUserEntryId!, {});
+    expect(firstNavigation.cancelled).toBe(false);
+    expect(firstNavigation.editorText).toBe("first message");
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    expect(snapshotResponse.status).toBe(200);
+    const snapshot = (await snapshotResponse.json()) as {
+      entries: Array<{ type: string; id: string; message?: { role?: string } }>;
+    };
+
+    const localUserEntryIds = runtime.session.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message" && entry.message.role === "user")
+      .map((entry) => entry.id);
+    const remoteUserEntryIds = snapshot.entries
+      .filter((entry) => entry.type === "message" && entry.message?.role === "user")
+      .map((entry) => entry.id);
+
+    expect(localUserEntryIds).toEqual(remoteUserEntryIds);
+
+    await waitForValue(
+      () =>
+        runtime.session.sessionManager
+          .getEntries()
+          .filter((entry) => entry.type === "message" && entry.message.role === "user")
+          .map((entry) => entry.id),
+      (nextLocalUserEntryIds) =>
+        JSON.stringify(nextLocalUserEntryIds) === JSON.stringify(remoteUserEntryIds),
+      20,
+      10,
+    );
+
+    const secondMessageEntryId = secondMessageEntryIdBeforeNavigate;
+    expect(secondMessageEntryId).toBeTruthy();
+
+    const secondNavigation = await runtime.session.navigateTree(secondMessageEntryId!, {});
+    expect(secondNavigation.cancelled).toBe(false);
+
+    const secondSnapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    expect(secondSnapshotResponse.status).toBe(200);
+    const secondSnapshot = (await secondSnapshotResponse.json()) as {
+      entries: Array<{ type: string; id: string; message?: { role?: string } }>;
+    };
+    const secondRemoteUserEntryIds = secondSnapshot.entries
+      .filter((entry) => entry.type === "message" && entry.message?.role === "user")
+      .map((entry) => entry.id);
+    const secondLocalUserEntryIds = runtime.session.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message" && entry.message.role === "user")
+      .map((entry) => entry.id);
+
+    expect(secondLocalUserEntryIds).toEqual(secondRemoteUserEntryIds);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "remote tree summary forwards custom prompt and runs server before-tree hook",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+    const seenPreparations: Array<{
+      customInstructions: string | undefined;
+      replaceInstructions: boolean | undefined;
+      userWantsSummary: boolean;
+      entriesToSummarize: number;
+    }> = [];
+
+    const serverExtension: ExtensionFactory = (pi) => {
+      pi.on("session_before_tree", (event) => {
+        seenPreparations.push({
+          customInstructions: event.preparation.customInstructions,
+          replaceInstructions: event.preparation.replaceInstructions,
+          userWantsSummary: event.preparation.userWantsSummary,
+          entriesToSummarize: event.preparation.entriesToSummarize.length,
+        });
+        return {
+          summary: {
+            summary: "server hook summary",
+            details: { source: "server-hook" },
+          },
+        };
+      });
+    };
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory({ extensionFactories: [serverExtension] }),
+    });
+
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ workspaceCwd: process.cwd() }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      const firstPromptResponse = await postSessionCommand(
+        remote.app,
+        `/v1/sessions/${created.sessionId}/prompt`,
+        token,
+        { text: "first message" },
+      );
+      expect(firstPromptResponse.status).toBe(202);
+
+      await waitForValue(
+        async () => {
+          const snapshotResponse = await remote.app.request(
+            `/v1/sessions/${created.sessionId}/snapshot`,
+            {
+              headers: {
+                authorization: `Bearer ${token}`,
+              },
+            },
+          );
+          expect(snapshotResponse.status).toBe(200);
+          return (await snapshotResponse.json()) as {
+            queue: { depth: number };
+            streamingState: string;
+          };
+        },
+        (snapshot) => snapshot.queue.depth === 0 && snapshot.streamingState === "idle",
+      );
+
+      const secondPromptResponse = await postSessionCommand(
+        remote.app,
+        `/v1/sessions/${created.sessionId}/prompt`,
+        token,
+        { text: "second message" },
+      );
+      expect(secondPromptResponse.status).toBe(202);
+
+      const snapshot = await waitForValue(
+        async () => {
+          const snapshotResponse = await remote.app.request(
+            `/v1/sessions/${created.sessionId}/snapshot`,
+            {
+              headers: {
+                authorization: `Bearer ${token}`,
+              },
+            },
+          );
+          expect(snapshotResponse.status).toBe(200);
+          return (await snapshotResponse.json()) as {
+            entries: Array<{ type: string; id: string; message?: { role?: string } }>;
+          };
+        },
+        (value) => value.entries.filter((entry) => entry.type === "message").length >= 2,
+      );
+
+      const firstUserEntryId = snapshot.entries.find(
+        (entry) => entry.type === "message" && entry.message?.role === "user",
+      )?.id;
+      expect(firstUserEntryId).toBeTruthy();
+
+      const navigateResponse = await remote.app.request(
+        `/v1/sessions/${created.sessionId}/navigate-tree`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            targetId: firstUserEntryId,
+            summarize: true,
+            customInstructions: "focus on diffs",
+          }),
+        },
+      );
+      expect(navigateResponse.status).toBe(200);
+      const navigateResult = (await navigateResponse.json()) as {
+        cancelled: boolean;
+        summaryEntry?: { summary?: string };
+      };
+
+      expect(navigateResult.cancelled).toBe(false);
+      expect(navigateResult.summaryEntry).toMatchObject({ summary: "server hook summary" });
+      expect(seenPreparations).toEqual([
+        {
+          customInstructions: "focus on diffs",
+          replaceInstructions: undefined,
+          userWantsSummary: true,
+          entriesToSummarize: seenPreparations[0]!.entriesToSummarize,
+        },
+      ]);
+      expect(seenPreparations[0]!.entriesToSummarize > 0).toBe(true);
+    } finally {
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest(
+  "remote tree summary forwards replaceInstructions for custom prompt replace mode",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+    const seenPreparations: Array<{
+      customInstructions: string | undefined;
+      replaceInstructions: boolean | undefined;
+    }> = [];
+
+    const serverExtension: ExtensionFactory = (pi) => {
+      pi.on("session_before_tree", (event) => {
+        seenPreparations.push({
+          customInstructions: event.preparation.customInstructions,
+          replaceInstructions: event.preparation.replaceInstructions,
+        });
+        return {
+          summary: {
+            summary: "replace mode summary",
+          },
+        };
+      });
+    };
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory({ extensionFactories: [serverExtension] }),
+    });
+
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ workspaceCwd: process.cwd() }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      const firstPromptResponse = await postSessionCommand(
+        remote.app,
+        `/v1/sessions/${created.sessionId}/prompt`,
+        token,
+        { text: "first message" },
+      );
+      expect(firstPromptResponse.status).toBe(202);
+
+      const secondPromptResponse = await postSessionCommand(
+        remote.app,
+        `/v1/sessions/${created.sessionId}/prompt`,
+        token,
+        { text: "second message" },
+      );
+      expect(secondPromptResponse.status).toBe(202);
+
+      const snapshot = await waitForValue(
+        async () => {
+          const snapshotResponse = await remote.app.request(
+            `/v1/sessions/${created.sessionId}/snapshot`,
+            {
+              headers: {
+                authorization: `Bearer ${token}`,
+              },
+            },
+          );
+          expect(snapshotResponse.status).toBe(200);
+          return (await snapshotResponse.json()) as {
+            entries: Array<{ type: string; id: string; message?: { role?: string } }>;
+          };
+        },
+        (value) => value.entries.filter((entry) => entry.type === "message").length >= 2,
+      );
+
+      const firstUserEntryId = snapshot.entries.find(
+        (entry) => entry.type === "message" && entry.message?.role === "user",
+      )?.id;
+      expect(firstUserEntryId).toBeTruthy();
+
+      const navigateResponse = await remote.app.request(
+        `/v1/sessions/${created.sessionId}/navigate-tree`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            targetId: firstUserEntryId,
+            summarize: true,
+            customInstructions: "only output file changes",
+            replaceInstructions: true,
+          }),
+        },
+      );
+      expect(navigateResponse.status).toBe(200);
+      const navigateResult = (await navigateResponse.json()) as {
+        cancelled: boolean;
+        summaryEntry?: { summary?: string };
+      };
+
+      expect(navigateResult.cancelled).toBe(false);
+      expect(navigateResult.summaryEntry).toMatchObject({ summary: "replace mode summary" });
+      expect(seenPreparations).toEqual([
+        {
+          customInstructions: "only output file changes",
+          replaceInstructions: true,
+        },
+      ]);
+    } finally {
+      await remote.dispose();
+    }
+  },
+);
 
 timedTest(
   "remote runtime switchSession ignores abort errors from previous session shutdown",

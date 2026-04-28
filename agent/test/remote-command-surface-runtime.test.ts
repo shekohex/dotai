@@ -483,6 +483,11 @@ timedTest("remote session supports compact bash and navigateTree", async () => {
     });
     expect(navigateResult.cancelled).toBe(false);
     expect(navigateResult.editorText).toBe("navigated:entry-123");
+    expect(navigateResult.summaryEntry).toMatchObject({
+      type: "branch_summary",
+      id: "summary-1",
+      summary: "summary-1",
+    });
     expect(session.navigateTreeCalls).toEqual([
       {
         targetId: "entry-123",

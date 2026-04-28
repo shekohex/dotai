@@ -446,7 +446,8 @@ export abstract class RemoteAgentSessionSetupBase {
       sessionManager: this.sessionManager,
       sessionId: this.sessionId,
       sessionName: currentSessionName,
-      messages: this.state.messages,
+      entries: this.sessionManager.getEntries(),
+      leafId: this.sessionManager.getLeafId(),
     });
     this.settingsManager = cwdResult.settingsManager;
     this.installSettingsManagerBindings(this.settingsManager);

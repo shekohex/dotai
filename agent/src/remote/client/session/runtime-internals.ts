@@ -20,6 +20,7 @@ import {
   enqueueRemoteSessionMutation,
   handleRemoteSessionErrorBridge,
 } from "../session-mutation-ops.js";
+import { initializeRemoteSessionMetadata } from "../session-bootstrap-ops.js";
 import {
   createRemoteSessionPollingInput,
   createRemoteSessionPollingStateHandlers,
@@ -39,6 +40,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   }
 
   protected applySnapshot(snapshot: Parameters<typeof applyRemoteSettingsSnapshot>[1]): void {
+    this.streamOffset = snapshot.lastSessionStreamOffset;
     this.applyAuthoritativeCwdUpdate(snapshot.cwd);
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
@@ -67,7 +69,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._followUpMode = snapshot.followUpMode;
     this.reloadResourceLoader(snapshot);
     this.activeTools = [...snapshot.activeTools];
-    this.sessionManager.appendSessionInfo(snapshot.sessionName);
+    initializeRemoteSessionMetadata(this.sessionManager, snapshot);
     this.queueDepth = snapshot.queue.depth;
   }
 

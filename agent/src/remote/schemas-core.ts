@@ -1,4 +1,5 @@
 import { Type, type Static, type TSchema } from "typebox";
+import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import {
   PackageSourceSchema,
   RemoteResourceBundleSchema,
@@ -196,6 +197,151 @@ export const SessionForkMessagesResponseSchema = Type.Object({
   messages: Type.Array(SessionForkMessageSchema),
 });
 
+const TextContentPartSchema = Type.Object({
+  type: Type.Literal("text"),
+  text: Type.String(),
+});
+
+const ImageContentPartSchema = Type.Object({
+  type: Type.Literal("image"),
+  mimeType: Type.String(),
+  data: Type.String(),
+});
+
+const MessageContentPartSchema = Type.Union([TextContentPartSchema, ImageContentPartSchema]);
+
+const MessageContentSchema = Type.Union([Type.String(), Type.Array(MessageContentPartSchema)]);
+
+const SessionMessageEntrySchema = Type.Object({
+  type: Type.Literal("message"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  message: Type.Unknown(),
+});
+
+const ThinkingLevelChangeEntrySchema = Type.Object({
+  type: Type.Literal("thinking_level_change"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  thinkingLevel: Type.String(),
+});
+
+const ModelChangeEntrySchema = Type.Object({
+  type: Type.Literal("model_change"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  provider: Type.String(),
+  modelId: Type.String(),
+});
+
+const CompactionEntrySchema = Type.Object({
+  type: Type.Literal("compaction"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  summary: Type.String(),
+  firstKeptEntryId: Type.String(),
+  tokensBefore: Type.Number(),
+  details: Type.Optional(Type.Unknown()),
+  fromHook: Type.Optional(Type.Boolean()),
+});
+
+const BranchSummaryEntrySchema = Type.Object({
+  type: Type.Literal("branch_summary"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  fromId: Type.String(),
+  summary: Type.String(),
+  details: Type.Optional(Type.Unknown()),
+  fromHook: Type.Optional(Type.Boolean()),
+});
+
+const CustomEntrySchema = Type.Object({
+  type: Type.Literal("custom"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  customType: Type.String(),
+  data: Type.Optional(Type.Unknown()),
+});
+
+const CustomMessageEntrySchema = Type.Object({
+  type: Type.Literal("custom_message"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  customType: Type.String(),
+  content: MessageContentSchema,
+  details: Type.Optional(Type.Unknown()),
+  display: Type.Boolean(),
+});
+
+const LabelEntrySchema = Type.Object({
+  type: Type.Literal("label"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  targetId: Type.String(),
+  label: Type.Optional(Type.String()),
+});
+
+const SessionInfoEntrySchema = Type.Object({
+  type: Type.Literal("session_info"),
+  id: Type.String(),
+  parentId: Type.Union([Type.String(), Type.Null()]),
+  timestamp: Type.String(),
+  name: Type.Optional(Type.String()),
+});
+
+export const SessionEntrySchema = Type.Unsafe<SessionEntry>(
+  Type.Union([
+    SessionMessageEntrySchema,
+    ThinkingLevelChangeEntrySchema,
+    ModelChangeEntrySchema,
+    CompactionEntrySchema,
+    BranchSummaryEntrySchema,
+    CustomEntrySchema,
+    CustomMessageEntrySchema,
+    LabelEntrySchema,
+    SessionInfoEntrySchema,
+  ]),
+);
+
+type EnsureTrue<T extends true> = T;
+type KnownSessionEntryMembers =
+  | Extract<SessionEntry, { type: "message" }>
+  | Extract<SessionEntry, { type: "thinking_level_change" }>
+  | Extract<SessionEntry, { type: "model_change" }>
+  | Extract<SessionEntry, { type: "compaction" }>
+  | Extract<SessionEntry, { type: "branch_summary" }>
+  | Extract<SessionEntry, { type: "custom" }>
+  | Extract<SessionEntry, { type: "custom_message" }>
+  | Extract<SessionEntry, { type: "label" }>
+  | Extract<SessionEntry, { type: "session_info" }>;
+type AssertNoUnhandledSessionEntryMembers = EnsureTrue<
+  Exclude<SessionEntry, KnownSessionEntryMembers> extends never ? true : false
+>;
+const sessionEntryMemberParity: AssertNoUnhandledSessionEntryMembers = true;
+void sessionEntryMemberParity;
+
+type AssertExtends<_A extends B, B> = true;
+type AssertSchemaAssignableToUpstream = AssertExtends<
+  Static<typeof SessionEntrySchema>,
+  SessionEntry
+>;
+type AssertUpstreamAssignableToSchema = AssertExtends<
+  SessionEntry,
+  Static<typeof SessionEntrySchema>
+>;
+const sessionEntrySchemaAssignableToUpstream: AssertSchemaAssignableToUpstream = true;
+const upstreamSessionEntryAssignableToSchema: AssertUpstreamAssignableToSchema = true;
+void sessionEntrySchemaAssignableToUpstream;
+void upstreamSessionEntryAssignableToSchema;
+
 export const ToolDefinitionMetadataSchema = Type.Object({
   name: Type.String(),
   label: Type.String(),
@@ -220,7 +366,7 @@ export const NavigateTreeResponseSchema = Type.Object({
   editorText: Type.Optional(Type.String()),
   cancelled: Type.Boolean(),
   aborted: Type.Optional(Type.Boolean()),
-  summaryEntry: Type.Optional(Type.Unknown()),
+  summaryEntry: Type.Optional(BranchSummaryEntrySchema),
   snapshot: Type.Optional(Type.Unknown()),
 });
 
@@ -552,6 +698,8 @@ export const SessionSnapshotSchema = Type.Object({
   autoCompactionEnabled: Type.Boolean(),
   steeringMode: Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]),
   followUpMode: Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]),
+  entries: Type.Array(SessionEntrySchema),
+  leafId: Type.Union([Type.String(), Type.Null()]),
   transcript: Type.Array(Type.Unknown()),
   queue: Type.Object({
     depth: Type.Number(),

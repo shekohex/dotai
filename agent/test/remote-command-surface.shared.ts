@@ -334,6 +334,8 @@ export class RecordingSession {
     getSessionId: () => this.sessionStats.sessionId,
     isPersisted: () => typeof this.sessionStats.sessionFile === "string",
     getSessionFile: () => this.sessionStats.sessionFile,
+    getEntries: () => this.buildSessionEntries(),
+    getLeafId: () => this.buildSessionEntries().at(-1)?.id ?? null,
   };
   settingsManager = {
     getDefaultProvider: () => this.defaultProvider,
@@ -448,6 +450,22 @@ export class RecordingSession {
       systemPrompt: this.resourceReadCounts.systemPrompt,
       appendSystemPrompt: this.resourceReadCounts.appendSystemPrompt,
     };
+  }
+
+  buildSessionEntries(): Array<{
+    type: "message";
+    id: string;
+    parentId: string | null;
+    timestamp: string;
+    message: (typeof this.messages)[number];
+  }> {
+    return this.messages.map((message, index) => ({
+      type: "message",
+      id: `message-${index + 1}`,
+      parentId: index === 0 ? null : `message-${index}`,
+      timestamp: new Date(index).toISOString(),
+      message,
+    }));
   }
 
   getActiveToolNames(): string[] {
@@ -609,7 +627,16 @@ export class RecordingSession {
     return {
       editorText: `navigated:${targetId}`,
       cancelled: false,
-      summaryEntry: options?.summarize ? { id: "summary-1" } : undefined,
+      summaryEntry: options?.summarize
+        ? {
+            type: "branch_summary",
+            id: "summary-1",
+            parentId: targetId,
+            timestamp: new Date(0).toISOString(),
+            fromId: "from-1",
+            summary: "summary-1",
+          }
+        : undefined,
     };
   }
 

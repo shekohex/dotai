@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { createServer } from "node:http2";
+import { createServer } from "node:http";
 import { createRemoteApp } from "./app.js";
 import { parseAllowedKeys } from "./auth.js";
 

@@ -5,7 +5,8 @@ import {
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 
-import { resolveModeSpec, type ThinkingLevel } from "../mode-utils.js";
+import { resolveModeSpec, type ModeSpec, type ThinkingLevel } from "../mode-utils.js";
+import { getRemoteModesSnapshot } from "../remote/client/remote-modes-store.js";
 import { CONTEXT_TRANSFER_SYSTEM_PROMPT } from "./session-launch-utils.constants.js";
 import {
   buildSummaryUserMessage,
@@ -109,6 +110,18 @@ export async function resolveSessionLaunchOptions(
   };
 }
 
+export function resolveContextModeSpec(
+  ctx: Pick<ExtensionContext, "cwd" | "sessionManager">,
+  mode: string,
+): Promise<ModeSpec | undefined> | ModeSpec | undefined {
+  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager.getSessionId());
+  if (remoteModes !== undefined) {
+    return remoteModes.modes[mode];
+  }
+
+  return resolveModeSpec(ctx.cwd, mode);
+}
+
 async function resolveModeLaunchSelection(
   ctx: ExtensionContext,
   mode: string | undefined,
@@ -117,7 +130,7 @@ async function resolveModeLaunchSelection(
     return {};
   }
 
-  const modeSpec = await resolveModeSpec(ctx.cwd, mode);
+  const modeSpec = await resolveContextModeSpec(ctx, mode);
   if (!modeSpec) {
     return { error: `Unknown mode "${mode}"` };
   }

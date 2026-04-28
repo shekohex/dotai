@@ -53,14 +53,20 @@ export async function setModelRemoteSession(input: {
   client: RemoteApiClient;
   sessionId: string;
   model: Model<Api>;
+  thinkingLevel?: ThinkingLevel;
   setModelState: (model: Model<Api>) => void;
   setDefaultModel: (provider: string, modelId: string) => void;
+  setDefaultThinkingLevel?: (thinkingLevel: ThinkingLevel) => void;
 }): Promise<void> {
   await input.client.updateModel(input.sessionId, {
     model: `${input.model.provider}/${input.model.id}`,
+    ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
   });
   input.setModelState(input.model);
   input.setDefaultModel(input.model.provider, input.model.id);
+  if (input.thinkingLevel !== undefined) {
+    input.setDefaultThinkingLevel?.(input.thinkingLevel);
+  }
 }
 
 export async function cycleModelRemoteSession(input: {

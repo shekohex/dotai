@@ -150,6 +150,7 @@ export abstract class RemoteAgentSessionInteractionApi extends RemoteAgentSessio
       client: this.client,
       sessionId: this.sessionId,
       model,
+      thinkingLevel: this.thinkingLevel,
       setModelState: (nextModel) => {
         this._model = nextModel;
         this.state.model = nextModel;
@@ -157,6 +158,9 @@ export abstract class RemoteAgentSessionInteractionApi extends RemoteAgentSessio
       setDefaultModel: (provider, modelId) => {
         this.remoteModelSettings.defaultProvider = provider;
         this.remoteModelSettings.defaultModel = modelId;
+      },
+      setDefaultThinkingLevel: (thinkingLevel) => {
+        this.remoteModelSettings.defaultThinkingLevel = thinkingLevel;
       },
     });
   }

@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import type { ModeSpec } from "../../mode-utils.js";
+import { getRemoteModesSnapshot } from "../../remote/client/remote-modes-store.js";
 import { loadAvailableModes } from "../available-modes.js";
 import type { SessionModel } from "../session-launch-utils.js";
 import type { HandoffRuntimeState } from "./shared.js";
@@ -236,13 +237,26 @@ async function getHandoffModeCompletions(
     return null;
   }
 
-  const items = (await loadAvailableModes(ctx.cwd)).map(({ name, spec }) => ({
+  const items = (await loadHandoffModes(ctx)).map(({ name, spec }) => ({
     value: `${prefixBase}${name}`,
     label: name,
     description: describeModeSpec(spec),
   }));
 
   return filterAutocompleteItems(items, query);
+}
+
+function loadHandoffModes(
+  ctx: ExtensionContext,
+): Promise<Array<{ name: string; spec: ModeSpec }>> | Array<{ name: string; spec: ModeSpec }> {
+  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager.getSessionId());
+  if (remoteModes === undefined) {
+    return loadAvailableModes(ctx.cwd);
+  }
+
+  return Object.entries(remoteModes.modes)
+    .toSorted(([left], [right]) => left.localeCompare(right))
+    .map(([name, spec]) => ({ name, spec }));
 }
 
 function getHandoffModelCompletions(

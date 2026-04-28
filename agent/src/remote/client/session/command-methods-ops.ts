@@ -144,15 +144,19 @@ export async function setModelRemoteSessionMethod(input: {
   client: RemoteApiClient;
   sessionId: string;
   model: Model<Api>;
+  thinkingLevel?: ThinkingLevel;
   setModelState: (model: Model<Api>) => void;
   setDefaultModel: (provider: string, modelId: string) => void;
+  setDefaultThinkingLevel?: (thinkingLevel: ThinkingLevel) => void;
 }): Promise<void> {
   await setModelRemoteSession({
     client: input.client,
     sessionId: input.sessionId,
     model: input.model,
+    thinkingLevel: input.thinkingLevel,
     setModelState: input.setModelState,
     setDefaultModel: input.setDefaultModel,
+    setDefaultThinkingLevel: input.setDefaultThinkingLevel,
   });
 }
 

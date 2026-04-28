@@ -57,29 +57,21 @@ export function handleRemoteSessionErrorMessage(input: {
 export function emitRemoteSessionAgentEvent(input: {
   event: AgentSessionEvent;
   listeners: Set<AgentSessionEventListener>;
-  currentEmitQueue: Promise<void>;
-  setEmitQueue: (next: Promise<void>) => void;
   isStreaming: boolean;
   queueDepth: number;
   idleResolvers: Set<() => void>;
 }): void {
-  const nextQueue = input.currentEmitQueue
-    .then(() => {
-      for (const listener of input.listeners) {
-        listener(input.event);
-      }
-    })
-    .catch(() => {})
-    .then(() => {
-      if (!input.isStreaming && input.queueDepth === 0 && input.idleResolvers.size > 0) {
-        const resolvers = [...input.idleResolvers.values()];
-        input.idleResolvers.clear();
-        for (const resolve of resolvers) {
-          resolve();
-        }
-      }
-    });
-  input.setEmitQueue(nextQueue);
+  for (const listener of input.listeners) {
+    listener(input.event);
+  }
+
+  if (!input.isStreaming && input.queueDepth === 0 && input.idleResolvers.size > 0) {
+    const resolvers = [...input.idleResolvers.values()];
+    input.idleResolvers.clear();
+    for (const resolve of resolvers) {
+      resolve();
+    }
+  }
 }
 
 export function applyRemoteAgentEventAndEmit(input: {
@@ -87,8 +79,6 @@ export function applyRemoteAgentEventAndEmit(input: {
   state: RemoteAgentSessionState;
   currentDerivedState: AgentEventDerivedState;
   listeners: Set<AgentSessionEventListener>;
-  currentEmitQueue: Promise<void>;
-  setEmitQueue: (next: Promise<void>) => void;
   isStreaming: boolean;
   queueDepth: number;
   idleResolvers: Set<() => void>;
@@ -101,8 +91,6 @@ export function applyRemoteAgentEventAndEmit(input: {
   emitRemoteSessionAgentEvent({
     event: input.event,
     listeners: input.listeners,
-    currentEmitQueue: input.currentEmitQueue,
-    setEmitQueue: input.setEmitQueue,
     isStreaming: input.isStreaming,
     queueDepth: input.queueDepth,
     idleResolvers: input.idleResolvers,

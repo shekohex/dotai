@@ -51,6 +51,12 @@ import {
   toForwardableRemoteExtensionEvent,
 } from "./local-extension-runner.js";
 import {
+  createLocalExtensionEventQueueState,
+  enqueueLocalExtensionEvent as enqueueCoalescedLocalExtensionEvent,
+  resetLocalExtensionEventQueue,
+  shiftNextLocalExtensionEvent,
+} from "./local-extension-event-queue.js";
+import {
   describeManagedExtensionState,
   hydrateExtensionStateFromKv,
   isKvManagedExtensionState,
@@ -138,7 +144,6 @@ export abstract class RemoteAgentSessionSetupBase {
     sourceInfo: unknown;
   }> = [];
   protected remoteToolDefinitions = new Map<string, ToolDefinitionMetadata>();
-  protected emitQueue: Promise<void> = Promise.resolve();
   protected mutationQueue: Promise<void> = Promise.resolve();
   protected idleResolvers = new Set<() => void>();
   protected _isRetrying = false;
@@ -170,8 +175,8 @@ export abstract class RemoteAgentSessionSetupBase {
   protected extensionErrorListener: ((error: unknown) => void) | undefined;
   protected localExtensionErrorUnsubscriber: (() => void) | undefined;
   protected extensionStateHydrationTask: Promise<void> | undefined;
-  protected localExtensionEventQueue: Promise<void> = Promise.resolve();
   protected readonly bufferedLocalExtensionEvents: ForwardableRemoteExtensionEvent[] = [];
+  protected readonly localExtensionEventQueue = createLocalExtensionEventQueueState();
   protected localExtensionTurnIndex = 0;
 
   protected constructor(
@@ -342,7 +347,7 @@ export abstract class RemoteAgentSessionSetupBase {
     this.localExtensionErrorUnsubscriber = undefined;
     this.localExtensionRunner = this.createLocalExtensionRunner();
     this.localExtensionsStarted = false;
-    this.localExtensionEventQueue = Promise.resolve();
+    resetLocalExtensionEventQueue(this.localExtensionEventQueue);
     this.bufferedLocalExtensionEvents.length = 0;
     this.localExtensionTurnIndex = 0;
     this.applyLocalExtensionBindings();
@@ -356,7 +361,7 @@ export abstract class RemoteAgentSessionSetupBase {
       return;
     }
 
-    await this.localExtensionEventQueue;
+    await this.waitForLocalExtensionEvents();
     await this.localExtensionRunner.emit({ type: "session_shutdown", reason: "reload" });
     this.localExtensionsStarted = false;
     await this.ensureLocalExtensionsStarted("reload");
@@ -651,7 +656,7 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   protected async shutdownLocalExtensions(): Promise<void> {
-    await this.localExtensionEventQueue;
+    await this.waitForLocalExtensionEvents();
     if (this.localExtensionsStarted) {
       await this.localExtensionRunner.emit({ type: "session_shutdown", reason: "quit" });
       this.localExtensionsStarted = false;
@@ -738,10 +743,11 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   private enqueueLocalExtensionEvent(event: ForwardableRemoteExtensionEvent): void {
-    this.localExtensionEventQueue = this.localExtensionEventQueue.then(async () => {
-      await this.emitLocalExtensionEvent(event);
+    enqueueCoalescedLocalExtensionEvent({
+      state: this.localExtensionEventQueue,
+      event,
+      flush: () => this.flushLocalExtensionEvents(),
     });
-    this.localExtensionEventQueue = this.localExtensionEventQueue.catch(() => {});
   }
 
   private async emitLocalExtensionEvent(event: ForwardableRemoteExtensionEvent): Promise<void> {
@@ -758,6 +764,21 @@ export abstract class RemoteAgentSessionSetupBase {
         error: errorMessage(error),
       });
     }
+  }
+
+  private async flushLocalExtensionEvents(): Promise<void> {
+    while (true) {
+      const nextEvent = shiftNextLocalExtensionEvent(this.localExtensionEventQueue);
+      if (nextEvent) {
+        await this.emitLocalExtensionEvent(nextEvent);
+        continue;
+      }
+      return;
+    }
+  }
+
+  private async waitForLocalExtensionEvents(): Promise<void> {
+    await this.localExtensionEventQueue.flushPromise;
   }
 
   abstract getContextUsage(): ContextUsage | undefined;

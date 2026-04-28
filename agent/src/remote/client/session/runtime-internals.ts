@@ -331,10 +331,6 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         isCompacting: this._isCompacting,
       },
       listeners: this.listeners,
-      currentEmitQueue: this.emitQueue,
-      setEmitQueue: (nextEmitQueue) => {
-        this.emitQueue = nextEmitQueue;
-      },
       isStreaming: this.isStreaming,
       queueDepth: this.queueDepth,
       idleResolvers: this.idleResolvers,

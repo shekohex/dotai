@@ -3,6 +3,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ContextUsage, SessionStats } from "@mariozechner/pi-coding-agent";
 import type {
   RemoteExtensionMetadata,
+  RemoteResourceBundle,
   RemoteSettingsSnapshot,
   StreamEventEnvelope,
 } from "../schemas.js";
@@ -25,7 +26,8 @@ type ApplyRemoteSessionStatePatchInput = {
   setThinkingLevel: (thinkingLevel: ThinkingLevel) => void;
   applyAuthoritativeCwd: (cwd: string) => void;
   setRemoteExtensions: (extensions: RemoteExtensionMetadata[]) => void;
-  setSessionName: (sessionName: string) => void;
+  setRemoteResources: (resources: RemoteResourceBundle) => void;
+  setSessionName: (sessionName: string | undefined) => void;
   setActiveTools: (activeTools: string[]) => void;
   setContextUsage: (contextUsage: ContextUsage | undefined) => void;
   setSessionStats: (sessionStats: SessionStats) => void;
@@ -46,6 +48,7 @@ export function applyRemoteSessionStatePatch(input: ApplyRemoteSessionStatePatch
   applyRemoteModelSettingsPatch(input, patch);
   applyRemoteModelAndThinkingPatch(input, patch);
   applyRemoteCwdAndExtensionsPatch(input, patch);
+  applyRemoteResourcesPatch(input, patch);
   applyRemoteSessionNamePatch(input, patch);
   applyRemoteActiveToolsPatch(input, patch);
   applyRemoteSessionStatsPatch(input, patch);
@@ -128,6 +131,17 @@ function applyRemoteSessionNamePatch(
   if (patch.sessionName !== undefined) {
     input.setSessionName(patch.sessionName);
   }
+}
+
+function applyRemoteResourcesPatch(
+  input: ApplyRemoteSessionStatePatchInput,
+  patch: SessionStatePatch,
+): void {
+  if (patch.resources === undefined) {
+    return;
+  }
+
+  input.setRemoteResources(structuredClone(patch.resources));
 }
 
 function applyRemoteActiveToolsPatch(

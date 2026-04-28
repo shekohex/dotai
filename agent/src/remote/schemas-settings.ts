@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { ModesFileSchema } from "../mode-definitions.js";
 
 export const RemoteSkillResourceSchema = Type.Object({
   name: Type.String(),
@@ -26,6 +27,7 @@ export const RemoteResourceBundleSchema = Type.Object({
   skills: Type.Array(RemoteSkillResourceSchema),
   prompts: Type.Array(RemotePromptResourceSchema),
   themes: Type.Array(RemoteThemeResourceSchema),
+  modes: Type.Optional(ModesFileSchema),
   systemPrompt: Type.Union([Type.String(), Type.Null()]),
   appendSystemPrompt: Type.Array(Type.String()),
 });

@@ -11,7 +11,10 @@ import { normalizeRemoteWorkspaceCwd } from "../workspace-cwd.js";
 
 export function toRemoteSessionInfo(summary: SessionSummary): SessionInfo {
   const firstMessage = summary.firstUserMessage ?? summary.sessionName;
-  const sessionName = summary.sessionName === summary.sessionId ? undefined : summary.sessionName;
+  const sessionName =
+    summary.sessionName === undefined || summary.sessionName === summary.sessionId
+      ? undefined
+      : summary.sessionName;
   return {
     path: summary.sessionId,
     id: summary.sessionId,
@@ -21,8 +24,8 @@ export function toRemoteSessionInfo(summary: SessionSummary): SessionInfo {
     created: new Date(summary.createdAt),
     modified: new Date(summary.updatedAt),
     messageCount: summary.messageCount,
-    firstMessage,
-    allMessagesText: `${summary.sessionName} ${firstMessage} ${summary.cwd} ${summary.sessionId}`,
+    firstMessage: firstMessage ?? "",
+    allMessagesText: `${summary.sessionName ?? ""} ${firstMessage ?? ""} ${summary.cwd} ${summary.sessionId}`,
   };
 }
 

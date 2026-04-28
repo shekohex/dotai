@@ -15,6 +15,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import type { ReplacedSessionContext } from "../../../../node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.js";
 import { defaultSettings } from "../../../default-settings.js";
+import { setRemoteModesSnapshot } from "../remote-modes-store.js";
 import type { RemoteApiClient } from "../../remote-api-client.js";
 import type {
   ExtensionUiRequestEventPayload,
@@ -200,6 +201,7 @@ export abstract class RemoteAgentSessionSetupBase {
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
     this.remoteSettings = readRemoteSettingsSnapshot(snapshot);
     this.remoteExtensions = applyRemoteExtensionsSnapshot(snapshot);
+    setRemoteModesSnapshot(this.sessionId, snapshot.resources?.modes);
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, "medium");
     this._model = resolveModel({
       modelRef: snapshot.model,

@@ -21,6 +21,7 @@ import {
   SessionToolParamsSchema,
   SessionNameUpdateRequestSchema,
   SteerCommandRequestSchema,
+  SessionSnapshotQuerySchema,
   StreamReadQuerySchema,
   UiResponseRequestSchema,
 } from "./schemas.js";
@@ -155,9 +156,15 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
       describeRoute(sessionSnapshotRouteDescription),
       needsAuth,
       tbValidator("param", SessionParamsSchema),
+      tbValidator("query", SessionSnapshotQuerySchema),
       (c) => {
         const { sessionId } = c.req.valid("param");
-        return handleSessionSnapshot(c, dependencies, sessionId);
+        return handleSessionSnapshot(
+          c,
+          dependencies,
+          sessionId,
+          c.req.valid("query").includeHistory !== "false",
+        );
       },
     )
     .post(

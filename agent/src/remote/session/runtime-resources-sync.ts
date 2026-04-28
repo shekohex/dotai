@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
 import { defaultSettings } from "../../default-settings.js";
+import { loadModesFileSync } from "../../mode-utils.js";
 import { isRecord } from "../../utils/unknown-data.js";
 import type { SessionRecord } from "./types.js";
 
@@ -11,7 +12,9 @@ export function applyRuntimeResourcesSnapshot(
   session: RuntimeSession,
 ): void {
   const resourceLoader = readRuntimeResourceLoader(session);
+  const loadedModes = loadModesFileSync(session.sessionManager.getCwd());
   if (!resourceLoader) {
+    record.resources.modes = structuredClone(loadedModes.resolvedData);
     record.settings = readRuntimeSettingsSnapshot(session);
     return;
   }
@@ -48,6 +51,7 @@ export function applyRuntimeResourcesSnapshot(
     skills,
     prompts,
     themes,
+    modes: structuredClone(loadedModes.resolvedData),
     systemPrompt: resourceLoader.getSystemPrompt() ?? null,
     appendSystemPrompt: [...resourceLoader.getAppendSystemPrompt()],
   };

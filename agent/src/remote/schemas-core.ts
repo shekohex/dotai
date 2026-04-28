@@ -85,7 +85,7 @@ export const PresenceSchema = Type.Object({
 
 export const SessionSummarySchema = Type.Object({
   sessionId: Type.String(),
-  sessionName: Type.String(),
+  sessionName: Type.Optional(Type.String()),
   firstUserMessage: Type.Optional(Type.String()),
   messageCount: Type.Number(),
   status: SessionStatusSchema,
@@ -182,7 +182,7 @@ export const CreateSessionRequestSchema = Type.Object({
 
 export const CreateSessionResponseSchema = Type.Object({
   sessionId: Type.String(),
-  sessionName: Type.String(),
+  sessionName: Type.Optional(Type.String()),
   status: SessionStatusSchema,
 });
 
@@ -431,13 +431,17 @@ export const ForkSessionRequestSchema = Type.Object({
 
 export const ForkSessionResponseSchema = Type.Object({
   sessionId: Type.String(),
-  sessionName: Type.String(),
+  sessionName: Type.Optional(Type.String()),
   status: SessionStatusSchema,
   selectedText: Type.Optional(Type.String()),
 });
 
 export const SessionParamsSchema = Type.Object({
   sessionId: Type.String({ minLength: 1 }),
+});
+
+export const SessionSnapshotQuerySchema = Type.Object({
+  includeHistory: Type.Optional(Type.Union([Type.Literal("true"), Type.Literal("false")])),
 });
 
 export const SessionToolParamsSchema = Type.Object({
@@ -681,7 +685,7 @@ export const CommandAcceptedResponseSchema = Type.Object({
 
 export const SessionSnapshotSchema = Type.Object({
   sessionId: Type.String(),
-  sessionName: Type.String(),
+  sessionName: Type.Optional(Type.String()),
   status: SessionStatusSchema,
   cwd: Type.String(),
   model: Type.String(),

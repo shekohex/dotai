@@ -1,7 +1,7 @@
 import type { TextContent } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { basename, extname, isAbsolute, relative, resolve } from "node:path";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 import {
   loadEntriesFromFile,
   type FileEntry,
@@ -14,7 +14,7 @@ export interface SessionCatalogRecord {
   sessionId: string;
   sessionPath: string;
   cwd: string;
-  sessionName: string;
+  sessionName?: string;
   firstUserMessage?: string;
   messageCount: number;
   createdAt: number;
@@ -29,7 +29,7 @@ interface RawCatalogRecord {
   sessionId: string;
   sessionPath: string;
   cwd: string;
-  sessionName: string;
+  sessionName?: string;
   firstUserMessage?: string;
   messageCount: number;
   createdAt: number;
@@ -323,7 +323,7 @@ function isSessionHeader(entry: FileEntry | undefined): entry is SessionHeader {
   );
 }
 
-function readSessionName(entries: FileEntry[], sessionId: string): string {
+function readSessionName(entries: FileEntry[], _sessionId: string): string | undefined {
   let sessionName: string | undefined;
   for (const entry of entries) {
     if (entry.type !== "session_info") {
@@ -333,8 +333,7 @@ function readSessionName(entries: FileEntry[], sessionId: string): string {
       sessionName = entry.name.trim();
     }
   }
-
-  return sessionName ?? basename(sessionId);
+  return sessionName;
 }
 
 function readFirstUserMessageFromEntries(entries: FileEntry[]): string | undefined {

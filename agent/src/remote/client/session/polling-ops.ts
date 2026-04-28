@@ -11,6 +11,7 @@ import type {
   ExtensionUiResolvedEventPayload,
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
+  RemoteResourceBundle,
   RemoteSettingsSnapshot,
   StreamEventEnvelope,
 } from "../../schemas.js";
@@ -59,7 +60,8 @@ export type PollRemoteSessionRuntimeInput = {
   setThinkingLevel: (thinkingLevel: ThinkingLevel) => void;
   applyAuthoritativeCwd: (cwd: string) => void;
   setRemoteExtensions: (extensions: RemoteExtensionMetadata[]) => void;
-  setSessionName: (sessionName: string) => void;
+  setRemoteResources: (resources: RemoteResourceBundle) => void;
+  setSessionName: (sessionName: string | undefined) => void;
   setActiveTools: (activeTools: string[]) => void;
   setContextUsage: (contextUsage: ContextUsage | undefined) => void;
   setSessionStats: (sessionStats: SessionStats) => void;
@@ -96,6 +98,7 @@ type PollingStateHandlers = Pick<
   | "setThinkingLevel"
   | "applyAuthoritativeCwd"
   | "setRemoteExtensions"
+  | "setRemoteResources"
   | "setSessionName"
   | "setActiveTools"
   | "setContextUsage"
@@ -248,6 +251,7 @@ function handleSessionStatePatchPayload(
     setThinkingLevel: input.setThinkingLevel,
     applyAuthoritativeCwd: input.applyAuthoritativeCwd,
     setRemoteExtensions: input.setRemoteExtensions,
+    setRemoteResources: input.setRemoteResources,
     setSessionName: input.setSessionName,
     setActiveTools: input.setActiveTools,
     setContextUsage: input.setContextUsage,

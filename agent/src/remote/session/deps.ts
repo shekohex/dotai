@@ -27,6 +27,7 @@ export {
 } from "./event-stream-ops.js";
 export { installRemoteExtensionEventMirror } from "./extension-event-stream.js";
 export { detachSessionPresence, touchSessionPresence } from "./presence-ops.js";
+export { ensurePresenceSessionExists } from "./presence-session.js";
 export {
   createSessionRecord,
   createSingleSession,

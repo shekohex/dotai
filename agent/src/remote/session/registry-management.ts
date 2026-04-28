@@ -18,7 +18,6 @@ import type {
 import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import {
   createSingleSession,
-  detachSessionPresence,
   disposeSessionRecord,
   disposeFailedSessionCreation,
   disposeSessionRegistry,
@@ -28,7 +27,6 @@ import {
   getLastSessionStreamOffset,
   getSessionSnapshot,
   registerCreatedSession,
-  touchSessionPresence,
   type SessionRecord,
 } from "./deps.js";
 import {
@@ -36,9 +34,11 @@ import {
   forkPersistentSessionRecord,
   readForkMessagesFromSessionManager,
 } from "./fork-ops.js";
+import { formatEphemeralCleanupError } from "./cleanup-errors.js";
+import { detachRegistryPresence, touchRegistryPresence } from "./registry-presence.js";
 import { SessionRegistryBase } from "./registry-base.js";
+import { omitSessionSnapshotHistory } from "./snapshot-history.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
-
 export class SessionRegistryManagement extends SessionRegistryBase {
   createSession(
     input: CreateSessionRequest,
@@ -142,9 +142,12 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     sessionId: string,
     client: AuthSession,
     connectionId?: string,
+    includeHistory = true,
   ): Promise<SessionSnapshot> {
     await this.ensureLoaded(sessionId);
-    return this.getSessionSnapshot(sessionId, client, connectionId);
+    return includeHistory
+      ? this.getSessionSnapshot(sessionId, client, connectionId)
+      : omitSessionSnapshotHistory(this.getSessionSnapshot(sessionId, client, connectionId));
   }
 
   async reload(
@@ -166,6 +169,37 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       throw new RemoteError("Wait for queued commands to finish before reloading.", 409);
     }
     await session.reload();
+    this.syncFromRuntime(record, { updateTimestamp: false, syncResources: true });
+    const updatedAt = this.now();
+    record.updatedAt = updatedAt;
+    this.streams.append(sessionEventsStreamId(record.sessionId), {
+      sessionId: record.sessionId,
+      kind: "session_state_patch",
+      payload: {
+        commandId: "server-reload",
+        sequence: record.queue.nextSequence,
+        patch: {
+          cwd: record.cwd,
+          extensions: record.extensions.map((extension) => ({ ...extension })),
+          resources: buildReloadResourcePatch(record),
+          settings: { ...record.settings },
+          availableModels: record.availableModels.map((model) => ({ ...model })),
+          modelSettings: {
+            defaultProvider: record.modelSettings.defaultProvider,
+            defaultModel: record.modelSettings.defaultModel,
+            defaultThinkingLevel: record.modelSettings.defaultThinkingLevel,
+            enabledModels: record.modelSettings.enabledModels
+              ? [...record.modelSettings.enabledModels]
+              : null,
+          },
+          autoCompactionEnabled: record.autoCompactionEnabled,
+          steeringMode: record.steeringMode,
+          followUpMode: record.followUpMode,
+        },
+      },
+      ts: updatedAt,
+    });
+    this.emitSessionSummaryUpdated(record, updatedAt);
     return this.getSessionSnapshot(sessionId, client, connectionId);
   }
 
@@ -547,37 +581,31 @@ export class SessionRegistryManagement extends SessionRegistryBase {
   }
 
   touchPresence(sessionId: string, client: AuthSession, connectionId?: string): void {
-    const record = this.getRequired(sessionId);
-    touchSessionPresence({
-      record,
+    touchRegistryPresence({
+      loadedRecord: this.loadedRuntimes.get(sessionId),
+      sessionId,
       client,
       connectionId,
+      catalog: this.catalog,
+      streams: this.streams,
       now: this.now(),
-      createConnectionId: () => randomUUID(),
-      pruneExpiredPresence: (targetRecord, now) => {
-        this.pruneExpiredPresence(targetRecord, now);
-      },
-      onPresencePrunedToZero: (targetRecord) => {
-        if (targetRecord.persistence === "ephemeral") {
-          this.scheduleEphemeralSessionCleanup(targetRecord.sessionId);
-        }
-      },
-      readConnectionCapabilities: (targetClientId, targetConnectionId) =>
-        this.readConnectionCapabilities(targetClientId, targetConnectionId),
-      getLastAppOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
-      getLastSessionOffset: (targetSessionId) =>
-        this.streams.getHeadOffset(sessionEventsStreamId(targetSessionId)),
+      pruneExpiredPresence: this.pruneExpiredPresence.bind(this),
+      scheduleEphemeralSessionCleanup: this.scheduleEphemeralSessionCleanup.bind(this),
+      readConnectionCapabilities: (clientId, targetConnectionId) =>
+        this.readConnectionCapabilities(clientId, targetConnectionId),
     });
   }
 
   detachPresence(sessionId: string, connectionId: string): void {
-    const record = this.getRequired(sessionId);
-    detachSessionPresence(record, connectionId);
-    if (record.persistence === "ephemeral" && record.presence.size === 0) {
-      this.scheduleEphemeralSessionCleanup(sessionId);
-    }
+    detachRegistryPresence({
+      loadedRecord: this.loadedRuntimes.get(sessionId),
+      sessionId,
+      connectionId,
+      catalog: this.catalog,
+      streams: this.streams,
+      scheduleEphemeralSessionCleanup: this.scheduleEphemeralSessionCleanup.bind(this),
+    });
   }
-
   async dispose(): Promise<void> {
     await disposeSessionRegistry({
       sessions: this.getLoadedSessions(),
@@ -586,7 +614,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       },
     });
   }
-
   private async handleChangedCatalogRecord(
     sessionId: string,
     previousRecord: SessionCatalogRecord,
@@ -696,11 +723,17 @@ export class SessionRegistryManagement extends SessionRegistryBase {
   }
 }
 
-function formatEphemeralCleanupError(error: unknown): string {
-  if (error instanceof Error && error.message.length > 0) {
-    return `Failed to clean up ephemeral session: ${error.message}`;
-  }
-  return "Failed to clean up ephemeral session.";
+function buildReloadResourcePatch(record: SessionRecord): SessionSnapshot["resources"] {
+  return {
+    skills: record.resources.skills.map((skill) => ({ ...skill })),
+    prompts: record.resources.prompts.map((prompt) => ({ ...prompt })),
+    themes: record.resources.themes.map((theme) => ({ ...theme })),
+    ...(record.resources.modes === undefined
+      ? {}
+      : { modes: structuredClone(record.resources.modes) }),
+    systemPrompt: record.resources.systemPrompt,
+    appendSystemPrompt: [...record.resources.appendSystemPrompt],
+  };
 }
 
 function didCatalogRecordChange(

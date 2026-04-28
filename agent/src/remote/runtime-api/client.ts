@@ -200,9 +200,18 @@ export class RemoteApiClient {
     throw await toRemoteHttpError(response);
   }
 
-  async getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
+  async getSessionSnapshot(
+    sessionId: string,
+    options?: { includeHistory?: boolean },
+  ): Promise<SessionSnapshot> {
     const response = await this.rpcClient.sessions[":sessionId"].snapshot.$get(
-      { param: { sessionId } },
+      {
+        param: { sessionId },
+        query:
+          options?.includeHistory === undefined
+            ? {}
+            : { includeHistory: options.includeHistory ? "true" : "false" },
+      },
       { headers: await this.getAuthHeaders() },
     );
     this.captureConnectionId(response);

@@ -278,7 +278,7 @@ function findMatchingRemoteSessions(snapshot: AppSnapshot, query: string) {
   }
   return snapshot.sessionSummaries.filter((summary) => {
     const sessionId = summary.sessionId.toLowerCase();
-    const sessionName = summary.sessionName.toLowerCase();
+    const sessionName = summary.sessionName?.toLowerCase() ?? "";
     const cwd = summary.cwd.toLowerCase();
     return (
       sessionId === normalizedQuery ||
@@ -309,7 +309,9 @@ export function resolveRemoteSessionId(input: {
       throw new Error(`Remote session not found: ${input.parsed.sessionId}`);
     }
     if (matches.length > 1) {
-      const labels = matches.map((summary) => `${summary.sessionId} (${summary.sessionName})`);
+      const labels = matches.map(
+        (summary) => `${summary.sessionId} (${summary.sessionName ?? summary.cwd})`,
+      );
       throw new Error(
         `Remote session query is ambiguous: ${input.parsed.sessionId}. Matches: ${labels.join(", ")}`,
       );
@@ -468,6 +470,7 @@ export async function runRemoteInteractiveMode(
     sessionId: selectedSessionId,
     sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
     createNewSession: selection.createNewSession,
+    preferLightweightAttach: true,
     persistence: parsed.noSession ? "ephemeral" : "persistent",
     workspaceCwd: parsed.workspaceCwd,
     clientExtensionMetadata: options.clientExtensionMetadata,

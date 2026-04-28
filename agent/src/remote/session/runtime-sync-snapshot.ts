@@ -26,6 +26,9 @@ export function buildSessionSnapshotParts(
       skills: record.resources.skills.map((skill) => ({ ...skill })),
       prompts: record.resources.prompts.map((prompt) => ({ ...prompt })),
       themes: record.resources.themes.map((theme) => ({ ...theme })),
+      ...(record.resources.modes === undefined
+        ? {}
+        : { modes: structuredClone(record.resources.modes) }),
       systemPrompt: record.resources.systemPrompt,
       appendSystemPrompt: [...record.resources.appendSystemPrompt],
     },

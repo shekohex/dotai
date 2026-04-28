@@ -2784,6 +2784,278 @@ timedTest("persistent remote session lazily loads runtime for commands after res
   }
 });
 
+timedTest("persisted unnamed session stream remains attachable after restart", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const originalCwd = process.cwd();
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "pi-remote-restart-stream-",
+  });
+
+  try {
+    const remoteA = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: harness.runtimeFactory,
+    });
+
+    let sessionId = "";
+
+    try {
+      const token = await authenticate(remoteA.app, privateKeyPem);
+      const createResponse = await remoteA.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      expect(createResponse.status).toBe(201);
+      sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+    } finally {
+      await remoteA.dispose();
+    }
+
+    const remoteB = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: harness.runtimeFactory,
+    });
+
+    try {
+      const token = await authenticate(remoteB.app, privateKeyPem);
+      const response = await remoteB.app.request(
+        `/v1/streams/sessions/${sessionId}/events?live=long-poll&offset=0000000000000000_0000000000000000&timeoutMs=250`,
+        {
+          headers: { authorization: `Bearer ${token}` },
+        },
+      );
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get("x-pi-connection-id")).toBeTruthy();
+    } finally {
+      await remoteB.dispose();
+    }
+  } finally {
+    process.chdir(originalCwd);
+    await harness.cleanup();
+  }
+});
+
+timedTest("session snapshot can omit history while preserving current stream offset", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(createResponse.status).toBe(201);
+    const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+    const promptResponse = await remote.app.request(`/v1/sessions/${sessionId}/prompt`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "create some history" }),
+    });
+    expect(promptResponse.status).toBe(202);
+
+    const fullSnapshot = await waitForValue(
+      async () => {
+        const response = await remote.app.request(`/v1/sessions/${sessionId}/snapshot`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          entries: unknown[];
+          transcript: unknown[];
+          lastSessionStreamOffset: string;
+          sessionStats: { totalMessages: number };
+        };
+      },
+      (snapshot) => snapshot.sessionStats.totalMessages > 0,
+    );
+
+    const lightweightResponse = await remote.app.request(
+      `/v1/sessions/${sessionId}/snapshot?includeHistory=false`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    expect(lightweightResponse.status).toBe(200);
+    const lightweightSnapshot = (await lightweightResponse.json()) as {
+      entries: unknown[];
+      transcript: unknown[];
+      lastSessionStreamOffset: string;
+      sessionStats: { totalMessages: number };
+    };
+
+    expect(fullSnapshot.entries.length).toBeGreaterThan(0);
+    expect(fullSnapshot.transcript.length).toBeGreaterThan(0);
+    expect(lightweightSnapshot.entries).toEqual([]);
+    expect(lightweightSnapshot.transcript).toEqual([]);
+    expect(lightweightSnapshot.lastSessionStreamOffset).toBe(fullSnapshot.lastSessionStreamOffset);
+    expect(lightweightSnapshot.sessionStats.totalMessages).toBe(
+      fullSnapshot.sessionStats.totalMessages,
+    );
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest(
+  "second runtime attach to loaded session uses lightweight snapshot and live offset",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: InMemoryPiRuntimeFactory(),
+    });
+
+    const requests: string[] = [];
+    const baseFetch = createInProcessFetch(remote.app);
+    const recordingFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push(url);
+      return baseFetch(input, init);
+    }) as typeof fetch;
+
+    let runtimeA: RemoteAgentSessionRuntime | undefined;
+    let runtimeB: RemoteAgentSessionRuntime | undefined;
+
+    try {
+      runtimeA = await RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: { keyId: "dev", privateKey: privateKeyPem },
+        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+        workspaceCwd: process.cwd(),
+        cwd: process.cwd(),
+        fetchImpl: createInProcessFetch(remote.app),
+      });
+
+      const sessionId = runtimeA.session.sessionManager.getSessionId();
+      await runtimeA.session.prompt("seed history before second attach");
+      await waitForValue(
+        async () => runtimeA!.session.getSessionStats().totalMessages,
+        (totalMessages) => totalMessages > 0,
+      );
+
+      runtimeB = await RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: { keyId: "dev", privateKey: privateKeyPem },
+        sessionId,
+        preferLightweightAttach: true,
+        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+        workspaceCwd: process.cwd(),
+        cwd: process.cwd(),
+        fetchImpl: recordingFetch,
+      });
+
+      expect(runtimeB.session.sessionManager.getEntries()).toEqual([]);
+      expect(runtimeB.session.sessionManager.getSessionId()).toBe(sessionId);
+      expect(
+        requests.some((url) =>
+          url.includes(`/v1/sessions/${sessionId}/snapshot?includeHistory=false`),
+        ),
+      ).toBe(true);
+      expect(
+        requests.some(
+          (url) =>
+            url.includes(`/v1/streams/sessions/${sessionId}/events`) &&
+            url.includes("offset=0000000000000000_0000000000000000"),
+        ),
+      ).toBe(false);
+    } finally {
+      await runtimeB?.dispose();
+      await runtimeA?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("remote runtime restart recovery reauths same unnamed persisted session", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const originalCwd = process.cwd();
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "pi-remote-runtime-reconnect-",
+  });
+
+  try {
+    const remoteA = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: harness.runtimeFactory,
+    });
+
+    let sessionId = "";
+
+    try {
+      const runtime = await createRemoteRuntime(remoteA.app, {
+        privateKeyPem,
+        cwd: harness.workspaceDir,
+      });
+      sessionId = runtime.session.sessionManager.getSessionId();
+      expect(runtime.session.sessionManager.getSessionName()).toBeUndefined();
+      await runtime.dispose();
+    } finally {
+      await remoteA.dispose();
+    }
+
+    const remoteB = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: harness.runtimeFactory,
+    });
+
+    try {
+      const runtime = await createRemoteRuntime(remoteB.app, {
+        privateKeyPem,
+        sessionId,
+        cwd: harness.workspaceDir,
+      });
+
+      try {
+        expect(runtime.session.sessionManager.getSessionId()).toBe(sessionId);
+        expect(runtime.session.sessionManager.getSessionName()).toBeUndefined();
+
+        await runtime.session.prompt("first message names later");
+
+        await waitForValue(
+          async () => runtime.session.messages.length,
+          (messageCount) => messageCount > 0,
+        );
+
+        expect(runtime.session.sessionManager.getSessionId()).toBe(sessionId);
+        expect(runtime.session.sessionManager.getSessionName()).toBeUndefined();
+      } finally {
+        await runtime.dispose();
+      }
+    } finally {
+      await remoteB.dispose();
+    }
+  } finally {
+    process.chdir(originalCwd);
+    await harness.cleanup();
+  }
+});
+
 timedTest("missing session summary returns 404", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 

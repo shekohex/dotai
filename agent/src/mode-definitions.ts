@@ -100,7 +100,7 @@ export type ModesFileFor<TModes extends ModeMap> = {
 
 export type LoadedModesFile = {
   path: string;
-  source: "project" | "global" | "missing";
+  source: "project" | "global" | "missing" | "remote";
   data: ModesFile;
   resolvedData: ModesFile;
   error?: string;

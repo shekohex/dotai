@@ -61,6 +61,7 @@ function readRemoteResources(snapshot: SessionSnapshot): RemoteResourceBundle {
       skills: [],
       prompts: [],
       themes: [],
+      modes: undefined,
       systemPrompt: null,
       appendSystemPrompt: [],
     };

@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import {
   AgentLifecyclePromptSession,
   BlockingPromptSession,
@@ -24,6 +25,7 @@ import {
   readFile,
   readSessionEvents,
   rm,
+  writeFile,
   test,
   testAuthSession,
   TEST_ED25519_KEYS,
@@ -1073,6 +1075,135 @@ timedTest("refreshForkMessages keeps cached entries on transient failure", async
     ]);
   } finally {
     await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote snapshot and reload stream include server modes", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const cwd = await mkdtemp(join(tmpdir(), "pi-remote-modes-"));
+
+  const session = new RecordingSession();
+  session.enableVersionedResources();
+  session.cwd = cwd;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  try {
+    await mkdir(join(cwd, ".pi"), { recursive: true });
+    await writeFile(
+      join(cwd, ".pi", "modes.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          currentMode: "builder",
+          modes: {
+            builder: {
+              provider: "pi-remote-faux",
+              modelId: "pi-remote-faux-1",
+              thinkingLevel: "medium",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const snapshotResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/snapshot`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    expect(snapshotResponse.status).toBe(200);
+    const snapshot = (await snapshotResponse.json()) as {
+      resources?: {
+        modes?: {
+          currentMode?: string;
+          modes: Record<string, { provider?: string; modelId?: string }>;
+        };
+      };
+      lastSessionStreamOffset: string;
+    };
+
+    expect(snapshot.resources?.modes?.currentMode).toBe("builder");
+    expect(snapshot.resources?.modes?.modes.builder?.provider).toBe("pi-remote-faux");
+
+    await writeFile(
+      join(cwd, ".pi", "modes.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          currentMode: "reviewer",
+          modes: {
+            reviewer: {
+              provider: "pi-remote-faux",
+              modelId: "pi-remote-faux-1",
+              thinkingLevel: "high",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const reloadResponse = await remote.app.request(`/v1/sessions/${created.sessionId}/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(reloadResponse.status).toBe(200);
+
+    const replayResponse = await remote.app.request(
+      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(snapshot.lastSessionStreamOffset)}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    expect(replayResponse.status).toBe(200);
+    const replay = (await replayResponse.json()) as {
+      events: Array<{
+        kind: string;
+        payload: {
+          patch?: {
+            resources?: {
+              modes?: {
+                currentMode?: string;
+                modes: Record<string, { thinkingLevel?: string }>;
+              };
+            };
+          };
+        };
+      }>;
+    };
+
+    expect(
+      replay.events.some(
+        (event) =>
+          event.kind === "session_state_patch" &&
+          event.payload.patch?.resources?.modes?.currentMode === "reviewer" &&
+          event.payload.patch.resources.modes.modes.reviewer?.thinkingLevel === "high",
+      ),
+    ).toBe(true);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
     await remote.dispose();
   }
 });

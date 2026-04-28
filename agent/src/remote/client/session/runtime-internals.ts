@@ -27,6 +27,7 @@ import {
   handleRemoteSessionEnvelope,
   pollRemoteSessionRuntime,
 } from "./polling-ops.js";
+import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-modes-store.js";
 import { RemoteAgentSessionSetupBase } from "./setup-base.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
@@ -79,6 +80,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   dispose(): Promise<void> {
     this.closed = true;
+    clearRemoteModesSnapshot(this.sessionId);
     for (const pendingRequest of this.pendingInteractiveRequests.values()) {
       abortControllerSafely(pendingRequest);
     }
@@ -219,8 +221,13 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       setRemoteExtensions: (extensions) => {
         this.remoteExtensions = extensions;
       },
+      setRemoteResources: (resources) => {
+        setRemoteModesSnapshot(this.sessionId, resources.modes);
+      },
       setSessionName: (sessionName) => {
-        this.sessionManager.appendSessionInfo(sessionName);
+        if (sessionName !== undefined) {
+          this.sessionManager.appendSessionInfo(sessionName);
+        }
       },
       setActiveTools: (activeTools) => {
         this.activeTools = [...activeTools];

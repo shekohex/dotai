@@ -28,7 +28,7 @@ const StreamEventCommonProperties = {
 
 const SessionCreatedEventPayloadSchema = Type.Object({
   sessionId: Type.String(),
-  sessionName: Type.String(),
+  sessionName: Type.Optional(Type.String()),
   status: SessionStatusSchema,
 });
 
@@ -38,7 +38,7 @@ const SessionClosedEventPayloadSchema = Type.Object({
 
 const SessionSummaryUpdatedEventPayloadSchema = Type.Object({
   sessionId: Type.String(),
-  sessionName: Type.String(),
+  sessionName: Type.Optional(Type.String()),
   status: SessionStatusSchema,
   updatedAt: Type.Number(),
 });

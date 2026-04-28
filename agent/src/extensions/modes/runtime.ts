@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getRemoteModesSnapshot } from "../../remote/client/remote-modes-store.js";
 import {
   getModesProjectPath,
   loadModesFile,
@@ -9,7 +10,7 @@ import {
 
 type ModeRuntimeLike = {
   path: string;
-  source: "project" | "global" | "missing";
+  source: "project" | "global" | "missing" | "remote";
   data: ModesFile;
   activeMode: string | undefined;
   error?: string;
@@ -26,6 +27,34 @@ export async function ensureRuntime(
 ): Promise<void> {
   const previousPath = runtime.path;
   const previousActiveMode = runtime.activeMode;
+  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager.getSessionId());
+  if (remoteModes !== undefined) {
+    runtime.source = "remote";
+    runtime.data = remoteModes;
+    runtime.path = getModesProjectPath(ctx.cwd);
+    runtime.error = undefined;
+    runtime.lastReportedError = undefined;
+
+    if (
+      previousActiveMode !== undefined &&
+      deps.getModeSpec(runtime.data, previousActiveMode) !== undefined
+    ) {
+      runtime.activeMode = previousActiveMode;
+      return;
+    }
+
+    if (
+      runtime.data.currentMode !== undefined &&
+      deps.getModeSpec(runtime.data, runtime.data.currentMode) !== undefined
+    ) {
+      runtime.activeMode = runtime.data.currentMode;
+      return;
+    }
+
+    runtime.activeMode = undefined;
+    return;
+  }
+
   const loaded = await loadModesFile(ctx.cwd);
   runtime.source = loaded.source;
   runtime.data = loaded.data;

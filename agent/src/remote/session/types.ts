@@ -44,7 +44,7 @@ export type RemoteUiStatusHandlers = Pick<
 
 export interface SessionRecord {
   sessionId: string;
-  sessionName: string;
+  sessionName?: string;
   persistence: "persistent" | "ephemeral";
   status: SessionStatus;
   cwd: string;
@@ -149,6 +149,7 @@ export function createEmptyResourceBundle(): SessionRecord["resources"] {
     skills: [],
     prompts: [],
     themes: [],
+    modes: undefined,
     systemPrompt: null,
     appendSystemPrompt: [],
   };

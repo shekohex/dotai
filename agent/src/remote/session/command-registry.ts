@@ -36,7 +36,7 @@ export function enqueueSessionCreation<T>(input: {
 
 export function createSessionRecord(input: {
   sessionId: string;
-  sessionName: string;
+  sessionName?: string;
   persistence: "persistent" | "ephemeral";
   createdAt: number;
   updatedAt?: number;
@@ -97,9 +97,10 @@ export function createSessionRecord(input: {
 }
 
 function toCreateSessionResponse(record: SessionRecord): CreateSessionResponse {
+  const sessionName = record.sessionName;
   return {
     sessionId: record.sessionId,
-    sessionName: record.sessionName,
+    ...(sessionName === undefined ? {} : { sessionName }),
     status: record.status,
   };
 }
@@ -136,7 +137,7 @@ export async function createSingleSession(input: {
   try {
     const record = createSessionRecord({
       sessionId,
-      sessionName: input.request.sessionName ?? `Session ${input.sessions.size + 1}`,
+      sessionName: input.request.sessionName,
       persistence: requestedPersistence ?? readRuntimePersistence(runtime),
       createdAt,
       updatedAt: createdAt,
@@ -213,7 +214,7 @@ export function registerCreatedSession(input: {
     sessionId: string,
     payload: {
       sessionId: string;
-      sessionName: string;
+      sessionName?: string;
       status: SessionRecord["status"];
     },
     ts: number,
@@ -226,7 +227,7 @@ export function registerCreatedSession(input: {
     input.record.sessionId,
     {
       sessionId: input.record.sessionId,
-      sessionName: input.record.sessionName,
+      ...(input.record.sessionName === undefined ? {} : { sessionName: input.record.sessionName }),
       status: input.record.status,
     },
     input.createdAt,

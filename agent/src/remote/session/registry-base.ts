@@ -370,7 +370,11 @@ export abstract class SessionRegistryBase {
     await session.bindExtensions({
       uiContext: this.createRemoteUiContext(record),
     });
-    if (input.syncSessionNameToRuntime && typeof session.setSessionName === "function") {
+    if (
+      input.syncSessionNameToRuntime &&
+      record.sessionName !== undefined &&
+      typeof session.setSessionName === "function"
+    ) {
       session.setSessionName(record.sessionName);
     }
     if (input.flushPersistedSessionManager) {

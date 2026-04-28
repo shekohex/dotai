@@ -158,5 +158,7 @@ export async function reloadRemoteSession(input: {
   input.state.model = input.resolveModel(snapshot.model);
   input.activeToolsTarget.value = [...snapshot.activeTools];
   input.queueDepthTarget.value = snapshot.queue.depth;
-  input.sessionManager.appendSessionInfo(snapshot.sessionName);
+  if (snapshot.sessionName !== undefined) {
+    input.sessionManager.appendSessionInfo(snapshot.sessionName);
+  }
 }

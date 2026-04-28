@@ -46,7 +46,7 @@ const registeredModeFlags = new Map<string, string>();
 
 type ModeRuntime = {
   path: string;
-  source: "project" | "global" | "missing";
+  source: "project" | "global" | "missing" | "remote";
   data: ModesFile;
   activeMode: string | undefined;
   applying: boolean;

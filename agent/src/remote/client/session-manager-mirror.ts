@@ -19,7 +19,7 @@ type SessionManagerInternals = {
 export function initializeMirroredSessionManager(input: {
   sessionManager: SessionManager;
   sessionId: string;
-  sessionName: string;
+  sessionName?: string;
   entries: SessionEntry[];
   leafId: string | null;
 }): void {

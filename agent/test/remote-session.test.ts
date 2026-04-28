@@ -37,6 +37,7 @@ import {
 } from "../src/remote/runtime-factory.ts";
 import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
+import { RemoteAgentSession } from "../src/remote/client/session.ts";
 import {
   createRemoteRenameSessionHandler,
   parseRemoteArgs,
@@ -3197,6 +3198,144 @@ timedTest("remote runtime create requires explicit workspace for new session", a
     ).rejects.toThrow(/workspaceCwd/);
   } finally {
     await remote.dispose();
+  }
+});
+
+timedTest("remote client bootstrap resolves snapshot model from available models", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-bootstrap-model-"));
+  const agentDir = join(root, "agent");
+  const workspaceDir = join(root, "workspace");
+  let session: RemoteAgentSession | undefined;
+
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(workspaceDir, { recursive: true });
+
+  const snapshot = {
+    sessionId: "session-bootstrap-model",
+    status: "idle",
+    cwd: workspaceDir,
+    model: "codex-openai/gpt-5.5",
+    thinkingLevel: "low",
+    activeTools: ["read", "bash", "edit", "write"],
+    extensions: [],
+    resources: {
+      skills: [],
+      prompts: [],
+      themes: [],
+      systemPrompt: null,
+      appendSystemPrompt: [],
+    },
+    settings: undefined,
+    availableModels: [
+      {
+        provider: "codex-openai",
+        id: "gpt-5.5",
+        name: "GPT 5.5",
+        baseUrl: "https://example.invalid",
+        api: "responses",
+        reasoning: true,
+        input: ["text"],
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+    ],
+    modelSettings: {
+      defaultProvider: "codex-openai",
+      defaultModel: "gpt-5.5",
+      defaultThinkingLevel: "low",
+      enabledModels: null,
+    },
+    sessionStats: {
+      sessionFile: undefined,
+      sessionId: "session-bootstrap-model",
+      userMessages: 0,
+      assistantMessages: 0,
+      toolCalls: 0,
+      toolResults: 0,
+      totalMessages: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+      cost: 0,
+      contextUsage: undefined,
+    },
+    contextUsage: undefined,
+    usageCost: 0,
+    autoCompactionEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
+    entries: [],
+    leafId: null,
+    transcript: [],
+    queue: {
+      depth: 0,
+      nextSequence: 1,
+    },
+    retry: {
+      status: "idle",
+    },
+    compaction: {
+      status: "idle",
+    },
+    presence: [],
+    activeRun: null,
+    lastSessionStreamOffset: "0",
+    lastAppStreamOffsetSeenByServer: "0",
+    streamingState: "idle",
+    isBashRunning: false,
+    hasPendingBashMessages: false,
+    pendingToolCalls: [],
+    errorMessage: null,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+
+  const readSessionEvents = ({ signal }: { signal?: AbortSignal }) => {
+    return new Promise<void>((resolve) => {
+      if (signal?.aborted) {
+        resolve();
+        return;
+      }
+      signal?.addEventListener("abort", () => resolve(), { once: true });
+    });
+  };
+
+  try {
+    session = await RemoteAgentSession.create(
+      {
+        getSessionForkMessages: async () => ({ messages: [] }),
+        readSessionEvents: async (
+          _sessionId: string,
+          _offset: string | undefined,
+          options: { signal?: AbortSignal },
+        ) => readSessionEvents(options),
+        readKv: async () => ({ found: false }),
+        reauthenticate: async () => {},
+      } as never,
+      snapshot.sessionId,
+      {
+        snapshot,
+        agentDir,
+      },
+    );
+
+    expect(session.thinkingLevel).toBe("low");
+    expect(session.model?.reasoning).toBe(true);
+    expect(session.getAvailableThinkingLevels()).toContain("low");
+    expect(session.getAvailableThinkingLevels()).not.toEqual(["off"]);
+  } finally {
+    await session?.dispose();
+    await rm(root, { recursive: true, force: true });
   }
 });
 

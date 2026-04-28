@@ -34,6 +34,10 @@ export class RemoteAgentSession
   extends RemoteAgentSessionCapabilitiesApi
   implements RemoteSessionContract
 {
+  syncResolvedModel(modelRef: string): void {
+    this.setResolvedModel(modelRef);
+  }
+
   static async create(
     client: RemoteApiClient,
     sessionId: string,
@@ -88,6 +92,7 @@ export class RemoteAgentSession
         clientExtensionLoader,
       },
     );
+    session.syncResolvedModel(snapshot.model);
     await session.refreshForkMessages();
     session.startPolling();
     return session;

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
+import type { LoadRemoteRuntimeRequest } from "../runtime-factory.js";
 import type { SessionCatalogRecord } from "../session-catalog.js";
 import type {
   AppSnapshot,
@@ -466,7 +467,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     };
   }
 
-  private forkPersistentSession(
+  private async forkPersistentSession(
     sessionId: string,
     request: ForkSessionRequest,
     client: AuthSession,
@@ -476,14 +477,13 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     if (catalogRecord === undefined) {
       throw new RemoteError("Session not found", 404);
     }
-    const loadedRecord = this.loadedRuntimes.get(sessionId);
+    const loadedRecord = await this.getLoadedRecordForFork(sessionId, request);
     const loadedRuntimeSession =
       loadedRecord === undefined ? undefined : this.getRuntimeSession(loadedRecord);
     const runtimeFactoryLoad =
       this.runtimeFactory.load === undefined
         ? undefined
-        : (requestInput: { sessionId: string; sessionPath: string; cwd: string }) =>
-            this.runtimeFactory.load!(requestInput);
+        : (requestInput: LoadRemoteRuntimeRequest) => this.runtimeFactory.load!(requestInput);
 
     return forkPersistentSessionRecord({
       sessionId,
@@ -501,6 +501,17 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       getAppStreamOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
       now: this.now,
     });
+  }
+
+  private getLoadedRecordForFork(
+    sessionId: string,
+    request: ForkSessionRequest,
+  ): Promise<SessionRecord | undefined> {
+    const loadedRecord = this.loadedRuntimes.get(sessionId);
+    if (loadedRecord !== undefined || request.entryId === undefined) {
+      return Promise.resolve(loadedRecord);
+    }
+    return this.ensureLoaded(sessionId);
   }
 
   private forkEphemeralLoadedSession(

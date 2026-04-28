@@ -1,4 +1,8 @@
-import { SessionManager, type AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
+import {
+  SessionManager,
+  type AgentSessionRuntime,
+  type SessionStartEvent,
+} from "@mariozechner/pi-coding-agent";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
 import type { SessionCatalogRecord } from "../session-catalog.js";
@@ -35,6 +39,7 @@ export async function forkPersistentSessionRecord(input: {
     sessionId: string;
     sessionPath: string;
     cwd: string;
+    sessionStartEvent?: SessionStartEvent;
   }) => Promise<AgentSessionRuntime>;
   readRuntimeExtensionMetadata: (runtime: AgentSessionRuntime) => SessionRecord["extensions"];
   initializeRuntimeRecord: (
@@ -71,6 +76,10 @@ export async function forkPersistentSessionRecord(input: {
     );
   } else {
     const position = input.request.position ?? "before";
+    const beforeForkResult = await emitBeforeFork(input.loadedRuntimeSession, entryId, position);
+    if (beforeForkResult.cancelled) {
+      throw new RemoteError("Session fork cancelled", 409);
+    }
     const selectedEntry = sourceManager.getEntry(entryId);
     if (selectedEntry === undefined) {
       throw new RemoteError("Invalid entry ID for forking", 404);
@@ -115,6 +124,11 @@ export async function forkPersistentSessionRecord(input: {
     sessionId: forkedSessionId,
     sessionPath: forkedSessionFile,
     cwd: forkedSessionManager.getCwd(),
+    sessionStartEvent: {
+      type: "session_start",
+      reason: "fork",
+      previousSessionFile: input.catalogRecord.sessionPath,
+    },
   });
   const record = createSessionRecord({
     sessionId: forkedSessionId,
@@ -133,15 +147,7 @@ export async function forkPersistentSessionRecord(input: {
     flushPersistedSessionManager: false,
   });
   input.registerCreatedSessionRecord(record, input.client, input.connectionId, loadedAt);
-  const response: ForkSessionResponse = {
-    sessionId: record.sessionId,
-    sessionName: record.sessionName,
-    status: record.status,
-  };
-  if (selectedText !== undefined) {
-    response.selectedText = selectedText;
-  }
-  return response;
+  return createForkSessionResponse(record, selectedText);
 }
 
 export async function forkEphemeralLoadedSessionRecord(input: {
@@ -212,4 +218,37 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
   }
 
   return "";
+}
+
+function createForkSessionResponse(
+  record: Pick<SessionRecord, "sessionId" | "sessionName" | "status">,
+  selectedText: string | undefined,
+): ForkSessionResponse {
+  const response: ForkSessionResponse = {
+    sessionId: record.sessionId,
+    sessionName: record.sessionName,
+    status: record.status,
+  };
+  if (selectedText !== undefined) {
+    response.selectedText = selectedText;
+  }
+  return response;
+}
+
+async function emitBeforeFork(
+  session: AgentSessionRuntime["session"] | undefined,
+  entryId: string,
+  position: "before" | "at",
+): Promise<{ cancelled: boolean }> {
+  const runner = session?.extensionRunner;
+  if (!runner || !runner.hasHandlers("session_before_fork")) {
+    return { cancelled: false };
+  }
+
+  const result = await runner.emit({
+    type: "session_before_fork",
+    entryId,
+    position,
+  });
+  return { cancelled: result?.cancel === true };
 }

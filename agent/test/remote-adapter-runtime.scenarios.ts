@@ -1414,6 +1414,291 @@ timedTest(
   },
 );
 
+timedTest("remote fork returns cancelled when server before-fork hook cancels", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const seenBeforeFork: Array<{ entryId: string; position: "before" | "at" }> = [];
+
+  const serverExtension: ExtensionFactory = (pi) => {
+    pi.on("session_before_fork", (event) => {
+      seenBeforeFork.push({ entryId: event.entryId, position: event.position });
+      return { cancel: true };
+    });
+  };
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory({
+      persistSessions: true,
+      extensionFactories: [serverExtension],
+    }),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspaceCwd: process.cwd() }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const promptResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/prompt`,
+      token,
+      { text: "fork me" },
+    );
+    expect(promptResponse.status).toBe(202);
+
+    await waitForValue(
+      async () => {
+        const snapshotResponse = await remote.app.request(
+          `/v1/sessions/${created.sessionId}/snapshot`,
+          {
+            headers: {
+              authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        expect(snapshotResponse.status).toBe(200);
+        return (await snapshotResponse.json()) as {
+          entries: Array<{ type: string; message?: { role?: string } }>;
+          queue: { depth: number };
+          streamingState: string;
+        };
+      },
+      (snapshot) =>
+        snapshot.entries.filter(
+          (entry) => entry.type === "message" && entry.message?.role === "user",
+        ).length >= 1 &&
+        snapshot.queue.depth === 0 &&
+        snapshot.streamingState === "idle",
+    );
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      cwd: process.cwd(),
+    });
+
+    const forkMessages = runtime.session.getUserMessagesForForking();
+    expect(forkMessages).toHaveLength(1);
+
+    const originalSessionId = runtime.session.sessionManager.getSessionId();
+    const result = await runtime.fork(forkMessages[0]!.entryId);
+
+    expect(result).toEqual({ cancelled: true, selectedText: undefined });
+    expect(runtime.session.sessionManager.getSessionId()).toBe(originalSessionId);
+    expect(seenBeforeFork).toEqual([{ entryId: forkMessages[0]!.entryId, position: "before" }]);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote fork starts replacement runtime with fork reason", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const seenBeforeFork: Array<{ entryId: string; position: "before" | "at" }> = [];
+  const seenSessionStarts: string[] = [];
+
+  const serverExtension: ExtensionFactory = (pi) => {
+    pi.on("session_before_fork", (event) => {
+      seenBeforeFork.push({ entryId: event.entryId, position: event.position });
+    });
+    pi.on("session_start", (event) => {
+      seenSessionStarts.push(event.reason);
+    });
+  };
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory({
+      persistSessions: true,
+      extensionFactories: [serverExtension],
+    }),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspaceCwd: process.cwd() }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const promptResponse = await postSessionCommand(
+      remote.app,
+      `/v1/sessions/${created.sessionId}/prompt`,
+      token,
+      { text: "fork me again" },
+    );
+    expect(promptResponse.status).toBe(202);
+
+    await waitForValue(
+      async () => {
+        const snapshotResponse = await remote.app.request(
+          `/v1/sessions/${created.sessionId}/snapshot`,
+          {
+            headers: {
+              authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        expect(snapshotResponse.status).toBe(200);
+        return (await snapshotResponse.json()) as {
+          entries: Array<{ type: string; message?: { role?: string } }>;
+          queue: { depth: number };
+          streamingState: string;
+        };
+      },
+      (snapshot) =>
+        snapshot.entries.filter(
+          (entry) => entry.type === "message" && entry.message?.role === "user",
+        ).length >= 1 &&
+        snapshot.queue.depth === 0 &&
+        snapshot.streamingState === "idle",
+    );
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      cwd: process.cwd(),
+    });
+
+    seenSessionStarts.length = 0;
+
+    const forkMessages = runtime.session.getUserMessagesForForking();
+    expect(forkMessages).toHaveLength(1);
+
+    const originalSessionId = runtime.session.sessionManager.getSessionId();
+    const result = await runtime.fork(forkMessages[0]!.entryId);
+
+    expect(result).toEqual({ cancelled: false, selectedText: "fork me again" });
+    expect(runtime.session.sessionManager.getSessionId()).not.toBe(originalSessionId);
+    expect(seenBeforeFork).toEqual([{ entryId: forkMessages[0]!.entryId, position: "before" }]);
+    expect(seenSessionStarts).toContain("fork");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote fork preserves semantics across repeated forks", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const seenBeforeFork: Array<{ entryId: string; position: "before" | "at" }> = [];
+  const seenSessionStarts: string[] = [];
+
+  const serverExtension: ExtensionFactory = (pi) => {
+    pi.on("session_before_fork", (event) => {
+      seenBeforeFork.push({ entryId: event.entryId, position: event.position });
+    });
+    pi.on("session_start", (event) => {
+      seenSessionStarts.push(event.reason);
+    });
+  };
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory({
+      persistSessions: true,
+      extensionFactories: [serverExtension],
+    }),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ workspaceCwd: process.cwd() }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const prompts = ["fork level 1", "fork level 2", "fork level 3"];
+    for (const [index, prompt] of prompts.entries()) {
+      const promptResponse = await postSessionCommand(
+        remote.app,
+        `/v1/sessions/${created.sessionId}/prompt`,
+        token,
+        { text: prompt },
+      );
+      expect(promptResponse.status).toBe(202);
+
+      await waitForValue(
+        async () => {
+          const snapshotResponse = await remote.app.request(
+            `/v1/sessions/${created.sessionId}/snapshot`,
+            {
+              headers: {
+                authorization: `Bearer ${token}`,
+              },
+            },
+          );
+          expect(snapshotResponse.status).toBe(200);
+          return (await snapshotResponse.json()) as {
+            entries: Array<{ type: string; id: string; message?: { role?: string } }>;
+            queue: { depth: number };
+            streamingState: string;
+          };
+        },
+        (snapshot) =>
+          snapshot.entries.filter(
+            (entry) => entry.type === "message" && entry.message?.role === "user",
+          ).length >=
+            index + 1 &&
+          snapshot.queue.depth === 0 &&
+          snapshot.streamingState === "idle",
+      );
+    }
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      cwd: process.cwd(),
+    });
+
+    seenSessionStarts.length = 0;
+
+    for (const prompt of prompts.toReversed()) {
+      const forkMessages = runtime.session.getUserMessagesForForking();
+      const target = forkMessages.find((message) => message.text === prompt);
+      expect(target).toBeTruthy();
+
+      const previousSessionId = runtime.session.sessionManager.getSessionId();
+      const result = await runtime.fork(target!.entryId);
+
+      expect(result).toEqual({ cancelled: false, selectedText: prompt });
+      expect(runtime.session.sessionManager.getSessionId()).not.toBe(previousSessionId);
+    }
+
+    expect(seenBeforeFork).toHaveLength(3);
+    expect(seenBeforeFork.every((event) => event.position === "before")).toBe(true);
+    expect(seenSessionStarts.filter((reason) => reason === "fork")).toHaveLength(3);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
 timedTest(
   "remote runtime switchSession ignores abort errors from previous session shutdown",
   async () => {

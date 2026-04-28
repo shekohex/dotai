@@ -6,6 +6,7 @@ import {
   type SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import { RemoteApiClient } from "../remote-api-client.js";
+import { RemoteApiError } from "../runtime-api/utils.js";
 import type { RemoteRuntimeContract, RemoteRuntimeOptions } from "./contracts.js";
 import { RemoteAgentSession } from "./session.js";
 import { resolveRemoteSessionTarget } from "./session-target.js";
@@ -148,10 +149,18 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     entryId: string,
     options?: Parameters<RemoteRuntimeContract["fork"]>[1],
   ): Promise<{ cancelled: boolean; selectedText?: string }> {
-    const forked = await this.client.forkSession(this._session.sessionManager.getSessionId(), {
-      entryId,
-      position: options?.position,
-    });
+    let forked: Awaited<ReturnType<RemoteApiClient["forkSession"]>>;
+    try {
+      forked = await this.client.forkSession(this._session.sessionManager.getSessionId(), {
+        entryId,
+        position: options?.position,
+      });
+    } catch (error) {
+      if (isCancelledForkError(error)) {
+        return { cancelled: true };
+      }
+      throw error;
+    }
     await this.switchToSession(forked.sessionId);
     if (options?.withSession) {
       await options.withSession(this._session.createReplacedSessionContext());
@@ -241,4 +250,12 @@ function requireWorkspaceCwdForCreate(input: {
     throw new Error("Remote new session requires workspaceCwd");
   }
   return input.workspaceCwd;
+}
+
+function isCancelledForkError(error: unknown): error is Error & { status: number } {
+  return (
+    error instanceof RemoteApiError &&
+    error.status === 409 &&
+    error.message === "Session fork cancelled"
+  );
 }

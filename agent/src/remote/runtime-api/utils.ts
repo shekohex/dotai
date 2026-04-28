@@ -31,9 +31,18 @@ export function readObject(value: unknown): Record<string, unknown> | undefined 
   return isRecord(value) ? value : undefined;
 }
 
-export function createRemoteApiError(status: number, message: string): Error & { status: number } {
-  const error = new Error(message);
-  return Object.assign(error, { name: "RemoteApiError", status });
+export class RemoteApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "RemoteApiError";
+    this.status = status;
+  }
+}
+
+export function createRemoteApiError(status: number, message: string): RemoteApiError {
+  return new RemoteApiError(status, message);
 }
 
 export async function readSessionEventsFromSse(input: {
@@ -74,7 +83,7 @@ export async function readSessionEventsFromSse(input: {
   return state;
 }
 
-export async function toRemoteHttpError(response: Response): Promise<Error & { status: number }> {
+export async function toRemoteHttpError(response: Response): Promise<RemoteApiError> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     return createRemoteApiError(response.status, response.statusText || `HTTP ${response.status}`);

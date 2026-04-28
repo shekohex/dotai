@@ -15,6 +15,7 @@ import {
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
   type ExtensionFactory,
+  type SessionStartEvent,
 } from "@mariozechner/pi-coding-agent";
 import { getDefaultSessionDir } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
 import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
@@ -38,6 +39,7 @@ export interface LoadRemoteRuntimeRequest {
   sessionId: string;
   sessionPath: string;
   cwd: string;
+  sessionStartEvent?: SessionStartEvent;
 }
 
 export interface RuntimeExtensionMetadata {
@@ -160,7 +162,7 @@ export class BundledPiRuntimeFactory implements RemoteRuntimeFactory {
       cwd: sessionManager.getCwd(),
       agentDir: this.agentDir,
       sessionManager,
-      sessionStartEvent: { type: "session_start", reason: "resume" },
+      sessionStartEvent: request.sessionStartEvent ?? { type: "session_start", reason: "resume" },
     });
   }
 
@@ -237,6 +239,7 @@ async function createInMemoryRuntime(input: {
 
 async function loadInMemoryRuntime(input: {
   sessionPath: string;
+  sessionStartEvent?: SessionStartEvent;
   agentDirPromise: Promise<string>;
   fauxRegistration: FauxProviderRegistration;
   fauxSeededResponseCount: number;
@@ -266,7 +269,7 @@ async function loadInMemoryRuntime(input: {
     cwd: sessionManager.getCwd(),
     agentDir,
     sessionManager,
-    sessionStartEvent: { type: "session_start", reason: "resume" },
+    sessionStartEvent: input.sessionStartEvent ?? { type: "session_start", reason: "resume" },
   });
 }
 
@@ -380,6 +383,7 @@ export function InMemoryPiRuntimeFactory(
     load(request: LoadRemoteRuntimeRequest): Promise<AgentSessionRuntime> {
       return loadInMemoryRuntime({
         sessionPath: request.sessionPath,
+        sessionStartEvent: request.sessionStartEvent,
         agentDirPromise,
         fauxRegistration,
         fauxSeededResponseCount,

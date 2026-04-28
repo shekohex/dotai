@@ -129,6 +129,7 @@ export interface SessionRegistryOptions {
   streams: InMemoryDurableStreamStore;
   runtimeFactory: RemoteRuntimeFactory;
   catalog?: SessionCatalog;
+  sessionSnapshotEntriesLimit?: number;
   presenceTtlMs?: number;
   runtimeIdleTtlMs?: number;
   now?: () => number;

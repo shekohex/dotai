@@ -30,6 +30,7 @@ export interface CreateRemoteAppOptions {
   kvStore?: RemoteKvStore;
   kvFilePath?: string;
   sessionCatalogRoot?: string;
+  sessionSnapshotEntriesLimit?: number;
   enableLogger?: boolean;
   loggerOptions?: Partial<RemoteLoggerOptions>;
 }
@@ -90,6 +91,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     streams,
     runtimeFactory,
     catalog,
+    sessionSnapshotEntriesLimit: options.sessionSnapshotEntriesLimit,
   });
   const watcher = new SessionCatalogWatcher({
     rootDir: options.sessionCatalogRoot ?? defaultSessionCatalogRoot(runtimeFactory),

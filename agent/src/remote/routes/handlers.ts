@@ -122,7 +122,7 @@ export function handleSessionSnapshot(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
-  includeHistory = true,
+  options?: { entriesLimit?: number; entriesOffset?: number },
 ): Promise<Response> {
   return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
@@ -130,7 +130,10 @@ export function handleSessionSnapshot(
       sessionId,
       c.get("auth"),
       connectionId,
-      includeHistory,
+      {
+        entriesLimit: options?.entriesLimit,
+        entriesOffset: options?.entriesOffset,
+      },
     );
     return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, connectionHeader(connectionId));
   });

@@ -2,11 +2,18 @@ import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot } from "../schemas.js";
 import type { SessionRecord } from "./types.js";
 
+export const DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT = 200;
+
 export function buildSessionSnapshotParts(
   record: SessionRecord,
+  options?: { entriesLimit?: number; entriesOffset?: number },
 ): Omit<SessionSnapshot, "lastSessionStreamOffset" | "lastAppStreamOffsetSeenByServer"> {
   const session = readRuntimeSession(record.runtime);
   const sessionEntries = session?.sessionManager.getEntries() ?? [];
+  const entriesLimit = options?.entriesLimit ?? DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT;
+  const entriesOffset = options?.entriesOffset ?? 0;
+  const trimmedEntries = sliceTrailingItems(sessionEntries, entriesLimit, entriesOffset);
+  const trimmedTranscript = sliceTrailingItems(record.transcript, entriesLimit, entriesOffset);
   const leafId = session?.sessionManager.getLeafId() ?? null;
   const modelSettings = buildModelSettingsSnapshot(record);
   const queue = {
@@ -41,9 +48,9 @@ export function buildSessionSnapshotParts(
     autoCompactionEnabled: record.autoCompactionEnabled,
     steeringMode: record.steeringMode,
     followUpMode: record.followUpMode,
-    entries: sessionEntries.map((entry) => cloneSessionEntry(entry)),
+    entries: trimmedEntries.map((entry) => cloneSessionEntry(entry)),
     leafId,
-    transcript: [...record.transcript],
+    transcript: trimmedTranscript.map((message) => structuredClone(message)),
     queue,
     retry: {
       status: record.retry.status,
@@ -61,6 +68,16 @@ export function buildSessionSnapshotParts(
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
+}
+
+function sliceTrailingItems<T>(items: T[], limit: number, offset: number): T[] {
+  if (limit <= 0) {
+    return [];
+  }
+  const normalizedOffset = Math.max(0, offset);
+  const exclusiveEnd = Math.max(0, items.length - normalizedOffset);
+  const start = Math.max(0, exclusiveEnd - limit);
+  return items.slice(start, exclusiveEnd);
 }
 
 function readRuntimeSession(

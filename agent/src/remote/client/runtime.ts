@@ -21,7 +21,8 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     RemoteRuntimeOptions["clientExtensionMetadata"]
   >;
   private readonly clientExtensionFactories: ExtensionFactory[];
-  private readonly preferLightweightAttach: boolean;
+  private readonly sessionEntriesLimit: number | undefined;
+  private readonly sessionEntriesOffset: number | undefined;
   private _session: RemoteAgentSession;
   private latestExtensionBindings: RemoteExtensionBindings | undefined;
   private rebindSessionHandler: ((session: RemoteAgentSession) => Promise<void>) | undefined;
@@ -35,7 +36,8 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       agentDir: string;
       clientExtensionMetadata: NonNullable<RemoteRuntimeOptions["clientExtensionMetadata"]>;
       clientExtensionFactories: ExtensionFactory[];
-      preferLightweightAttach: boolean;
+      sessionEntriesLimit?: number;
+      sessionEntriesOffset?: number;
     },
   ) {
     this.client = client;
@@ -44,7 +46,8 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     this.agentDir = options.agentDir;
     this.clientExtensionMetadata = options.clientExtensionMetadata;
     this.clientExtensionFactories = options.clientExtensionFactories;
-    this.preferLightweightAttach = options.preferLightweightAttach;
+    this.sessionEntriesLimit = options.sessionEntriesLimit;
+    this.sessionEntriesOffset = options.sessionEntriesOffset;
   }
 
   static async create(options: RemoteRuntimeOptions): Promise<RemoteAgentSessionRuntime> {
@@ -79,13 +82,9 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
           persistence: options.persistence,
         })
       ).sessionId;
-    const attachSummary = appSnapshot.sessionSummaries.find(
-      (summary) => summary.sessionId === attachedSessionId,
-    );
     const snapshot = await client.getSessionSnapshot(attachedSessionId, {
-      includeHistory: !(
-        options.preferLightweightAttach === true && attachSummary?.lifecycle.loaded === true
-      ),
+      entriesLimit: options.sessionEntriesLimit,
+      entriesOffset: options.sessionEntriesOffset,
     });
     const authoritativeCwd = snapshot.cwd ?? fallbackCwd;
     const session = await RemoteAgentSession.create(client, attachedSessionId, {
@@ -100,7 +99,8 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       agentDir,
       clientExtensionMetadata,
       clientExtensionFactories,
-      preferLightweightAttach: options.preferLightweightAttach === true,
+      sessionEntriesLimit: options.sessionEntriesLimit,
+      sessionEntriesOffset: options.sessionEntriesOffset,
     });
     runtime.instrumentSessionBindings(session);
 
@@ -198,9 +198,9 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
 
   private async switchToSession(sessionId: string): Promise<void> {
     const previous = this._session;
-    const summary = await this.client.getSessionSummary(sessionId);
     const snapshot = await this.client.getSessionSnapshot(sessionId, {
-      includeHistory: !(this.preferLightweightAttach && summary.lifecycle.loaded),
+      entriesLimit: this.sessionEntriesLimit,
+      entriesOffset: this.sessionEntriesOffset,
     });
     const next = await RemoteAgentSession.create(this.client, sessionId, {
       snapshot,

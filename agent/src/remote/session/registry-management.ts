@@ -37,7 +37,6 @@ import {
 import { formatEphemeralCleanupError } from "./cleanup-errors.js";
 import { detachRegistryPresence, touchRegistryPresence } from "./registry-presence.js";
 import { SessionRegistryBase } from "./registry-base.js";
-import { omitSessionSnapshotHistory } from "./snapshot-history.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
 export class SessionRegistryManagement extends SessionRegistryBase {
   createSession(
@@ -121,12 +120,15 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     sessionId: string,
     client: AuthSession,
     connectionId?: string,
+    options?: { entriesLimit?: number; entriesOffset?: number },
   ): SessionSnapshot {
     const record = this.getRequired(sessionId);
     return getSessionSnapshot({
       sessionId,
       client,
       connectionId,
+      entriesLimit: options?.entriesLimit,
+      entriesOffset: options?.entriesOffset,
       record,
       touchPresence: (targetSessionId, targetClient, targetConnectionId) => {
         this.touchPresence(targetSessionId, targetClient, targetConnectionId);
@@ -134,7 +136,8 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       syncFromRuntime: (targetRecord) => {
         this.syncFromRuntime(targetRecord, { updateTimestamp: false, syncResources: true });
       },
-      toSessionSnapshot: (targetRecord) => this.toSessionSnapshot(targetRecord),
+      toSessionSnapshot: (targetRecord, snapshotOptions) =>
+        this.toSessionSnapshot(targetRecord, snapshotOptions),
     });
   }
 
@@ -142,12 +145,10 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     sessionId: string,
     client: AuthSession,
     connectionId?: string,
-    includeHistory = true,
+    options?: { entriesLimit?: number; entriesOffset?: number },
   ): Promise<SessionSnapshot> {
     await this.ensureLoaded(sessionId);
-    return includeHistory
-      ? this.getSessionSnapshot(sessionId, client, connectionId)
-      : omitSessionSnapshotHistory(this.getSessionSnapshot(sessionId, client, connectionId));
+    return this.getSessionSnapshot(sessionId, client, connectionId, options);
   }
 
   async reload(

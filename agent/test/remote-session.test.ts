@@ -2284,6 +2284,43 @@ timedTest("remote CLI parser accepts explicit workspace target", async () => {
   }
 });
 
+timedTest("remote CLI parser accepts session snapshot window flags", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+
+  try {
+    const parsed = parseRemoteArgs([
+      "--session-entries-limit",
+      "25",
+      "--session-entries-offset",
+      "5",
+    ]);
+    expect(parsed.sessionEntriesLimit).toBe(25);
+    expect(parsed.sessionEntriesOffset).toBe(5);
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+  }
+});
+
+timedTest("remote CLI parser reads session snapshot window from env", async () => {
+  process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
+  process.env.PI_REMOTE_KEY_ID = "dev";
+  process.env.PI_REMOTE_SESSION_ENTRIES_LIMIT = "15";
+  process.env.PI_REMOTE_SESSION_ENTRIES_OFFSET = "3";
+
+  try {
+    const parsed = parseRemoteArgs([]);
+    expect(parsed.sessionEntriesLimit).toBe(15);
+    expect(parsed.sessionEntriesOffset).toBe(3);
+  } finally {
+    delete process.env.PI_REMOTE_ORIGIN;
+    delete process.env.PI_REMOTE_KEY_ID;
+    delete process.env.PI_REMOTE_SESSION_ENTRIES_LIMIT;
+    delete process.env.PI_REMOTE_SESSION_ENTRIES_OFFSET;
+  }
+});
+
 timedTest("remote CLI parser accepts short resume flag", async () => {
   process.env.PI_REMOTE_ORIGIN = "http://localhost:3000";
   process.env.PI_REMOTE_KEY_ID = "dev";

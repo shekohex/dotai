@@ -52,6 +52,8 @@ interface ParsedRemoteArgs {
   sessionDir?: string;
   sessionName?: string;
   workspaceCwd?: string;
+  sessionEntriesLimit?: number;
+  sessionEntriesOffset?: number;
   verbose: boolean;
   initialMessage?: string;
   initialMessages: string[];
@@ -112,6 +114,24 @@ const remoteFlagSetters = new Map<string, RemoteFlagSetter>([
     "--workspace-cwd",
     (parsed, value) => {
       parsed.workspaceCwd = value;
+    },
+  ],
+  [
+    "--session-entries-limit",
+    (parsed, value) => {
+      const parsedValue = Number.parseInt(value, 10);
+      if (Number.isFinite(parsedValue) && parsedValue >= 0) {
+        parsed.sessionEntriesLimit = parsedValue;
+      }
+    },
+  ],
+  [
+    "--session-entries-offset",
+    (parsed, value) => {
+      const parsedValue = Number.parseInt(value, 10);
+      if (Number.isFinite(parsedValue) && parsedValue >= 0) {
+        parsed.sessionEntriesOffset = parsedValue;
+      }
     },
   ],
   [
@@ -225,6 +245,12 @@ export function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
     sessionDir: undefined,
     sessionName: process.env.PI_REMOTE_SESSION_NAME,
     workspaceCwd: process.env.PI_REMOTE_WORKSPACE_CWD,
+    sessionEntriesLimit: readOptionalNonNegativeInteger(
+      process.env.PI_REMOTE_SESSION_ENTRIES_LIMIT,
+    ),
+    sessionEntriesOffset: readOptionalNonNegativeInteger(
+      process.env.PI_REMOTE_SESSION_ENTRIES_OFFSET,
+    ),
     verbose: false,
     initialMessage: undefined,
     initialMessages: [],
@@ -265,6 +291,14 @@ export function parseRemoteArgs(args: string[]): ParsedRemoteArgs {
   }
 
   return parsed;
+}
+
+function readOptionalNonNegativeInteger(value: string | undefined): number | undefined {
+  if (value === undefined || value.length === 0) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function findMatchingRemoteSessions(snapshot: AppSnapshot, query: string) {
@@ -487,7 +521,8 @@ export async function runRemoteInteractiveMode(
     sessionId: selectedSessionId,
     sessionName: parsed.sessionName,
     createNewSession: selection.createNewSession,
-    preferLightweightAttach: true,
+    sessionEntriesLimit: parsed.sessionEntriesLimit,
+    sessionEntriesOffset: parsed.sessionEntriesOffset,
     persistence: parsed.noSession ? "ephemeral" : "persistent",
     workspaceCwd: parsed.workspaceCwd,
     clientExtensionMetadata: options.clientExtensionMetadata,

@@ -20,7 +20,8 @@ export interface RemoteRuntimeOptions {
   sessionId?: string;
   sessionName?: string;
   createNewSession?: boolean;
-  preferLightweightAttach?: boolean;
+  sessionEntriesLimit?: number;
+  sessionEntriesOffset?: number;
   persistence?: "persistent" | "ephemeral";
   workspaceCwd?: string;
   connectionId?: string;

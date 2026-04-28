@@ -242,8 +242,9 @@ export function pruneExpiredSessionPresence(
 export function toSessionSnapshotRecord(
   record: SessionRecord,
   getHeadOffset: (streamId: string) => string,
+  options?: { entriesLimit?: number; entriesOffset?: number },
 ): SessionSnapshot {
-  const snapshotParts = buildSessionSnapshotParts(record);
+  const snapshotParts = buildSessionSnapshotParts(record, options);
   const streamOffsets = {
     lastSessionStreamOffset: getHeadOffset(sessionEventsStreamId(record.sessionId)),
     lastAppStreamOffsetSeenByServer: record.lastAppStreamOffsetSeenByServer,

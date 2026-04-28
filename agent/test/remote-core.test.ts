@@ -2843,12 +2843,75 @@ timedTest("persisted unnamed session stream remains attachable after restart", a
   }
 });
 
-timedTest("session snapshot can omit history while preserving current stream offset", async () => {
+timedTest(
+  "session snapshot caps loaded history to recent 200 entries and transcript messages",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+    const session = new RecordingSession();
+    session.messages = Array.from({ length: 250 }, (_, index) => ({
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: `message ${index + 1}` }],
+    }));
+    session.sessionStats.totalMessages = 250;
+    session.sessionStats.assistantMessages = 250;
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(createResponse.status).toBe(201);
+      const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+      const response = await remote.app.request(`/v1/sessions/${sessionId}/snapshot`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      const snapshot = (await response.json()) as {
+        entries: Array<{ id: string; message?: { content?: Array<{ text?: string }> } }>;
+        transcript: Array<{ role: string; content?: Array<{ text?: string }> }>;
+        sessionStats: { totalMessages: number };
+      };
+
+      expect(snapshot.entries).toHaveLength(200);
+      expect(snapshot.transcript).toHaveLength(200);
+      expect(snapshot.entries[0]?.id).toBe("message-51");
+      expect(snapshot.entries.at(-1)?.id).toBe("message-250");
+      expect(snapshot.transcript[0]?.content?.[0]?.text).toBe("message 51");
+      expect(snapshot.transcript.at(-1)?.content?.[0]?.text).toBe("message 250");
+      expect(snapshot.sessionStats.totalMessages).toBe(250);
+    } finally {
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest("session snapshot respects per-request entries limit and offset", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const session = new RecordingSession();
+  session.messages = Array.from({ length: 20 }, (_, index) => ({
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text: `message ${index + 1}` }],
+  }));
+  session.sessionStats.totalMessages = 20;
+  session.sessionStats.assistantMessages = 20;
+
   const remote = createRemoteApp({
     origin: "http://localhost:3000",
     allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: InMemoryPiRuntimeFactory(),
+    runtimeFactory: new RecordingRuntimeFactory(session),
+    sessionSnapshotEntriesLimit: 12,
   });
 
   try {
@@ -2861,134 +2924,132 @@ timedTest("session snapshot can omit history while preserving current stream off
       },
       body: JSON.stringify({}),
     });
-
     expect(createResponse.status).toBe(201);
     const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
 
-    const promptResponse = await remote.app.request(`/v1/sessions/${sessionId}/prompt`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ text: "create some history" }),
-    });
-    expect(promptResponse.status).toBe(202);
-
-    const fullSnapshot = await waitForValue(
-      async () => {
-        const response = await remote.app.request(`/v1/sessions/${sessionId}/snapshot`, {
-          headers: { authorization: `Bearer ${token}` },
-        });
-        expect(response.status).toBe(200);
-        return (await response.json()) as {
-          entries: unknown[];
-          transcript: unknown[];
-          lastSessionStreamOffset: string;
-          sessionStats: { totalMessages: number };
-        };
-      },
-      (snapshot) => snapshot.sessionStats.totalMessages > 0,
-    );
-
-    const lightweightResponse = await remote.app.request(
-      `/v1/sessions/${sessionId}/snapshot?includeHistory=false`,
+    const response = await remote.app.request(
+      `/v1/sessions/${sessionId}/snapshot?entriesLimit=5&entriesOffset=3`,
       {
         headers: { authorization: `Bearer ${token}` },
       },
     );
-    expect(lightweightResponse.status).toBe(200);
-    const lightweightSnapshot = (await lightweightResponse.json()) as {
-      entries: unknown[];
-      transcript: unknown[];
-      lastSessionStreamOffset: string;
-      sessionStats: { totalMessages: number };
+    expect(response.status).toBe(200);
+    const snapshot = (await response.json()) as {
+      entries: Array<{ id: string }>;
+      transcript: Array<{ content?: Array<{ text?: string }> }>;
     };
 
-    expect(fullSnapshot.entries.length).toBeGreaterThan(0);
-    expect(fullSnapshot.transcript.length).toBeGreaterThan(0);
-    expect(lightweightSnapshot.entries).toEqual([]);
-    expect(lightweightSnapshot.transcript).toEqual([]);
-    expect(lightweightSnapshot.lastSessionStreamOffset).toBe(fullSnapshot.lastSessionStreamOffset);
-    expect(lightweightSnapshot.sessionStats.totalMessages).toBe(
-      fullSnapshot.sessionStats.totalMessages,
-    );
+    expect(snapshot.entries).toHaveLength(5);
+    expect(snapshot.entries[0]?.id).toBe("message-13");
+    expect(snapshot.entries.at(-1)?.id).toBe("message-17");
+    expect(snapshot.transcript[0]?.content?.[0]?.text).toBe("message 13");
+    expect(snapshot.transcript.at(-1)?.content?.[0]?.text).toBe("message 17");
   } finally {
     await remote.dispose();
   }
 });
 
-timedTest(
-  "second runtime attach to loaded session uses lightweight snapshot and live offset",
-  async () => {
-    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-    const remote = createRemoteApp({
-      origin: "http://localhost:3000",
-      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-      runtimeFactory: InMemoryPiRuntimeFactory(),
+timedTest("second runtime attach to loaded session hydrates recent session tail", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const session = new RecordingSession();
+  session.messages = Array.from({ length: 250 }, (_, index) => ({
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text: `message ${index + 1}` }],
+  }));
+  session.sessionStats.totalMessages = 250;
+  session.sessionStats.assistantMessages = 250;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId,
     });
 
-    const requests: string[] = [];
-    const baseFetch = createInProcessFetch(remote.app);
-    const recordingFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-      requests.push(url);
-      return baseFetch(input, init);
-    }) as typeof fetch;
+    const entries = runtime.session.sessionManager.getEntries();
+    expect(entries).toHaveLength(200);
+    expect(entries[0]?.id).toBe("message-51");
+    expect(entries.at(-1)?.id).toBe("message-250");
+    expect(runtime.session.messages).toHaveLength(200);
+    expect(runtime.session.messages[0]?.role).toBe("assistant");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
 
-    let runtimeA: RemoteAgentSessionRuntime | undefined;
-    let runtimeB: RemoteAgentSessionRuntime | undefined;
+timedTest("remote runtime attach honors configured entries limit and offset", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const session = new RecordingSession();
+  session.messages = Array.from({ length: 20 }, (_, index) => ({
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text: `message ${index + 1}` }],
+  }));
+  session.sessionStats.totalMessages = 20;
+  session.sessionStats.assistantMessages = 20;
 
-    try {
-      runtimeA = await RemoteAgentSessionRuntime.create({
-        origin: "http://localhost:3000",
-        auth: { keyId: "dev", privateKey: privateKeyPem },
-        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
-        workspaceCwd: process.cwd(),
-        cwd: process.cwd(),
-        fetchImpl: createInProcessFetch(remote.app),
-      });
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+    sessionSnapshotEntriesLimit: 12,
+  });
 
-      const sessionId = runtimeA.session.sessionManager.getSessionId();
-      await runtimeA.session.prompt("seed history before second attach");
-      await waitForValue(
-        async () => runtimeA!.session.getSessionStats().totalMessages,
-        (totalMessages) => totalMessages > 0,
-      );
+  let runtime: RemoteAgentSessionRuntime | undefined;
 
-      runtimeB = await RemoteAgentSessionRuntime.create({
-        origin: "http://localhost:3000",
-        auth: { keyId: "dev", privateKey: privateKeyPem },
-        sessionId,
-        preferLightweightAttach: true,
-        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
-        workspaceCwd: process.cwd(),
-        cwd: process.cwd(),
-        fetchImpl: recordingFetch,
-      });
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
 
-      expect(runtimeB.session.sessionManager.getEntries()).toEqual([]);
-      expect(runtimeB.session.sessionManager.getSessionId()).toBe(sessionId);
-      expect(
-        requests.some((url) =>
-          url.includes(`/v1/sessions/${sessionId}/snapshot?includeHistory=false`),
-        ),
-      ).toBe(true);
-      expect(
-        requests.some(
-          (url) =>
-            url.includes(`/v1/streams/sessions/${sessionId}/events`) &&
-            url.includes("offset=0000000000000000_0000000000000000"),
-        ),
-      ).toBe(false);
-    } finally {
-      await runtimeB?.dispose();
-      await runtimeA?.dispose();
-      await remote.dispose();
-    }
-  },
-);
+    runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      sessionId,
+      sessionEntriesLimit: 4,
+      sessionEntriesOffset: 2,
+      clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+      workspaceCwd: process.cwd(),
+      cwd: process.cwd(),
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+
+    const entries = runtime.session.sessionManager.getEntries();
+    expect(entries).toHaveLength(4);
+    expect(entries[0]?.id).toBe("message-15");
+    expect(entries.at(-1)?.id).toBe("message-18");
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
 
 timedTest("remote startup selection without flags reattaches latest workspace session", () => {
   const workspaceCwd = "/home/coder/dotai/agent";

@@ -441,7 +441,8 @@ export const SessionParamsSchema = Type.Object({
 });
 
 export const SessionSnapshotQuerySchema = Type.Object({
-  includeHistory: Type.Optional(Type.Union([Type.Literal("true"), Type.Literal("false")])),
+  entriesLimit: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
+  entriesOffset: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
 });
 
 export const SessionToolParamsSchema = Type.Object({

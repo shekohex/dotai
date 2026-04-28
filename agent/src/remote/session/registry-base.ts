@@ -21,6 +21,7 @@ import type {
 import { appEventsStreamId, InMemoryDurableStreamStore } from "../streams.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import {
+  DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT,
   ALLOWED_THINKING_LEVELS,
   acceptSessionCommandWithStreams,
   appendExtensionUiRequestEvent,
@@ -67,6 +68,7 @@ export abstract class SessionRegistryBase {
   protected readonly streams: InMemoryDurableStreamStore;
   protected readonly runtimeFactory: RemoteRuntimeFactory;
   protected readonly catalog: SessionCatalog;
+  protected readonly sessionSnapshotEntriesLimit: number;
   protected readonly presenceTtlMs: number;
   protected readonly runtimeIdleTtlMs: number | undefined;
   protected readonly now: () => number;
@@ -80,6 +82,8 @@ export abstract class SessionRegistryBase {
       new SessionCatalog({
         rootDir: join(process.cwd(), ".pi", "remote-sessions"),
       });
+    this.sessionSnapshotEntriesLimit =
+      options.sessionSnapshotEntriesLimit ?? DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT;
     this.presenceTtlMs = options.presenceTtlMs ?? 120_000;
     this.runtimeIdleTtlMs = options.runtimeIdleTtlMs;
     this.now = options.now ?? (() => Date.now());
@@ -343,8 +347,14 @@ export abstract class SessionRegistryBase {
     pruneExpiredSessionPresence(record, now, this.presenceTtlMs);
   }
 
-  protected toSessionSnapshot(record: SessionRecord): SessionSnapshot {
-    return toSessionSnapshotRecord(record, (streamId) => this.streams.getHeadOffset(streamId));
+  protected toSessionSnapshot(
+    record: SessionRecord,
+    options?: { entriesLimit?: number; entriesOffset?: number },
+  ): SessionSnapshot {
+    return toSessionSnapshotRecord(record, (streamId) => this.streams.getHeadOffset(streamId), {
+      entriesLimit: options?.entriesLimit ?? this.sessionSnapshotEntriesLimit,
+      entriesOffset: options?.entriesOffset,
+    });
   }
 
   protected async initializeRuntimeRecord(

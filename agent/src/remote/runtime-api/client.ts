@@ -202,15 +202,19 @@ export class RemoteApiClient {
 
   async getSessionSnapshot(
     sessionId: string,
-    options?: { includeHistory?: boolean },
+    options?: { entriesLimit?: number; entriesOffset?: number },
   ): Promise<SessionSnapshot> {
     const response = await this.rpcClient.sessions[":sessionId"].snapshot.$get(
       {
         param: { sessionId },
-        query:
-          options?.includeHistory === undefined
+        query: {
+          ...(options?.entriesLimit === undefined
             ? {}
-            : { includeHistory: options.includeHistory ? "true" : "false" },
+            : { entriesLimit: String(options.entriesLimit) }),
+          ...(options?.entriesOffset === undefined
+            ? {}
+            : { entriesOffset: String(options.entriesOffset) }),
+        },
       },
       { headers: await this.getAuthHeaders() },
     );

@@ -18,10 +18,10 @@ import {
   PromptCommandRequestSchema,
   SettingsUpdateRequestSchema,
   SessionParamsSchema,
-  SessionToolParamsSchema,
-  SessionNameUpdateRequestSchema,
-  SteerCommandRequestSchema,
   SessionSnapshotQuerySchema,
+  SessionNameUpdateRequestSchema,
+  SessionToolParamsSchema,
+  SteerCommandRequestSchema,
   StreamReadQuerySchema,
   UiResponseRequestSchema,
 } from "./schemas.js";
@@ -159,12 +159,15 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
       tbValidator("query", SessionSnapshotQuerySchema),
       (c) => {
         const { sessionId } = c.req.valid("param");
-        return handleSessionSnapshot(
-          c,
-          dependencies,
-          sessionId,
-          c.req.valid("query").includeHistory !== "false",
-        );
+        const query = c.req.valid("query");
+        return handleSessionSnapshot(c, dependencies, sessionId, {
+          entriesLimit:
+            query.entriesLimit === undefined ? undefined : Number.parseInt(query.entriesLimit, 10),
+          entriesOffset:
+            query.entriesOffset === undefined
+              ? undefined
+              : Number.parseInt(query.entriesOffset, 10),
+        });
       },
     )
     .post(

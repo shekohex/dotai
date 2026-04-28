@@ -193,14 +193,22 @@ export function getSessionSnapshot(input: {
   sessionId: string;
   client: AuthSession;
   connectionId?: string;
+  entriesLimit?: number;
+  entriesOffset?: number;
   record: SessionRecord;
   touchPresence: (sessionId: string, client: AuthSession, connectionId?: string) => void;
   syncFromRuntime: (record: SessionRecord) => void;
-  toSessionSnapshot: (record: SessionRecord) => SessionSnapshot;
+  toSessionSnapshot: (
+    record: SessionRecord,
+    options?: { entriesLimit?: number; entriesOffset?: number },
+  ) => SessionSnapshot;
 }): SessionSnapshot {
   input.touchPresence(input.sessionId, input.client, input.connectionId);
   input.syncFromRuntime(input.record);
-  return input.toSessionSnapshot(input.record);
+  return input.toSessionSnapshot(input.record, {
+    entriesLimit: input.entriesLimit,
+    entriesOffset: input.entriesOffset,
+  });
 }
 
 export function registerCreatedSession(input: {

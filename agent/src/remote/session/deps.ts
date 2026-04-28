@@ -53,6 +53,7 @@ export {
   syncSessionRecordFromRuntime,
   toSessionSnapshotRecord,
 } from "./runtime-sync.js";
+export { DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT } from "./runtime-sync-snapshot.js";
 export {
   ALLOWED_THINKING_LEVELS,
   createEmptyModelSettings,

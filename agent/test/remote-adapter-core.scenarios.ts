@@ -837,6 +837,398 @@ timedTest("milestone 3 adapter does not double-append user/custom messages", asy
   }
 });
 
+timedTest(
+  "milestone 3 adapter emits session listeners synchronously without backlog queue",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      const observed: string[] = [];
+      runtime.session.subscribe((event) => {
+        observed.push(event.type);
+      });
+
+      const sessionAny = runtime.session as any;
+      sessionAny.applyAgentSessionEvent({
+        type: "message_start",
+        message: assistantMessageWithText("a"),
+      });
+
+      expect(observed).toEqual(["message_start"]);
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest(
+  "milestone 3 adapter coalesces pending assistant message_update events for local extensions",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+    let releaseFirstUpdate: (() => void) | undefined;
+    const seenTexts: string[] = [];
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      await runtime.session.bindExtensions({});
+
+      const sessionAny = runtime.session as any;
+      const originalEmit = sessionAny.localExtensionRunner.emit.bind(
+        sessionAny.localExtensionRunner,
+      );
+      let firstUpdate = true;
+      sessionAny.localExtensionRunner.emit = async (event: {
+        type: string;
+        message?: { content?: Array<{ type: string; text?: string }> };
+      }) => {
+        if (event.type === "message_update") {
+          const text = (event.message?.content ?? [])
+            .filter((content) => content.type === "text")
+            .map((content) => content.text ?? "")
+            .join("");
+          seenTexts.push(text);
+          if (firstUpdate) {
+            firstUpdate = false;
+            await new Promise<void>((resolve) => {
+              releaseFirstUpdate = resolve;
+            });
+          }
+        }
+        return originalEmit(event);
+      };
+
+      sessionAny.applyAgentSessionEvent({
+        type: "message_start",
+        message: assistantMessageWithText("a"),
+      });
+      sessionAny.applyAgentSessionEvent({
+        type: "message_update",
+        message: assistantMessageWithText("ab"),
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "b",
+          partial: { type: "text", text: "ab" },
+        },
+      });
+
+      await waitForValue(
+        () => seenTexts.length,
+        (value) => value === 1,
+      );
+
+      sessionAny.applyAgentSessionEvent({
+        type: "message_update",
+        message: assistantMessageWithText("abc"),
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "c",
+          partial: { type: "text", text: "abc" },
+        },
+      });
+      sessionAny.applyAgentSessionEvent({
+        type: "message_update",
+        message: assistantMessageWithText("abcd"),
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "d",
+          partial: { type: "text", text: "abcd" },
+        },
+      });
+
+      releaseFirstUpdate?.();
+
+      await waitForValue(
+        () => seenTexts.length,
+        (value) => value === 2,
+      );
+      expect(seenTexts).toEqual(["ab", "abcd"]);
+    } finally {
+      releaseFirstUpdate?.();
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest(
+  "milestone 3 adapter preserves message_update before message_end for local extensions",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+    let releaseFirstUpdate: (() => void) | undefined;
+    const seenEvents: string[] = [];
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      await runtime.session.bindExtensions({});
+
+      const sessionAny = runtime.session as any;
+      const originalEmit = sessionAny.localExtensionRunner.emit.bind(
+        sessionAny.localExtensionRunner,
+      );
+      let firstUpdate = true;
+      sessionAny.localExtensionRunner.emit = async (event: {
+        type: string;
+        message?: { content?: Array<{ type: string; text?: string }> };
+      }) => {
+        if (event.type === "message_update") {
+          const text = (event.message?.content ?? [])
+            .filter((content) => content.type === "text")
+            .map((content) => content.text ?? "")
+            .join("");
+          seenEvents.push(`update:${text}`);
+          if (firstUpdate) {
+            firstUpdate = false;
+            await new Promise<void>((resolve) => {
+              releaseFirstUpdate = resolve;
+            });
+          }
+        }
+        if (event.type === "message_end") {
+          const text = (event.message?.content ?? [])
+            .filter((content) => content.type === "text")
+            .map((content) => content.text ?? "")
+            .join("");
+          seenEvents.push(`end:${text}`);
+        }
+        return originalEmit(event);
+      };
+
+      sessionAny.applyAgentSessionEvent({
+        type: "message_start",
+        message: assistantMessageWithText("a"),
+      });
+      sessionAny.applyAgentSessionEvent({
+        type: "message_update",
+        message: assistantMessageWithText("ab"),
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "b",
+          partial: { type: "text", text: "ab" },
+        },
+      });
+
+      await waitForValue(
+        () => seenEvents.length,
+        (value) => value === 1,
+      );
+
+      sessionAny.applyAgentSessionEvent({
+        type: "message_update",
+        message: assistantMessageWithText("abcd"),
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "cd",
+          partial: { type: "text", text: "abcd" },
+        },
+      });
+      sessionAny.applyAgentSessionEvent({
+        type: "message_end",
+        message: assistantMessageWithText("abcd"),
+      });
+
+      releaseFirstUpdate?.();
+
+      await waitForValue(
+        () => seenEvents.length,
+        (value) => value === 3,
+      );
+      expect(seenEvents).toEqual(["update:ab", "update:abcd", "end:abcd"]);
+    } finally {
+      releaseFirstUpdate?.();
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
+timedTest(
+  "milestone 3 adapter coalesces pending tool_execution_update events per tool call",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+    let releaseFirstUpdate: (() => void) | undefined;
+    const seenUpdates: string[] = [];
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      await runtime.session.bindExtensions({});
+
+      const sessionAny = runtime.session as any;
+      const originalEmit = sessionAny.localExtensionRunner.emit.bind(
+        sessionAny.localExtensionRunner,
+      );
+      let firstUpdate = true;
+      sessionAny.localExtensionRunner.emit = async (event: {
+        type: string;
+        toolCallId?: string;
+        partialResult?: { content?: Array<{ type: string; text?: string }> };
+      }) => {
+        if (event.type === "tool_execution_update") {
+          const text = (event.partialResult?.content ?? [])
+            .filter((content) => content.type === "text")
+            .map((content) => content.text ?? "")
+            .join("");
+          seenUpdates.push(`${event.toolCallId}:${text}`);
+          if (firstUpdate) {
+            firstUpdate = false;
+            await new Promise<void>((resolve) => {
+              releaseFirstUpdate = resolve;
+            });
+          }
+        }
+        return originalEmit(event);
+      };
+
+      sessionAny.applyAgentSessionEvent({
+        type: "tool_execution_update",
+        toolCallId: "call-1",
+        toolName: "read",
+        args: {},
+        partialResult: {
+          content: [{ type: "text", text: "a" }],
+        },
+      });
+
+      await waitForValue(
+        () => seenUpdates.length,
+        (value) => value === 1,
+      );
+
+      sessionAny.applyAgentSessionEvent({
+        type: "tool_execution_update",
+        toolCallId: "call-1",
+        toolName: "read",
+        args: {},
+        partialResult: {
+          content: [{ type: "text", text: "ab" }],
+        },
+      });
+      sessionAny.applyAgentSessionEvent({
+        type: "tool_execution_update",
+        toolCallId: "call-1",
+        toolName: "read",
+        args: {},
+        partialResult: {
+          content: [{ type: "text", text: "abc" }],
+        },
+      });
+
+      releaseFirstUpdate?.();
+
+      await waitForValue(
+        () => seenUpdates.length,
+        (value) => value === 2,
+      );
+      expect(seenUpdates).toEqual(["call-1:a", "call-1:abc"]);
+    } finally {
+      releaseFirstUpdate?.();
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
 timedTest("milestone 3 adapter sendCustomMessage appends custom messages", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
@@ -883,3 +1275,29 @@ timedTest("milestone 3 adapter sendCustomMessage appends custom messages", async
     await remote.dispose();
   }
 });
+
+function assistantMessageWithText(text: string) {
+  return {
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text }],
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+    },
+    api: "responses",
+    provider: "pi-remote-faux",
+    model: "pi-remote-faux-1",
+    stopReason: "stop" as const,
+    timestamp: Date.now(),
+  };
+}

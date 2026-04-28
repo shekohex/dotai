@@ -7,13 +7,14 @@ import {
   publishUsageUpdateIfChanged,
   resolveAndRefreshProvider,
 } from "./controller-utils.js";
-import { parseAlertEvent, parseModeChangedEvent } from "./events.js";
+import { parseAlertEvent, parseModeChangedEvent, parseUpdatedEvent } from "./events.js";
 import { resolveSupportedProviderId } from "./model-map.js";
-import { createRuntimeState, restorePersistedState } from "./state.js";
+import { applyUpdatedEventToState, createRuntimeState, restorePersistedState } from "./state.js";
 import {
   OPENUSAGE_ALERT_EVENT,
   OPENUSAGE_CACHE_TTL_MS,
   OPENUSAGE_REFRESH_INTERVAL_MS,
+  OPENUSAGE_UPDATED_EVENT,
   type SupportedProviderId,
 } from "./types.js";
 import { usageProviders } from "./providers/index.js";
@@ -23,6 +24,7 @@ type OpenUsageState = ReturnType<typeof createRuntimeState>;
 export class OpenUsageController {
   private readonly state: OpenUsageState;
   private currentCtx: ExtensionContext | undefined;
+  private unsubscribeUpdated: (() => void) | undefined;
   private unsubscribeAlert: (() => void) | undefined;
   private unsubscribeModeChanged: (() => void) | undefined;
 
@@ -31,6 +33,9 @@ export class OpenUsageController {
   }
 
   register(): void {
+    this.unsubscribeUpdated = this.pi.events.on(OPENUSAGE_UPDATED_EVENT, (data) => {
+      this.onUpdated(data);
+    });
     this.unsubscribeAlert = this.pi.events.on(OPENUSAGE_ALERT_EVENT, (data) => {
       this.onAlert(data);
     });
@@ -57,6 +62,15 @@ export class OpenUsageController {
     if (alert) {
       this.currentCtx.ui.notify(formatAlertMessage(alert), "warning");
     }
+  }
+
+  private onUpdated(data: unknown): void {
+    const event = parseUpdatedEvent(data);
+    if (!event) {
+      return;
+    }
+
+    applyUpdatedEventToState(this.state, event);
   }
 
   private async onSessionStart(ctx: ExtensionContext): Promise<void> {
@@ -104,6 +118,7 @@ export class OpenUsageController {
   private onSessionShutdown(ctx: ExtensionContext): void {
     this.currentCtx = undefined;
     this.stopInterval();
+    this.unsubscribeUpdated?.();
     this.unsubscribeAlert?.();
     this.unsubscribeModeChanged?.();
     this.state.lastPublishedStatusText = undefined;
@@ -233,7 +248,6 @@ export class OpenUsageController {
 
     try {
       const snapshot = await task;
-      this.state.snapshots.set(providerId, snapshot);
       const isActive =
         providerId === resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
       publishUsageUpdateIfChanged(this.pi, this.state, ctx, snapshot, isActive);

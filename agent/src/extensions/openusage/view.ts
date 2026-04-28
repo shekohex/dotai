@@ -18,6 +18,7 @@ class OpenUsageView implements Component {
   private displayMode: "left" | "used" = "left";
   private busyMessage?: string;
   private errorMessage?: string;
+  private readonly unsubscribeStateUpdates: () => void;
 
   constructor(tui: TUI, theme: Theme, data: OpenUsageViewData, onDone: () => void) {
     this.tui = tui;
@@ -43,7 +44,9 @@ class OpenUsageView implements Component {
     this.container.addChild(new Text("", 1, 0));
     this.container.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
 
-    void this.ensureSelectedSnapshot();
+    this.unsubscribeStateUpdates = this.data.subscribeToStateUpdates(() => {
+      this.invalidateAndRender();
+    });
   }
 
   private getSelectedSnapshot(): UsageSnapshot | undefined {
@@ -86,13 +89,6 @@ class OpenUsageView implements Component {
     this.tui.requestRender();
   }
 
-  private async ensureSelectedSnapshot(): Promise<void> {
-    if (this.getSelectedSnapshot()) {
-      return;
-    }
-    await this.refreshSelectedProvider(false);
-  }
-
   private cycleProvider(direction: number): void {
     const index = this.data.providerIds.indexOf(this.selectedProviderId);
     this.selectedProviderId =
@@ -101,7 +97,6 @@ class OpenUsageView implements Component {
       ] ?? this.selectedProviderId;
     this.errorMessage = undefined;
     this.invalidateAndRender();
-    void this.ensureSelectedSnapshot();
   }
 
   private toggleDisplayMode(direction: number): void {
@@ -202,6 +197,7 @@ class OpenUsageView implements Component {
     ) {
       return false;
     }
+    this.unsubscribeStateUpdates();
     this.onDone();
     return true;
   }
@@ -250,13 +246,11 @@ class OpenUsageView implements Component {
     if (data === "1") {
       this.selectedProviderId = this.data.providerIds[0] ?? this.selectedProviderId;
       this.invalidateAndRender();
-      void this.ensureSelectedSnapshot();
       return;
     }
     if (data === "2") {
       this.selectedProviderId = this.data.providerIds[1] ?? this.selectedProviderId;
       this.invalidateAndRender();
-      void this.ensureSelectedSnapshot();
     }
   }
 

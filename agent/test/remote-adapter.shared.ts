@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 export { expect, test } from "vitest";
 import { sign } from "node:crypto";
 export { sign } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 export { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1065,6 +1066,7 @@ export class UiPrimitivesPromptSession extends RecordingSession {
 }
 
 export function createRecordingResourceLoader(session: RecordingSession): ResourceLoader {
+  const eventEmitter = new EventEmitter();
   return {
     getExtensions: (): LoadExtensionsResult => {
       session.resourceReadCounts.extensions += 1;
@@ -1112,6 +1114,23 @@ export function createRecordingResourceLoader(session: RecordingSession): Resour
     extendResources: () => {},
     reload: async () => {
       await session.reload();
+    },
+    eventBus: {
+      emit: (channel: string, data: unknown) => {
+        eventEmitter.emit(channel, data);
+      },
+      on: (channel: string, handler: (data: unknown) => void | Promise<void>) => {
+        const safeHandler = async (data: unknown) => {
+          await handler(data);
+        };
+        eventEmitter.on(channel, safeHandler);
+        return () => {
+          eventEmitter.off(channel, safeHandler);
+        };
+      },
+      clear: () => {
+        eventEmitter.removeAllListeners();
+      },
     },
   };
 }

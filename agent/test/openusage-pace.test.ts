@@ -8,7 +8,8 @@ import {
   type PaceResult,
 } from "../src/extensions/openusage/status.ts";
 import { publishUsageUpdateIfChanged } from "../src/extensions/openusage/controller-utils.ts";
-import { createRuntimeState } from "../src/extensions/openusage/state.ts";
+import { applyUpdatedEventToState, createRuntimeState } from "../src/extensions/openusage/state.ts";
+import { parseUpdatedEvent } from "../src/extensions/openusage/events.ts";
 import type { UsageMetric } from "../src/extensions/openusage/types.ts";
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
@@ -114,4 +115,32 @@ timedTest("openusage publishUsageUpdateIfChanged skips identical active status w
 
   expect(statuses.length).toBe(1);
   expect(emitted.length).toBe(1);
+});
+
+timedTest("openusage updated event hydrates and clears local snapshots", () => {
+  const state = createRuntimeState();
+  const updated = parseUpdatedEvent({
+    providerId: "codex",
+    active: true,
+    snapshot: {
+      providerId: "codex",
+      displayName: "Codex",
+      source: "cliproxy",
+      fetchedAt: RESETS_AT_MS,
+      summary: "cliproxy account",
+    },
+  });
+
+  expect(updated).toBeTruthy();
+  applyUpdatedEventToState(state, updated!);
+  expect(state.snapshots.get("codex")?.summary).toBe("cliproxy account");
+
+  const cleared = parseUpdatedEvent({
+    providerId: "codex",
+    active: true,
+  });
+
+  expect(cleared).toBeTruthy();
+  applyUpdatedEventToState(state, cleared!);
+  expect(state.snapshots.has("codex")).toBe(false);
 });

@@ -2,6 +2,7 @@ import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import type {
+  OpenUsageUpdatedEvent,
   OpenUsageRuntimeState,
   PersistedOpenUsageState,
   ResetTimeFormat,
@@ -92,6 +93,23 @@ export function setResetTimeFormat(
   };
 
   return state.persisted;
+}
+
+export function applyUpdatedEventToState(
+  state: OpenUsageRuntimeState,
+  event: OpenUsageUpdatedEvent,
+): void {
+  const providerId = event.snapshot?.providerId ?? event.providerId;
+  if (!providerId) {
+    return;
+  }
+
+  if (event.snapshot) {
+    state.snapshots.set(providerId, event.snapshot);
+    return;
+  }
+
+  state.snapshots.delete(providerId);
 }
 
 function normalizeSelectedAccounts(value: unknown): Partial<Record<SupportedProviderId, string>> {

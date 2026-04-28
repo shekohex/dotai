@@ -13,6 +13,7 @@ import {
   SessionStatusSchema,
   UiResponseRequestSchema,
 } from "./schemas-core.js";
+import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
 
 const WorkingIndicatorOptionsSchema = Type.Object({
   frames: Type.Optional(Type.Array(Type.String())),
@@ -283,6 +284,11 @@ export const StreamEventEnvelopeSchema = Type.Union([
     ...StreamEventCommonProperties,
     kind: Type.Literal("extension_event"),
     payload: ExtensionEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("extension_custom_event"),
+    payload: RemoteCustomExtensionEventPayloadSchema,
   }),
   Type.Object({
     ...StreamEventCommonProperties,

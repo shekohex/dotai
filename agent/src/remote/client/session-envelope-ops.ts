@@ -14,6 +14,9 @@ export async function routeRemoteSessionEnvelope(input: {
   onExtensionEventPayload: (
     payload: Extract<StreamEventEnvelope, { kind: "extension_event" }>["payload"],
   ) => void;
+  onExtensionCustomEventPayload: (
+    payload: Extract<StreamEventEnvelope, { kind: "extension_custom_event" }>["payload"],
+  ) => void;
   onSessionStatePatchPayload: (
     payload: Extract<StreamEventEnvelope, { kind: "session_state_patch" }>["payload"],
   ) => void;
@@ -42,6 +45,11 @@ export async function routeRemoteSessionEnvelope(input: {
 
   if (input.envelope.kind === "extension_event") {
     input.onExtensionEventPayload(input.envelope.payload);
+    return;
+  }
+
+  if (input.envelope.kind === "extension_custom_event") {
+    input.onExtensionCustomEventPayload(input.envelope.payload);
     return;
   }
 

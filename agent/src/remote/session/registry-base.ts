@@ -372,6 +372,7 @@ export abstract class SessionRegistryBase {
 
     installRemoteExtensionEventMirror({
       runner: session.extensionRunner,
+      resourceLoader: session.resourceLoader,
       streams: this.streams,
       record,
       now: this.now,

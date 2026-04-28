@@ -12,7 +12,7 @@ import type {
   OpenUsageRuntimeState,
   SupportedProviderId,
 } from "./types.js";
-import { isSupportedProviderId, OPENUSAGE_STATE_ENTRY } from "./types.js";
+import { isSupportedProviderId, OPENUSAGE_STATE_ENTRY, OPENUSAGE_UPDATED_EVENT } from "./types.js";
 import { OpenUsageView } from "./view.js";
 
 type RefreshProvider = (
@@ -119,6 +119,7 @@ async function showOpenUsageView(
         activeProviderId,
         activeModelLabel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
         refreshProvider: (nextProviderId, options) => refreshProvider(nextProviderId, ctx, options),
+        subscribeToStateUpdates: (listener) => pi.events.on(OPENUSAGE_UPDATED_EVENT, listener),
         persistState: () => {
           persistState(pi, state);
         },

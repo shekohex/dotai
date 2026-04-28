@@ -29,6 +29,7 @@ import {
 } from "./polling-ops.js";
 import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-modes-store.js";
 import { RemoteAgentSessionSetupBase } from "./setup-base.js";
+import { requireResourceLoaderEventBus } from "../../event-bus-bridge.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   protected async resyncAfterReauthentication(): Promise<void> {
@@ -158,6 +159,12 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       },
       applyExtensionEvent: (event) => {
         this.forwardRemoteExtensionEventToLocalExtensions(event);
+      },
+      applyExtensionCustomEvent: (channel: string, data: unknown) => {
+        requireResourceLoaderEventBus(
+          this.resourceLoader,
+          "RemoteAgentSessionRuntimeInternals",
+        ).emit(channel, data);
       },
       handleEnvelope: async (envelope) => {
         await this.handleEnvelope(envelope);

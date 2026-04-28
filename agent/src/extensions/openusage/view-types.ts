@@ -15,6 +15,7 @@ type OpenUsageViewData = {
     providerId: SupportedProviderId,
     options?: { force?: boolean },
   ) => Promise<void>;
+  subscribeToStateUpdates: (listener: () => void) => () => void;
   persistState: () => void;
 };
 

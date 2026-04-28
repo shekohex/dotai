@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { ModeSpecSchema } from "../../mode-utils.js";
-import type { OpenUsageAlertEvent, UsageSnapshot } from "./types.js";
+import type { OpenUsageAlertEvent, OpenUsageUpdatedEvent, UsageSnapshot } from "./types.js";
 import { isSupportedProviderId } from "./types.js";
 
 const UsageMetricSchema = Type.Object(
@@ -40,6 +40,17 @@ const OpenUsageAlertEventSchema = Type.Object(
     thresholdPercent: Type.Number(),
     resetsAt: Type.Optional(Type.String()),
     snapshot: UsageSnapshotSchema,
+  },
+  { additionalProperties: true },
+);
+
+const OpenUsageUpdatedEventSchema = Type.Object(
+  {
+    providerId: Type.Optional(
+      Type.Union([Type.Literal("codex"), Type.Literal("google"), Type.Literal("zai")]),
+    ),
+    active: Type.Boolean(),
+    snapshot: Type.Optional(UsageSnapshotSchema),
   },
   { additionalProperties: true },
 );
@@ -85,6 +96,20 @@ export function parseAlertEvent(data: unknown): OpenUsageAlertEvent | undefined 
 
   return {
     ...parsed,
+    snapshot,
+  };
+}
+
+export function parseUpdatedEvent(data: unknown): OpenUsageUpdatedEvent | undefined {
+  if (!Value.Check(OpenUsageUpdatedEventSchema, data)) {
+    return undefined;
+  }
+
+  const parsed = Value.Parse(OpenUsageUpdatedEventSchema, data);
+  const snapshot = parsed.snapshot ? toUsageSnapshot(parsed.snapshot) : undefined;
+  return {
+    providerId: parsed.providerId,
+    active: parsed.active,
     snapshot,
   };
 }

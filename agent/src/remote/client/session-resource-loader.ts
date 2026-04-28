@@ -1,12 +1,14 @@
 import {
   DefaultResourceLoader,
   createSyntheticSourceInfo,
+  type EventBus,
   type LoadExtensionsResult,
   type PromptTemplate,
   type ResourceLoader,
   type Skill,
   type Theme,
 } from "@mariozechner/pi-coding-agent";
+import { requireResourceLoaderEventBus } from "../event-bus-bridge.js";
 import type { RemoteExtensionMetadata, RemoteResourceBundle, SessionSnapshot } from "../schemas.js";
 import { RemoteResourceBundleSchema } from "../schemas.js";
 import { createRemoteThemeFromContent } from "./remote-theme.js";
@@ -151,8 +153,12 @@ function createRemoteResourceLoaderView(input: {
   const remotePrompts = toRemotePrompts(input.remoteResources);
   const remoteSystemPrompt = input.remoteResources.systemPrompt ?? undefined;
   const remoteAppendSystemPrompt = input.remoteResources.appendSystemPrompt;
+  const eventBus = requireResourceLoaderEventBus(
+    input.baseLoader,
+    "createRemoteResourceLoaderView",
+  );
 
-  return {
+  const resourceLoader: ResourceLoader & { eventBus?: EventBus } = {
     getExtensions: (): LoadExtensionsResult =>
       mergeRemoteAndClientExtensions({
         loaded: input.baseLoader.getExtensions(),
@@ -178,7 +184,10 @@ function createRemoteResourceLoaderView(input: {
     ],
     extendResources: (_paths: Parameters<ResourceLoader["extendResources"]>[0]) => {},
     reload: () => Promise.resolve(),
+    eventBus,
   };
+
+  return resourceLoader;
 }
 function mergeRemoteAndClientExtensions(input: {
   loaded: LoadExtensionsResult;

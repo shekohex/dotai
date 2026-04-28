@@ -7,6 +7,7 @@ import type {
   SessionStats,
 } from "@mariozechner/pi-coding-agent";
 import type { RemoteApiClient } from "../../remote-api-client.js";
+import { parseRemoteCustomExtensionEventPayload } from "../../event-bus-bridge.js";
 import type {
   ExtensionUiResolvedEventPayload,
   ExtensionUiRequestEventPayload,
@@ -55,6 +56,7 @@ export type PollRemoteSessionRuntimeInput = {
   applyAgentSessionEvent: (event: AgentSessionEvent) => void;
   isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
   applyExtensionEvent: (event: ForwardableRemoteExtensionEvent) => void;
+  applyExtensionCustomEvent: (channel: string, data: unknown) => void;
   remoteModelSettings: RemoteModelSettingsState;
   setRemoteAvailableModels: (models: Model<Api>[]) => void;
   setResolvedModel: (modelRef: string) => void;
@@ -131,6 +133,7 @@ export function createRemoteSessionPollingInput(input: {
   applyAgentSessionEvent: PollRemoteSessionRuntimeInput["applyAgentSessionEvent"];
   isForwardableRemoteExtensionEvent: PollRemoteSessionRuntimeInput["isForwardableRemoteExtensionEvent"];
   applyExtensionEvent: PollRemoteSessionRuntimeInput["applyExtensionEvent"];
+  applyExtensionCustomEvent: PollRemoteSessionRuntimeInput["applyExtensionCustomEvent"];
   handleEnvelope: PollRemoteSessionRuntimeInput["handleEnvelope"];
   remoteModelSettings: PollRemoteSessionRuntimeInput["remoteModelSettings"];
   stateHandlers: PollingStateHandlers;
@@ -155,6 +158,7 @@ export function createRemoteSessionPollingInput(input: {
     applyAgentSessionEvent: input.applyAgentSessionEvent,
     isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
     applyExtensionEvent: input.applyExtensionEvent,
+    applyExtensionCustomEvent: input.applyExtensionCustomEvent,
     handleEnvelope: input.handleEnvelope,
     remoteModelSettings: input.remoteModelSettings,
     ...input.stateHandlers,
@@ -215,6 +219,13 @@ export async function handleRemoteSessionEnvelope(
         isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
         applyExtensionEvent: input.applyExtensionEvent,
       });
+    },
+    onExtensionCustomEventPayload: (payload) => {
+      const parsed = parseRemoteCustomExtensionEventPayload(payload);
+      if (!parsed) {
+        return;
+      }
+      input.applyExtensionCustomEvent(parsed.channel, parsed.data);
     },
     onSessionStatePatchPayload: (payload) => {
       handleSessionStatePatchPayload(input, payload);

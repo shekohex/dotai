@@ -28,6 +28,24 @@ import {
   type ExtensionFactory,
 } from "./remote-adapter.shared.ts";
 import { initializeMirroredSessionManager } from "../src/remote/client/session-manager-mirror.ts";
+import { readResourceLoaderEventBus } from "../src/remote/event-bus-bridge.ts";
+
+class CustomExtensionEventsPromptSession extends RecordingSession {
+  override async prompt(text: string, options?: Record<string, unknown>): Promise<void> {
+    await super.prompt(text, options);
+    readResourceLoaderEventBus(this.resourceLoader)?.emit("openusage:updated", {
+      providerId: "codex",
+      active: true,
+      snapshot: {
+        providerId: "codex",
+        displayName: "Codex",
+        source: "cliproxy",
+        fetchedAt: 1_700_000_000_000,
+        summary: "cliproxy account",
+      },
+    });
+  }
+}
 
 timedTest("in-memory runtime load preserves source session directory", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-load-session-dir-"));
@@ -533,6 +551,81 @@ timedTest("milestone 3 adapter forwards passive extension events", async () => {
     expect(modelSeenByExtension).toBe("test-provider/updated-model");
     expect(sessionCompactCount).toBe(1);
     expect(sessionTreeCount).toBe(1);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter forwards custom extension bus events", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const session = new CustomExtensionEventsPromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  let receivedCount = 0;
+  let lastPayload: unknown;
+
+  const extension: ExtensionFactory = (pi) => {
+    pi.events.on("openusage:updated", (data) => {
+      receivedCount += 1;
+      lastPayload = data;
+    });
+  };
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      clientExtensionMetadata: [
+        {
+          id: "test-custom-events",
+          runtime: "client",
+          path: "client:test-custom-events",
+        },
+      ],
+      clientExtensionFactories: [extension],
+    });
+
+    await runtime.session.bindExtensions({});
+    await runtime.session.prompt("trigger custom extension events");
+
+    await waitForValue(
+      () => ({ receivedCount, lastPayload }),
+      (value) => value.receivedCount > 0,
+      20,
+      10,
+    );
+
+    expect(receivedCount).toBe(1);
+    expect(lastPayload).toEqual({
+      providerId: "codex",
+      active: true,
+      snapshot: {
+        providerId: "codex",
+        displayName: "Codex",
+        source: "cliproxy",
+        fetchedAt: 1_700_000_000_000,
+        summary: "cliproxy account",
+      },
+    });
   } finally {
     await runtime?.dispose();
     await remote.dispose();

@@ -1,4 +1,9 @@
-import type { ExtensionEvent, ExtensionRunner } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionEvent,
+  ExtensionRunner,
+  ResourceLoader,
+} from "@mariozechner/pi-coding-agent";
+import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
 import { sessionEventsStreamId, type InMemoryDurableStreamStore } from "../streams.js";
 import type { SessionRecord } from "./types.js";
 
@@ -37,28 +42,62 @@ export function appendMirroredRemoteExtensionEvent(input: {
   });
 }
 
+export function appendMirroredRemoteCustomExtensionEvent(input: {
+  streams: InMemoryDurableStreamStore;
+  record: SessionRecord;
+  channel: string;
+  data: unknown;
+  ts: number;
+}): void {
+  input.streams.append(sessionEventsStreamId(input.record.sessionId), {
+    sessionId: input.record.sessionId,
+    kind: "extension_custom_event",
+    payload: {
+      channel: input.channel,
+      data: input.data,
+    },
+    ts: input.ts,
+  });
+}
+
 export function installRemoteExtensionEventMirror(input: {
   runner: MirroredExtensionRunner | undefined;
+  resourceLoader: ResourceLoader;
   streams: InMemoryDurableStreamStore;
   record: SessionRecord;
   now: () => number;
 }): void {
-  if (!input.runner || input.runner.emit === undefined) {
+  if (input.runner && input.runner.emit !== undefined) {
+    const originalEmit = input.runner.emit.bind(input.runner);
+    input.runner.emit = async (...args) => {
+      const [event] = args;
+      const result = await originalEmit(...args);
+      if (isMirroredRemoteExtensionEvent(event)) {
+        appendMirroredRemoteExtensionEvent({
+          streams: input.streams,
+          record: input.record,
+          event,
+          ts: input.now(),
+        });
+      }
+      return result;
+    };
+  }
+
+  const eventBus = readResourceLoaderEventBus(input.resourceLoader);
+  if (!eventBus) {
     return;
   }
 
-  const originalEmit = input.runner.emit.bind(input.runner);
-  input.runner.emit = async (...args) => {
-    const [event] = args;
-    const result = await originalEmit(...args);
-    if (isMirroredRemoteExtensionEvent(event)) {
-      appendMirroredRemoteExtensionEvent({
-        streams: input.streams,
-        record: input.record,
-        event,
-        ts: input.now(),
-      });
-    }
-    return result;
+  const originalEventBusEmit = eventBus.emit.bind(eventBus);
+  eventBus.emit = (channel, data) => {
+    originalEventBusEmit(channel, data);
+    appendMirroredRemoteCustomExtensionEvent({
+      streams: input.streams,
+      record: input.record,
+      channel,
+      data,
+      ts: input.now(),
+    });
   };
 }

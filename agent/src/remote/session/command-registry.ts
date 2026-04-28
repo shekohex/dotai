@@ -38,6 +38,7 @@ export function createSessionRecord(input: {
   sessionId: string;
   sessionName?: string;
   persistence: "persistent" | "ephemeral";
+  cwd?: string;
   createdAt: number;
   updatedAt?: number;
   runtime: AgentSessionRuntime;
@@ -49,7 +50,7 @@ export function createSessionRecord(input: {
     sessionName: input.sessionName,
     persistence: input.persistence,
     status: "idle",
-    cwd: "",
+    cwd: input.cwd ?? "",
     model: "pi-remote-faux/pi-remote-faux-1",
     thinkingLevel: "medium",
     activeTools: ["read", "bash", "edit", "write"],
@@ -129,8 +130,9 @@ export async function createSingleSession(input: {
 }): Promise<CreateSessionResponse> {
   const createdAt = input.now();
   const requestedPersistence = input.request.persistence;
+  const requestedCwd = normalizeRemoteWorkspaceCwd(input.request.workspaceCwd);
   const runtime = await input.createRuntime({
-    cwd: normalizeRemoteWorkspaceCwd(input.request.workspaceCwd),
+    cwd: requestedCwd,
     persistence: requestedPersistence,
   });
   const sessionId = readRuntimeSessionId(runtime) ?? input.createSessionId();
@@ -139,6 +141,7 @@ export async function createSingleSession(input: {
       sessionId,
       sessionName: input.request.sessionName,
       persistence: requestedPersistence ?? readRuntimePersistence(runtime),
+      cwd: requestedCwd ?? readRuntimeCwd(runtime),
       createdAt,
       updatedAt: createdAt,
       runtime,
@@ -161,6 +164,17 @@ function readRuntimeSessionId(runtime: AgentSessionRuntime): string | undefined 
 
 function readRuntimePersistence(runtime: AgentSessionRuntime): "persistent" | "ephemeral" {
   return runtime.session?.sessionManager.isPersisted() ? "persistent" : "ephemeral";
+}
+
+function readRuntimeCwd(runtime: AgentSessionRuntime): string | undefined {
+  const sessionCwd = runtime.session?.sessionManager.getCwd();
+  if (typeof sessionCwd === "string" && sessionCwd.length > 0) {
+    return sessionCwd;
+  }
+  if ("cwd" in runtime && typeof runtime.cwd === "string" && runtime.cwd.length > 0) {
+    return runtime.cwd;
+  }
+  return undefined;
 }
 
 export function getAppSnapshot(input: {

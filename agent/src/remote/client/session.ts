@@ -40,7 +40,10 @@ export class RemoteAgentSession
     options: RemoteAgentSessionCreateOptions,
   ): Promise<RemoteAgentSession> {
     const snapshot = options.snapshot ?? (await client.getSessionSnapshot(sessionId));
-    const sessionCwd = snapshot.cwd ?? options.fallbackCwd ?? process.cwd();
+    const sessionCwd = snapshot.cwd ?? options.fallbackCwd;
+    if (sessionCwd === undefined || sessionCwd.length === 0) {
+      throw new Error("Remote session snapshot is missing cwd");
+    }
     const remoteSettings = readRemoteSettingsSnapshot(snapshot);
     const settingsManager = SettingsManager.inMemory(remoteSettings);
     const authStorage = AuthStorage.create();

@@ -432,6 +432,8 @@ export abstract class RemoteAgentSessionSetupBase {
 
   protected applyAuthoritativeCwdUpdate(nextCwd: string): void {
     const currentSessionName = this.sessionManager.getSessionName();
+    const currentEntries = this.sessionManager.getEntries();
+    const currentLeafId = this.sessionManager.getLeafId();
     const cwdResult = applyAuthoritativeCwd({
       currentCwd: this.sessionManager.getCwd(),
       nextCwd,
@@ -448,8 +450,8 @@ export abstract class RemoteAgentSessionSetupBase {
       sessionManager: this.sessionManager,
       sessionId: this.sessionId,
       sessionName: currentSessionName,
-      entries: this.sessionManager.getEntries(),
-      leafId: this.sessionManager.getLeafId(),
+      entries: currentEntries,
+      leafId: currentLeafId,
     });
     this.settingsManager = cwdResult.settingsManager;
     this.installSettingsManagerBindings(this.settingsManager);

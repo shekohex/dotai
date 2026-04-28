@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+
 alice_private_key() {
   printf '%s\n' '-----BEGIN PRIVATE KEY-----' 'MC4CAQAwBQYDK2VwBCIEINB1KC9CGcvJ2KV9iSPqaE//4Bm2DIt+gBJrg2SZR92F' '-----END PRIVATE KEY-----'
 }
@@ -211,6 +212,7 @@ run_server() {
 }
 
 run_client() {
+  local port="3141"
   local remote_origin=""
   local identity="alice"
   local -a passthrough_args=()
@@ -237,8 +239,7 @@ run_client() {
   done
 
   if [[ -z "${remote_origin}" ]]; then
-    echo "missing --remote-url" >&2
-    exit 1
+    remote_origin="$(default_origin_for_port "${port}")"
   fi
 
   case "${identity}" in

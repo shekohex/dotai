@@ -51,7 +51,6 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
   }
 
   static async create(options: RemoteRuntimeOptions): Promise<RemoteAgentSessionRuntime> {
-    const fallbackCwd = options.cwd ?? process.cwd();
     const agentDir = options.agentDir ?? getAgentDir();
     const clientExtensionMetadata = options.clientExtensionMetadata ?? [];
     const clientExtensionFactories = options.clientExtensionFactories ?? [];
@@ -86,10 +85,10 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
       entriesLimit: options.sessionEntriesLimit,
       entriesOffset: options.sessionEntriesOffset,
     });
-    const authoritativeCwd = snapshot.cwd ?? fallbackCwd;
+    const authoritativeCwd = snapshot.cwd ?? options.cwd ?? process.cwd();
     const session = await RemoteAgentSession.create(client, attachedSessionId, {
       snapshot,
-      fallbackCwd,
+      fallbackCwd: options.cwd,
       agentDir,
       clientExtensions: clientExtensionMetadata,
       clientExtensionFactories,

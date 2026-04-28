@@ -112,6 +112,8 @@ import { TEST_ED25519_KEYS, TEST_RSA_PUBLIC_KEY_PEM } from "./remote-test-keys.t
 export { TEST_ED25519_KEYS, TEST_RSA_PUBLIC_KEY_PEM } from "./remote-test-keys.ts";
 process.env.PI_REMOTE_ENABLE_LOGGER = "0";
 
+const TEST_FAKE_RUNTIME_CWD = "/tmp/pi-remote-fake-runtime";
+
 export const TEST_TIMEOUT_MS = 15_000;
 
 export const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
@@ -120,6 +122,7 @@ export const timedTest: typeof test = ((name: string, fn: (...args: any[]) => an
 export class FakeRuntimeFactory implements RemoteRuntimeFactory {
   async create() {
     return {
+      cwd: TEST_FAKE_RUNTIME_CWD,
       dispose: async () => {},
     } as any;
   }
@@ -139,6 +142,7 @@ export class SlowRuntimeFactory implements RemoteRuntimeFactory {
     this.createCalls += 1;
     await new Promise<void>((resolve) => setTimeout(resolve, this.delayMs));
     return {
+      cwd: TEST_FAKE_RUNTIME_CWD,
       dispose: async () => {},
     } as any;
   }
@@ -1371,10 +1375,12 @@ export async function createRemoteRuntime(
     privateKeyPem: string;
     sessionId?: string;
     cwd?: string;
+    workspaceCwd?: string;
     clientExtensionMetadata?: Array<{ id: string; runtime: "client"; path: string }>;
     clientExtensionFactories?: ExtensionFactory[];
   },
 ) {
+  const workspaceCwd = options.workspaceCwd ?? (options.sessionId ? undefined : options.cwd);
   return RemoteAgentSessionRuntime.create({
     origin: "http://localhost:3000",
     auth: {
@@ -1384,7 +1390,7 @@ export async function createRemoteRuntime(
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
-    ...(options.cwd ? { workspaceCwd: options.cwd } : {}),
+    ...(workspaceCwd ? { workspaceCwd } : {}),
     ...(options.clientExtensionMetadata
       ? { clientExtensionMetadata: options.clientExtensionMetadata }
       : {}),

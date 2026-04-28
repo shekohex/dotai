@@ -60,6 +60,8 @@ import { TEST_ED25519_KEYS } from "./remote-test-keys.ts";
 
 process.env.PI_REMOTE_ENABLE_LOGGER = "0";
 
+const TEST_FAKE_RUNTIME_CWD = "/tmp/pi-remote-fake-runtime";
+
 const TEST_TIMEOUT_MS = 15_000;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
@@ -68,6 +70,7 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
 class FakeRuntimeFactory implements RemoteRuntimeFactory {
   async create() {
     return {
+      cwd: TEST_FAKE_RUNTIME_CWD,
       dispose: async () => {},
     } as any;
   }
@@ -87,6 +90,7 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
     this.createCalls += 1;
     await new Promise<void>((resolve) => setTimeout(resolve, this.delayMs));
     return {
+      cwd: TEST_FAKE_RUNTIME_CWD,
       dispose: async () => {},
     } as any;
   }
@@ -1319,10 +1323,12 @@ async function createRemoteRuntime(
     privateKeyPem: string;
     sessionId?: string;
     cwd?: string;
+    workspaceCwd?: string;
     clientExtensionMetadata?: Array<{ id: string; runtime: "client"; path: string }>;
     clientExtensionFactories?: ExtensionFactory[];
   },
 ) {
+  const workspaceCwd = options.workspaceCwd ?? (options.sessionId ? undefined : options.cwd);
   return RemoteAgentSessionRuntime.create({
     origin: "http://localhost:3000",
     auth: {
@@ -1332,7 +1338,7 @@ async function createRemoteRuntime(
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
-    ...(options.cwd ? { workspaceCwd: options.cwd } : {}),
+    ...(workspaceCwd ? { workspaceCwd } : {}),
     ...(options.clientExtensionMetadata
       ? { clientExtensionMetadata: options.clientExtensionMetadata }
       : {}),
@@ -3299,6 +3305,63 @@ timedTest("remote adapter mirrors snapshot entries into session manager", async 
     expect(
       calculateTotalCost({ sessionManager: runtime.session.sessionManager } as ExtensionContext),
     ).toBe(0.03);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("remote adapter preserves snapshot entries after authoritative cwd update", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const session = new RecordingSession();
+  session.cwd = "/srv/remote-workspace";
+  session.messages = [
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "restored after cwd sync" }],
+      api: "responses",
+      provider: "pi-remote-faux",
+      model: "pi-remote-faux-1",
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
+  ];
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      cwd: "/tmp/local-client-cwd",
+    });
+
+    const messageEntries = runtime.session.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message");
+
+    expect(runtime.session.sessionManager.getCwd()).toBe("/srv/remote-workspace");
+    expect(messageEntries.length).toBe(1);
+    expect(messageEntries[0]?.message.role).toBe("assistant");
+    expect(runtime.session.messages[0]?.role).toBe("assistant");
   } finally {
     await runtime?.dispose();
     await remote.dispose();

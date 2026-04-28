@@ -60,6 +60,8 @@ import { TEST_ED25519_KEYS, TEST_RSA_PUBLIC_KEY_PEM } from "./remote-test-keys.t
 
 process.env.PI_REMOTE_ENABLE_LOGGER = "0";
 
+const TEST_FAKE_RUNTIME_CWD = "/tmp/pi-remote-fake-runtime";
+
 const TEST_TIMEOUT_MS = 15_000;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
@@ -68,6 +70,7 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
 class FakeRuntimeFactory implements RemoteRuntimeFactory {
   async create() {
     return {
+      cwd: TEST_FAKE_RUNTIME_CWD,
       dispose: async () => {},
     } as any;
   }
@@ -87,6 +90,7 @@ class SlowRuntimeFactory implements RemoteRuntimeFactory {
     this.createCalls += 1;
     await new Promise<void>((resolve) => setTimeout(resolve, this.delayMs));
     return {
+      cwd: TEST_FAKE_RUNTIME_CWD,
       dispose: async () => {},
     } as any;
   }
@@ -1290,10 +1294,12 @@ async function createRemoteRuntime(
     privateKeyPem: string;
     sessionId?: string;
     cwd?: string;
+    workspaceCwd?: string;
     clientExtensionMetadata?: Array<{ id: string; runtime: "client"; path: string }>;
     clientExtensionFactories?: ExtensionFactory[];
   },
 ) {
+  const workspaceCwd = options.workspaceCwd ?? (options.sessionId ? undefined : options.cwd);
   return RemoteAgentSessionRuntime.create({
     origin: "http://localhost:3000",
     auth: {
@@ -1303,7 +1309,7 @@ async function createRemoteRuntime(
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
-    ...(options.cwd ? { workspaceCwd: options.cwd } : {}),
+    ...(workspaceCwd ? { workspaceCwd } : {}),
     ...(options.clientExtensionMetadata
       ? { clientExtensionMetadata: options.clientExtensionMetadata }
       : {}),
@@ -3140,6 +3146,57 @@ timedTest("remote runtime create does not infer session name from cwd", async ()
       await runtime.dispose();
     }
   } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("remote runtime create does not treat client cwd as workspace cwd", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory({ cwd: "/srv/server-workspace" }),
+  });
+
+  try {
+    await expect(
+      RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: { keyId: "dev", privateKey: privateKeyPem },
+        createNewSession: true,
+        cwd: "/tmp/local-client-cwd",
+        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+        fetchImpl: createInProcessFetch(remote.app),
+      }),
+    ).rejects.toThrow("Remote new session requires workspaceCwd");
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("remote runtime create uses explicit workspace cwd only", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory({ cwd: "/srv/server-default" }),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      createNewSession: true,
+      cwd: "/tmp/local-client-cwd",
+      workspaceCwd: "/srv/explicit-workspace",
+      clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+
+    expect(runtime.session.sessionManager.getCwd()).toBe("/srv/explicit-workspace");
+  } finally {
+    await runtime?.dispose();
     await remote.dispose();
   }
 });

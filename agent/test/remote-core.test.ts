@@ -2990,6 +2990,99 @@ timedTest(
   },
 );
 
+timedTest("remote startup selection without flags reattaches latest workspace session", () => {
+  const workspaceCwd = "/home/coder/dotai/agent";
+  const selection = resolveRemoteSessionId({
+    snapshot: {
+      serverInfo: { name: "pi-remote", version: "0.1.0", now: Date.now() },
+      currentClientAuthInfo: {
+        clientId: "dev",
+        keyId: "dev",
+        tokenExpiresAt: Date.now() + 60_000,
+      },
+      sessionSummaries: [
+        {
+          sessionId: "older-other",
+          sessionName: undefined,
+          firstUserMessage: undefined,
+          messageCount: 0,
+          status: "idle",
+          cwd: "/tmp/other",
+          createdAt: 1,
+          updatedAt: 10,
+          parentSessionId: null,
+          lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+          lastSessionStreamOffset: "0000000000000000_0000000000000001",
+        },
+        {
+          sessionId: "latest-workspace",
+          sessionName: undefined,
+          firstUserMessage: undefined,
+          messageCount: 3,
+          status: "idle",
+          cwd: workspaceCwd,
+          createdAt: 2,
+          updatedAt: 20,
+          parentSessionId: null,
+          lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+          lastSessionStreamOffset: "0000000000000000_0000000000000002",
+        },
+      ],
+      recentNotices: [],
+      defaultAttachSessionId: undefined,
+    },
+    parsed: {
+      remoteOrigin: "http://localhost:3000",
+      keyId: "dev",
+      privateKey: undefined,
+      privateKeyPath: undefined,
+      sessionId: undefined,
+      resume: false,
+      continueSession: false,
+      forkSessionId: undefined,
+      noSession: false,
+      exportPath: undefined,
+      sessionDir: undefined,
+      sessionName: undefined,
+      workspaceCwd,
+      verbose: false,
+      initialMessage: undefined,
+      initialMessages: [],
+    },
+  });
+
+  expect(selection).toEqual({ sessionId: "latest-workspace", createNewSession: false });
+});
+
+timedTest("remote runtime create does not infer session name from cwd", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: InMemoryPiRuntimeFactory({ cwd: process.cwd() }),
+  });
+
+  try {
+    const runtime = await RemoteAgentSessionRuntime.create({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      createNewSession: true,
+      workspaceCwd: process.cwd(),
+      cwd: process.cwd(),
+      clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+      fetchImpl: createInProcessFetch(remote.app),
+    });
+
+    try {
+      expect(runtime.session.sessionManager.getSessionName()).toBeUndefined();
+    } finally {
+      await runtime.dispose();
+    }
+  } finally {
+    await remote.dispose();
+  }
+});
+
 timedTest("remote runtime restart recovery reauths same unnamed persisted session", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const originalCwd = process.cwd();

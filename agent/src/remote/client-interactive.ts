@@ -4,11 +4,7 @@ import {
   type AgentSessionRuntime,
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
-import {
-  RemoteAgentSessionRuntime,
-  defaultSessionNameFromCwd,
-  readRemotePrivateKey,
-} from "./client-runtime.js";
+import { RemoteAgentSessionRuntime, readRemotePrivateKey } from "./client-runtime.js";
 import type { AppSnapshot, ClientCapabilities, RemoteExtensionMetadata } from "./schemas.js";
 import { RemoteApiClient } from "./remote-api-client.js";
 import { buildRemoteSessionLists, selectRemoteSessionId } from "./client/session-picker.js";
@@ -372,7 +368,28 @@ export function resolveRemoteSessionId(input: {
     return { sessionId: selectedMatch.sessionId, createNewSession: false };
   }
 
-  return { sessionId: input.parsed.sessionId, createNewSession: false };
+  if (workspaceCwd !== undefined && workspaceCwd.length > 0) {
+    const workspaceMatches = input.snapshot.sessionSummaries
+      .filter((summary) => normalizeRemoteWorkspaceCwd(summary.cwd) === workspaceCwd)
+      .toSorted((left, right) => right.updatedAt - left.updatedAt);
+    const latestWorkspaceSession = workspaceMatches[0];
+    if (latestWorkspaceSession !== undefined) {
+      return { sessionId: latestWorkspaceSession.sessionId, createNewSession: false };
+    }
+  }
+
+  if (input.snapshot.defaultAttachSessionId !== undefined) {
+    return { sessionId: input.snapshot.defaultAttachSessionId, createNewSession: false };
+  }
+
+  const latestSession = input.snapshot.sessionSummaries.toSorted(
+    (left, right) => right.updatedAt - left.updatedAt,
+  )[0];
+  if (latestSession !== undefined) {
+    return { sessionId: latestSession.sessionId, createNewSession: false };
+  }
+
+  return { createNewSession: true };
 }
 
 export interface RunRemoteInteractiveModeOptions {
@@ -468,7 +485,7 @@ export async function runRemoteInteractiveMode(
       privateKey,
     },
     sessionId: selectedSessionId,
-    sessionName: parsed.sessionName ?? defaultSessionNameFromCwd(process.cwd()),
+    sessionName: parsed.sessionName,
     createNewSession: selection.createNewSession,
     preferLightweightAttach: true,
     persistence: parsed.noSession ? "ephemeral" : "persistent",

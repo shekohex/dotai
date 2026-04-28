@@ -2724,6 +2724,77 @@ timedTest(
   },
 );
 
+timedTest(
+  "remote picker session info shows no-messages label for empty unnamed session",
+  async () => {
+    const sessionInfo = toRemoteSessionInfo({
+      sessionId: "019dced9-0684-755e-868c-92603fabb984",
+      sessionName: "019dced9-0684-755e-868c-92603fabb984",
+      messageCount: 0,
+      status: "idle",
+      cwd: "/workspace/a",
+      createdAt: 1,
+      updatedAt: 2,
+      parentSessionId: null,
+      lifecycle: {
+        persistence: "persistent",
+        loaded: true,
+        state: "active",
+      },
+      lastSessionStreamOffset: "1-0",
+    });
+
+    expect(sessionInfo.name).toBeUndefined();
+    expect(sessionInfo.firstMessage).toBe("(no messages)");
+  },
+);
+
+timedTest("remote picker session info preserves name over first user message", async () => {
+  const sessionInfo = toRemoteSessionInfo({
+    sessionId: "session-a",
+    sessionName: "Named Session",
+    firstUserMessage: "First user message",
+    messageCount: 1,
+    status: "idle",
+    cwd: "/workspace/a",
+    createdAt: 1,
+    updatedAt: 2,
+    parentSessionId: null,
+    lifecycle: {
+      persistence: "persistent",
+      loaded: true,
+      state: "active",
+    },
+    lastSessionStreamOffset: "1-0",
+  });
+
+  expect(sessionInfo.name).toBe("Named Session");
+  expect(sessionInfo.firstMessage).toBe("First user message");
+});
+
+timedTest("remote picker session info prefers first user message when name hidden", async () => {
+  const sessionInfo = toRemoteSessionInfo({
+    sessionId: "019dced9-0684-755e-868c-92603fabb984",
+    sessionName: "019dced9-0684-755e-868c-92603fabb984",
+    firstUserMessage: "Visible first user message",
+    messageCount: 1,
+    status: "idle",
+    cwd: "/workspace/a",
+    createdAt: 1,
+    updatedAt: 2,
+    parentSessionId: null,
+    lifecycle: {
+      persistence: "persistent",
+      loaded: true,
+      state: "active",
+    },
+    lastSessionStreamOffset: "1-0",
+  });
+
+  expect(sessionInfo.name).toBeUndefined();
+  expect(sessionInfo.firstMessage).toBe("Visible first user message");
+});
+
 timedTest("remote picker session info maps parentSessionId for threaded rendering", async () => {
   const sessionInfo = toRemoteSessionInfo({
     sessionId: "child-session",

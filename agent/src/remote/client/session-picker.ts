@@ -9,12 +9,14 @@ import type { AppSnapshot, SessionSummary } from "../schemas.js";
 import { resolveRemoteSessionTarget } from "./session-target.js";
 import { normalizeRemoteWorkspaceCwd } from "../workspace-cwd.js";
 
+const NO_MESSAGES_LABEL = "(no messages)";
+
 export function toRemoteSessionInfo(summary: SessionSummary): SessionInfo {
-  const firstMessage = summary.firstUserMessage ?? summary.sessionName;
   const sessionName =
     summary.sessionName === undefined || summary.sessionName === summary.sessionId
       ? undefined
       : summary.sessionName;
+  const firstMessage = summary.firstUserMessage ?? NO_MESSAGES_LABEL;
   return {
     path: summary.sessionId,
     id: summary.sessionId,

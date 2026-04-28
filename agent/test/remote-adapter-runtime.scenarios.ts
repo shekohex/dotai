@@ -3,6 +3,7 @@ import {
   InMemoryPiRuntimeFactory,
   RecordingRuntimeFactory,
   RecordingSession,
+  REMOTE_DEFAULT_CLIENT_CAPABILITIES,
   RemoteAgentSessionRuntime,
   SequencedRecordingRuntimeFactory,
   TEST_ED25519_KEYS,
@@ -19,6 +20,7 @@ import {
   waitForValue,
   type ExtensionFactory,
 } from "./remote-adapter.shared.ts";
+import { createTempPersistedRuntimeHarness } from "./remote-runtime-test-helpers.ts";
 
 timedTest("milestone 3.1 snapshot includes model catalog and remote model settings", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
@@ -1998,6 +2000,115 @@ timedTest(
     } finally {
       await runtime?.dispose();
       await remote.dispose();
+    }
+  },
+);
+
+timedTest(
+  "milestone 3 adapter resyncs stale working state after server restart reauth",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+    const harness = await createTempPersistedRuntimeHarness({
+      prefix: "pi-remote-reauth-resync-",
+    });
+
+    let remoteA: ReturnType<typeof createRemoteApp> | undefined;
+    let remoteB: ReturnType<typeof createRemoteApp> | undefined;
+    let runtime: RemoteAgentSessionRuntime | undefined;
+
+    try {
+      remoteA = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: harness.runtimeFactory,
+      });
+
+      const token = await authenticate(remoteA.app, privateKeyPem);
+      const createResponse = await remoteA.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ workspaceCwd: harness.workspaceDir }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      remoteB = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: harness.runtimeFactory,
+      });
+
+      let useRestartedServer = false;
+      let unauthorizedInjected = false;
+      runtime = await RemoteAgentSessionRuntime.create({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        sessionId: created.sessionId,
+        cwd: harness.workspaceDir,
+        clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+        fetchImpl: async (input, init) => {
+          const url = typeof input === "string" ? input : input.url;
+          if (
+            !unauthorizedInjected &&
+            url.includes(`/streams/sessions/${created.sessionId}/events`)
+          ) {
+            unauthorizedInjected = true;
+            useRestartedServer = true;
+            await remoteA?.dispose();
+            remoteA = undefined;
+            return new Response(JSON.stringify({ error: "Invalid token" }), {
+              status: 401,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+
+          const activeApp = useRestartedServer ? remoteB.app : remoteA!.app;
+          return createInProcessFetch(activeApp)(input, init);
+        },
+      });
+
+      const runtimeAny = runtime.session as unknown as {
+        _isRetrying: boolean;
+        _isCompacting: boolean;
+        queueDepth: number;
+        queuedSteeringMessages: string[];
+        queuedFollowUpMessages: string[];
+        state: { isStreaming: boolean };
+      };
+      runtimeAny.state.isStreaming = true;
+      runtimeAny._isRetrying = true;
+      runtimeAny._isCompacting = true;
+      runtimeAny.queueDepth = 2;
+      runtimeAny.queuedSteeringMessages = ["stale steer"];
+      runtimeAny.queuedFollowUpMessages = ["stale follow up"];
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (unauthorizedInjected && !runtime.session.isStreaming && !runtime.session.isRetrying) {
+          break;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+
+      expect(unauthorizedInjected).toBe(true);
+      expect(runtime.session.isStreaming).toBe(false);
+      expect(runtime.session.isRetrying).toBe(false);
+      expect(runtime.session.isCompacting).toBe(false);
+      expect(runtime.session.pendingMessageCount).toBe(0);
+      expect(runtime.session.getSteeringMessages()).toEqual([]);
+      expect(runtime.session.getFollowUpMessages()).toEqual([]);
+    } finally {
+      await runtime?.dispose();
+      await remoteA?.dispose();
+      await remoteB?.dispose();
+      await harness.cleanup();
     }
   },
 );

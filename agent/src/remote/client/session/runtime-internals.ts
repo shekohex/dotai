@@ -31,6 +31,13 @@ import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-mode
 import { RemoteAgentSessionSetupBase } from "./setup-base.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
+  protected async resyncAfterReauthentication(): Promise<void> {
+    const snapshot = await this.client.getSessionSnapshot(this.sessionId);
+    this.applySnapshot(snapshot);
+    await this.refreshRemoteToolCatalog();
+    await this.refreshForkMessages();
+  }
+
   async reload(): Promise<void> {
     await this.waitForPendingMutations();
     const snapshot = await this.client.reloadSession(this.sessionId);
@@ -68,6 +75,11 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._autoCompactionEnabled = snapshot.autoCompactionEnabled;
     this._steeringMode = snapshot.steeringMode;
     this._followUpMode = snapshot.followUpMode;
+    this._isRetrying = snapshot.retry.status === "running";
+    this._retryAttempt = 0;
+    this._isCompacting = snapshot.compaction.status === "running";
+    this.queuedSteeringMessages = [];
+    this.queuedFollowUpMessages = [];
     this.reloadResourceLoader(snapshot);
     this.activeTools = [...snapshot.activeTools];
     initializeRemoteSessionMetadata(this.sessionManager, snapshot);
@@ -136,6 +148,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         this.handleRemoteWarning(message);
       },
       reauthenticate: () => this.client.reauthenticate(),
+      onReauthenticated: () => this.resyncAfterReauthentication(),
       isAgentSessionEventLike,
       applyAgentSessionEvent: (event) => {
         this.applyAgentSessionEvent(event);

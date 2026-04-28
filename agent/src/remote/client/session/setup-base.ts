@@ -217,6 +217,8 @@ export abstract class RemoteAgentSessionSetupBase {
       model: this._model,
       thinkingLevel: this._thinkingLevel,
     });
+    this._isRetrying = snapshot.retry.status === "running";
+    this._isCompacting = snapshot.compaction.status === "running";
     this._autoCompactionEnabled = snapshot.autoCompactionEnabled;
     this._steeringMode = snapshot.steeringMode;
     this._followUpMode = snapshot.followUpMode;

@@ -50,6 +50,7 @@ export type PollRemoteSessionRuntimeInput = {
   handleRemoteError: (message: string) => void;
   handleRemoteWarning: (message: string) => void;
   reauthenticate: () => Promise<void>;
+  onReauthenticated?: () => Promise<void>;
   isAgentSessionEventLike: (value: unknown) => value is AgentSessionEvent;
   applyAgentSessionEvent: (event: AgentSessionEvent) => void;
   isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
@@ -125,6 +126,7 @@ export function createRemoteSessionPollingInput(input: {
   handleRemoteError: PollRemoteSessionRuntimeInput["handleRemoteError"];
   handleRemoteWarning: PollRemoteSessionRuntimeInput["handleRemoteWarning"];
   reauthenticate: PollRemoteSessionRuntimeInput["reauthenticate"];
+  onReauthenticated?: PollRemoteSessionRuntimeInput["onReauthenticated"];
   isAgentSessionEventLike: PollRemoteSessionRuntimeInput["isAgentSessionEventLike"];
   applyAgentSessionEvent: PollRemoteSessionRuntimeInput["applyAgentSessionEvent"];
   isForwardableRemoteExtensionEvent: PollRemoteSessionRuntimeInput["isForwardableRemoteExtensionEvent"];
@@ -148,6 +150,7 @@ export function createRemoteSessionPollingInput(input: {
     handleRemoteError: input.handleRemoteError,
     handleRemoteWarning: input.handleRemoteWarning,
     reauthenticate: input.reauthenticate,
+    onReauthenticated: input.onReauthenticated,
     isAgentSessionEventLike: input.isAgentSessionEventLike,
     applyAgentSessionEvent: input.applyAgentSessionEvent,
     isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
@@ -189,6 +192,7 @@ export async function pollRemoteSessionRuntime(
     handleRemoteError: input.handleRemoteError,
     handleRemoteWarning: input.handleRemoteWarning,
     reauthenticate: input.reauthenticate,
+    onReauthenticated: input.onReauthenticated,
   });
 }
 

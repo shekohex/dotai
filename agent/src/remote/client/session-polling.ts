@@ -22,6 +22,7 @@ type PollRemoteSessionEventsInput = {
   handleRemoteError: (message: string) => void;
   handleRemoteWarning: (message: string) => void;
   reauthenticate: () => Promise<void>;
+  onReauthenticated?: () => Promise<void>;
 };
 
 const RETRY_DELAY_MS = 250;
@@ -83,6 +84,7 @@ async function recoverAuthentication(input: PollRemoteSessionEventsInput): Promi
   while (!input.isClosed()) {
     try {
       await input.reauthenticate();
+      await input.onReauthenticated?.();
       input.handleRemoteWarning("Remote connection restored.");
       return true;
     } catch (error) {

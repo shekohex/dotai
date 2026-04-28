@@ -114,7 +114,7 @@ export function resolveContextModeSpec(
   ctx: Pick<ExtensionContext, "cwd" | "sessionManager">,
   mode: string,
 ): Promise<ModeSpec | undefined> | ModeSpec | undefined {
-  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager.getSessionId());
+  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager);
   if (remoteModes !== undefined) {
     return remoteModes.modes[mode];
   }

@@ -76,6 +76,10 @@ export async function applyModeModelSelection(
     return true;
   }
 
+  if (ctx.model?.provider === spec.provider && ctx.model.id === spec.modelId) {
+    return true;
+  }
+
   const model = ctx.modelRegistry.find(spec.provider, spec.modelId);
   if (!model) {
     ctx.ui.notify(

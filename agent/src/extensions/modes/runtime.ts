@@ -1,5 +1,8 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getRemoteModesSnapshot } from "../../remote/client/remote-modes-store.js";
+import {
+  getRemoteModesSnapshot,
+  setRemoteModesSnapshot,
+} from "../../remote/client/remote-modes-store.js";
 import {
   getModesProjectPath,
   loadModesFile,
@@ -27,7 +30,7 @@ export async function ensureRuntime(
 ): Promise<void> {
   const previousPath = runtime.path;
   const previousActiveMode = runtime.activeMode;
-  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager.getSessionId());
+  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager);
   if (remoteModes !== undefined) {
     runtime.source = "remote";
     runtime.data = remoteModes;
@@ -119,7 +122,12 @@ export function notifyConfigError(
   ctx.ui.notify(`Modes config error in ${runtime.path}: ${runtime.error}`, "error");
 }
 
-export async function saveRuntime(runtime: ModeRuntimeLike): Promise<void> {
+export async function saveRuntime(runtime: ModeRuntimeLike, ctx: ExtensionContext): Promise<void> {
+  if (runtime.source === "remote") {
+    setRemoteModesSnapshot(ctx.sessionManager, runtime.data);
+    return;
+  }
+
   await saveModesFile(runtime.path, runtime.data);
 }
 

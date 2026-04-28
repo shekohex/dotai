@@ -151,8 +151,8 @@ function notifyConfigError(ctx: ExtensionContext): void {
   notifyConfigErrorState(runtime, ctx, hasText);
 }
 
-async function saveRuntime(_ctx: ExtensionContext): Promise<void> {
-  await saveRuntimeState(runtime);
+async function saveRuntime(ctx: ExtensionContext): Promise<void> {
+  await saveRuntimeState(runtime, ctx);
 }
 
 const modeApplyActions = createModeApplyActions({

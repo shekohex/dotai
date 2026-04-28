@@ -249,7 +249,7 @@ async function getHandoffModeCompletions(
 function loadHandoffModes(
   ctx: ExtensionContext,
 ): Promise<Array<{ name: string; spec: ModeSpec }>> | Array<{ name: string; spec: ModeSpec }> {
-  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager.getSessionId());
+  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager);
   if (remoteModes === undefined) {
     return loadAvailableModes(ctx.cwd);
   }

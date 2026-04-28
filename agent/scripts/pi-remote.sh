@@ -39,18 +39,16 @@ eve_public_key() {
 usage() {
   cat <<EOF
 Usage:
-  npm run pi:server -- [--port 3000] [--host 0.0.0.0] [--origin http://IP:3000]
-  npm run pi:remote -- --remote-url http://IP:3000 [--identity alice|bob|charlie|eve] [--workspace-cwd PATH] [extra pi args]
+  npm run pi:server -- [--port 3141] [--host 0.0.0.0] [--origin http://IP:3141]
+  npm run pi:remote -- --remote-url http://IP:3141 [--identity alice|bob|charlie|eve] [extra pi args]
 
 Server defaults:
-  --port    3000
+  --port    3141
   --host    0.0.0.0
   --origin  auto-picks first LAN IPv4, fallback http://127.0.0.1:PORT
 
 Client defaults:
   --identity       alice
-  --workspace-cwd  current directory
-  --session-name   <Identity> Remote
 
 Client aliases:
   --remote-url     same as --remote-origin
@@ -159,7 +157,7 @@ EOF
 }
 
 run_server() {
-  local port="3000"
+  local port="3141"
   local host="0.0.0.0"
   local origin=""
 
@@ -215,8 +213,6 @@ run_server() {
 run_client() {
   local remote_origin=""
   local identity="alice"
-  local workspace_cwd="$(pwd)"
-  local session_name=""
   local -a passthrough_args=()
 
   while [[ $# -gt 0 ]]; do
@@ -227,14 +223,6 @@ run_client() {
         ;;
       --identity|--key-id|--remote-key-id)
         identity="${2:-}"
-        shift 2
-        ;;
-      --workspace-cwd)
-        workspace_cwd="${2:-}"
-        shift 2
-        ;;
-      --session-name|--remote-session-name)
-        session_name="${2:-}"
         shift 2
         ;;
       -h|--help)
@@ -262,34 +250,15 @@ run_client() {
       ;;
   esac
 
-  if [[ -z "${session_name}" ]]; then
-    case "${identity}" in
-      alice)
-        session_name="Alice Remote"
-        ;;
-      bob)
-        session_name="Bob Remote"
-        ;;
-      charlie)
-        session_name="Charlie Remote"
-        ;;
-      eve)
-        session_name="Eve Remote"
-        ;;
-    esac
-  fi
-
   local private_key
   private_key="$(private_key_for_identity "${identity}")"
 
   cd "${ROOT_DIR}"
+  PI_REMOTE_PRIVATE_KEY="${private_key}" \
   npm run pi -- \
     --mode-rush \
     --remote-origin "${remote_origin}" \
     --remote-key-id "${identity}" \
-    --remote-private-key "${private_key}" \
-    --remote-session-name "${session_name}" \
-    --workspace-cwd "${workspace_cwd}" \
     "${passthrough_args[@]}"
 }
 

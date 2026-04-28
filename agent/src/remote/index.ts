@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { createServer } from "node:http2";
 import { createRemoteApp } from "./app.js";
 import { parseAllowedKeys } from "./auth.js";
 
@@ -21,6 +22,7 @@ const server = serve(
     fetch: app.fetch,
     port,
     hostname,
+    createServer,
   },
   (info) => {
     console.log(`pi-remote running on ${origin} via ${hostname}:${info.port}`);

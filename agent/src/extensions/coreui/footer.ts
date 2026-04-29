@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { shortenHome } from "./path.js";
 import { formatDuration } from "./tps.js";
 import type { CoreUIState } from "./types.js";
@@ -25,7 +26,13 @@ export function bindCoreUI(
 
   ctx.ui.setFooter((tui, theme, footerData) => {
     const requestRender = () => {
-      tui.requestRender();
+      try {
+        tui.requestRender();
+      } catch (error) {
+        if (!isStaleSessionReplacementContextError(error)) {
+          throw error;
+        }
+      }
     };
     setRequestRender(requestRender);
 
@@ -38,21 +45,29 @@ export function bindCoreUI(
       },
       invalidate() {},
       render(width: number): string[] {
-        const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
-        const leftBottom = buildTPSStatus(theme, state);
-        const rightTop = buildModelStatus(theme, ctx, pi, state);
-        const rightBottom = buildUsageStatus(
-          theme,
-          ctx,
-          state.totalCost,
-          footerData.getExtensionStatuses().get(OPENUSAGE_STATUS_KEY),
-        );
+        try {
+          const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
+          const leftBottom = buildTPSStatus(theme, state);
+          const rightTop = buildModelStatus(theme, ctx, pi, state);
+          const rightBottom = buildUsageStatus(
+            theme,
+            ctx,
+            state.totalCost,
+            footerData.getExtensionStatuses().get(OPENUSAGE_STATUS_KEY),
+          );
 
-        return [
-          ...Array.from({ length: FOOTER_TOP_PADDING }, () => " ".repeat(Math.max(0, width))),
-          composeFooterLine(left, rightTop, width),
-          composeFooterLine(leftBottom, rightBottom, width),
-        ];
+          return [
+            ...Array.from({ length: FOOTER_TOP_PADDING }, () => " ".repeat(Math.max(0, width))),
+            composeFooterLine(left, rightTop, width),
+            composeFooterLine(leftBottom, rightBottom, width),
+          ];
+        } catch (error) {
+          if (!isStaleSessionReplacementContextError(error)) {
+            throw error;
+          }
+
+          return [];
+        }
       },
     };
   });

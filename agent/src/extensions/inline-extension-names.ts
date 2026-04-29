@@ -64,11 +64,19 @@ function renameInlineExtensionPaths(loader: LoaderLike): void {
 
   const usedPaths = new Set<string>();
   const inlinePathMap = new Map<string, string>();
+  const inlineStartIndex = Math.max(
+    0,
+    extensionsResult.extensions.length - extensionFactories.length,
+  );
 
   for (const [index, extension] of extensionsResult.extensions.entries()) {
     const currentPath = extension.path;
-    const expectedInlinePath = `<inline:${index + 1}>`;
-    const factory = extensionFactories[index];
+    const inlineFactoryIndex = index - inlineStartIndex;
+    const expectedInlinePath = `<inline:${inlineFactoryIndex + 1}>`;
+    const factory =
+      inlineFactoryIndex >= 0 && inlineFactoryIndex < extensionFactories.length
+        ? extensionFactories[inlineFactoryIndex]
+        : undefined;
     const baseName = factory === undefined ? undefined : readInlineExtensionName(factory);
     if (baseName === undefined || currentPath !== expectedInlinePath) {
       usedPaths.add(currentPath);

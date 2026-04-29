@@ -31,6 +31,7 @@ export interface CreateRemoteAppOptions {
   kvFilePath?: string;
   sessionCatalogRoot?: string;
   sessionSnapshotEntriesLimit?: number;
+  gcIntervalMs?: number;
   enableLogger?: boolean;
   loggerOptions?: Partial<RemoteLoggerOptions>;
 }
@@ -57,8 +58,12 @@ function createOpenApiHandler(app: Hono<RemoteHonoEnv>, origin: string) {
 function createDispose(
   sessions: SessionRegistry,
   watcher: SessionCatalogWatcher | undefined,
+  gcInterval: ReturnType<typeof setInterval> | undefined,
 ): () => Promise<void> {
   return async () => {
+    if (gcInterval !== undefined) {
+      clearInterval(gcInterval);
+    }
     await watcher?.dispose();
     await sessions.dispose();
   };
@@ -98,6 +103,13 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     onChange: () => sessions.reconcileCatalogFromDisk(),
   });
   watcher.start();
+  const gcIntervalMs = options.gcIntervalMs ?? 30_000;
+  const gcInterval =
+    gcIntervalMs > 0
+      ? setInterval(() => {
+          void sessions.evictIdleRuntimes();
+        }, gcIntervalMs)
+      : undefined;
 
   const v1 = createV1Routes({
     auth,
@@ -133,7 +145,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
 
   return {
     app,
-    dispose: createDispose(sessions, watcher),
+    dispose: createDispose(sessions, watcher, gcInterval),
   };
 }
 

@@ -5,6 +5,7 @@ import { Value } from "typebox/value";
 import type { GitStatusEntry } from "./files/model.js";
 import { toCanonicalPath, toCanonicalPathMaybeMissing } from "./files/path-utils.js";
 import { isAuthoritativeRuntime } from "./runtime-authority.js";
+import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 
 const GIT_TIMEOUT_MS = 900;
 export const GIT_STATE_UPDATED_EVENT = "git:state-updated";
@@ -416,30 +417,41 @@ export async function refreshGitState(
   pi: ExtensionAPI,
   ctx: Pick<ExtensionContext, "cwd" | "signal">,
 ): Promise<GitRuntimeState> {
-  const gitRoot = await resolveGitRoot(pi, ctx);
-  if (gitRoot === undefined) {
-    return publishGitState(pi, ctx.cwd, createEmptyGitState());
+  const cwd = ctx.cwd;
+  const signal = ctx.signal;
+
+  try {
+    const gitRoot = await resolveGitRoot(pi, { cwd, signal });
+    if (gitRoot === undefined) {
+      return publishGitState(pi, cwd, createEmptyGitState());
+    }
+
+    const [fileCollections, projectInfo] = await Promise.all([
+      loadGitFileCollections(pi, { signal }, gitRoot),
+      loadGitProjectInfo(pi, { signal }, gitRoot),
+    ]);
+
+    const state: GitRuntimeState = {
+      gitRoot,
+      trackedFiles: fileCollections.trackedFiles,
+      trackedSet: fileCollections.trackedSet,
+      statusMap: fileCollections.statusMap,
+      projectInfo: {
+        ...projectInfo,
+        dirty: fileCollections.branchStatus.dirty,
+        aheadCommits: fileCollections.branchStatus.aheadCommits,
+        behindCommits: fileCollections.branchStatus.behindCommits,
+      },
+    };
+
+    return publishGitState(pi, cwd, state);
+  } catch (error) {
+    if (isStaleSessionReplacementContextError(error)) {
+      return getGitState(cwd);
+    }
+
+    throw error;
   }
-
-  const [fileCollections, projectInfo] = await Promise.all([
-    loadGitFileCollections(pi, ctx, gitRoot),
-    loadGitProjectInfo(pi, ctx, gitRoot),
-  ]);
-
-  const state: GitRuntimeState = {
-    gitRoot,
-    trackedFiles: fileCollections.trackedFiles,
-    trackedSet: fileCollections.trackedSet,
-    statusMap: fileCollections.statusMap,
-    projectInfo: {
-      ...projectInfo,
-      dirty: fileCollections.branchStatus.dirty,
-      aheadCommits: fileCollections.branchStatus.aheadCommits,
-      behindCommits: fileCollections.branchStatus.behindCommits,
-    },
-  };
-
-  return publishGitState(pi, ctx.cwd, state);
 }
 
 export default function gitStateExtension(pi: ExtensionAPI): void {

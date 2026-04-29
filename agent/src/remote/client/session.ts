@@ -11,6 +11,7 @@ import { RemoteApiClient } from "../remote-api-client.js";
 import type { RemoteExtensionMetadata, SessionSnapshot } from "../schemas.js";
 import type { RemoteSessionContract } from "./session-deps.js";
 import { markNonAuthoritativeRuntime } from "../../extensions/runtime-authority.js";
+import { seedHydratedExecutorState } from "../../extensions/executor/status.js";
 import {
   createForwardingEventBus,
   requireResourceLoaderEventBus,
@@ -112,6 +113,9 @@ export class RemoteAgentSession
         clientExtensionLoader,
       },
     );
+    if (snapshot.executorState !== undefined) {
+      seedHydratedExecutorState(session.sessionManager, snapshot.executorState);
+    }
     session.syncResolvedModel(snapshot.model);
     await session.refreshForkMessages();
     session.startPolling();

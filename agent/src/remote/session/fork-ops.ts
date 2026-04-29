@@ -59,10 +59,8 @@ export async function forkPersistentSessionRecord(input: {
   getAppStreamOffset: () => string;
   now: () => number;
 }): Promise<ForkSessionResponse> {
-  const sourceManager =
-    input.request.entryId !== undefined && input.loadedRuntimeSession !== undefined
-      ? input.loadedRuntimeSession.sessionManager
-      : SessionManager.open(input.catalogRecord.sessionPath);
+  const sourceManager = SessionManager.open(input.catalogRecord.sessionPath);
+  const loadedSessionManager = input.loadedRuntimeSession?.sessionManager;
   const targetWorkspaceCwd = input.request.workspaceCwd ?? input.catalogRecord.cwd;
 
   let forkedSessionManager: SessionManager;
@@ -80,7 +78,8 @@ export async function forkPersistentSessionRecord(input: {
     if (beforeForkResult.cancelled) {
       throw new RemoteError("Session fork cancelled", 409);
     }
-    const selectedEntry = sourceManager.getEntry(entryId);
+    const selectedEntry =
+      loadedSessionManager?.getEntry(entryId) ?? sourceManager.getEntry(entryId);
     if (selectedEntry === undefined) {
       throw new RemoteError("Invalid entry ID for forking", 404);
     }

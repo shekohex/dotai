@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { sign } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
@@ -2145,7 +2145,7 @@ timedTest("remote runtime exposes fork messages and can fork persisted session",
       expect(result.cancelled).toBe(false);
       expect(result.selectedText).toBe("Say hello");
       expect(runtime.session.sessionManager.getSessionId()).not.toBe(originalSessionId);
-      const snapshot = await appClient.getAppSnapshot();
+      const snapshot = await waitForAppSessionSummaryCount(appClient, 2);
       expect(snapshot.sessionSummaries.length).toBe(2);
     } finally {
       await runtime.dispose();
@@ -2968,6 +2968,64 @@ timedTest("remote no-session creates ephemeral session summary", async () => {
     await harness.cleanup();
   }
 });
+
+timedTest(
+  "persistent remote session file is not duplicated before first assistant flush",
+  async () => {
+    const harness = await createTempPersistedRuntimeHarness({
+      prefix: "remote-persistent-session-flush-",
+    });
+    const registry = new SessionRegistry({
+      streams: new InMemoryDurableStreamStore(),
+      runtimeFactory: harness.runtimeFactory,
+    });
+    const auth = testAuthSession();
+
+    try {
+      const created = await registry.createSession(
+        {
+          workspaceCwd: harness.workspaceDir,
+          sessionName: "Initial name",
+        },
+        auth,
+        "conn-a",
+      );
+
+      const sessionFileAfterCreate = await waitForPersistedSessionFile(
+        harness.sessionDir,
+        created.sessionId,
+      );
+      await expectSingleSessionHeaderFile(sessionFileAfterCreate);
+
+      await registry.updateSessionName(
+        created.sessionId,
+        {
+          sessionName: "Renamed before first reply",
+        },
+        auth,
+        "conn-a",
+      );
+
+      await expectSingleSessionHeaderFile(sessionFileAfterCreate);
+
+      await registry.prompt(
+        created.sessionId,
+        {
+          text: "Say hello",
+        },
+        auth,
+        "conn-a",
+      );
+
+      await waitForSessionToBecomeIdle(registry, created.sessionId, auth);
+
+      await expectSingleSessionHeaderFile(sessionFileAfterCreate);
+    } finally {
+      await registry.dispose();
+      await harness.cleanup();
+    }
+  },
+);
 
 timedTest("ephemeral remote session cleans up after last detach", async () => {
   const harness = await createTempPersistedRuntimeHarness({
@@ -3878,3 +3936,71 @@ timedTest(
     expect(restored).toBe(undefined);
   },
 );
+
+async function waitForPersistedSessionFile(sessionDir: string, sessionId: string): Promise<string> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const entries = await readdir(sessionDir);
+    const match = entries.find((entry) => entry.endsWith(`${sessionId}.jsonl`));
+    if (match !== undefined) {
+      return join(sessionDir, match);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(`Timed out waiting for persisted session file for ${sessionId}`);
+}
+
+async function expectSingleSessionHeaderFile(sessionFile: string): Promise<void> {
+  const lines = (await readFile(sessionFile, "utf8"))
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as { type: string; id?: string });
+  const headerCount = lines.filter((line) => line.type === "session").length;
+  const entryIds = lines.flatMap((line) => (typeof line.id === "string" ? [line.id] : []));
+
+  expect(headerCount).toBe(1);
+  expect(new Set(entryIds).size).toBe(entryIds.length);
+}
+
+async function waitForSessionToBecomeIdle(
+  registry: SessionRegistry,
+  sessionId: string,
+  auth: ReturnType<typeof testAuthSession>,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const snapshot = registry.getSessionSnapshot(sessionId, auth, "conn-a");
+    if (snapshot.status === "idle") {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(`Timed out waiting for session ${sessionId} to become idle`);
+}
+
+async function waitForAppSessionSummaryCount(
+  client: RemoteApiClient,
+  expectedCount: number,
+): Promise<Awaited<ReturnType<RemoteApiClient["getAppSnapshot"]>>> {
+  const deadline = Date.now() + 10_000;
+  let lastSnapshot: Awaited<ReturnType<RemoteApiClient["getAppSnapshot"]>> | undefined;
+  while (Date.now() < deadline) {
+    const snapshot = await client.getAppSnapshot();
+    lastSnapshot = snapshot;
+    if (snapshot.sessionSummaries.length === expectedCount) {
+      return snapshot;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  const labels =
+    lastSnapshot?.sessionSummaries.map(
+      (summary) => `${summary.sessionId}:${summary.lifecycle.status}`,
+    ) ?? [];
+  throw new Error(
+    `Timed out waiting for app snapshot summary count ${expectedCount}. Last summaries: ${labels.join(", ")}`,
+  );
+}

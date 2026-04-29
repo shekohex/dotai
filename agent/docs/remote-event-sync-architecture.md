@@ -13,7 +13,7 @@ Primary problem:
 
 - Server crashes under high-velocity event load.
 - Current remote transport retains too much transient data in memory.
-- Requirement is now narrower and clearer: when a client disconnects because of transient network issue and reconnects, catch up fast to current state.
+- Requirement is now narrower and clearer: when a client disconnects or server restarts, recover fast to current durable state.
 - Generic replay/history for all transient events is not required.
 
 Relevant current local files:
@@ -52,6 +52,7 @@ Success criteria:
 
 - server memory stays bounded under high-velocity streaming updates
 - reconnect after transient network failure is fast and correct
+- recovery after server crash/restart restores correct durable state
 - client converges to current authoritative state using minimum useful data
 - connected clients still get responsive live progress updates
 - architecture does not require generic replay of transient streaming history
@@ -63,6 +64,8 @@ Constraints:
 - reuse existing session JSONL-backed committed history where it already solves the need
 - do not introduce a new durable replay subsystem unless snapshot + committed history prove insufficient
 - optimize for current-state recovery, not historical event preservation
+- single server process with local disk is deployment target
+- full SSE is target transport; long-poll and stream-offset replay are legacy
 
 Stop rules:
 
@@ -72,13 +75,15 @@ Stop rules:
 
 Desired client behavior:
 
-1. Client connects.
-2. Client receives snapshot of authoritative current state.
-3. Client subscribes to live updates.
-4. If disconnected because of transient network issue, client reconnects quickly.
-5. Server sends enough current state to restore convergence fast.
-6. Client does not need full replay of all missed transient progress events.
-7. Client converges to current server state with minimum useful data.
+1. Client opens per-session SSE sync endpoint.
+2. Server attaches live subscription before sending initial data.
+3. Server emits `server.connected`.
+4. Server emits `snapshot` event with authoritative state and session version.
+5. Server emits live `patch` events for connected clients.
+6. If disconnected because of transient network issue, client reconnects to same SSE sync endpoint.
+7. If server restarts, it rebuilds durable state from session JSONL, marks interrupted runtime domains explicitly, then emits fresh snapshot.
+8. Client does not need full replay of missed transient progress events.
+9. Client converges to current server state with minimum useful data.
 
 ## Current Local Architecture
 
@@ -307,6 +312,26 @@ Working recommendation:
 - treat missed transient progress updates as disposable unless they still affect current authoritative state
 - move server shape toward `opencode` bus-first model instead of evolving current stream-store-first model
 
+### Final Locked Decisions
+
+- transport is per-session SSE only
+- one sync stream emits `server.connected`, then `snapshot`, then live `patch` events
+- server subscribes client before emitting snapshot to avoid snapshot/live race
+- snapshot payload is `{ type: "snapshot", version, snapshot }`
+- client reconciliation is merge by durable identity, but server snapshot wins on conflict
+- single monotonic session version exists across snapshot and live patches while process is alive
+- persisted version resumes from last durable version after crash/restart; lost in-memory live-only versions are not preserved
+- session snapshot includes most recent 100 durable entries
+- older durable history comes from paginated session entries JSONL endpoint
+- long-poll, stream offsets, and replay cursors are removed from target design
+- crash/restart follows upstream Pi semantics for partials: active assistant/tool partials are not restored from durable storage
+- crash/restart recovery restores durable history plus explicit interrupted state for runtime domains
+- queue, retry, compaction, and bash state persist as typed durable transition entries
+- runtime domains rebuilt from durable reducers mark any previously running domain as `interrupted` on boot
+- interrupted state is represented in snapshot fields, not synthetic transcript entries
+- extensions declare sync class in event contract: `sync: "ephemeral" | "replaceable" | "durable"`
+- extension durable state persists through session JSONL entries and is rebuilt by extension reducers on boot
+
 ### Key principle
 
 If event B fully supersedes event A for convergence, A should be replaceable or droppable.
@@ -326,12 +351,17 @@ Needed to restore client after reconnect.
 Examples:
 
 - committed transcript state
-- current active partial assistant state
-- current active partial tool state
+- current active partial assistant state while server process is still alive
+- current active partial tool state while server process is still alive
 - queue state
 - retry and compaction state
 - bash runtime state
 - pending UI state if needed
+
+Important limit after final decisions:
+
+- after crash/restart we follow upstream Pi semantics and do not restore in-flight assistant/tool partials from durable storage
+- after crash/restart authoritative snapshot restores durable state and marks previously running domains as `interrupted`
 
 #### Replaceable progress updates
 
@@ -352,8 +382,21 @@ Examples:
 
 - committed message entries
 - compaction entries
+- queue transition entries
+- retry transition entries
+- bash transition entries
 - custom persisted entries
 - branch/session history already stored by session manager
+
+#### Extension sync classes
+
+Declared by extension event contract.
+
+Classes:
+
+- `ephemeral`: live SSE only
+- `replaceable`: live SSE only, newer event supersedes older state for same semantic slot
+- `durable`: persisted via session JSONL entries and rebuilt by server-side reducer on boot
 
 ## Proposed Target Model
 
@@ -361,25 +404,26 @@ Examples:
 
 #### 1. Authoritative session state
 
-Per-session in-memory canonical state object.
+Per-session canonical state object built from durable session entries plus live runtime overlays when runtime exists.
 
 Should include:
 
 - committed transcript
-- current active assistant partial state
-- current active tool partial state
+- current active assistant partial state only while process stays alive
+- current active tool partial state only while process stays alive
 - queue state
 - retry state
 - compaction state
 - bash state
 - pending UI requests
 - extension UI state if client needs it
+- interrupted runtime state after crash/restart
 
 This becomes source of truth for snapshots.
 
 #### 2. Live event bus and transport
 
-Live SSE or websocket channel for connected clients only.
+Live SSE channel for connected clients only.
 
 Properties:
 
@@ -387,11 +431,14 @@ Properties:
 - no requirement to serve as long-term replay store
 - may use tiny bounded coalescing queue internally for transport smoothing
 - should not retain every transient update for reconnect
+- no offset or cursor replay semantics
+- first stream events are `server.connected` then `snapshot`
 
 Preferred implementation:
 
 - runtime/session changes publish to internal bus
 - SSE subscribes to bus
+- server attaches subscription before emitting initial snapshot
 - transport emits connection lifecycle and heartbeat separately
 - retained stream arrays are not primary fanout mechanism
 
@@ -403,14 +450,14 @@ Properties:
 
 - dedicated HTTP APIs
 - paginated via `entriesLimit` and `entriesOffset`
-- good for committed transcript/history recovery
-- not sufficient alone for active in-flight runtime state
+- good for committed durable history recovery
+- not used for live catch-up replay
 
 Preferred implementation:
 
-- session snapshot endpoint returns authoritative current state
-- session history endpoint returns committed entries when needed
-- reconnect starts with fresh bootstrap call rather than stream offset catch-up
+- SSE sync endpoint emits authoritative `snapshot` event inline
+- session history endpoint returns paginated durable entries when needed
+- reconnect starts with fresh inline snapshot rather than stream offset catch-up
 
 ## Ring Buffer Notes
 
@@ -432,13 +479,15 @@ Not required uses:
 
 Recommended reconnect flow:
 
-1. Client connects and requests current session snapshot.
-2. Server responds with authoritative snapshot and snapshot sequence/version.
-3. Client subscribes to live updates from that point.
-4. If client disconnects, it reconnects and asks for current session snapshot again.
-5. Server returns authoritative current snapshot.
-6. If session is still running, snapshot includes current active partial state.
-7. Client replaces or reconciles local state from snapshot and resumes live subscription.
+1. Client opens per-session SSE sync endpoint.
+2. Server attaches live subscriber before emitting any sync data.
+3. Server emits `server.connected`.
+4. Server emits `snapshot` event carrying authoritative snapshot and current durable version.
+5. Client merges durable structures by identity, but snapshot wins on conflict.
+6. Server emits live `patch` events after snapshot.
+7. If client disconnects, it reconnects to same SSE sync endpoint and receives fresh snapshot again.
+8. If server crashed and restarted, it first rebuilds state from session JSONL reducers, marks previously running domains as `interrupted`, then emits fresh snapshot.
+9. No replay of missed transient `message_update` or `tool_execution_update` events is required.
 
 This is intentionally closer to `opencode` than to current stream-offset replay behavior.
 

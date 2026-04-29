@@ -9,7 +9,11 @@ export function markNonAuthoritativeRuntime(sessionManager: object): void {
   flaggedSessionManager[nonAuthoritativeRuntimeSymbol] = true;
 }
 
-export function isAuthoritativeRuntime(context: { sessionManager: object }): boolean {
+export function isAuthoritativeRuntime(context: { sessionManager?: object }): boolean {
+  if (context.sessionManager === undefined) {
+    return true;
+  }
+
   const flaggedSessionManager = context.sessionManager as SessionManagerLikeWithAuthorityFlag;
   return flaggedSessionManager[nonAuthoritativeRuntimeSymbol] !== true;
 }

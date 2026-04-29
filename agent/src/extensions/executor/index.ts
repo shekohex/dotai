@@ -1,13 +1,35 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
+import { isAuthoritativeRuntime } from "../runtime-authority.js";
 import { registerExecutorCommands } from "./commands.js";
 import { getExecutorSettings } from "./settings.js";
-import { clearExecutorState, connectExecutor } from "./status.js";
+import {
+  applyExecutorUpdatedEvent,
+  clearExecutorState,
+  connectExecutor,
+  EXECUTOR_UPDATED_EVENT,
+  hydrateExecutorState,
+  readHydratedExecutorState,
+} from "./status.js";
 import { isExecutorToolDetails, loadExecutorPrompt, registerExecutorTools } from "./tools.js";
 
 export default function (pi: ExtensionAPI): void {
+  pi.events.on?.(EXECUTOR_UPDATED_EVENT, (data) => {
+    applyExecutorUpdatedEvent(data);
+  });
+
   pi.on("session_start", async (_event, ctx) => {
     await registerExecutorTools(pi, ctx.cwd, ctx.hasUI);
+
+    if (!isAuthoritativeRuntime(ctx)) {
+      const hydratedState = readHydratedExecutorState(ctx.sessionManager);
+      if (hydratedState) {
+        hydrateExecutorState(ctx.cwd, hydratedState);
+      } else {
+        clearExecutorState(pi, ctx.cwd);
+      }
+      return;
+    }
 
     const settings = getExecutorSettings();
 
@@ -43,6 +65,10 @@ export default function (pi: ExtensionAPI): void {
   registerExecutorCommands(pi);
 
   pi.on("session_shutdown", (_event, ctx) => {
+    if (!isAuthoritativeRuntime(ctx)) {
+      return;
+    }
+
     clearExecutorState(pi, ctx.cwd);
   });
 }

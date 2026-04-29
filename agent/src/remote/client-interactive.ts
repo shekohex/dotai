@@ -306,6 +306,14 @@ function findMatchingRemoteSessions(snapshot: AppSnapshot, query: string) {
   if (normalizedQuery.length === 0) {
     return [];
   }
+
+  const exactSessionIdMatches = snapshot.sessionSummaries.filter(
+    (summary) => summary.sessionId.toLowerCase() === normalizedQuery,
+  );
+  if (exactSessionIdMatches.length > 0) {
+    return exactSessionIdMatches;
+  }
+
   return snapshot.sessionSummaries.filter((summary) => {
     const sessionId = summary.sessionId.toLowerCase();
     const sessionName = summary.sessionName?.toLowerCase() ?? "";

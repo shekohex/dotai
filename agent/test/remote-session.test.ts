@@ -2652,6 +2652,76 @@ timedTest(
   },
 );
 
+timedTest("remote session resolution prefers exact session id over fuzzy matches", async () => {
+  const snapshot = {
+    serverInfo: {
+      name: "pi-remote",
+      version: "0.1.0",
+      now: 100,
+    },
+    currentClientAuthInfo: {
+      clientId: "client-1",
+      keyId: "dev",
+      tokenExpiresAt: 200,
+    },
+    sessionSummaries: [
+      {
+        sessionId: "019dd960-82a8-70ee-8988-9a030be2becd",
+        sessionName: undefined,
+        messageCount: 1,
+        status: "idle",
+        cwd: "/workspace/a",
+        createdAt: 10,
+        updatedAt: 20,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+        lastSessionStreamOffset: "1-0",
+      },
+      {
+        sessionId: "80201b01-9672-4c43-a302-228f2e602fe7",
+        sessionName: "[review] 019dd960-82a8-70ee-8988-9a030be2becd",
+        messageCount: 1,
+        status: "idle",
+        cwd: "/workspace/a",
+        createdAt: 30,
+        updatedAt: 40,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+        lastSessionStreamOffset: "2-0",
+      },
+    ],
+    recentNotices: [],
+    defaultAttachSessionId: undefined,
+  } as const;
+
+  expect(
+    resolveRemoteSessionId({
+      snapshot,
+      parsed: {
+        remoteOrigin: "http://localhost:3000",
+        keyId: "dev",
+        sessionId: "019dd960-82a8-70ee-8988-9a030be2becd",
+        privateKey: undefined,
+        privateKeyPath: undefined,
+        resume: false,
+        continueSession: false,
+        forkSessionId: undefined,
+        noSession: false,
+        exportPath: undefined,
+        sessionDir: undefined,
+        sessionName: undefined,
+        workspaceCwd: "/workspace/a",
+        verbose: false,
+        initialMessage: undefined,
+        initialMessages: [],
+      },
+    }),
+  ).toEqual({
+    sessionId: "019dd960-82a8-70ee-8988-9a030be2becd",
+    createNewSession: false,
+  });
+});
+
 timedTest("remote session resolution normalizes workspace cwd for continue", async () => {
   const snapshot = {
     serverInfo: {

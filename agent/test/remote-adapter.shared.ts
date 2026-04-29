@@ -1371,6 +1371,25 @@ export async function createRemoteRuntime(
   },
 ) {
   const workspaceCwd = options.workspaceCwd ?? (options.sessionId ? undefined : options.cwd);
+  let sessionId = options.sessionId;
+
+  if (sessionId === undefined && workspaceCwd === undefined) {
+    const client = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: {
+        keyId: "dev",
+        privateKey: options.privateKeyPem,
+      },
+      fetchImpl: createInProcessFetch(app),
+    });
+    await client.authenticate();
+    const snapshot = await client.getAppSnapshot();
+    sessionId =
+      snapshot.defaultAttachSessionId ??
+      snapshot.sessionSummaries.toSorted((left, right) => right.updatedAt - left.updatedAt)[0]
+        ?.sessionId;
+  }
+
   return RemoteAgentSessionRuntime.create({
     origin: "http://localhost:3000",
     auth: {
@@ -1378,7 +1397,7 @@ export async function createRemoteRuntime(
       privateKey: options.privateKeyPem,
     },
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
-    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+    ...(sessionId ? { sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(workspaceCwd ? { workspaceCwd } : {}),
     ...(options.clientExtensionMetadata

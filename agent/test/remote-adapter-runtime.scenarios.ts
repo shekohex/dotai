@@ -2089,6 +2089,7 @@ timedTest(
       runtimeAny.queueDepth = 2;
       runtimeAny.queuedSteeringMessages = ["stale steer"];
       runtimeAny.queuedFollowUpMessages = ["stale follow up"];
+      const waitForIdlePromise = runtime.session.waitForIdle();
 
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if (unauthorizedInjected && !runtime.session.isStreaming && !runtime.session.isRetrying) {
@@ -2104,6 +2105,7 @@ timedTest(
       expect(runtime.session.pendingMessageCount).toBe(0);
       expect(runtime.session.getSteeringMessages()).toEqual([]);
       expect(runtime.session.getFollowUpMessages()).toEqual([]);
+      await expect(waitForIdlePromise).resolves.toBeUndefined();
     } finally {
       await runtime?.dispose();
       await remoteA?.dispose();

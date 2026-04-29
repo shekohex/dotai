@@ -326,13 +326,6 @@ export function resolveRemoteSessionId(input: {
   cwd?: string;
 }): { sessionId?: string; createNewSession: boolean } {
   const workspaceCwd = normalizeRemoteWorkspaceCwd(input.parsed.workspaceCwd ?? input.cwd);
-  if (input.parsed.noSession) {
-    if (workspaceCwd === undefined || workspaceCwd.length === 0) {
-      throw new Error("Remote new session requires --workspace-cwd");
-    }
-    return { createNewSession: true };
-  }
-
   if (input.parsed.sessionId !== undefined) {
     const matches = findMatchingRemoteSessions(input.snapshot, input.parsed.sessionId);
     if (matches.length === 0) {
@@ -353,37 +346,6 @@ export function resolveRemoteSessionId(input: {
     return { sessionId: selectedMatch.sessionId, createNewSession: false };
   }
 
-  if (input.parsed.resume) {
-    const defaultSessionId = input.snapshot.defaultAttachSessionId;
-    if (defaultSessionId !== undefined) {
-      return { sessionId: defaultSessionId, createNewSession: false };
-    }
-    const latest = input.snapshot.sessionSummaries.toSorted(
-      (left, right) => right.updatedAt - left.updatedAt,
-    )[0];
-    if (latest !== undefined) {
-      return { sessionId: latest.sessionId, createNewSession: false };
-    }
-    if (workspaceCwd === undefined || workspaceCwd.length === 0) {
-      throw new Error("Remote new session requires --workspace-cwd");
-    }
-    return { createNewSession: true };
-  }
-
-  if (input.parsed.continueSession) {
-    if (workspaceCwd === undefined || workspaceCwd.length === 0) {
-      throw new Error("Remote --continue requires --workspace-cwd");
-    }
-    const workspaceMatches = input.snapshot.sessionSummaries
-      .filter((summary) => normalizeRemoteWorkspaceCwd(summary.cwd) === workspaceCwd)
-      .toSorted((left, right) => right.updatedAt - left.updatedAt);
-    const latestWorkspaceSession = workspaceMatches[0];
-    if (latestWorkspaceSession !== undefined) {
-      return { sessionId: latestWorkspaceSession.sessionId, createNewSession: false };
-    }
-    return { createNewSession: true };
-  }
-
   if (input.parsed.forkSessionId !== undefined) {
     const matches = findMatchingRemoteSessions(input.snapshot, input.parsed.forkSessionId);
     if (matches.length === 0) {
@@ -402,7 +364,19 @@ export function resolveRemoteSessionId(input: {
     return { sessionId: selectedMatch.sessionId, createNewSession: false };
   }
 
-  if (workspaceCwd !== undefined && workspaceCwd.length > 0) {
+  if (workspaceCwd === undefined || workspaceCwd.length === 0) {
+    throw new Error("Remote session startup requires --workspace-cwd");
+  }
+
+  if (input.parsed.noSession) {
+    return { createNewSession: true };
+  }
+
+  if (input.parsed.resume) {
+    throw new Error("Remote --resume requires explicit session selection");
+  }
+
+  if (input.parsed.continueSession) {
     const workspaceMatches = input.snapshot.sessionSummaries
       .filter((summary) => normalizeRemoteWorkspaceCwd(summary.cwd) === workspaceCwd)
       .toSorted((left, right) => right.updatedAt - left.updatedAt);
@@ -410,17 +384,7 @@ export function resolveRemoteSessionId(input: {
     if (latestWorkspaceSession !== undefined) {
       return { sessionId: latestWorkspaceSession.sessionId, createNewSession: false };
     }
-  }
-
-  if (input.snapshot.defaultAttachSessionId !== undefined) {
-    return { sessionId: input.snapshot.defaultAttachSessionId, createNewSession: false };
-  }
-
-  const latestSession = input.snapshot.sessionSummaries.toSorted(
-    (left, right) => right.updatedAt - left.updatedAt,
-  )[0];
-  if (latestSession !== undefined) {
-    return { sessionId: latestSession.sessionId, createNewSession: false };
+    return { createNewSession: true };
   }
 
   return { createNewSession: true };
@@ -451,11 +415,16 @@ export async function resolveRemoteStartupSelection(input: {
   cwd?: string;
   selectSessionId?: (snapshot: AppSnapshot, workspaceCwd?: string) => Promise<string | undefined>;
 }): Promise<{ sessionId?: string; createNewSession: boolean } | undefined> {
+  const workspaceCwd = normalizeRemoteWorkspaceCwd(input.parsed.workspaceCwd ?? input.cwd);
+  if (
+    input.parsed.sessionId === undefined &&
+    (workspaceCwd === undefined || workspaceCwd.length === 0)
+  ) {
+    throw new Error("Remote session startup requires --workspace-cwd");
+  }
+
   const selectedResumeSessionId = input.parsed.resume
-    ? await (input.selectSessionId ?? selectRemoteSessionId)(
-        input.snapshot,
-        input.parsed.workspaceCwd,
-      )
+    ? await (input.selectSessionId ?? selectRemoteSessionId)(input.snapshot, workspaceCwd)
     : undefined;
   if (input.parsed.resume && selectedResumeSessionId === undefined) {
     return undefined;

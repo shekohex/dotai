@@ -63,13 +63,10 @@ export class RemoteAgentSessionRuntime implements RemoteRuntimeContract {
     });
 
     await client.authenticate();
-    const appSnapshot = await client.getAppSnapshot();
-    const resolvedSessionId =
-      options.createNewSession === true
-        ? undefined
-        : (options.sessionId ?? appSnapshot.defaultAttachSessionId);
+    const resolvedSessionId = options.sessionId;
+    const createNewSession = options.createNewSession === true || resolvedSessionId === undefined;
     const workspaceCwd = requireWorkspaceCwdForCreate({
-      createNewSession: options.createNewSession === true || resolvedSessionId === undefined,
+      createNewSession,
       workspaceCwd: options.workspaceCwd,
     });
     const attachedSessionId =

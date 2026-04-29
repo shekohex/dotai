@@ -1337,6 +1337,7 @@ async function createRemoteRuntime(
       privateKey: options.privateKeyPem,
     },
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+    ...(options.sessionId ? {} : { createNewSession: true }),
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(workspaceCwd ? { workspaceCwd } : {}),
@@ -1611,6 +1612,27 @@ timedTest("archive and delete updates are visible to multiple remote clients", a
       expect(createResponse.status).toBe(201);
       const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
 
+      const apiClient = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remote.app),
+      });
+      await apiClient.authenticate();
+
+      const promptResponse = await remote.app.request(`/v1/sessions/${sessionId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenA}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "Persist before archive" }),
+      });
+      expect(promptResponse.status).toBe(202);
+      await waitForRemoteSessionMessageCount(apiClient, sessionId, 2);
+
       const archiveResponse = await remote.app.request(`/v1/sessions/${sessionId}/archive`, {
         method: "POST",
         headers: { authorization: `Bearer ${tokenA}` },
@@ -1675,16 +1697,18 @@ timedTest("archive and delete updates are visible to multiple remote clients", a
       expect(appEventsBResponse.status).toBe(200);
       const appEventsA = (await appEventsAResponse.json()) as { events: Array<{ kind: string }> };
       const appEventsB = (await appEventsBResponse.json()) as { events: Array<{ kind: string }> };
-      expect(appEventsA.events.map((event) => event.kind)).toEqual([
-        "session_created",
-        "session_summary_updated",
-        "session_closed",
-      ]);
-      expect(appEventsB.events.map((event) => event.kind)).toEqual([
-        "session_created",
-        "session_summary_updated",
-        "session_closed",
-      ]);
+      const eventKindsA = appEventsA.events.map((event) => event.kind);
+      const eventKindsB = appEventsB.events.map((event) => event.kind);
+      expect(eventKindsA[0]).toBe("session_created");
+      expect(eventKindsA.at(-1)).toBe("session_closed");
+      expect(
+        eventKindsA.filter((kind) => kind === "session_summary_updated").length,
+      ).toBeGreaterThan(0);
+      expect(eventKindsB[0]).toBe("session_created");
+      expect(eventKindsB.at(-1)).toBe("session_closed");
+      expect(
+        eventKindsB.filter((kind) => kind === "session_summary_updated").length,
+      ).toBeGreaterThan(0);
     } finally {
       await remote.dispose();
     }
@@ -2117,10 +2141,6 @@ timedTest("remote runtime exposes fork messages and can fork persisted session",
     });
 
     try {
-      await runtime.session.prompt("Say hello");
-      await runtime.session.agent.waitForIdle();
-      await runtime.session.reload();
-
       const appClient = new RemoteApiClient({
         origin: "http://localhost:3000",
         auth: {
@@ -2130,7 +2150,16 @@ timedTest("remote runtime exposes fork messages and can fork persisted session",
         fetchImpl: createInProcessFetch(remote.app),
       });
       await appClient.authenticate();
-      const remoteForkMessages = await appClient.getSessionForkMessages(
+      await appClient.prompt(runtime.session.sessionManager.getSessionId(), { text: "Say hello" });
+      await waitForRemoteSessionMessageCount(
+        appClient,
+        runtime.session.sessionManager.getSessionId(),
+        2,
+      );
+      await runtime.session.reload();
+
+      const remoteForkMessages = await waitForRemoteForkMessages(
+        appClient,
         runtime.session.sessionManager.getSessionId(),
       );
       expect(remoteForkMessages.messages.length).toBe(1);
@@ -2141,7 +2170,7 @@ timedTest("remote runtime exposes fork messages and can fork persisted session",
       expect(forkMessages[0]?.text).toBe("Say hello");
 
       const originalSessionId = runtime.session.sessionManager.getSessionId();
-      const result = await runtime.fork(forkMessages[0]!.entryId);
+      const result = await runtime.fork(remoteForkMessages.messages[0]!.entryId);
       expect(result.cancelled).toBe(false);
       expect(result.selectedText).toBe("Say hello");
       expect(runtime.session.sessionManager.getSessionId()).not.toBe(originalSessionId);
@@ -2439,6 +2468,7 @@ timedTest(
           exportPath: undefined,
           sessionDir: undefined,
           sessionName: undefined,
+          workspaceCwd: "/workspace/a",
           verbose: false,
           initialMessage: undefined,
           initialMessages: [],
@@ -2448,6 +2478,56 @@ timedTest(
     ).toEqual({ sessionId: "session-c", createNewSession: false });
 
     expect(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: "Gamma",
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: undefined,
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          workspaceCwd: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: undefined,
+      }),
+    ).toEqual({ sessionId: "session-c", createNewSession: false });
+
+    expect(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: undefined,
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: undefined,
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          workspaceCwd: "/workspace/a",
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: "/workspace/a",
+      }),
+    ).toEqual({ createNewSession: true });
+
+    expect(() =>
       resolveRemoteSessionId({
         snapshot,
         parsed: {
@@ -2469,7 +2549,7 @@ timedTest(
         },
         cwd: "/workspace/a",
       }),
-    ).toEqual({ sessionId: "session-b", createNewSession: false });
+    ).toThrow(/explicit session selection/);
 
     expect(
       resolveRemoteSessionId({
@@ -2520,6 +2600,31 @@ timedTest(
         cwd: undefined,
       }),
     ).toEqual({ createNewSession: true });
+
+    expect(
+      resolveRemoteSessionId({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: undefined,
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: "Alpha",
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          workspaceCwd: "/workspace/a",
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+        cwd: undefined,
+      }),
+    ).toEqual({ sessionId: "session-a", createNewSession: false });
 
     expect(
       resolveRemoteSessionId({
@@ -2675,6 +2780,175 @@ timedTest("remote startup selection uses resume picker choice", async () => {
   expect(selectedWorkspaceCwd).toBe("/workspace/a");
   expect(selection).toEqual({ sessionId: "session-a", createNewSession: false });
 });
+
+timedTest("remote startup selection requires workspace cwd for resume picker", async () => {
+  const snapshot = {
+    serverInfo: {
+      name: "pi-remote",
+      version: "0.1.0",
+      now: 100,
+    },
+    currentClientAuthInfo: {
+      clientId: "client-1",
+      keyId: "dev",
+      tokenExpiresAt: 200,
+    },
+    sessionSummaries: [
+      {
+        sessionId: "session-a",
+        sessionName: "Alpha",
+        messageCount: 1,
+        status: "idle",
+        cwd: "/workspace/a",
+        createdAt: 10,
+        updatedAt: 20,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+        lastSessionStreamOffset: "1-0",
+      },
+    ],
+    recentNotices: [],
+    defaultAttachSessionId: undefined,
+  } as const;
+
+  await expect(
+    resolveRemoteStartupSelection({
+      snapshot,
+      parsed: {
+        remoteOrigin: "http://localhost:3000",
+        keyId: "dev",
+        sessionId: undefined,
+        privateKey: undefined,
+        privateKeyPath: undefined,
+        resume: true,
+        continueSession: false,
+        forkSessionId: undefined,
+        noSession: false,
+        exportPath: undefined,
+        sessionDir: undefined,
+        sessionName: undefined,
+        workspaceCwd: undefined,
+        verbose: false,
+        initialMessage: undefined,
+        initialMessages: [],
+      },
+      selectSessionId: async () => "session-a",
+    }),
+  ).rejects.toThrow(/--workspace-cwd/);
+});
+
+timedTest("remote startup selection requires workspace cwd for startup fork", async () => {
+  const snapshot = {
+    serverInfo: {
+      name: "pi-remote",
+      version: "0.1.0",
+      now: 100,
+    },
+    currentClientAuthInfo: {
+      clientId: "client-1",
+      keyId: "dev",
+      tokenExpiresAt: 200,
+    },
+    sessionSummaries: [
+      {
+        sessionId: "session-a",
+        sessionName: "Alpha",
+        messageCount: 1,
+        status: "idle",
+        cwd: "/workspace/a",
+        createdAt: 10,
+        updatedAt: 20,
+        parentSessionId: null,
+        lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+        lastSessionStreamOffset: "1-0",
+      },
+    ],
+    recentNotices: [],
+    defaultAttachSessionId: undefined,
+  } as const;
+
+  await expect(
+    resolveRemoteStartupSelection({
+      snapshot,
+      parsed: {
+        remoteOrigin: "http://localhost:3000",
+        keyId: "dev",
+        sessionId: undefined,
+        privateKey: undefined,
+        privateKeyPath: undefined,
+        resume: false,
+        continueSession: false,
+        forkSessionId: "Alpha",
+        noSession: false,
+        exportPath: undefined,
+        sessionDir: undefined,
+        sessionName: undefined,
+        workspaceCwd: undefined,
+        verbose: false,
+        initialMessage: undefined,
+        initialMessages: [],
+      },
+    }),
+  ).rejects.toThrow(/--workspace-cwd/);
+});
+
+timedTest(
+  "remote startup selection allows explicit session attach without workspace cwd",
+  async () => {
+    const snapshot = {
+      serverInfo: {
+        name: "pi-remote",
+        version: "0.1.0",
+        now: 100,
+      },
+      currentClientAuthInfo: {
+        clientId: "client-1",
+        keyId: "dev",
+        tokenExpiresAt: 200,
+      },
+      sessionSummaries: [
+        {
+          sessionId: "session-a",
+          sessionName: "Alpha",
+          messageCount: 1,
+          status: "idle",
+          cwd: "/workspace/a",
+          createdAt: 10,
+          updatedAt: 20,
+          parentSessionId: null,
+          lifecycle: { persistence: "persistent", loaded: false, state: "active" },
+          lastSessionStreamOffset: "1-0",
+        },
+      ],
+      recentNotices: [],
+      defaultAttachSessionId: undefined,
+    } as const;
+
+    await expect(
+      resolveRemoteStartupSelection({
+        snapshot,
+        parsed: {
+          remoteOrigin: "http://localhost:3000",
+          keyId: "dev",
+          sessionId: "Alpha",
+          privateKey: undefined,
+          privateKeyPath: undefined,
+          resume: false,
+          continueSession: false,
+          forkSessionId: undefined,
+          noSession: false,
+          exportPath: undefined,
+          sessionDir: undefined,
+          sessionName: undefined,
+          workspaceCwd: undefined,
+          verbose: false,
+          initialMessage: undefined,
+          initialMessages: [],
+        },
+      }),
+    ).resolves.toEqual({ sessionId: "session-a", createNewSession: false });
+  },
+);
 
 timedTest("remote picker session info prefers firstUserMessage for firstMessage", async () => {
   const sessionInfo = toRemoteSessionInfo({
@@ -2969,6 +3243,125 @@ timedTest("remote no-session creates ephemeral session summary", async () => {
   }
 });
 
+timedTest("loaded phantom persistent session can be archived", async () => {
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-phantom-archive-",
+  });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+    runtimeFactory: harness.runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: harness.workspaceDir,
+        sessionName: "Archive phantom",
+      },
+      auth,
+      "conn-archive",
+    );
+
+    await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
+
+    const archived = await registry.archiveSession(created.sessionId);
+
+    expect(archived.sessionId).toBe(created.sessionId);
+    expect(archived.lifecycle.state).toBe("archived");
+    expect(archived.lifecycle.loaded).toBe(false);
+
+    const archivedCatalog = new SessionCatalog({ rootDir: harness.sessionDir });
+    expect(archivedCatalog.get(created.sessionId)?.sessionPath ?? "").toContain(".archive");
+  } finally {
+    await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
+timedTest("loaded phantom persistent session supports full-session fork", async () => {
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-phantom-full-fork-",
+  });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+    runtimeFactory: harness.runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: harness.workspaceDir,
+        sessionName: "Fork phantom",
+      },
+      auth,
+      "conn-fork",
+    );
+
+    await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
+
+    const forked = await registry.forkSession(
+      created.sessionId,
+      {
+        workspaceCwd: harness.workspaceDir,
+      },
+      auth,
+      "conn-fork",
+    );
+
+    expect(forked.sessionId).not.toBe(created.sessionId);
+    expect(forked.status).toBe("idle");
+  } finally {
+    await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
+timedTest("loaded phantom persistent session does not persist on failed entry fork", async () => {
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-phantom-failed-fork-",
+  });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+    runtimeFactory: harness.runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: harness.workspaceDir,
+        sessionName: "Fork phantom fail",
+      },
+      auth,
+      "conn-fork",
+    );
+
+    await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
+
+    await expect(
+      registry.forkSession(
+        created.sessionId,
+        {
+          entryId: "missing-entry-id",
+          workspaceCwd: harness.workspaceDir,
+        },
+        auth,
+        "conn-fork",
+      ),
+    ).rejects.toThrow(/Entry .* not found|Invalid entry ID for forking/);
+
+    await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
+  } finally {
+    await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
 timedTest(
   "persistent remote session file is not duplicated before first assistant flush",
   async () => {
@@ -2991,11 +3384,7 @@ timedTest(
         "conn-a",
       );
 
-      const sessionFileAfterCreate = await waitForPersistedSessionFile(
-        harness.sessionDir,
-        created.sessionId,
-      );
-      await expectSingleSessionHeaderFile(sessionFileAfterCreate);
+      await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
 
       await registry.updateSessionName(
         created.sessionId,
@@ -3006,7 +3395,7 @@ timedTest(
         "conn-a",
       );
 
-      await expectSingleSessionHeaderFile(sessionFileAfterCreate);
+      await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
 
       await registry.prompt(
         created.sessionId,
@@ -3019,7 +3408,12 @@ timedTest(
 
       await waitForSessionToBecomeIdle(registry, created.sessionId, auth);
 
-      await expectSingleSessionHeaderFile(sessionFileAfterCreate);
+      const sessionFileAfterFirstAssistant = await waitForPersistedSessionFile(
+        harness.sessionDir,
+        created.sessionId,
+      );
+
+      await expectSingleSessionHeaderFile(sessionFileAfterFirstAssistant);
     } finally {
       await registry.dispose();
       await harness.cleanup();
@@ -3951,6 +4345,12 @@ async function waitForPersistedSessionFile(sessionDir: string, sessionId: string
   throw new Error(`Timed out waiting for persisted session file for ${sessionId}`);
 }
 
+async function expectNoPersistedSessionFile(sessionDir: string, sessionId: string): Promise<void> {
+  const entries = await readdir(sessionDir);
+  const match = entries.find((entry) => entry.endsWith(`${sessionId}.jsonl`));
+  expect(match).toBeUndefined();
+}
+
 async function expectSingleSessionHeaderFile(sessionFile: string): Promise<void> {
   const lines = (await readFile(sessionFile, "utf8"))
     .trim()
@@ -4003,4 +4403,52 @@ async function waitForAppSessionSummaryCount(
   throw new Error(
     `Timed out waiting for app snapshot summary count ${expectedCount}. Last summaries: ${labels.join(", ")}`,
   );
+}
+
+async function waitForRemoteSessionIdle(client: RemoteApiClient, sessionId: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const snapshot = await client.getSessionSnapshot(sessionId);
+    if (snapshot.status === "idle") {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(`Timed out waiting for remote session ${sessionId} to become idle`);
+}
+
+async function waitForRemoteSessionMessageCount(
+  client: RemoteApiClient,
+  sessionId: string,
+  expectedCount: number,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const snapshot = await client.getSessionSnapshot(sessionId);
+    if (snapshot.status === "idle" && snapshot.sessionStats.totalMessages >= expectedCount) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(
+    `Timed out waiting for remote session ${sessionId} to reach ${expectedCount} messages`,
+  );
+}
+
+async function waitForRemoteForkMessages(
+  client: RemoteApiClient,
+  sessionId: string,
+): Promise<Awaited<ReturnType<RemoteApiClient["getSessionForkMessages"]>>> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const messages = await client.getSessionForkMessages(sessionId);
+    if (messages.messages.length > 0) {
+      return messages;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(`Timed out waiting for remote fork messages for ${sessionId}`);
 }

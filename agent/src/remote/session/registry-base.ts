@@ -223,6 +223,9 @@ export abstract class SessionRegistryBase {
       options,
       getRuntimeSession: (sessionRecord) => this.getRuntimeSession(sessionRecord),
     });
+    if (record.persistence === "persistent") {
+      this.catalog.registerPersistedRuntimeRecord(record);
+    }
   }
 
   protected getRuntimeSession(record: SessionRecord): AgentSessionRuntime["session"] | undefined {

@@ -1326,6 +1326,7 @@ async function createRemoteRuntime(
       privateKey: options.privateKeyPem,
     },
     clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
+    ...(options.sessionId ? {} : { createNewSession: true }),
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(workspaceCwd ? { workspaceCwd } : {}),
@@ -1388,6 +1389,38 @@ async function authenticate(
   expect(verifyResponse.status).toBe(200);
   const verified = (await verifyResponse.json()) as { token: string };
   return verified.token;
+}
+
+async function waitForRemoteSessionIdle(client: RemoteApiClient, sessionId: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const snapshot = await client.getSessionSnapshot(sessionId);
+    if (snapshot.status === "idle") {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(`Timed out waiting for remote session ${sessionId} to become idle`);
+}
+
+async function waitForRemoteSessionMessageCount(
+  client: RemoteApiClient,
+  sessionId: string,
+  expectedCount: number,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const snapshot = await client.getSessionSnapshot(sessionId);
+    if (snapshot.status === "idle" && snapshot.sessionStats.totalMessages >= expectedCount) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(
+    `Timed out waiting for remote session ${sessionId} to reach ${expectedCount} messages`,
+  );
 }
 
 async function postSessionCommand(
@@ -2516,6 +2549,30 @@ timedTest(
         const created = (await createResponse.json()) as { sessionId: string };
         createdSessionId = created.sessionId;
 
+        const apiClient = new RemoteApiClient({
+          origin: "http://localhost:3000",
+          auth: {
+            keyId: "dev",
+            privateKey: privateKeyPem,
+          },
+          fetchImpl: createInProcessFetch(remoteA.app),
+        });
+        await apiClient.authenticate();
+
+        const promptResponse = await remoteA.app.request(
+          `/v1/sessions/${createdSessionId}/prompt`,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ text: "Persist catalog session" }),
+          },
+        );
+        expect(promptResponse.status).toBe(202);
+        await waitForRemoteSessionMessageCount(apiClient, createdSessionId, 2);
+
         const summaryResponse = await remoteA.app.request(
           `/v1/sessions/${createdSessionId}/summary`,
           {
@@ -2577,7 +2634,7 @@ timedTest(
         expect(snapshot.sessionSummaries.length).toBe(1);
         expect(snapshot.sessionSummaries[0]?.sessionId).toBe(createdSessionId);
         expect(snapshot.sessionSummaries[0]?.sessionName).toBe("Persistent Catalog Session");
-        expect(snapshot.sessionSummaries[0]?.messageCount).toBe(0);
+        expect(snapshot.sessionSummaries[0]?.messageCount).toBe(2);
         expect(snapshot.sessionSummaries[0]?.cwd).toBe(harness.workspaceDir);
         expect(snapshot.sessionSummaries[0]?.parentSessionId).toBe(null);
         expect(snapshot.sessionSummaries[0]?.lifecycle.persistence).toBe("persistent");
@@ -2650,6 +2707,25 @@ timedTest("persistent remote session lazily loads runtime on attach after restar
 
       expect(createResponse.status).toBe(201);
       createdSessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+      const apiClient = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remoteA.app),
+      });
+      await apiClient.authenticate();
+      const promptResponse = await remoteA.app.request(`/v1/sessions/${createdSessionId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "Persist lazy attach session" }),
+      });
+      expect(promptResponse.status).toBe(202);
+      await waitForRemoteSessionMessageCount(apiClient, createdSessionId, 2);
       expect(runtimeFactoryA.createCalls).toBe(1);
       expect(runtimeFactoryA.loadCalls).toBe(0);
     } finally {
@@ -2679,7 +2755,7 @@ timedTest("persistent remote session lazily loads runtime on attach after restar
       };
 
       expect(appSnapshot.sessionSummaries[0]?.sessionId).toBe(createdSessionId);
-      expect(appSnapshot.sessionSummaries[0]?.messageCount).toBe(0);
+      expect(appSnapshot.sessionSummaries[0]?.messageCount).toBe(2);
       expect(appSnapshot.sessionSummaries[0]?.cwd).toBe(harness.workspaceDir);
       expect(appSnapshot.sessionSummaries[0]?.lifecycle.loaded).toBe(false);
       expect(runtimeFactoryB.createCalls).toBe(0);
@@ -2761,6 +2837,26 @@ timedTest("persistent remote session lazily loads runtime for commands after res
 
       expect(createResponse.status).toBe(201);
       createdSessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+      const apiClient = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remoteA.app),
+      });
+      await apiClient.authenticate();
+      const promptResponse = await remoteA.app.request(`/v1/sessions/${createdSessionId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "Persist lazy command session" }),
+      });
+      expect(promptResponse.status).toBe(202);
+      await waitForRemoteSessionMessageCount(apiClient, createdSessionId, 2);
     } finally {
       await remoteA.dispose();
     }
@@ -2839,6 +2935,26 @@ timedTest("persisted unnamed session stream remains attachable after restart", a
 
       expect(createResponse.status).toBe(201);
       sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+      const apiClient = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remoteA.app),
+      });
+      await apiClient.authenticate();
+      const promptResponse = await remoteA.app.request(`/v1/sessions/${sessionId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "Persist unnamed stream session" }),
+      });
+      expect(promptResponse.status).toBe(202);
+      await waitForRemoteSessionMessageCount(apiClient, sessionId, 2);
     } finally {
       await remoteA.dispose();
     }
@@ -3077,7 +3193,7 @@ timedTest("remote runtime attach honors configured entries limit and offset", as
   }
 });
 
-timedTest("remote startup selection without flags reattaches latest workspace session", () => {
+timedTest("remote startup selection without flags creates new session", () => {
   const workspaceCwd = "/home/coder/dotai/agent";
   const selection = resolveRemoteSessionId({
     snapshot: {
@@ -3138,7 +3254,7 @@ timedTest("remote startup selection without flags reattaches latest workspace se
     },
   });
 
-  expect(selection).toEqual({ sessionId: "latest-workspace", createNewSession: false });
+  expect(selection).toEqual({ createNewSession: true });
 });
 
 timedTest("remote runtime create does not infer session name from cwd", async () => {
@@ -3242,6 +3358,21 @@ timedTest("remote runtime restart recovery reauths same unnamed persisted sessio
         privateKeyPem,
         cwd: harness.workspaceDir,
       });
+      const apiClient = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remoteA.app),
+      });
+      await apiClient.authenticate();
+      await runtime.session.prompt("Persist reconnect session");
+      await waitForRemoteSessionMessageCount(
+        apiClient,
+        runtime.session.sessionManager.getSessionId(),
+        2,
+      );
       sessionId = runtime.session.sessionManager.getSessionId();
       expect(runtime.session.sessionManager.getSessionName()).toBeUndefined();
       await runtime.dispose();
@@ -3346,6 +3477,26 @@ timedTest(
         expect(createAResponse.status).toBe(201);
         const sessionAId = ((await createAResponse.json()) as { sessionId: string }).sessionId;
 
+        const apiClient = new RemoteApiClient({
+          origin: "http://localhost:3000",
+          auth: {
+            keyId: "dev",
+            privateKey: privateKeyPem,
+          },
+          fetchImpl: createInProcessFetch(remote.app),
+        });
+        await apiClient.authenticate();
+        const persistAResponse = await remote.app.request(`/v1/sessions/${sessionAId}/prompt`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ text: "Persist before archive" }),
+        });
+        expect(persistAResponse.status).toBe(202);
+        await waitForRemoteSessionMessageCount(apiClient, sessionAId, 2);
+
         const archivedResponse = await remote.app.request(`/v1/sessions/${sessionAId}/archive`, {
           method: "POST",
           headers: { authorization: `Bearer ${token}` },
@@ -3408,6 +3559,17 @@ timedTest(
         expect(createBResponse.status).toBe(201);
         const sessionBId = ((await createBResponse.json()) as { sessionId: string }).sessionId;
 
+        const persistBResponse = await remote.app.request(`/v1/sessions/${sessionBId}/prompt`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ text: "Persist before delete" }),
+        });
+        expect(persistBResponse.status).toBe(202);
+        await waitForRemoteSessionMessageCount(apiClient, sessionBId, 2);
+
         const deleteLoadedResponse = await remote.app.request(`/v1/sessions/${sessionBId}`, {
           method: "DELETE",
           headers: { authorization: `Bearer ${token}` },
@@ -3433,14 +3595,14 @@ timedTest(
         expect(appEventsResponse.status).toBe(200);
         const appEventsBody = await appEventsResponse.json();
         assertType(StreamReadResponseSchema, appEventsBody);
-        expect(appEventsBody.events.map((event) => event.kind)).toEqual([
-          "session_created",
-          "session_summary_updated",
-          "session_summary_updated",
-          "session_closed",
-          "session_created",
-          "session_closed",
-        ]);
+        const eventKinds = appEventsBody.events.map((event) => event.kind);
+        expect(eventKinds[0]).toBe("session_created");
+        expect(eventKinds.at(-1)).toBe("session_closed");
+        expect(eventKinds.filter((kind) => kind === "session_created").length).toBe(2);
+        expect(eventKinds.filter((kind) => kind === "session_closed").length).toBe(2);
+        expect(
+          eventKinds.filter((kind) => kind === "session_summary_updated").length,
+        ).toBeGreaterThanOrEqual(2);
       } finally {
         await remote.dispose();
       }

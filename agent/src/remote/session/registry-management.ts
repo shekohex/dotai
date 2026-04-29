@@ -35,6 +35,16 @@ import {
   readForkMessagesFromSessionManager,
 } from "./fork-ops.js";
 import { formatEphemeralCleanupError } from "./cleanup-errors.js";
+import {
+  buildReloadResourcePatch,
+  didCatalogLocationChange,
+  didCatalogRecordChange,
+  isRuntimeSessionBusy,
+  loadRecordForFork,
+  promoteLoadedPersistentSessionToCatalog,
+  shouldForkLoadedSession,
+  shouldEvictLoadedRuntime,
+} from "./persistent-loaded-session.js";
 import { detachRegistryPresence, touchRegistryPresence } from "./registry-presence.js";
 import { SessionRegistryBase } from "./registry-base.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
@@ -72,7 +82,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
         await this.initializeRuntimeRecord(record, {
           initializedAt: createdAt,
           syncSessionNameToRuntime: true,
-          flushPersistedSessionManager: true,
+          flushPersistedSessionManager: false,
         });
       },
       registerCreatedSession: (record, targetClient, targetConnectionId, createdAt) => {
@@ -290,8 +300,14 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     connectionId?: string,
   ): Promise<ForkSessionResponse> {
     const existingRecord = this.loadedRuntimes.get(sessionId);
-    if (existingRecord?.persistence === "ephemeral") {
-      return this.forkEphemeralLoadedSession(existingRecord, request, client, connectionId);
+    if (
+      shouldForkLoadedSession(
+        existingRecord,
+        this.catalog.get(sessionId) !== undefined,
+        request.entryId,
+      )
+    ) {
+      return this.forkEphemeralLoadedSession(existingRecord!, request, client, connectionId);
     }
 
     return this.forkPersistentSession(sessionId, request, client, connectionId);
@@ -436,6 +452,11 @@ export class SessionRegistryManagement extends SessionRegistryBase {
   }
 
   async archiveSession(sessionId: string): Promise<SessionSummary> {
+    promoteLoadedPersistentSessionToCatalog({
+      loadedRecord: this.loadedRuntimes.get(sessionId),
+      syncFromRuntime: this.syncFromRuntime.bind(this),
+      catalog: this.catalog,
+    });
     if (!this.catalog.get(sessionId)) {
       throw new RemoteError("Session not found", 404);
     }
@@ -508,13 +529,31 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     client: AuthSession,
     connectionId?: string,
   ): Promise<ForkSessionResponse> {
-    const catalogRecord = this.catalog.get(sessionId);
-    if (catalogRecord === undefined) {
-      throw new RemoteError("Session not found", 404);
-    }
-    const loadedRecord = await this.getLoadedRecordForFork(sessionId, request);
+    const loadedRecord = await loadRecordForFork({
+      loadedRecord: this.loadedRuntimes.get(sessionId),
+      sessionId,
+      entryId: request.entryId,
+      ensureLoaded: (targetSessionId) => this.ensureLoaded(targetSessionId),
+    });
     const loadedRuntimeSession =
       loadedRecord === undefined ? undefined : this.getRuntimeSession(loadedRecord);
+    let catalogRecord = this.catalog.get(sessionId);
+    if (
+      catalogRecord === undefined &&
+      request.entryId !== undefined &&
+      loadedRuntimeSession?.sessionManager.getEntry(request.entryId) === undefined
+    ) {
+      throw new RemoteError("Invalid entry ID for forking", 404);
+    }
+    if (catalogRecord === undefined) {
+      promoteLoadedPersistentSessionToCatalog({
+        loadedRecord,
+        syncFromRuntime: this.syncFromRuntime.bind(this),
+        catalog: this.catalog,
+      });
+      catalogRecord = this.catalog.get(sessionId);
+    }
+    if (catalogRecord === undefined) throw new RemoteError("Session not found", 404);
     const runtimeFactoryLoad =
       this.runtimeFactory.load === undefined
         ? undefined
@@ -536,17 +575,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       getAppStreamOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
       now: this.now,
     });
-  }
-
-  private getLoadedRecordForFork(
-    sessionId: string,
-    request: ForkSessionRequest,
-  ): Promise<SessionRecord | undefined> {
-    const loadedRecord = this.loadedRuntimes.get(sessionId);
-    if (loadedRecord !== undefined || request.entryId === undefined) {
-      return Promise.resolve(loadedRecord);
-    }
-    return this.ensureLoaded(sessionId);
   }
 
   private forkEphemeralLoadedSession(
@@ -722,76 +750,4 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       this.emitSessionSummaryUpdated(record, updatedAt);
     });
   }
-}
-
-function buildReloadResourcePatch(record: SessionRecord): SessionSnapshot["resources"] {
-  return {
-    skills: record.resources.skills.map((skill) => ({ ...skill })),
-    prompts: record.resources.prompts.map((prompt) => ({ ...prompt })),
-    themes: record.resources.themes.map((theme) => ({ ...theme })),
-    ...(record.resources.modes === undefined
-      ? {}
-      : { modes: structuredClone(record.resources.modes) }),
-    systemPrompt: record.resources.systemPrompt,
-    appendSystemPrompt: [...record.resources.appendSystemPrompt],
-  };
-}
-
-function didCatalogRecordChange(
-  previousRecord: SessionCatalogRecord,
-  nextRecord: SessionCatalogRecord,
-): boolean {
-  return (
-    previousRecord.sessionPath !== nextRecord.sessionPath ||
-    previousRecord.cwd !== nextRecord.cwd ||
-    previousRecord.sessionName !== nextRecord.sessionName ||
-    previousRecord.modifiedAt !== nextRecord.modifiedAt ||
-    previousRecord.parentSessionId !== nextRecord.parentSessionId ||
-    previousRecord.lifecycleStatus !== nextRecord.lifecycleStatus
-  );
-}
-
-function didCatalogLocationChange(
-  previousRecord: SessionCatalogRecord,
-  nextRecord: SessionCatalogRecord,
-): boolean {
-  return (
-    previousRecord.sessionPath !== nextRecord.sessionPath ||
-    previousRecord.lifecycleStatus !== nextRecord.lifecycleStatus
-  );
-}
-
-function isRuntimeSessionBusy(
-  record: SessionRecord,
-  session: NonNullable<SessionRecord["runtime"]>["session"],
-): boolean {
-  return session.isStreaming || session.isCompacting || record.queue.depth > 0;
-}
-
-function shouldEvictLoadedRuntime(
-  record: SessionRecord,
-  now: number,
-  runtimeIdleTtlMs: number | undefined,
-  canReloadPersistedSessions: boolean,
-): boolean {
-  if (record.persistence !== "persistent") {
-    return false;
-  }
-  if (!canReloadPersistedSessions) {
-    return false;
-  }
-  if (record.presence.size > 0) {
-    return false;
-  }
-  const session = record.runtime.session;
-  if (session === undefined) {
-    return false;
-  }
-  if (isRuntimeSessionBusy(record, session)) {
-    return false;
-  }
-  if (runtimeIdleTtlMs === undefined) {
-    return false;
-  }
-  return now - record.updatedAt >= runtimeIdleTtlMs;
 }

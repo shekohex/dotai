@@ -28,12 +28,22 @@ import {
   pollRemoteSessionRuntime,
 } from "./polling-ops.js";
 import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-modes-store.js";
+import { RemoteApiError } from "../../runtime-api/utils.js";
 import { RemoteAgentSessionSetupBase } from "./setup-base.js";
 import { emitResourceLoaderEventLocally } from "../../event-bus-bridge.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   protected async resyncAfterReauthentication(): Promise<void> {
-    const snapshot = await this.client.getSessionSnapshot(this.sessionId);
+    let snapshot;
+    try {
+      snapshot = await this.client.getSessionSnapshot(this.sessionId);
+    } catch (error) {
+      if (error instanceof RemoteApiError && error.status === 404) {
+        this.clearTransientWorkingState();
+        return;
+      }
+      throw error;
+    }
     this.applySnapshot(snapshot);
     await this.refreshRemoteToolCatalog();
     await this.refreshForkMessages();
@@ -89,6 +99,24 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   protected async waitForPendingMutations(): Promise<void> {
     await this.mutationQueue;
+  }
+
+  protected clearTransientWorkingState(): void {
+    this.state.isStreaming = false;
+    this._isRetrying = false;
+    this._retryAttempt = 0;
+    this._isCompacting = false;
+    this.queueDepth = 0;
+    this.queuedSteeringMessages = [];
+    this.queuedFollowUpMessages = [];
+    this.state.pendingToolCalls = new Set();
+    if (this.idleResolvers.size > 0) {
+      const resolvers = [...this.idleResolvers.values()];
+      this.idleResolvers.clear();
+      for (const resolve of resolvers) {
+        resolve();
+      }
+    }
   }
 
   dispose(): Promise<void> {

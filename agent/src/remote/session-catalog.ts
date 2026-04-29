@@ -1,6 +1,6 @@
 import type { TextContent } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import {
   loadEntriesFromFile,
@@ -130,8 +130,11 @@ export class SessionCatalog {
   }
 
   registerPersistedRuntimeRecord(record: SessionRecord): void {
-    const sessionPath = record.sessionStats.sessionFile;
+    const sessionPath = readPersistedSessionPath(record);
     if (sessionPath === undefined || sessionPath.length === 0) {
+      return;
+    }
+    if (!existsSync(sessionPath)) {
       return;
     }
 
@@ -250,6 +253,21 @@ export class SessionCatalog {
     }
     return record;
   }
+}
+
+function readPersistedSessionPath(record: SessionRecord): string | undefined {
+  const statsPath = record.sessionStats.sessionFile;
+  if (statsPath !== undefined && statsPath.length > 0) {
+    return statsPath;
+  }
+
+  const runtimeSession = record.runtime.session;
+  if (runtimeSession === undefined) {
+    return undefined;
+  }
+
+  const managerPath = runtimeSession.sessionManager.getSessionFile();
+  return managerPath !== undefined && managerPath.length > 0 ? managerPath : undefined;
 }
 
 function collectRawCatalogRecords(rootDir: string): RawCatalogRecord[] {

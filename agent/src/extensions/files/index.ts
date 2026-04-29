@@ -19,7 +19,7 @@ const runFileBrowser = async (pi: ExtensionAPI, ctx: ExtensionContext): Promise<
     return;
   }
 
-  const { files, gitRoot } = await buildFileEntries(pi, ctx);
+  const { files, gitRoot } = buildFileEntries(pi, ctx);
   if (files.length === 0) {
     ctx.ui.notify("No files found", "info");
     return;

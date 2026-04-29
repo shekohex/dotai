@@ -12,6 +12,7 @@ import type { RemoteExtensionMetadata, SessionSnapshot } from "../schemas.js";
 import type { RemoteSessionContract } from "./session-deps.js";
 import { markNonAuthoritativeRuntime } from "../../extensions/runtime-authority.js";
 import { seedHydratedExecutorState } from "../../extensions/executor/status.js";
+import { seedHydratedSerializedGitState } from "../../extensions/git-state.js";
 import {
   createForwardingEventBus,
   requireResourceLoaderEventBus,
@@ -115,6 +116,9 @@ export class RemoteAgentSession
     );
     if (snapshot.executorState !== undefined) {
       seedHydratedExecutorState(session.sessionManager, snapshot.executorState);
+    }
+    if (snapshot.gitState !== undefined) {
+      seedHydratedSerializedGitState(session.sessionManager, snapshot.gitState);
     }
     session.syncResolvedModel(snapshot.model);
     await session.refreshForkMessages();

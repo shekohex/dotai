@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
+import { applyGitStateUpdatedEvent, GIT_STATE_UPDATED_EVENT } from "./git-state.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 import { getRuntimeCapabilities } from "./runtime-capabilities.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
@@ -59,7 +60,7 @@ function registerSessionStartHandler(input: {
   state: ReturnType<typeof createCoreUIState>;
   ensureToolOverridesRegistered: (tools: ReturnType<ExtensionAPI["getActiveTools"]>) => void;
   refreshUsageMetrics: (ctx: ExtensionContext) => void;
-  refreshProjectInfo: (ctx: ExtensionContext, force: boolean) => Promise<void>;
+  refreshProjectInfo: (ctx: ExtensionContext, force: boolean) => void;
   setRequestRender: (requestRender: (() => void) | undefined) => void;
 }): void {
   input.pi.on("session_start", (_event, ctx) => {
@@ -84,14 +85,14 @@ function registerSessionStartHandler(input: {
       });
     }
     input.refreshUsageMetrics(ctx);
-    void input.refreshProjectInfo(ctx, true);
+    input.refreshProjectInfo(ctx, true);
   });
 }
 
 function registerCoreUIHandlers(input: {
   pi: ExtensionAPI;
   ensureToolOverridesRegistered: (tools: ReturnType<ExtensionAPI["getActiveTools"]>) => void;
-  refreshAll: (ctx: ExtensionContext) => Promise<void>;
+  refreshAll: (ctx: ExtensionContext) => void;
   getRequestRender: () => (() => void) | undefined;
   clearSubscriptions: () => void;
   setRequestRender: (requestRender: (() => void) | undefined) => void;
@@ -100,14 +101,14 @@ function registerCoreUIHandlers(input: {
     ctx.ui.setWorkingMessage(pickRandomWhimsical());
   });
 
-  input.pi.on("turn_end", async (_event, ctx) => {
-    await input.refreshAll(ctx);
+  input.pi.on("turn_end", (_event, ctx) => {
+    input.refreshAll(ctx);
     ctx.ui.setWorkingMessage();
   });
 
-  input.pi.on("session_tree", async (_event, ctx) => {
+  input.pi.on("session_tree", (_event, ctx) => {
     input.ensureToolOverridesRegistered(input.pi.getActiveTools());
-    await input.refreshAll(ctx);
+    input.refreshAll(ctx);
   });
 
   input.pi.on("model_select", () => {
@@ -134,6 +135,11 @@ function createCoreUISubscriptions(input: {
     input.getRequestRender()?.();
   });
 
+  const unsubscribeGitStateEvents = input.pi.events.on(GIT_STATE_UPDATED_EVENT, (data) => {
+    applyGitStateUpdatedEvent(data);
+    input.getRequestRender()?.();
+  });
+
   const unsubscribeModeEvents = input.pi.events.on("modes:changed", (data) => {
     const event = parseModeChangedEvent(data);
     input.state.activeMode = event?.mode ?? "custom";
@@ -143,15 +149,16 @@ function createCoreUISubscriptions(input: {
 
   return () => {
     unsubscribeOpenUsageEvents();
+    unsubscribeGitStateEvents();
     unsubscribeModeEvents();
   };
 }
 
 function createCoreUIBindings(pi: ExtensionAPI): {
   state: ReturnType<typeof createCoreUIState>;
-  refreshAll: (ctx: ExtensionContext) => Promise<void>;
+  refreshAll: (ctx: ExtensionContext) => void;
   refreshUsageMetrics: (ctx: ExtensionContext) => void;
-  refreshProjectInfo: (ctx: ExtensionContext, force: boolean) => Promise<void>;
+  refreshProjectInfo: (ctx: ExtensionContext, force: boolean) => void;
   getRequestRender: () => (() => void) | undefined;
   setRequestRender: (requestRender: (() => void) | undefined) => void;
   clearSubscriptions: () => void;
@@ -159,7 +166,7 @@ function createCoreUIBindings(pi: ExtensionAPI): {
   const state = createCoreUIState();
   let requestRender: (() => void) | undefined;
 
-  const refreshProjectInfo = createProjectInfoRefresher(pi, state, () => {
+  const refreshProjectInfo = createProjectInfoRefresher(state, () => {
     requestRender?.();
   });
 
@@ -168,9 +175,9 @@ function createCoreUIBindings(pi: ExtensionAPI): {
     requestRender?.();
   };
 
-  const refreshAll = async (ctx: ExtensionContext): Promise<void> => {
+  const refreshAll = (ctx: ExtensionContext): void => {
     refreshUsageMetrics(ctx);
-    await refreshProjectInfo(ctx, true);
+    refreshProjectInfo(ctx, true);
   };
   const clearSubscriptions = createCoreUISubscriptions({
     pi,

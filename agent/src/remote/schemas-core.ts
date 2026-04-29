@@ -1,6 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import { ExecutorRuntimeStateSchema } from "../extensions/executor/status.js";
+import { GitRuntimeStateSchema } from "../extensions/git-state.js";
 import {
   PackageSourceSchema,
   RemoteResourceBundleSchema,
@@ -710,6 +711,7 @@ export const SessionSnapshotSchema = Type.Object({
   steeringMode: Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]),
   followUpMode: Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")]),
   executorState: Type.Optional(ExecutorRuntimeStateSchema),
+  gitState: Type.Optional(GitRuntimeStateSchema),
   entries: Type.Array(SessionEntrySchema),
   leafId: Type.Union([Type.String(), Type.Null()]),
   transcript: Type.Array(Type.Unknown()),

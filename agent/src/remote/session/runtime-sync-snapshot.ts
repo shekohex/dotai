@@ -1,6 +1,7 @@
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot } from "../schemas.js";
 import { getExecutorState } from "../../extensions/executor/status.js";
+import { getGitState, serializeGitRuntimeState } from "../../extensions/git-state.js";
 import type { SessionRecord } from "./types.js";
 
 export const DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT = 200;
@@ -50,6 +51,7 @@ export function buildSessionSnapshotParts(
     steeringMode: record.steeringMode,
     followUpMode: record.followUpMode,
     executorState: structuredClone(getExecutorState(record.cwd)),
+    gitState: structuredClone(serializeGitRuntimeState(getGitState(record.cwd))),
     entries: trimmedEntries.map((entry) => cloneSessionEntry(entry)),
     leafId,
     transcript: trimmedTranscript.map((message) => structuredClone(message)),

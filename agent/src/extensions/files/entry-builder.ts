@@ -162,13 +162,13 @@ function sortFileEntries(fileMap: Map<string, FileEntry>): FileEntry[] {
   });
 }
 
-export const buildFileEntries = async (
-  pi: ExtensionAPI,
+export const buildFileEntries = (
+  _pi: ExtensionAPI,
   ctx: ExtensionContext,
-): Promise<{ files: FileEntry[]; gitRoot: string | null }> => {
+): { files: FileEntry[]; gitRoot: string | null } => {
   const entries = ctx.sessionManager.getBranch();
   const sessionChanges = collectSessionFileChanges(entries, ctx.cwd);
-  const { gitRoot, statusMap, trackedSet, gitFiles } = await loadGitFileMetadata(pi, ctx.cwd);
+  const { gitRoot, statusMap, trackedSet, gitFiles } = loadGitFileMetadata(ctx.cwd);
   const fileMap = new Map<string, FileEntry>();
   const upsertFile = createFileEntryUpserter(fileMap, ctx.cwd);
 

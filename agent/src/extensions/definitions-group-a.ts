@@ -1,6 +1,7 @@
 import bundledResourcesExtension from "./bundled-resources.js";
 import commitExtension from "./commit.js";
 import coreUIExtension from "./coreui.js";
+import gitStateExtension from "./git-state.js";
 import litellmGatewayExtension from "./litellm.js";
 import modesExtension from "./modes.js";
 import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
@@ -15,6 +16,7 @@ export const groupedExtensionsA: GroupedExtensionDefinition[] = [
     factory: modelFamilySystemPromptExtension,
   },
   { id: "bundled-resources", factory: bundledResourcesExtension },
+  { id: "git-state", factory: gitStateExtension },
   { id: "coreui", factory: coreUIExtension },
   { id: "litellm", factory: litellmGatewayExtension },
   { id: "openusage", factory: openUsageExtension },

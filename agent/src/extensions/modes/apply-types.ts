@@ -46,7 +46,11 @@ export type ModeApplyDeps = {
       cwd: string;
     },
   ) => void;
-  appendModeState: (pi: ExtensionAPI, activeMode: string | undefined) => void;
+  appendModeState: (
+    pi: ExtensionAPI,
+    ctx: ExtensionContext,
+    activeMode: string | undefined,
+  ) => void;
   notifyModeSwitch: (
     ctx: ExtensionContext,
     modeName: string | undefined,

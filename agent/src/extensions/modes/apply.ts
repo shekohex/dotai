@@ -34,7 +34,11 @@ async function syncFromSelectionWithDeps(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   source: ModeChangeSource,
-  options: { notifyModeSwitch?: boolean; emitChangedEvent?: boolean } = {},
+  options: {
+    notifyModeSwitch?: boolean;
+    emitChangedEvent?: boolean;
+    appendState?: boolean;
+  } = {},
 ): Promise<void> {
   const emitChangedEvent = options.emitChangedEvent ?? true;
   await deps.ensureRuntime(ctx);
@@ -61,6 +65,10 @@ async function syncFromSelectionWithDeps(
     return;
   }
 
+  if (nextMode !== undefined && options.appendState !== false) {
+    deps.appendModeState(pi, ctx, nextMode);
+  }
+
   if (source === "model_select" && options.notifyModeSwitch !== false) {
     deps.notifyModeSwitch(ctx, nextMode, nextSpec);
   }
@@ -85,6 +93,7 @@ async function applyResolvedModeWithDeps(
     reason: ModeChangeReason;
     source: ModeChangeSource;
     persist?: boolean;
+    appendState?: boolean;
   },
 ): Promise<boolean> {
   const modelReady = await applyModeModelSelection(
@@ -121,10 +130,13 @@ function finalizeAppliedMode(
     previousMode: string | undefined;
     reason: ModeChangeReason;
     source: ModeChangeSource;
+    appendState?: boolean;
   },
 ): void {
   deps.setStatus(ctx, data.modeName);
-  deps.appendModeState(pi, data.modeName);
+  if (data.appendState !== false) {
+    deps.appendModeState(pi, ctx, data.modeName);
+  }
   deps.emitModeChanged(pi, ctx, {
     mode: data.modeName,
     previousMode: data.previousMode,
@@ -168,7 +180,6 @@ async function applySelectionToRuntimeWithDeps(
   deps.runtime.activeMode = nextMode;
   deps.syncModeTools(pi, ctx, nextSpec);
   deps.setStatus(ctx, nextMode);
-  deps.appendModeState(pi, nextMode);
   deps.emitModeChanged(pi, ctx, {
     mode: nextMode,
     previousMode,
@@ -208,7 +219,7 @@ async function applyModeWithDeps(
   modeName: string,
   source: ModeChangeSource,
   reason: ModeChangeReason = "apply",
-  options: { persist?: boolean } = {},
+  options: { persist?: boolean; appendState?: boolean } = {},
 ): Promise<boolean> {
   if (!(await deps.ensureModesReady(ctx))) {
     return false;
@@ -229,6 +240,7 @@ async function applyModeWithDeps(
       reason,
       source,
       persist: options.persist,
+      appendState: options.appendState,
     }),
   );
 }
@@ -255,7 +267,11 @@ export function createModeApplyActions(deps: ModeApplyDeps) {
       pi: ExtensionAPI,
       ctx: ExtensionContext,
       source: ModeChangeSource,
-      options: { notifyModeSwitch?: boolean; emitChangedEvent?: boolean } = {},
+      options: {
+        notifyModeSwitch?: boolean;
+        emitChangedEvent?: boolean;
+        appendState?: boolean;
+      } = {},
     ) => syncFromSelectionWithDeps(deps, pi, ctx, source, options),
     applyMode: (
       pi: ExtensionAPI,
@@ -263,7 +279,7 @@ export function createModeApplyActions(deps: ModeApplyDeps) {
       modeName: string,
       source: ModeChangeSource,
       reason: ModeChangeReason = "apply",
-      options: { persist?: boolean } = {},
+      options: { persist?: boolean; appendState?: boolean } = {},
     ) => applyModeWithDeps(deps, pi, ctx, modeName, source, reason, options),
     applySelection: (pi: ExtensionAPI, ctx: ExtensionContext, event: ModeSelectionApplyEvent) =>
       applySelectionWithDeps(deps, pi, ctx, event),

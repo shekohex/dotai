@@ -579,6 +579,22 @@ function getLatestModeState(testSession: TestSession): string | undefined {
     .at(-1)?.data?.activeMode;
 }
 
+function countModeStateEntries(testSession: TestSession): number {
+  const entries = (
+    testSession.session as {
+      sessionManager: {
+        getEntries: () => Array<{
+          type: string;
+          customType?: string;
+        }>;
+      };
+    }
+  ).sessionManager.getEntries();
+
+  return entries.filter((entry) => entry.type === "custom" && entry.customType === "mode-state")
+    .length;
+}
+
 function createActiveToolsCaptureExtension(capturedToolSets: string[][]) {
   return (pi: ExtensionAPI) => {
     pi.events.on("modes:changed", () => {
@@ -1549,7 +1565,7 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
       expect(model.model.provider).toBe("mode-provider");
       expect(model.model.id).toBe("mode-model");
       expect(model.thinkingLevel).toBe("high");
-      expect(getLatestModeState(session!)).toBe("docs");
+      expect(getLatestModeState(session!)).toBe(undefined);
 
       expect(observedModeChanges.length > 0, JSON.stringify(observedModeChanges)).toBeTruthy();
       const latestModeChange = observedModeChanges.at(-1);
@@ -1560,6 +1576,113 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
       expect(latestModeChange?.spec?.modelId).toBe("mode-model");
       expect(latestModeChange?.spec?.thinkingLevel).toBe("high");
     });
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("mode reload startup does not append mode-state entry when nothing changed", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-reload-state-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    await withProcessCwd(cwd, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, providers.extensionFactory],
+      });
+
+      (
+        session!.session as {
+          extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void };
+        }
+      ).extensionRunner.setFlagValue("mode-docs", true);
+
+      await session!.session.reload();
+
+      const firstCount = countModeStateEntries(session!);
+      const firstModel = session!.session as {
+        model: { provider: string; id: string };
+        thinkingLevel: string;
+      };
+      expect(firstCount).toBe(0);
+      expect(getLatestModeState(session!)).toBe(undefined);
+      expect(firstModel.model.provider).toBe("mode-provider");
+      expect(firstModel.model.id).toBe("mode-model");
+      expect(firstModel.thinkingLevel).toBe("high");
+
+      await session!.session.reload();
+
+      const secondModel = session!.session as {
+        model: { provider: string; id: string };
+        thinkingLevel: string;
+      };
+      expect(countModeStateEntries(session!)).toBe(firstCount);
+      expect(getLatestModeState(session!)).toBe(undefined);
+      expect(secondModel.model.provider).toBe("mode-provider");
+      expect(secondModel.model.id).toBe("mode-model");
+      expect(secondModel.thinkingLevel).toBe("high");
+    });
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("mode state dedupe is scoped to current branch", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-branch-dedupe-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, providers.extensionFactory],
+    });
+    patchHarnessAgent(session);
+
+    await session.session.prompt("seed branch root");
+    await session.session.agent.waitForIdle();
+
+    await session.session.prompt("/mode docs");
+    await session.session.agent.waitForIdle();
+
+    expect(countModeStateEntries(session)).toBe(1);
+
+    const branchPointEntryId = (
+      session.session as {
+        sessionManager: {
+          getEntries: () => Array<{ id: string; type: string; message?: { role: string } }>;
+          branch: (entryId: string) => void;
+        };
+      }
+    ).sessionManager
+      .getEntries()
+      .find((entry) => entry.type === "message" && entry.message?.role === "user")?.id;
+
+    expect(branchPointEntryId).toBeTruthy();
+
+    (
+      session.session as {
+        sessionManager: {
+          branch: (entryId: string) => void;
+        };
+      }
+    ).sessionManager.branch(branchPointEntryId!);
+
+    await session.session.prompt("/mode docs");
+    await session.session.agent.waitForIdle();
+
+    expect(countModeStateEntries(session)).toBe(2);
+    expect(getLatestModeState(session)).toBe("docs");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -1603,7 +1726,7 @@ timedTest(
         expect(model.model.provider).toBe("mode-provider");
         expect(model.model.id).toBe("mode-model");
         expect(model.thinkingLevel).toBe("high");
-        expect(getLatestModeState(session!)).toBe("review");
+        expect(getLatestModeState(session!)).toBe(undefined);
 
         observedModeChanges.length = 0;
 

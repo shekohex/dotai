@@ -14,7 +14,12 @@ import {
   orderedModeNames,
   selectionSatisfiesMode,
 } from "./core.js";
-import { isThinkingLevel, parseModeActivateEvent, parseModeSelectionApplyEvent } from "./events.js";
+import {
+  isThinkingLevel,
+  parseModeActivateEvent,
+  parseModeSelectionApplyEvent,
+  readActiveModeFromEntry,
+} from "./events.js";
 import {
   createModeActionHandlers,
   createModeApplyActions,
@@ -134,8 +139,19 @@ function emitModeChanged(
   pi.events.emit("modes:changed", payload);
 }
 
-function appendModeState(pi: ExtensionAPI, activeMode: string | undefined): void {
+function appendModeState(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  activeMode: string | undefined,
+): void {
   if (!hasText(activeMode)) return;
+  const latestMode = readActiveModeFromEntry(
+    ctx.sessionManager
+      .getBranch()
+      .filter((entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY)
+      .at(-1),
+  );
+  if (latestMode === activeMode) return;
   pi.appendEntry(MODE_STATE_ENTRY, { activeMode });
 }
 

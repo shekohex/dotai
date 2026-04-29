@@ -40,17 +40,25 @@ type ModeActionDeps = {
     modeName: string,
     source: ModeChangeSource,
     reason?: ModeChangeReason,
-    options?: { persist?: boolean },
+    options?: { persist?: boolean; appendState?: boolean },
   ) => Promise<boolean>;
   syncFromSelection: (
     pi: ExtensionAPI,
     ctx: ExtensionContext,
     source: ModeChangeSource,
-    options?: { notifyModeSwitch?: boolean; emitChangedEvent?: boolean },
+    options?: {
+      notifyModeSwitch?: boolean;
+      emitChangedEvent?: boolean;
+      appendState?: boolean;
+    },
   ) => Promise<void>;
   syncModeTools: (pi: ExtensionAPI, ctx: ExtensionContext, spec: ModeSpec | undefined) => void;
   setStatus: (ctx: ExtensionContext, modeName: string | undefined) => void;
-  appendModeState: (pi: ExtensionAPI, activeMode: string | undefined) => void;
+  appendModeState: (
+    pi: ExtensionAPI,
+    ctx: ExtensionContext,
+    activeMode: string | undefined,
+  ) => void;
   emitModeChanged: (pi: ExtensionAPI, ctx: ExtensionContext, payload: ModeChangedPayload) => void;
   getStartupModeSelection: (pi: ExtensionAPI) => {
     selectedMode?: string;
@@ -87,7 +95,7 @@ async function storeModeWithDeps(
   deps.runtime.activeMode = name;
   await deps.saveRuntime(ctx);
   deps.setStatus(ctx, name);
-  deps.appendModeState(pi, name);
+  deps.appendModeState(pi, ctx, name);
   deps.emitModeChanged(pi, ctx, {
     mode: name,
     previousMode: undefined,

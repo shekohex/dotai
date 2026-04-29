@@ -50,6 +50,7 @@ import {
   createReadToolOverrideDefinition,
 } from "../src/extensions/coreui/tools.ts";
 import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
+import modesExtension from "../src/extensions/modes.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
@@ -3414,6 +3415,105 @@ timedTest("remote runtime restart recovery reauths same unnamed persisted sessio
     }
   } finally {
     process.chdir(originalCwd);
+    await harness.cleanup();
+  }
+});
+
+timedTest("persistent remote modes startup does not trigger watcher reload loop", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "pi-remote-modes-watcher-loop-",
+    extensionFactories: [modesExtension],
+  });
+
+  await mkdir(join(harness.workspaceDir, ".pi"), { recursive: true });
+  await writeFile(
+    join(harness.workspaceDir, ".pi", "modes.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        currentMode: "stable",
+        modes: {
+          stable: {
+            provider: "pi-remote-faux",
+            modelId: "pi-remote-faux-1",
+            thinkingLevel: "medium",
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: harness.runtimeFactory,
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+
+  try {
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      cwd: harness.workspaceDir,
+    });
+
+    const initialModeChangedCount = await waitForValue(
+      async () => {
+        const response = await remote.app.request(
+          `/v1/streams/sessions/${runtime?.session.sessionManager.getSessionId()}/events`,
+          {
+            headers: { authorization: `Bearer ${await authenticate(remote.app, privateKeyPem)}` },
+          },
+        );
+        expect(response.status).toBe(200);
+        const payload = (await response.json()) as {
+          events: Array<{
+            kind: string;
+            payload?: { channel?: string; data?: { source?: string } };
+          }>;
+        };
+        return payload.events.filter(
+          (event) =>
+            event.kind === "extension_custom_event" &&
+            event.payload?.channel === "modes:changed" &&
+            event.payload?.data?.source === "session_start",
+        ).length;
+      },
+      (count) => count >= 1,
+      50,
+      20,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    const finalEventsResponse = await remote.app.request(
+      `/v1/streams/sessions/${runtime.session.sessionManager.getSessionId()}/events`,
+      {
+        headers: { authorization: `Bearer ${await authenticate(remote.app, privateKeyPem)}` },
+      },
+    );
+    expect(finalEventsResponse.status).toBe(200);
+    const finalEvents = (await finalEventsResponse.json()) as {
+      events: Array<{
+        kind: string;
+        payload?: { channel?: string; data?: { source?: string } };
+      }>;
+    };
+    const modeChangedCount = finalEvents.events.filter(
+      (event) =>
+        event.kind === "extension_custom_event" &&
+        event.payload?.channel === "modes:changed" &&
+        event.payload?.data?.source === "session_start",
+    ).length;
+
+    expect(modeChangedCount).toBe(initialModeChangedCount);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
     await harness.cleanup();
   }
 });

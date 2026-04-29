@@ -89,7 +89,11 @@ export function registerModeLifecycleHandlers(
       ctx: ExtensionContext,
       source: "model_select" | "before_agent_start",
     ) => Promise<void>;
-    appendModeState: (pi: ExtensionAPI, activeMode: string | undefined) => void;
+    appendModeState: (
+      pi: ExtensionAPI,
+      ctx: ExtensionContext,
+      activeMode: string | undefined,
+    ) => void;
     getActiveMode: () => string | undefined;
     setStatus: (ctx: ExtensionContext, modeName: string | undefined) => void;
   },
@@ -116,7 +120,7 @@ export function registerModeLifecycleHandlers(
   });
 
   pi.on("turn_start", (_event, ctx) => {
-    deps.appendModeState(pi, deps.getActiveMode());
+    deps.appendModeState(pi, ctx, deps.getActiveMode());
     deps.setStatus(ctx, deps.getActiveMode());
   });
 }

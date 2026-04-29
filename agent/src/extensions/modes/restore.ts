@@ -39,13 +39,17 @@ type ModeRestoreDeps = {
     modeName: string,
     source: ModeChangeSource,
     reason?: ModeChangeReason,
-    options?: { persist?: boolean },
+    options?: { persist?: boolean; appendState?: boolean },
   ) => Promise<boolean>;
   syncFromSelection: (
     pi: ExtensionAPI,
     ctx: ExtensionContext,
     source: ModeChangeSource,
-    options?: { notifyModeSwitch?: boolean; emitChangedEvent?: boolean },
+    options?: {
+      notifyModeSwitch?: boolean;
+      emitChangedEvent?: boolean;
+      appendState?: boolean;
+    },
   ) => Promise<void>;
   syncModeTools: (pi: ExtensionAPI, ctx: ExtensionContext, spec: ModeSpec | undefined) => void;
   setStatus: (ctx: ExtensionContext, modeName: string | undefined) => void;
@@ -81,7 +85,10 @@ async function emitRestoreFromSelection(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
 ): Promise<void> {
-  await deps.syncFromSelection(pi, ctx, "session_start", { emitChangedEvent: false });
+  await deps.syncFromSelection(pi, ctx, "session_start", {
+    emitChangedEvent: false,
+    appendState: false,
+  });
   deps.emitModeChanged(pi, ctx, {
     mode: deps.runtime.activeMode,
     previousMode: undefined,
@@ -107,7 +114,8 @@ async function tryRestoreFromStartupMode(
   }
 
   await deps.applyMode(pi, ctx, startupModeSelection.selectedMode, "session_start", "restore", {
-    persist: false,
+    persist: true,
+    appendState: false,
   });
   return true;
 }
@@ -122,7 +130,10 @@ async function tryRestoreFromSessionMode(
     return false;
   }
 
-  await deps.applyMode(pi, ctx, sessionMode, "session_start", "restore", { persist: false });
+  await deps.applyMode(pi, ctx, sessionMode, "session_start", "restore", {
+    persist: false,
+    appendState: false,
+  });
   return true;
 }
 
@@ -140,6 +151,7 @@ async function tryRestoreFromPersistedMode(
 
   await deps.applyMode(pi, ctx, deps.runtime.data.currentMode, "session_start", "restore", {
     persist: false,
+    appendState: false,
   });
   return true;
 }

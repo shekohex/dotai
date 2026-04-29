@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { sign } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
@@ -1796,6 +1796,9 @@ timedTest("session registry evicts idle persistent runtime and reloads on demand
 
   session.sessionStats.sessionId = "evict-session";
   session.sessionStats.sessionFile = sessionPath;
+  session.sessionStats.userMessages = 1;
+  session.sessionStats.assistantMessages = 1;
+  session.sessionStats.totalMessages = 2;
   session.sessionManager = {
     ...session.sessionManager,
     getSessionId: () => "evict-session",
@@ -1835,6 +1838,86 @@ timedTest("session registry evicts idle persistent runtime and reloads on demand
   }
 });
 
+timedTest("session registry collects detached phantom persistent session", async () => {
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-phantom-gc-",
+  });
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory: harness.runtimeFactory,
+  });
+  const auth = testAuthSession();
+
+  try {
+    const created = await registry.createSession(
+      { workspaceCwd: harness.workspaceDir, sessionName: "Phantom Session" },
+      auth,
+      "conn-gc",
+    );
+
+    registry.detachPresence(created.sessionId, "conn-gc");
+
+    const collected = await registry.evictIdleRuntimes();
+
+    expect(collected).toEqual([created.sessionId]);
+    expect(registry.getAppSnapshot(auth).sessionSummaries).toEqual([]);
+    await expectNoPersistedSessionFile(harness.sessionDir, created.sessionId);
+  } finally {
+    await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
+timedTest("session registry deletes detached empty persisted session file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-empty-persisted-gc-"));
+  const catalogRoot = join(root, "sessions");
+  const sessionPath = join(catalogRoot, "empty-persisted-session.jsonl");
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: catalogRoot }),
+  });
+  const auth = testAuthSession();
+
+  session.sessionStats.sessionId = "empty-persisted-session";
+  session.sessionStats.sessionFile = sessionPath;
+  session.sessionManager = {
+    ...session.sessionManager,
+    getSessionId: () => "empty-persisted-session",
+    getSessionFile: () => sessionPath,
+  };
+
+  try {
+    await mkdir(catalogRoot, { recursive: true });
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "empty-persisted-session",
+      cwd: "/srv/empty-persisted",
+      sessionName: "Empty Persisted Session",
+    });
+
+    const created = await registry.createSession(
+      { workspaceCwd: "/srv/empty-persisted", sessionName: "Empty Persisted Session" },
+      auth,
+      "conn-empty",
+    );
+    expect(created.sessionId).toBe("empty-persisted-session");
+
+    registry.detachPresence("empty-persisted-session", "conn-empty");
+
+    const collected = await registry.evictIdleRuntimes();
+
+    expect(collected).toEqual(["empty-persisted-session"]);
+    expect(registry.getAppSnapshot(auth).sessionSummaries).toEqual([]);
+    await expect(access(sessionPath)).rejects.toThrow();
+  } finally {
+    await registry.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "session registry keeps idle persistent runtime loaded when factory cannot reload",
   async () => {
@@ -1855,6 +1938,9 @@ timedTest(
 
     session.sessionStats.sessionId = "no-reload-session";
     session.sessionStats.sessionFile = sessionPath;
+    session.sessionStats.userMessages = 1;
+    session.sessionStats.assistantMessages = 1;
+    session.sessionStats.totalMessages = 2;
     session.sessionManager = {
       ...session.sessionManager,
       getSessionId: () => "no-reload-session",

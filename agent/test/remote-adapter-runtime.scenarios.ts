@@ -1798,7 +1798,7 @@ timedTest("milestone 3 adapter reads session stream via sse", async () => {
       fetchImpl: async (input, init) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-        if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
+        if (url.includes(`/v1/sessions/${created.sessionId}/sync`)) {
           streamRequests.push(url);
         }
         return baseFetch(input, init);
@@ -1806,14 +1806,15 @@ timedTest("milestone 3 adapter reads session stream via sse", async () => {
     });
 
     for (let attempt = 0; attempt < 80; attempt += 1) {
-      if (streamRequests.some((url) => url.includes("live=sse"))) {
+      if (streamRequests.some((url) => url.includes(`/v1/sessions/${created.sessionId}/sync`))) {
         break;
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
 
-    expect(streamRequests.some((url) => url.includes("live=sse"))).toBeTruthy();
-    expect(streamRequests.some((url) => url.includes("live=long-poll"))).toBe(false);
+    expect(
+      streamRequests.some((url) => url.includes(`/v1/sessions/${created.sessionId}/sync`)),
+    ).toBeTruthy();
 
     const initialSseRequestCount = streamRequests.length;
     await new Promise<void>((resolve) => setTimeout(resolve, 300));
@@ -1859,7 +1860,7 @@ timedTest("milestone 3 adapter applies live sse control offsets without reconnec
       fetchImpl: async (input, init) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-        if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
+        if (url.includes(`/v1/sessions/${created.sessionId}/sync`)) {
           streamRequests.push(url);
         }
         return baseFetch(input, init);
@@ -1943,7 +1944,7 @@ timedTest(
           }
           if (
             !streamUnauthorizedInjected &&
-            url.includes(`/streams/sessions/${created.sessionId}/events`)
+            url.includes(`/v1/sessions/${created.sessionId}/sync`)
           ) {
             streamUnauthorizedInjected = true;
             return new Response(JSON.stringify({ error: "Invalid token" }), {
@@ -2054,10 +2055,7 @@ timedTest(
         clientCapabilities: REMOTE_DEFAULT_CLIENT_CAPABILITIES,
         fetchImpl: async (input, init) => {
           const url = typeof input === "string" ? input : input.url;
-          if (
-            !unauthorizedInjected &&
-            url.includes(`/streams/sessions/${created.sessionId}/events`)
-          ) {
+          if (!unauthorizedInjected && url.includes(`/v1/sessions/${created.sessionId}/sync`)) {
             unauthorizedInjected = true;
             useRestartedServer = true;
             await remoteA?.dispose();
@@ -2160,7 +2158,7 @@ timedTest("milestone 3 adapter stops auth refresh loop when key is denied", asyn
             });
           }
         }
-        if (url.includes(`/streams/sessions/${created.sessionId}/events`)) {
+        if (url.includes(`/v1/sessions/${created.sessionId}/sync`)) {
           return new Response(JSON.stringify({ error: "Invalid token" }), {
             status: 401,
             headers: {
@@ -2232,32 +2230,44 @@ timedTest("milestone 3 adapter retries failed stream batch from same offset", as
     sessionAny.closed = false;
     sessionAny.streamOffset = "0-0";
 
-    const offsets: string[] = [];
     let readCalls = 0;
-    sessionAny.client.readSessionEvents = async (_sessionId: string, offset: string) => {
-      offsets.push(offset);
+    sessionAny.client.readSessionSync = async (
+      _sessionId: string,
+      input: { onSyncEvent: (event: unknown) => Promise<void> },
+    ) => {
       readCalls += 1;
       if (readCalls === 1) {
-        return {
-          events: [
-            { kind: "unknown_first", payload: { id: "first" }, streamOffset: "0-1" },
-            { kind: "unknown_second", payload: { id: "second" }, streamOffset: "0-2" },
-          ],
-          nextOffset: "0-3",
-          streamClosed: false,
-        };
+        throw { status: 500, message: "transient" };
       }
-      if (readCalls === 2) {
-        return {
-          events: [
-            { kind: "unknown_first", payload: { id: "first" }, streamOffset: "0-1" },
-            { kind: "unknown_second", payload: { id: "second" }, streamOffset: "0-2" },
-          ],
-          nextOffset: "0-3",
-          streamClosed: true,
-        };
+      if (readCalls === 2 || readCalls === 3) {
+        await input.onSyncEvent({
+          type: "server.connected",
+          sessionId: created.sessionId,
+        });
+        await input.onSyncEvent({
+          type: "snapshot",
+          sessionId: created.sessionId,
+          version: "0-0",
+          snapshot: await sessionAny.client.getSessionSnapshot(created.sessionId),
+        });
+        await input.onSyncEvent({
+          type: "patch",
+          sessionId: created.sessionId,
+          version: "0-3",
+          event: { kind: "unknown_first", payload: { id: "first" }, streamOffset: "0-1" },
+        });
+        await input.onSyncEvent({
+          type: "patch",
+          sessionId: created.sessionId,
+          version: "0-3",
+          event: { kind: "unknown_second", payload: { id: "second" }, streamOffset: "0-2" },
+        });
+        if (readCalls === 3) {
+          sessionAny.closed = true;
+        }
+        return;
       }
-      throw new Error("unexpected readSessionEvents call");
+      throw new Error("unexpected readSessionSync call");
     };
 
     const handled: string[] = [];
@@ -2272,7 +2282,7 @@ timedTest("milestone 3 adapter retries failed stream batch from same offset", as
 
     await sessionAny.pollEvents();
 
-    expect(offsets).toEqual(["0-0", "0-0"]);
+    expect(readCalls).toBe(3);
     expect(handled).toEqual(["first", "second"]);
     expect(sessionAny.streamOffset).toBe("0-3");
   } finally {
@@ -2317,7 +2327,7 @@ timedTest("milestone 3 adapter fails fast on non-http polling errors", async () 
     sessionAny.closed = false;
 
     let readCalls = 0;
-    sessionAny.client.readSessionEvents = async () => {
+    sessionAny.client.readSessionSync = async () => {
       readCalls += 1;
       throw new Error("schema mismatch");
     };

@@ -1,7 +1,8 @@
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { SessionStats } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import type { StreamEventEnvelope } from "../../schemas.js";
+import { errorMessage } from "../../../utils/error-message.js";
+import type { SessionSyncEvent, StreamEventEnvelope } from "../../schemas.js";
 import {
   applyRemoteSettingsSnapshotInPlace,
   applyRemoteExtensionsSnapshot,
@@ -25,7 +26,7 @@ import {
   createRemoteSessionPollingInput,
   createRemoteSessionPollingStateHandlers,
   handleRemoteSessionEnvelope,
-  pollRemoteSessionRuntime,
+  type PollRemoteSessionRuntimeInput,
 } from "./polling-ops.js";
 import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-modes-store.js";
 import { RemoteApiError } from "../../runtime-api/utils.js";
@@ -145,14 +146,85 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   }
 
   protected async pollEvents(): Promise<void> {
-    await pollRemoteSessionRuntime(this.createPollingRuntimeInput());
+    while (!this.closed) {
+      const controller = new AbortController();
+      this.activeReadAbortController = controller;
+
+      try {
+        await this.client.readSessionSync(this.sessionId, {
+          signal: controller.signal,
+          onSyncEvent: async (event) => {
+            await this.handleSyncEvent(event);
+          },
+        });
+        if (!this.closed) {
+          await delay(250);
+        }
+      } catch (error) {
+        if (controller.signal.aborted || this.closed) {
+          return;
+        }
+
+        if (error instanceof RemoteApiError && error.status === 401) {
+          const recovered = await this.recoverAuthentication();
+          if (recovered) {
+            continue;
+          }
+          return;
+        }
+
+        const status = readErrorStatus(error);
+        let retryable: boolean;
+        if (status === undefined) {
+          retryable = error instanceof TypeError;
+        } else {
+          retryable = isRetryableStatus(status);
+        }
+        if (retryable) {
+          await delay(250);
+          continue;
+        }
+
+        this.handleRemoteError(`Remote stream polling failed: ${errorMessage(error)}`);
+        return;
+      } finally {
+        if (this.activeReadAbortController === controller) {
+          this.activeReadAbortController = undefined;
+        }
+      }
+    }
+  }
+
+  protected async handleSyncEvent(event: SessionSyncEvent): Promise<void> {
+    if (event.type === "server.connected") {
+      return;
+    }
+
+    const previousOffset = this.streamOffset;
+    const previousErrorMessage = this.state.errorMessage;
+    this.streamOffset = event.version;
+
+    if (event.type === "snapshot") {
+      this.applySnapshot(event.snapshot);
+      if (
+        previousErrorMessage !== undefined &&
+        previousErrorMessage.length > 0 &&
+        event.snapshot.errorMessage === null &&
+        previousOffset === event.version
+      ) {
+        this.state.errorMessage = previousErrorMessage;
+      }
+      return;
+    }
+
+    await this.handleEnvelope(event.event);
   }
 
   protected async handleEnvelope(envelope: StreamEventEnvelope): Promise<void> {
     await handleRemoteSessionEnvelope(this.createPollingRuntimeInput(), envelope);
   }
 
-  protected createPollingRuntimeInput(): Parameters<typeof pollRemoteSessionRuntime>[0] {
+  protected createPollingRuntimeInput(): PollRemoteSessionRuntimeInput {
     return createRemoteSessionPollingInput({
       isClosed: () => this.closed,
       getStreamOffset: () => this.streamOffset,
@@ -401,6 +473,47 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   }> {
     return [...this.activeBashExecutions.values()].map((execution) => ({ ...execution }));
   }
+
+  private async recoverAuthentication(): Promise<boolean> {
+    this.handleRemoteWarning("Remote auth token invalid or expired. Reconnecting...");
+    let attempt = 0;
+
+    while (!this.closed) {
+      try {
+        await this.client.reauthenticate();
+        await this.resyncAfterReauthentication();
+        this.handleRemoteWarning("Remote connection restored.");
+        return true;
+      } catch (error) {
+        if (this.closed) {
+          return false;
+        }
+
+        const status = readErrorStatus(error);
+        if (status === 401 || status === 403) {
+          this.handleRemoteError(`Remote authentication denied: ${formatRemoteError(error)}`);
+          return false;
+        }
+
+        let retryable: boolean;
+        if (status === undefined) {
+          retryable = error instanceof TypeError;
+        } else {
+          retryable = isRetryableStatus(status);
+        }
+        if (retryable) {
+          attempt += 1;
+          await delay(getBackoffDelayMs(attempt));
+          continue;
+        }
+
+        this.handleRemoteError(`Remote authentication refresh failed: ${formatRemoteError(error)}`);
+        return false;
+      }
+    }
+
+    return false;
+  }
 }
 
 type BashExecutionMessagePayload = {
@@ -472,4 +585,37 @@ function toBashExecutionMessage(
       ? {}
       : { excludeFromContext: payload.excludeFromContext }),
   };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function readErrorStatus(error: unknown): number | undefined {
+  if (error === null || typeof error !== "object" || !("status" in error)) {
+    return undefined;
+  }
+
+  const status = error.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status >= 500 || status === 408 || status === 425 || status === 429;
+}
+
+function formatRemoteError(error: unknown): string {
+  const status = readErrorStatus(error);
+  const message = errorMessage(error);
+  if (status === undefined) {
+    return message;
+  }
+  return `${message} (HTTP ${status})`;
+}
+
+function getBackoffDelayMs(attempt: number): number {
+  const factor = 2 ** Math.max(0, attempt - 1);
+  return Math.min(500 * factor, 30_000);
 }

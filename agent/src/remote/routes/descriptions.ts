@@ -213,6 +213,23 @@ export const sessionSnapshotRouteDescription = {
   },
 };
 
+export const sessionSyncRouteDescription = {
+  tags: ["streams"],
+  operationId: "syncSession",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: {
+      description: "Session sync stream",
+      content: {
+        "text/event-stream": {
+          schema: { type: "string" as const },
+        },
+      },
+    },
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
 export const sessionSummaryRouteDescription = {
   tags: ["snapshot"],
   operationId: "getSessionSummary",

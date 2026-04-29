@@ -22,6 +22,8 @@ type StreamListener = (event: StreamEventEnvelope) => void;
 interface StreamState {
   id: string;
   events: StreamEventEnvelope[];
+  firstRetainedPosition: number;
+  nextPosition: number;
   listeners: Set<StreamListener>;
   closed: boolean;
 }
@@ -69,6 +71,11 @@ function resolveOffset(offset: string | undefined, nextOffset: string): string |
 
 export class InMemoryDurableStreamStore {
   private readonly streams = new Map<string, StreamState>();
+  private readonly maxRetainedEventsPerStream: number;
+
+  constructor(options?: { maxRetainedEventsPerStream?: number }) {
+    this.maxRetainedEventsPerStream = options?.maxRetainedEventsPerStream ?? 512;
+  }
 
   ensureStream(streamId: string): void {
     if (this.streams.has(streamId)) {
@@ -77,6 +84,8 @@ export class InMemoryDurableStreamStore {
     this.streams.set(streamId, {
       id: streamId,
       events: [],
+      firstRetainedPosition: 1,
+      nextPosition: 0,
       listeners: new Set(),
       closed: false,
     });
@@ -87,7 +96,8 @@ export class InMemoryDurableStreamStore {
     input: AppendEventInput<TKind>,
   ): StreamEventEnvelope {
     const stream = this.getOrCreate(streamId);
-    const streamOffset = formatOffset(stream.events.length + 1);
+    stream.nextPosition += 1;
+    const streamOffset = formatOffset(stream.nextPosition);
     const eventCandidate: unknown = {
       eventId: randomUUID(),
       sessionId: input.sessionId,
@@ -99,6 +109,7 @@ export class InMemoryDurableStreamStore {
     assertType(StreamEventEnvelopeSchema, eventCandidate);
     const event = eventCandidate;
     stream.events.push(event);
+    this.trimRetainedEvents(stream);
     for (const listener of stream.listeners) {
       listener(event);
     }
@@ -107,24 +118,22 @@ export class InMemoryDurableStreamStore {
 
   read(streamId: string, offset: string | undefined): StreamReadResult {
     const stream = this.getOrCreate(streamId);
-    const nextOffset = formatOffset(stream.events.length);
+    const nextOffset = formatOffset(stream.nextPosition);
     const resolvedOffset = resolveOffset(offset, nextOffset);
-    const events =
-      resolvedOffset !== undefined && resolvedOffset.length > 0
-        ? stream.events.filter((event) => event.streamOffset > resolvedOffset)
-        : [...stream.events];
+    const requestedPosition = parseResolvedOffsetPosition(resolvedOffset);
+    const events = selectRetainedEvents(stream, requestedPosition);
     return {
       events,
       fromOffset: resolvedOffset ?? null,
       nextOffset,
-      upToDate: true,
+      upToDate: requestedPosition >= stream.firstRetainedPosition - 1,
       streamClosed: stream.closed,
     };
   }
 
   getHeadOffset(streamId: string): string {
     const stream = this.getOrCreate(streamId);
-    return formatOffset(stream.events.length);
+    return formatOffset(stream.nextPosition);
   }
 
   subscribe(streamId: string, listener: StreamListener): () => void {
@@ -141,17 +150,15 @@ export class InMemoryDurableStreamStore {
     listener: StreamListener,
   ): StreamSubscription {
     const stream = this.getOrCreate(streamId);
-    const nextOffset = formatOffset(stream.events.length);
+    const nextOffset = formatOffset(stream.nextPosition);
     const resolvedOffset = resolveOffset(offset, nextOffset);
-    const events =
-      resolvedOffset !== undefined && resolvedOffset.length > 0
-        ? stream.events.filter((event) => event.streamOffset > resolvedOffset)
-        : [...stream.events];
+    const requestedPosition = parseResolvedOffsetPosition(resolvedOffset);
+    const events = selectRetainedEvents(stream, requestedPosition);
     const read: StreamReadResult = {
       events,
       fromOffset: resolvedOffset ?? null,
       nextOffset,
-      upToDate: true,
+      upToDate: requestedPosition >= stream.firstRetainedPosition - 1,
       streamClosed: stream.closed,
     };
 
@@ -229,12 +236,51 @@ export class InMemoryDurableStreamStore {
     const created: StreamState = {
       id: streamId,
       events: [],
+      firstRetainedPosition: 1,
+      nextPosition: 0,
       listeners: new Set(),
       closed: false,
     };
     this.streams.set(streamId, created);
     return created;
   }
+
+  private trimRetainedEvents(stream: StreamState): void {
+    if (stream.events.length <= this.maxRetainedEventsPerStream) {
+      return;
+    }
+
+    const deleteCount = stream.events.length - this.maxRetainedEventsPerStream;
+    stream.events.splice(0, deleteCount);
+    stream.firstRetainedPosition += deleteCount;
+  }
+}
+
+function parseResolvedOffsetPosition(offset: string | undefined): number {
+  if (offset === undefined || offset === "-1") {
+    return -1;
+  }
+
+  const separatorIndex = offset.indexOf("_");
+  if (separatorIndex === -1) {
+    return -1;
+  }
+
+  const parsed = Number.parseInt(offset.slice(separatorIndex + 1), 10);
+  return Number.isSafeInteger(parsed) ? parsed : -1;
+}
+
+function selectRetainedEvents(
+  stream: StreamState,
+  requestedPosition: number,
+): StreamEventEnvelope[] {
+  if (requestedPosition < stream.firstRetainedPosition - 1) {
+    return [...stream.events];
+  }
+
+  return stream.events.filter(
+    (event) => parseResolvedOffsetPosition(event.streamOffset) > requestedPosition,
+  );
 }
 
 export function appEventsStreamId(): string {

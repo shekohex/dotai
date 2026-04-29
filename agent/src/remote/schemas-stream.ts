@@ -11,6 +11,7 @@ import {
   RemoteModelSettingsSchema,
   SessionStatsSchema,
   SessionStatusSchema,
+  SessionSnapshotSchema,
   UiResponseRequestSchema,
 } from "./schemas-core.js";
 import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
@@ -346,3 +347,28 @@ export const StreamReadResponseSchema = Type.Object({
   streamClosed: Type.Boolean(),
   events: Type.Array(StreamEventEnvelopeSchema),
 });
+
+export const SessionSyncConnectedEventSchema = Type.Object({
+  type: Type.Literal("server.connected"),
+  sessionId: Type.String(),
+});
+
+export const SessionSyncSnapshotEventSchema = Type.Object({
+  type: Type.Literal("snapshot"),
+  sessionId: Type.String(),
+  version: Type.String(),
+  snapshot: SessionSnapshotSchema,
+});
+
+export const SessionSyncPatchEventSchema = Type.Object({
+  type: Type.Literal("patch"),
+  sessionId: Type.String(),
+  version: Type.String(),
+  event: StreamEventEnvelopeSchema,
+});
+
+export const SessionSyncEventSchema = Type.Union([
+  SessionSyncConnectedEventSchema,
+  SessionSyncSnapshotEventSchema,
+  SessionSyncPatchEventSchema,
+]);

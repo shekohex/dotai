@@ -1823,6 +1823,77 @@ timedTest("readAndSubscribe includes replay and post-subscribe events", () => {
   subscription.unsubscribe();
 });
 
+timedTest("stream retention stays bounded and marks stale replay as not up to date", () => {
+  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 3 });
+  const streamId = "app-events";
+  streams.ensureStream(streamId);
+
+  for (let index = 0; index < 5; index += 1) {
+    streams.append(streamId, {
+      sessionId: null,
+      kind: "server_notice",
+      payload: { message: String(index) },
+    });
+  }
+
+  const staleRead = streams.read(streamId, "0000000000000000_0000000000000000");
+  expect(staleRead.events).toHaveLength(3);
+  expect(staleRead.upToDate).toBe(false);
+  expect(staleRead.nextOffset).toBe("0000000000000000_0000000000000005");
+
+  const freshRead = streams.read(streamId, "0000000000000000_0000000000000004");
+  expect(freshRead.events).toHaveLength(1);
+  expect(freshRead.upToDate).toBe(true);
+});
+
+timedTest("session sync stream emits connected then snapshot", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const response = await remote.app.request(`/v1/sessions/${created.sessionId}/sync`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+
+    const reader = response.body?.getReader();
+    expect(reader).toBeTruthy();
+    let payload = "";
+    while (!payload.includes('"type":"snapshot"')) {
+      const chunk = await reader!.read();
+      if (chunk.done) {
+        break;
+      }
+      payload += new TextDecoder().decode(chunk.value);
+    }
+    await reader?.cancel();
+
+    expect(payload).toMatch(/"type":"server.connected"/);
+    expect(payload).toMatch(/"type":"snapshot"/);
+    expect(payload).toMatch(new RegExp(`"sessionId":"${created.sessionId}"`));
+  } finally {
+    await remote.dispose();
+  }
+});
+
 timedTest("stream endpoints accept durable protocol sentinel offsets", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 

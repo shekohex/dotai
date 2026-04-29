@@ -50,6 +50,7 @@ import {
   restoreSessionRouteDescription,
   sessionSummaryRouteDescription,
   sessionSnapshotRouteDescription,
+  sessionSyncRouteDescription,
   sessionToolDefinitionRouteDescription,
   sessionForkMessagesRouteDescription,
   sessionToolsRouteDescription,
@@ -102,6 +103,7 @@ import {
   handleUpdateSessionSettings,
 } from "./routes/handlers-commands.js";
 import { handleAppEventsStreamRead, handleSessionEventsStreamRead } from "./routes/stream-read.js";
+import { handleSessionSync } from "./routes/session-sync.js";
 import { assertType } from "./typebox.js";
 import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./routes/types.js";
 
@@ -492,17 +494,28 @@ function registerStreamRoutes<S extends Schema, BasePath extends string>(
     tbValidator("query", StreamReadQuerySchema),
     (c) => handleAppEventsStreamRead(c, dependencies, c.req.valid("query")),
   );
-  return route15.get(
-    "/streams/sessions/:sessionId/events",
-    describeRoute(readSessionEventsStreamRouteDescription),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("query", StreamReadQuerySchema),
-    (c) => {
-      const { sessionId } = c.req.valid("param");
-      return handleSessionEventsStreamRead(c, dependencies, sessionId, c.req.valid("query"));
-    },
-  );
+  return route15
+    .get(
+      "/streams/sessions/:sessionId/events",
+      describeRoute(readSessionEventsStreamRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      tbValidator("query", StreamReadQuerySchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleSessionEventsStreamRead(c, dependencies, sessionId, c.req.valid("query"));
+      },
+    )
+    .get(
+      "/sessions/:sessionId/sync",
+      describeRoute(sessionSyncRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleSessionSync(c, dependencies, sessionId);
+      },
+    );
 }
 
 export function createV1Routes(dependencies: RemoteRoutesDependencies) {

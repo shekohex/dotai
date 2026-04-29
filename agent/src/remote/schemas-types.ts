@@ -58,6 +58,10 @@ import {
 import {
   ExtensionUiResolvedEventPayloadSchema,
   ExtensionUiRequestEventPayloadSchema,
+  SessionSyncConnectedEventSchema,
+  SessionSyncEventSchema,
+  SessionSyncPatchEventSchema,
+  SessionSyncSnapshotEventSchema,
   StreamEventEnvelopeSchema,
   StreamReadResponseSchema,
 } from "./schemas-stream.js";
@@ -113,6 +117,10 @@ export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;
 export type ExtensionUiRequestEventPayload = Static<typeof ExtensionUiRequestEventPayloadSchema>;
 export type ExtensionUiResolvedEventPayload = Static<typeof ExtensionUiResolvedEventPayloadSchema>;
 export type StreamReadResponse = Static<typeof StreamReadResponseSchema>;
+export type SessionSyncConnectedEvent = Static<typeof SessionSyncConnectedEventSchema>;
+export type SessionSyncSnapshotEvent = Static<typeof SessionSyncSnapshotEventSchema>;
+export type SessionSyncPatchEvent = Static<typeof SessionSyncPatchEventSchema>;
+export type SessionSyncEvent = Static<typeof SessionSyncEventSchema>;
 export type Presence = Static<typeof PresenceSchema>;
 export type RemoteExtensionMetadata = Static<typeof RemoteExtensionMetadataSchema>;
 export type RemoteExtensionRuntime = Static<typeof RemoteExtensionRuntimeSchema>;

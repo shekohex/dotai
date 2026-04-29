@@ -7,6 +7,7 @@ import type {
   BashRecordRequest,
   BashRecordResponse,
   SessionToolsResponse,
+  SessionSyncEvent,
   AppSnapshot,
   ClientCapabilities,
   ConnectionCapabilitiesResponse,
@@ -70,6 +71,7 @@ import {
   resolveRemoteConnectionId,
 } from "./internals.js";
 import { readRemoteSessionEvents } from "./streams.js";
+import { readRemoteSessionSync } from "./sync.js";
 import {
   type ReadSessionEventsOptions,
   type StreamReadResult,
@@ -602,6 +604,26 @@ export class RemoteApiClient {
         { headers },
       ),
     );
+  }
+
+  async readSessionSync(
+    sessionId: string,
+    input: {
+      signal?: AbortSignal;
+      onSyncEvent: (event: SessionSyncEvent) => Promise<void> | void;
+    },
+  ): Promise<void> {
+    await readRemoteSessionSync({
+      fetchImpl: this.fetchImpl,
+      origin: this.origin,
+      sessionId,
+      headers: await this.getAuthHeaders(),
+      signal: input.signal,
+      captureConnectionId: (response) => {
+        this.captureConnectionId(response);
+      },
+      onSyncEvent: input.onSyncEvent,
+    });
   }
 
   private async postSessionRoute(

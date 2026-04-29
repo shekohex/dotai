@@ -495,6 +495,7 @@ Important conclusion from session:
 
 - reconnecting client usually does not need every historical `message_update`
 - if `message_end` already exists, replaying previous streaming token deltas is wasted work
+- after crash/restart, upstream Pi semantics are acceptable: partial assistant/tool state may be lost even if live client had seen it before crash
 
 ## Minimum Diff Protocol Direction
 
@@ -508,6 +509,7 @@ Recommended distinction:
 - mutate only active streaming UI state
 - replaceable
 - not authoritative long-term
+- not guaranteed to survive crash/restart
 
 Examples:
 
@@ -520,6 +522,7 @@ Examples:
 - authoritative
 - enough to reconstruct state after reconnect
 - derived from authoritative runtime state and committed session history
+- durable version only advances when durable state changes are recorded
 
 Examples:
 
@@ -528,6 +531,7 @@ Examples:
 - queue changed
 - retry started/ended
 - compaction started/ended
+- bash started/ended
 
 This separation is critical.
 
@@ -648,12 +652,13 @@ Cons:
 Recommended path from session discussion:
 
 1. Stop treating current durable stream as long-term architectural center.
-2. Make session snapshot authoritative for reconnect.
-3. Use existing session JSONL-backed entries for committed history pagination.
-4. Move live fanout to bus-first architecture closer to `opencode`.
-5. Treat live progress updates as transient transport data.
-6. Add only small bounded/coalesced live buffering if transport needs it.
-7. Remove older assumption that full transient replay history is required.
+2. Replace stream routes with per-session SSE sync endpoint that emits `server.connected`, `snapshot`, then live `patch` events.
+3. Make inline snapshot authoritative for reconnect.
+4. Use existing session JSONL-backed entries for committed history pagination.
+5. Move live fanout to bus-first architecture closer to `opencode`.
+6. Treat live progress updates as transient transport data.
+7. Persist only durable state transitions and committed messages.
+8. Remove older assumption that full transient replay history is required.
 
 Outcome-first summary:
 
@@ -667,47 +672,56 @@ Outcome-first summary:
 
 ### Design checklist
 
-- [ ] define event taxonomy: durable, replaceable, ephemeral
-- [ ] define authoritative session snapshot shape
-- [ ] define live progress patch shapes
-- [ ] define reconnect bootstrap flow
-- [ ] define which snapshot fields come from JSONL vs runtime-only state
-- [ ] define exact client reconciliation rule when snapshot replaces stale local transient state
+- [x] define event taxonomy: durable, replaceable, ephemeral
+- [x] define extension sync classes in event contract
+- [x] define authoritative session snapshot shape at protocol level
+- [x] define live progress patch shapes at protocol level
+- [x] define reconnect bootstrap flow
+- [x] define client reconciliation rule: merge by identity, snapshot wins on conflict
+- [ ] define exact TypeBox schemas for new snapshot and patch envelopes
+- [ ] define exact interrupted status enums for each runtime domain
 
 ### Storage checklist
 
-- [ ] reduce or cap unbounded `events[]` retention
-- [ ] implement replaceable-slot coalescing
+- [ ] remove unbounded `events[]` retention from remote stream store path
+- [ ] implement typed durable transition entries for queue/retry/compaction/bash
+- [ ] persist session version with durable state transitions
 - [ ] ensure `tool_execution_update` does not persist every accumulated partial snapshot forever
-- [ ] verify committed history needs are served by existing session manager persistence before adding new storage
+- [ ] add reducer-based rebuild from session JSONL on boot
 
 ### Server checklist
 
 - [ ] separate live transport concerns from reconnect recovery concerns
-- [ ] make session snapshot primary reconnect endpoint
-- [ ] maintain active-run partial snapshot for reconnect during streaming
-- [ ] ensure reconnect path can succeed without retained transient stream backlog
+- [ ] add per-session SSE sync endpoint
+- [ ] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
+- [ ] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
 - [ ] add internal live event bus layer
 - [ ] make SSE subscribe to bus instead of retained stream store
-- [ ] expose committed history through normal HTTP endpoints, not stream catch-up
+- [ ] expose committed history through paginated session entries endpoint only
+- [ ] remove long-poll and stream-offset replay endpoints from target design
+- [ ] rebuild interrupted runtime state from durable reducers after restart
 
 ### Client checklist
 
 - [ ] apply progress deltas to active local state
-- [ ] replace local state from fresh snapshot on reconnect
+- [ ] merge durable state by identity and let snapshot win on conflict
+- [ ] replace transient local state from fresh snapshot on reconnect
 - [ ] clear transient partial state when final durable event arrives
 - [ ] support multi-client eventual consistency by honoring durable order
 - [ ] tolerate reconnect where some transient updates were never observed
+- [ ] treat `server.connected` as reconnect/resync signal
 
 ### Testing checklist
 
 - [ ] reproduce high-volume memory case
-- [ ] verify bounded memory under sustained `message_update`
-- [ ] verify bounded memory under sustained `tool_execution_update`
-- [ ] verify reconnect during streaming restores correct active partial state
+- [ ] verify bounded memory under sustained 100k `message_update`
+- [ ] verify bounded memory under sustained 100k `tool_execution_update`
+- [ ] verify reconnect during same-process streaming restores correct active partial state within 2s
+- [ ] verify crash mid-assistant stream restores committed transcript plus interrupted state within 5s
+- [ ] verify crash mid-tool stream restores committed tool state plus interrupted state within 5s
 - [ ] verify reconnect after completion skips obsolete transient updates
-- [ ] verify two clients converge to same final state after snapshot-based reconnect
-- [ ] verify reconnect works when transient live backlog is intentionally discarded
+- [ ] verify two clients converge to same final durable state after snapshot-based reconnect
+- [ ] verify extension ephemeral/replaceable/durable contracts behave correctly across reconnect and restart
 
 ## QA
 
@@ -739,8 +753,8 @@ Yes.
 
 Recommended answer now:
 
-- server returns fresh authoritative session snapshot
-- snapshot includes current active partial assistant/tool state when available
+- for transient disconnect while same process stays alive, snapshot can include current active partial assistant/tool state
+- after crash/restart, snapshot restores durable state and explicit interrupted runtime state instead of in-flight partials
 - client resumes live subscription after replacing/reconciling local state
 
 Client does not need every missed intermediate token delta if current partial or final committed state is available.
@@ -749,7 +763,7 @@ Client does not need every missed intermediate token delta if current partial or
 
 Not necessarily.
 
-Current session clarification says existing session JSONL may already be enough for committed history needs, together with authoritative session snapshot for active runtime state.
+Current session clarification says existing session JSONL is primary durable source for committed history and typed runtime transition entries.
 
 Separate persistent sync log becomes optional, not assumed.
 
@@ -777,6 +791,15 @@ Live events still valuable for:
 
 Best shape is snapshot + live updates + existing committed history, not snapshot-only or replay-heavy stream retention.
 
+### Q: What survives crash/restart?
+
+Committed durable state survives.
+
+- committed transcript and custom durable entries survive through session JSONL
+- queue/retry/compaction/bash state survives through typed durable transition entries
+- interrupted status is reconstructed on boot for domains that were running before crash
+- in-flight assistant and tool partials do not survive, matching accepted upstream Pi semantics
+
 ### Q: Why not only use ring buffer?
 
 Ring buffer alone gives memory bound, but not reconnect correctness.
@@ -785,87 +808,67 @@ Need also authoritative snapshot.
 
 ## Migration Path
 
-### Phase 1: Immediate safety
+### Phase 1: New durable taxonomy
 
-Goal: stop OOM with smallest change.
+Goal: define what survives restart.
 
-1. Add bounded retention to `InMemoryDurableStreamStore`.
-2. Coalesce replaceable hot events.
-3. Add tests proving heap stays bounded under hot update streams.
-
-Expected result:
-
-- hard cap on heap growth from stream retention
-
-### Phase 2: Snapshot-first reconnect
-
-Goal: stop depending on stream replay for reconnect.
-
-1. Make session snapshot authoritative reconnect source.
-2. Ensure snapshot includes active partial assistant/tool state.
-3. Ensure reconnect path always refreshes snapshot before resuming live stream.
+1. Add typed durable transition entries for queue/retry/compaction/bash.
+2. Add extension sync classes and durable reducers.
+3. Persist session version with durable state changes.
 
 Expected result:
 
-- reconnect correctness independent from long event retention
+- durable recovery source is explicit and reducer-driven
 
-### Phase 3: Event classification
+### Phase 2: New per-session SSE sync endpoint
 
-Goal: reduce active in-memory churn.
+Goal: make sync atomic and replay-free.
 
-1. Add replaceable slots keyed by semantic identity.
-2. Coalesce streaming message updates.
-3. Coalesce tool execution partial updates.
-4. Coalesce patch domains.
+1. Add per-session SSE endpoint.
+2. Subscribe client before sending sync data.
+3. Emit `server.connected`, then `snapshot`, then live `patch` events.
 
 Expected result:
 
-- dramatically fewer retained transient objects
+- reconnect correctness without offset replay
 
-### Phase 4: Move transport to bus-first architecture
+### Phase 3: Bus-first fanout
 
-Goal: make server flow closer to `opencode`.
+Goal: decouple live transport from retained storage.
 
 1. Add internal live event bus abstraction.
 2. Publish runtime/session progress events to bus.
-3. Make SSE subscribe to bus directly.
-4. Remove dependence on retained stream arrays for connected-client fanout.
+3. Remove retained stream arrays from connected-client fanout.
 
 Expected result:
 
-- live transport simpler
-- less coupling between fanout and reconnect recovery
+- bounded live fanout path
+- less coupling between transport and recovery
 
-### Phase 5: Use existing session JSONL deliberately
+### Phase 4: Boot rebuild and interrupted state
 
-Goal: reuse committed history already available.
+Goal: survive crash/restart using durable state only.
 
-1. Treat `snapshot.entries` and paginated session entries as committed history source.
-2. Document which reconnect needs are solved by JSONL entries and which require runtime snapshot state.
-3. Avoid inventing new persistent replay log unless later proven necessary.
-
-Expected result:
-
-- simpler architecture
-- no duplicate durability layer by default
-
-### Phase 6: Protocol cleanup
-
-Goal: correct reconnect during ongoing stream.
-
-1. Add authoritative active-run snapshot endpoint or enrich session snapshot.
-2. Include current partial assistant/tool state.
-3. On reconnect, send this snapshot instead of replaying whole transient chain.
+1. Rebuild canonical session state from session JSONL reducers on boot.
+2. Mark any previously running domain as `interrupted`.
+3. Emit fresh authoritative snapshot after restart.
 
 Expected result:
 
-- reconnect during active generation is fast and accurate
+- restart recovery matches accepted upstream semantics
+
+### Phase 5: Remove legacy remote stream model
+
+Goal: delete obsolete replay-centric architecture.
+
+1. Remove long-poll and offset replay endpoints.
+2. Remove dependence on `InMemoryDurableStreamStore` for recovery.
+3. Keep only paginated durable entries endpoint for history.
 
 Expected result:
 
-- easier reasoning
-- smaller payloads
-- reconnect model aligned with actual requirement
+- cleaner architecture
+- no backward-compat replay machinery
 
 ## Summary
 
@@ -893,6 +896,7 @@ Final recommendation:
 - optimize for current-state restoration
 - keep prompts, transport, and architecture outcome-first
 - avoid over-specifying replay machinery that does not improve reconnect correctness
+- follow upstream Pi semantics for transient partial loss on crash/restart
 
 That architecture best satisfies goals from this session:
 

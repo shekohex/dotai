@@ -1745,6 +1745,73 @@ timedTest(
   },
 );
 
+timedTest(
+  "mode CLI flags keep explicit startup mode after other loaders register different flags",
+  async () => {
+    const sessionCwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-local-"));
+    const loaderCwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-overwrite-loader-"));
+    let session: TestSession | undefined;
+    const observedModeChanges: CapturedModeChange[] = [];
+    const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+    await writeSharedSelectionModesFile(sessionCwd);
+    await writeHandoffModesFile(loaderCwd);
+
+    try {
+      await withProcessCwd(sessionCwd, async () => {
+        session = await createTestSession({
+          cwd: sessionCwd,
+          extensionFactories: [
+            modesExtension,
+            createModeChangeCaptureExtension(observedModeChanges),
+            providers.extensionFactory,
+          ],
+        });
+
+        (
+          session!.session as {
+            extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void };
+          }
+        ).extensionRunner.setFlagValue("mode-review", true);
+
+        await withProcessCwd(loaderCwd, async () => {
+          const loader = new DefaultResourceLoader({
+            cwd: loaderCwd,
+            agentDir: loaderCwd,
+            extensionFactories: [modesExtension, providers.extensionFactory],
+          });
+          await loader.reload();
+        });
+
+        await session!.session.reload();
+
+        const model = session!.session as {
+          model: { provider: string; id: string };
+          thinkingLevel: string;
+        };
+        expect(model.model.provider).toBe("mode-provider");
+        expect(model.model.id).toBe("mode-model");
+        expect(model.thinkingLevel).toBe("high");
+        expect(getLatestModeState(session!)).toBe(undefined);
+
+        observedModeChanges.length = 0;
+
+        await session!.session.prompt("hello");
+        await session!.session.agent.waitForIdle();
+        await new Promise((resolve) => setTimeout(resolve, 5));
+
+        expect(getLatestModeState(session!)).toBe("review");
+        expect(observedModeChanges.length).toBe(0, JSON.stringify(observedModeChanges));
+      });
+    } finally {
+      session?.dispose();
+      providers.dispose();
+      await rm(sessionCwd, { recursive: true, force: true });
+      await rm(loaderCwd, { recursive: true, force: true });
+    }
+  },
+);
+
 timedTest("LiteLLM provider registrations add the gemini provider via v1beta", () => {
   const registrations = createLiteLLMProviderRegistrations(
     {

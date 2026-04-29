@@ -55,6 +55,24 @@ function parseThemeColor(value: unknown): ThemeColor | undefined {
   return Value.Parse(ThemeColorSchema, value);
 }
 
+function ignoreStaleSessionReplacementError(error: unknown): void {
+  if (!isStaleSessionReplacementContextError(error)) {
+    throw error;
+  }
+}
+
+function requestRenderSafely(requestRender: (() => void) | undefined): void {
+  if (!requestRender) {
+    return;
+  }
+
+  try {
+    requestRender();
+  } catch (error) {
+    ignoreStaleSessionReplacementError(error);
+  }
+}
+
 function registerSessionStartHandler(input: {
   pi: ExtensionAPI;
   state: ReturnType<typeof createCoreUIState>;
@@ -64,28 +82,32 @@ function registerSessionStartHandler(input: {
   setRequestRender: (requestRender: (() => void) | undefined) => void;
 }): void {
   input.pi.on("session_start", (_event, ctx) => {
-    const runtimeCapabilities = getRuntimeCapabilities(ctx);
-    input.ensureToolOverridesRegistered(input.pi.getActiveTools());
-    input.state.cwd = ctx.cwd;
-    if (runtimeCapabilities?.primitives.setEditorComponent !== false) {
-      const theme = ctx.ui.theme;
-      ctx.ui.setEditorComponent(
-        createCorePromptEditorFactory(
-          () => theme,
-          () => readCoreUIIdleState(ctx),
-        ),
-      );
+    try {
+      const runtimeCapabilities = getRuntimeCapabilities(ctx);
+      input.ensureToolOverridesRegistered(input.pi.getActiveTools());
+      input.state.cwd = ctx.cwd;
+      if (runtimeCapabilities?.primitives.setEditorComponent !== false) {
+        const theme = ctx.ui.theme;
+        ctx.ui.setEditorComponent(
+          createCorePromptEditorFactory(
+            () => theme,
+            () => readCoreUIIdleState(ctx),
+          ),
+        );
+      }
+      if (
+        runtimeCapabilities?.primitives.setHeader !== false &&
+        runtimeCapabilities?.primitives.setFooter !== false
+      ) {
+        bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
+          input.setRequestRender(nextRequestRender);
+        });
+      }
+      input.refreshUsageMetrics(ctx);
+      input.refreshProjectInfo(ctx, true);
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
     }
-    if (
-      runtimeCapabilities?.primitives.setHeader !== false &&
-      runtimeCapabilities?.primitives.setFooter !== false
-    ) {
-      bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
-        input.setRequestRender(nextRequestRender);
-      });
-    }
-    input.refreshUsageMetrics(ctx);
-    input.refreshProjectInfo(ctx, true);
   });
 }
 
@@ -98,26 +120,46 @@ function registerCoreUIHandlers(input: {
   setRequestRender: (requestRender: (() => void) | undefined) => void;
 }): void {
   input.pi.on("turn_start", (_event, ctx) => {
-    ctx.ui.setWorkingMessage(pickRandomWhimsical());
+    try {
+      ctx.ui.setWorkingMessage(pickRandomWhimsical());
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   input.pi.on("turn_end", (_event, ctx) => {
-    input.refreshAll(ctx);
-    ctx.ui.setWorkingMessage();
+    try {
+      input.refreshAll(ctx);
+      ctx.ui.setWorkingMessage();
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   input.pi.on("session_tree", (_event, ctx) => {
-    input.ensureToolOverridesRegistered(input.pi.getActiveTools());
-    input.refreshAll(ctx);
+    try {
+      input.ensureToolOverridesRegistered(input.pi.getActiveTools());
+      input.refreshAll(ctx);
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   input.pi.on("model_select", () => {
-    input.ensureToolOverridesRegistered(input.pi.getActiveTools());
-    input.getRequestRender()?.();
+    try {
+      input.ensureToolOverridesRegistered(input.pi.getActiveTools());
+      requestRenderSafely(input.getRequestRender());
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   input.pi.on("before_agent_start", () => {
-    input.ensureToolOverridesRegistered(input.pi.getActiveTools());
+    try {
+      input.ensureToolOverridesRegistered(input.pi.getActiveTools());
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   input.pi.on("session_shutdown", () => {
@@ -132,19 +174,27 @@ function createCoreUISubscriptions(input: {
   getRequestRender: () => (() => void) | undefined;
 }): () => void {
   const unsubscribeOpenUsageEvents = input.pi.events.on(OPENUSAGE_UPDATED_EVENT, () => {
-    input.getRequestRender()?.();
+    requestRenderSafely(input.getRequestRender());
   });
 
   const unsubscribeGitStateEvents = input.pi.events.on(GIT_STATE_UPDATED_EVENT, (data) => {
-    applyGitStateUpdatedEvent(data);
-    input.getRequestRender()?.();
+    try {
+      applyGitStateUpdatedEvent(data);
+      requestRenderSafely(input.getRequestRender());
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   const unsubscribeModeEvents = input.pi.events.on("modes:changed", (data) => {
-    const event = parseModeChangedEvent(data);
-    input.state.activeMode = event?.mode ?? "custom";
-    input.state.activeModeColor = parseThemeColor(event?.spec?.color);
-    input.getRequestRender()?.();
+    try {
+      const event = parseModeChangedEvent(data);
+      input.state.activeMode = event?.mode ?? "custom";
+      input.state.activeModeColor = parseThemeColor(event?.spec?.color);
+      requestRenderSafely(input.getRequestRender());
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   return () => {
@@ -167,12 +217,12 @@ function createCoreUIBindings(pi: ExtensionAPI): {
   let requestRender: (() => void) | undefined;
 
   const refreshProjectInfo = createProjectInfoRefresher(state, () => {
-    requestRender?.();
+    requestRenderSafely(requestRender);
   });
 
   const refreshUsageMetrics = (ctx: ExtensionContext): void => {
     state.totalCost = calculateTotalCost(ctx);
-    requestRender?.();
+    requestRenderSafely(requestRender);
   };
 
   const refreshAll = (ctx: ExtensionContext): void => {

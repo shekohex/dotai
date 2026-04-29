@@ -5,6 +5,10 @@ import {
   groupedExtensionsC,
   type GroupedExtensionDefinition,
 } from "./definitions.js";
+import {
+  installInlineExtensionNamePatch,
+  setInlineExtensionName,
+} from "./inline-extension-names.js";
 import { createSubagentExtension } from "./subagent.js";
 
 export interface BundledExtensionDefinition {
@@ -14,12 +18,17 @@ export interface BundledExtensionDefinition {
 
 const subagentExtensionFactory = createSubagentExtension({ enabled: false });
 
+installInlineExtensionNamePatch();
+
 export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
   ...groupedExtensionsA,
   ...groupedExtensionsB,
   ...groupedExtensionsC,
   { id: "subagent", factory: subagentExtensionFactory },
-] satisfies GroupedExtensionDefinition[];
+].map((definition) => ({
+  ...definition,
+  factory: setInlineExtensionName(definition.factory, definition.id),
+})) satisfies GroupedExtensionDefinition[];
 
 const bundledExtensionDefinitionByFactory = new Map<ExtensionFactory, BundledExtensionDefinition>(
   bundledExtensionDefinitions.map((definition) => [definition.factory, definition]),

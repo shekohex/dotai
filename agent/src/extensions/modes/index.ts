@@ -47,8 +47,6 @@ export const MODE_SELECTION_APPLY_EVENT = "modes:apply-selection";
 const MODE_STATUS_KEY = "mode";
 const CUSTOM_MODE_LABEL = "custom";
 
-const registeredModeFlags = new Map<string, string>();
-
 type ModeRuntime = {
   path: string;
   source: "project" | "global" | "missing" | "remote";
@@ -207,40 +205,40 @@ function ensureModesReady(ctx: ExtensionContext): Promise<boolean> {
   });
 }
 
-const modeActionHandlers = createModeActionHandlers({
-  runtime,
-  modeStateEntry: MODE_STATE_ENTRY,
-  ensureRuntime,
-  syncErrorUI,
-  notifyConfigError,
-  saveRuntime,
-  hasText,
-  isThinkingLevel,
-  currentSelection,
-  describeModeSpec,
-  orderedModeNames,
-  getModeSpec,
-  applyMode,
-  syncFromSelection,
-  syncModeTools,
-  setStatus,
-  appendModeState,
-  emitModeChanged,
-  getStartupModeSelection: (pi) => getStartupModeSelection(pi, registeredModeFlags),
-  notifyStartupModeConflict,
-});
-
-const {
-  storeMode,
-  reloadModes,
-  promptForModeName,
-  showModePicker,
-  cycleMode,
-  restoreMode,
-  activateMode,
-} = modeActionHandlers;
-
 export default function modesExtension(pi: ExtensionAPI): void {
+  const registeredModeFlags = new Map<string, string>();
+  const {
+    storeMode,
+    reloadModes,
+    promptForModeName,
+    showModePicker,
+    cycleMode,
+    restoreMode,
+    activateMode,
+  } = createModeActionHandlers({
+    runtime,
+    modeStateEntry: MODE_STATE_ENTRY,
+    ensureRuntime,
+    syncErrorUI,
+    notifyConfigError,
+    saveRuntime,
+    hasText,
+    isThinkingLevel,
+    currentSelection,
+    describeModeSpec,
+    orderedModeNames,
+    getModeSpec,
+    applyMode,
+    syncFromSelection,
+    syncModeTools,
+    setStatus,
+    appendModeState,
+    emitModeChanged,
+    getStartupModeSelection: (extensionApi) =>
+      getStartupModeSelection(extensionApi, registeredModeFlags),
+    notifyStartupModeConflict,
+  });
+
   registerModeFlags(pi, registeredModeFlags, { orderedModeNames, describeModeSpec, hasText });
   registerModeCommand(pi, {
     getModeArgumentCompletions,

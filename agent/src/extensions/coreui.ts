@@ -271,6 +271,6 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   });
 
   registerTPSExtension(pi, bindings.state, () => {
-    bindings.getRequestRender()?.();
+    requestRenderSafely(bindings.getRequestRender());
   });
 }

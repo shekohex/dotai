@@ -4,6 +4,7 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { CoreUIState } from "./types.js";
 import {
   formatCompactCount,
@@ -29,6 +30,20 @@ type RuntimeState = {
   persistedElapsedMs: number;
 };
 
+function ignoreStaleSessionReplacementError(error: unknown): void {
+  if (!isStaleSessionReplacementContextError(error)) {
+    throw error;
+  }
+}
+
+function requestRenderSafely(requestRender: () => void): void {
+  try {
+    requestRender();
+  } catch (error) {
+    ignoreStaleSessionReplacementError(error);
+  }
+}
+
 function handleTPSCommand(
   pi: ExtensionAPI,
   state: CoreUIState,
@@ -53,7 +68,7 @@ function handleTPSCommand(
   const visible = action === "on";
   const changed = setPersistedTPSVisibility(pi, state, visible);
   if (changed) {
-    requestRender();
+    requestRenderSafely(requestRender);
   }
   ctx.ui.notify(`TPS ${visible ? "enabled" : "hidden"}`, "info");
 }
@@ -72,7 +87,7 @@ function updateTPSForRun(
   const elapsedChanged = updateTPSElapsedInState(state, runtime.persistedElapsedMs, run);
   runtime.sessionSamples = result.nextSamples;
   if (result.changed || elapsedChanged) {
-    requestRender();
+    requestRenderSafely(requestRender);
   }
 }
 
@@ -130,18 +145,26 @@ function registerSessionLifecycleEvents(
   runtime: RuntimeState,
 ): void {
   pi.on("session_start", (_event, ctx) => {
-    const restored = restoreTPSState(ctx.sessionManager.getBranch());
-    state.tps = restored.tps;
-    state.tpsVisible = restored.tpsVisible;
-    state.tpsElapsedMs = restored.tpsElapsedMs;
-    runtime.persistedElapsedMs = restored.tpsElapsedMs;
-    runtime.sessionSamples = [];
-    requestRender();
+    try {
+      const restored = restoreTPSState(ctx.sessionManager.getBranch());
+      state.tps = restored.tps;
+      state.tpsVisible = restored.tpsVisible;
+      state.tpsElapsedMs = restored.tpsElapsedMs;
+      runtime.persistedElapsedMs = restored.tpsElapsedMs;
+      runtime.sessionSamples = [];
+      requestRenderSafely(requestRender);
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   pi.on("agent_start", (_event, ctx) => {
-    if (!ctx.hasUI) return;
-    runtime.run = { startedAtMs: Date.now(), completedOutputTokens: 0, currentOutputTokens: 0 };
+    try {
+      if (!ctx.hasUI) return;
+      runtime.run = { startedAtMs: Date.now(), completedOutputTokens: 0, currentOutputTokens: 0 };
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 }
 
@@ -152,21 +175,29 @@ function registerMessageEvents(
   runtime: RuntimeState,
 ): void {
   pi.on("message_update", (event: { message: AgentMessage }, ctx) => {
-    if (!ctx.hasUI || !runtime.run || event.message.role !== "assistant") return;
-    runtime.run.currentOutputTokens = resolveAssistantOutputTokens(event.message);
-    updateTPSForRun(
-      state,
-      requestRender,
-      runtime,
-      runtime.run.completedOutputTokens + runtime.run.currentOutputTokens,
-    );
+    try {
+      if (!ctx.hasUI || !runtime.run || event.message.role !== "assistant") return;
+      runtime.run.currentOutputTokens = resolveAssistantOutputTokens(event.message);
+      updateTPSForRun(
+        state,
+        requestRender,
+        runtime,
+        runtime.run.completedOutputTokens + runtime.run.currentOutputTokens,
+      );
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   pi.on("message_end", (event: { message: AgentMessage }, ctx) => {
-    if (!ctx.hasUI || !runtime.run || event.message.role !== "assistant") return;
-    runtime.run.completedOutputTokens += resolveAssistantOutputTokens(event.message);
-    runtime.run.currentOutputTokens = 0;
-    updateTPSForRun(state, requestRender, runtime, runtime.run.completedOutputTokens);
+    try {
+      if (!ctx.hasUI || !runtime.run || event.message.role !== "assistant") return;
+      runtime.run.completedOutputTokens += resolveAssistantOutputTokens(event.message);
+      runtime.run.currentOutputTokens = 0;
+      updateTPSForRun(state, requestRender, runtime, runtime.run.completedOutputTokens);
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 }
 
@@ -177,40 +208,48 @@ function registerTurnAndAgentEndEvents(
   runtime: RuntimeState,
 ): void {
   pi.on("turn_end", (_event, ctx) => {
-    if (!ctx.hasUI || !runtime.run) return;
-    updateTPSForRun(
-      state,
-      requestRender,
-      runtime,
-      runtime.run.completedOutputTokens + runtime.run.currentOutputTokens,
-    );
+    try {
+      if (!ctx.hasUI || !runtime.run) return;
+      updateTPSForRun(
+        state,
+        requestRender,
+        runtime,
+        runtime.run.completedOutputTokens + runtime.run.currentOutputTokens,
+      );
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
   });
 
   pi.on("agent_end", (event: { messages: AgentMessage[] }, ctx) => {
-    if (!ctx.hasUI || !runtime.run) return;
-    const elapsedMs = Date.now() - runtime.run.startedAtMs;
-    const usage = summarizeAssistantUsage(event.messages);
-    const outputTokens = Math.max(
-      usage.output,
-      runtime.run.completedOutputTokens + runtime.run.currentOutputTokens,
-    );
-    const result = setTPSState(state, runtime.sessionSamples, runtime.run, outputTokens);
-    runtime.sessionSamples = result.nextSamples;
-    const finalStats = state.tps;
-    if (elapsedMs > 0) {
-      runtime.persistedElapsedMs += elapsedMs;
-    }
-    const elapsedChanged = updateTPSElapsedInState(state, runtime.persistedElapsedMs, null);
-    runtime.run = null;
+    try {
+      if (!ctx.hasUI || !runtime.run) return;
+      const elapsedMs = Date.now() - runtime.run.startedAtMs;
+      const usage = summarizeAssistantUsage(event.messages);
+      const outputTokens = Math.max(
+        usage.output,
+        runtime.run.completedOutputTokens + runtime.run.currentOutputTokens,
+      );
+      const result = setTPSState(state, runtime.sessionSamples, runtime.run, outputTokens);
+      runtime.sessionSamples = result.nextSamples;
+      const finalStats = state.tps;
+      if (elapsedMs > 0) {
+        runtime.persistedElapsedMs += elapsedMs;
+      }
+      const elapsedChanged = updateTPSElapsedInState(state, runtime.persistedElapsedMs, null);
+      runtime.run = null;
 
-    if (result.changed || elapsedChanged) {
-      requestRender();
-    }
-    if (elapsedMs > 0 && usage.output > 0 && finalStats) {
-      appendTPSEntry(pi, finalStats, usage, elapsedMs);
-    }
-    if (state.tpsVisible && elapsedMs > 0 && usage.output > 0) {
-      notifyTPSSummary(ctx, usage, elapsedMs);
+      if (result.changed || elapsedChanged) {
+        requestRenderSafely(requestRender);
+      }
+      if (elapsedMs > 0 && usage.output > 0 && finalStats) {
+        appendTPSEntry(pi, finalStats, usage, elapsedMs);
+      }
+      if (state.tpsVisible && elapsedMs > 0 && usage.output > 0) {
+        notifyTPSSummary(ctx, usage, elapsedMs);
+      }
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
     }
   });
 }

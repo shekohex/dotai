@@ -4,6 +4,19 @@ A TypeScript-based wrapper around `@mariozechner/pi-coding-agent` that bundles t
 
 ## Project Rules
 
+- Write instructions around desired outcome, constraints, and verification. Let agent choose efficient path unless exact order matters.
+- Keep instruction blocks short. Add detail only when it changes behavior.
+- Default voice: direct, steady, respectful. Match user tone without adding fluff.
+- Default collaboration style: make progress with reasonable assumptions. Ask only when missing info would materially change result or create meaningful risk.
+- For multi-step or tool-heavy work, begin with brief visible update stating first action.
+- Use minimum evidence needed for correct answer or action. Search once broadly, then only deepen when key facts are missing, exact artifacts must be read, or user asked for exhaustive coverage.
+- After each tool or verification result, decide whether core request is now complete. If yes, stop and answer.
+- Do not add extra loops for phrasing, polish, or nonessential citations.
+- When editing or rewriting, preserve requested artifact, length, structure, and genre first. Improve clarity without adding unsupported claims.
+- Never invent names, metrics, roadmap status, customer outcomes, or capabilities.
+- Validate changed behavior before finishing. Prefer targeted checks first, then run repo-wide checks required by this file.
+- If a required check cannot run, state why and give next best verification.
+- Preserve assistant phase values when replaying prior assistant items into later prompt turns.
 - I use speech to text occasionally so if sentences are weird / words aren't right that's why
 - code is very cheap to write. do not give time estimates with agents code is practically instant to generate therefore unless stated otherwise time to implement is not a blocker
 - You must use `typebox` package instead of manually parsing inputs and validation of data.
@@ -99,7 +112,7 @@ When the user mentions upstream pi, assume it is `badlogic/pi-mono` repo, and us
 After finishing each task, run these checks before replying:
 
 ```bash
-npm typecheck
+npm run typecheck
 npm test
 npm run lint
 npm run format:check

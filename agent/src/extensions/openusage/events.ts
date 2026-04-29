@@ -1,7 +1,12 @@
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { ModeSpecSchema } from "../../mode-utils.js";
-import type { OpenUsageAlertEvent, OpenUsageUpdatedEvent, UsageSnapshot } from "./types.js";
+import type {
+  OpenUsageAlertEvent,
+  OpenUsageRefreshRequestedEvent,
+  OpenUsageUpdatedEvent,
+  UsageSnapshot,
+} from "./types.js";
 import { isSupportedProviderId } from "./types.js";
 
 const UsageMetricSchema = Type.Object(
@@ -51,6 +56,14 @@ const OpenUsageUpdatedEventSchema = Type.Object(
     ),
     active: Type.Boolean(),
     snapshot: Type.Optional(UsageSnapshotSchema),
+  },
+  { additionalProperties: true },
+);
+
+const OpenUsageRefreshRequestedEventSchema = Type.Object(
+  {
+    providerId: Type.Union([Type.Literal("codex"), Type.Literal("google"), Type.Literal("zai")]),
+    force: Type.Boolean(),
   },
   { additionalProperties: true },
 );
@@ -111,6 +124,20 @@ export function parseUpdatedEvent(data: unknown): OpenUsageUpdatedEvent | undefi
     providerId: parsed.providerId,
     active: parsed.active,
     snapshot,
+  };
+}
+
+export function parseRefreshRequestedEvent(
+  data: unknown,
+): OpenUsageRefreshRequestedEvent | undefined {
+  if (!Value.Check(OpenUsageRefreshRequestedEventSchema, data)) {
+    return undefined;
+  }
+
+  const parsed = Value.Parse(OpenUsageRefreshRequestedEventSchema, data);
+  return {
+    providerId: parsed.providerId,
+    force: parsed.force,
   };
 }
 

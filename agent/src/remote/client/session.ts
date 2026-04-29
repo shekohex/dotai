@@ -10,6 +10,12 @@ import {
 import { RemoteApiClient } from "../remote-api-client.js";
 import type { RemoteExtensionMetadata, SessionSnapshot } from "../schemas.js";
 import type { RemoteSessionContract } from "./session-deps.js";
+import { markNonAuthoritativeRuntime } from "../../extensions/runtime-authority.js";
+import {
+  createForwardingEventBus,
+  requireResourceLoaderEventBus,
+  setResourceLoaderEventBus,
+} from "../event-bus-bridge.js";
 export type {
   RemoteRuntimeAuthOptions,
   RemoteRuntimeContract,
@@ -58,6 +64,7 @@ export class RemoteAgentSession
       sessionRef: () => session,
     });
     const sessionManager = SessionManager.inMemory(sessionCwd);
+    markNonAuthoritativeRuntime(sessionManager);
     const clientExtensionLoader = new DefaultResourceLoader({
       cwd: sessionCwd,
       agentDir: options.agentDir,
@@ -66,6 +73,19 @@ export class RemoteAgentSession
       noPromptTemplates: true,
       noThemes: true,
     });
+    setResourceLoaderEventBus(
+      clientExtensionLoader,
+      createForwardingEventBus({
+        baseEventBus: requireResourceLoaderEventBus(
+          clientExtensionLoader,
+          "RemoteAgentSession.create",
+        ),
+        forwardEvent: (channel: string, data: unknown) => {
+          void client.emitSessionCustomEvent(snapshot.sessionId, { channel, data });
+        },
+      }),
+      "RemoteAgentSession.create",
+    );
     await clientExtensionLoader.reload();
     const resourceLoader = createSessionResourceLoader({
       snapshot,

@@ -2,6 +2,7 @@ import { createLocalBashOperations } from "@mariozechner/pi-coding-agent";
 import { executeBashWithOperations } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/core/bash-executor.js";
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
 import type { AuthSession } from "../auth.js";
+import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
 import { sessionEventsStreamId } from "../streams.js";
 import type {
   BashExecuteRequest,
@@ -19,6 +20,19 @@ import { SessionRegistryPromptCommands } from "./registry-prompt-commands.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
 
 export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
+  async emitSessionExtensionCustomEvent(
+    sessionId: string,
+    input: { channel: string; data: unknown },
+    client: AuthSession,
+    connectionId?: string,
+  ): Promise<void> {
+    const record = await this.ensureLoaded(sessionId);
+    this.touchPresence(sessionId, client, connectionId);
+    this.syncFromRuntime(record, { updateTimestamp: false, syncResources: true });
+    const session = this.requireRuntimeSession(record);
+    readResourceLoaderEventBus(session.resourceLoader)?.emit(input.channel, input.data);
+  }
+
   async getSessionToolDefinition(
     sessionId: string,
     toolName: string,

@@ -3,6 +3,7 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 export const OPENUSAGE_STATE_ENTRY = "openusage-state";
 export const OPENUSAGE_STATUS_KEY = "openusage";
 export const OPENUSAGE_UPDATED_EVENT = "openusage:updated";
+export const OPENUSAGE_REFRESH_REQUESTED_EVENT = "openusage:refresh-requested";
 export const OPENUSAGE_ALERT_EVENT = "openusage:alert";
 export const OPENUSAGE_REFRESH_INTERVAL_MS = 300_000;
 export const OPENUSAGE_CACHE_TTL_MS = 45_000;
@@ -85,6 +86,11 @@ export type OpenUsageUpdatedEvent = {
   providerId?: SupportedProviderId;
   active: boolean;
   snapshot?: UsageSnapshot;
+};
+
+export type OpenUsageRefreshRequestedEvent = {
+  providerId: SupportedProviderId;
+  force: boolean;
 };
 
 export type OpenUsageAlertEvent = {

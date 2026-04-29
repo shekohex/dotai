@@ -27,6 +27,7 @@ import type {
   ClientCapabilities,
   CompactRequest,
   CreateSessionRequest,
+  ExtensionCustomEventRequest,
   ForkSessionRequest,
   NavigateTreeRequest,
   UiResponseRequest,
@@ -440,5 +441,29 @@ export function handleRecordBashResult(
       connectionId,
     );
     return jsonWithSchema(c, BashRecordResponseSchema, result, 200, connectionHeader(connectionId));
+  });
+}
+
+export function handleEmitSessionExtensionCustomEvent(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  payload: ExtensionCustomEventRequest,
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    await dependencies.sessions.emitSessionExtensionCustomEvent(
+      sessionId,
+      payload,
+      c.get("auth"),
+      connectionId,
+    );
+    return jsonWithSchema(
+      c,
+      AbortOperationResponseSchema,
+      { ok: true },
+      200,
+      connectionHeader(connectionId),
+    );
   });
 }

@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isAuthoritativeRuntime } from "../runtime-authority.js";
 import { registerOpenUsageCommands } from "./commands.js";
 import {
   emitThresholdAlerts,
@@ -7,13 +8,19 @@ import {
   publishUsageUpdateIfChanged,
   resolveAndRefreshProvider,
 } from "./controller-utils.js";
-import { parseAlertEvent, parseModeChangedEvent, parseUpdatedEvent } from "./events.js";
+import {
+  parseAlertEvent,
+  parseModeChangedEvent,
+  parseRefreshRequestedEvent,
+  parseUpdatedEvent,
+} from "./events.js";
 import { resolveSupportedProviderId } from "./model-map.js";
 import { applyUpdatedEventToState, createRuntimeState, restorePersistedState } from "./state.js";
 import {
   OPENUSAGE_ALERT_EVENT,
   OPENUSAGE_CACHE_TTL_MS,
   OPENUSAGE_REFRESH_INTERVAL_MS,
+  OPENUSAGE_REFRESH_REQUESTED_EVENT,
   OPENUSAGE_UPDATED_EVENT,
   type SupportedProviderId,
 } from "./types.js";
@@ -24,6 +31,7 @@ type OpenUsageState = ReturnType<typeof createRuntimeState>;
 export class OpenUsageController {
   private readonly state: OpenUsageState;
   private currentCtx: ExtensionContext | undefined;
+  private unsubscribeRefreshRequested: (() => void) | undefined;
   private unsubscribeUpdated: (() => void) | undefined;
   private unsubscribeAlert: (() => void) | undefined;
   private unsubscribeModeChanged: (() => void) | undefined;
@@ -33,6 +41,12 @@ export class OpenUsageController {
   }
 
   register(): void {
+    this.unsubscribeRefreshRequested = this.pi.events.on(
+      OPENUSAGE_REFRESH_REQUESTED_EVENT,
+      (data) => {
+        void this.onRefreshRequested(data);
+      },
+    );
     this.unsubscribeUpdated = this.pi.events.on(OPENUSAGE_UPDATED_EVENT, (data) => {
       this.onUpdated(data);
     });
@@ -71,6 +85,16 @@ export class OpenUsageController {
     }
 
     applyUpdatedEventToState(this.state, event);
+  }
+
+  private async onRefreshRequested(data: unknown): Promise<void> {
+    const event = parseRefreshRequestedEvent(data);
+    const ctx = this.currentCtx;
+    if (!event || !ctx || !isAuthoritativeRuntime(ctx)) {
+      return;
+    }
+
+    await this.refreshProvider(event.providerId, ctx, { force: event.force });
   }
 
   private async onSessionStart(ctx: ExtensionContext): Promise<void> {
@@ -118,6 +142,7 @@ export class OpenUsageController {
   private onSessionShutdown(ctx: ExtensionContext): void {
     this.currentCtx = undefined;
     this.stopInterval();
+    this.unsubscribeRefreshRequested?.();
     this.unsubscribeUpdated?.();
     this.unsubscribeAlert?.();
     this.unsubscribeModeChanged?.();

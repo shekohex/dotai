@@ -10,6 +10,7 @@ import {
   BashRecordRequestSchema,
   CompactRequestSchema,
   CreateSessionRequestSchema,
+  ExtensionCustomEventRequestSchema,
   ForkSessionRequestSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
@@ -34,6 +35,7 @@ import {
   clearSessionQueueRouteDescription,
   createSessionRouteDescription,
   deleteSessionRouteDescription,
+  emitSessionExtensionCustomEventRouteDescription,
   executeBashRouteDescription,
   forkSessionRouteDescription,
   followUpSessionRouteDescription,
@@ -72,6 +74,7 @@ import {
   handleCompactSession,
   handleCreateSession,
   handleDeleteSession,
+  handleEmitSessionExtensionCustomEvent,
   handleExecuteBash,
   handleForkSession,
   handleNavigateTree,
@@ -270,17 +273,34 @@ function registerSessionCommandRoutesA<S extends Schema, BasePath extends string
       return handleSteerSession(c, dependencies, sessionId, c.req.valid("json"));
     },
   );
-  return route7.post(
-    "/sessions/:sessionId/follow-up",
-    describeRoute(followUpSessionRouteDescription),
-    needsAuth,
-    tbValidator("param", SessionParamsSchema),
-    tbValidator("json", FollowUpCommandRequestSchema),
-    (c) => {
-      const { sessionId } = c.req.valid("param");
-      return handleFollowUpSession(c, dependencies, sessionId, c.req.valid("json"));
-    },
-  );
+  return route7
+    .post(
+      "/sessions/:sessionId/follow-up",
+      describeRoute(followUpSessionRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      tbValidator("json", FollowUpCommandRequestSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleFollowUpSession(c, dependencies, sessionId, c.req.valid("json"));
+      },
+    )
+    .post(
+      "/sessions/:sessionId/extension-event",
+      describeRoute(emitSessionExtensionCustomEventRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      tbValidator("json", ExtensionCustomEventRequestSchema),
+      (c) => {
+        const { sessionId } = c.req.valid("param");
+        return handleEmitSessionExtensionCustomEvent(
+          c,
+          dependencies,
+          sessionId,
+          c.req.valid("json"),
+        );
+      },
+    );
 }
 
 function registerSessionCommandRoutesB<S extends Schema, BasePath extends string>(

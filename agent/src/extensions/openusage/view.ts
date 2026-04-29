@@ -228,7 +228,7 @@ class OpenUsageView implements Component {
       return true;
     }
     if (data === "f") {
-      void this.refreshSelectedProvider(true);
+      this.data.requestRefresh(this.selectedProviderId, { force: true });
       return true;
     }
     if (data === "a") {

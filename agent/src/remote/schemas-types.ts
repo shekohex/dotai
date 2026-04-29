@@ -20,6 +20,7 @@ import {
   ConnectionCapabilitiesResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
+  ExtensionCustomEventRequestSchema,
   ForkSessionRequestSchema,
   ForkSessionResponseSchema,
   FollowUpCommandRequestSchema,
@@ -70,6 +71,7 @@ export type AppSnapshot = Static<typeof AppSnapshotSchema>;
 export type AbortOperationResponse = Static<typeof AbortOperationResponseSchema>;
 export type CreateSessionRequest = Static<typeof CreateSessionRequestSchema>;
 export type CreateSessionResponse = Static<typeof CreateSessionResponseSchema>;
+export type ExtensionCustomEventRequest = Static<typeof ExtensionCustomEventRequestSchema>;
 export type ForkSessionRequest = Static<typeof ForkSessionRequestSchema>;
 export type ForkSessionResponse = Static<typeof ForkSessionResponseSchema>;
 export type NavigateTreeRequest = Static<typeof NavigateTreeRequestSchema>;

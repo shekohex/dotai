@@ -1,7 +1,6 @@
 import {
   DefaultResourceLoader,
   createSyntheticSourceInfo,
-  type EventBus,
   type LoadExtensionsResult,
   type PromptTemplate,
   type ResourceLoader,
@@ -158,7 +157,7 @@ function createRemoteResourceLoaderView(input: {
     "createRemoteResourceLoaderView",
   );
 
-  const resourceLoader: ResourceLoader & { eventBus?: EventBus } = {
+  const resourceLoader: ResourceLoader & { eventBus: typeof eventBus } = {
     getExtensions: (): LoadExtensionsResult =>
       mergeRemoteAndClientExtensions({
         loaded: input.baseLoader.getExtensions(),

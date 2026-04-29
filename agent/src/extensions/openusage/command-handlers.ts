@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
+import { isAuthoritativeRuntime } from "../runtime-authority.js";
 import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { listCliproxyAccounts } from "./cliproxy.js";
 import { handleDebug } from "./command-debug.js";
@@ -9,10 +10,16 @@ import { setResetTimeFormat, setSelectedAccount } from "./state.js";
 import type {
   CliproxyAccount,
   CliproxyAccountsByProvider,
+  OpenUsageRefreshRequestedEvent,
   OpenUsageRuntimeState,
   SupportedProviderId,
 } from "./types.js";
-import { isSupportedProviderId, OPENUSAGE_STATE_ENTRY, OPENUSAGE_UPDATED_EVENT } from "./types.js";
+import {
+  isSupportedProviderId,
+  OPENUSAGE_REFRESH_REQUESTED_EVENT,
+  OPENUSAGE_STATE_ENTRY,
+  OPENUSAGE_UPDATED_EVENT,
+} from "./types.js";
 import { OpenUsageView } from "./view.js";
 
 type RefreshProvider = (
@@ -39,7 +46,7 @@ function createOpenUsageCommandHandler(
       return;
     }
     if (action === "refresh") {
-      await handleRefresh(ctx, tokens[1], refreshProvider);
+      handleRefresh(pi, ctx, tokens[1]);
       return;
     }
     if (action === "debug") {
@@ -47,7 +54,7 @@ function createOpenUsageCommandHandler(
       return;
     }
     if (action === "account") {
-      await handleAccount(pi, state, ctx, refreshProvider, tokens);
+      await handleAccount(pi, state, ctx, tokens);
       return;
     }
     if (action === "setting" || action === "settings") {
@@ -119,6 +126,9 @@ async function showOpenUsageView(
         activeProviderId,
         activeModelLabel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
         refreshProvider: (nextProviderId, options) => refreshProvider(nextProviderId, ctx, options),
+        requestRefresh: (nextProviderId, options) => {
+          emitRefreshRequested(pi, nextProviderId, options?.force === true);
+        },
         subscribeToStateUpdates: (listener) => pi.events.on(OPENUSAGE_UPDATED_EVENT, listener),
         persistState: () => {
           persistState(pi, state);
@@ -129,19 +139,25 @@ async function showOpenUsageView(
   });
 }
 
-async function handleRefresh(
+function handleRefresh(
+  pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   providerArg: string | undefined,
-  refreshProvider: RefreshProvider,
-): Promise<void> {
+): void {
   const providerId = resolveProviderArgument(providerArg, ctx);
   if (!providerId) {
     ctx.ui.notify("No supported provider selected", "warning");
     return;
   }
+
+  if (!isAuthoritativeRuntime(ctx)) {
+    ctx.ui.notify(`Requested ${providerId} usage refresh`, "info");
+    return;
+  }
+
   try {
-    await refreshProvider(providerId, ctx, { force: true });
-    ctx.ui.notify(`Refreshed ${providerId} usage`, "info");
+    emitRefreshRequested(pi, providerId, true);
+    ctx.ui.notify(`Requested ${providerId} usage refresh`, "info");
   } catch (error) {
     ctx.ui.notify(`OpenUsage ${providerId}: ${formatError(error)}`, "warning");
   }
@@ -151,26 +167,24 @@ async function handleAccount(
   pi: ExtensionAPI,
   state: OpenUsageRuntimeState,
   ctx: ExtensionCommandContext,
-  refreshProvider: RefreshProvider,
   tokens: string[],
 ): Promise<void> {
   const sub = tokens[1]?.toLowerCase();
 
   if (sub === "clear") {
-    await handleClearAccount(pi, state, ctx, refreshProvider, tokens[2]);
+    handleClearAccount(pi, state, ctx, tokens[2]);
     return;
   }
 
-  await handleSelectAccount(pi, state, ctx, refreshProvider, sub);
+  await handleSelectAccount(pi, state, ctx, sub);
 }
 
-async function handleClearAccount(
+function handleClearAccount(
   pi: ExtensionAPI,
   state: OpenUsageRuntimeState,
   ctx: ExtensionCommandContext,
-  refreshProvider: RefreshProvider,
   providerArg: string | undefined,
-): Promise<void> {
+): void {
   const providerId = resolveProviderArgument(providerArg, ctx);
   if (!providerId) {
     ctx.ui.notify("No supported provider selected", "warning");
@@ -179,14 +193,13 @@ async function handleClearAccount(
 
   setSelectedAccount(state, providerId, undefined);
   persistState(pi, state);
-  await handleRefresh(ctx, providerId, refreshProvider);
+  handleRefresh(pi, ctx, providerId);
 }
 
 async function handleSelectAccount(
   pi: ExtensionAPI,
   state: OpenUsageRuntimeState,
   ctx: ExtensionCommandContext,
-  refreshProvider: RefreshProvider,
   providerArg: string | undefined,
 ): Promise<void> {
   const providerId = resolveProviderArgument(providerArg, ctx);
@@ -213,7 +226,7 @@ async function handleSelectAccount(
   }
 
   persistState(pi, state);
-  await handleRefresh(ctx, providerId, refreshProvider);
+  handleRefresh(pi, ctx, providerId);
 }
 
 function handleSettings(
@@ -280,6 +293,19 @@ function resolveProviderArgument(
 function persistState(pi: ExtensionAPI, state: OpenUsageRuntimeState): void {
   pi.appendEntry(OPENUSAGE_STATE_ENTRY, state.persisted);
 }
+
+function emitRefreshRequested(
+  pi: ExtensionAPI,
+  providerId: SupportedProviderId,
+  force: boolean,
+): void {
+  const payload: OpenUsageRefreshRequestedEvent = {
+    providerId,
+    force,
+  };
+  pi.events.emit(OPENUSAGE_REFRESH_REQUESTED_EVENT, payload);
+}
+
 function formatError(error: unknown): string {
   return errorMessage(error);
 }

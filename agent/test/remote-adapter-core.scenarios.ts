@@ -47,6 +47,29 @@ class CustomExtensionEventsPromptSession extends RecordingSession {
   }
 }
 
+class RefreshRequestRoundTripPromptSession extends RecordingSession {
+  constructor() {
+    super();
+    readResourceLoaderEventBus(this.resourceLoader)?.on("openusage:refresh-requested", (data) => {
+      const providerId =
+        data !== null && typeof data === "object" && "providerId" in data
+          ? String(data.providerId)
+          : "codex";
+      readResourceLoaderEventBus(this.resourceLoader)?.emit("openusage:updated", {
+        providerId,
+        active: providerId === "codex",
+        snapshot: {
+          providerId,
+          displayName: providerId === "google" ? "Gemini" : "Codex",
+          source: "cliproxy",
+          fetchedAt: 1_700_000_000_001,
+          summary: "refreshed from server",
+        },
+      });
+    });
+  }
+}
+
 timedTest("in-memory runtime load preserves source session directory", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-load-session-dir-"));
   const workspaceDir = join(root, "workspace");
@@ -624,6 +647,85 @@ timedTest("milestone 3 adapter forwards custom extension bus events", async () =
         source: "cliproxy",
         fetchedAt: 1_700_000_000_000,
         summary: "cliproxy account",
+      },
+    });
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
+});
+
+timedTest("milestone 3 adapter forwards client custom bus events to server and back", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const session = new RefreshRequestRoundTripPromptSession();
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(session),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  let receivedCount = 0;
+  let lastPayload: unknown;
+
+  const extension: ExtensionFactory = (pi) => {
+    pi.on("session_start", () => {
+      pi.events.emit("openusage:refresh-requested", {
+        providerId: "google",
+        force: true,
+      });
+    });
+    pi.events.on("openusage:updated", (data) => {
+      receivedCount += 1;
+      lastPayload = data;
+    });
+  };
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    runtime = await createRemoteRuntime(remote.app, {
+      privateKeyPem,
+      sessionId: created.sessionId,
+      clientExtensionMetadata: [
+        {
+          id: "test-custom-event-roundtrip",
+          runtime: "client",
+          path: "client:test-custom-event-roundtrip",
+        },
+      ],
+      clientExtensionFactories: [extension],
+    });
+
+    await runtime.session.bindExtensions({});
+
+    await waitForValue(
+      () => ({ receivedCount, lastPayload }),
+      (value) => value.receivedCount > 0,
+      20,
+      10,
+    );
+
+    expect(lastPayload).toEqual({
+      providerId: "google",
+      active: false,
+      snapshot: {
+        providerId: "google",
+        displayName: "Gemini",
+        source: "cliproxy",
+        fetchedAt: 1_700_000_000_001,
+        summary: "refreshed from server",
       },
     });
   } finally {

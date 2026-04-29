@@ -592,6 +592,18 @@ export class RemoteApiClient {
     });
   }
 
+  async emitSessionCustomEvent(
+    sessionId: string,
+    body: { channel: string; data: unknown },
+  ): Promise<void> {
+    await this.postSessionRoute((headers) =>
+      this.rpcClient.sessions[":sessionId"]["extension-event"].$post(
+        { param: { sessionId }, json: body },
+        { headers },
+      ),
+    );
+  }
+
   private async postSessionRoute(
     request: (headers: Record<string, string>) => Promise<Response>,
   ): Promise<void> {

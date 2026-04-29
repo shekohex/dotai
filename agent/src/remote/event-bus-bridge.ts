@@ -15,6 +15,10 @@ type EventBusLike = {
   on: (channel: string, handler: (data: unknown) => void) => () => void;
 };
 
+type EventBusWithLocalEmit = EventBusLike & {
+  emitLocalOnly: (channel: string, data: unknown) => void;
+};
+
 type ResourceLoaderWithOptionalEventBus = ResourceLoader & {
   eventBus?: unknown;
 };
@@ -25,7 +29,9 @@ function isEventBusLike(value: unknown): value is EventBusLike {
     typeof value === "object" &&
     !Array.isArray(value) &&
     "emit" in value &&
-    typeof value.emit === "function"
+    typeof value.emit === "function" &&
+    "on" in value &&
+    typeof value.on === "function"
   );
 }
 
@@ -58,6 +64,54 @@ export function requireResourceLoaderEventBus(
   throw new Error(
     `${location}: ResourceLoader event bus unavailable. Upstream ResourceLoader shape changed or non-DefaultResourceLoader omitted hidden eventBus.`,
   );
+}
+
+export function setResourceLoaderEventBus(
+  resourceLoader: ResourceLoader,
+  eventBus: EventBusLike,
+  location: string,
+): void {
+  if (!isResourceLoaderWithOptionalEventBus(resourceLoader)) {
+    throw new Error(
+      `${location}: ResourceLoader event bus unavailable. Upstream ResourceLoader shape changed or non-DefaultResourceLoader omitted hidden eventBus.`,
+    );
+  }
+
+  resourceLoader.eventBus = eventBus;
+}
+
+export function createForwardingEventBus(input: {
+  baseEventBus: EventBusLike;
+  forwardEvent: (channel: string, data: unknown) => void;
+}): EventBusWithLocalEmit {
+  return {
+    emit: (channel, data) => {
+      input.baseEventBus.emit(channel, data);
+      input.forwardEvent(channel, data);
+    },
+    emitLocalOnly: (channel, data) => {
+      input.baseEventBus.emit(channel, data);
+    },
+    on: (channel, handler) => input.baseEventBus.on(channel, handler),
+  };
+}
+
+export function emitResourceLoaderEventLocally(
+  resourceLoader: ResourceLoader,
+  channel: string,
+  data: unknown,
+  location: string,
+): void {
+  const eventBus = requireResourceLoaderEventBus(resourceLoader, location) as EventBusLike & {
+    emitLocalOnly?: (nextChannel: string, nextData: unknown) => void;
+  };
+
+  if (typeof eventBus.emitLocalOnly === "function") {
+    eventBus.emitLocalOnly(channel, data);
+    return;
+  }
+
+  eventBus.emit(channel, data);
 }
 
 export function parseRemoteCustomExtensionEventPayload(

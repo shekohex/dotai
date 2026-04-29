@@ -18,6 +18,7 @@ import {
   ConnectionCapabilitiesResponseSchema,
   CreateSessionRequestSchema,
   CreateSessionResponseSchema,
+  ExtensionCustomEventRequestSchema,
   ErrorResponseSchema,
   ForkSessionRequestSchema,
   ForkSessionResponseSchema,
@@ -374,6 +375,20 @@ export const clearSessionQueueRouteDescription = {
   parameters: [sessionIdPathParameter],
   responses: {
     200: jsonResponse("Queue cleared", ClearQueueResponseSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const emitSessionExtensionCustomEventRouteDescription = {
+  tags: ["command"],
+  operationId: "emitSessionExtensionCustomEvent",
+  parameters: [sessionIdPathParameter],
+  requestBody: {
+    required: true,
+    content: jsonContent(ExtensionCustomEventRequestSchema),
+  },
+  responses: {
+    200: jsonResponse("Extension custom event emitted", AbortOperationResponseSchema),
     404: jsonResponse("Session not found", ErrorResponseSchema),
   },
 };

@@ -423,6 +423,11 @@ export const AbortOperationResponseSchema = Type.Object({
   ok: Type.Boolean(),
 });
 
+export const ExtensionCustomEventRequestSchema = Type.Object({
+  channel: Type.String({ minLength: 1 }),
+  data: Type.Unknown(),
+});
+
 export const ForkSessionRequestSchema = Type.Object({
   entryId: Type.Optional(Type.String({ minLength: 1 })),
   position: Type.Optional(ForkPositionSchema),

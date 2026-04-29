@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import type { SessionSnapshot } from "../schemas.js";
 import type { SessionCatalog, SessionCatalogRecord } from "../session-catalog.js";
 import { flushPersistedSessionManagerToDisk } from "../session-manager-storage.js";
@@ -115,4 +116,49 @@ export function shouldEvictLoadedRuntime(
     return false;
   }
   return now - record.updatedAt >= runtimeIdleTtlMs;
+}
+
+export function shouldCollectDetachedEmptySession(
+  record: SessionRecord,
+  _sessionFilePath: string | undefined,
+): boolean {
+  if (record.presence.size > 0) {
+    return false;
+  }
+  if (record.queue.depth > 0) {
+    return false;
+  }
+  const runtimeSession = record.runtime.session;
+  if (runtimeSession?.isStreaming || runtimeSession?.isCompacting) {
+    return false;
+  }
+  if (record.sessionStats.totalMessages > 0) {
+    return false;
+  }
+  if (record.persistence === "ephemeral") {
+    return true;
+  }
+  return true;
+}
+
+export function readLoadedSessionFilePath(record: SessionRecord): string | undefined {
+  const statsPath = record.sessionStats.sessionFile;
+  if (statsPath !== undefined && statsPath.length > 0) {
+    return statsPath;
+  }
+
+  const runtimeSession = record.runtime.session;
+  if (runtimeSession === undefined) {
+    return undefined;
+  }
+
+  const managerPath = runtimeSession.sessionManager.getSessionFile();
+  return managerPath !== undefined && managerPath.length > 0 ? managerPath : undefined;
+}
+
+export function deleteSessionFileIfPresent(sessionFilePath: string | undefined): void {
+  if (sessionFilePath === undefined || sessionFilePath.length === 0) {
+    return;
+  }
+  rmSync(sessionFilePath, { force: true });
 }

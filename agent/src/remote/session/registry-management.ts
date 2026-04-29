@@ -37,11 +37,14 @@ import {
 import { formatEphemeralCleanupError } from "./cleanup-errors.js";
 import {
   buildReloadResourcePatch,
+  deleteSessionFileIfPresent,
   didCatalogLocationChange,
   didCatalogRecordChange,
   isRuntimeSessionBusy,
   loadRecordForFork,
   promoteLoadedPersistentSessionToCatalog,
+  readLoadedSessionFilePath,
+  shouldCollectDetachedEmptySession,
   shouldForkLoadedSession,
   shouldEvictLoadedRuntime,
 } from "./persistent-loaded-session.js";
@@ -357,6 +360,11 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     const canReloadPersistedSessions = typeof this.runtimeFactory.load === "function";
 
     for (const record of this.loadedRuntimes.values()) {
+      if (await this.collectDetachedEmptySession(record, evictedAt)) {
+        evictedSessionIds.push(record.sessionId);
+        continue;
+      }
+
       if (
         !shouldEvictLoadedRuntime(
           record,
@@ -734,6 +742,35 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       ts: this.now(),
     });
     this.loadedRuntimes.delete(sessionId);
+  }
+
+  private async collectDetachedEmptySession(
+    record: SessionRecord,
+    collectedAt: number,
+  ): Promise<boolean> {
+    const sessionFilePath = readLoadedSessionFilePath(record);
+    if (!shouldCollectDetachedEmptySession(record, sessionFilePath)) {
+      return false;
+    }
+
+    await disposeSessionRecord(record);
+    this.loadedRuntimes.delete(record.sessionId);
+
+    if (record.persistence === "persistent") {
+      if (this.catalog.get(record.sessionId)) {
+        this.catalog.delete(record.sessionId);
+      } else if (sessionFilePath !== undefined) {
+        deleteSessionFileIfPresent(sessionFilePath);
+      }
+    }
+
+    this.streams.append(appEventsStreamId(), {
+      sessionId: record.sessionId,
+      kind: "session_closed",
+      payload: { sessionId: record.sessionId },
+      ts: collectedAt,
+    });
+    return true;
   }
 
   private scheduleEphemeralSessionCleanup(sessionId: string): void {

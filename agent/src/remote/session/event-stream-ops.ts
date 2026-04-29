@@ -89,6 +89,7 @@ export function handleRegistrySessionEvent(input: {
         sessionId: targetRecord.sessionId,
         kind: "agent_session_event",
         payload: targetEvent,
+        retentionKey: getAgentSessionEventRetentionKey(targetEvent),
         ts,
       });
     },
@@ -101,9 +102,22 @@ export function handleRegistrySessionEvent(input: {
           sequence: targetRecord.queue.nextSequence,
           patch,
         },
+        retentionKey: "session-state-patch",
         ts,
       });
     },
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });
+}
+
+function getAgentSessionEventRetentionKey(event: AgentSessionEvent): string | undefined {
+  if (event.type === "message_update" && event.message.role === "assistant") {
+    return "assistant-message-update";
+  }
+
+  if (event.type === "tool_execution_update") {
+    return `tool-execution-update:${event.toolCallId}`;
+  }
+
+  return undefined;
 }

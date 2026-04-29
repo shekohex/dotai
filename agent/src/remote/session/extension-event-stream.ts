@@ -49,6 +49,11 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
   data: unknown;
   ts: number;
 }): void {
+  const syncClass = readRemoteExtensionEventSyncClass(input.data);
+  if (syncClass === "ephemeral") {
+    return;
+  }
+
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_custom_event",
@@ -56,6 +61,7 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
       channel: input.channel,
       data: input.data,
     },
+    retentionKey: readRemoteExtensionRetentionKey(input.channel, input.data, syncClass),
     ts: input.ts,
   });
 }
@@ -100,4 +106,51 @@ export function installRemoteExtensionEventMirror(input: {
       ts: input.now(),
     });
   };
+}
+
+function readRemoteExtensionEventSyncClass(
+  data: unknown,
+): "ephemeral" | "replaceable" | "durable" | undefined {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+
+  const sync = readStringProperty(data, "sync");
+  if (sync === "ephemeral" || sync === "replaceable" || sync === "durable") {
+    return sync;
+  }
+
+  return undefined;
+}
+
+function readRemoteExtensionRetentionKey(
+  channel: string,
+  data: unknown,
+  syncClass: "ephemeral" | "replaceable" | "durable" | undefined,
+): string | undefined {
+  if (syncClass !== "replaceable") {
+    return undefined;
+  }
+
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    const replaceKey = readStringProperty(data, "replaceKey");
+    if (replaceKey !== undefined && replaceKey.length > 0) {
+      return `${channel}:${replaceKey}`;
+    }
+  }
+
+  return channel;
+}
+
+function readStringProperty(value: object, propertyName: string): string | undefined {
+  if (!isObjectRecord(value) || !(propertyName in value)) {
+    return undefined;
+  }
+
+  const propertyValue = value[propertyName];
+  return typeof propertyValue === "string" ? propertyValue : undefined;
+}
+
+function isObjectRecord(value: object): value is Record<string, unknown> {
+  return !Array.isArray(value);
 }

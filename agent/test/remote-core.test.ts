@@ -30,6 +30,7 @@ import {
   type ExtensionStateKvClient,
 } from "../src/remote/client/session/extension-state-kv.ts";
 import { hasSessionPrimitiveCapability } from "../src/remote/session/capabilities.ts";
+import { appendMirroredRemoteCustomExtensionEvent } from "../src/remote/session/extension-event-stream.ts";
 import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
 import {
@@ -1892,6 +1893,56 @@ timedTest("session sync stream emits connected then snapshot", async () => {
   } finally {
     await remote.dispose();
   }
+});
+
+timedTest("replaceable retained events collapse to latest replay state", () => {
+  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 10 });
+  const streamId = "sessions/test/events";
+  streams.ensureStream(streamId);
+
+  streams.append(streamId, {
+    sessionId: "test",
+    kind: "session_state_patch",
+    payload: {
+      commandId: "cmd-1",
+      sequence: 1,
+      patch: { sessionName: "first" },
+    },
+    retentionKey: "session-state-patch",
+  });
+  streams.append(streamId, {
+    sessionId: "test",
+    kind: "session_state_patch",
+    payload: {
+      commandId: "cmd-2",
+      sequence: 2,
+      patch: { sessionName: "second" },
+    },
+    retentionKey: "session-state-patch",
+  });
+
+  const read = streams.read(streamId, "-1");
+  expect(read.events).toHaveLength(1);
+  expect(read.events[0]?.payload.commandId).toBe("cmd-2");
+  expect(read.nextOffset).toBe("0000000000000000_0000000000000002");
+});
+
+timedTest("ephemeral custom extension events stay live-only", () => {
+  const streams = new InMemoryDurableStreamStore();
+  const sessionId = "test-session";
+  const streamId = `sessions/${sessionId}/events`;
+  streams.ensureStream(streamId);
+
+  appendMirroredRemoteCustomExtensionEvent({
+    streams,
+    record: { sessionId } as never,
+    channel: "demo:ephemeral",
+    data: { sync: "ephemeral", value: "ignored" },
+    ts: Date.now(),
+  });
+
+  const read = streams.read(streamId, "-1");
+  expect(read.events).toHaveLength(0);
 });
 
 timedTest("stream endpoints accept durable protocol sentinel offsets", async () => {

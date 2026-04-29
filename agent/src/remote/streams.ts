@@ -24,6 +24,7 @@ interface StreamState {
   events: StreamEventEnvelope[];
   firstRetainedPosition: number;
   nextPosition: number;
+  retentionKeysByEventId: Map<string, string>;
   listeners: Set<StreamListener>;
   closed: boolean;
 }
@@ -38,6 +39,7 @@ interface AppendEventInput<TKind extends StreamEventKind = StreamEventKind> {
   kind: TKind;
   payload: StreamEventEnvelope["payload"];
   ts?: number;
+  retentionKey?: string;
 }
 
 const OFFSET_READ_SEQ = "0000000000000000";
@@ -86,6 +88,7 @@ export class InMemoryDurableStreamStore {
       events: [],
       firstRetainedPosition: 1,
       nextPosition: 0,
+      retentionKeysByEventId: new Map(),
       listeners: new Set(),
       closed: false,
     });
@@ -96,6 +99,9 @@ export class InMemoryDurableStreamStore {
     input: AppendEventInput<TKind>,
   ): StreamEventEnvelope {
     const stream = this.getOrCreate(streamId);
+    if (input.retentionKey !== undefined && input.retentionKey.length > 0) {
+      dropRetainedEventsByKey(stream, input.retentionKey);
+    }
     stream.nextPosition += 1;
     const streamOffset = formatOffset(stream.nextPosition);
     const eventCandidate: unknown = {
@@ -109,6 +115,9 @@ export class InMemoryDurableStreamStore {
     assertType(StreamEventEnvelopeSchema, eventCandidate);
     const event = eventCandidate;
     stream.events.push(event);
+    if (input.retentionKey !== undefined && input.retentionKey.length > 0) {
+      stream.retentionKeysByEventId.set(event.eventId, input.retentionKey);
+    }
     this.trimRetainedEvents(stream);
     for (const listener of stream.listeners) {
       listener(event);
@@ -238,6 +247,7 @@ export class InMemoryDurableStreamStore {
       events: [],
       firstRetainedPosition: 1,
       nextPosition: 0,
+      retentionKeysByEventId: new Map(),
       listeners: new Set(),
       closed: false,
     };
@@ -251,9 +261,39 @@ export class InMemoryDurableStreamStore {
     }
 
     const deleteCount = stream.events.length - this.maxRetainedEventsPerStream;
-    stream.events.splice(0, deleteCount);
+    const removedEvents = stream.events.splice(0, deleteCount);
+    for (const removedEvent of removedEvents) {
+      stream.retentionKeysByEventId.delete(removedEvent.eventId);
+    }
     stream.firstRetainedPosition += deleteCount;
   }
+}
+
+function dropRetainedEventsByKey(stream: StreamState, retentionKey: string): void {
+  const removedEventIds = stream.events
+    .filter((event) => stream.retentionKeysByEventId.get(event.eventId) === retentionKey)
+    .map((event) => event.eventId);
+  const nextEvents = stream.events.filter((event) => !removedEventIds.includes(event.eventId));
+  if (nextEvents.length === stream.events.length) {
+    return;
+  }
+
+  for (const removedEventId of removedEventIds) {
+    stream.retentionKeysByEventId.delete(removedEventId);
+  }
+
+  stream.events = nextEvents;
+  if (stream.events.length === 0) {
+    stream.firstRetainedPosition = stream.nextPosition + 1;
+    return;
+  }
+
+  const firstEvent = stream.events[0];
+  if (firstEvent === undefined) {
+    return;
+  }
+
+  stream.firstRetainedPosition = parseResolvedOffsetPosition(firstEvent.streamOffset);
 }
 
 function parseResolvedOffsetPosition(offset: string | undefined): number {

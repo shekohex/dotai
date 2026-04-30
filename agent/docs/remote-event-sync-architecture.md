@@ -678,38 +678,38 @@ Outcome-first summary:
 - [x] define live progress patch shapes at protocol level
 - [x] define reconnect bootstrap flow
 - [x] define client reconciliation rule: merge by identity, snapshot wins on conflict
-- [ ] define exact TypeBox schemas for new snapshot and patch envelopes
-- [ ] define exact interrupted status enums for each runtime domain
+- [x] define exact TypeBox schemas for new snapshot and patch envelopes
+- [x] define exact interrupted status enums for each runtime domain
 
 ### Storage checklist
 
-- [ ] remove unbounded `events[]` retention from remote stream store path
-- [ ] implement typed durable transition entries for queue/retry/compaction/bash
+- [x] remove unbounded `events[]` retention from remote stream store path
+- [x] implement typed durable transition entries for queue/retry/compaction/bash
 - [ ] persist session version with durable state transitions
-- [ ] ensure `tool_execution_update` does not persist every accumulated partial snapshot forever
-- [ ] add reducer-based rebuild from session JSONL on boot
+- [x] ensure `tool_execution_update` does not persist every accumulated partial snapshot forever
+- [x] add reducer-based rebuild from session JSONL on boot
 
 ### Server checklist
 
-- [ ] separate live transport concerns from reconnect recovery concerns
-- [ ] add per-session SSE sync endpoint
-- [ ] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
-- [ ] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
+- [x] separate live transport concerns from reconnect recovery concerns
+- [x] add per-session SSE sync endpoint
+- [x] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
+- [x] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
 - [ ] add internal live event bus layer
 - [ ] make SSE subscribe to bus instead of retained stream store
 - [ ] expose committed history through paginated session entries endpoint only
 - [ ] remove long-poll and stream-offset replay endpoints from target design
-- [ ] rebuild interrupted runtime state from durable reducers after restart
+- [x] rebuild interrupted runtime state from durable reducers after restart
 
 ### Client checklist
 
-- [ ] apply progress deltas to active local state
-- [ ] merge durable state by identity and let snapshot win on conflict
-- [ ] replace transient local state from fresh snapshot on reconnect
-- [ ] clear transient partial state when final durable event arrives
-- [ ] support multi-client eventual consistency by honoring durable order
-- [ ] tolerate reconnect where some transient updates were never observed
-- [ ] treat `server.connected` as reconnect/resync signal
+- [x] apply progress deltas to active local state
+- [x] merge durable state by identity and let snapshot win on conflict
+- [x] replace transient local state from fresh snapshot on reconnect
+- [x] clear transient partial state when final durable event arrives
+- [x] support multi-client eventual consistency by honoring durable order
+- [x] tolerate reconnect where some transient updates were never observed
+- [x] treat `server.connected` as reconnect/resync signal
 
 ### Testing checklist
 
@@ -719,7 +719,7 @@ Outcome-first summary:
 - [ ] verify reconnect during same-process streaming restores correct active partial state within 2s
 - [ ] verify crash mid-assistant stream restores committed transcript plus interrupted state within 5s
 - [ ] verify crash mid-tool stream restores committed tool state plus interrupted state within 5s
-- [ ] verify reconnect after completion skips obsolete transient updates
+- [x] verify reconnect after completion skips obsolete transient updates
 - [ ] verify two clients converge to same final durable state after snapshot-based reconnect
 - [ ] verify extension ephemeral/replaceable/durable contracts behave correctly across reconnect and restart
 

@@ -73,13 +73,13 @@ export interface SessionRecord {
     nextSequence: number;
   };
   retry: {
-    status: string;
+    status: "idle" | "running" | "interrupted";
   };
   compaction: {
-    status: string;
+    status: "idle" | "running" | "interrupted";
   };
   activeRun: SessionSnapshot["activeRun"];
-  streamingState: string;
+  streamingState: "idle" | "streaming" | "interrupted";
   isBashRunning: boolean;
   hasPendingBashMessages: boolean;
   pendingToolCalls: unknown[];

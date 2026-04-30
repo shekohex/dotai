@@ -43,6 +43,18 @@ export const SessionStatusSchema = Type.Union([
   Type.Literal("closed"),
 ]);
 
+export const RuntimeTaskStatusSchema = Type.Union([
+  Type.Literal("idle"),
+  Type.Literal("running"),
+  Type.Literal("interrupted"),
+]);
+
+export const StreamingStateSchema = Type.Union([
+  Type.Literal("idle"),
+  Type.Literal("streaming"),
+  Type.Literal("interrupted"),
+]);
+
 export const AuthChallengeRequestSchema = Type.Object({
   keyId: Type.String({ minLength: 1 }),
 });
@@ -720,17 +732,17 @@ export const SessionSnapshotSchema = Type.Object({
     nextSequence: Type.Number(),
   }),
   retry: Type.Object({
-    status: Type.String(),
+    status: RuntimeTaskStatusSchema,
   }),
   compaction: Type.Object({
-    status: Type.String(),
+    status: RuntimeTaskStatusSchema,
   }),
   presence: Type.Array(PresenceSchema),
   activeRun: Type.Union([
     Type.Null(),
     Type.Object({
       runId: Type.String(),
-      status: Type.String(),
+      status: Type.Union([SessionStatusSchema, Type.Literal("interrupted")]),
       triggeringCommandId: Type.String(),
       startedAt: Type.Number(),
       updatedAt: Type.Number(),
@@ -747,7 +759,7 @@ export const SessionSnapshotSchema = Type.Object({
   }),
   lastSessionStreamOffset: Type.String(),
   lastAppStreamOffsetSeenByServer: Type.String(),
-  streamingState: Type.String(),
+  streamingState: StreamingStateSchema,
   isBashRunning: Type.Boolean(),
   hasPendingBashMessages: Type.Boolean(),
   pendingToolCalls: Type.Array(Type.Unknown()),

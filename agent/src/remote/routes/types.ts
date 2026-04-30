@@ -1,4 +1,5 @@
 import type { AuthService, AuthSession } from "../auth.js";
+import type { SessionLiveEventBus } from "../live-events.js";
 import type { RemoteKvStore } from "../kv/store.js";
 import type { SessionRegistry } from "../session-registry.js";
 import type { InMemoryDurableStreamStore } from "../streams.js";
@@ -14,4 +15,5 @@ export interface RemoteRoutesDependencies {
   sessions: SessionRegistry;
   kv: RemoteKvStore;
   streams: InMemoryDurableStreamStore;
+  liveEvents: SessionLiveEventBus;
 }

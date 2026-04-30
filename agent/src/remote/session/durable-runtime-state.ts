@@ -30,11 +30,17 @@ const RemoteStreamingStateEntrySchema = Type.Object({
   updatedAt: Type.Number(),
 });
 
+const RemoteSessionVersionEntrySchema = Type.Object({
+  version: Type.Number(),
+  updatedAt: Type.Number(),
+});
+
 export const REMOTE_QUEUE_STATE_ENTRY = "remote-queue-state";
 export const REMOTE_RETRY_STATE_ENTRY = "remote-retry-state";
 export const REMOTE_COMPACTION_STATE_ENTRY = "remote-compaction-state";
 export const REMOTE_BASH_STATE_ENTRY = "remote-bash-state";
 export const REMOTE_STREAMING_STATE_ENTRY = "remote-streaming-state";
+export const REMOTE_SESSION_VERSION_ENTRY = "remote-session-version";
 
 type DurableRuntimeDomainState = {
   queue: { depth: number; nextSequence: number; updatedAt: number };
@@ -42,6 +48,7 @@ type DurableRuntimeDomainState = {
   compaction: { status: "idle" | "running"; updatedAt: number };
   bash: { isRunning: boolean; hasPendingMessages: boolean; updatedAt: number };
   streaming: { status: "idle" | "streaming"; updatedAt: number };
+  version: { version: number; updatedAt: number };
 };
 
 export function persistDurableRuntimeDomainState(input: {
@@ -75,6 +82,10 @@ export function persistDurableRuntimeDomainState(input: {
     status: input.record.streamingState === "streaming" ? "streaming" : "idle",
     updatedAt: input.updatedAt,
   });
+  sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
+    version: input.record.lastDurableSessionVersion,
+    updatedAt: input.updatedAt,
+  });
 }
 
 export function restoreDurableRuntimeDomainState(record: SessionRecord, now: number): void {
@@ -84,6 +95,9 @@ export function restoreDurableRuntimeDomainState(record: SessionRecord, now: num
   }
 
   const persistedState = readDurableRuntimeDomainState(sessionManager.getEntries());
+  if (persistedState.version !== undefined) {
+    record.lastDurableSessionVersion = persistedState.version.version;
+  }
   const interruptedRuntimeDomains = {
     queue: persistedState.queue?.depth !== undefined && persistedState.queue.depth > 0,
     retry: persistedState.retry?.status === "running",
@@ -193,6 +207,13 @@ function readDurableRuntimeDomainState(
       Value.Check(RemoteStreamingStateEntrySchema, entry.data)
     ) {
       result.streaming = Value.Parse(RemoteStreamingStateEntrySchema, entry.data);
+      continue;
+    }
+    if (
+      entry.customType === REMOTE_SESSION_VERSION_ENTRY &&
+      Value.Check(RemoteSessionVersionEntrySchema, entry.data)
+    ) {
+      result.version = Value.Parse(RemoteSessionVersionEntrySchema, entry.data);
     }
   }
 

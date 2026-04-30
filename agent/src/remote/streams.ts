@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { RemoteError } from "./errors.js";
-import { StreamEventEnvelopeSchema, type StreamEventEnvelope } from "./schemas.js";
-import { assertType } from "./typebox.js";
+import type { SessionLiveEventBus } from "./live-events.js";
+import type { StreamEventEnvelope } from "./schemas.js";
 
 type StreamEventKind = StreamEventEnvelope["kind"];
 
@@ -37,10 +37,14 @@ export interface StreamSubscription {
 interface AppendEventInput<TKind extends StreamEventKind = StreamEventKind> {
   sessionId: string;
   kind: TKind;
-  payload: StreamEventEnvelope["payload"];
+  payload: Extract<StreamEventEnvelope, { kind: TKind }>["payload"];
   ts?: number;
   retentionKey?: string;
 }
+
+type AppendEventInputUnion = {
+  [TKind in StreamEventKind]: AppendEventInput<TKind>;
+}[StreamEventKind];
 
 const OFFSET_READ_SEQ = "0000000000000000";
 const OFFSET_PATTERN = /^\d{16}_\d{16}$/;
@@ -74,9 +78,14 @@ function resolveOffset(offset: string | undefined, nextOffset: string): string |
 export class InMemoryDurableStreamStore {
   private readonly streams = new Map<string, StreamState>();
   private readonly maxRetainedEventsPerStream: number;
+  private readonly liveEventBus: SessionLiveEventBus | undefined;
 
-  constructor(options?: { maxRetainedEventsPerStream?: number }) {
+  constructor(options?: {
+    maxRetainedEventsPerStream?: number;
+    liveEventBus?: SessionLiveEventBus;
+  }) {
     this.maxRetainedEventsPerStream = options?.maxRetainedEventsPerStream ?? 512;
+    this.liveEventBus = options?.liveEventBus;
   }
 
   ensureStream(streamId: string): void {
@@ -94,35 +103,41 @@ export class InMemoryDurableStreamStore {
     });
   }
 
-  append<TKind extends StreamEventKind>(
-    streamId: string,
-    input: AppendEventInput<TKind>,
-  ): StreamEventEnvelope {
+  append(streamId: string, input: AppendEventInputUnion): StreamEventEnvelope {
     const stream = this.getOrCreate(streamId);
     if (input.retentionKey !== undefined && input.retentionKey.length > 0) {
       dropRetainedEventsByKey(stream, input.retentionKey);
     }
     stream.nextPosition += 1;
     const streamOffset = formatOffset(stream.nextPosition);
-    const eventCandidate: unknown = {
-      eventId: randomUUID(),
-      sessionId: input.sessionId,
+    const event = createStreamEventEnvelope(
+      randomUUID(),
       streamOffset,
-      ts: input.ts ?? Date.now(),
-      kind: input.kind,
-      payload: input.payload,
-    };
-    assertType(StreamEventEnvelopeSchema, eventCandidate);
-    const event = eventCandidate;
+      input.ts ?? Date.now(),
+      input,
+    );
     stream.events.push(event);
     if (input.retentionKey !== undefined && input.retentionKey.length > 0) {
       stream.retentionKeysByEventId.set(event.eventId, input.retentionKey);
     }
     this.trimRetainedEvents(stream);
+    this.liveEventBus?.publish(streamId, event);
     for (const listener of stream.listeners) {
       listener(event);
     }
     return event;
+  }
+
+  seedHeadOffset(streamId: string, position: number): void {
+    const stream = this.getOrCreate(streamId);
+    if (position <= stream.nextPosition) {
+      return;
+    }
+
+    stream.nextPosition = position;
+    if (stream.events.length === 0) {
+      stream.firstRetainedPosition = position + 1;
+    }
   }
 
   read(streamId: string, offset: string | undefined): StreamReadResult {
@@ -267,6 +282,54 @@ export class InMemoryDurableStreamStore {
     }
     stream.firstRetainedPosition += deleteCount;
   }
+}
+
+function createStreamEventEnvelope(
+  eventId: string,
+  streamOffset: string,
+  ts: number,
+  input: AppendEventInputUnion,
+): StreamEventEnvelope {
+  switch (input.kind) {
+    case "session_created":
+      return { eventId, streamOffset, ts, ...input };
+    case "session_closed":
+      return { eventId, streamOffset, ts, ...input };
+    case "session_summary_updated":
+      return { eventId, streamOffset, ts, ...input };
+    case "client_presence_updated":
+      return { eventId, streamOffset, ts, ...input };
+    case "auth_notice":
+      return { eventId, streamOffset, ts, ...input };
+    case "server_notice":
+      return { eventId, streamOffset, ts, ...input };
+    case "agent_session_event":
+      return { eventId, streamOffset, ts, ...input };
+    case "extension_event":
+      return { eventId, streamOffset, ts, ...input };
+    case "extension_custom_event":
+      return { eventId, streamOffset, ts, ...input };
+    case "command_accepted":
+      return { eventId, streamOffset, ts, ...input };
+    case "session_state_patch":
+      return { eventId, streamOffset, ts, ...input };
+    case "extension_ui_request":
+      return { eventId, streamOffset, ts, ...input };
+    case "extension_ui_resolved":
+      return { eventId, streamOffset, ts, ...input };
+    case "extension_error":
+      return { eventId, streamOffset, ts, ...input };
+    case "bash_start":
+      return { eventId, streamOffset, ts, ...input };
+    case "bash_chunk":
+      return { eventId, streamOffset, ts, ...input };
+    case "bash_end":
+      return { eventId, streamOffset, ts, ...input };
+    case "bash_flush":
+      return { eventId, streamOffset, ts, ...input };
+  }
+
+  throw new RemoteError("Unsupported stream event kind", 500);
 }
 
 function dropRetainedEventsByKey(stream: StreamState, retentionKey: string): void {

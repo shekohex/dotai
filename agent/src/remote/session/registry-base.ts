@@ -18,7 +18,11 @@ import type {
   RemoteExtensionMetadata,
   SessionSnapshot,
 } from "../schemas.js";
-import { appEventsStreamId, InMemoryDurableStreamStore } from "../streams.js";
+import {
+  appEventsStreamId,
+  InMemoryDurableStreamStore,
+  sessionEventsStreamId,
+} from "../streams.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import {
   DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT,
@@ -338,6 +342,10 @@ export abstract class SessionRegistryBase {
           flushPersistedSessionManager: false,
         });
         restoreDurableRuntimeDomainState(record, loadedAt);
+        this.streams.seedHeadOffset(
+          sessionEventsStreamId(record.sessionId),
+          record.lastDurableSessionVersion,
+        );
         this.loadedRuntimes.set(record);
         this.emitSessionSummaryUpdated(record, loadedAt);
         return record;

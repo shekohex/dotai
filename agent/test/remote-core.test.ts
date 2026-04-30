@@ -35,6 +35,7 @@ import {
   REMOTE_COMPACTION_STATE_ENTRY,
   REMOTE_QUEUE_STATE_ENTRY,
   REMOTE_RETRY_STATE_ENTRY,
+  REMOTE_SESSION_VERSION_ENTRY,
   REMOTE_STREAMING_STATE_ENTRY,
   restoreDurableRuntimeDomainState,
 } from "../src/remote/session/durable-runtime-state.ts";
@@ -1977,6 +1978,10 @@ timedTest("durable runtime state rebuild marks interrupted domains on restart", 
     status: "streaming",
     updatedAt: 1,
   });
+  sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
+    version: 42,
+    updatedAt: 1,
+  });
 
   const record = {
     runtime: {
@@ -2014,6 +2019,71 @@ timedTest("durable runtime state rebuild marks interrupted domains on restart", 
   expect(record.compaction.status).toBe("interrupted");
   expect(record.streamingState).toBe("interrupted");
   expect(record.activeRun?.status).toBe("interrupted");
+  expect(record.lastDurableSessionVersion).toBe(42);
+});
+
+timedTest("seeded head offset resumes persisted session version", () => {
+  const streams = new InMemoryDurableStreamStore();
+  const streamId = "sessions/persisted/events";
+  streams.ensureStream(streamId);
+  streams.seedHeadOffset(streamId, 42);
+
+  const event = streams.append(streamId, {
+    sessionId: "persisted",
+    kind: "server_notice",
+    payload: { message: "resume" },
+  });
+
+  expect(event.streamOffset).toBe("0000000000000000_0000000000000043");
+  expect(streams.getHeadOffset(streamId)).toBe("0000000000000000_0000000000000043");
+});
+
+timedTest("bounded retention stays stable under 100k assistant message updates", () => {
+  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 16 });
+  const streamId = "sessions/load-test/events";
+  streams.ensureStream(streamId);
+
+  for (let index = 0; index < 100_000; index += 1) {
+    streams.append(streamId, {
+      sessionId: "load-test",
+      kind: "agent_session_event",
+      payload: {
+        type: "message_update",
+        message: { role: "assistant", content: `chunk-${index}` },
+      },
+      retentionKey: "assistant-message-update",
+    });
+  }
+
+  const read = streams.read(streamId, "-1");
+  expect(read.events).toHaveLength(1);
+  expect(read.events[0]?.payload.type).toBe("message_update");
+  expect(read.nextOffset).toBe("0000000000000000_0000000000100000");
+});
+
+timedTest("bounded retention stays stable under 100k tool execution updates", () => {
+  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 16 });
+  const streamId = "sessions/tool-load-test/events";
+  streams.ensureStream(streamId);
+
+  for (let index = 0; index < 100_000; index += 1) {
+    streams.append(streamId, {
+      sessionId: "tool-load-test",
+      kind: "agent_session_event",
+      payload: {
+        type: "tool_execution_update",
+        toolCallId: "call-1",
+        toolName: "bash",
+        partialResult: { content: [{ type: "text", text: `out-${index}` }] },
+      },
+      retentionKey: "tool-execution-update:call-1",
+    });
+  }
+
+  const read = streams.read(streamId, "-1");
+  expect(read.events).toHaveLength(1);
+  expect(read.events[0]?.payload.type).toBe("tool_execution_update");
+  expect(read.nextOffset).toBe("0000000000000000_0000000000100000");
 });
 
 timedTest("stream endpoints accept durable protocol sentinel offsets", async () => {

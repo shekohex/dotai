@@ -95,6 +95,7 @@ export function acceptSessionCommand<TPayload>(input: {
 
     input.record.queue.nextSequence += 1;
     input.record.updatedAt = acceptedAt;
+    input.record.lastDurableSessionVersion += 1;
     input.appendCommandAccepted(input.record, accepted, acceptedAt);
     persistDurableRuntimeDomainState({ record: input.record, updatedAt: acceptedAt });
 

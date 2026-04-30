@@ -78,6 +78,8 @@ export function handleRegistrySessionEvent(input: {
     return;
   }
 
+  const previousDurableRuntimeState = readDurableRuntimeState(record);
+
   handleSessionEventForRecord({
     record,
     event: input.event,
@@ -110,10 +112,57 @@ export function handleRegistrySessionEvent(input: {
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });
 
+  record.lastDurableSessionVersion = readStreamHeadPosition(
+    input.streams.getHeadOffset(sessionEventsStreamId(record.sessionId)),
+  );
+  if (!didDurableRuntimeStateChange(previousDurableRuntimeState, record)) {
+    return;
+  }
   persistDurableRuntimeDomainState({
     record,
     updatedAt: input.now,
   });
+}
+
+function readDurableRuntimeState(record: SessionRecord): {
+  queueDepth: number;
+  nextSequence: number;
+  retryStatus: SessionRecord["retry"]["status"];
+  compactionStatus: SessionRecord["compaction"]["status"];
+  isBashRunning: boolean;
+  hasPendingBashMessages: boolean;
+  streamingState: SessionRecord["streamingState"];
+} {
+  return {
+    queueDepth: record.queue.depth,
+    nextSequence: record.queue.nextSequence,
+    retryStatus: record.retry.status,
+    compactionStatus: record.compaction.status,
+    isBashRunning: record.isBashRunning,
+    hasPendingBashMessages: record.hasPendingBashMessages,
+    streamingState: record.streamingState,
+  };
+}
+
+function didDurableRuntimeStateChange(
+  previous: ReturnType<typeof readDurableRuntimeState>,
+  record: SessionRecord,
+): boolean {
+  return (
+    previous.queueDepth !== record.queue.depth ||
+    previous.nextSequence !== record.queue.nextSequence ||
+    previous.retryStatus !== record.retry.status ||
+    previous.compactionStatus !== record.compaction.status ||
+    previous.isBashRunning !== record.isBashRunning ||
+    previous.hasPendingBashMessages !== record.hasPendingBashMessages ||
+    previous.streamingState !== record.streamingState
+  );
+}
+
+function readStreamHeadPosition(offset: string): number {
+  const [, rawPosition = "0"] = offset.split("_");
+  const parsed = Number.parseInt(rawPosition, 10);
+  return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
 function getAgentSessionEventRetentionKey(event: AgentSessionEvent): string | undefined {

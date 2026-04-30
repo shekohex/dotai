@@ -15,6 +15,7 @@ import {
 } from "./http-adapters.js";
 import { JsonFileRemoteKvStore } from "./kv/json-file-store.js";
 import type { RemoteKvStore } from "./kv/store.js";
+import { SessionLiveEventBus } from "./live-events.js";
 import type { RemoteRuntimeFactory } from "./runtime-factory.js";
 import { BundledPiRuntimeFactory } from "./runtime-factory.js";
 import { createV1Routes, type RemoteHonoEnv } from "./routes.js";
@@ -80,7 +81,8 @@ function parseMaxBodyChars(value: string | undefined): number {
 export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppContext {
   const origin = options.origin ?? "http://localhost:3000";
   const app = new Hono<RemoteHonoEnv>();
-  const streams = new InMemoryDurableStreamStore();
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
   const kv =
     options.kvStore ??
     new JsonFileRemoteKvStore({ filePath: options.kvFilePath ?? defaultRemoteKvFilePath() });
@@ -116,6 +118,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     sessions,
     kv,
     streams,
+    liveEvents,
   });
 
   app.use("*", requestId());

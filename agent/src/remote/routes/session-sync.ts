@@ -40,7 +40,7 @@ export async function handleSessionSync(
     const encoder = new TextEncoder();
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 
-    const unsubscribe = dependencies.streams.subscribe(streamId, (event) => {
+    const unsubscribe = dependencies.liveEvents.subscribe(streamId, (event) => {
       if (!controller) {
         return;
       }

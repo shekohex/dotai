@@ -75,6 +75,7 @@ export function createSessionRecord(input: {
     isBashRunning: false,
     hasPendingBashMessages: false,
     pendingToolCalls: [],
+    lastDurableSessionVersion: 0,
     interruptedRuntimeDomains: createInitialInterruptedRuntimeDomains(),
     errorMessage: null,
     createdAt: input.createdAt,

@@ -83,6 +83,7 @@ export interface SessionRecord {
   isBashRunning: boolean;
   hasPendingBashMessages: boolean;
   pendingToolCalls: unknown[];
+  lastDurableSessionVersion: number;
   interruptedRuntimeDomains: {
     queue: boolean;
     retry: boolean;

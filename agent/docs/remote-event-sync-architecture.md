@@ -685,7 +685,7 @@ Outcome-first summary:
 
 - [x] remove unbounded `events[]` retention from remote stream store path
 - [x] implement typed durable transition entries for queue/retry/compaction/bash
-- [ ] persist session version with durable state transitions
+- [x] persist session version with durable state transitions
 - [x] ensure `tool_execution_update` does not persist every accumulated partial snapshot forever
 - [x] add reducer-based rebuild from session JSONL on boot
 
@@ -695,10 +695,10 @@ Outcome-first summary:
 - [x] add per-session SSE sync endpoint
 - [x] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
 - [x] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
-- [ ] add internal live event bus layer
-- [ ] make SSE subscribe to bus instead of retained stream store
-- [ ] expose committed history through paginated session entries endpoint only
-- [ ] remove long-poll and stream-offset replay endpoints from target design
+- [x] add internal live event bus layer
+- [x] make SSE subscribe to bus instead of retained stream store
+- [x] expose committed history through paginated session entries endpoint only
+- [x] remove long-poll and stream-offset replay endpoints from target design
 - [x] rebuild interrupted runtime state from durable reducers after restart
 
 ### Client checklist
@@ -713,15 +713,15 @@ Outcome-first summary:
 
 ### Testing checklist
 
-- [ ] reproduce high-volume memory case
-- [ ] verify bounded memory under sustained 100k `message_update`
-- [ ] verify bounded memory under sustained 100k `tool_execution_update`
-- [ ] verify reconnect during same-process streaming restores correct active partial state within 2s
-- [ ] verify crash mid-assistant stream restores committed transcript plus interrupted state within 5s
-- [ ] verify crash mid-tool stream restores committed tool state plus interrupted state within 5s
+- [x] reproduce high-volume memory case
+- [x] verify bounded memory under sustained 100k `message_update`
+- [x] verify bounded memory under sustained 100k `tool_execution_update`
+- [x] verify reconnect during same-process streaming restores correct active partial state within 2s
+- [x] verify crash mid-assistant stream restores committed transcript plus interrupted state within 5s
+- [x] verify crash mid-tool stream restores committed tool state plus interrupted state within 5s
 - [x] verify reconnect after completion skips obsolete transient updates
-- [ ] verify two clients converge to same final durable state after snapshot-based reconnect
-- [ ] verify extension ephemeral/replaceable/durable contracts behave correctly across reconnect and restart
+- [x] verify two clients converge to same final durable state after snapshot-based reconnect
+- [x] verify extension ephemeral/replaceable/durable contracts behave correctly across reconnect and restart
 
 ## QA
 

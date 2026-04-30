@@ -108,7 +108,20 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
         excludeFromContext: options?.excludeFromContext,
         clientRequestId,
       })
-      .then((result) => {
+      .then(async (result) => {
+        const chunkCount = this.activeBashChunkCounts.get(clientRequestId) ?? 0;
+        if (chunkCount === 0) {
+          const [firstChunk, ...remainingChunks] = result.chunks ?? [];
+          if (firstChunk !== undefined) {
+            onChunk?.(firstChunk);
+          }
+          for (const chunk of remainingChunks) {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 10);
+            });
+            onChunk?.(chunk);
+          }
+        }
         if (result.snapshot !== undefined) {
           assertType(SessionSnapshotSchema, result.snapshot);
           this.applySnapshot(result.snapshot);
@@ -121,8 +134,12 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
           fullOutputPath: result.fullOutputPath,
         };
       })
-      .finally(() => {
+      .catch((error) => {
+        this.activeBashChunkCounts.delete(clientRequestId);
         this.activeBashRequests.delete(clientRequestId);
+        throw error;
+      })
+      .finally(() => {
         this._isBashRunning = false;
       });
   }

@@ -2,6 +2,7 @@ import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot } from "../schemas.js";
 import { getExecutorState } from "../../extensions/executor/status.js";
 import { getGitState, serializeGitRuntimeState } from "../../extensions/git-state.js";
+import { readDurableExtensionEvents } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
 
 export const DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT = 200;
@@ -65,6 +66,10 @@ export function buildSessionSnapshotParts(
     presence: [...record.presence.values()],
     activeRun: record.activeRun,
     interruptedRuntimeDomains: { ...record.interruptedRuntimeDomains },
+    durableExtensionEvents: readDurableExtensionEvents(record).map((event) => ({
+      channel: event.channel,
+      data: structuredClone(event.data),
+    })),
     streamingState: record.streamingState,
     isBashRunning: record.isBashRunning,
     hasPendingBashMessages: record.hasPendingBashMessages,

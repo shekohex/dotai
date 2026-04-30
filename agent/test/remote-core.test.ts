@@ -1910,6 +1910,64 @@ timedTest("session sync stream emits connected then snapshot", async () => {
   }
 });
 
+timedTest("session sync drops buffered patches already covered by snapshot", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const syncResponse = await remote.app.request(`/v1/sessions/${created.sessionId}/sync`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(syncResponse.status).toBe(200);
+
+    const renameResponse = await remote.app.request(
+      `/v1/sessions/${created.sessionId}/session-name`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionName: "buffered" }),
+      },
+    );
+    expect(renameResponse.status).toBe(202);
+
+    const reader = syncResponse.body?.getReader();
+    expect(reader).toBeTruthy();
+    let payload = "";
+    while (!payload.includes('"type":"snapshot"')) {
+      const chunk = await reader!.read();
+      if (chunk.done) {
+        break;
+      }
+      payload += new TextDecoder().decode(chunk.value);
+    }
+    await reader?.cancel();
+
+    expect(payload.match(/"type":"snapshot"/g)?.length ?? 0).toBe(1);
+    expect(payload.match(/"type":"patch"/g)?.length ?? 0).toBe(0);
+  } finally {
+    await remote.dispose();
+  }
+});
+
 timedTest("replaceable retained events collapse to latest replay state", () => {
   const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 10 });
   const streamId = "sessions/test/events";
@@ -2026,6 +2084,44 @@ timedTest("durable runtime state rebuild marks interrupted domains on restart", 
   expect(record.streamingState).toBe("interrupted");
   expect(record.activeRun?.status).toBe("interrupted");
   expect(record.lastDurableSessionVersion).toBe(42);
+});
+
+timedTest("snapshot clears stale bash execution caches", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new FakeRuntimeFactory(),
+  });
+
+  let runtime: RemoteAgentSessionRuntime | undefined;
+  try {
+    runtime = await createRemoteRuntime(remote.app, { privateKeyPem, cwd: process.cwd() });
+    const sessionAny = runtime.session as unknown as {
+      activeBashExecutions: Map<string, unknown>;
+      activeBashRequests: Map<string, unknown>;
+      applySnapshot: (
+        snapshot: Awaited<ReturnType<RemoteApiClient["getSessionSnapshot"]>>,
+        options?: { resetTransientBashState?: boolean },
+      ) => void;
+      client: RemoteApiClient;
+      sessionId: string;
+    };
+
+    sessionAny.activeBashExecutions.set("stale", { executionId: "stale" });
+    sessionAny.activeBashRequests.set("stale", { onChunk: () => {} });
+    const snapshot = await sessionAny.client.getSessionSnapshot(sessionAny.sessionId);
+    sessionAny.applySnapshot(
+      { ...snapshot, isBashRunning: false, hasPendingBashMessages: false },
+      { resetTransientBashState: true },
+    );
+
+    expect(sessionAny.activeBashExecutions.size).toBe(0);
+    expect(sessionAny.activeBashRequests.size).toBe(0);
+  } finally {
+    await runtime?.dispose();
+    await remote.dispose();
+  }
 });
 
 timedTest(
@@ -2192,125 +2288,6 @@ timedTest("command acceptance persists queue state after onAccepted mutation", a
         (entry.data as { depth?: number }).depth === 1,
     ),
   ).toBe(true);
-});
-
-timedTest("session sync buffers patches before stream start", async () => {
-  const liveEvents = new SessionLiveEventBus();
-  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
-  const sessionId = "sync-buffer";
-  const streamId = sessionEventsStreamId(sessionId);
-  streams.ensureStream(streamId);
-
-  const response = await handleSessionSync(
-    {
-      req: { header: () => undefined },
-      get: (key: string) => {
-        if (key === "auth") {
-          return { token: "token-1" };
-        }
-        return undefined;
-      },
-    } as never,
-    {
-      auth: {} as never,
-      kv: {} as never,
-      streams,
-      liveEvents,
-      sessions: {
-        touchPresence: () => {},
-        detachPresence: () => {},
-        loadSessionSnapshot: async () => {
-          streams.append(streamId, {
-            sessionId,
-            kind: "server_notice",
-            payload: { message: "buffered" },
-          });
-          return {
-            sessionId,
-            status: "idle",
-            cwd: "/tmp",
-            model: "provider/model",
-            thinkingLevel: "medium",
-            activeTools: [],
-            extensions: [],
-            resources: {
-              skills: [],
-              prompts: [],
-              themes: [],
-              systemPrompt: null,
-              appendSystemPrompt: [],
-            },
-            settings: {},
-            availableModels: [],
-            modelSettings: {
-              defaultProvider: null,
-              defaultModel: null,
-              defaultThinkingLevel: null,
-              enabledModels: null,
-            },
-            sessionStats: {
-              sessionId,
-              userMessages: 0,
-              assistantMessages: 0,
-              toolCalls: 0,
-              toolResults: 0,
-              totalMessages: 0,
-              tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              cost: 0,
-            },
-            usageCost: 0,
-            autoCompactionEnabled: false,
-            steeringMode: "all",
-            followUpMode: "all",
-            entries: [],
-            leafId: null,
-            transcript: [],
-            queue: { depth: 0, nextSequence: 1 },
-            retry: { status: "idle" },
-            compaction: { status: "idle" },
-            presence: [],
-            activeRun: null,
-            interruptedRuntimeDomains: {
-              queue: false,
-              retry: false,
-              compaction: false,
-              bash: false,
-              streaming: false,
-            },
-            lastSessionStreamOffset: streams.getHeadOffset(streamId),
-            lastAppStreamOffsetSeenByServer: "0000000000000000_0000000000000000",
-            streamingState: "idle",
-            isBashRunning: false,
-            hasPendingBashMessages: false,
-            pendingToolCalls: [],
-            errorMessage: null,
-            createdAt: 0,
-            updatedAt: 0,
-          };
-        },
-      } as never,
-    },
-    sessionId,
-  );
-
-  const reader = response.body?.getReader();
-  expect(reader).toBeTruthy();
-  let payload = "";
-  while (true) {
-    const chunk = await reader!.read();
-    if (chunk.done) {
-      break;
-    }
-    payload += new TextDecoder().decode(chunk.value);
-    if (payload.includes("buffered")) {
-      break;
-    }
-  }
-  await reader?.cancel();
-
-  expect(payload).toMatch(/"type":"snapshot"/);
-  expect(payload).toMatch(/"type":"patch"/);
-  expect(payload).toMatch(/buffered/);
 });
 
 timedTest("seeded head offset resumes persisted session version", () => {

@@ -120,7 +120,9 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     this.appendBashStartEvent(record, executionId, request);
     this.syncFromRuntime(record, { updateTimestamp: true, syncResources: false });
     this.appendBashStatePatch(record);
+    const chunks: string[] = [];
     const result = await this.executeRuntimeBash(session, request, (chunk) => {
+      chunks.push(chunk);
       this.appendBashChunkEvent(record, executionId, chunk, request.clientRequestId);
     });
     this.syncFromRuntime(record, { updateTimestamp: true, syncResources: true });
@@ -128,6 +130,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     this.appendBashStatePatch(record);
     return {
       ...result,
+      chunks,
       clientRequestId: request.clientRequestId,
       snapshot: this.toSessionSnapshot(record),
     };

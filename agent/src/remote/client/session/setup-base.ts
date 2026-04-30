@@ -1,5 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
+import { errorMessage } from "../../../utils/error-message.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventListener,
@@ -820,4 +821,3 @@ export abstract class RemoteAgentSessionSetupBase {
   abstract abort(): Promise<void>;
   abstract waitForIdle(): Promise<void>;
 }
-import { errorMessage } from "../../../utils/error-message.js";

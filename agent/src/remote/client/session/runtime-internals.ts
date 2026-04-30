@@ -34,6 +34,13 @@ import { RemoteAgentSessionSetupBase } from "./setup-base.js";
 import { emitResourceLoaderEventLocally } from "../../event-bus-bridge.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
+  private initialSyncReady = false;
+  protected readonly activeBashChunkCounts = new Map<string, number>();
+  private readonly initialSyncReadyPromise = new Promise<void>((resolve) => {
+    this.resolveInitialSyncReady = resolve;
+  });
+  private resolveInitialSyncReady: (() => void) | undefined;
+
   protected async resyncAfterReauthentication(): Promise<void> {
     let snapshot;
     try {
@@ -45,7 +52,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       }
       throw error;
     }
-    this.applySnapshot(snapshot);
+    this.applySnapshot(snapshot, { resetTransientBashState: true });
     await this.refreshRemoteToolCatalog();
     await this.refreshForkMessages();
   }
@@ -53,14 +60,21 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
   async reload(): Promise<void> {
     await this.waitForPendingMutations();
     const snapshot = await this.client.reloadSession(this.sessionId);
-    this.applySnapshot(snapshot);
+    this.applySnapshot(snapshot, { resetTransientBashState: true });
     await this.refreshRemoteToolCatalog();
     await this.refreshForkMessages();
     await this.replayLocalExtensionReloadLifecycle();
   }
 
-  protected applySnapshot(snapshot: Parameters<typeof applyRemoteSettingsSnapshot>[1]): void {
+  protected applySnapshot(
+    snapshot: Parameters<typeof applyRemoteSettingsSnapshot>[1],
+    options?: { resetTransientBashState?: boolean },
+  ): void {
     this.streamOffset = snapshot.lastSessionStreamOffset;
+    if (options?.resetTransientBashState === true) {
+      this.activeBashExecutions.clear();
+      this.activeBashRequests.clear();
+    }
     this.applyAuthoritativeCwdUpdate(snapshot.cwd);
     this.applyRemoteCatalogSnapshot(snapshot);
     applyRemoteSettingsSnapshot(this.remoteModelSettings, snapshot);
@@ -96,6 +110,14 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.activeTools = [...snapshot.activeTools];
     initializeRemoteSessionMetadata(this.sessionManager, snapshot);
     this.queueDepth = snapshot.queue.depth;
+    for (const durableExtensionEvent of snapshot.durableExtensionEvents) {
+      emitResourceLoaderEventLocally(
+        this.resourceLoader,
+        durableExtensionEvent.channel,
+        durableExtensionEvent.data,
+        "RemoteAgentSessionRuntimeInternals.applySnapshot",
+      );
+    }
   }
 
   protected async waitForPendingMutations(): Promise<void> {
@@ -205,7 +227,8 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.streamOffset = event.version;
 
     if (event.type === "snapshot") {
-      this.applySnapshot(event.snapshot);
+      this.applySnapshot(event.snapshot, { resetTransientBashState: true });
+      this.markInitialSyncReady();
       if (
         previousErrorMessage !== undefined &&
         previousErrorMessage.length > 0 &&
@@ -298,7 +321,15 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         if (payload.clientRequestId === undefined) {
           return;
         }
-        this.activeBashRequests.get(payload.clientRequestId)?.onChunk?.(payload.chunk);
+        const activeRequest = this.activeBashRequests.get(payload.clientRequestId);
+        if (!activeRequest) {
+          return;
+        }
+        this.activeBashChunkCounts.set(
+          payload.clientRequestId,
+          (this.activeBashChunkCounts.get(payload.clientRequestId) ?? 0) + 1,
+        );
+        activeRequest.onChunk?.(payload.chunk);
       },
       handleBashEnd: (payload) => {
         this._isBashRunning = false;
@@ -309,6 +340,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
           this.sessionManager.appendMessage(message);
         }
         if (payload.clientRequestId !== undefined) {
+          this.activeBashChunkCounts.delete(payload.clientRequestId);
           this.activeBashRequests.delete(payload.clientRequestId);
         }
       },
@@ -474,6 +506,14 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     return [...this.activeBashExecutions.values()].map((execution) => ({ ...execution }));
   }
 
+  async waitForInitialSyncReady(): Promise<void> {
+    if (this.initialSyncReady) {
+      return;
+    }
+
+    await this.initialSyncReadyPromise;
+  }
+
   private async recoverAuthentication(): Promise<boolean> {
     this.handleRemoteWarning("Remote auth token invalid or expired. Reconnecting...");
     let attempt = 0;
@@ -513,6 +553,16 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     }
 
     return false;
+  }
+
+  private markInitialSyncReady(): void {
+    if (this.initialSyncReady) {
+      return;
+    }
+
+    this.initialSyncReady = true;
+    this.resolveInitialSyncReady?.();
+    this.resolveInitialSyncReady = undefined;
   }
 }
 

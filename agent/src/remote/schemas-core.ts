@@ -15,6 +15,7 @@ import {
   RemoteExtensionMetadataSchema,
   RemoteExtensionRuntimeSchema,
 } from "./schemas-capabilities.js";
+import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
 
 export {
   ClientCapabilitiesPrimitivesSchema,
@@ -413,6 +414,7 @@ export const BashResultSchema = Type.Object({
 
 export const BashExecuteResponseSchema = Type.Object({
   ...BashResultSchema.properties,
+  chunks: Type.Optional(Type.Array(Type.String())),
   clientRequestId: Type.Optional(Type.String()),
   snapshot: Type.Optional(Type.Unknown()),
 });
@@ -757,6 +759,7 @@ export const SessionSnapshotSchema = Type.Object({
     bash: Type.Boolean(),
     streaming: Type.Boolean(),
   }),
+  durableExtensionEvents: Type.Array(RemoteCustomExtensionEventPayloadSchema),
   lastSessionStreamOffset: Type.String(),
   lastAppStreamOffsetSeenByServer: Type.String(),
   streamingState: StreamingStateSchema,

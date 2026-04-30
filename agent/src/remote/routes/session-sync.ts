@@ -33,8 +33,10 @@ export async function handleSessionSync(
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
 ): Promise<Response> {
+  let unsubscribe: (() => void) | undefined;
+  let connectionId: string | undefined;
   try {
-    const connectionId = getConnectionId(c);
+    connectionId = getConnectionId(c);
     dependencies.sessions.touchPresence(sessionId, c.get("auth"), connectionId);
     const streamId = sessionEventsStreamId(sessionId);
     const encoder = new TextEncoder();
@@ -50,7 +52,7 @@ export async function handleSessionSync(
       controller.enqueue(encoder.encode(sseChunk(patchEvent)));
     };
 
-    const unsubscribe = dependencies.liveEvents.subscribe(streamId, (event) => {
+    unsubscribe = dependencies.liveEvents.subscribe(streamId, (event) => {
       const payload: SessionSyncEvent = {
         type: "patch",
         sessionId,
@@ -86,19 +88,31 @@ export async function handleSessionSync(
         activeController.enqueue(encoder.encode(sseChunk(connectedPayload)));
         activeController.enqueue(encoder.encode(sseChunk(snapshotPayload)));
         for (const bufferedPatchEvent of bufferedPatchEvents) {
+          if (
+            bufferedPatchEvent.type === "patch" &&
+            bufferedPatchEvent.version <= snapshot.lastSessionStreamOffset
+          ) {
+            continue;
+          }
           activeController.enqueue(encoder.encode(sseChunk(bufferedPatchEvent)));
         }
         bufferedPatchEvents.length = 0;
       },
       cancel() {
-        unsubscribe();
+        unsubscribe?.();
         controller = undefined;
-        dependencies.sessions.detachPresence(sessionId, connectionId);
+        if (connectionId !== undefined) {
+          dependencies.sessions.detachPresence(sessionId, connectionId);
+        }
       },
     });
 
     return new Response(body, { headers: buildHeaders(connectionId) });
   } catch (error) {
+    unsubscribe?.();
+    if (connectionId !== undefined) {
+      dependencies.sessions.detachPresence(sessionId, connectionId);
+    }
     return authError(c, error);
   }
 }

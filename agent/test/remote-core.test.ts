@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Hono } from "hono";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import type {
   ExtensionFactory,
@@ -45,6 +46,7 @@ import { acceptSessionCommand } from "../src/remote/session/command-acceptance.t
 import { appendMirroredRemoteCustomExtensionEvent } from "../src/remote/session/extension-event-stream.ts";
 import { SessionLiveEventBus } from "../src/remote/live-events.ts";
 import { handleSessionSync } from "../src/remote/routes/session-sync.ts";
+import { createV1Routes } from "../src/remote/routes.ts";
 import { syncSessionRecordFromRuntime } from "../src/remote/session/runtime-sync.ts";
 import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
@@ -2001,10 +2003,17 @@ timedTest("replaceable retained events collapse to latest replay state", () => {
 });
 
 timedTest("ephemeral custom extension events stay live-only", () => {
-  const streams = new InMemoryDurableStreamStore();
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
   const sessionId = "test-session";
   const streamId = `sessions/${sessionId}/events`;
   streams.ensureStream(streamId);
+  const liveEventsSeen: string[] = [];
+  const unsubscribe = liveEvents.subscribe(streamId, (event) => {
+    if (event.kind === "extension_custom_event") {
+      liveEventsSeen.push(event.payload.channel);
+    }
+  });
 
   appendMirroredRemoteCustomExtensionEvent({
     streams,
@@ -2016,6 +2025,103 @@ timedTest("ephemeral custom extension events stay live-only", () => {
 
   const read = streams.read(streamId, "-1");
   expect(read.events).toHaveLength(0);
+  expect(liveEventsSeen).toEqual(["demo:ephemeral"]);
+  unsubscribe();
+});
+
+timedTest("session sync bounds pre-snapshot custom event buffering", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const rootDir = await mkdtemp(join(tmpdir(), "pi-remote-sync-buffer-"));
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
+  const sessions = new SessionRegistry({
+    streams,
+    runtimeFactory: new FakeRuntimeFactory(),
+    catalog: new SessionCatalog({ rootDir }),
+  });
+  const originalLoadSessionSnapshot = sessions.loadSessionSnapshot.bind(sessions);
+  let releaseSnapshotLoad: (() => void) | undefined;
+  const snapshotLoadGate = new Promise<void>((resolve) => {
+    releaseSnapshotLoad = resolve;
+  });
+  sessions.loadSessionSnapshot = async (...args) => {
+    await snapshotLoadGate;
+    return originalLoadSessionSnapshot(...args);
+  };
+
+  const app = new Hono();
+  app.route(
+    "/v1",
+    createV1Routes({
+      auth: new AuthService({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      }),
+      sessions,
+      kv: new InMemoryRemoteKvStore(),
+      streams,
+      liveEvents,
+    }),
+  );
+
+  try {
+    const token = await authenticate(app, privateKeyPem);
+    const createResponse = await app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const syncResponsePromise = app.request(`/v1/sessions/${created.sessionId}/sync`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    for (let index = 0; index < 200; index += 1) {
+      streams.append(sessionEventsStreamId(created.sessionId), {
+        sessionId: created.sessionId,
+        kind: "extension_custom_event",
+        payload: {
+          channel: `demo:${index}`,
+          data: { value: index },
+        },
+      });
+    }
+
+    releaseSnapshotLoad?.();
+
+    const syncResponse = await syncResponsePromise;
+    expect(syncResponse.status).toBe(200);
+    const reader = syncResponse.body?.getReader();
+    expect(reader).toBeTruthy();
+
+    let payload = "";
+    while ((payload.match(/"type":"patch"/g)?.length ?? 0) < 128) {
+      const chunk = await reader!.read();
+      if (chunk.done) {
+        break;
+      }
+      payload += new TextDecoder().decode(chunk.value);
+      if (payload.includes('"channel":"demo:199"')) {
+        break;
+      }
+    }
+    await reader?.cancel();
+
+    expect(payload).toMatch(/"type":"snapshot"/);
+    expect(payload.match(/"type":"patch"/g)?.length ?? 0).toBe(128);
+    expect(payload).not.toContain('"channel":"demo:0"');
+    expect(payload).toContain('"channel":"demo:199"');
+  } finally {
+    await sessions.dispose();
+    await rm(rootDir, { recursive: true, force: true });
+  }
 });
 
 timedTest("durable runtime state rebuild marks interrupted domains on restart", () => {

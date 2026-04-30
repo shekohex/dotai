@@ -55,6 +55,15 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
 }): void {
   const syncClass = readRemoteExtensionEventSyncClass(input.data);
   if (syncClass === "ephemeral") {
+    input.streams.appendLiveOnly(sessionEventsStreamId(input.record.sessionId), {
+      sessionId: input.record.sessionId,
+      kind: "extension_custom_event",
+      payload: {
+        channel: input.channel,
+        data: input.data,
+      },
+      ts: input.ts,
+    });
     return;
   }
 

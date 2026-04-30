@@ -121,10 +121,25 @@ export class InMemoryDurableStreamStore {
       stream.retentionKeysByEventId.set(event.eventId, input.retentionKey);
     }
     this.trimRetainedEvents(stream);
-    this.liveEventBus?.publish(streamId, event);
-    for (const listener of stream.listeners) {
-      listener(event);
+    this.emitLiveEvent(streamId, stream, event);
+    return event;
+  }
+
+  appendLiveOnly(streamId: string, input: AppendEventInputUnion): StreamEventEnvelope {
+    const stream = this.getOrCreate(streamId);
+    stream.nextPosition += 1;
+    const event = createStreamEventEnvelope(
+      randomUUID(),
+      formatOffset(stream.nextPosition),
+      input.ts ?? Date.now(),
+      input,
+    );
+
+    if (stream.events.length === 0) {
+      stream.firstRetainedPosition = stream.nextPosition + 1;
     }
+
+    this.emitLiveEvent(streamId, stream, event);
     return event;
   }
 
@@ -281,6 +296,13 @@ export class InMemoryDurableStreamStore {
       stream.retentionKeysByEventId.delete(removedEvent.eventId);
     }
     stream.firstRetainedPosition += deleteCount;
+  }
+
+  private emitLiveEvent(streamId: string, stream: StreamState, event: StreamEventEnvelope): void {
+    this.liveEventBus?.publish(streamId, event);
+    for (const listener of stream.listeners) {
+      listener(event);
+    }
   }
 }
 

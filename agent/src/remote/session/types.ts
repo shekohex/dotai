@@ -83,6 +83,13 @@ export interface SessionRecord {
   isBashRunning: boolean;
   hasPendingBashMessages: boolean;
   pendingToolCalls: unknown[];
+  interruptedRuntimeDomains: {
+    queue: boolean;
+    retry: boolean;
+    compaction: boolean;
+    bash: boolean;
+    streaming: boolean;
+  };
   errorMessage: string | null;
   createdAt: number;
   updatedAt: number;
@@ -169,6 +176,16 @@ export function createInitialQueue(): SessionRecord["queue"] {
 
 export function createIdleTaskState(): { status: "idle" } {
   return { status: "idle" };
+}
+
+export function createInitialInterruptedRuntimeDomains(): SessionRecord["interruptedRuntimeDomains"] {
+  return {
+    queue: false,
+    retry: false,
+    compaction: false,
+    bash: false,
+    streaming: false,
+  };
 }
 
 export function createEmptySessionStats(sessionId: string): SessionStats {

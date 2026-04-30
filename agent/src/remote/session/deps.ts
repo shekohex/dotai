@@ -26,6 +26,10 @@ export {
   handleRegistrySessionEvent,
 } from "./event-stream-ops.js";
 export { installRemoteExtensionEventMirror } from "./extension-event-stream.js";
+export {
+  persistDurableRuntimeDomainState,
+  restoreDurableRuntimeDomainState,
+} from "./durable-runtime-state.js";
 export { detachSessionPresence, touchSessionPresence } from "./presence-ops.js";
 export { ensurePresenceSessionExists } from "./presence-session.js";
 export {
@@ -57,6 +61,7 @@ export { DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT } from "./runtime-sync-snapshot.
 export {
   ALLOWED_THINKING_LEVELS,
   createEmptyModelSettings,
+  createInitialInterruptedRuntimeDomains,
   createIdleTaskState,
   createInitialQueue,
 } from "./types.js";

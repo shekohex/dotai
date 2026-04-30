@@ -38,6 +38,7 @@ import {
   parseResourceLoaderExtensionMetadata,
   parseRuntimeExtensionMetadata,
   parseThinkingLevelFromAllowedSet,
+  restoreDurableRuntimeDomainState,
   pruneExpiredSessionPresence,
   requireRuntimeSessionFromRecord,
   syncSessionRecordFromRuntime,
@@ -336,6 +337,7 @@ export abstract class SessionRegistryBase {
           syncSessionNameToRuntime: false,
           flushPersistedSessionManager: false,
         });
+        restoreDurableRuntimeDomainState(record, loadedAt);
         this.loadedRuntimes.set(record);
         this.emitSessionSummaryUpdated(record, loadedAt);
         return record;

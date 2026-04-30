@@ -30,6 +30,14 @@ import {
   type ExtensionStateKvClient,
 } from "../src/remote/client/session/extension-state-kv.ts";
 import { hasSessionPrimitiveCapability } from "../src/remote/session/capabilities.ts";
+import {
+  REMOTE_BASH_STATE_ENTRY,
+  REMOTE_COMPACTION_STATE_ENTRY,
+  REMOTE_QUEUE_STATE_ENTRY,
+  REMOTE_RETRY_STATE_ENTRY,
+  REMOTE_STREAMING_STATE_ENTRY,
+  restoreDurableRuntimeDomainState,
+} from "../src/remote/session/durable-runtime-state.ts";
 import { appendMirroredRemoteCustomExtensionEvent } from "../src/remote/session/extension-event-stream.ts";
 import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
@@ -1943,6 +1951,69 @@ timedTest("ephemeral custom extension events stay live-only", () => {
 
   const read = streams.read(streamId, "-1");
   expect(read.events).toHaveLength(0);
+});
+
+timedTest("durable runtime state rebuild marks interrupted domains on restart", () => {
+  const sessionManager = SessionManager.inMemory(process.cwd());
+  sessionManager.appendCustomEntry(REMOTE_QUEUE_STATE_ENTRY, {
+    depth: 2,
+    nextSequence: 7,
+    updatedAt: 1,
+  });
+  sessionManager.appendCustomEntry(REMOTE_RETRY_STATE_ENTRY, {
+    status: "running",
+    updatedAt: 1,
+  });
+  sessionManager.appendCustomEntry(REMOTE_COMPACTION_STATE_ENTRY, {
+    status: "running",
+    updatedAt: 1,
+  });
+  sessionManager.appendCustomEntry(REMOTE_BASH_STATE_ENTRY, {
+    isRunning: true,
+    hasPendingMessages: true,
+    updatedAt: 1,
+  });
+  sessionManager.appendCustomEntry(REMOTE_STREAMING_STATE_ENTRY, {
+    status: "streaming",
+    updatedAt: 1,
+  });
+
+  const record = {
+    runtime: {
+      session: {
+        sessionManager,
+      },
+    },
+    queue: { depth: 0, nextSequence: 7 },
+    retry: { status: "idle" },
+    compaction: { status: "idle" },
+    isBashRunning: false,
+    hasPendingBashMessages: false,
+    streamingState: "idle",
+    interruptedRuntimeDomains: {
+      queue: false,
+      retry: false,
+      compaction: false,
+      bash: false,
+      streaming: false,
+    },
+    activeRun: null,
+  } as never;
+
+  restoreDurableRuntimeDomainState(record, 10);
+
+  expect(record.interruptedRuntimeDomains).toEqual({
+    queue: true,
+    retry: true,
+    compaction: true,
+    bash: true,
+    streaming: true,
+  });
+  expect(record.queue.depth).toBe(0);
+  expect(record.retry.status).toBe("interrupted");
+  expect(record.compaction.status).toBe("interrupted");
+  expect(record.streamingState).toBe("interrupted");
+  expect(record.activeRun?.status).toBe("interrupted");
 });
 
 timedTest("stream endpoints accept durable protocol sentinel offsets", async () => {

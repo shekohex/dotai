@@ -738,6 +738,13 @@ export const SessionSnapshotSchema = Type.Object({
       queueDepth: Type.Number(),
     }),
   ]),
+  interruptedRuntimeDomains: Type.Object({
+    queue: Type.Boolean(),
+    retry: Type.Boolean(),
+    compaction: Type.Boolean(),
+    bash: Type.Boolean(),
+    streaming: Type.Boolean(),
+  }),
   lastSessionStreamOffset: Type.String(),
   lastAppStreamOffsetSeenByServer: Type.String(),
   streamingState: Type.String(),

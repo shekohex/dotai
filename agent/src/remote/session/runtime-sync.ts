@@ -33,6 +33,13 @@ export function syncSessionRecordFromRuntime(input: {
   const updateTimestamp = input.options?.updateTimestamp ?? true;
   const syncResources = input.options?.syncResources ?? false;
   applyRuntimeSnapshot(input.record, session, syncResources);
+  input.record.interruptedRuntimeDomains = {
+    queue: false,
+    retry: false,
+    compaction: false,
+    bash: false,
+    streaming: false,
+  };
   if (updateTimestamp) {
     input.record.updatedAt = now;
   }

@@ -64,6 +64,7 @@ export function buildSessionSnapshotParts(
     },
     presence: [...record.presence.values()],
     activeRun: record.activeRun,
+    interruptedRuntimeDomains: { ...record.interruptedRuntimeDomains },
     streamingState: record.streamingState,
     isBashRunning: record.isBashRunning,
     hasPendingBashMessages: record.hasPendingBashMessages,

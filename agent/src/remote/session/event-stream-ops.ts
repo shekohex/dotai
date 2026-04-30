@@ -9,6 +9,7 @@ import type {
   ExtensionUiResolvedEventPayload,
 } from "../schemas.js";
 import { hasExtensionMetadataChange } from "./helpers.js";
+import { persistDurableRuntimeDomainState } from "./durable-runtime-state.js";
 import { handleSessionEventForRecord } from "./event-ops.js";
 import type { SessionRecord } from "./types.js";
 
@@ -107,6 +108,11 @@ export function handleRegistrySessionEvent(input: {
       });
     },
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
+  });
+
+  persistDurableRuntimeDomainState({
+    record,
+    updatedAt: input.now,
   });
 }
 

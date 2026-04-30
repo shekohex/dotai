@@ -1,5 +1,6 @@
 import type { CommandKind, CommandAcceptedResponse } from "../schemas.js";
 import type { AuthSession } from "../auth.js";
+import { persistDurableRuntimeDomainState } from "./durable-runtime-state.js";
 import type { AcceptCommandHooks, AcceptedSessionCommand, SessionRecord } from "./types.js";
 
 function toCommandAcceptedResponse(accepted: AcceptedSessionCommand): CommandAcceptedResponse {
@@ -95,6 +96,7 @@ export function acceptSessionCommand<TPayload>(input: {
     input.record.queue.nextSequence += 1;
     input.record.updatedAt = acceptedAt;
     input.appendCommandAccepted(input.record, accepted, acceptedAt);
+    persistDurableRuntimeDomainState({ record: input.record, updatedAt: acceptedAt });
 
     await hooks.onAccepted?.(accepted);
     input.syncFromRuntime(input.record, { now: acceptedAt, updateTimestamp: false });

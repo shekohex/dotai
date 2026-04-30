@@ -35,12 +35,19 @@ const RemoteSessionVersionEntrySchema = Type.Object({
   updatedAt: Type.Number(),
 });
 
+const RemoteDurableExtensionEventEntrySchema = Type.Object({
+  channel: Type.String(),
+  data: Type.Unknown(),
+  ts: Type.Number(),
+});
+
 export const REMOTE_QUEUE_STATE_ENTRY = "remote-queue-state";
 export const REMOTE_RETRY_STATE_ENTRY = "remote-retry-state";
 export const REMOTE_COMPACTION_STATE_ENTRY = "remote-compaction-state";
 export const REMOTE_BASH_STATE_ENTRY = "remote-bash-state";
 export const REMOTE_STREAMING_STATE_ENTRY = "remote-streaming-state";
 export const REMOTE_SESSION_VERSION_ENTRY = "remote-session-version";
+export const REMOTE_DURABLE_EXTENSION_EVENT_ENTRY = "remote-durable-extension-event";
 
 type DurableRuntimeDomainState = {
   queue: { depth: number; nextSequence: number; updatedAt: number };
@@ -142,6 +149,48 @@ export function restoreDurableRuntimeDomainState(record: SessionRecord, now: num
       queueDepth: 0,
     };
   }
+}
+
+export function appendDurableExtensionEvent(input: {
+  record: SessionRecord;
+  channel: string;
+  data: unknown;
+  ts: number;
+}): void {
+  const sessionManager = input.record.runtime.session?.sessionManager;
+  if (!hasAppendCustomEntry(sessionManager)) {
+    return;
+  }
+
+  sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_EVENT_ENTRY, {
+    channel: input.channel,
+    data: input.data,
+    ts: input.ts,
+  });
+}
+
+export function readDurableExtensionEvents(record: SessionRecord): Array<{
+  channel: string;
+  data: unknown;
+  ts: number;
+}> {
+  const sessionManager = record.runtime.session?.sessionManager;
+  if (!hasSessionEntries(sessionManager)) {
+    return [];
+  }
+
+  const result: Array<{ channel: string; data: unknown; ts: number }> = [];
+  for (const entry of sessionManager.getEntries()) {
+    if (
+      entry.type === "custom" &&
+      entry.customType === REMOTE_DURABLE_EXTENSION_EVENT_ENTRY &&
+      Value.Check(RemoteDurableExtensionEventEntrySchema, entry.data)
+    ) {
+      result.push(Value.Parse(RemoteDurableExtensionEventEntrySchema, entry.data));
+    }
+  }
+
+  return result;
 }
 
 function hasAppendCustomEntry(

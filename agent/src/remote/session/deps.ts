@@ -25,9 +25,14 @@ export {
   emitSessionSummaryUpdatedEvent,
   handleRegistrySessionEvent,
 } from "./event-stream-ops.js";
-export { installRemoteExtensionEventMirror } from "./extension-event-stream.js";
 export {
+  installRemoteExtensionEventMirror,
+  restoreMirroredRemoteDurableExtensionEvents,
+} from "./extension-event-stream.js";
+export {
+  appendDurableExtensionEvent,
   persistDurableRuntimeDomainState,
+  readDurableExtensionEvents,
   restoreDurableRuntimeDomainState,
 } from "./durable-runtime-state.js";
 export { detachSessionPresence, touchSessionPresence } from "./presence-ops.js";

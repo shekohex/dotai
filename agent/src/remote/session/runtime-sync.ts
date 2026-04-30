@@ -32,14 +32,13 @@ export function syncSessionRecordFromRuntime(input: {
   const now = input.options?.now ?? input.now();
   const updateTimestamp = input.options?.updateTimestamp ?? true;
   const syncResources = input.options?.syncResources ?? false;
-  applyRuntimeSnapshot(input.record, session, syncResources);
-  input.record.interruptedRuntimeDomains = {
-    queue: false,
-    retry: false,
-    compaction: false,
-    bash: false,
-    streaming: false,
-  };
+  const previousInterruptedRuntimeDomains = { ...input.record.interruptedRuntimeDomains };
+  applyRuntimeSnapshot(input.record, session, syncResources, previousInterruptedRuntimeDomains);
+  input.record.interruptedRuntimeDomains = resolveInterruptedRuntimeDomains({
+    previous: previousInterruptedRuntimeDomains,
+    session,
+    queueDepth: input.record.queue.depth,
+  });
   if (updateTimestamp) {
     input.record.updatedAt = now;
   }
@@ -49,17 +48,34 @@ export function syncSessionRecordFromRuntime(input: {
       input.record.activeRun.updatedAt = now;
     }
     input.record.activeRun.queueDepth = input.record.queue.depth;
-    input.record.activeRun.status = input.record.status;
-    if (!session.isStreaming && input.record.queue.depth === 0) {
+    input.record.activeRun.status = hasInterruptedRuntimeDomains(input.record)
+      ? "interrupted"
+      : input.record.status;
+    if (
+      !hasInterruptedRuntimeDomains(input.record) &&
+      !session.isStreaming &&
+      input.record.queue.depth === 0
+    ) {
       input.record.activeRun = null;
     }
   }
+}
+
+function hasInterruptedRuntimeDomains(record: SessionRecord): boolean {
+  return (
+    record.interruptedRuntimeDomains.queue ||
+    record.interruptedRuntimeDomains.retry ||
+    record.interruptedRuntimeDomains.compaction ||
+    record.interruptedRuntimeDomains.bash ||
+    record.interruptedRuntimeDomains.streaming
+  );
 }
 
 function applyRuntimeSnapshot(
   record: SessionRecord,
   session: NonNullable<AgentSessionRuntime["session"]>,
   syncResources: boolean,
+  interruptedRuntimeDomains: SessionRecord["interruptedRuntimeDomains"],
 ): void {
   record.cwd = session.sessionManager.getCwd();
   record.extensions = readRuntimeExtensionMetadata(record.runtime);
@@ -69,18 +85,52 @@ function applyRuntimeSnapshot(
   }
   applyRuntimeModelSnapshot(record, session);
   record.transcript = [...session.messages];
-  record.streamingState = session.isStreaming ? "streaming" : "idle";
+  if (session.isStreaming) {
+    record.streamingState = "streaming";
+  } else if (interruptedRuntimeDomains.streaming) {
+    record.streamingState = "interrupted";
+  } else {
+    record.streamingState = "idle";
+  }
   record.isBashRunning = session.isBashRunning;
   record.hasPendingBashMessages = session.hasPendingBashMessages;
   record.pendingToolCalls = [...session.state.pendingToolCalls.values()];
   applyRuntimeErrorSnapshot(record, session.state.errorMessage ?? null);
-  record.retry.status = session.isRetrying ? "running" : "idle";
-  record.compaction.status = session.isCompacting ? "running" : "idle";
+  if (session.isRetrying) {
+    record.retry.status = "running";
+  } else if (interruptedRuntimeDomains.retry) {
+    record.retry.status = "interrupted";
+  } else {
+    record.retry.status = "idle";
+  }
+
+  if (session.isCompacting) {
+    record.compaction.status = "running";
+  } else if (interruptedRuntimeDomains.compaction) {
+    record.compaction.status = "interrupted";
+  } else {
+    record.compaction.status = "idle";
+  }
   record.queue.depth =
     session.pendingMessageCount +
     (session.isStreaming ? 1 : 0) +
     record.runtimeUndispatchedCommandCount;
   record.status = deriveRuntimeSessionStatus(session, record.errorMessage);
+}
+
+function resolveInterruptedRuntimeDomains(input: {
+  previous: SessionRecord["interruptedRuntimeDomains"];
+  session: NonNullable<AgentSessionRuntime["session"]>;
+  queueDepth: number;
+}): SessionRecord["interruptedRuntimeDomains"] {
+  return {
+    queue: input.queueDepth > 0 ? false : input.previous.queue,
+    retry: input.previous.retry && !input.session.isRetrying,
+    compaction: input.previous.compaction && !input.session.isCompacting,
+    bash:
+      input.previous.bash && !input.session.isBashRunning && !input.session.hasPendingBashMessages,
+    streaming: input.previous.streaming && !input.session.isStreaming,
+  };
 }
 
 function applyRuntimeModelSnapshot(

@@ -31,15 +31,21 @@ import {
 } from "../src/remote/client/session/extension-state-kv.ts";
 import { hasSessionPrimitiveCapability } from "../src/remote/session/capabilities.ts";
 import {
+  appendDurableExtensionEvent,
   REMOTE_BASH_STATE_ENTRY,
   REMOTE_COMPACTION_STATE_ENTRY,
   REMOTE_QUEUE_STATE_ENTRY,
   REMOTE_RETRY_STATE_ENTRY,
   REMOTE_SESSION_VERSION_ENTRY,
   REMOTE_STREAMING_STATE_ENTRY,
+  readDurableExtensionEvents,
   restoreDurableRuntimeDomainState,
 } from "../src/remote/session/durable-runtime-state.ts";
+import { acceptSessionCommand } from "../src/remote/session/command-acceptance.ts";
 import { appendMirroredRemoteCustomExtensionEvent } from "../src/remote/session/extension-event-stream.ts";
+import { SessionLiveEventBus } from "../src/remote/live-events.ts";
+import { handleSessionSync } from "../src/remote/routes/session-sync.ts";
+import { syncSessionRecordFromRuntime } from "../src/remote/session/runtime-sync.ts";
 import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
 import {
@@ -2020,6 +2026,291 @@ timedTest("durable runtime state rebuild marks interrupted domains on restart", 
   expect(record.streamingState).toBe("interrupted");
   expect(record.activeRun?.status).toBe("interrupted");
   expect(record.lastDurableSessionVersion).toBe(42);
+});
+
+timedTest(
+  "sync from runtime preserves interrupted restart state until live activity resumes",
+  () => {
+    const record = {
+      runtime: {
+        session: {
+          sessionManager: { getCwd: () => "/tmp" },
+          resourceLoader: { getExtensions: () => ({ extensions: [] }) },
+          model: { provider: "p", id: "m" },
+          thinkingLevel: "medium",
+          getActiveToolNames: () => [],
+          autoCompactionEnabled: false,
+          steeringMode: "all",
+          followUpMode: "all",
+          modelRegistry: { getAvailable: () => [] },
+          settingsManager: {
+            getDefaultProvider: () => null,
+            getDefaultModel: () => null,
+            getDefaultThinkingLevel: () => null,
+            getEnabledModels: () => null,
+          },
+          messages: [],
+          isStreaming: false,
+          isBashRunning: false,
+          hasPendingBashMessages: false,
+          state: { pendingToolCalls: new Set(), errorMessage: null },
+          isRetrying: false,
+          isCompacting: false,
+          pendingMessageCount: 0,
+        },
+      },
+      interruptedRuntimeDomains: {
+        queue: true,
+        retry: true,
+        compaction: true,
+        bash: true,
+        streaming: true,
+      },
+      queue: { depth: 0, nextSequence: 1 },
+      retry: { status: "interrupted" },
+      compaction: { status: "interrupted" },
+      activeRun: {
+        runId: "interrupted",
+        status: "interrupted",
+        triggeringCommandId: "server-recovery",
+        startedAt: 1,
+        updatedAt: 1,
+        queueDepth: 0,
+      },
+      streamingState: "interrupted",
+      isBashRunning: false,
+      hasPendingBashMessages: false,
+      pendingToolCalls: [],
+      cwd: "",
+      extensions: [],
+      settings: {},
+      availableModels: [],
+      modelSettings: {
+        defaultProvider: null,
+        defaultModel: null,
+        defaultThinkingLevel: null,
+        enabledModels: null,
+      },
+      transcript: [],
+      sessionStats: {
+        sessionId: "s",
+        userMessages: 0,
+        assistantMessages: 0,
+        toolCalls: 0,
+        toolResults: 0,
+        totalMessages: 0,
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+      },
+      contextUsage: undefined,
+      usageCost: 0,
+      autoCompactionEnabled: false,
+      steeringMode: "all",
+      followUpMode: "all",
+      errorMessage: null,
+      status: "idle",
+    } as never;
+
+    syncSessionRecordFromRuntime({
+      record,
+      now: () => 10,
+      getRuntimeSession: (targetRecord) => targetRecord.runtime.session,
+    });
+
+    expect(record.interruptedRuntimeDomains).toEqual({
+      queue: true,
+      retry: true,
+      compaction: true,
+      bash: true,
+      streaming: true,
+    });
+    expect(record.retry.status).toBe("interrupted");
+    expect(record.compaction.status).toBe("interrupted");
+    expect(record.streamingState).toBe("interrupted");
+    expect(record.activeRun?.status).toBe("interrupted");
+  },
+);
+
+timedTest("durable extension events persist to session history", () => {
+  const sessionManager = SessionManager.inMemory(process.cwd());
+  const record = {
+    runtime: { session: { sessionManager } },
+  } as never;
+
+  appendDurableExtensionEvent({
+    record,
+    channel: "demo:durable",
+    data: { sync: "durable", value: 1 },
+    ts: 1,
+  });
+
+  expect(readDurableExtensionEvents(record)).toEqual([
+    { channel: "demo:durable", data: { sync: "durable", value: 1 }, ts: 1 },
+  ]);
+});
+
+timedTest("command acceptance persists queue state after onAccepted mutation", async () => {
+  const sessionManager = SessionManager.inMemory(process.cwd());
+  const entriesBefore = sessionManager.getEntries().length;
+  const record = {
+    sessionId: "session-1",
+    queue: { depth: 0, nextSequence: 1 },
+    updatedAt: 0,
+    lastDurableSessionVersion: 0,
+    commandAcceptanceQueue: Promise.resolve(),
+    runtime: { session: { sessionManager } },
+    retry: { status: "idle" },
+    compaction: { status: "idle" },
+    isBashRunning: false,
+    hasPendingBashMessages: false,
+    streamingState: "idle",
+  } as never;
+
+  await acceptSessionCommand({
+    record,
+    client: { clientId: "client-1" } as never,
+    kind: "prompt",
+    payload: { text: "hi" },
+    hooksOrOnAccepted: {
+      onAccepted: () => {
+        record.queue.depth = 1;
+      },
+    },
+    createCommandId: () => "cmd-1",
+    now: () => 1,
+    touchPresence: () => {},
+    appendCommandAccepted: () => {},
+    syncFromRuntime: () => {},
+  });
+
+  const entriesAfter = sessionManager.getEntries().slice(entriesBefore);
+  expect(
+    entriesAfter.some(
+      (entry) =>
+        entry.type === "custom" &&
+        entry.customType === REMOTE_QUEUE_STATE_ENTRY &&
+        (entry.data as { depth?: number }).depth === 1,
+    ),
+  ).toBe(true);
+});
+
+timedTest("session sync buffers patches before stream start", async () => {
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
+  const sessionId = "sync-buffer";
+  const streamId = sessionEventsStreamId(sessionId);
+  streams.ensureStream(streamId);
+
+  const response = await handleSessionSync(
+    {
+      req: { header: () => undefined },
+      get: (key: string) => {
+        if (key === "auth") {
+          return { token: "token-1" };
+        }
+        return undefined;
+      },
+    } as never,
+    {
+      auth: {} as never,
+      kv: {} as never,
+      streams,
+      liveEvents,
+      sessions: {
+        touchPresence: () => {},
+        detachPresence: () => {},
+        loadSessionSnapshot: async () => {
+          streams.append(streamId, {
+            sessionId,
+            kind: "server_notice",
+            payload: { message: "buffered" },
+          });
+          return {
+            sessionId,
+            status: "idle",
+            cwd: "/tmp",
+            model: "provider/model",
+            thinkingLevel: "medium",
+            activeTools: [],
+            extensions: [],
+            resources: {
+              skills: [],
+              prompts: [],
+              themes: [],
+              systemPrompt: null,
+              appendSystemPrompt: [],
+            },
+            settings: {},
+            availableModels: [],
+            modelSettings: {
+              defaultProvider: null,
+              defaultModel: null,
+              defaultThinkingLevel: null,
+              enabledModels: null,
+            },
+            sessionStats: {
+              sessionId,
+              userMessages: 0,
+              assistantMessages: 0,
+              toolCalls: 0,
+              toolResults: 0,
+              totalMessages: 0,
+              tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              cost: 0,
+            },
+            usageCost: 0,
+            autoCompactionEnabled: false,
+            steeringMode: "all",
+            followUpMode: "all",
+            entries: [],
+            leafId: null,
+            transcript: [],
+            queue: { depth: 0, nextSequence: 1 },
+            retry: { status: "idle" },
+            compaction: { status: "idle" },
+            presence: [],
+            activeRun: null,
+            interruptedRuntimeDomains: {
+              queue: false,
+              retry: false,
+              compaction: false,
+              bash: false,
+              streaming: false,
+            },
+            lastSessionStreamOffset: streams.getHeadOffset(streamId),
+            lastAppStreamOffsetSeenByServer: "0000000000000000_0000000000000000",
+            streamingState: "idle",
+            isBashRunning: false,
+            hasPendingBashMessages: false,
+            pendingToolCalls: [],
+            errorMessage: null,
+            createdAt: 0,
+            updatedAt: 0,
+          };
+        },
+      } as never,
+    },
+    sessionId,
+  );
+
+  const reader = response.body?.getReader();
+  expect(reader).toBeTruthy();
+  let payload = "";
+  while (true) {
+    const chunk = await reader!.read();
+    if (chunk.done) {
+      break;
+    }
+    payload += new TextDecoder().decode(chunk.value);
+    if (payload.includes("buffered")) {
+      break;
+    }
+  }
+  await reader?.cancel();
+
+  expect(payload).toMatch(/"type":"snapshot"/);
+  expect(payload).toMatch(/"type":"patch"/);
+  expect(payload).toMatch(/buffered/);
 });
 
 timedTest("seeded head offset resumes persisted session version", () => {

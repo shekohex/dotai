@@ -42,6 +42,7 @@ import {
   parseResourceLoaderExtensionMetadata,
   parseRuntimeExtensionMetadata,
   parseThinkingLevelFromAllowedSet,
+  restoreMirroredRemoteDurableExtensionEvents,
   restoreDurableRuntimeDomainState,
   pruneExpiredSessionPresence,
   requireRuntimeSessionFromRecord,
@@ -342,6 +343,10 @@ export abstract class SessionRegistryBase {
           flushPersistedSessionManager: false,
         });
         restoreDurableRuntimeDomainState(record, loadedAt);
+        restoreMirroredRemoteDurableExtensionEvents({
+          streams: this.streams,
+          record,
+        });
         this.streams.seedHeadOffset(
           sessionEventsStreamId(record.sessionId),
           record.lastDurableSessionVersion,

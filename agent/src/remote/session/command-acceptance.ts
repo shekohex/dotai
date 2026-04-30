@@ -97,10 +97,10 @@ export function acceptSessionCommand<TPayload>(input: {
     input.record.updatedAt = acceptedAt;
     input.record.lastDurableSessionVersion += 1;
     input.appendCommandAccepted(input.record, accepted, acceptedAt);
-    persistDurableRuntimeDomainState({ record: input.record, updatedAt: acceptedAt });
 
     await hooks.onAccepted?.(accepted);
     input.syncFromRuntime(input.record, { now: acceptedAt, updateTimestamp: false });
+    persistDurableRuntimeDomainState({ record: input.record, updatedAt: acceptedAt });
     return toCommandAcceptedResponse(accepted);
   });
 }

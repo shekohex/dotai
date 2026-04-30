@@ -5,6 +5,10 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
 import { sessionEventsStreamId, type InMemoryDurableStreamStore } from "../streams.js";
+import {
+  appendDurableExtensionEvent,
+  readDurableExtensionEvents,
+} from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
 
 export type MirroredRemoteExtensionEvent = Extract<
@@ -52,6 +56,15 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
   const syncClass = readRemoteExtensionEventSyncClass(input.data);
   if (syncClass === "ephemeral") {
     return;
+  }
+
+  if (syncClass === "durable") {
+    appendDurableExtensionEvent({
+      record: input.record,
+      channel: input.channel,
+      data: input.data,
+      ts: input.ts,
+    });
   }
 
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
@@ -106,6 +119,28 @@ export function installRemoteExtensionEventMirror(input: {
       ts: input.now(),
     });
   };
+}
+
+export function restoreMirroredRemoteDurableExtensionEvents(input: {
+  streams: InMemoryDurableStreamStore;
+  record: SessionRecord;
+}): void {
+  for (const event of readDurableExtensionEvents(input.record)) {
+    input.streams.append(sessionEventsStreamId(input.record.sessionId), {
+      sessionId: input.record.sessionId,
+      kind: "extension_custom_event",
+      payload: {
+        channel: event.channel,
+        data: event.data,
+      },
+      retentionKey: readRemoteExtensionRetentionKey(
+        event.channel,
+        event.data,
+        readRemoteExtensionEventSyncClass(event.data),
+      ),
+      ts: event.ts,
+    });
+  }
 }
 
 function readRemoteExtensionEventSyncClass(

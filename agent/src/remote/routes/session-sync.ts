@@ -39,11 +39,18 @@ export async function handleSessionSync(
     const streamId = sessionEventsStreamId(sessionId);
     const encoder = new TextEncoder();
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const bufferedPatchEvents: SessionSyncEvent[] = [];
 
-    const unsubscribe = dependencies.liveEvents.subscribe(streamId, (event) => {
-      if (!controller) {
+    const enqueuePatchEvent = (patchEvent: SessionSyncEvent): void => {
+      if (controller === undefined) {
+        bufferedPatchEvents.push(patchEvent);
         return;
       }
+
+      controller.enqueue(encoder.encode(sseChunk(patchEvent)));
+    };
+
+    const unsubscribe = dependencies.liveEvents.subscribe(streamId, (event) => {
       const payload: SessionSyncEvent = {
         type: "patch",
         sessionId,
@@ -51,7 +58,7 @@ export async function handleSessionSync(
         event,
       };
       assertType(SessionSyncEventSchema, payload);
-      controller.enqueue(encoder.encode(sseChunk(payload)));
+      enqueuePatchEvent(payload);
     });
 
     const snapshot = await dependencies.sessions.loadSessionSnapshot(
@@ -78,6 +85,10 @@ export async function handleSessionSync(
         controller = activeController;
         activeController.enqueue(encoder.encode(sseChunk(connectedPayload)));
         activeController.enqueue(encoder.encode(sseChunk(snapshotPayload)));
+        for (const bufferedPatchEvent of bufferedPatchEvents) {
+          activeController.enqueue(encoder.encode(sseChunk(bufferedPatchEvent)));
+        }
+        bufferedPatchEvents.length = 0;
       },
       cancel() {
         unsubscribe();

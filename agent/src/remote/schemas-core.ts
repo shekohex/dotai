@@ -796,7 +796,6 @@ export const SessionSnapshotSchema = Type.Object({
   }),
   durableExtensionState: Type.Array(RemoteCustomExtensionEventPayloadSchema),
   version: Type.String(),
-  lastAppStreamOffsetSeenByServer: Type.String(),
   streamingState: StreamingStateSchema,
   isBashRunning: Type.Boolean(),
   hasPendingBashMessages: Type.Boolean(),

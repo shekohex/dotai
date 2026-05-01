@@ -3902,7 +3902,6 @@ timedTest("touchSessionPresence reports prune-to-zero transitions", async () => 
     errorMessage: null,
     createdAt: 0,
     updatedAt: 0,
-    lastAppStreamOffsetSeenByServer: "0000000000000000_0000000000000000",
     presence: new Map([
       [
         "stale-conn",
@@ -4105,7 +4104,6 @@ timedTest("remote client bootstrap resolves snapshot model from available models
     presence: [],
     activeRun: null,
     lastSessionStreamOffset: "0",
-    lastAppStreamOffsetSeenByServer: "0",
     streamingState: "idle",
     isBashRunning: false,
     hasPendingBashMessages: false,

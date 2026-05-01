@@ -66,6 +66,9 @@ export function readSessionSyncPatchReplaceKey(
     case "retry.status": {
       return `agent_session_event:${patch.payload.type}`;
     }
+    case "compaction.status": {
+      return `agent_session_event:${patch.payload.type}`;
+    }
     case "extension.custom": {
       const syncInfo = readRemoteExtensionSyncInfo(patch.payload.channel, patch.payload.data);
       return syncInfo.sync === "replaceable"

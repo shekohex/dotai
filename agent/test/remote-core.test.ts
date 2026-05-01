@@ -52,6 +52,7 @@ import {
   bufferPatchEvent,
   handleSessionSync,
   isPatchCoveredBySnapshot,
+  toSessionSyncPatchEvent,
 } from "../src/remote/routes/session-sync.ts";
 import { createV1Routes } from "../src/remote/routes.ts";
 import { syncSessionRecordFromRuntime } from "../src/remote/session/runtime-sync.ts";
@@ -799,6 +800,24 @@ class RecordingSession {
       ...parent,
       [nestedKey]: value,
     };
+  }
+}
+
+class InvalidToolMetadataSession extends RecordingSession {
+  override getAllTools(): Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+    sourceInfo: unknown;
+  }> {
+    return [
+      {
+        name: "read",
+        description: "read tool",
+        parameters: [],
+        sourceInfo: { source: "test" },
+      },
+    ];
   }
 }
 
@@ -1826,7 +1845,6 @@ function buildEmptySnapshot(): SessionSnapshot {
     createdAt: 0,
     updatedAt: 0,
     version: "0",
-    lastAppStreamOffsetSeenByServer: "0000000000000000_0000000000000000",
   };
 }
 
@@ -1936,6 +1954,88 @@ timedTest("session sync stream emits connected then snapshot", async () => {
     expect(payload).toMatch(/"type":"server.connected"/);
     expect(payload).toMatch(/"type":"snapshot"/);
     expect(payload).toMatch(new RegExp(`"sessionId":"${created.sessionId}"`));
+    expect(payload).not.toMatch(/lastAppStreamOffsetSeenByServer/);
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("session sync compaction patches use explicit taxonomy", () => {
+  const event = {
+    eventId: "1",
+    sessionId: "session-1",
+    streamOffset: "0",
+    sessionVersion: "3",
+    ts: 1,
+    kind: "agent_session_event",
+    payload: {
+      type: "compaction_start",
+      reason: "threshold",
+    },
+  } as const;
+
+  expect(toSessionSyncPatchEvent("session-1", event)).toEqual({
+    type: "patch",
+    sessionId: "session-1",
+    version: "3",
+    patch: {
+      patchType: "compaction.status",
+      payload: {
+        type: "compaction_start",
+        reason: "threshold",
+      },
+    },
+  });
+});
+
+timedTest("generic fallback patches buffered before snapshot are dropped", () => {
+  const covered = isPatchCoveredBySnapshot(
+    {
+      type: "patch",
+      sessionId: "buffer-session",
+      version: "0",
+      patch: {
+        patchType: "agent.event",
+        eventType: "message_end",
+        payload: {
+          type: "message_end",
+          message: { role: "assistant" },
+        },
+      },
+    },
+    buildEmptySnapshot(),
+  );
+
+  expect(covered).toBe(true);
+});
+
+timedTest("session tools rejects invalid metadata objects", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(new InvalidToolMetadataSession()),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const response = await remote.app.request(`/v1/sessions/${created.sessionId}/tools`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toContain("parameters must be JSON object");
   } finally {
     await remote.dispose();
   }
@@ -2066,7 +2166,6 @@ timedTest("runtime durable sync patches use post-change durable version", async 
     cwd: "/tmp/runtime-version",
     createdAt: 1,
     runtime,
-    lastAppStreamOffsetSeenByServer: "0000000000000000_0000000000000000",
     readRuntimeExtensionMetadata: () => [],
   });
   const sessions = new Map([[record.sessionId, record]]);

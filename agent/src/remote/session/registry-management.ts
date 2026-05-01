@@ -650,17 +650,19 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     nextRecord: SessionCatalogRecord,
     reconciledAt: number,
   ): Promise<void> {
-    const loaded = this.loadedRuntimes.get(sessionId);
-    if (loaded) {
+    const loadedBeforeReconcile = this.loadedRuntimes.get(sessionId);
+    if (loadedBeforeReconcile) {
       await this.reconcileLoadedRuntimeForCatalogChange(
-        loaded,
+        loadedBeforeReconcile,
         previousRecord,
         nextRecord,
         reconciledAt,
       );
     }
 
-    const summary = loaded ? this.getSessionSummary(sessionId) : undefined;
+    const summary = this.loadedRuntimes.get(sessionId)
+      ? this.getSessionSummary(sessionId)
+      : undefined;
     this.streams.append(appEventsStreamId(), {
       sessionId,
       kind: "session_summary_updated",

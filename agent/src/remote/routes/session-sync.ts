@@ -216,6 +216,8 @@ export function isPatchCoveredBySnapshot(
       );
     case "retry.status":
       return isRetryStatusPatchCoveredBySnapshot(patchEvent.patch.payload, snapshot);
+    case "compaction.status":
+      return isCompactionStatusPatchCoveredBySnapshot(patchEvent.patch.payload, snapshot);
     case "extension.custom": {
       const patchSyncInfo = readRemoteExtensionSyncInfo(
         patchEvent.patch.payload.channel,
@@ -242,7 +244,7 @@ export function isPatchCoveredBySnapshot(
     case "session.state":
       return true;
     case "agent.event":
-      return false;
+      return true;
   }
 
   return false;
@@ -308,6 +310,20 @@ function isRetryStatusPatchCoveredBySnapshot(
   return snapshot.retry.status !== "running" && snapshot.live.retryAttempt === payload.attempt;
 }
 
+function isCompactionStatusPatchCoveredBySnapshot(
+  payload: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "compaction.status" }
+  >["payload"],
+  snapshot: Extract<SessionSyncEvent, { type: "snapshot" }>["snapshot"],
+): boolean {
+  if (payload.type === "compaction_start") {
+    return snapshot.compaction.status === "running";
+  }
+
+  return snapshot.compaction.status !== "running";
+}
+
 function arraysEqual(left: string[], right: string[]): boolean {
   if (left.length !== right.length) {
     return false;
@@ -316,7 +332,7 @@ function arraysEqual(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
-function toSessionSyncPatchEvent(
+export function toSessionSyncPatchEvent(
   sessionId: string,
   event: StreamEventEnvelope,
 ): Extract<SessionSyncEvent, { type: "patch" }> | undefined {
@@ -373,6 +389,13 @@ function toSessionSyncPatchEvent(
         return {
           ...base,
           patch: { patchType: "retry.status", payload: event.payload },
+        };
+      }
+
+      if (isCompactionStatusPayload(event.payload)) {
+        return {
+          ...base,
+          patch: { patchType: "compaction.status", payload: event.payload },
         };
       }
 
@@ -454,6 +477,15 @@ function isRetryStatusPayload(
   { patchType: "retry.status" }
 >["payload"] {
   return payload.type === "auto_retry_start" || payload.type === "auto_retry_end";
+}
+
+function isCompactionStatusPayload(
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): payload is Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "compaction.status" }
+>["payload"] {
+  return payload.type === "compaction_start" || payload.type === "compaction_end";
 }
 
 function compareSessionVersions(left: string, right: string): number {

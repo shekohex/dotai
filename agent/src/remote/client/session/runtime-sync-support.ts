@@ -198,6 +198,16 @@ export async function applySessionSyncPatch(input: {
     case "retry.status":
       input.handleAgentSessionEvent(input.patch.payload);
       return;
+    case "compaction.status":
+      await input.handleEnvelope({
+        eventId: "sync-patch",
+        sessionId: input.sessionId,
+        streamOffset: input.streamOffset,
+        ts: Date.now(),
+        kind: "agent_session_event",
+        payload: input.patch.payload,
+      });
+      return;
     case "agent.event":
       await input.handleEnvelope({
         eventId: "sync-patch",
@@ -260,6 +270,7 @@ function createSyntheticSyncEnvelope(
     case "tool.execution":
     case "queue.update":
     case "retry.status":
+    case "compaction.status":
     case "agent.event":
     case "command.accepted":
     case "extension.custom":

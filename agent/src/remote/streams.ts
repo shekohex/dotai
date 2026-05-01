@@ -71,7 +71,7 @@ export class InMemoryDurableStreamStore {
       stream.retentionKeysByEventId.set(event.eventId, input.retentionKey);
     }
     this.trimRetainedEvents(stream);
-    this.emitLiveEvent(streamId, stream, event);
+    this.publish(streamId, event);
     return event;
   }
 
@@ -84,8 +84,12 @@ export class InMemoryDurableStreamStore {
       input.ts ?? Date.now(),
       input,
     );
-    this.emitLiveEvent(streamId, stream, event);
+    this.publish(streamId, event);
     return event;
+  }
+
+  publish(streamId: string, event: StreamEventEnvelope): void {
+    this.emitLiveEvent(streamId, event);
   }
 
   seedHeadOffset(streamId: string, position: number): void {
@@ -129,7 +133,7 @@ export class InMemoryDurableStreamStore {
     }
   }
 
-  private emitLiveEvent(streamId: string, stream: StreamState, event: StreamEventEnvelope): void {
+  private emitLiveEvent(streamId: string, event: StreamEventEnvelope): void {
     this.liveEventBus?.publish(streamId, event);
   }
 }

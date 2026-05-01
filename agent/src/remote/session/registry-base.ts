@@ -414,7 +414,7 @@ export abstract class SessionRegistryBase {
     record: SessionRecord,
     options?: { entriesLimit?: number; entriesOffset?: number },
   ): SessionSnapshot {
-    return toSessionSnapshotRecord(record, (streamId) => this.streams.getHeadOffset(streamId), {
+    return toSessionSnapshotRecord(record, {
       entriesLimit: options?.entriesLimit ?? this.sessionSnapshotEntriesLimit,
       entriesOffset: options?.entriesOffset,
     });

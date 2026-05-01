@@ -11,7 +11,7 @@ export const DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT = 100;
 export function buildSessionSnapshotParts(
   record: SessionRecord,
   options?: { entriesLimit?: number; entriesOffset?: number },
-): Omit<SessionSnapshot, "version" | "lastAppStreamOffsetSeenByServer"> {
+): Omit<SessionSnapshot, "version"> {
   const session = readRuntimeSession(record.runtime);
   const sessionEntries = session?.sessionManager.getEntries() ?? [];
   const entriesLimit = options?.entriesLimit ?? DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT;

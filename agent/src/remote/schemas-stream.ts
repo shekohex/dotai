@@ -1,4 +1,3 @@
-import type { AssistantMessageEvent } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
 import { JsonValueSchema } from "./json-schema.js";
 import {
@@ -118,81 +117,79 @@ const RuntimeAssistantMessageSchema = Type.Object({
   timestamp: Type.Number(),
 });
 
-const AssistantMessageEventPayloadSchema = Type.Unsafe<AssistantMessageEvent>(
-  Type.Union([
-    Type.Object({
-      type: Type.Literal("start"),
-      partial: RuntimeAssistantMessageSchema,
+const AssistantMessageEventPayloadSchema = Type.Union([
+  Type.Object({
+    type: Type.Literal("start"),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("text_start"),
+    contentIndex: Type.Number(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("text_delta"),
+    contentIndex: Type.Number(),
+    delta: Type.String(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("text_end"),
+    contentIndex: Type.Number(),
+    content: Type.String(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("thinking_start"),
+    contentIndex: Type.Number(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("thinking_delta"),
+    contentIndex: Type.Number(),
+    delta: Type.String(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("thinking_end"),
+    contentIndex: Type.Number(),
+    content: Type.String(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("toolcall_start"),
+    contentIndex: Type.Number(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("toolcall_delta"),
+    contentIndex: Type.Number(),
+    delta: Type.String(),
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("toolcall_end"),
+    contentIndex: Type.Number(),
+    toolCall: Type.Object({
+      type: Type.Literal("toolCall"),
+      id: Type.String(),
+      name: Type.String(),
+      arguments: Type.Record(Type.String(), JsonValueSchema),
+      thoughtSignature: Type.Optional(Type.String()),
     }),
-    Type.Object({
-      type: Type.Literal("text_start"),
-      contentIndex: Type.Number(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("text_delta"),
-      contentIndex: Type.Number(),
-      delta: Type.String(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("text_end"),
-      contentIndex: Type.Number(),
-      content: Type.String(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("thinking_start"),
-      contentIndex: Type.Number(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("thinking_delta"),
-      contentIndex: Type.Number(),
-      delta: Type.String(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("thinking_end"),
-      contentIndex: Type.Number(),
-      content: Type.String(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("toolcall_start"),
-      contentIndex: Type.Number(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("toolcall_delta"),
-      contentIndex: Type.Number(),
-      delta: Type.String(),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("toolcall_end"),
-      contentIndex: Type.Number(),
-      toolCall: Type.Object({
-        type: Type.Literal("toolCall"),
-        id: Type.String(),
-        name: Type.String(),
-        arguments: Type.Record(Type.String(), JsonValueSchema),
-        thoughtSignature: Type.Optional(Type.String()),
-      }),
-      partial: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("done"),
-      reason: Type.Union([Type.Literal("stop"), Type.Literal("length"), Type.Literal("toolUse")]),
-      message: RuntimeAssistantMessageSchema,
-    }),
-    Type.Object({
-      type: Type.Literal("error"),
-      reason: Type.Union([Type.Literal("aborted"), Type.Literal("error")]),
-      error: RuntimeAssistantMessageSchema,
-    }),
-  ]),
-);
+    partial: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("done"),
+    reason: Type.Union([Type.Literal("stop"), Type.Literal("length"), Type.Literal("toolUse")]),
+    message: RuntimeAssistantMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("error"),
+    reason: Type.Union([Type.Literal("aborted"), Type.Literal("error")]),
+    error: RuntimeAssistantMessageSchema,
+  }),
+]);
 
 const AssistantMessageSyncPatchPayloadSchema = Type.Object({
   type: Type.Literal("message_update"),
@@ -245,6 +242,27 @@ const RetryStatusSyncPatchPayloadSchema = Type.Union([
   }),
 ]);
 
+const CompactionStatusSyncPatchPayloadSchema = Type.Union([
+  Type.Object({
+    type: Type.Literal("compaction_start"),
+    reason: Type.Union([
+      Type.Literal("manual"),
+      Type.Literal("threshold"),
+      Type.Literal("overflow"),
+    ]),
+  }),
+  Type.Object({
+    type: Type.Literal("compaction_end"),
+    reason: Type.Union([
+      Type.Literal("manual"),
+      Type.Literal("threshold"),
+      Type.Literal("overflow"),
+    ]),
+    aborted: Type.Boolean(),
+    willRetry: Type.Boolean(),
+  }),
+]);
+
 const AgentSessionGenericFallbackPayloadSchema = Type.Object(
   {
     type: Type.String(),
@@ -261,6 +279,7 @@ const AgentSessionEventKnownPayloadSchema = Type.Union([
   ToolExecutionSyncPatchPayloadSchema,
   QueueUpdateSyncPatchPayloadSchema,
   RetryStatusSyncPatchPayloadSchema,
+  CompactionStatusSyncPatchPayloadSchema,
 ]);
 
 const AgentSessionEventPayloadSchema = Type.Union([
@@ -499,6 +518,10 @@ export const SessionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     patchType: Type.Literal("retry.status"),
     payload: RetryStatusSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("compaction.status"),
+    payload: CompactionStatusSyncPatchPayloadSchema,
   }),
   Type.Object({
     patchType: Type.Literal("agent.event"),

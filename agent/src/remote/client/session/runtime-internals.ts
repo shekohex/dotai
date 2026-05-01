@@ -1,8 +1,7 @@
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { SessionStats } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import { errorMessage } from "../../../utils/error-message.js";
-import { asRecord } from "../../../utils/unknown-data.js";
+import { Value } from "typebox/value";
 import type { SessionSyncEvent, StreamEventEnvelope } from "../../schemas.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
 import {
@@ -37,6 +36,7 @@ import {
   replaySnapshotLiveOverlay,
   replaySnapshotUiState,
 } from "./runtime-sync-support.js";
+import { RuntimeAgentSessionEventSchema } from "./runtime-agent-session-event-schema.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   private initialSyncReady = false;
@@ -239,7 +239,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
           continue;
         }
 
-        this.handleRemoteError(`Remote stream polling failed: ${errorMessage(error)}`);
+        this.handleRemoteError(`Remote stream polling failed: ${readErrorMessage(error)}`);
         return;
       } finally {
         if (this.activeReadAbortController === controller) {
@@ -611,66 +611,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 function isRuntimeAgentSessionEvent(
   value: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
 ): value is AgentSessionEvent {
-  const event = asRecord(value);
-  if (event === undefined || typeof event.type !== "string") {
-    return false;
-  }
-
-  switch (event.type) {
-    case "agent_start":
-    case "turn_start":
-      return true;
-    case "agent_end":
-      return Array.isArray(event.messages);
-    case "turn_end":
-      return event.message !== undefined && Array.isArray(event.toolResults);
-    case "message_start":
-    case "message_end":
-      return event.message !== undefined;
-    case "message_update":
-      return event.message !== undefined && event.assistantMessageEvent !== undefined;
-    case "tool_execution_start":
-      return (
-        typeof event.toolCallId === "string" &&
-        typeof event.toolName === "string" &&
-        "args" in event
-      );
-    case "tool_execution_update":
-      return (
-        typeof event.toolCallId === "string" &&
-        typeof event.toolName === "string" &&
-        "args" in event &&
-        "partialResult" in event
-      );
-    case "tool_execution_end":
-      return (
-        typeof event.toolCallId === "string" &&
-        typeof event.toolName === "string" &&
-        typeof event.isError === "boolean" &&
-        "result" in event
-      );
-    case "queue_update":
-      return Array.isArray(event.steering) && Array.isArray(event.followUp);
-    case "compaction_start":
-      return typeof event.reason === "string";
-    case "compaction_end":
-      return (
-        typeof event.reason === "string" &&
-        typeof event.aborted === "boolean" &&
-        typeof event.willRetry === "boolean"
-      );
-    case "auto_retry_start":
-      return (
-        typeof event.attempt === "number" &&
-        typeof event.maxAttempts === "number" &&
-        typeof event.delayMs === "number" &&
-        typeof event.errorMessage === "string"
-      );
-    case "auto_retry_end":
-      return typeof event.success === "boolean" && typeof event.attempt === "number";
-    default:
-      return false;
-  }
+  return Value.Check(RuntimeAgentSessionEventSchema, value);
 }
 
 type BashExecutionMessagePayload = {
@@ -751,12 +692,15 @@ function delay(ms: number): Promise<void> {
 }
 
 function readErrorStatus(error: unknown): number | undefined {
-  const record = asRecord(error);
-  if (!record) {
+  if (typeof error !== "object" || error === null) {
     return undefined;
   }
 
-  const status = record.status;
+  if (!("status" in error)) {
+    return undefined;
+  }
+
+  const status = error.status;
   return typeof status === "number" ? status : undefined;
 }
 
@@ -766,11 +710,19 @@ function isRetryableStatus(status: number): boolean {
 
 function formatRemoteError(error: unknown): string {
   const status = readErrorStatus(error);
-  const message = errorMessage(error);
+  const message = readErrorMessage(error);
   if (status === undefined) {
     return message;
   }
   return `${message} (HTTP ${status})`;
+}
+
+function readErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }
 
 function getBackoffDelayMs(attempt: number): number {

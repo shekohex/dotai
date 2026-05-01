@@ -2414,7 +2414,7 @@ timedTest(
         await input.onSyncEvent({
           type: "snapshot",
           sessionId: created.sessionId,
-          version: "0-9",
+          version: "9",
           snapshot,
         });
         sessionAny.closed = true;

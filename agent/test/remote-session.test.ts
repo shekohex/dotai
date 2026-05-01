@@ -55,6 +55,7 @@ import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 import { SessionCatalog } from "../src/remote/session-catalog.ts";
 import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
+import { REMOTE_SESSION_VERSION_ENTRY } from "../src/remote/session/durable-runtime-state.ts";
 import { assertType } from "../src/remote/typebox.ts";
 import { createTempPersistedRuntimeHarness } from "./remote-runtime-test-helpers.ts";
 import { TEST_ED25519_KEYS } from "./remote-test-keys.ts";
@@ -1498,7 +1499,11 @@ async function readSessionEvents(
         version?: string;
         patch?: { patchType: string; payload: unknown };
       };
-      if (payload.type !== "patch" || payload.version === undefined || payload.version <= offset) {
+      if (
+        payload.type !== "patch" ||
+        payload.version === undefined ||
+        compareDurableVersions(payload.version, offset) <= 0
+      ) {
         continue;
       }
       nextOffset = payload.version;
@@ -1609,6 +1614,7 @@ async function writeSessionFile(input: {
   sessionName?: string;
   firstUserMessage?: string;
   parentSessionPath?: string;
+  durableVersion?: number;
 }): Promise<void> {
   await mkdir(dirname(input.sessionPath), { recursive: true });
   const lines = [
@@ -1636,7 +1642,37 @@ async function writeSessionFile(input: {
       }),
     );
   }
+  if (input.durableVersion !== undefined) {
+    lines.push(
+      JSON.stringify({
+        type: "custom",
+        id: `${input.sessionId}-version`,
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        customType: REMOTE_SESSION_VERSION_ENTRY,
+        data: {
+          version: input.durableVersion,
+          updatedAt: Date.now(),
+        },
+      }),
+    );
+  }
   await writeFile(input.sessionPath, [...lines, ""].join("\n"));
+}
+
+function compareDurableVersions(left: string, right: string | undefined): number {
+  if (right === undefined) {
+    return 1;
+  }
+  const leftVersion = BigInt(left);
+  const rightVersion = BigInt(right);
+  if (leftVersion < rightVersion) {
+    return -1;
+  }
+  if (leftVersion > rightVersion) {
+    return 1;
+  }
+  return 0;
 }
 
 timedTest("archive and delete updates are visible to multiple remote clients", async () => {
@@ -1869,6 +1905,66 @@ timedTest("session registry evicts idle persistent runtime and reloads on demand
     expect(snapshot.sessionId).toBe("evict-session");
     expect(runtimeFactory.loadCalls).toBe(1);
     expect(registry.getSessionSummary("evict-session").lifecycle.loaded).toBe(true);
+  } finally {
+    await registry.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+timedTest("session summary version stays durable across unloaded and loaded views", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-summary-version-"));
+  const catalogRoot = join(root, "sessions");
+  const sessionPath = join(catalogRoot, "versioned-session.jsonl");
+  const session = new RecordingSession();
+  const runtimeFactory = new RecordingRuntimeFactory(session);
+  const registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: catalogRoot }),
+  });
+  const auth = testAuthSession();
+
+  session.sessionStats.sessionId = "versioned-session";
+  session.sessionStats.sessionFile = sessionPath;
+  session.sessionManager = {
+    ...session.sessionManager,
+    getSessionId: () => "versioned-session",
+    getSessionFile: () => sessionPath,
+    getEntries: () => [
+      {
+        type: "custom" as const,
+        id: "versioned-session-version",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        customType: REMOTE_SESSION_VERSION_ENTRY,
+        data: {
+          version: 42,
+          updatedAt: Date.now(),
+        },
+      },
+    ],
+  };
+
+  try {
+    await writeSessionFile({
+      sessionPath,
+      sessionId: "versioned-session",
+      cwd: "/srv/versioned",
+      sessionName: "Versioned Session",
+      durableVersion: 42,
+    });
+
+    await registry.reconcileCatalogFromDisk();
+
+    const unloadedSummary = registry.getSessionSummary("versioned-session");
+    expect(unloadedSummary.version).toBe("42");
+    expect(unloadedSummary.lifecycle.loaded).toBe(false);
+
+    await registry.loadSessionSnapshot("versioned-session", auth, "conn-version");
+
+    const loadedSummary = registry.getSessionSummary("versioned-session");
+    expect(loadedSummary.version).toBe("42");
+    expect(loadedSummary.lifecycle.loaded).toBe(true);
   } finally {
     await registry.dispose();
     await rm(root, { recursive: true, force: true });

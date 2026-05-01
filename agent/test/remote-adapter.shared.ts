@@ -1557,7 +1557,11 @@ export async function readSessionEvents(
         version?: string;
         patch?: { patchType: string; payload: unknown };
       };
-      if (payload.type !== "patch" || payload.version === undefined || payload.version <= offset) {
+      if (
+        payload.type !== "patch" ||
+        payload.version === undefined ||
+        compareDurableVersions(payload.version, offset) <= 0
+      ) {
         continue;
       }
       nextOffset = payload.version;
@@ -1575,6 +1579,21 @@ export async function readSessionEvents(
   }
 
   return { events, nextOffset };
+}
+
+function compareDurableVersions(left: string, right: string | undefined): number {
+  if (right === undefined) {
+    return 1;
+  }
+  const leftVersion = BigInt(left);
+  const rightVersion = BigInt(right);
+  if (leftVersion < rightVersion) {
+    return -1;
+  }
+  if (leftVersion > rightVersion) {
+    return 1;
+  }
+  return 0;
 }
 
 export async function waitForSessionEvent(

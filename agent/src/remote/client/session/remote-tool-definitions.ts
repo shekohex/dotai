@@ -2,13 +2,21 @@ import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { ToolDefinitionMetadata } from "../../schemas.js";
-import { asRecord } from "../../../utils/unknown-data.js";
+import { JsonObjectSchema, JsonValueSchema } from "../../json-schema.js";
 
 const ToolSchemaLikeSchema = Type.Object(
-  {},
   {
-    additionalProperties: true,
+    type: Type.Optional(Type.String()),
+    properties: Type.Optional(JsonObjectSchema),
+    items: Type.Optional(Type.Union([JsonObjectSchema, Type.Array(JsonObjectSchema)])),
+    $ref: Type.Optional(Type.String()),
+    anyOf: Type.Optional(Type.Array(JsonObjectSchema)),
+    allOf: Type.Optional(Type.Array(JsonObjectSchema)),
+    oneOf: Type.Optional(Type.Array(JsonObjectSchema)),
+    const: Type.Optional(JsonValueSchema),
+    enum: Type.Optional(Type.Array(JsonValueSchema)),
   },
+  { additionalProperties: JsonValueSchema },
 );
 
 export function buildRemoteToolDefinition(
@@ -39,24 +47,5 @@ function normalizeToolParameters(parameters: unknown): TSchema {
 }
 
 function isToolSchema(value: unknown): value is TSchema {
-  if (!Value.Check(ToolSchemaLikeSchema, value)) {
-    return false;
-  }
-
-  const schemaCandidate = asRecord(value);
-  if (schemaCandidate === undefined) {
-    return false;
-  }
-
-  return (
-    schemaCandidate.type !== undefined ||
-    schemaCandidate.properties !== undefined ||
-    schemaCandidate.items !== undefined ||
-    schemaCandidate.$ref !== undefined ||
-    schemaCandidate.anyOf !== undefined ||
-    schemaCandidate.allOf !== undefined ||
-    schemaCandidate.oneOf !== undefined ||
-    schemaCandidate.const !== undefined ||
-    schemaCandidate.enum !== undefined
-  );
+  return Value.Check(ToolSchemaLikeSchema, value);
 }

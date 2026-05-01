@@ -18,9 +18,8 @@ import type {
   GetCommandsHandler,
   GetAllToolsHandler,
 } from "../../../../node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.js";
-import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { JsonValueSchema } from "../../json-schema.js";
+import { RemoteToolInfoSchema, type RemoteToolInfo } from "../../schemas.js";
 
 export type RemoteLocalExtensionRunner = ExtensionRunner;
 
@@ -30,20 +29,6 @@ type SendCustomMessageInput<T = unknown> = {
   display: boolean;
   details?: T;
 };
-
-type RemoteToolInfo = {
-  name: string;
-  description: string;
-  parameters: unknown;
-  sourceInfo: unknown;
-};
-
-const RemoteToolInfoSchema = Type.Object({
-  name: Type.String(),
-  description: Type.String(),
-  parameters: Type.Record(Type.String(), JsonValueSchema),
-  sourceInfo: Type.Record(Type.String(), JsonValueSchema),
-});
 
 export function createRemoteLocalExtensionRunner(input: {
   resourceLoader: ResourceLoader;

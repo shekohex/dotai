@@ -2,7 +2,7 @@ import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
 import type { SessionManager } from "@mariozechner/pi-coding-agent";
 import type { RemoteApiClient } from "../remote-api-client.js";
-import type { SessionSnapshot } from "../schemas.js";
+import type { RemoteToolInfo, SessionSnapshot } from "../schemas.js";
 import {
   contentToTextAndImages,
   normalizeAttachments,
@@ -104,12 +104,9 @@ export function getLastAssistantTextRemoteSession(messages: AgentMessage[]): str
   return text || undefined;
 }
 
-export function getAllToolsRemoteSession(activeTools: string[]): Array<{
-  name: string;
-  description: string;
-  parameters: unknown;
-  sourceInfo: unknown;
-}> {
+export function getAllToolsRemoteSession(
+  activeTools: string[],
+): Array<Pick<RemoteToolInfo, "name" | "description" | "parameters" | "sourceInfo">> {
   return activeTools.map((toolName) => ({
     name: toolName,
     description: `${toolName} tool`,

@@ -1,5 +1,5 @@
 import type { AgentSession, SessionStats } from "@mariozechner/pi-coding-agent";
-import { SessionSnapshotSchema } from "../../schemas.js";
+import { SessionSnapshotSchema, type RemoteToolInfo } from "../../schemas.js";
 import { assertType } from "../../typebox.js";
 import { getAllToolsRemoteSession, getLastAssistantTextRemoteSession } from "../session-ops.js";
 import {
@@ -271,12 +271,7 @@ export abstract class RemoteAgentSessionCapabilitiesApi extends RemoteAgentSessi
     return [...this.activeTools];
   }
 
-  getAllTools(): Array<{
-    name: string;
-    description: string;
-    parameters: unknown;
-    sourceInfo: unknown;
-  }> {
+  getAllTools(): Array<Pick<RemoteToolInfo, "name" | "description" | "parameters" | "sourceInfo">> {
     return this.allTools.length > 0
       ? [...this.allTools]
       : getAllToolsRemoteSession(this.activeTools);

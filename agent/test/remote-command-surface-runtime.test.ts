@@ -184,6 +184,58 @@ timedTest("remote tools endpoint includes authoritative tool definition metadata
   }
 });
 
+timedTest(
+  "remote tool transport preserves object-shaped parameters and sourceInfo locally",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+    const session = new RecordingSession();
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new RecordingRuntimeFactory(session),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const client = new RemoteApiClient({
+        origin: "http://localhost:3000",
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remote.app),
+      });
+      await client.authenticate();
+
+      const created = await client.createSession({ workspaceCwd: session.cwd });
+      const tools = await client.getSessionTools(created.sessionId);
+      const readTool = tools.tools.find((tool) => tool.name === "read");
+
+      expect(readTool).toBeTruthy();
+      expect(readTool?.parameters).toEqual({});
+      expect(readTool?.sourceInfo).toEqual({ source: "test" });
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      await (
+        runtime.session as unknown as { refreshRemoteToolCatalog: () => Promise<void> }
+      ).refreshRemoteToolCatalog();
+
+      const localReadTool = runtime.session.getAllTools().find((tool) => tool.name === "read");
+      expect(localReadTool).toBeTruthy();
+      expect(localReadTool?.parameters).toEqual({});
+      expect(localReadTool?.sourceInfo).toEqual({ source: "test" });
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
+
 timedTest("remote session supports compact bash and navigateTree", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 

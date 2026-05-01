@@ -315,6 +315,9 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         this.handleRemoteError(message);
       },
       applyAgentSessionEvent: (event) => {
+        if (!isRuntimeAgentSessionEvent(event)) {
+          return;
+        }
         this.applyAgentSessionEvent(event);
       },
       isForwardableRemoteExtensionEvent: (value) => {
@@ -602,6 +605,71 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.initialSyncReady = true;
     this.resolveInitialSyncReady?.();
     this.resolveInitialSyncReady = undefined;
+  }
+}
+
+function isRuntimeAgentSessionEvent(
+  value: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): value is AgentSessionEvent {
+  const event = asRecord(value);
+  if (event === undefined || typeof event.type !== "string") {
+    return false;
+  }
+
+  switch (event.type) {
+    case "agent_start":
+    case "turn_start":
+      return true;
+    case "agent_end":
+      return Array.isArray(event.messages);
+    case "turn_end":
+      return event.message !== undefined && Array.isArray(event.toolResults);
+    case "message_start":
+    case "message_end":
+      return event.message !== undefined;
+    case "message_update":
+      return event.message !== undefined && event.assistantMessageEvent !== undefined;
+    case "tool_execution_start":
+      return (
+        typeof event.toolCallId === "string" &&
+        typeof event.toolName === "string" &&
+        "args" in event
+      );
+    case "tool_execution_update":
+      return (
+        typeof event.toolCallId === "string" &&
+        typeof event.toolName === "string" &&
+        "args" in event &&
+        "partialResult" in event
+      );
+    case "tool_execution_end":
+      return (
+        typeof event.toolCallId === "string" &&
+        typeof event.toolName === "string" &&
+        typeof event.isError === "boolean" &&
+        "result" in event
+      );
+    case "queue_update":
+      return Array.isArray(event.steering) && Array.isArray(event.followUp);
+    case "compaction_start":
+      return typeof event.reason === "string";
+    case "compaction_end":
+      return (
+        typeof event.reason === "string" &&
+        typeof event.aborted === "boolean" &&
+        typeof event.willRetry === "boolean"
+      );
+    case "auto_retry_start":
+      return (
+        typeof event.attempt === "number" &&
+        typeof event.maxAttempts === "number" &&
+        typeof event.delayMs === "number" &&
+        typeof event.errorMessage === "string"
+      );
+    case "auto_retry_end":
+      return typeof event.success === "boolean" && typeof event.attempt === "number";
+    default:
+      return false;
   }
 }
 

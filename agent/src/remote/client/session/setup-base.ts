@@ -21,9 +21,12 @@ import type { RemoteApiClient } from "../../remote-api-client.js";
 import type {
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
+  RemoteToolInfo,
   SessionSnapshot,
   ToolDefinitionMetadata,
 } from "../../schemas.js";
+
+type RemoteToolSurface = Pick<RemoteToolInfo, "name" | "description" | "parameters" | "sourceInfo">;
 import {
   applyAuthoritativeCwd,
   applyRemoteExtensionsSnapshot,
@@ -138,12 +141,7 @@ export abstract class RemoteAgentSessionSetupBase {
   protected queueDepth = 0;
   protected activeTools: string[] = [];
   protected forkMessages: Array<{ entryId: string; text: string }> = [];
-  protected allTools: Array<{
-    name: string;
-    description: string;
-    parameters: unknown;
-    sourceInfo: unknown;
-  }> = [];
+  protected allTools: RemoteToolSurface[] = [];
   protected remoteToolDefinitions = new Map<string, ToolDefinitionMetadata>();
   protected mutationQueue: Promise<void> = Promise.resolve();
   protected idleResolvers = new Set<() => void>();
@@ -803,12 +801,7 @@ export abstract class RemoteAgentSessionSetupBase {
   ): Promise<void>;
   abstract setSessionName(name: string): void;
   abstract getActiveToolNames(): string[];
-  abstract getAllTools(): Array<{
-    name: string;
-    description: string;
-    parameters: unknown;
-    sourceInfo: unknown;
-  }>;
+  abstract getAllTools(): RemoteToolSurface[];
   abstract setActiveToolsByName(toolNames: string[]): void;
   abstract setModel(model: Model<Api>): Promise<void>;
   abstract setThinkingLevel(level: ThinkingLevel): void;

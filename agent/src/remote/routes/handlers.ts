@@ -20,6 +20,7 @@ import {
   SessionSnapshotSchema,
   UiResponseResponseSchema,
 } from "../schemas.js";
+import { isJsonObject, type JsonObject } from "../json-schema.js";
 import type {
   AuthChallengeRequest,
   AuthVerifyRequest,
@@ -239,8 +240,8 @@ export function handleSessionTools(
     );
     const transportTools = tools.map((tool) => ({
       ...tool,
-      parameters: toJsonValue(tool.parameters) ?? null,
-      sourceInfo: toJsonValue(tool.sourceInfo) ?? null,
+      parameters: toJsonObject(tool.parameters),
+      sourceInfo: toJsonObject(tool.sourceInfo),
     }));
     return jsonWithSchema(
       c,
@@ -250,6 +251,14 @@ export function handleSessionTools(
       connectionHeader(connectionId),
     );
   });
+}
+
+function toJsonObject(value: unknown): JsonObject {
+  const jsonValue = toJsonValue(value);
+  if (jsonValue !== undefined && isJsonObject(jsonValue)) {
+    return jsonValue;
+  }
+  return {};
 }
 
 export function handleSessionToolDefinition(

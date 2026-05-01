@@ -418,7 +418,11 @@ function isAssistantMessageUpdatePayload(
   Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
   { type: "message_update" }
 > & { message: { role: "assistant" } } {
-  return payload.type === "message_update" && payload.message.role === "assistant";
+  return (
+    payload.type === "message_update" &&
+    "message" in payload &&
+    payload.message.role === "assistant"
+  );
 }
 
 function isToolExecutionPayload(

@@ -5,6 +5,7 @@ import type {
   StreamEventEnvelope,
 } from "../../schemas.js";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { JsonValue } from "../../json-schema.js";
 import { readRemoteExtensionSyncInfo } from "../../session-sync-metadata.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
@@ -126,17 +127,18 @@ export function replaySnapshotLiveOverlay(input: {
   const liveState = readSnapshotLiveState(input.snapshot);
   if (liveState.streamingMessage !== undefined) {
     const streamingMessage = fromTransportTranscript([liveState.streamingMessage])[0];
-    if (streamingMessage.role === "assistant") {
+    const assistantMessage = toAssistantSessionMessage(streamingMessage);
+    if (assistantMessage !== undefined) {
       input.forwardAgentSessionEventToLocalExtensions({
         type: "message_start",
-        message: streamingMessage,
+        message: assistantMessage,
       });
       input.forwardAgentSessionEventToLocalExtensions({
         type: "message_update",
-        message: streamingMessage,
+        message: assistantMessage,
         assistantMessageEvent: {
           type: "start",
-          partial: streamingMessage,
+          partial: assistantMessage,
         },
       });
     }
@@ -183,7 +185,9 @@ export async function applySessionSyncPatch(input: {
       });
       return;
     case "assistant.message":
-      input.handleAgentSessionEvent(toAssistantMessageUpdateEvent(input.patch));
+      await input.handleEnvelope(
+        toAssistantMessageUpdateEnvelope(input.sessionId, input.streamOffset, input.patch),
+      );
       return;
     case "tool.execution":
       input.handleAgentSessionEvent(input.patch.payload);
@@ -279,15 +283,45 @@ function createSyntheticSyncEnvelope(
   }
 }
 
-function toAssistantMessageUpdateEvent(
+function toAssistantMessageUpdateEnvelope(
+  sessionId: string,
+  streamOffset: string,
   patch: Extract<
     Extract<SessionSyncEvent, { type: "patch" }>["patch"],
     { patchType: "assistant.message" }
   >,
-): Extract<AgentSessionEvent, { type: "message_update" }> {
+): Extract<StreamEventEnvelope, { kind: "agent_session_event" }> {
   return {
-    type: "message_update",
-    message: patch.payload.message,
-    assistantMessageEvent: patch.payload.assistantMessageEvent,
+    eventId: "sync-patch",
+    sessionId,
+    streamOffset,
+    ts: Date.now(),
+    kind: "agent_session_event",
+    payload: {
+      type: "message_update",
+      message: patch.payload.message,
+      assistantMessageEvent: patch.payload.assistantMessageEvent,
+    },
+  };
+}
+
+function toAssistantSessionMessage(
+  message: ReturnType<typeof fromTransportTranscript>[number],
+): AssistantMessage | undefined {
+  if (message.role !== "assistant") {
+    return undefined;
+  }
+
+  return {
+    role: "assistant",
+    content: message.content,
+    api: message.api,
+    provider: message.provider,
+    model: message.model,
+    responseId: message.responseId,
+    usage: message.usage,
+    stopReason: message.stopReason,
+    errorMessage: message.errorMessage,
+    timestamp: message.timestamp,
   };
 }

@@ -23,7 +23,11 @@ import {
   TranscriptMessageTransportSchema,
   TranscriptSchema,
 } from "./schemas-session-runtime.js";
-
+import {
+  RemoteToolInfoSchema,
+  SessionToolsResponseSchema,
+  ToolDefinitionMetadataSchema,
+} from "./schemas-tools.js";
 export {
   ClientCapabilitiesPrimitivesSchema,
   ClientCapabilitiesSchema,
@@ -41,7 +45,11 @@ export {
   RemoteThemeResourceSchema,
 } from "./schemas-settings.js";
 export { ExtensionUiRequestEventPayloadSchema } from "./schemas-session-runtime.js";
-
+export {
+  RemoteToolInfoSchema,
+  SessionToolsResponseSchema,
+  ToolDefinitionMetadataSchema,
+} from "./schemas-tools.js";
 export const SessionStatusSchema = Type.Union([
   Type.Literal("starting"),
   Type.Literal("idle"),
@@ -51,7 +59,6 @@ export const SessionStatusSchema = Type.Union([
   Type.Literal("error"),
   Type.Literal("closed"),
 ]);
-
 export const RuntimeTaskStatusSchema = Type.Union([
   Type.Literal("idle"),
   Type.Literal("running"),
@@ -365,18 +372,6 @@ const upstreamSessionEntryAssignableToSchema: AssertUpstreamAssignableToSchema =
 void sessionEntrySchemaAssignableToUpstream;
 void upstreamSessionEntryAssignableToSchema;
 
-export const ToolDefinitionMetadataSchema = Type.Object({
-  name: Type.String(),
-  label: Type.String(),
-  description: Type.String(),
-  promptSnippet: Type.Optional(Type.String()),
-  promptGuidelines: Type.Optional(Type.Array(Type.String())),
-  parameters: JsonValueSchema,
-  renderShell: Type.Optional(Type.Union([Type.Literal("default"), Type.Literal("self")])),
-  executionMode: Type.Optional(Type.Union([Type.Literal("sequential"), Type.Literal("parallel")])),
-  sourceInfo: Type.Optional(JsonValueSchema),
-});
-
 export const NavigateTreeRequestSchema = Type.Object({
   targetId: Type.String({ minLength: 1 }),
   summarize: Type.Optional(Type.Boolean()),
@@ -553,8 +548,6 @@ const TreeFilterModeSettingSchema = Type.Union([
   Type.Literal("all"),
 ]);
 
-type PackageSourceValue = Static<typeof PackageSourceSchema>;
-
 export type SettingsUpdateRequestValue =
   | { method: "setLastChangelogVersion"; args: [string]; requestId?: string }
   | { method: "setDefaultProvider"; args: [string]; requestId?: string }
@@ -580,8 +573,12 @@ export type SettingsUpdateRequestValue =
   | { method: "setNpmCommand"; args: [string[] | null]; requestId?: string }
   | { method: "setCollapseChangelog"; args: [boolean]; requestId?: string }
   | { method: "setEnableInstallTelemetry"; args: [boolean]; requestId?: string }
-  | { method: "setPackages"; args: [PackageSourceValue[]]; requestId?: string }
-  | { method: "setProjectPackages"; args: [PackageSourceValue[]]; requestId?: string }
+  | { method: "setPackages"; args: [Static<typeof PackageSourceSchema>[]]; requestId?: string }
+  | {
+      method: "setProjectPackages";
+      args: [Static<typeof PackageSourceSchema>[]];
+      requestId?: string;
+    }
   | { method: "setExtensionPaths"; args: [string[]]; requestId?: string }
   | { method: "setProjectExtensionPaths"; args: [string[]]; requestId?: string }
   | { method: "setSkillPaths"; args: [string[]]; requestId?: string }
@@ -662,18 +659,6 @@ export const SettingsUpdateRequestSchema = Type.Unsafe<SettingsUpdateRequestValu
     settingsMutationSchema("setAutocompleteMaxVisible", [Type.Number()]),
   ]),
 );
-
-export const RemoteToolInfoSchema = Type.Object({
-  name: Type.String(),
-  description: Type.String(),
-  parameters: JsonValueSchema,
-  sourceInfo: JsonValueSchema,
-  definition: Type.Optional(ToolDefinitionMetadataSchema),
-});
-
-export const SessionToolsResponseSchema = Type.Object({
-  tools: Type.Array(RemoteToolInfoSchema),
-});
 
 export const UiResponseRequestSchema = Type.Union([
   Type.Object({

@@ -8,6 +8,8 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export type JsonObject = { [key: string]: JsonValue };
+
 const JsonValueModule = Type.Module({
   JsonValue: Type.Union([
     Type.Null(),
@@ -20,3 +22,8 @@ const JsonValueModule = Type.Module({
 });
 
 export const JsonValueSchema = JsonValueModule.JsonValue;
+export const JsonObjectSchema = Type.Object({}, { additionalProperties: JsonValueSchema });
+
+export function isJsonObject(value: JsonValue): value is JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}

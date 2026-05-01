@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { JsonValueSchema } from "./json-schema.js";
+import { JsonObjectSchema, JsonValueSchema } from "./json-schema.js";
 
 const WorkingIndicatorOptionsSchema = Type.Object({
   frames: Type.Optional(Type.Array(Type.String())),
@@ -244,4 +244,4 @@ export const TranscriptMessageTransportSchema = Type.Union([
 
 export const TranscriptSchema = Type.Array(TranscriptMessageTransportSchema);
 
-export { JsonValueSchema };
+export { JsonObjectSchema, JsonValueSchema };

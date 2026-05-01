@@ -1,4 +1,3 @@
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { AssistantMessageEvent } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
 import { JsonValueSchema } from "./json-schema.js";
@@ -253,19 +252,21 @@ const AgentSessionGenericFallbackPayloadSchema = Type.Object(
   { additionalProperties: true },
 );
 
-const AgentSessionEventPayloadSchema = Type.Unsafe<AgentSessionEvent>(
-  Type.Union([
-    Type.Object({
-      type: Type.Literal("message_update"),
-      message: RuntimeAssistantMessageSchema,
-      assistantMessageEvent: AssistantMessageEventPayloadSchema,
-    }),
-    ToolExecutionSyncPatchPayloadSchema,
-    QueueUpdateSyncPatchPayloadSchema,
-    RetryStatusSyncPatchPayloadSchema,
-    AgentSessionGenericFallbackPayloadSchema,
-  ]),
-);
+const AgentSessionEventKnownPayloadSchema = Type.Union([
+  Type.Object({
+    type: Type.Literal("message_update"),
+    message: RuntimeAssistantMessageSchema,
+    assistantMessageEvent: AssistantMessageEventPayloadSchema,
+  }),
+  ToolExecutionSyncPatchPayloadSchema,
+  QueueUpdateSyncPatchPayloadSchema,
+  RetryStatusSyncPatchPayloadSchema,
+]);
+
+const AgentSessionEventPayloadSchema = Type.Union([
+  AgentSessionEventKnownPayloadSchema,
+  AgentSessionGenericFallbackPayloadSchema,
+]);
 
 const ExtensionEventPayloadSchema = Type.Object(
   {
@@ -502,7 +503,7 @@ export const SessionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     patchType: Type.Literal("agent.event"),
     eventType: Type.String(),
-    payload: AgentSessionEventPayloadSchema,
+    payload: AgentSessionGenericFallbackPayloadSchema,
   }),
   Type.Object({
     patchType: Type.Literal("extension.custom"),

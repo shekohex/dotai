@@ -96,6 +96,7 @@ export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
 export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
 export type SettingsUpdateRequest = SettingsUpdateRequestValue;
 export type SessionToolsResponse = Static<typeof SessionToolsResponseSchema>;
+export type RemoteToolInfo = Static<typeof SessionToolsResponseSchema>["tools"][number];
 export type ToolDefinitionMetadata = Static<typeof ToolDefinitionMetadataSchema>;
 export type UiResponseRequest = Static<typeof UiResponseRequestSchema>;
 export type UiResponseResponse = Static<typeof UiResponseResponseSchema>;

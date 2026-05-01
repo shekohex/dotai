@@ -17,8 +17,10 @@ import type {
 } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import type { JsonValue } from "../json-schema.js";
+import { sanitizeBranchSummaryEntry, sanitizeCompactDetails } from "../schema-normalization.js";
 import { SessionRegistryPromptCommands } from "./registry-prompt-commands.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
+import type { SessionRecord } from "./types.js";
 
 export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
   async emitSessionExtensionCustomEvent(
@@ -74,8 +76,15 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
       label: request.label,
     });
     this.syncFromRuntime(record, { updateTimestamp: true, syncResources: true });
+    const summaryEntry =
+      result.summaryEntry === undefined
+        ? undefined
+        : sanitizeBranchSummaryEntry(result.summaryEntry);
     return {
-      ...result,
+      editorText: result.editorText,
+      cancelled: result.cancelled,
+      ...(result.aborted === undefined ? {} : { aborted: result.aborted }),
+      ...(summaryEntry === undefined ? {} : { summaryEntry }),
       snapshot: this.toSessionSnapshot(record),
     };
   }
@@ -91,8 +100,12 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     const session = this.requireRuntimeSession(record);
     const result = await session.compact(request.customInstructions);
     this.syncFromRuntime(record, { updateTimestamp: true, syncResources: true });
+    const details = sanitizeCompactDetails(result.details);
     return {
-      ...result,
+      summary: result.summary,
+      firstKeptEntryId: result.firstKeptEntryId,
+      tokensBefore: result.tokensBefore,
+      ...(details === undefined ? {} : { details }),
       snapshot: this.toSessionSnapshot(record),
     };
   }
@@ -267,15 +280,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     request: BashExecuteRequest,
     result: Omit<BashExecuteResponse, "snapshot" | "clientRequestId">,
   ): void {
-    const lastMessage = [...record.transcript].at(-1);
-    const bashMessage =
-      lastMessage &&
-      typeof lastMessage === "object" &&
-      lastMessage !== null &&
-      "role" in lastMessage &&
-      lastMessage.role === "bashExecution"
-        ? lastMessage
-        : undefined;
+    const bashMessage = readLastBashExecutionMessage(record.transcript);
     appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_end",
@@ -320,6 +325,16 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
       ts: this.now(),
     });
   }
+}
+
+function readLastBashExecutionMessage(
+  transcript: SessionRecord["transcript"],
+): Extract<SessionRecord["transcript"][number], { role: "bashExecution" }> | undefined {
+  const lastMessage = transcript.at(-1);
+  if (!lastMessage || lastMessage.role !== "bashExecution") {
+    return undefined;
+  }
+  return lastMessage;
 }
 
 function supportsDirectTimedBashExecution(

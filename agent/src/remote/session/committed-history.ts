@@ -5,6 +5,7 @@ import {
   type FileEntry,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
+import { sanitizeSessionEntry } from "../schema-normalization.js";
 
 export type CommittedSessionHistory = {
   entries: SessionEntry[];
@@ -80,18 +81,10 @@ function isCommittedSessionEntry(entry: SessionEntry): boolean {
 }
 
 function cloneSessionEntry(entry: SessionEntry): SessionEntry {
-  return {
+  return sanitizeSessionEntry({
     ...entry,
     ...(entry.type === "message" ? { message: structuredClone(entry.message) } : {}),
-    ...(entry.type === "compaction" || entry.type === "branch_summary"
-      ? { details: structuredClone(entry.details) }
-      : {}),
     ...(entry.type === "custom" ? { data: structuredClone(entry.data) } : {}),
-    ...(entry.type === "custom_message"
-      ? {
-          content: structuredClone(entry.content),
-          details: structuredClone(entry.details),
-        }
-      : {}),
-  };
+    ...(entry.type === "custom_message" ? { content: structuredClone(entry.content) } : {}),
+  });
 }

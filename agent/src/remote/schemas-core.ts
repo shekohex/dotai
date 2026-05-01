@@ -153,7 +153,7 @@ export const RemoteModelSchema = Type.Object({
   contextWindow: Type.Number(),
   maxTokens: Type.Number(),
   headers: Type.Optional(Type.Record(Type.String(), Type.String())),
-  compat: Type.Optional(Type.Unknown()),
+  compat: Type.Optional(JsonValueSchema),
 });
 
 export const RemoteModelSettingsSchema = Type.Object({
@@ -275,7 +275,7 @@ const CompactionEntrySchema = Type.Object({
   summary: Type.String(),
   firstKeptEntryId: Type.String(),
   tokensBefore: Type.Number(),
-  details: Type.Optional(Type.Unknown()),
+  details: Type.Optional(JsonValueSchema),
   fromHook: Type.Optional(Type.Boolean()),
 });
 
@@ -286,7 +286,7 @@ const BranchSummaryEntrySchema = Type.Object({
   timestamp: Type.String(),
   fromId: Type.String(),
   summary: Type.String(),
-  details: Type.Optional(Type.Unknown()),
+  details: Type.Optional(JsonValueSchema),
   fromHook: Type.Optional(Type.Boolean()),
 });
 
@@ -306,7 +306,7 @@ const CustomMessageEntrySchema = Type.Object({
   timestamp: Type.String(),
   customType: Type.String(),
   content: MessageContentSchema,
-  details: Type.Optional(Type.Unknown()),
+  details: Type.Optional(JsonValueSchema),
   display: Type.Boolean(),
 });
 
@@ -327,19 +327,23 @@ const SessionInfoEntrySchema = Type.Object({
   name: Type.Optional(Type.String()),
 });
 
-export const SessionEntrySchema = Type.Unsafe<SessionEntry>(
-  Type.Union([
-    SessionMessageEntrySchema,
+export const RemoteSessionEntrySchema = Type.Union([
+  Type.Unsafe<Extract<SessionEntry, { type: "message" }>>(SessionMessageEntrySchema),
+  Type.Unsafe<Extract<SessionEntry, { type: "thinking_level_change" }>>(
     ThinkingLevelChangeEntrySchema,
-    ModelChangeEntrySchema,
-    CompactionEntrySchema,
-    BranchSummaryEntrySchema,
-    CustomEntrySchema,
-    CustomMessageEntrySchema,
-    LabelEntrySchema,
-    SessionInfoEntrySchema,
-  ]),
-);
+  ),
+  Type.Unsafe<Extract<SessionEntry, { type: "model_change" }>>(ModelChangeEntrySchema),
+  CompactionEntrySchema,
+  BranchSummaryEntrySchema,
+  CustomEntrySchema,
+  CustomMessageEntrySchema,
+  Type.Unsafe<Extract<SessionEntry, { type: "label" }>>(LabelEntrySchema),
+  Type.Unsafe<Extract<SessionEntry, { type: "session_info" }>>(SessionInfoEntrySchema),
+]);
+
+export type RemoteSessionEntry = Static<typeof RemoteSessionEntrySchema>;
+
+export const SessionEntrySchema = Type.Unsafe<SessionEntry>(RemoteSessionEntrySchema);
 
 type EnsureTrue<T extends true> = T;
 type KnownSessionEntryMembers =
@@ -358,20 +362,6 @@ type AssertNoUnhandledSessionEntryMembers = EnsureTrue<
 const sessionEntryMemberParity: AssertNoUnhandledSessionEntryMembers = true;
 void sessionEntryMemberParity;
 
-type AssertExtends<_A extends B, B> = true;
-type AssertSchemaAssignableToUpstream = AssertExtends<
-  Static<typeof SessionEntrySchema>,
-  SessionEntry
->;
-type AssertUpstreamAssignableToSchema = AssertExtends<
-  SessionEntry,
-  Static<typeof SessionEntrySchema>
->;
-const sessionEntrySchemaAssignableToUpstream: AssertSchemaAssignableToUpstream = true;
-const upstreamSessionEntryAssignableToSchema: AssertUpstreamAssignableToSchema = true;
-void sessionEntrySchemaAssignableToUpstream;
-void upstreamSessionEntryAssignableToSchema;
-
 export const NavigateTreeRequestSchema = Type.Object({
   targetId: Type.String({ minLength: 1 }),
   summarize: Type.Optional(Type.Boolean()),
@@ -380,24 +370,8 @@ export const NavigateTreeRequestSchema = Type.Object({
   label: Type.Optional(Type.String()),
 });
 
-export const NavigateTreeResponseSchema = Type.Object({
-  editorText: Type.Optional(Type.String()),
-  cancelled: Type.Boolean(),
-  aborted: Type.Optional(Type.Boolean()),
-  summaryEntry: Type.Optional(BranchSummaryEntrySchema),
-  snapshot: Type.Optional(Type.Unknown()),
-});
-
 export const CompactRequestSchema = Type.Object({
   customInstructions: Type.Optional(Type.String()),
-});
-
-export const CompactResponseSchema = Type.Object({
-  summary: Type.String(),
-  firstKeptEntryId: Type.String(),
-  tokensBefore: Type.Number(),
-  details: Type.Optional(Type.Unknown()),
-  snapshot: Type.Optional(Type.Unknown()),
 });
 
 export const BashExecuteRequestSchema = Type.Object({
@@ -415,13 +389,6 @@ export const BashResultSchema = Type.Object({
   fullOutputPath: Type.Optional(Type.String()),
 });
 
-export const BashExecuteResponseSchema = Type.Object({
-  ...BashResultSchema.properties,
-  chunks: Type.Optional(Type.Array(Type.String())),
-  clientRequestId: Type.Optional(Type.String()),
-  snapshot: Type.Optional(Type.Unknown()),
-});
-
 export const BashRecordRequestSchema = Type.Object({
   command: Type.String({ minLength: 1 }),
   result: Type.Object({
@@ -432,10 +399,6 @@ export const BashRecordRequestSchema = Type.Object({
     fullOutputPath: Type.Optional(Type.String()),
   }),
   excludeFromContext: Type.Optional(Type.Boolean()),
-});
-
-export const BashRecordResponseSchema = Type.Object({
-  snapshot: Type.Optional(Type.Unknown()),
 });
 
 export const AbortOperationResponseSchema = Type.Object({
@@ -548,6 +511,17 @@ const TreeFilterModeSettingSchema = Type.Union([
   Type.Literal("all"),
 ]);
 
+function settingsMutationSchema<
+  const TMethod extends string,
+  const TArgs extends readonly TSchema[],
+>(method: TMethod, args: TArgs) {
+  return Type.Object({
+    method: Type.Literal(method),
+    args: Type.Tuple([...args]),
+    requestId: Type.Optional(Type.String({ minLength: 1 })),
+  });
+}
+
 export type SettingsUpdateRequestValue =
   | { method: "setLastChangelogVersion"; args: [string]; requestId?: string }
   | { method: "setDefaultProvider"; args: [string]; requestId?: string }
@@ -602,62 +576,53 @@ export type SettingsUpdateRequestValue =
   | { method: "setEditorPaddingX"; args: [number]; requestId?: string }
   | { method: "setAutocompleteMaxVisible"; args: [number]; requestId?: string };
 
-function settingsMutationSchema<
-  const TMethod extends string,
-  const TArgs extends readonly TSchema[],
->(method: TMethod, args: TArgs) {
-  return Type.Object({
-    method: Type.Literal(method),
-    args: Type.Tuple([...args]),
-    requestId: Type.Optional(Type.String({ minLength: 1 })),
-  });
-}
+export const SettingsUpdateRequestTransportSchema = Type.Union([
+  settingsMutationSchema("setLastChangelogVersion", [Type.String()]),
+  settingsMutationSchema("setDefaultProvider", [Type.String()]),
+  settingsMutationSchema("setDefaultModel", [Type.String()]),
+  settingsMutationSchema("setDefaultModelAndProvider", [Type.String(), Type.String()]),
+  settingsMutationSchema("setDefaultThinkingLevel", [ThinkingLevelSettingSchema]),
+  settingsMutationSchema("setEnabledModels", [
+    Type.Union([Type.Array(Type.String()), Type.Null()]),
+  ]),
+  settingsMutationSchema("setSteeringMode", [QueueModeSettingSchema]),
+  settingsMutationSchema("setFollowUpMode", [QueueModeSettingSchema]),
+  settingsMutationSchema("setAutoCompactionEnabled", [Type.Boolean()]),
+  settingsMutationSchema("setCompactionEnabled", [Type.Boolean()]),
+  settingsMutationSchema("setTheme", [Type.String()]),
+  settingsMutationSchema("setTransport", [TransportSettingSchema]),
+  settingsMutationSchema("setRetryEnabled", [Type.Boolean()]),
+  settingsMutationSchema("setHideThinkingBlock", [Type.Boolean()]),
+  settingsMutationSchema("setShellPath", [Type.Union([Type.String(), Type.Null()])]),
+  settingsMutationSchema("setQuietStartup", [Type.Boolean()]),
+  settingsMutationSchema("setShellCommandPrefix", [Type.Union([Type.String(), Type.Null()])]),
+  settingsMutationSchema("setNpmCommand", [Type.Union([Type.Array(Type.String()), Type.Null()])]),
+  settingsMutationSchema("setCollapseChangelog", [Type.Boolean()]),
+  settingsMutationSchema("setEnableInstallTelemetry", [Type.Boolean()]),
+  settingsMutationSchema("setPackages", [Type.Array(PackageSourceSchema)]),
+  settingsMutationSchema("setProjectPackages", [Type.Array(PackageSourceSchema)]),
+  settingsMutationSchema("setExtensionPaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setProjectExtensionPaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setSkillPaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setProjectSkillPaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setPromptTemplatePaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setProjectPromptTemplatePaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setThemePaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setProjectThemePaths", [Type.Array(Type.String())]),
+  settingsMutationSchema("setEnableSkillCommands", [Type.Boolean()]),
+  settingsMutationSchema("setShowImages", [Type.Boolean()]),
+  settingsMutationSchema("setClearOnShrink", [Type.Boolean()]),
+  settingsMutationSchema("setImageAutoResize", [Type.Boolean()]),
+  settingsMutationSchema("setBlockImages", [Type.Boolean()]),
+  settingsMutationSchema("setDoubleEscapeAction", [DoubleEscapeActionSettingSchema]),
+  settingsMutationSchema("setTreeFilterMode", [TreeFilterModeSettingSchema]),
+  settingsMutationSchema("setShowHardwareCursor", [Type.Boolean()]),
+  settingsMutationSchema("setEditorPaddingX", [Type.Number()]),
+  settingsMutationSchema("setAutocompleteMaxVisible", [Type.Number()]),
+]);
 
 export const SettingsUpdateRequestSchema = Type.Unsafe<SettingsUpdateRequestValue>(
-  Type.Union([
-    settingsMutationSchema("setLastChangelogVersion", [Type.String()]),
-    settingsMutationSchema("setDefaultProvider", [Type.String()]),
-    settingsMutationSchema("setDefaultModel", [Type.String()]),
-    settingsMutationSchema("setDefaultModelAndProvider", [Type.String(), Type.String()]),
-    settingsMutationSchema("setDefaultThinkingLevel", [ThinkingLevelSettingSchema]),
-    settingsMutationSchema("setEnabledModels", [
-      Type.Union([Type.Array(Type.String()), Type.Null()]),
-    ]),
-    settingsMutationSchema("setSteeringMode", [QueueModeSettingSchema]),
-    settingsMutationSchema("setFollowUpMode", [QueueModeSettingSchema]),
-    settingsMutationSchema("setAutoCompactionEnabled", [Type.Boolean()]),
-    settingsMutationSchema("setCompactionEnabled", [Type.Boolean()]),
-    settingsMutationSchema("setTheme", [Type.String()]),
-    settingsMutationSchema("setTransport", [TransportSettingSchema]),
-    settingsMutationSchema("setRetryEnabled", [Type.Boolean()]),
-    settingsMutationSchema("setHideThinkingBlock", [Type.Boolean()]),
-    settingsMutationSchema("setShellPath", [Type.Union([Type.String(), Type.Null()])]),
-    settingsMutationSchema("setQuietStartup", [Type.Boolean()]),
-    settingsMutationSchema("setShellCommandPrefix", [Type.Union([Type.String(), Type.Null()])]),
-    settingsMutationSchema("setNpmCommand", [Type.Union([Type.Array(Type.String()), Type.Null()])]),
-    settingsMutationSchema("setCollapseChangelog", [Type.Boolean()]),
-    settingsMutationSchema("setEnableInstallTelemetry", [Type.Boolean()]),
-    settingsMutationSchema("setPackages", [Type.Array(PackageSourceSchema)]),
-    settingsMutationSchema("setProjectPackages", [Type.Array(PackageSourceSchema)]),
-    settingsMutationSchema("setExtensionPaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setProjectExtensionPaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setSkillPaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setProjectSkillPaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setPromptTemplatePaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setProjectPromptTemplatePaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setThemePaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setProjectThemePaths", [Type.Array(Type.String())]),
-    settingsMutationSchema("setEnableSkillCommands", [Type.Boolean()]),
-    settingsMutationSchema("setShowImages", [Type.Boolean()]),
-    settingsMutationSchema("setClearOnShrink", [Type.Boolean()]),
-    settingsMutationSchema("setImageAutoResize", [Type.Boolean()]),
-    settingsMutationSchema("setBlockImages", [Type.Boolean()]),
-    settingsMutationSchema("setDoubleEscapeAction", [DoubleEscapeActionSettingSchema]),
-    settingsMutationSchema("setTreeFilterMode", [TreeFilterModeSettingSchema]),
-    settingsMutationSchema("setShowHardwareCursor", [Type.Boolean()]),
-    settingsMutationSchema("setEditorPaddingX", [Type.Number()]),
-    settingsMutationSchema("setAutocompleteMaxVisible", [Type.Number()]),
-  ]),
+  SettingsUpdateRequestTransportSchema,
 );
 
 export const UiResponseRequestSchema = Type.Union([
@@ -812,4 +777,31 @@ export const SessionEntriesResponseSchema = Type.Object({
   totalTranscriptMessages: Type.Number(),
   entriesLimit: Type.Number(),
   entriesOffset: Type.Number(),
+});
+
+export const NavigateTreeResponseSchema = Type.Object({
+  editorText: Type.Optional(Type.String()),
+  cancelled: Type.Boolean(),
+  aborted: Type.Optional(Type.Boolean()),
+  summaryEntry: Type.Optional(BranchSummaryEntrySchema),
+  snapshot: Type.Optional(SessionSnapshotSchema),
+});
+
+export const CompactResponseSchema = Type.Object({
+  summary: Type.String(),
+  firstKeptEntryId: Type.String(),
+  tokensBefore: Type.Number(),
+  details: Type.Optional(JsonValueSchema),
+  snapshot: Type.Optional(Type.Unknown()),
+});
+
+export const BashExecuteResponseSchema = Type.Object({
+  ...BashResultSchema.properties,
+  chunks: Type.Optional(Type.Array(Type.String())),
+  clientRequestId: Type.Optional(Type.String()),
+  snapshot: Type.Optional(Type.Unknown()),
+});
+
+export const BashRecordResponseSchema = Type.Object({
+  snapshot: Type.Optional(Type.Unknown()),
 });

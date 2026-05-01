@@ -34,6 +34,7 @@ import {
   RemoteExtensionRuntimeSchema,
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
+  SettingsUpdateRequestSchema,
   ExtensionUiRequestEventPayloadSchema,
   SessionNameUpdateRequestSchema,
   SessionDeletedResponseSchema,
@@ -47,7 +48,6 @@ import {
   ToolDefinitionMetadataSchema,
   UiResponseRequestSchema,
   UiResponseResponseSchema,
-  type SettingsUpdateRequestValue,
 } from "./schemas-core.js";
 import {
   RemoteKvDeleteResponseSchema,
@@ -94,7 +94,7 @@ export type InterruptCommandRequest = Static<typeof InterruptCommandRequestSchem
 export type ActiveToolsUpdateRequest = Static<typeof ActiveToolsUpdateRequestSchema>;
 export type ModelUpdateRequest = Static<typeof ModelUpdateRequestSchema>;
 export type SessionNameUpdateRequest = Static<typeof SessionNameUpdateRequestSchema>;
-export type SettingsUpdateRequest = SettingsUpdateRequestValue;
+export type SettingsUpdateRequest = Static<typeof SettingsUpdateRequestSchema>;
 export type SessionToolsResponse = Static<typeof SessionToolsResponseSchema>;
 export type RemoteToolInfo = Static<typeof SessionToolsResponseSchema>["tools"][number];
 export type ToolDefinitionMetadata = Static<typeof ToolDefinitionMetadataSchema>;

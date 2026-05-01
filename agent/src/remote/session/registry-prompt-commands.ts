@@ -13,6 +13,7 @@ import {
   handlePromptCommand,
   handleSteerCommand,
 } from "./deps.js";
+import { sanitizeRemoteModel } from "../schema-normalization.js";
 import { SessionRegistryManagement } from "./registry-management.js";
 
 export class SessionRegistryPromptCommands extends SessionRegistryManagement {
@@ -75,7 +76,9 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
                     systemPrompt: targetRecord.resources.systemPrompt,
                     appendSystemPrompt: [...targetRecord.resources.appendSystemPrompt],
                   },
-                  availableModels: targetRecord.availableModels.map((model) => ({ ...model })),
+                  availableModels: targetRecord.availableModels.map((model) =>
+                    sanitizeRemoteModel({ ...model }),
+                  ),
                   modelSettings: {
                     defaultProvider: targetRecord.modelSettings.defaultProvider,
                     defaultModel: targetRecord.modelSettings.defaultModel,

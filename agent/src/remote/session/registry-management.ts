@@ -26,6 +26,7 @@ import {
   getLastAppStreamOffsetForNewSession,
   getSessionSnapshot,
   registerCreatedSession,
+  sanitizeRemoteModel,
   type SessionRecord,
 } from "./deps.js";
 import {
@@ -197,7 +198,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
           extensions: record.extensions.map((extension) => ({ ...extension })),
           resources: buildReloadResourcePatch(record),
           settings: { ...record.settings },
-          availableModels: record.availableModels.map((model) => ({ ...model })),
+          availableModels: record.availableModels.map((model) => sanitizeRemoteModel(model)),
           modelSettings: {
             defaultProvider: record.modelSettings.defaultProvider,
             defaultModel: record.modelSettings.defaultModel,

@@ -4,6 +4,7 @@ export {
   parseResourceLoaderExtensionMetadata,
   parseRuntimeExtensionMetadata,
 } from "./helpers.js";
+export { sanitizeRemoteModel } from "../schema-normalization.js";
 export {
   handleFollowUpCommand,
   handleInterruptCommand,

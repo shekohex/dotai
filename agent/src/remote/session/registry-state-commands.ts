@@ -10,6 +10,7 @@ import type {
   UiResponseResponse,
 } from "../schemas.js";
 import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
+import { sanitizeRemoteModel } from "../schema-normalization.js";
 import {
   handleModelUpdateCommand,
   handleSessionNameUpdateCommand,
@@ -97,7 +98,9 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
                 thinkingLevel: targetRecord.thinkingLevel,
                 cwd: targetRecord.cwd,
                 extensions: targetRecord.extensions,
-                availableModels: targetRecord.availableModels,
+                availableModels: targetRecord.availableModels.map((model) =>
+                  sanitizeRemoteModel({ ...model }),
+                ),
                 modelSettings: targetRecord.modelSettings,
                 sessionStats: {
                   ...targetRecord.sessionStats,

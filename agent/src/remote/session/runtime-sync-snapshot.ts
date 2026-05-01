@@ -2,6 +2,7 @@ import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot } from "../schemas.js";
 import { getExecutorState } from "../../extensions/executor/status.js";
 import { getGitState, serializeGitRuntimeState } from "../../extensions/git-state.js";
+import { sanitizeRemoteModel, sanitizeSessionEntry } from "../schema-normalization.js";
 import { toTransportTranscript } from "../transcript-transport.js";
 import { buildDurableExtensionState } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
@@ -60,7 +61,7 @@ export function buildSessionSnapshotParts(
       appendSystemPrompt: [...record.resources.appendSystemPrompt],
     },
     settings: { ...record.settings },
-    availableModels: record.availableModels.map((model) => ({ ...model })),
+    availableModels: record.availableModels.map((model) => sanitizeRemoteModel({ ...model })),
     modelSettings,
     sessionStats: cloneSessionStats(record.sessionStats),
     contextUsage: record.contextUsage ? { ...record.contextUsage } : undefined,
@@ -140,20 +141,12 @@ function readRuntimeSession(
 }
 
 function cloneSessionEntry(entry: SessionEntry): SessionEntry {
-  return {
+  return sanitizeSessionEntry({
     ...entry,
     ...(entry.type === "message" ? { message: structuredClone(entry.message) } : {}),
-    ...(entry.type === "compaction" || entry.type === "branch_summary"
-      ? { details: structuredClone(entry.details) }
-      : {}),
     ...(entry.type === "custom" ? { data: structuredClone(entry.data) } : {}),
-    ...(entry.type === "custom_message"
-      ? {
-          content: structuredClone(entry.content),
-          details: structuredClone(entry.details),
-        }
-      : {}),
-  };
+    ...(entry.type === "custom_message" ? { content: structuredClone(entry.content) } : {}),
+  });
 }
 
 function cloneSessionStats(stats: SessionRecord["sessionStats"]): SessionSnapshot["sessionStats"] {

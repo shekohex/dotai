@@ -75,6 +75,7 @@ export function readSessionSyncPatchReplaceKey(
         ? `extension_custom_event:${syncInfo.stateKey}`
         : undefined;
     }
+    case "agent.lifecycle":
     case "agent.event":
     case "bash.chunk":
     case "bash.end":

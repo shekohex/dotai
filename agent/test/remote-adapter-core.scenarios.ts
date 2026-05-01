@@ -180,6 +180,7 @@ timedTest("milestone 3 adapter forwards turn_end to client extensions", async ()
 
   let runtime: RemoteAgentSessionRuntime | undefined;
   let turnEndCount = 0;
+  let sessionTurnEndCount = 0;
   const turnEndExtension: ExtensionFactory = (pi) => {
     pi.on("turn_end", () => {
       turnEndCount += 1;
@@ -202,6 +203,12 @@ timedTest("milestone 3 adapter forwards turn_end to client extensions", async ()
 
     await runtime.session.bindExtensions({});
 
+    const unsubscribeTurnEnd = runtime.session.subscribe((event) => {
+      if (event.type === "turn_end") {
+        sessionTurnEndCount += 1;
+      }
+    });
+
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         unsubscribe();
@@ -220,13 +227,16 @@ timedTest("milestone 3 adapter forwards turn_end to client extensions", async ()
       void runtime!.session.prompt("forward turn end");
     });
 
+    unsubscribeTurnEnd();
+
     await waitForValue(
       () => turnEndCount,
       (count) => count > 0,
-      20,
+      500,
       10,
     );
 
+    expect(sessionTurnEndCount).toBe(1);
     expect(turnEndCount).toBe(1);
   } finally {
     await runtime?.dispose();

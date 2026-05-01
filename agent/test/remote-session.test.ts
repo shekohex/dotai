@@ -1574,6 +1574,7 @@ function mapSyncPatchToEnvelope(
   }
 
   switch (patch.patchType) {
+    case "agent.lifecycle":
     case "assistant.message":
     case "tool.execution":
     case "queue.update":

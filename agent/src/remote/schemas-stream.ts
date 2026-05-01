@@ -24,6 +24,7 @@ import {
   SettingsUpdateRequestSchema,
   UiResponseRequestSchema,
 } from "./schemas-core.js";
+import { TranscriptMessageTransportSchema } from "./schemas-session-runtime.js";
 import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
 
 const StreamEventCommonProperties = {
@@ -64,7 +65,7 @@ const ServerNoticeEventPayloadSchema = Type.Object({
   message: Type.String(),
 });
 
-const RuntimeAssistantMessageSchema = Type.Object({
+export const RuntimeAssistantMessageSchema = Type.Object({
   role: Type.Literal("assistant"),
   content: Type.Array(
     Type.Union([
@@ -117,7 +118,7 @@ const RuntimeAssistantMessageSchema = Type.Object({
   timestamp: Type.Number(),
 });
 
-const AssistantMessageEventPayloadSchema = Type.Union([
+export const AssistantMessageEventPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("start"),
     partial: RuntimeAssistantMessageSchema,
@@ -191,13 +192,18 @@ const AssistantMessageEventPayloadSchema = Type.Union([
   }),
 ]);
 
-const AssistantMessageSyncPatchPayloadSchema = Type.Object({
+export const AssistantMessageSyncPatchPayloadSchema = Type.Object({
   type: Type.Literal("message_update"),
   message: RuntimeAssistantMessageSchema,
   assistantMessageEvent: AssistantMessageEventPayloadSchema,
 });
 
-const ToolExecutionSyncPatchPayloadSchema = Type.Union([
+const AgentSessionMessageSchema = Type.Union([
+  TranscriptMessageTransportSchema,
+  RuntimeAssistantMessageSchema,
+]);
+
+export const ToolExecutionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("tool_execution_start"),
     toolCallId: Type.String(),
@@ -263,6 +269,33 @@ const CompactionStatusSyncPatchPayloadSchema = Type.Union([
   }),
 ]);
 
+export const AgentLifecycleEventPayloadSchema = Type.Union([
+  Type.Object({ type: Type.Literal("agent_start") }),
+  Type.Object({
+    type: Type.Literal("turn_start"),
+    turnIndex: Type.Optional(Type.Number()),
+    timestamp: Type.Optional(Type.Number()),
+  }),
+  Type.Object({
+    type: Type.Literal("agent_end"),
+    messages: Type.Array(AgentSessionMessageSchema),
+  }),
+  Type.Object({
+    type: Type.Literal("turn_end"),
+    turnIndex: Type.Optional(Type.Number()),
+    message: Type.Unknown(),
+    toolResults: Type.Array(Type.Unknown()),
+  }),
+  Type.Object({
+    type: Type.Literal("message_start"),
+    message: AgentSessionMessageSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("message_end"),
+    message: AgentSessionMessageSchema,
+  }),
+]);
+
 const AgentSessionGenericFallbackPayloadSchema = Type.Object(
   {
     type: Type.String(),
@@ -271,6 +304,7 @@ const AgentSessionGenericFallbackPayloadSchema = Type.Object(
 );
 
 const AgentSessionEventKnownPayloadSchema = Type.Union([
+  AgentLifecycleEventPayloadSchema,
   Type.Object({
     type: Type.Literal("message_update"),
     message: RuntimeAssistantMessageSchema,
@@ -522,6 +556,10 @@ export const SessionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     patchType: Type.Literal("compaction.status"),
     payload: CompactionStatusSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("agent.lifecycle"),
+    payload: AgentLifecycleEventPayloadSchema,
   }),
   Type.Object({
     patchType: Type.Literal("agent.event"),

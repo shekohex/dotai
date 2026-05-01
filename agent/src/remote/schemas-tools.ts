@@ -17,7 +17,7 @@ export const RemoteToolInfoSchema = Type.Object({
   name: Type.String(),
   description: Type.String(),
   parameters: JsonObjectSchema,
-  sourceInfo: JsonObjectSchema,
+  sourceInfo: Type.Optional(JsonObjectSchema),
   definition: Type.Optional(ToolDefinitionMetadataSchema),
 });
 

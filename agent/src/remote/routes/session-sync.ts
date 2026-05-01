@@ -1,8 +1,13 @@
 import type { MiddlewareHandler } from "hono";
+import { Value } from "typebox/value";
 import {
   readRemoteExtensionSyncInfo,
   readSessionSyncPatchReplaceKey,
 } from "../session-sync-metadata.js";
+import {
+  AgentLifecycleEventPayloadSchema,
+  AssistantMessageSyncPatchPayloadSchema,
+} from "../schemas-stream.js";
 import {
   SessionSyncEventSchema,
   type SessionSyncEvent,
@@ -218,6 +223,8 @@ export function isPatchCoveredBySnapshot(
       return isRetryStatusPatchCoveredBySnapshot(patchEvent.patch.payload, snapshot);
     case "compaction.status":
       return isCompactionStatusPatchCoveredBySnapshot(patchEvent.patch.payload, snapshot);
+    case "agent.lifecycle":
+      return true;
     case "extension.custom": {
       const patchSyncInfo = readRemoteExtensionSyncInfo(
         patchEvent.patch.payload.channel,
@@ -399,6 +406,13 @@ export function toSessionSyncPatchEvent(
         };
       }
 
+      if (isAgentLifecyclePayload(event.payload)) {
+        return {
+          ...base,
+          patch: { patchType: "agent.lifecycle", payload: event.payload },
+        };
+      }
+
       return {
         ...base,
         patch: { patchType: "agent.event", eventType: event.payload.type, payload: event.payload },
@@ -441,11 +455,7 @@ function isAssistantMessageUpdatePayload(
   Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
   { type: "message_update" }
 > & { message: { role: "assistant" } } {
-  return (
-    payload.type === "message_update" &&
-    "message" in payload &&
-    payload.message.role === "assistant"
-  );
+  return Value.Check(AssistantMessageSyncPatchPayloadSchema, payload);
 }
 
 function isToolExecutionPayload(
@@ -486,6 +496,15 @@ function isCompactionStatusPayload(
   { patchType: "compaction.status" }
 >["payload"] {
   return payload.type === "compaction_start" || payload.type === "compaction_end";
+}
+
+function isAgentLifecyclePayload(
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): payload is Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "agent.lifecycle" }
+>["payload"] {
+  return Value.Check(AgentLifecycleEventPayloadSchema, payload);
 }
 
 function compareSessionVersions(left: string, right: string): number {

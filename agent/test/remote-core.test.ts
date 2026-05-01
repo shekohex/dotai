@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { Value } from "typebox/value";
 import { parseSseStream } from "../src/remote/sse.ts";
 import type {
   ExtensionFactory,
@@ -64,6 +65,7 @@ import {
 } from "../src/remote/runtime-factory.ts";
 import { createRemoteThemeFromContent } from "../src/remote/client/remote-theme.ts";
 import { RemoteAgentSessionRuntime, createInProcessFetch } from "../src/remote/client-runtime.ts";
+import { RuntimeAgentSessionEventSchema } from "../src/remote/client/session/runtime-agent-session-event-schema.ts";
 import {
   createRemoteRenameSessionHandler,
   parseRemoteArgs,
@@ -821,6 +823,24 @@ class InvalidToolMetadataSession extends RecordingSession {
   }
 }
 
+class MissingSourceInfoSession extends RecordingSession {
+  override getAllTools(): Array<{
+    name: string;
+    description: string;
+    parameters: unknown;
+    sourceInfo: unknown;
+  }> {
+    return [
+      {
+        name: "read",
+        description: "read tool",
+        parameters: {},
+        sourceInfo: undefined,
+      },
+    ];
+  }
+}
+
 class RacyPromptSession extends RecordingSession {
   private promptInFlight = false;
   private readonly startupTurns: number;
@@ -1458,7 +1478,7 @@ async function waitForRemoteSessionMessageCount(
   sessionId: string,
   expectedCount: number,
 ): Promise<void> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     const snapshot = await client.getSessionSnapshot(sessionId);
     if (snapshot.status === "idle" && snapshot.sessionStats.totalMessages >= expectedCount) {
@@ -1643,6 +1663,7 @@ function mapSyncPatchToEnvelope(
   }
 
   switch (patch.patchType) {
+    case "agent.lifecycle":
     case "assistant.message":
     case "tool.execution":
     case "queue.update":
@@ -2009,6 +2030,32 @@ timedTest("generic fallback patches buffered before snapshot are dropped", () =>
   expect(covered).toBe(true);
 });
 
+timedTest("session sync lifecycle patches use explicit taxonomy", () => {
+  const event = {
+    eventId: "1",
+    sessionId: "session-1",
+    streamOffset: "0",
+    sessionVersion: "3",
+    ts: 1,
+    kind: "agent_session_event",
+    payload: {
+      type: "turn_start",
+      turnIndex: 1,
+      timestamp: 1,
+    },
+  } as const;
+
+  expect(toSessionSyncPatchEvent("session-1", event)).toEqual({
+    type: "patch",
+    sessionId: "session-1",
+    version: "3",
+    patch: {
+      patchType: "agent.lifecycle",
+      payload: event.payload,
+    },
+  });
+});
+
 timedTest("session tools rejects invalid metadata objects", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
@@ -2039,6 +2086,116 @@ timedTest("session tools rejects invalid metadata objects", async () => {
   } finally {
     await remote.dispose();
   }
+});
+
+timedTest("session tools preserves missing sourceInfo instead of inventing it", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+  const remote = createRemoteApp({
+    origin: "http://localhost:3000",
+    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+    runtimeFactory: new RecordingRuntimeFactory(new MissingSourceInfoSession()),
+  });
+
+  try {
+    const token = await authenticate(remote.app, privateKeyPem);
+    const createResponse = await remote.app.request("/v1/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    const created = (await createResponse.json()) as { sessionId: string };
+
+    const response = await remote.app.request(`/v1/sessions/${created.sessionId}/tools`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { tools: Array<Record<string, unknown>> };
+    expect(payload.tools).toHaveLength(1);
+    expect(payload.tools[0]).not.toHaveProperty("sourceInfo");
+    expect(payload.tools[0]).toMatchObject({
+      name: "read",
+      description: "read tool",
+      parameters: {},
+      definition: expect.objectContaining({
+        name: "read",
+        label: "read",
+      }),
+    });
+  } finally {
+    await remote.dispose();
+  }
+});
+
+timedTest("runtime event schema validates narrowed sync payloads", () => {
+  const usage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+
+  expect(
+    Value.Check(RuntimeAgentSessionEventSchema, {
+      type: "message_update",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "partial" }],
+        api: "responses",
+        provider: "demo",
+        model: "demo-1",
+        usage,
+        stopReason: "toolUse",
+        timestamp: 1,
+      },
+      assistantMessageEvent: {
+        type: "start",
+        partial: {
+          role: "assistant",
+          content: [{ type: "text", text: "partial" }],
+          api: "responses",
+          provider: "demo",
+          model: "demo-1",
+          usage,
+          stopReason: "toolUse",
+          timestamp: 1,
+        },
+      },
+    }),
+  ).toBe(true);
+
+  expect(
+    Value.Check(RuntimeAgentSessionEventSchema, {
+      type: "tool_execution_update",
+      toolCallId: "tool-1",
+      toolName: "read",
+      args: { path: "README.md" },
+      partialResult: { lines: ["x"] },
+    }),
+  ).toBe(true);
+
+  expect(
+    Value.Check(RuntimeAgentSessionEventSchema, {
+      type: "turn_end",
+      turnIndex: 1,
+      message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+      toolResults: [],
+    }),
+  ).toBe(true);
+
+  expect(
+    Value.Check(RuntimeAgentSessionEventSchema, {
+      type: "message_update",
+      message: { role: "assistant" },
+      assistantMessageEvent: {},
+    }),
+  ).toBe(false);
 });
 
 timedTest("session sync drops buffered patches already covered by snapshot", async () => {

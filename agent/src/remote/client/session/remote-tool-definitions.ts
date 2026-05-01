@@ -19,9 +19,9 @@ const ToolSchemaLikeSchema = Type.Object(
   { additionalProperties: JsonValueSchema },
 );
 
-export function buildRemoteToolDefinition(
-  metadata: ToolDefinitionMetadata,
-): ToolDefinition<TSchema, unknown, unknown> {
+const EmptyToolParametersSchema = Type.Object({});
+
+export function buildRemoteToolDefinition(metadata: ToolDefinitionMetadata): ToolDefinition {
   return {
     name: metadata.name,
     label: metadata.label,
@@ -39,12 +39,12 @@ export function buildRemoteToolDefinition(
   };
 }
 
-function normalizeToolParameters(parameters: unknown): TSchema {
+function normalizeToolParameters(parameters: unknown): ToolDefinition["parameters"] {
   const schema = parseToolSchema(parameters);
   if (schema !== undefined) {
     return schema;
   }
-  return Type.Object({});
+  return EmptyToolParametersSchema;
 }
 
 function parseToolSchema(value: unknown): TSchema | undefined {

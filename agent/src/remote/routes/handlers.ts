@@ -244,10 +244,9 @@ export function handleSessionTools(
         tool.parameters,
         `Tool ${tool.name} parameters must be JSON object`,
       ),
-      sourceInfo: requireJsonObject(
+      sourceInfo: requireOptionalJsonObject(
         tool.sourceInfo,
         `Tool ${tool.name} sourceInfo must be JSON object`,
-        { source: "remote" },
       ),
     }));
     return jsonWithSchema(
@@ -270,6 +269,14 @@ function requireJsonObject(value: unknown, message: string, fallback?: JsonObjec
     return jsonValue;
   }
   throw new RemoteError(message, 500);
+}
+
+function requireOptionalJsonObject(value: unknown, message: string): JsonObject | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  return requireJsonObject(value, message);
 }
 
 function toJsonObjectValue(value: unknown): JsonObject | undefined {

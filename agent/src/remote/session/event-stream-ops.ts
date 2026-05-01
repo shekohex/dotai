@@ -1,4 +1,5 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import { readAgentSessionEventReplaceKey } from "../session-sync-metadata.js";
 import {
   appEventsStreamId,
   sessionEventsStreamId,
@@ -41,6 +42,7 @@ export function appendExtensionUiRequestEvent(input: {
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_ui_request",
+    sessionVersion: String(input.record.lastDurableSessionVersion),
     payload: input.payload,
     ts: input.ts,
   });
@@ -55,6 +57,7 @@ export function appendExtensionUiResolvedEvent(input: {
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_ui_resolved",
+    sessionVersion: String(input.record.lastDurableSessionVersion),
     payload: input.payload,
     ts: input.ts,
   });
@@ -88,7 +91,11 @@ export function handleRegistrySessionEvent(input: {
     syncFromRuntime: input.syncFromRuntime,
     hasExtensionMetadataChange,
     appendAgentEvent: (targetRecord, targetEvent, ts) => {
-      input.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
+      const streamId = sessionEventsStreamId(targetRecord.sessionId);
+      const append = isLiveOnlyAgentSessionEvent(targetEvent)
+        ? input.streams.appendLiveOnly.bind(input.streams)
+        : input.streams.append.bind(input.streams);
+      append(streamId, {
         sessionId: targetRecord.sessionId,
         kind: "agent_session_event",
         payload: targetEvent,
@@ -100,6 +107,7 @@ export function handleRegistrySessionEvent(input: {
       input.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
         sessionId: targetRecord.sessionId,
         kind: "session_state_patch",
+        sessionVersion: String(targetRecord.lastDurableSessionVersion),
         payload: {
           commandId: "server-state-sync",
           sequence: targetRecord.queue.nextSequence,
@@ -112,12 +120,10 @@ export function handleRegistrySessionEvent(input: {
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });
 
-  record.lastDurableSessionVersion = readStreamHeadPosition(
-    input.streams.getHeadOffset(sessionEventsStreamId(record.sessionId)),
-  );
   if (!didDurableRuntimeStateChange(previousDurableRuntimeState, record)) {
     return;
   }
+  record.lastDurableSessionVersion += 1;
   persistDurableRuntimeDomainState({
     record,
     updatedAt: input.now,
@@ -159,20 +165,29 @@ function didDurableRuntimeStateChange(
   );
 }
 
-function readStreamHeadPosition(offset: string): number {
-  const [, rawPosition = "0"] = offset.split("_");
-  const parsed = Number.parseInt(rawPosition, 10);
-  return Number.isSafeInteger(parsed) ? parsed : 0;
-}
-
 function getAgentSessionEventRetentionKey(event: AgentSessionEvent): string | undefined {
-  if (event.type === "message_update" && event.message.role === "assistant") {
+  const replaceKey = readAgentSessionEventReplaceKey(event);
+  if (replaceKey === "agent_session_event:message_update:assistant") {
     return "assistant-message-update";
   }
 
-  if (event.type === "tool_execution_update") {
-    return `tool-execution-update:${event.toolCallId}`;
+  if (
+    replaceKey !== undefined &&
+    replaceKey.startsWith("agent_session_event:tool_execution_update:")
+  ) {
+    return replaceKey
+      .replace("agent_session_event:", "")
+      .replace("tool_execution_update:", "tool-execution-update:");
   }
 
   return undefined;
+}
+
+function isLiveOnlyAgentSessionEvent(event: AgentSessionEvent): boolean {
+  return (
+    (event.type === "message_update" && event.message.role === "assistant") ||
+    event.type === "tool_execution_start" ||
+    event.type === "tool_execution_update" ||
+    event.type === "tool_execution_end"
+  );
 }

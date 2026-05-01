@@ -68,6 +68,13 @@ export function createSessionRecord(input: {
     followUpMode: "all",
     transcript: [],
     queue: createInitialQueue(),
+    live: {
+      queuedSteeringMessages: [],
+      queuedFollowUpMessages: [],
+      retryAttempt: 0,
+      streamingMessage: undefined,
+      activeToolExecutions: new Map(),
+    },
     retry: createIdleTaskState(),
     compaction: createIdleTaskState(),
     activeRun: null,
@@ -174,7 +181,7 @@ function readRuntimeCwd(runtime: AgentSessionRuntime): string | undefined {
   if (typeof sessionCwd === "string" && sessionCwd.length > 0) {
     return sessionCwd;
   }
-  if ("cwd" in runtime && typeof runtime.cwd === "string" && runtime.cwd.length > 0) {
+  if (runtime.cwd.length > 0) {
     return runtime.cwd;
   }
   return undefined;

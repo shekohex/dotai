@@ -1,8 +1,12 @@
+import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import type { AssistantMessageEvent } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
+import { JsonValueSchema } from "./json-schema.js";
 import {
   BashResultSchema,
   CommandKindSchema,
   ContextUsageSchema,
+  ExtensionUiRequestEventPayloadSchema,
   PresenceSchema,
   RemoteExtensionMetadataSchema,
   RemoteResourceBundleSchema,
@@ -12,19 +16,23 @@ import {
   SessionStatsSchema,
   SessionStatusSchema,
   SessionSnapshotSchema,
+  FollowUpCommandRequestSchema,
+  InterruptCommandRequestSchema,
+  PromptCommandRequestSchema,
+  SessionNameUpdateRequestSchema,
+  SteerCommandRequestSchema,
+  ActiveToolsUpdateRequestSchema,
+  ModelUpdateRequestSchema,
+  SettingsUpdateRequestSchema,
   UiResponseRequestSchema,
 } from "./schemas-core.js";
 import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
-
-const WorkingIndicatorOptionsSchema = Type.Object({
-  frames: Type.Optional(Type.Array(Type.String())),
-  intervalMs: Type.Optional(Type.Number()),
-});
 
 const StreamEventCommonProperties = {
   eventId: Type.String(),
   sessionId: Type.Union([Type.String(), Type.Null()]),
   streamOffset: Type.String(),
+  sessionVersion: Type.Optional(Type.String()),
   ts: Type.Number(),
 };
 
@@ -58,12 +66,127 @@ const ServerNoticeEventPayloadSchema = Type.Object({
   message: Type.String(),
 });
 
-const AgentSessionEventPayloadSchema = Type.Object(
-  {
-    type: Type.String(),
-  },
-  { additionalProperties: true },
+const RuntimeAssistantMessageSchema = Type.Object({
+  role: Type.Literal("assistant"),
+  content: Type.Array(
+    Type.Union([
+      Type.Object({
+        type: Type.Literal("text"),
+        text: Type.String(),
+        textSignature: Type.Optional(Type.String()),
+      }),
+      Type.Object({
+        type: Type.Literal("thinking"),
+        thinking: Type.String(),
+        thinkingSignature: Type.Optional(Type.String()),
+        redacted: Type.Optional(Type.Boolean()),
+      }),
+      Type.Object({
+        type: Type.Literal("toolCall"),
+        id: Type.String(),
+        name: Type.String(),
+        arguments: Type.Record(Type.String(), JsonValueSchema),
+        thoughtSignature: Type.Optional(Type.String()),
+      }),
+    ]),
+  ),
+  api: Type.String(),
+  provider: Type.String(),
+  model: Type.String(),
+  responseId: Type.Optional(Type.String()),
+  usage: Type.Object({
+    input: Type.Number(),
+    output: Type.Number(),
+    cacheRead: Type.Number(),
+    cacheWrite: Type.Number(),
+    totalTokens: Type.Number(),
+    cost: Type.Object({
+      input: Type.Number(),
+      output: Type.Number(),
+      cacheRead: Type.Number(),
+      cacheWrite: Type.Number(),
+      total: Type.Number(),
+    }),
+  }),
+  stopReason: Type.Union([
+    Type.Literal("stop"),
+    Type.Literal("length"),
+    Type.Literal("toolUse"),
+    Type.Literal("error"),
+    Type.Literal("aborted"),
+  ]),
+  errorMessage: Type.Optional(Type.String()),
+  timestamp: Type.Number(),
+});
+
+const AssistantMessageEventPayloadSchema = Type.Unsafe<AssistantMessageEvent>(
+  Type.Object(
+    {
+      type: Type.String(),
+    },
+    { additionalProperties: true },
+  ),
 );
+
+const AgentSessionEventPayloadSchema = Type.Unsafe<AgentSessionEvent>(
+  Type.Object(
+    {
+      type: Type.String(),
+    },
+    { additionalProperties: true },
+  ),
+);
+
+const AssistantMessageSyncPatchPayloadSchema = Type.Object({
+  type: Type.Literal("message_update"),
+  message: RuntimeAssistantMessageSchema,
+  assistantMessageEvent: AssistantMessageEventPayloadSchema,
+});
+
+const ToolExecutionSyncPatchPayloadSchema = Type.Union([
+  Type.Object({
+    type: Type.Literal("tool_execution_start"),
+    toolCallId: Type.String(),
+    toolName: Type.String(),
+    args: JsonValueSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("tool_execution_update"),
+    toolCallId: Type.String(),
+    toolName: Type.String(),
+    args: JsonValueSchema,
+    partialResult: JsonValueSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("tool_execution_end"),
+    toolCallId: Type.String(),
+    toolName: Type.String(),
+    result: JsonValueSchema,
+    isError: Type.Boolean(),
+  }),
+]);
+
+const QueueUpdateSyncPatchPayloadSchema = Type.Object({
+  type: Type.Literal("queue_update"),
+  steering: Type.Array(Type.String()),
+  followUp: Type.Array(Type.String()),
+});
+
+const RetryStatusSyncPatchPayloadSchema = Type.Union([
+  Type.Object({
+    type: Type.Literal("auto_retry_start"),
+    attempt: Type.Number(),
+    maxAttempts: Type.Number(),
+    delayMs: Type.Number(),
+    errorMessage: Type.String(),
+  }),
+  Type.Object({
+    type: Type.Literal("auto_retry_end"),
+    success: Type.Boolean(),
+    attempt: Type.Number(),
+    finalError: Type.Optional(Type.String()),
+  }),
+]);
 
 const ExtensionEventPayloadSchema = Type.Object(
   {
@@ -78,7 +201,16 @@ const CommandAcceptedEventPayloadSchema = Type.Object({
   clientId: Type.String(),
   requestId: Type.Union([Type.String(), Type.Null()]),
   kind: CommandKindSchema,
-  payload: Type.Unknown(),
+  payload: Type.Union([
+    PromptCommandRequestSchema,
+    SteerCommandRequestSchema,
+    FollowUpCommandRequestSchema,
+    InterruptCommandRequestSchema,
+    ActiveToolsUpdateRequestSchema,
+    ModelUpdateRequestSchema,
+    SessionNameUpdateRequestSchema,
+    SettingsUpdateRequestSchema,
+  ]),
   acceptedAt: Type.Number(),
   sequence: Type.Number(),
 });
@@ -110,89 +242,6 @@ const SessionStatePatchEventPayloadSchema = Type.Object({
     { minProperties: 1 },
   ),
 });
-
-export const ExtensionUiRequestEventPayloadSchema = Type.Union([
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("select"),
-    title: Type.String(),
-    options: Type.Array(Type.String()),
-    timeout: Type.Optional(Type.Number()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("confirm"),
-    title: Type.String(),
-    message: Type.String(),
-    timeout: Type.Optional(Type.Number()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("input"),
-    title: Type.String(),
-    placeholder: Type.Optional(Type.String()),
-    timeout: Type.Optional(Type.Number()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("editor"),
-    title: Type.String(),
-    prefill: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("notify"),
-    message: Type.String(),
-    notifyType: Type.Optional(
-      Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
-    ),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setStatus"),
-    statusKey: Type.String(),
-    statusText: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setWorkingMessage"),
-    message: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setWorkingIndicator"),
-    options: Type.Optional(WorkingIndicatorOptionsSchema),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setHiddenThinkingLabel"),
-    label: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setWidget"),
-    widgetKey: Type.String(),
-    widgetLines: Type.Optional(Type.Array(Type.String())),
-    widgetPlacement: Type.Optional(
-      Type.Union([Type.Literal("aboveEditor"), Type.Literal("belowEditor")]),
-    ),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setTitle"),
-    title: Type.String(),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("setToolsExpanded"),
-    expanded: Type.Boolean(),
-  }),
-  Type.Object({
-    id: Type.String({ minLength: 1 }),
-    method: Type.Literal("set_editor_text"),
-    text: Type.String(),
-  }),
-]);
 
 export const ExtensionUiResolvedEventPayloadSchema = Type.Object({
   id: Type.String({ minLength: 1 }),
@@ -338,16 +387,6 @@ export const StreamEventEnvelopeSchema = Type.Union([
   }),
 ]);
 
-export const StreamReadResponseSchema = Type.Object({
-  streamId: Type.String(),
-  fromOffset: Type.Union([Type.String(), Type.Null()]),
-  nextOffset: Type.String(),
-  streamCursor: Type.Optional(Type.String()),
-  upToDate: Type.Boolean(),
-  streamClosed: Type.Boolean(),
-  events: Type.Array(StreamEventEnvelopeSchema),
-});
-
 export const SessionSyncConnectedEventSchema = Type.Object({
   type: Type.Literal("server.connected"),
   sessionId: Type.String(),
@@ -360,11 +399,79 @@ export const SessionSyncSnapshotEventSchema = Type.Object({
   snapshot: SessionSnapshotSchema,
 });
 
+export const SessionSyncPatchPayloadSchema = Type.Union([
+  Type.Object({
+    patchType: Type.Literal("session.state"),
+    payload: SessionStatePatchEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("assistant.message"),
+    payload: AssistantMessageSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("tool.execution"),
+    payload: ToolExecutionSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("queue.update"),
+    payload: QueueUpdateSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("retry.status"),
+    payload: RetryStatusSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("agent.event"),
+    eventType: Type.String(),
+    payload: AgentSessionEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("extension.custom"),
+    payload: RemoteCustomExtensionEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("extension.event"),
+    payload: ExtensionEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("extension.ui.request"),
+    payload: ExtensionUiRequestEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("extension.ui.resolved"),
+    payload: ExtensionUiResolvedEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("command.accepted"),
+    payload: CommandAcceptedEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("bash.start"),
+    payload: BashStartEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("bash.chunk"),
+    payload: BashChunkEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("bash.end"),
+    payload: BashEndEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("bash.flush"),
+    payload: BashFlushEventPayloadSchema,
+  }),
+  Type.Object({
+    patchType: Type.Literal("extension.error"),
+    payload: ExtensionErrorEventPayloadSchema,
+  }),
+]);
+
 export const SessionSyncPatchEventSchema = Type.Object({
   type: Type.Literal("patch"),
   sessionId: Type.String(),
   version: Type.String(),
-  event: StreamEventEnvelopeSchema,
+  patch: SessionSyncPatchPayloadSchema,
 });
 
 export const SessionSyncEventSchema = Type.Union([

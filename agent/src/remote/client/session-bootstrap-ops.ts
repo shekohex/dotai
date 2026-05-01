@@ -9,15 +9,11 @@ import {
   type RemoteSettingsSnapshot,
   type SessionSnapshot,
 } from "../schemas.js";
+import { fromTransportTranscript } from "../transcript-transport.js";
 import { assertType } from "../typebox.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
 import { cloneModel, createFallbackModel } from "./session-models.js";
-import {
-  normalizeTranscript,
-  parseModelRef,
-  readPendingToolCallId,
-  resolveOptionalThinkingLevel,
-} from "./session-shared.js";
+import { parseModelRef, resolveOptionalThinkingLevel } from "./session-shared.js";
 import { initializeMirroredSessionManager } from "./session-manager-mirror.js";
 
 export type RemoteAgentSettings = Exclude<
@@ -35,6 +31,17 @@ void remoteSettingsTypeParity;
 
 type SessionStatsPayload = Omit<SessionStats, "sessionFile"> & { sessionFile?: string };
 
+function readSnapshotLiveState(snapshot: SessionSnapshot): SessionSnapshot["live"] {
+  return (
+    snapshot.live ?? {
+      queuedSteeringMessages: [],
+      queuedFollowUpMessages: [],
+      retryAttempt: 0,
+      activeToolExecutions: [],
+    }
+  );
+}
+
 export function createInitialRemoteSessionState(input: {
   snapshot: SessionSnapshot;
   model: Model<Api> | undefined;
@@ -48,22 +55,24 @@ export function createInitialRemoteSessionState(input: {
   sessionStats: SessionStats;
   contextUsage: ContextUsage | undefined;
   usageCost: number;
+  streamingMessage?: AgentMessage;
   errorMessage?: string;
 } {
   const sessionStats = cloneSessionStats(input.snapshot.sessionStats);
+  const liveState = readSnapshotLiveState(input.snapshot);
   return {
-    messages: normalizeTranscript(input.snapshot.transcript),
-    pendingToolCalls: new Set(
-      input.snapshot.pendingToolCalls
-        .map((call) => readPendingToolCallId(call))
-        .filter((value): value is string => value !== undefined),
-    ),
+    messages: fromTransportTranscript(input.snapshot.transcript),
+    pendingToolCalls: new Set(input.snapshot.pendingToolCalls),
     isStreaming: input.snapshot.streamingState === "streaming",
     model: input.model,
     thinkingLevel: input.thinkingLevel,
     sessionStats,
     contextUsage: sessionStats.contextUsage ?? input.snapshot.contextUsage,
     usageCost: sessionStats.cost,
+    streamingMessage:
+      liveState.streamingMessage === undefined
+        ? undefined
+        : fromTransportTranscript([liveState.streamingMessage])[0],
     errorMessage: input.snapshot.errorMessage ?? undefined,
   };
 }

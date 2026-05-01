@@ -30,7 +30,6 @@ export function enqueueRemoteSessionMutation(input: {
 export function handleRemoteSessionErrorMessage(input: {
   message: string;
   uiContext: ExtensionUIContext | undefined;
-  isAgentMessageLike: (value: unknown) => value is AgentMessage;
   applyAgentSessionEvent: (event: {
     type: "message_start" | "message_end";
     message: AgentMessage;
@@ -38,7 +37,7 @@ export function handleRemoteSessionErrorMessage(input: {
 }): void {
   input.uiContext?.notify(input.message, "error");
 
-  const messageCandidate: unknown = {
+  const messageCandidate: Extract<AgentMessage, { role: "custom" }> = {
     role: "custom",
     customType: "remote_error",
     content: input.message,
@@ -46,12 +45,11 @@ export function handleRemoteSessionErrorMessage(input: {
     details: {
       source: "remote",
     },
+    timestamp: Date.now(),
   };
 
-  if (input.isAgentMessageLike(messageCandidate)) {
-    input.applyAgentSessionEvent({ type: "message_start", message: messageCandidate });
-    input.applyAgentSessionEvent({ type: "message_end", message: messageCandidate });
-  }
+  input.applyAgentSessionEvent({ type: "message_start", message: messageCandidate });
+  input.applyAgentSessionEvent({ type: "message_end", message: messageCandidate });
 }
 
 export function emitRemoteSessionAgentEvent(input: {
@@ -102,7 +100,6 @@ export function handleRemoteSessionErrorBridge(input: {
   message: string;
   setErrorMessage: (message: string) => void;
   uiContext: ExtensionUIContext | undefined;
-  isAgentMessageLike: (value: unknown) => value is AgentMessage;
   applyAgentSessionEvent: (event: {
     type: "message_start" | "message_end";
     message: AgentMessage;
@@ -112,7 +109,6 @@ export function handleRemoteSessionErrorBridge(input: {
   handleRemoteSessionErrorMessage({
     message: input.message,
     uiContext: input.uiContext,
-    isAgentMessageLike: input.isAgentMessageLike,
     applyAgentSessionEvent: input.applyAgentSessionEvent,
   });
 }

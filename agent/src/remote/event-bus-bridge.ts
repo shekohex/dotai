@@ -1,13 +1,27 @@
 import type { ResourceLoader } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { asRecord } from "../utils/unknown-data.js";
+import { JsonValueSchema, type JsonValue } from "./json-schema.js";
+import { readHiddenProperty, writeHiddenProperty } from "./runtime-api/capabilities.js";
+import { assertType } from "./typebox.js";
 
 export const RemoteCustomExtensionEventPayloadSchema = Type.Object(
   {
     channel: Type.String({ minLength: 1 }),
-    data: Type.Unknown(),
+    data: JsonValueSchema,
   },
   { additionalProperties: false },
+);
+
+const RemoteExtensionSyncMetadataSchema = Type.Object(
+  {
+    sync: Type.Optional(
+      Type.Union([Type.Literal("ephemeral"), Type.Literal("replaceable"), Type.Literal("durable")]),
+    ),
+    replaceKey: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: true },
 );
 
 type EventBusLike = {
@@ -19,36 +33,20 @@ type EventBusWithLocalEmit = EventBusLike & {
   emitLocalOnly: (channel: string, data: unknown) => void;
 };
 
-type ResourceLoaderWithOptionalEventBus = ResourceLoader & {
-  eventBus?: unknown;
-};
-
 function isEventBusLike(value: unknown): value is EventBusLike {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    "emit" in value &&
-    typeof value.emit === "function" &&
-    "on" in value &&
-    typeof value.on === "function"
-  );
+  const record = asRecord(value);
+  return hasEventBusMethod(record, "emit") && hasEventBusMethod(record, "on");
 }
 
-function isResourceLoaderWithOptionalEventBus(
-  value: ResourceLoader,
-): value is ResourceLoaderWithOptionalEventBus {
-  return "eventBus" in value;
+function readHiddenResourceLoaderEventBusCandidate(resourceLoader: ResourceLoader): unknown {
+  return readHiddenProperty(resourceLoader, "eventBus");
 }
 
 export function readResourceLoaderEventBus(
   resourceLoader: ResourceLoader,
 ): EventBusLike | undefined {
-  if (!isResourceLoaderWithOptionalEventBus(resourceLoader)) {
-    return undefined;
-  }
-
-  return isEventBusLike(resourceLoader.eventBus) ? resourceLoader.eventBus : undefined;
+  const eventBusCandidate = readHiddenResourceLoaderEventBusCandidate(resourceLoader);
+  return isEventBusLike(eventBusCandidate) ? eventBusCandidate : undefined;
 }
 
 export function requireResourceLoaderEventBus(
@@ -60,7 +58,6 @@ export function requireResourceLoaderEventBus(
     return eventBus;
   }
 
-  // Upstream ResourceLoader public type hides this bus, but pi.events depends on it at runtime.
   throw new Error(
     `${location}: ResourceLoader event bus unavailable. Upstream ResourceLoader shape changed or non-DefaultResourceLoader omitted hidden eventBus.`,
   );
@@ -69,15 +66,8 @@ export function requireResourceLoaderEventBus(
 export function setResourceLoaderEventBus(
   resourceLoader: ResourceLoader,
   eventBus: EventBusLike,
-  location: string,
 ): void {
-  if (!isResourceLoaderWithOptionalEventBus(resourceLoader)) {
-    throw new Error(
-      `${location}: ResourceLoader event bus unavailable. Upstream ResourceLoader shape changed or non-DefaultResourceLoader omitted hidden eventBus.`,
-    );
-  }
-
-  resourceLoader.eventBus = eventBus;
+  writeHiddenProperty(resourceLoader, "eventBus", eventBus);
 }
 
 export function createForwardingEventBus(input: {
@@ -102,11 +92,8 @@ export function emitResourceLoaderEventLocally(
   data: unknown,
   location: string,
 ): void {
-  const eventBus = requireResourceLoaderEventBus(resourceLoader, location) as EventBusLike & {
-    emitLocalOnly?: (nextChannel: string, nextData: unknown) => void;
-  };
-
-  if (typeof eventBus.emitLocalOnly === "function") {
+  const eventBus = requireResourceLoaderEventBus(resourceLoader, location);
+  if (isEventBusWithLocalEmit(eventBus)) {
     eventBus.emitLocalOnly(channel, data);
     return;
   }
@@ -114,12 +101,53 @@ export function emitResourceLoaderEventLocally(
   eventBus.emit(channel, data);
 }
 
+function isEventBusWithLocalEmit(value: EventBusLike): value is EventBusWithLocalEmit {
+  return hasEventBusMethod(asRecord(value), "emitLocalOnly");
+}
+
+function hasEventBusMethod(
+  value: Record<string, unknown> | undefined,
+  propertyName: string,
+): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const propertyValue = value[propertyName];
+  return typeof propertyValue === "function";
+}
+
 export function parseRemoteCustomExtensionEventPayload(
   value: unknown,
-): { channel: string; data: unknown } | undefined {
+): { channel: string; data: JsonValue } | undefined {
   if (!Value.Check(RemoteCustomExtensionEventPayloadSchema, value)) {
     return undefined;
   }
 
-  return Value.Parse(RemoteCustomExtensionEventPayloadSchema, value);
+  assertType(RemoteCustomExtensionEventPayloadSchema, value);
+  return value;
+}
+
+export function parseRemoteExtensionSyncMetadata(value: unknown): {
+  sync: "ephemeral" | "replaceable" | "durable" | undefined;
+  replaceKey: string | undefined;
+} {
+  if (Value.Check(RemoteExtensionSyncMetadataSchema, value)) {
+    const metadata = Value.Parse(RemoteExtensionSyncMetadataSchema, value);
+    return {
+      sync: metadata.sync,
+      replaceKey: metadata.replaceKey,
+    };
+  }
+
+  return { sync: undefined, replaceKey: undefined };
+}
+
+export function readRemoteExtensionStateKey(channel: string, data: unknown): string {
+  const metadata = parseRemoteExtensionSyncMetadata(data);
+  if (metadata.replaceKey === undefined) {
+    return channel;
+  }
+
+  return `${channel}:${metadata.replaceKey}`;
 }

@@ -33,6 +33,7 @@ import {
   dispatchRuntimeCommandWithStreams,
   emitSessionSummaryUpdatedEvent,
   ensurePromptPreflight,
+  getCommittedSessionHistory,
   getRequiredSessionRecord,
   getRuntimeSessionFromRecord,
   handleRegistrySessionEvent,
@@ -42,7 +43,6 @@ import {
   parseResourceLoaderExtensionMetadata,
   parseRuntimeExtensionMetadata,
   parseThinkingLevelFromAllowedSet,
-  restoreMirroredRemoteDurableExtensionEvents,
   restoreDurableRuntimeDomainState,
   pruneExpiredSessionPresence,
   requireRuntimeSessionFromRecord,
@@ -50,10 +50,12 @@ import {
   toSessionSnapshotRecord,
   type AcceptCommandHooks,
   type AcceptedSessionCommand,
+  type CommittedSessionHistory,
   type SessionRecord,
   type SessionRegistryOptions,
   type ThinkingLevel,
 } from "./deps.js";
+import type { AcceptedSessionCommandPayload } from "./types.js";
 import type { ClientCapabilities, ConnectionCapabilitiesResponse } from "../schemas.js";
 import {
   readConnectionCapabilitiesForSessions,
@@ -112,33 +114,59 @@ export abstract class SessionRegistryBase {
     });
   }
 
-  protected acceptCommand<TPayload>(
+  protected acceptCommand(
     record: SessionRecord,
     client: AuthSession,
     connectionId: string | undefined,
     kind: CommandKind,
-    payload: TPayload & { requestId?: string },
+    payload: AcceptedSessionCommandPayload,
     hooksOrOnAccepted:
       | AcceptCommandHooks
       | ((accepted: AcceptedSessionCommand) => Promise<void> | void),
   ): Promise<CommandAcceptedResponse> {
-    return acceptSessionCommandWithStreams({
+    const base = {
       streams: this.streams,
       record,
       client,
       connectionId,
-      kind,
-      payload,
       hooksOrOnAccepted,
       createCommandId: () => randomUUID(),
       now: this.now,
-      touchPresence: (targetSessionId, targetClient, targetConnectionId) => {
+      touchPresence: (
+        targetSessionId: string,
+        targetClient: AuthSession,
+        targetConnectionId?: string,
+      ) => {
         this.touchPresence(targetSessionId, targetClient, targetConnectionId);
       },
-      syncFromRuntime: (targetRecord, options) => {
+      syncFromRuntime: (
+        targetRecord: SessionRecord,
+        options: { now: number; updateTimestamp: boolean },
+      ) => {
         this.syncFromRuntime(targetRecord, options);
       },
-    });
+    };
+
+    switch (kind) {
+      case "prompt":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "steer":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "follow-up":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "interrupt":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "active-tools":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "model":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "session-name":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+      case "settings":
+        return acceptSessionCommandWithStreams({ ...base, kind, payload });
+    }
+
+    throw new Error("Unsupported command kind");
   }
 
   protected createRemoteUiContext(record: SessionRecord): ExtensionUIContext {
@@ -343,10 +371,6 @@ export abstract class SessionRegistryBase {
           flushPersistedSessionManager: false,
         });
         restoreDurableRuntimeDomainState(record, loadedAt);
-        restoreMirroredRemoteDurableExtensionEvents({
-          streams: this.streams,
-          record,
-        });
         this.streams.seedHeadOffset(
           sessionEventsStreamId(record.sessionId),
           record.lastDurableSessionVersion,
@@ -359,6 +383,27 @@ export abstract class SessionRegistryBase {
         throw error;
       }
     });
+  }
+
+  loadCommittedSessionHistory(
+    sessionId: string,
+    client: AuthSession,
+    connectionId?: string,
+    options?: { entriesLimit?: number; entriesOffset?: number },
+  ): Promise<CommittedSessionHistory> {
+    return Promise.resolve(
+      getCommittedSessionHistory({
+        sessionId,
+        client,
+        connectionId,
+        options,
+        catalog: this.catalog,
+        loadedRecord: this.getLoadedSessions().get(sessionId),
+        touchPresence: (targetSessionId, targetClient, targetConnectionId) => {
+          this.touchPresence(targetSessionId, targetClient, targetConnectionId);
+        },
+      }),
+    );
   }
 
   protected pruneExpiredPresence(record: SessionRecord, now: number): void {

@@ -12,6 +12,7 @@ import {
   ForkSessionResponseSchema,
   NavigateTreeResponseSchema,
   SessionDeletedResponseSchema,
+  SessionEntriesResponseSchema,
   SessionForkMessagesResponseSchema,
   SessionSummarySchema,
   ToolDefinitionMetadataSchema,
@@ -32,7 +33,9 @@ import type {
   NavigateTreeRequest,
   UiResponseRequest,
 } from "../schemas.js";
+import { toTransportTranscript } from "../transcript-transport.js";
 import { jsonWithSchema } from "../typebox.js";
+import { toJsonValue } from "../json-value.js";
 import {
   connectionHeader,
   getConnectionId,
@@ -123,7 +126,6 @@ export function handleSessionSnapshot(
   c: HonoContext,
   dependencies: RemoteRoutesDependencies,
   sessionId: string,
-  options?: { entriesLimit?: number; entriesOffset?: number },
 ): Promise<Response> {
   return withAuthError(c, async () => {
     const connectionId = getConnectionId(c);
@@ -131,12 +133,39 @@ export function handleSessionSnapshot(
       sessionId,
       c.get("auth"),
       connectionId,
-      {
-        entriesLimit: options?.entriesLimit,
-        entriesOffset: options?.entriesOffset,
-      },
     );
     return jsonWithSchema(c, SessionSnapshotSchema, snapshot, 200, connectionHeader(connectionId));
+  });
+}
+
+export function handleSessionEntries(
+  c: HonoContext,
+  dependencies: RemoteRoutesDependencies,
+  sessionId: string,
+  options?: { entriesLimit?: number; entriesOffset?: number },
+): Promise<Response> {
+  return withAuthError(c, async () => {
+    const connectionId = getConnectionId(c);
+    const history = await dependencies.sessions.loadCommittedSessionHistory(
+      sessionId,
+      c.get("auth"),
+      connectionId,
+      options,
+    );
+    return jsonWithSchema(
+      c,
+      SessionEntriesResponseSchema,
+      {
+        entries: history.entries,
+        transcript: toTransportTranscript(history.transcript),
+        totalEntries: history.totalEntries,
+        totalTranscriptMessages: history.totalTranscriptMessages,
+        entriesLimit: history.entriesLimit,
+        entriesOffset: history.entriesOffset,
+      },
+      200,
+      connectionHeader(connectionId),
+    );
   });
 }
 
@@ -208,10 +237,15 @@ export function handleSessionTools(
       c.get("auth"),
       connectionId,
     );
+    const transportTools = tools.map((tool) => ({
+      ...tool,
+      parameters: toJsonValue(tool.parameters) ?? null,
+      sourceInfo: toJsonValue(tool.sourceInfo) ?? null,
+    }));
     return jsonWithSchema(
       c,
       SessionToolsResponseSchema,
-      { tools },
+      { tools: transportTools },
       200,
       connectionHeader(connectionId),
     );

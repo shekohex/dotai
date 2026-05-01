@@ -51,6 +51,7 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
           this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
             sessionId: targetRecord.sessionId,
             kind: "session_state_patch",
+            sessionVersion: String(targetRecord.lastDurableSessionVersion),
             payload: {
               commandId: accepted.commandId,
               sequence: accepted.sequence,
@@ -122,6 +123,7 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
         this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
           sessionId: targetRecord.sessionId,
           kind: "bash_flush",
+          sessionVersion: String(targetRecord.lastDurableSessionVersion),
           payload: {
             messages,
           },

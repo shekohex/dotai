@@ -42,6 +42,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         this.streams.append(sessionEventsStreamId(record.sessionId), {
           sessionId: record.sessionId,
           kind: "session_state_patch",
+          sessionVersion: String(record.lastDurableSessionVersion),
           payload: {
             commandId: accepted.commandId,
             sequence: accepted.sequence,
@@ -83,6 +84,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
           sessionId: targetRecord.sessionId,
           kind: "session_state_patch",
+          sessionVersion: String(targetRecord.lastDurableSessionVersion),
           payload: {
             commandId: acceptedCommand.commandId,
             sequence: acceptedCommand.sequence,
@@ -138,6 +140,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
           sessionId: targetRecord.sessionId,
           kind: "session_state_patch",
+          sessionVersion: String(targetRecord.lastDurableSessionVersion),
           payload: {
             commandId: command.commandId,
             sequence: command.sequence,
@@ -187,6 +190,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
           this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
             sessionId: targetRecord.sessionId,
             kind: "session_state_patch",
+            sessionVersion: String(targetRecord.lastDurableSessionVersion),
             payload: {
               commandId: accepted.commandId,
               sequence:
@@ -235,6 +239,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         this.streams.append(sessionEventsStreamId(record.sessionId), {
           sessionId: record.sessionId,
           kind: "extension_ui_resolved",
+          sessionVersion: String(record.lastDurableSessionVersion),
           payload,
           ts: this.now(),
         });

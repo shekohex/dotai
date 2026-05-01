@@ -230,6 +230,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     this.streams.append(sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_start",
+      sessionVersion: String(record.lastDurableSessionVersion),
       payload: {
         executionId,
         command: request.command,
@@ -249,6 +250,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     this.streams.append(sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_chunk",
+      sessionVersion: String(record.lastDurableSessionVersion),
       payload: {
         executionId,
         chunk,
@@ -276,6 +278,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     this.streams.append(sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_end",
+      sessionVersion: String(record.lastDurableSessionVersion),
       payload: {
         executionId,
         clientRequestId: request.clientRequestId,
@@ -291,6 +294,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     this.streams.append(sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "session_state_patch",
+      sessionVersion: String(record.lastDurableSessionVersion),
       payload: {
         commandId: "server-state-sync",
         sequence: record.queue.nextSequence,

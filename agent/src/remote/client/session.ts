@@ -86,7 +86,6 @@ export class RemoteAgentSession
           void client.emitSessionCustomEvent(snapshot.sessionId, { channel, data });
         },
       }),
-      "RemoteAgentSession.create",
     );
     await clientExtensionLoader.reload();
     const resourceLoader = createSessionResourceLoader({

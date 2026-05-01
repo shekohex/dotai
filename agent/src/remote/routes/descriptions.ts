@@ -31,12 +31,12 @@ import {
   SettingsUpdateRequestSchema,
   SessionNameUpdateRequestSchema,
   SessionDeletedResponseSchema,
+  SessionEntriesResponseSchema,
   SessionForkMessagesResponseSchema,
   SessionSummarySchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
   SteerCommandRequestSchema,
-  StreamReadResponseSchema,
   ToolDefinitionMetadataSchema,
   UiResponseRequestSchema,
   UiResponseResponseSchema,
@@ -57,35 +57,6 @@ const connectionIdPathParameter = {
   required: true,
 };
 
-function streamQueryParameters() {
-  return [
-    {
-      in: "query" as const,
-      name: "offset",
-      schema: { type: "string" as const },
-      required: false,
-    },
-    {
-      in: "query" as const,
-      name: "live",
-      schema: { type: "string" as const, enum: ["json", "sse", "long-poll"] },
-      required: false,
-    },
-    {
-      in: "query" as const,
-      name: "timeoutMs",
-      schema: { type: "string" as const },
-      required: false,
-    },
-    {
-      in: "query" as const,
-      name: "cursor",
-      schema: { type: "string" as const },
-      required: false,
-    },
-  ];
-}
-
 function jsonContent(schema: TSchema) {
   return {
     "application/json": {
@@ -105,26 +76,6 @@ function commandAcceptedResponses() {
   return {
     202: jsonResponse("Command accepted", CommandAcceptedResponseSchema),
     404: jsonResponse("Session not found", ErrorResponseSchema),
-  };
-}
-
-function streamResponseDescription() {
-  return {
-    200: {
-      description: "Stream events response",
-      content: {
-        ...jsonContent(StreamReadResponseSchema),
-        "text/event-stream": {
-          schema: {
-            type: "string" as const,
-            description: "SSE stream with data/control events when live=sse",
-          },
-        },
-      },
-    },
-    204: {
-      description: "No new events available",
-    },
   };
 }
 
@@ -209,6 +160,16 @@ export const sessionSnapshotRouteDescription = {
   parameters: [sessionIdPathParameter],
   responses: {
     200: jsonResponse("Session snapshot", SessionSnapshotSchema),
+    404: jsonResponse("Session not found", ErrorResponseSchema),
+  },
+};
+
+export const sessionEntriesRouteDescription = {
+  tags: ["snapshot"],
+  operationId: "getSessionEntries",
+  parameters: [sessionIdPathParameter],
+  responses: {
+    200: jsonResponse("Session entries", SessionEntriesResponseSchema),
     404: jsonResponse("Session not found", ErrorResponseSchema),
   },
 };
@@ -488,18 +449,4 @@ export const recordBashResultRouteDescription = {
     404: jsonResponse("Session not found", ErrorResponseSchema),
     409: jsonResponse("Session cannot record bash result right now", ErrorResponseSchema),
   },
-};
-
-export const readAppEventsStreamRouteDescription = {
-  tags: ["streams"],
-  operationId: "readAppEventsStream",
-  parameters: streamQueryParameters(),
-  responses: streamResponseDescription(),
-};
-
-export const readSessionEventsStreamRouteDescription = {
-  tags: ["streams"],
-  operationId: "readSessionEventsStream",
-  parameters: [sessionIdPathParameter, ...streamQueryParameters()],
-  responses: streamResponseDescription(),
 };

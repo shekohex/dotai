@@ -126,7 +126,7 @@ export abstract class RemoteAgentSessionSetupBase {
   protected readonly listeners = new Set<AgentSessionEventListener>();
   protected readonly client: RemoteApiClient;
   protected readonly sessionId: string;
-  protected streamOffset: string;
+  protected sessionVersion: string;
   protected closed = false;
   protected pollingTask: Promise<void> | undefined;
   protected activeReadAbortController: AbortController | undefined;
@@ -195,7 +195,7 @@ export abstract class RemoteAgentSessionSetupBase {
   ) {
     this.client = client;
     this.sessionId = sessionId;
-    this.streamOffset = snapshot.lastSessionStreamOffset;
+    this.sessionVersion = snapshot.version;
     this.settingsManager = settingsManager;
     this.modelRegistry = modelRegistry;
     this.sessionManager = sessionManager;

@@ -1,4 +1,3 @@
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type {
   ExtensionUiRequestEventPayload,
   ExtensionUiResolvedEventPayload,
@@ -94,13 +93,11 @@ export async function routeRemoteSessionEnvelope(input: {
 }
 
 export function applyAgentSessionEnvelopePayload(input: {
-  payload: unknown;
-  isAgentSessionEventLike: (value: unknown) => value is AgentSessionEvent;
-  applyAgentSessionEvent: (event: AgentSessionEvent) => void;
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"];
+  applyAgentSessionEvent: (
+    event: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+  ) => void;
 }): void {
-  if (!input.isAgentSessionEventLike(input.payload)) {
-    return;
-  }
   input.applyAgentSessionEvent(input.payload);
 }
 

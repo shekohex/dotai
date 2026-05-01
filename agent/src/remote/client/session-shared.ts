@@ -1,6 +1,5 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { RemoteExtensionMetadata } from "../schemas.js";
 import { isRecord } from "../../utils/unknown-data.js";
 
@@ -58,37 +57,6 @@ export function isAgentMessageLike(value: unknown): value is AgentMessage {
     role === "bashExecution" ||
     role === "custom"
   );
-}
-
-export function normalizeTranscript(value: unknown): AgentMessage[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((message): message is AgentMessage => isAgentMessageLike(message));
-}
-
-export function readPendingToolCallId(value: unknown): string | undefined {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  const objectValue = readObject(value);
-  if (!objectValue) {
-    return undefined;
-  }
-
-  const toolCallId = objectValue.toolCallId;
-  if (typeof toolCallId === "string") {
-    return toolCallId;
-  }
-
-  const id = objectValue.id;
-  return typeof id === "string" ? id : undefined;
-}
-
-export function isAgentSessionEventLike(value: unknown): value is AgentSessionEvent {
-  return isRecord(value) && typeof value.type === "string";
 }
 
 export function isRemoteExtensionMetadataLike(value: unknown): value is RemoteExtensionMetadata {

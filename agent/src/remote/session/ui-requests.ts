@@ -56,8 +56,9 @@ function createRemoteUiRequestPromise<T>(
 
     input.signal?.addEventListener("abort", onAbort, { once: true });
     timeoutHandle = startRemoteUiRequestTimeout(id, input.timeout, finish);
-    registerPendingRemoteUiRequest(record, id, finish, environment.now);
-    environment.publishUiEvent(record, buildRemoteUiRequestPayload(id, input));
+    const request = buildRemoteUiRequestPayload(id, input);
+    registerPendingRemoteUiRequest(record, id, request, finish, environment.now);
+    environment.publishUiEvent(record, request);
   });
 }
 
@@ -97,10 +98,11 @@ function startRemoteUiRequestTimeout(
 function registerPendingRemoteUiRequest(
   record: SessionRecord,
   requestId: string,
+  request: ExtensionUiRequestEventPayload,
   finish: (response: UiResponseRequest) => void,
   now: () => number,
 ): void {
-  record.pendingUiRequests.set(requestId, { resolve: finish });
+  record.pendingUiRequests.set(requestId, { resolve: finish, request });
   if (record.activeRun) {
     record.activeRun.pendingUiRequestId = requestId;
     record.activeRun.updatedAt = now();

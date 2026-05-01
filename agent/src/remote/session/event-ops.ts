@@ -1,5 +1,76 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import { toJsonValue } from "../json-value.js";
 import type { SessionRecord } from "./types.js";
+
+function ensureLiveState(record: SessionRecord): SessionRecord["live"] {
+  if (record.live !== undefined) {
+    return record.live;
+  }
+
+  const liveState: SessionRecord["live"] = {
+    queuedSteeringMessages: [],
+    queuedFollowUpMessages: [],
+    retryAttempt: 0,
+    streamingMessage: undefined,
+    activeToolExecutions: new Map(),
+  };
+  record.live = liveState;
+  return liveState;
+}
+
+function applyLiveOverlayEvent(record: SessionRecord, event: AgentSessionEvent): void {
+  const liveState = ensureLiveState(record);
+  switch (event.type) {
+    case "agent_start":
+    case "compaction_end":
+    case "compaction_start":
+    case "turn_end":
+    case "turn_start":
+      break;
+    case "agent_end":
+      liveState.streamingMessage = undefined;
+      liveState.activeToolExecutions.clear();
+      break;
+    case "message_start":
+    case "message_update":
+      if (event.message.role === "assistant") {
+        liveState.streamingMessage = event.message;
+      }
+      break;
+    case "message_end":
+      if (event.message.role === "assistant") {
+        liveState.streamingMessage = undefined;
+      }
+      break;
+    case "tool_execution_start":
+      liveState.activeToolExecutions.set(event.toolCallId, {
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        args: toJsonValue(event.args) ?? null,
+        partialResult: undefined,
+      });
+      break;
+    case "tool_execution_update":
+      liveState.activeToolExecutions.set(event.toolCallId, {
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        args: toJsonValue(event.args) ?? null,
+        partialResult: toJsonValue(event.partialResult) ?? null,
+      });
+      break;
+    case "tool_execution_end":
+      liveState.activeToolExecutions.delete(event.toolCallId);
+      break;
+    case "queue_update":
+      liveState.queuedSteeringMessages = [...event.steering];
+      liveState.queuedFollowUpMessages = [...event.followUp];
+      break;
+    case "auto_retry_start":
+    case "auto_retry_end":
+      liveState.retryAttempt = event.attempt;
+      break;
+  }
+}
 
 function hasContextUsageChange(
   previous: SessionRecord["contextUsage"],
@@ -235,6 +306,7 @@ export function handleSessionEventForRecord(input: {
     now: input.now,
     createRunId: input.createRunId,
   });
+  applyLiveOverlayEvent(input.record, input.event);
 
   const previousCwd = input.record.cwd;
   const previousExtensions = input.record.extensions;

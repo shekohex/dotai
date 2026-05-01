@@ -4,11 +4,10 @@ import type {
   ResourceLoader,
 } from "@mariozechner/pi-coding-agent";
 import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
+import { toJsonValue } from "../json-value.js";
+import { readRemoteExtensionSyncInfo } from "../session-sync-metadata.js";
 import { sessionEventsStreamId, type InMemoryDurableStreamStore } from "../streams.js";
-import {
-  appendDurableExtensionEvent,
-  readDurableExtensionEvents,
-} from "./durable-runtime-state.js";
+import { appendDurableExtensionEvent } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
 
 export type MirroredRemoteExtensionEvent = Extract<
@@ -41,6 +40,7 @@ export function appendMirroredRemoteExtensionEvent(input: {
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_event",
+    sessionVersion: String(input.record.lastDurableSessionVersion),
     payload: input.event,
     ts: input.ts,
   });
@@ -53,25 +53,30 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
   data: unknown;
   ts: number;
 }): void {
-  const syncClass = readRemoteExtensionEventSyncClass(input.data);
-  if (syncClass === "ephemeral") {
+  const jsonData = toJsonValue(input.data);
+  if (jsonData === undefined) {
+    return;
+  }
+  const syncInfo = readRemoteExtensionSyncInfo(input.channel, jsonData);
+  if (syncInfo.sync === "ephemeral") {
     input.streams.appendLiveOnly(sessionEventsStreamId(input.record.sessionId), {
       sessionId: input.record.sessionId,
       kind: "extension_custom_event",
+      sessionVersion: String(input.record.lastDurableSessionVersion),
       payload: {
         channel: input.channel,
-        data: input.data,
+        data: jsonData,
       },
       ts: input.ts,
     });
     return;
   }
 
-  if (syncClass === "durable") {
+  if (syncInfo.sync === "durable") {
     appendDurableExtensionEvent({
       record: input.record,
       channel: input.channel,
-      data: input.data,
+      data: jsonData,
       ts: input.ts,
     });
   }
@@ -79,11 +84,12 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
   input.streams.append(sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_custom_event",
+    sessionVersion: String(input.record.lastDurableSessionVersion),
     payload: {
       channel: input.channel,
-      data: input.data,
+      data: jsonData,
     },
-    retentionKey: readRemoteExtensionRetentionKey(input.channel, input.data, syncClass),
+    retentionKey: syncInfo.retentionKey,
     ts: input.ts,
   });
 }
@@ -128,73 +134,4 @@ export function installRemoteExtensionEventMirror(input: {
       ts: input.now(),
     });
   };
-}
-
-export function restoreMirroredRemoteDurableExtensionEvents(input: {
-  streams: InMemoryDurableStreamStore;
-  record: SessionRecord;
-}): void {
-  for (const event of readDurableExtensionEvents(input.record)) {
-    input.streams.append(sessionEventsStreamId(input.record.sessionId), {
-      sessionId: input.record.sessionId,
-      kind: "extension_custom_event",
-      payload: {
-        channel: event.channel,
-        data: event.data,
-      },
-      retentionKey: readRemoteExtensionRetentionKey(
-        event.channel,
-        event.data,
-        readRemoteExtensionEventSyncClass(event.data),
-      ),
-      ts: event.ts,
-    });
-  }
-}
-
-function readRemoteExtensionEventSyncClass(
-  data: unknown,
-): "ephemeral" | "replaceable" | "durable" | undefined {
-  if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    return undefined;
-  }
-
-  const sync = readStringProperty(data, "sync");
-  if (sync === "ephemeral" || sync === "replaceable" || sync === "durable") {
-    return sync;
-  }
-
-  return undefined;
-}
-
-function readRemoteExtensionRetentionKey(
-  channel: string,
-  data: unknown,
-  syncClass: "ephemeral" | "replaceable" | "durable" | undefined,
-): string | undefined {
-  if (syncClass !== "replaceable") {
-    return undefined;
-  }
-
-  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const replaceKey = readStringProperty(data, "replaceKey");
-    if (replaceKey !== undefined && replaceKey.length > 0) {
-      return `${channel}:${replaceKey}`;
-    }
-  }
-
-  return channel;
-}
-
-function readStringProperty(value: object, propertyName: string): string | undefined {
-  if (!isObjectRecord(value) || !(propertyName in value)) {
-    return undefined;
-  }
-
-  const propertyValue = value[propertyName];
-  return typeof propertyValue === "string" ? propertyValue : undefined;
-}
-
-function isObjectRecord(value: object): value is Record<string, unknown> {
-  return !Array.isArray(value);
 }

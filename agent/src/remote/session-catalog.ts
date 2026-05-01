@@ -497,7 +497,7 @@ function createSummaryFromCatalogRecord(
       loaded: false,
       state: record.lifecycleStatus,
     },
-    lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),
+    version: input.getLastSessionStreamOffset(record.sessionId),
   };
   if (record.firstUserMessage === undefined) {
     return summary;
@@ -529,7 +529,7 @@ function createSummaryFromRuntimeRecord(
       loaded: true,
       state: input.lifecycleStatus,
     },
-    lastSessionStreamOffset: input.getLastSessionStreamOffset(record.sessionId),
+    version: String(record.lastDurableSessionVersion),
   };
   if (firstUserMessage === undefined) {
     return summary;

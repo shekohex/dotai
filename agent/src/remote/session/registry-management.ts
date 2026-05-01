@@ -116,7 +116,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       ensureSessionStream: (targetSessionId) => {
         this.streams.ensureStream(sessionEventsStreamId(targetSessionId));
       },
-      appendSessionCreatedEvent: (targetSessionId, payload, ts) =>
+      appendSessionCreatedEvent: (targetSessionId, payload, ts): { streamOffset: string } =>
         this.streams.append(appEventsStreamId(), {
           sessionId: targetSessionId,
           kind: "session_created",
@@ -189,6 +189,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     this.streams.append(sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "session_state_patch",
+      sessionVersion: String(record.lastDurableSessionVersion),
       payload: {
         commandId: "server-reload",
         sequence: record.queue.nextSequence,

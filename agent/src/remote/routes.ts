@@ -18,12 +18,11 @@ import {
   NavigateTreeRequestSchema,
   PromptCommandRequestSchema,
   SettingsUpdateRequestSchema,
+  SessionEntriesQuerySchema,
   SessionParamsSchema,
-  SessionSnapshotQuerySchema,
   SessionNameUpdateRequestSchema,
   SessionToolParamsSchema,
   SteerCommandRequestSchema,
-  StreamReadQuerySchema,
   UiResponseRequestSchema,
 } from "./schemas.js";
 import { requireAuth } from "./routes/auth.js";
@@ -43,11 +42,10 @@ import {
   navigateTreeRouteDescription,
   promptSessionRouteDescription,
   reloadSessionRouteDescription,
-  readAppEventsStreamRouteDescription,
-  readSessionEventsStreamRouteDescription,
   recordBashResultRouteDescription,
   renameSessionRouteDescription,
   restoreSessionRouteDescription,
+  sessionEntriesRouteDescription,
   sessionSummaryRouteDescription,
   sessionSnapshotRouteDescription,
   sessionSyncRouteDescription,
@@ -81,6 +79,7 @@ import {
   handleNavigateTree,
   handleRecordBashResult,
   handleRestoreSession,
+  handleSessionEntries,
   handleSessionSummary,
   handleSessionForkMessages,
   handleSessionSnapshot,
@@ -102,7 +101,6 @@ import {
   handleUpdateSessionName,
   handleUpdateSessionSettings,
 } from "./routes/handlers-commands.js";
-import { handleAppEventsStreamRead, handleSessionEventsStreamRead } from "./routes/stream-read.js";
 import { handleSessionSync } from "./routes/session-sync.js";
 import { assertType } from "./typebox.js";
 import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./routes/types.js";
@@ -161,11 +159,17 @@ function registerSnapshotRoutes<S extends Schema, BasePath extends string>(
       describeRoute(sessionSnapshotRouteDescription),
       needsAuth,
       tbValidator("param", SessionParamsSchema),
-      tbValidator("query", SessionSnapshotQuerySchema),
+      (c) => handleSessionSnapshot(c, dependencies, c.req.valid("param").sessionId),
+    )
+    .get(
+      "/sessions/:sessionId/entries",
+      describeRoute(sessionEntriesRouteDescription),
+      needsAuth,
+      tbValidator("param", SessionParamsSchema),
+      tbValidator("query", SessionEntriesQuerySchema),
       (c) => {
-        const { sessionId } = c.req.valid("param");
         const query = c.req.valid("query");
-        return handleSessionSnapshot(c, dependencies, sessionId, {
+        return handleSessionEntries(c, dependencies, c.req.valid("param").sessionId, {
           entriesLimit:
             query.entriesLimit === undefined ? undefined : Number.parseInt(query.entriesLimit, 10),
           entriesOffset:
@@ -482,40 +486,21 @@ function registerSessionCommandRoutesC<S extends Schema, BasePath extends string
   );
 }
 
-function registerStreamRoutes<S extends Schema, BasePath extends string>(
+function registerSyncRoutes<S extends Schema, BasePath extends string>(
   app: Hono<RemoteHonoEnv, S, BasePath>,
   dependencies: RemoteRoutesDependencies,
   needsAuth: AuthMiddleware,
 ) {
-  const route15 = app.get(
-    "/streams/app-events",
-    describeRoute(readAppEventsStreamRouteDescription),
+  return app.get(
+    "/sessions/:sessionId/sync",
+    describeRoute(sessionSyncRouteDescription),
     needsAuth,
-    tbValidator("query", StreamReadQuerySchema),
-    (c) => handleAppEventsStreamRead(c, dependencies, c.req.valid("query")),
+    tbValidator("param", SessionParamsSchema),
+    (c) => {
+      const { sessionId } = c.req.valid("param");
+      return handleSessionSync(c, dependencies, sessionId);
+    },
   );
-  return route15
-    .get(
-      "/streams/sessions/:sessionId/events",
-      describeRoute(readSessionEventsStreamRouteDescription),
-      needsAuth,
-      tbValidator("param", SessionParamsSchema),
-      tbValidator("query", StreamReadQuerySchema),
-      (c) => {
-        const { sessionId } = c.req.valid("param");
-        return handleSessionEventsStreamRead(c, dependencies, sessionId, c.req.valid("query"));
-      },
-    )
-    .get(
-      "/sessions/:sessionId/sync",
-      describeRoute(sessionSyncRouteDescription),
-      needsAuth,
-      tbValidator("param", SessionParamsSchema),
-      (c) => {
-        const { sessionId } = c.req.valid("param");
-        return handleSessionSync(c, dependencies, sessionId);
-      },
-    );
 }
 
 export function createV1Routes(dependencies: RemoteRoutesDependencies) {
@@ -546,7 +531,7 @@ export function createV1Routes(dependencies: RemoteRoutesDependencies) {
     dependencies,
     needsAuth,
   );
-  return registerStreamRoutes(withSessionCommandsC, dependencies, needsAuth);
+  return registerSyncRoutes(withSessionCommandsC, dependencies, needsAuth);
 }
 
 export type RemoteV1RoutesApp = ReturnType<typeof createV1Routes>;

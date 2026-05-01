@@ -198,7 +198,7 @@ export const AssistantMessageSyncPatchPayloadSchema = Type.Object({
   assistantMessageEvent: AssistantMessageEventPayloadSchema,
 });
 
-const AgentSessionMessageSchema = Type.Union([
+export const AgentSessionMessageSchema = Type.Union([
   TranscriptMessageTransportSchema,
   RuntimeAssistantMessageSchema,
 ]);
@@ -226,13 +226,13 @@ export const ToolExecutionSyncPatchPayloadSchema = Type.Union([
   }),
 ]);
 
-const QueueUpdateSyncPatchPayloadSchema = Type.Object({
+export const QueueUpdateSyncPatchPayloadSchema = Type.Object({
   type: Type.Literal("queue_update"),
   steering: Type.Array(Type.String()),
   followUp: Type.Array(Type.String()),
 });
 
-const RetryStatusSyncPatchPayloadSchema = Type.Union([
+export const RetryStatusSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("auto_retry_start"),
     attempt: Type.Number(),
@@ -248,7 +248,7 @@ const RetryStatusSyncPatchPayloadSchema = Type.Union([
   }),
 ]);
 
-const CompactionStatusSyncPatchPayloadSchema = Type.Union([
+export const CompactionStatusSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("compaction_start"),
     reason: Type.Union([
@@ -264,8 +264,10 @@ const CompactionStatusSyncPatchPayloadSchema = Type.Union([
       Type.Literal("threshold"),
       Type.Literal("overflow"),
     ]),
+    result: Type.Optional(JsonValueSchema),
     aborted: Type.Boolean(),
     willRetry: Type.Boolean(),
+    errorMessage: Type.Optional(Type.String()),
   }),
 ]);
 
@@ -283,8 +285,8 @@ export const AgentLifecycleEventPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("turn_end"),
     turnIndex: Type.Optional(Type.Number()),
-    message: Type.Unknown(),
-    toolResults: Type.Array(Type.Unknown()),
+    message: AgentSessionMessageSchema,
+    toolResults: Type.Array(TranscriptMessageTransportSchema),
   }),
   Type.Object({
     type: Type.Literal("message_start"),

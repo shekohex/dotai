@@ -32,14 +32,9 @@ function formatOffset(position: number): string {
 export class InMemoryDurableStreamStore {
   private readonly streams = new Map<string, StreamState>();
   private readonly maxRetainedEventsPerStream: number;
-  private readonly liveEventBus: SessionLiveEventBus | undefined;
 
-  constructor(options?: {
-    maxRetainedEventsPerStream?: number;
-    liveEventBus?: SessionLiveEventBus;
-  }) {
+  constructor(options?: { maxRetainedEventsPerStream?: number }) {
     this.maxRetainedEventsPerStream = options?.maxRetainedEventsPerStream ?? 512;
-    this.liveEventBus = options?.liveEventBus;
   }
 
   ensureStream(streamId: string): void {
@@ -71,7 +66,6 @@ export class InMemoryDurableStreamStore {
       stream.retentionKeysByEventId.set(event.eventId, input.retentionKey);
     }
     this.trimRetainedEvents(stream);
-    this.publish(streamId, event);
     return event;
   }
 
@@ -84,12 +78,7 @@ export class InMemoryDurableStreamStore {
       input.ts ?? Date.now(),
       input,
     );
-    this.publish(streamId, event);
     return event;
-  }
-
-  publish(streamId: string, event: StreamEventEnvelope): void {
-    this.emitLiveEvent(streamId, event);
   }
 
   seedHeadOffset(streamId: string, position: number): void {
@@ -131,10 +120,6 @@ export class InMemoryDurableStreamStore {
     for (const removedEvent of removedEvents) {
       stream.retentionKeysByEventId.delete(removedEvent.eventId);
     }
-  }
-
-  private emitLiveEvent(streamId: string, event: StreamEventEnvelope): void {
-    this.liveEventBus?.publish(streamId, event);
   }
 }
 
@@ -214,4 +199,31 @@ export function appEventsStreamId(): string {
 
 export function sessionEventsStreamId(sessionId: string): string {
   return `sessions/${sessionId}/events`;
+}
+
+export function publishLiveEvent(
+  liveEvents: SessionLiveEventBus | undefined,
+  streamId: string,
+  event: StreamEventEnvelope,
+): StreamEventEnvelope {
+  liveEvents?.publish(streamId, event);
+  return event;
+}
+
+export function appendAndPublish(
+  streams: InMemoryDurableStreamStore,
+  liveEvents: SessionLiveEventBus | undefined,
+  streamId: string,
+  input: Parameters<InMemoryDurableStreamStore["append"]>[1],
+): StreamEventEnvelope {
+  return publishLiveEvent(liveEvents, streamId, streams.append(streamId, input));
+}
+
+export function appendLiveOnlyAndPublish(
+  streams: InMemoryDurableStreamStore,
+  liveEvents: SessionLiveEventBus | undefined,
+  streamId: string,
+  input: Parameters<InMemoryDurableStreamStore["appendLiveOnly"]>[1],
+): StreamEventEnvelope {
+  return publishLiveEvent(liveEvents, streamId, streams.appendLiveOnly(streamId, input));
 }

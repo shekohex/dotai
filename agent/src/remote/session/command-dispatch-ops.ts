@@ -1,5 +1,10 @@
-import { sessionEventsStreamId, type InMemoryDurableStreamStore } from "../streams.js";
+import {
+  appendAndPublish,
+  sessionEventsStreamId,
+  type InMemoryDurableStreamStore,
+} from "../streams.js";
 import type { AuthSession } from "../auth.js";
+import type { SessionLiveEventBus } from "../live-events.js";
 import type { CommandAcceptedResponse, CommandKind } from "../schemas.js";
 import { acceptSessionCommand } from "./command-acceptance.js";
 import { dispatchRuntimeCommand } from "./runtime-command.js";
@@ -13,6 +18,7 @@ import type {
 type AcceptSessionCommandWithStreamsInput = {
   [TKind in CommandKind]: {
     streams: InMemoryDurableStreamStore;
+    liveEvents?: SessionLiveEventBus;
     record: SessionRecord;
     client: AuthSession;
     connectionId: string | undefined;
@@ -47,13 +53,18 @@ export function acceptSessionCommandWithStreams(
       accepted: AcceptedSessionCommand,
       acceptedAt: number,
     ) => {
-      input.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-        sessionId: targetRecord.sessionId,
-        kind: "command_accepted",
-        sessionVersion: String(targetRecord.lastDurableSessionVersion),
-        payload: toCommandAcceptedEventPayload(accepted),
-        ts: acceptedAt,
-      });
+      appendAndPublish(
+        input.streams,
+        input.liveEvents,
+        sessionEventsStreamId(targetRecord.sessionId),
+        {
+          sessionId: targetRecord.sessionId,
+          kind: "command_accepted",
+          sessionVersion: String(targetRecord.lastDurableSessionVersion),
+          payload: toCommandAcceptedEventPayload(accepted),
+          ts: acceptedAt,
+        },
+      );
     },
     syncFromRuntime: input.syncFromRuntime,
   };
@@ -182,6 +193,7 @@ function toCommandAcceptedEventPayload(
 
 export function dispatchRuntimeCommandWithStreams(input: {
   streams: InMemoryDurableStreamStore;
+  liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   command: AcceptedSessionCommand;
   operation: () => Promise<void>;
@@ -198,17 +210,22 @@ export function dispatchRuntimeCommandWithStreams(input: {
     getRuntimeSession: input.getRuntimeSession,
     now: input.now,
     appendExtensionError: (targetRecord, acceptedCommand, message) => {
-      input.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-        sessionId: targetRecord.sessionId,
-        kind: "extension_error",
-        sessionVersion: String(targetRecord.lastDurableSessionVersion),
-        payload: {
-          commandId: acceptedCommand.commandId,
-          kind: acceptedCommand.kind,
-          error: message,
+      appendAndPublish(
+        input.streams,
+        input.liveEvents,
+        sessionEventsStreamId(targetRecord.sessionId),
+        {
+          sessionId: targetRecord.sessionId,
+          kind: "extension_error",
+          sessionVersion: String(targetRecord.lastDurableSessionVersion),
+          payload: {
+            commandId: acceptedCommand.commandId,
+            kind: acceptedCommand.kind,
+            error: message,
+          },
+          ts: targetRecord.updatedAt,
         },
-        ts: targetRecord.updatedAt,
-      });
+      );
     },
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });

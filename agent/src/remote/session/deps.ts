@@ -74,6 +74,7 @@ export {
 export type {
   AcceptCommandHooks,
   AcceptedSessionCommand,
+  AcceptedSessionCommandPayload,
   RemoteUiInputHandlers,
   RemoteUiStatusHandlers,
   SessionRecord,

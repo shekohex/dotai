@@ -8,12 +8,15 @@ import type {
 import { createRemoteUiContext as createRemoteUiContextForSession } from "./ui-context.js";
 import type { AuthSession } from "../auth.js";
 import { RemoteError } from "../errors.js";
+import { SessionLiveEventBus } from "../live-events.js";
 import { LoadedRuntimeRegistry } from "../loaded-runtime-registry.js";
 import { flushPersistedSessionManagerToDisk } from "../session-manager-storage.js";
 import { SessionCatalog } from "../session-catalog.js";
 import type {
   CommandAcceptedResponse,
+  ClientCapabilities,
   CommandKind,
+  ConnectionCapabilitiesResponse,
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
   SessionSnapshot,
@@ -50,13 +53,12 @@ import {
   toSessionSnapshotRecord,
   type AcceptCommandHooks,
   type AcceptedSessionCommand,
+  type AcceptedSessionCommandPayload,
   type CommittedSessionHistory,
   type SessionRecord,
   type SessionRegistryOptions,
   type ThinkingLevel,
 } from "./deps.js";
-import type { AcceptedSessionCommandPayload } from "./types.js";
-import type { ClientCapabilities, ConnectionCapabilitiesResponse } from "../schemas.js";
 import {
   readConnectionCapabilitiesForSessions,
   setConnectionCapabilitiesForSessions,
@@ -74,6 +76,7 @@ export abstract class SessionRegistryBase {
     }
   >();
   protected readonly streams: InMemoryDurableStreamStore;
+  protected readonly liveEvents: SessionLiveEventBus;
   protected readonly runtimeFactory: RemoteRuntimeFactory;
   protected readonly catalog: SessionCatalog;
   protected readonly sessionSnapshotEntriesLimit: number;
@@ -84,6 +87,7 @@ export abstract class SessionRegistryBase {
 
   constructor(options: SessionRegistryOptions) {
     this.streams = options.streams;
+    this.liveEvents = options.liveEvents ?? new SessionLiveEventBus();
     this.runtimeFactory = options.runtimeFactory;
     this.catalog =
       options.catalog ??
@@ -103,6 +107,7 @@ export abstract class SessionRegistryBase {
       event,
       sessions: this.getLoadedSessions(),
       streams: this.streams,
+      liveEvents: this.liveEvents,
       now: this.now(),
       createRunId: () => randomUUID(),
       syncFromRuntime: (record, options) => {
@@ -126,6 +131,7 @@ export abstract class SessionRegistryBase {
   ): Promise<CommandAcceptedResponse> {
     const base = {
       streams: this.streams,
+      liveEvents: this.liveEvents,
       record,
       client,
       connectionId,
@@ -182,6 +188,7 @@ export abstract class SessionRegistryBase {
   protected publishUiEvent(record: SessionRecord, payload: ExtensionUiRequestEventPayload): void {
     appendExtensionUiRequestEvent({
       streams: this.streams,
+      liveEvents: this.liveEvents,
       record,
       payload,
       ts: this.now(),
@@ -204,6 +211,7 @@ export abstract class SessionRegistryBase {
   ): void {
     dispatchRuntimeCommandWithStreams({
       streams: this.streams,
+      liveEvents: this.liveEvents,
       record,
       command,
       operation,
@@ -238,6 +246,7 @@ export abstract class SessionRegistryBase {
   protected emitSessionSummaryUpdated(record: SessionRecord, ts: number): void {
     emitSessionSummaryUpdatedEvent({
       streams: this.streams,
+      liveEvents: this.liveEvents,
       record,
       ts,
     });
@@ -437,6 +446,7 @@ export abstract class SessionRegistryBase {
       runner: session.extensionRunner,
       resourceLoader: session.resourceLoader,
       streams: this.streams,
+      liveEvents: this.liveEvents,
       record,
       now: this.now,
     });

@@ -9,7 +9,7 @@ import type {
   UiResponseRequest,
   UiResponseResponse,
 } from "../schemas.js";
-import { sessionEventsStreamId } from "../streams.js";
+import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import {
   handleModelUpdateCommand,
   handleSessionNameUpdateCommand,
@@ -39,7 +39,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         const updatedAt = this.now();
         this.syncFromRuntime(record, { updateTimestamp: false });
         record.updatedAt = updatedAt;
-        this.streams.append(sessionEventsStreamId(record.sessionId), {
+        appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
           sessionId: record.sessionId,
           kind: "session_state_patch",
           sessionVersion: String(record.lastDurableSessionVersion),
@@ -81,37 +81,42 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         this.syncFromRuntime(targetRecord, options);
       },
       appendModelPatchEvent: (targetRecord, acceptedCommand, ts) => {
-        this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-          sessionId: targetRecord.sessionId,
-          kind: "session_state_patch",
-          sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload: {
-            commandId: acceptedCommand.commandId,
-            sequence: acceptedCommand.sequence,
-            patch: {
-              model: targetRecord.model,
-              thinkingLevel: targetRecord.thinkingLevel,
-              cwd: targetRecord.cwd,
-              extensions: targetRecord.extensions,
-              availableModels: targetRecord.availableModels,
-              modelSettings: targetRecord.modelSettings,
-              sessionStats: {
-                ...targetRecord.sessionStats,
-                tokens: {
-                  input: targetRecord.sessionStats.tokens.input,
-                  output: targetRecord.sessionStats.tokens.output,
-                  cacheRead: targetRecord.sessionStats.tokens.cacheRead,
-                  cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
-                  total: targetRecord.sessionStats.tokens.total,
+        appendAndPublish(
+          this.streams,
+          this.liveEvents,
+          sessionEventsStreamId(targetRecord.sessionId),
+          {
+            sessionId: targetRecord.sessionId,
+            kind: "session_state_patch",
+            sessionVersion: String(targetRecord.lastDurableSessionVersion),
+            payload: {
+              commandId: acceptedCommand.commandId,
+              sequence: acceptedCommand.sequence,
+              patch: {
+                model: targetRecord.model,
+                thinkingLevel: targetRecord.thinkingLevel,
+                cwd: targetRecord.cwd,
+                extensions: targetRecord.extensions,
+                availableModels: targetRecord.availableModels,
+                modelSettings: targetRecord.modelSettings,
+                sessionStats: {
+                  ...targetRecord.sessionStats,
+                  tokens: {
+                    input: targetRecord.sessionStats.tokens.input,
+                    output: targetRecord.sessionStats.tokens.output,
+                    cacheRead: targetRecord.sessionStats.tokens.cacheRead,
+                    cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
+                    total: targetRecord.sessionStats.tokens.total,
+                  },
+                  ...(targetRecord.sessionStats.contextUsage
+                    ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
+                    : {}),
                 },
-                ...(targetRecord.sessionStats.contextUsage
-                  ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
-                  : {}),
               },
             },
+            ts,
           },
-          ts,
-        });
+        );
       },
       emitSessionSummaryUpdated: (targetRecord, ts) => {
         this.emitSessionSummaryUpdated(targetRecord, ts);
@@ -137,21 +142,26 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
       acceptCommand: (targetRecord, targetClient, targetConnectionId, kind, payload, hooks) =>
         this.acceptCommand(targetRecord, targetClient, targetConnectionId, kind, payload, hooks),
       appendSessionNamePatchedEvent: (targetRecord, command, updatedAt) => {
-        this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-          sessionId: targetRecord.sessionId,
-          kind: "session_state_patch",
-          sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload: {
-            commandId: command.commandId,
-            sequence: command.sequence,
-            patch: {
-              sessionName: targetRecord.sessionName,
-              cwd: targetRecord.cwd,
-              extensions: targetRecord.extensions,
+        appendAndPublish(
+          this.streams,
+          this.liveEvents,
+          sessionEventsStreamId(targetRecord.sessionId),
+          {
+            sessionId: targetRecord.sessionId,
+            kind: "session_state_patch",
+            sessionVersion: String(targetRecord.lastDurableSessionVersion),
+            payload: {
+              commandId: command.commandId,
+              sequence: command.sequence,
+              patch: {
+                sessionName: targetRecord.sessionName,
+                cwd: targetRecord.cwd,
+                extensions: targetRecord.extensions,
+              },
             },
+            ts: updatedAt,
           },
-          ts: updatedAt,
-        });
+        );
       },
       emitSessionSummaryUpdated: (targetRecord, ts) => {
         this.emitSessionSummaryUpdated(targetRecord, ts);
@@ -187,33 +197,38 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
         for (const targetRecord of this.getLoadedSessions().values()) {
           this.syncFromRuntime(targetRecord, { updateTimestamp: false });
           targetRecord.updatedAt = updatedAt;
-          this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-            sessionId: targetRecord.sessionId,
-            kind: "session_state_patch",
-            sessionVersion: String(targetRecord.lastDurableSessionVersion),
-            payload: {
-              commandId: accepted.commandId,
-              sequence:
-                targetRecord.sessionId === record.sessionId
-                  ? accepted.sequence
-                  : targetRecord.queue.nextSequence,
-              patch: {
-                settings: { ...targetRecord.settings },
-                modelSettings: {
-                  defaultProvider: targetRecord.modelSettings.defaultProvider,
-                  defaultModel: targetRecord.modelSettings.defaultModel,
-                  defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
-                  enabledModels: targetRecord.modelSettings.enabledModels
-                    ? [...targetRecord.modelSettings.enabledModels]
-                    : null,
+          appendAndPublish(
+            this.streams,
+            this.liveEvents,
+            sessionEventsStreamId(targetRecord.sessionId),
+            {
+              sessionId: targetRecord.sessionId,
+              kind: "session_state_patch",
+              sessionVersion: String(targetRecord.lastDurableSessionVersion),
+              payload: {
+                commandId: accepted.commandId,
+                sequence:
+                  targetRecord.sessionId === record.sessionId
+                    ? accepted.sequence
+                    : targetRecord.queue.nextSequence,
+                patch: {
+                  settings: { ...targetRecord.settings },
+                  modelSettings: {
+                    defaultProvider: targetRecord.modelSettings.defaultProvider,
+                    defaultModel: targetRecord.modelSettings.defaultModel,
+                    defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
+                    enabledModels: targetRecord.modelSettings.enabledModels
+                      ? [...targetRecord.modelSettings.enabledModels]
+                      : null,
+                  },
+                  autoCompactionEnabled: targetRecord.autoCompactionEnabled,
+                  steeringMode: targetRecord.steeringMode,
+                  followUpMode: targetRecord.followUpMode,
                 },
-                autoCompactionEnabled: targetRecord.autoCompactionEnabled,
-                steeringMode: targetRecord.steeringMode,
-                followUpMode: targetRecord.followUpMode,
               },
+              ts: updatedAt,
             },
-            ts: updatedAt,
-          });
+          );
           this.emitSessionSummaryUpdated(targetRecord, updatedAt);
         }
       },
@@ -236,7 +251,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
       connectionId: resolvedConnectionId,
       now: this.now,
       appendUiResolvedEvent: (payload) => {
-        this.streams.append(sessionEventsStreamId(record.sessionId), {
+        appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
           sessionId: record.sessionId,
           kind: "extension_ui_resolved",
           sessionVersion: String(record.lastDurableSessionVersion),

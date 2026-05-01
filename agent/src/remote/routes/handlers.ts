@@ -259,11 +259,7 @@ export function handleSessionTools(
   });
 }
 
-function requireJsonObject(value: unknown, message: string, fallback?: JsonObject): JsonObject {
-  if ((value === undefined || value === null) && fallback !== undefined) {
-    return fallback;
-  }
-
+function requireJsonObject(value: unknown, message: string): JsonObject {
   const jsonValue = toJsonObjectValue(value);
   if (jsonValue !== undefined) {
     return jsonValue;

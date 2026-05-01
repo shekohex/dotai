@@ -698,7 +698,7 @@ Outcome-first summary:
 - [x] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
 - [x] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
 - [x] add internal live event bus layer
-- [~] make SSE subscribe to live bus via stream-store append seam; retained store still allocates offsets and durable append path
+- [x] make SSE subscribe to live bus via explicit publish seam; retained store now allocates offsets/retention only while session/app append sites publish separately
 - [x] expose committed history through paginated session entries endpoint only
 - [x] remove long-poll and stream-offset replay endpoints from target design
 - [x] rebuild interrupted runtime state from durable reducers after restart

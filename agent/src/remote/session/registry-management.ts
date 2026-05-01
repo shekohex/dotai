@@ -15,7 +15,7 @@ import type {
   SessionSummary,
   ToolDefinitionMetadata,
 } from "../schemas.js";
-import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
+import { appEventsStreamId, appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import {
   createSingleSession,
   disposeSessionRecord,
@@ -116,7 +116,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
         this.streams.ensureStream(sessionEventsStreamId(targetSessionId));
       },
       appendSessionCreatedEvent: (targetSessionId, payload, ts): { streamOffset: string } =>
-        this.streams.append(appEventsStreamId(), {
+        appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
           sessionId: targetSessionId,
           kind: "session_created",
           payload,
@@ -185,7 +185,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     this.syncFromRuntime(record, { updateTimestamp: false, syncResources: true });
     const updatedAt = this.now();
     record.updatedAt = updatedAt;
-    this.streams.append(sessionEventsStreamId(record.sessionId), {
+    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "session_state_patch",
       sessionVersion: String(record.lastDurableSessionVersion),
@@ -372,7 +372,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       await disposeSessionRecord(record);
       this.loadedRuntimes.delete(record.sessionId);
       evictedSessionIds.push(record.sessionId);
-      this.streams.append(appEventsStreamId(), {
+      appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
         sessionId: record.sessionId,
         kind: "session_summary_updated",
         payload: {
@@ -409,7 +409,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       const loaded = this.loadedRuntimes.get(sessionId);
       if (loaded) {
         if (this.markLoadedRuntimeConflictedIfBusy(loaded, reconciledAt)) {
-          this.streams.append(appEventsStreamId(), {
+          appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
             sessionId,
             kind: "session_summary_updated",
             payload: {
@@ -426,7 +426,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
         await disposeSessionRecord(loaded);
         this.loadedRuntimes.delete(sessionId);
       }
-      this.streams.append(appEventsStreamId(), {
+      appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
         sessionId,
         kind: "session_closed",
         payload: { sessionId },
@@ -438,7 +438,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       if (previousRecords.has(sessionId)) {
         continue;
       }
-      this.streams.append(appEventsStreamId(), {
+      appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
         sessionId,
         kind: "session_summary_updated",
         payload: {
@@ -467,7 +467,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       this.loadedRuntimes.delete(sessionId);
     }
     const archivedRecord = this.catalog.archive(sessionId);
-    this.streams.append(appEventsStreamId(), {
+    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
       sessionId,
       kind: "session_summary_updated",
       payload: {
@@ -486,7 +486,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       throw new RemoteError("Session not found", 404);
     }
     const restoredRecord = this.catalog.restore(sessionId);
-    this.streams.append(appEventsStreamId(), {
+    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
       sessionId,
       kind: "session_summary_updated",
       payload: {
@@ -512,7 +512,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     if (this.catalog.get(sessionId)) {
       this.catalog.delete(sessionId);
     }
-    this.streams.append(appEventsStreamId(), {
+    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
       sessionId,
       kind: "session_closed",
       payload: { sessionId },
@@ -663,7 +663,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     const summary = this.loadedRuntimes.get(sessionId)
       ? this.getSessionSummary(sessionId)
       : undefined;
-    this.streams.append(appEventsStreamId(), {
+    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
       sessionId,
       kind: "session_summary_updated",
       payload: {
@@ -730,7 +730,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     }
 
     await disposeSessionRecord(record);
-    this.streams.append(appEventsStreamId(), {
+    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
       sessionId,
       kind: "session_closed",
       payload: { sessionId },
@@ -759,7 +759,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       }
     }
 
-    this.streams.append(appEventsStreamId(), {
+    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
       sessionId: record.sessionId,
       kind: "session_closed",
       payload: { sessionId: record.sessionId },

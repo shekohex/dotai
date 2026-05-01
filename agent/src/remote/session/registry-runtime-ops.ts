@@ -3,7 +3,7 @@ import { executeBashWithOperations } from "../../../node_modules/@mariozechner/p
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
 import type { AuthSession } from "../auth.js";
 import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
-import { sessionEventsStreamId } from "../streams.js";
+import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import type {
   BashExecuteRequest,
   BashExecuteResponse,
@@ -228,7 +228,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     executionId: string,
     request: BashExecuteRequest,
   ): void {
-    this.streams.append(sessionEventsStreamId(record.sessionId), {
+    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_start",
       sessionVersion: String(record.lastDurableSessionVersion),
@@ -248,7 +248,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     chunk: string,
     clientRequestId?: string,
   ): void {
-    this.streams.append(sessionEventsStreamId(record.sessionId), {
+    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_chunk",
       sessionVersion: String(record.lastDurableSessionVersion),
@@ -276,7 +276,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
       lastMessage.role === "bashExecution"
         ? lastMessage
         : undefined;
-    this.streams.append(sessionEventsStreamId(record.sessionId), {
+    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_end",
       sessionVersion: String(record.lastDurableSessionVersion),
@@ -292,7 +292,7 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
   }
 
   private appendBashStatePatch(record: Parameters<typeof this.toSessionSnapshot>[0]): void {
-    this.streams.append(sessionEventsStreamId(record.sessionId), {
+    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "session_state_patch",
       sessionVersion: String(record.lastDurableSessionVersion),

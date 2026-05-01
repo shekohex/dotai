@@ -1,5 +1,5 @@
 import type { AuthSession } from "../auth.js";
-import { sessionEventsStreamId } from "../streams.js";
+import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import type {
   CommandAcceptedResponse,
   FollowUpCommandRequest,
@@ -48,59 +48,64 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
           const updatedAt = this.now();
           this.syncFromRuntime(targetRecord, { updateTimestamp: false, syncResources: true });
           targetRecord.updatedAt = updatedAt;
-          this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-            sessionId: targetRecord.sessionId,
-            kind: "session_state_patch",
-            sessionVersion: String(targetRecord.lastDurableSessionVersion),
-            payload: {
-              commandId: accepted.commandId,
-              sequence: accepted.sequence,
-              patch: {
-                model: targetRecord.model,
-                thinkingLevel: targetRecord.thinkingLevel,
-                activeTools: [...targetRecord.activeTools],
-                cwd: targetRecord.cwd,
-                extensions: targetRecord.extensions,
-                resources: {
-                  skills: targetRecord.resources.skills.map((skill) => ({ ...skill })),
-                  prompts: targetRecord.resources.prompts.map((prompt) => ({ ...prompt })),
-                  themes: targetRecord.resources.themes.map((theme) => ({ ...theme })),
-                  ...(targetRecord.resources.modes === undefined
-                    ? {}
-                    : { modes: structuredClone(targetRecord.resources.modes) }),
-                  systemPrompt: targetRecord.resources.systemPrompt,
-                  appendSystemPrompt: [...targetRecord.resources.appendSystemPrompt],
-                },
-                availableModels: targetRecord.availableModels.map((model) => ({ ...model })),
-                modelSettings: {
-                  defaultProvider: targetRecord.modelSettings.defaultProvider,
-                  defaultModel: targetRecord.modelSettings.defaultModel,
-                  defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
-                  enabledModels: targetRecord.modelSettings.enabledModels
-                    ? [...targetRecord.modelSettings.enabledModels]
-                    : null,
-                },
-                sessionStats: {
-                  ...targetRecord.sessionStats,
-                  tokens: {
-                    input: targetRecord.sessionStats.tokens.input,
-                    output: targetRecord.sessionStats.tokens.output,
-                    cacheRead: targetRecord.sessionStats.tokens.cacheRead,
-                    cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
-                    total: targetRecord.sessionStats.tokens.total,
+          appendAndPublish(
+            this.streams,
+            this.liveEvents,
+            sessionEventsStreamId(targetRecord.sessionId),
+            {
+              sessionId: targetRecord.sessionId,
+              kind: "session_state_patch",
+              sessionVersion: String(targetRecord.lastDurableSessionVersion),
+              payload: {
+                commandId: accepted.commandId,
+                sequence: accepted.sequence,
+                patch: {
+                  model: targetRecord.model,
+                  thinkingLevel: targetRecord.thinkingLevel,
+                  activeTools: [...targetRecord.activeTools],
+                  cwd: targetRecord.cwd,
+                  extensions: targetRecord.extensions,
+                  resources: {
+                    skills: targetRecord.resources.skills.map((skill) => ({ ...skill })),
+                    prompts: targetRecord.resources.prompts.map((prompt) => ({ ...prompt })),
+                    themes: targetRecord.resources.themes.map((theme) => ({ ...theme })),
+                    ...(targetRecord.resources.modes === undefined
+                      ? {}
+                      : { modes: structuredClone(targetRecord.resources.modes) }),
+                    systemPrompt: targetRecord.resources.systemPrompt,
+                    appendSystemPrompt: [...targetRecord.resources.appendSystemPrompt],
                   },
-                  ...(targetRecord.sessionStats.contextUsage
-                    ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
+                  availableModels: targetRecord.availableModels.map((model) => ({ ...model })),
+                  modelSettings: {
+                    defaultProvider: targetRecord.modelSettings.defaultProvider,
+                    defaultModel: targetRecord.modelSettings.defaultModel,
+                    defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
+                    enabledModels: targetRecord.modelSettings.enabledModels
+                      ? [...targetRecord.modelSettings.enabledModels]
+                      : null,
+                  },
+                  sessionStats: {
+                    ...targetRecord.sessionStats,
+                    tokens: {
+                      input: targetRecord.sessionStats.tokens.input,
+                      output: targetRecord.sessionStats.tokens.output,
+                      cacheRead: targetRecord.sessionStats.tokens.cacheRead,
+                      cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
+                      total: targetRecord.sessionStats.tokens.total,
+                    },
+                    ...(targetRecord.sessionStats.contextUsage
+                      ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
+                      : {}),
+                  },
+                  ...(targetRecord.contextUsage
+                    ? { contextUsage: { ...targetRecord.contextUsage } }
                     : {}),
+                  usageCost: targetRecord.usageCost,
                 },
-                ...(targetRecord.contextUsage
-                  ? { contextUsage: { ...targetRecord.contextUsage } }
-                  : {}),
-                usageCost: targetRecord.usageCost,
               },
+              ts: updatedAt,
             },
-            ts: updatedAt,
-          });
+          );
           this.emitSessionSummaryUpdated(targetRecord, updatedAt);
         }
 
@@ -120,15 +125,20 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
         if (messages.length === 0) {
           return;
         }
-        this.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-          sessionId: targetRecord.sessionId,
-          kind: "bash_flush",
-          sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload: {
-            messages,
+        appendAndPublish(
+          this.streams,
+          this.liveEvents,
+          sessionEventsStreamId(targetRecord.sessionId),
+          {
+            sessionId: targetRecord.sessionId,
+            kind: "bash_flush",
+            sessionVersion: String(targetRecord.lastDurableSessionVersion),
+            payload: {
+              messages,
+            },
+            ts: this.now(),
           },
-          ts: this.now(),
-        });
+        );
       },
     });
   }

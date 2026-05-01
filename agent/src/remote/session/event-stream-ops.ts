@@ -1,7 +1,10 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import type { SessionLiveEventBus } from "../live-events.js";
 import { readAgentSessionEventReplaceKey } from "../session-sync-metadata.js";
 import {
   appEventsStreamId,
+  appendAndPublish,
+  appendLiveOnlyAndPublish,
   sessionEventsStreamId,
   type InMemoryDurableStreamStore,
 } from "../streams.js";
@@ -16,10 +19,11 @@ import type { SessionRecord } from "./types.js";
 
 export function emitSessionSummaryUpdatedEvent(input: {
   streams: InMemoryDurableStreamStore;
+  liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   ts: number;
 }): void {
-  const event = input.streams.append(appEventsStreamId(), {
+  const event = appendAndPublish(input.streams, input.liveEvents, appEventsStreamId(), {
     sessionId: input.record.sessionId,
     kind: "session_summary_updated",
     payload: {
@@ -35,11 +39,12 @@ export function emitSessionSummaryUpdatedEvent(input: {
 
 export function appendExtensionUiRequestEvent(input: {
   streams: InMemoryDurableStreamStore;
+  liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   payload: ExtensionUiRequestEventPayload;
   ts: number;
 }): void {
-  input.streams.append(sessionEventsStreamId(input.record.sessionId), {
+  appendAndPublish(input.streams, input.liveEvents, sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_ui_request",
     sessionVersion: String(input.record.lastDurableSessionVersion),
@@ -50,11 +55,12 @@ export function appendExtensionUiRequestEvent(input: {
 
 export function appendExtensionUiResolvedEvent(input: {
   streams: InMemoryDurableStreamStore;
+  liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   payload: ExtensionUiResolvedEventPayload;
   ts: number;
 }): void {
-  input.streams.append(sessionEventsStreamId(input.record.sessionId), {
+  appendAndPublish(input.streams, input.liveEvents, sessionEventsStreamId(input.record.sessionId), {
     sessionId: input.record.sessionId,
     kind: "extension_ui_resolved",
     sessionVersion: String(input.record.lastDurableSessionVersion),
@@ -68,6 +74,7 @@ export function handleRegistrySessionEvent(input: {
   event: AgentSessionEvent;
   sessions: Map<string, SessionRecord>;
   streams: InMemoryDurableStreamStore;
+  liveEvents?: SessionLiveEventBus;
   now: number;
   createRunId: () => string;
   syncFromRuntime: (
@@ -91,9 +98,9 @@ export function handleRegistrySessionEvent(input: {
     appendAgentEvent: (targetRecord, targetEvent, ts, sessionVersion) => {
       const streamId = sessionEventsStreamId(targetRecord.sessionId);
       const append = isLiveOnlyAgentSessionEvent(targetEvent)
-        ? input.streams.appendLiveOnly.bind(input.streams)
-        : input.streams.append.bind(input.streams);
-      append(streamId, {
+        ? appendLiveOnlyAndPublish
+        : appendAndPublish;
+      append(input.streams, input.liveEvents, streamId, {
         sessionId: targetRecord.sessionId,
         kind: "agent_session_event",
         sessionVersion,
@@ -103,18 +110,23 @@ export function handleRegistrySessionEvent(input: {
       });
     },
     appendSessionStatePatch: (targetRecord, sessionVersion, patch, ts) => {
-      input.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
-        sessionId: targetRecord.sessionId,
-        kind: "session_state_patch",
-        sessionVersion,
-        payload: {
-          commandId: "server-state-sync",
-          sequence: targetRecord.queue.nextSequence,
-          patch,
+      appendAndPublish(
+        input.streams,
+        input.liveEvents,
+        sessionEventsStreamId(targetRecord.sessionId),
+        {
+          sessionId: targetRecord.sessionId,
+          kind: "session_state_patch",
+          sessionVersion,
+          payload: {
+            commandId: "server-state-sync",
+            sequence: targetRecord.queue.nextSequence,
+            patch,
+          },
+          retentionKey: "session-state-patch",
+          ts,
         },
-        retentionKey: "session-state-patch",
-        ts,
-      });
+      );
     },
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });

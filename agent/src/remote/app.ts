@@ -82,7 +82,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
   const origin = options.origin ?? "http://localhost:3000";
   const app = new Hono<RemoteHonoEnv>();
   const liveEvents = new SessionLiveEventBus();
-  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
+  const streams = new InMemoryDurableStreamStore();
   const kv =
     options.kvStore ??
     new JsonFileRemoteKvStore({ filePath: options.kvFilePath ?? defaultRemoteKvFilePath() });
@@ -96,6 +96,7 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
   });
   const sessions = new SessionRegistry({
     streams,
+    liveEvents,
     runtimeFactory,
     catalog,
     sessionSnapshotEntriesLimit: options.sessionSnapshotEntriesLimit,

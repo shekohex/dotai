@@ -9,6 +9,7 @@ import type {
 import { defaultSettings } from "../../default-settings.js";
 import type { AuthSession } from "../auth.js";
 import type { SessionCatalog } from "../session-catalog.js";
+import type { SessionLiveEventBus } from "../live-events.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import type {
   ActiveToolsUpdateRequest,
@@ -179,6 +180,7 @@ export interface AcceptCommandHooks {
 
 export interface SessionRegistryOptions {
   streams: InMemoryDurableStreamStore;
+  liveEvents?: SessionLiveEventBus;
   runtimeFactory: RemoteRuntimeFactory;
   catalog?: SessionCatalog;
   sessionSnapshotEntriesLimit?: number;

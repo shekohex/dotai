@@ -680,7 +680,7 @@ Outcome-first summary:
 - [x] define live progress patch shapes at protocol level
 - [x] define reconnect bootstrap flow
 - [x] define client reconciliation rule: merge by identity, snapshot wins on conflict
-- [x] define exact TypeBox schemas for new snapshot and patch envelopes
+- [~] define TypeBox schemas for snapshot and patch envelopes
 - [x] define exact interrupted status enums for each runtime domain
 
 ### Storage checklist
@@ -698,7 +698,7 @@ Outcome-first summary:
 - [x] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
 - [x] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
 - [x] add internal live event bus layer
-- [x] make SSE subscribe to bus instead of retained stream store
+- [~] make SSE subscribe to live bus via stream-store append seam; retained store still allocates offsets and durable append path
 - [x] expose committed history through paginated session entries endpoint only
 - [x] remove long-poll and stream-offset replay endpoints from target design
 - [x] rebuild interrupted runtime state from durable reducers after restart

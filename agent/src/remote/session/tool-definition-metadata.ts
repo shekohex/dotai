@@ -1,5 +1,4 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { toJsonValue } from "../json-value.js";
 import { isJsonObject, type JsonObject } from "../json-schema.js";
 import type { ToolDefinitionMetadata } from "../schemas.js";
 
@@ -25,14 +24,67 @@ export function serializeToolDefinition(
 }
 
 function toJsonObject(value: unknown): JsonObject {
-  const jsonValue = toJsonValue(value);
-  if (jsonValue !== undefined && isJsonObject(jsonValue)) {
+  const jsonValue = toJsonObjectValue(value);
+  if (jsonValue !== undefined) {
     return jsonValue;
   }
-  return {};
+  throw new Error("Tool definition parameters must be JSON object");
 }
 
 function toOptionalJsonObject(value: unknown): JsonObject | undefined {
-  const jsonValue = toJsonValue(value);
-  return jsonValue !== undefined && isJsonObject(jsonValue) ? jsonValue : undefined;
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const jsonValue = toJsonObjectValue(value);
+  if (jsonValue !== undefined) {
+    return jsonValue;
+  }
+  throw new Error("Tool definition sourceInfo must be JSON object");
+}
+
+function toJsonObjectValue(value: unknown): JsonObject | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const result: JsonObject = {};
+  for (const [key, entryValue] of Object.entries(value)) {
+    if (entryValue === undefined) {
+      continue;
+    }
+
+    const nextValue = toJsonCompatibleValue(entryValue);
+    if (nextValue === undefined) {
+      return undefined;
+    }
+    result[key] = nextValue;
+  }
+
+  return isJsonObject(result) ? result : undefined;
+}
+
+function toJsonCompatibleValue(value: unknown): JsonObject[string] | undefined {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const result: JsonObject[string] = [];
+    for (const entryValue of value) {
+      const nextValue = toJsonCompatibleValue(entryValue);
+      if (nextValue === undefined) {
+        return undefined;
+      }
+      result.push(nextValue);
+    }
+    return result;
+  }
+
+  return toJsonObjectValue(value);
 }

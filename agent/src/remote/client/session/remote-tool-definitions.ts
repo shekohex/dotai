@@ -40,12 +40,16 @@ export function buildRemoteToolDefinition(
 }
 
 function normalizeToolParameters(parameters: unknown): TSchema {
-  if (isToolSchema(parameters)) {
-    return parameters;
+  const schema = parseToolSchema(parameters);
+  if (schema !== undefined) {
+    return schema;
   }
   return Type.Object({});
 }
 
-function isToolSchema(value: unknown): value is TSchema {
-  return Value.Check(ToolSchemaLikeSchema, value);
+function parseToolSchema(value: unknown): TSchema | undefined {
+  if (!Value.Check(ToolSchemaLikeSchema, value)) {
+    return undefined;
+  }
+  return value as TSchema;
 }

@@ -319,8 +319,9 @@ Working recommendation:
 - server subscribes client before emitting snapshot to avoid snapshot/live race
 - snapshot payload is `{ type: "snapshot", version, snapshot }`
 - client reconciliation is merge by durable identity, but server snapshot wins on conflict
-- single monotonic session version exists across snapshot and live patches while process is alive
-- persisted version resumes from last durable version after crash/restart; lost in-memory live-only versions are not preserved
+- snapshot `version` and patch `version` are durable session versions only
+- live-only patches may reuse current durable version until next committed durable transition
+- persisted version resumes from last durable version after crash/restart; lost in-memory live-only patches do not create new versions
 - session snapshot includes most recent 100 durable entries
 - older durable history comes from paginated session entries JSONL endpoint
 - long-poll, stream offsets, and replay cursors are removed from target design
@@ -523,6 +524,7 @@ Examples:
 - enough to reconstruct state after reconnect
 - derived from authoritative runtime state and committed session history
 - durable version only advances when durable state changes are recorded
+- live progress patches keep transport order but do not allocate separate monotonic versions
 
 Examples:
 
@@ -722,6 +724,8 @@ Outcome-first summary:
 - [x] verify reconnect after completion skips obsolete transient updates
 - [x] verify two clients converge to same final durable state after snapshot-based reconnect
 - [x] verify extension ephemeral/replaceable/durable contracts behave correctly across reconnect and restart
+- [x] verify durable-only snapshot/patch version semantics for live-only patches
+- [x] verify remote tool transport preserves object-shaped `parameters` and `sourceInfo` end to end
 
 ## QA
 

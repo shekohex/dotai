@@ -3,6 +3,7 @@ import { sign } from "node:crypto";
 import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Hono } from "hono";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { parseSseStream } from "../src/remote/sse.ts";
 import type {
@@ -16,6 +17,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { AuthService, createChallengePayload } from "../src/remote/auth.ts";
 import { createRemoteApp } from "../src/remote/app.ts";
+import { createV1Routes } from "../src/remote/routes.ts";
 import { REMOTE_DEFAULT_CLIENT_CAPABILITIES } from "../src/remote/capabilities.ts";
 import { SessionCatalogWatcher } from "../src/remote/session-catalog-watcher.ts";
 import { cancelRemoteUiRequest, handleRemoteUiRequest } from "../src/remote/client/session-ui.ts";
@@ -3846,6 +3848,184 @@ timedTest("session snapshot version resumes from durable state after restart", a
     expect(Number(afterNextDurableChange.version)).toBe(Number(beforeRestart.version) + 1);
   } finally {
     await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
+timedTest("durable extension sync stays authoritative across reconnect and restart", async () => {
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-extension-durable-restart-",
+  });
+  const auth = testAuthSession();
+
+  let registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory: harness.runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+  });
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: harness.workspaceDir,
+        persistence: "persistent",
+      },
+      auth,
+      "conn-a",
+    );
+
+    await registry.updateSessionName(
+      created.sessionId,
+      { sessionName: "durable-extension-session" },
+      auth,
+      "conn-a",
+    );
+    await registry.prompt(
+      created.sessionId,
+      { text: "persist durable extension state" },
+      auth,
+      "conn-a",
+    );
+    await waitForSessionToBecomeIdle(registry, created.sessionId, auth);
+
+    await registry.emitSessionExtensionCustomEvent(
+      created.sessionId,
+      {
+        channel: "demo:durable",
+        data: { sync: "durable", replaceKey: "slot", value: 1 },
+      },
+      auth,
+      "conn-a",
+    );
+    await registry.emitSessionExtensionCustomEvent(
+      created.sessionId,
+      {
+        channel: "demo:durable",
+        data: { sync: "durable", replaceKey: "slot", value: 2 },
+      },
+      auth,
+      "conn-a",
+    );
+
+    let snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    expect(snapshot.durableExtensionState).toEqual([
+      { channel: "demo:durable", data: { sync: "durable", replaceKey: "slot", value: 2 } },
+    ]);
+
+    await registry.emitSessionExtensionCustomEvent(
+      created.sessionId,
+      {
+        channel: "demo:durable",
+        data: { sync: "durable", replaceKey: "slot", deleted: true },
+      },
+      auth,
+      "conn-a",
+    );
+
+    snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-b");
+    expect(snapshot.durableExtensionState).toEqual([]);
+
+    await waitForPersistedSessionFile(harness.sessionDir, created.sessionId);
+    await registry.reconcileCatalogFromDisk();
+
+    await registry.dispose();
+    registry = new SessionRegistry({
+      streams: new InMemoryDurableStreamStore(),
+      runtimeFactory: harness.runtimeFactory,
+      catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+    });
+    const restartedSnapshot = await registry.loadSessionSnapshot(created.sessionId, auth, "conn-c");
+    expect(restartedSnapshot.durableExtensionState).toEqual([]);
+  } finally {
+    await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
+timedTest("two clients converge after snapshot-based reconnect", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-two-client-converge-",
+  });
+
+  const streams = new InMemoryDurableStreamStore();
+  const sessions = new SessionRegistry({
+    streams,
+    runtimeFactory: harness.runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+  });
+  const app = new Hono();
+  app.route(
+    "/v1",
+    createV1Routes({
+      auth: new AuthService({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      }),
+      sessions,
+      kv: new InMemoryRemoteKvStore(),
+      streams,
+    }),
+  );
+
+  let runtimeA: RemoteAgentSessionRuntime | undefined;
+  let clientA: RemoteApiClient | undefined;
+  let clientB: RemoteApiClient | undefined;
+  try {
+    runtimeA = await createRemoteRuntime(app, {
+      privateKeyPem,
+      cwd: harness.workspaceDir,
+      persistence: "persistent",
+    });
+    const sessionId = runtimeA.session.sessionManager.getSessionId();
+    clientA = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      fetchImpl: createInProcessFetch(app),
+    });
+    clientB = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      fetchImpl: createInProcessFetch(app),
+    });
+    await clientA.authenticate();
+    await clientB.authenticate();
+
+    await runtimeA.session.prompt("client convergence one");
+    await waitForValue(
+      async () => (await clientB?.getSessionSnapshot(sessionId))?.transcript.length,
+      (messageCount) => typeof messageCount === "number" && messageCount >= 2,
+    );
+    await waitForValue(
+      () => runtimeA?.session.isStreaming,
+      (isStreaming) => isStreaming === false,
+    );
+
+    clientB = new RemoteApiClient({
+      origin: "http://localhost:3000",
+      auth: { keyId: "dev", privateKey: privateKeyPem },
+      fetchImpl: createInProcessFetch(app),
+    });
+    await clientB.authenticate();
+
+    await runtimeA.session.prompt("client convergence two");
+    await waitForValue(
+      async () => (await clientB?.getSessionSnapshot(sessionId))?.transcript.length,
+      (messageCount) => typeof messageCount === "number" && messageCount >= 4,
+    );
+    await waitForValue(
+      () => runtimeA?.session.isStreaming,
+      (isStreaming) => isStreaming === false,
+    );
+
+    const snapshotA = await clientA.getSessionSnapshot(sessionId);
+    const snapshotB = await clientB.getSessionSnapshot(sessionId);
+    expect(snapshotB.version).toBe(snapshotA.version);
+    expect(snapshotB.transcript).toEqual(snapshotA.transcript);
+    expect(snapshotB.durableExtensionState).toEqual(snapshotA.durableExtensionState);
+  } finally {
+    await runtimeA?.dispose();
+    await sessions.dispose();
     await harness.cleanup();
   }
 });

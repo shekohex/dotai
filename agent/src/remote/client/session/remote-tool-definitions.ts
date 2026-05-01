@@ -1,7 +1,15 @@
 import { Type, type TSchema } from "typebox";
+import { Value } from "typebox/value";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { ToolDefinitionMetadata } from "../../schemas.js";
-import { isRecord } from "../../../utils/unknown-data.js";
+import { asRecord } from "../../../utils/unknown-data.js";
+
+const ToolSchemaLikeSchema = Type.Object(
+  {},
+  {
+    additionalProperties: true,
+  },
+);
 
 export function buildRemoteToolDefinition(
   metadata: ToolDefinitionMetadata,
@@ -31,19 +39,24 @@ function normalizeToolParameters(parameters: unknown): TSchema {
 }
 
 function isToolSchema(value: unknown): value is TSchema {
-  if (!isRecord(value)) {
+  if (!Value.Check(ToolSchemaLikeSchema, value)) {
+    return false;
+  }
+
+  const schemaCandidate = asRecord(value);
+  if (schemaCandidate === undefined) {
     return false;
   }
 
   return (
-    "type" in value ||
-    "properties" in value ||
-    "items" in value ||
-    "$ref" in value ||
-    "anyOf" in value ||
-    "allOf" in value ||
-    "oneOf" in value ||
-    "const" in value ||
-    "enum" in value
+    schemaCandidate.type !== undefined ||
+    schemaCandidate.properties !== undefined ||
+    schemaCandidate.items !== undefined ||
+    schemaCandidate.$ref !== undefined ||
+    schemaCandidate.anyOf !== undefined ||
+    schemaCandidate.allOf !== undefined ||
+    schemaCandidate.oneOf !== undefined ||
+    schemaCandidate.const !== undefined ||
+    schemaCandidate.enum !== undefined
   );
 }

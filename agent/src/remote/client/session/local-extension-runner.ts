@@ -18,6 +18,9 @@ import type {
   GetCommandsHandler,
   GetAllToolsHandler,
 } from "../../../../node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.js";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { JsonValueSchema } from "../../json-schema.js";
 
 export type RemoteLocalExtensionRunner = ExtensionRunner;
 
@@ -34,6 +37,13 @@ type RemoteToolInfo = {
   parameters: unknown;
   sourceInfo: unknown;
 };
+
+const RemoteToolInfoSchema = Type.Object({
+  name: Type.String(),
+  description: Type.String(),
+  parameters: Type.Record(Type.String(), JsonValueSchema),
+  sourceInfo: Type.Record(Type.String(), JsonValueSchema),
+});
 
 export function createRemoteLocalExtensionRunner(input: {
   resourceLoader: ResourceLoader;
@@ -274,21 +284,7 @@ function createExtensionActions(
 }
 
 function isToolInfoLike(tool: unknown): tool is ReturnType<GetAllToolsHandler>[number] {
-  if (tool === null || typeof tool !== "object") {
-    return false;
-  }
-  return (
-    "name" in tool &&
-    typeof tool.name === "string" &&
-    "description" in tool &&
-    typeof tool.description === "string" &&
-    "parameters" in tool &&
-    tool.parameters !== null &&
-    typeof tool.parameters === "object" &&
-    "sourceInfo" in tool &&
-    tool.sourceInfo !== null &&
-    typeof tool.sourceInfo === "object"
-  );
+  return Value.Check(RemoteToolInfoSchema, tool);
 }
 
 function createExtensionContextActions(

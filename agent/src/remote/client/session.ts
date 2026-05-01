@@ -13,6 +13,7 @@ import type { RemoteSessionContract } from "./session-deps.js";
 import { markNonAuthoritativeRuntime } from "../../extensions/runtime-authority.js";
 import { seedHydratedExecutorState } from "../../extensions/executor/status.js";
 import { seedHydratedSerializedGitState } from "../../extensions/git-state.js";
+import { toJsonValue } from "../json-value.js";
 import {
   createForwardingEventBus,
   requireResourceLoaderEventBus,
@@ -83,7 +84,11 @@ export class RemoteAgentSession
           "RemoteAgentSession.create",
         ),
         forwardEvent: (channel: string, data: unknown) => {
-          void client.emitSessionCustomEvent(snapshot.sessionId, { channel, data });
+          const jsonData = toJsonValue(data);
+          if (jsonData === undefined) {
+            return;
+          }
+          void client.emitSessionCustomEvent(snapshot.sessionId, { channel, data: jsonData });
         },
       }),
     );

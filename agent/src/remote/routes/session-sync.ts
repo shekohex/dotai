@@ -1,5 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Value } from "typebox/value";
+import { toAssistantMessageSyncEvent } from "../assistant-message-sync.js";
+import type { JsonValue } from "../json-schema.js";
 import {
   readRemoteExtensionSyncInfo,
   readSessionSyncPatchReplaceKey,
@@ -13,6 +15,7 @@ import {
   type SessionSyncEvent,
   type StreamEventEnvelope,
 } from "../schemas.js";
+import { readToolOutputText } from "../tool-output-text.js";
 import { RemoteError } from "../errors.js";
 import { sessionEventsStreamId } from "../streams.js";
 import { assertType } from "../typebox.js";
@@ -211,7 +214,7 @@ export function isPatchCoveredBySnapshot(
 
   switch (patchEvent.patch.patchType) {
     case "assistant.message":
-      return snapshot.live.streamingMessage !== undefined;
+      return isAssistantMessagePatchCoveredBySnapshot(patchEvent.patch.payload, snapshot);
     case "tool.execution":
       return isToolExecutionPatchCoveredBySnapshot(patchEvent.patch.payload, snapshot);
     case "queue.update":
@@ -234,10 +237,7 @@ export function isPatchCoveredBySnapshot(
         return false;
       }
 
-      const patchKey = patchSyncInfo.stateKey;
-      return snapshot.durableExtensionState.some(
-        (entry) => readRemoteExtensionSyncInfo(entry.channel, entry.data).stateKey === patchKey,
-      );
+      return true;
     }
     case "bash.chunk":
     case "bash.end":
@@ -270,7 +270,152 @@ function isToolExecutionPatchCoveredBySnapshot(
     return activeExecution === undefined && !snapshot.pendingToolCalls.includes(payload.toolCallId);
   }
 
-  return activeExecution !== undefined;
+  if (payload.type === "tool_execution_start") {
+    if (activeExecution !== undefined) {
+      return (
+        activeExecution.toolName === payload.toolName &&
+        serializedSyncValue(activeExecution.args) === serializedSyncValue(payload.args)
+      );
+    }
+
+    return !snapshot.pendingToolCalls.includes(payload.toolCallId);
+  }
+
+  if (payload.type === "tool_execution_output_delta") {
+    if (activeExecution === undefined) {
+      return !snapshot.pendingToolCalls.includes(payload.toolCallId);
+    }
+
+    return toolOutputDeltaCoveredBySnapshot(activeExecution.partialResult, payload.delta);
+  }
+
+  if (activeExecution !== undefined) {
+    return (
+      serializedSyncValue(activeExecution.partialResult) ===
+      serializedSyncValue(payload.partialResult)
+    );
+  }
+
+  return !snapshot.pendingToolCalls.includes(payload.toolCallId);
+}
+
+function toolOutputDeltaCoveredBySnapshot(
+  partialResult: JsonValue | undefined,
+  delta: string,
+): boolean {
+  const text = readToolOutputText(partialResult);
+  return text?.includes(delta) ?? false;
+}
+
+function isAssistantMessagePatchCoveredBySnapshot(
+  payload: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "assistant.message" }
+  >["payload"],
+  snapshot: Extract<SessionSyncEvent, { type: "snapshot" }>["snapshot"],
+): boolean {
+  if (snapshot.live.streamingMessage !== undefined) {
+    return assistantMessageEventCoveredBySnapshot(
+      snapshot.live.streamingMessage,
+      payload.assistantMessageEvent,
+    );
+  }
+
+  const assistantMessageEvent = payload.assistantMessageEvent;
+  return (
+    assistantMessageEvent.type === "done" ||
+    assistantMessageEvent.type === "error" ||
+    snapshot.streamingState !== "streaming"
+  );
+}
+
+function readAssistantPatchMessage(
+  payload: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "assistant.message" }
+  >["payload"],
+): ReturnType<typeof readAssistantPatchEventMessage> {
+  return readAssistantPatchEventMessage(payload.assistantMessageEvent);
+}
+
+function readAssistantPatchEventMessage(
+  event: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "assistant.message" }
+  >["payload"]["assistantMessageEvent"],
+): Extract<SessionSyncEvent, { type: "snapshot" }>["snapshot"]["live"]["streamingMessage"] | null {
+  switch (event.type) {
+    case "start":
+    case "toolcall_start":
+    case "toolcall_delta":
+      return event.partial;
+    case "done":
+      return event.message;
+    case "error":
+      return event.error;
+    case "text_start":
+    case "text_delta":
+    case "text_end":
+    case "thinking_start":
+    case "thinking_delta":
+    case "thinking_end":
+    case "toolcall_end":
+      return null;
+    default:
+      throw new Error("Unsupported assistant patch message event");
+  }
+}
+
+function assistantMessageEventCoveredBySnapshot(
+  snapshotMessage: Extract<
+    SessionSyncEvent,
+    { type: "snapshot" }
+  >["snapshot"]["live"]["streamingMessage"],
+  patchEvent: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "assistant.message" }
+  >["payload"]["assistantMessageEvent"],
+): boolean {
+  if (snapshotMessage === undefined) {
+    return false;
+  }
+
+  const snapshotBlock =
+    "contentIndex" in patchEvent ? snapshotMessage.content[patchEvent.contentIndex] : undefined;
+
+  switch (patchEvent.type) {
+    case "start":
+      return assistantMessageCovers(snapshotMessage, patchEvent.partial);
+    case "text_start":
+      return snapshotBlock?.type === "text";
+    case "text_delta":
+      return snapshotBlock?.type === "text" && snapshotBlock.text.includes(patchEvent.delta);
+    case "text_end":
+      return snapshotBlock?.type === "text" && snapshotBlock.text === patchEvent.content;
+    case "thinking_start":
+      return snapshotBlock?.type === "thinking";
+    case "thinking_delta":
+      return (
+        snapshotBlock?.type === "thinking" && snapshotBlock.thinking.includes(patchEvent.delta)
+      );
+    case "thinking_end":
+      return snapshotBlock?.type === "thinking" && snapshotBlock.thinking === patchEvent.content;
+    case "toolcall_start":
+      return assistantMessageCovers(snapshotMessage, patchEvent.partial);
+    case "toolcall_delta":
+      return assistantMessageCovers(snapshotMessage, patchEvent.partial);
+    case "toolcall_end":
+      return (
+        snapshotBlock?.type === "toolCall" &&
+        serializedSyncValue(snapshotBlock) === serializedSyncValue(patchEvent.toolCall)
+      );
+    case "done":
+      return false;
+    case "error":
+      return false;
+    default:
+      return false;
+  }
 }
 
 function readBufferedPatchReplaceKey(patchEvent: SessionSyncEvent): string | undefined {
@@ -337,6 +482,67 @@ function arraysEqual(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+function serializedSyncValue(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function assistantMessageCovers(
+  snapshotMessage: Extract<
+    SessionSyncEvent,
+    { type: "snapshot" }
+  >["snapshot"]["live"]["streamingMessage"],
+  patchMessage: ReturnType<typeof readAssistantPatchMessage>,
+): boolean {
+  if (snapshotMessage === undefined || patchMessage === null || patchMessage === undefined) {
+    return false;
+  }
+
+  if (
+    snapshotMessage.api !== patchMessage.api ||
+    snapshotMessage.provider !== patchMessage.provider ||
+    snapshotMessage.model !== patchMessage.model ||
+    snapshotMessage.stopReason !== patchMessage.stopReason ||
+    snapshotMessage.responseId !== patchMessage.responseId ||
+    snapshotMessage.content.length < patchMessage.content.length
+  ) {
+    return false;
+  }
+
+  return patchMessage.content.every((patchBlock, index) => {
+    const snapshotBlock = snapshotMessage.content[index];
+    if (snapshotBlock === undefined) {
+      return false;
+    }
+
+    if (serializedSyncValue(snapshotBlock) === serializedSyncValue(patchBlock)) {
+      return true;
+    }
+
+    switch (patchBlock.type) {
+      case "text":
+        if (snapshotBlock.type !== "text") {
+          return false;
+        }
+        return snapshotBlock.text.startsWith(patchBlock.text);
+      case "thinking":
+        if (snapshotBlock.type !== "thinking") {
+          return false;
+        }
+        return (
+          snapshotBlock.thinking.startsWith(patchBlock.thinking) &&
+          snapshotBlock.redacted === patchBlock.redacted
+        );
+      case "toolCall":
+        if (snapshotBlock.type !== "toolCall") {
+          return false;
+        }
+        return false;
+      default:
+        return false;
+    }
+  });
+}
+
 export function toSessionSyncPatchEvent(
   sessionId: string,
   event: StreamEventEnvelope,
@@ -345,7 +551,7 @@ export function toSessionSyncPatchEvent(
     return undefined;
   }
 
-  const base = {
+  const patchBase = {
     type: "patch" as const,
     sessionId,
     version: event.sessionVersion,
@@ -353,85 +559,22 @@ export function toSessionSyncPatchEvent(
 
   switch (event.kind) {
     case "session_state_patch":
-      return { ...base, patch: { patchType: "session.state", payload: event.payload } };
+      return { ...patchBase, patch: { patchType: "session.state", payload: event.payload } };
     case "agent_session_event":
-      if (isAssistantMessageUpdatePayload(event.payload)) {
-        return {
-          ...base,
-          patch: {
-            patchType: "assistant.message",
-            payload: {
-              type: "message_update",
-              message: event.payload.message,
-              assistantMessageEvent: event.payload.assistantMessageEvent,
-            },
-          },
-        };
-      }
-
-      if (isToolExecutionPayload(event.payload)) {
-        return {
-          ...base,
-          patch: { patchType: "tool.execution", payload: event.payload },
-        };
-      }
-
-      if (isQueueUpdatePayload(event.payload)) {
-        return {
-          ...base,
-          patch: {
-            patchType: "queue.update",
-            payload: {
-              type: "queue_update",
-              steering: [...event.payload.steering],
-              followUp: [...event.payload.followUp],
-            },
-          },
-        };
-      }
-
-      if (isRetryStatusPayload(event.payload)) {
-        return {
-          ...base,
-          patch: { patchType: "retry.status", payload: event.payload },
-        };
-      }
-
-      if (isCompactionStatusPayload(event.payload)) {
-        return {
-          ...base,
-          patch: { patchType: "compaction.status", payload: event.payload },
-        };
-      }
-
-      if (isAgentLifecyclePayload(event.payload)) {
-        return {
-          ...base,
-          patch: { patchType: "agent.lifecycle", payload: event.payload },
-        };
-      }
-
-      return undefined;
+      return toAgentSessionSyncPatchEvent(patchBase, event.payload);
+    case "assistant_message_patch":
+    case "tool_execution_patch":
     case "extension_custom_event":
-      return { ...base, patch: { patchType: "extension.custom", payload: event.payload } };
     case "extension_event":
-      return { ...base, patch: { patchType: "extension.event", payload: event.payload } };
     case "extension_ui_request":
-      return { ...base, patch: { patchType: "extension.ui.request", payload: event.payload } };
     case "extension_ui_resolved":
-      return { ...base, patch: { patchType: "extension.ui.resolved", payload: event.payload } };
     case "command_accepted":
-      return { ...base, patch: { patchType: "command.accepted", payload: event.payload } };
     case "bash_start":
-      return { ...base, patch: { patchType: "bash.start", payload: event.payload } };
     case "bash_chunk":
-      return { ...base, patch: { patchType: "bash.chunk", payload: event.payload } };
     case "bash_end":
-      return { ...base, patch: { patchType: "bash.end", payload: event.payload } };
     case "bash_flush":
-      return { ...base, patch: { patchType: "bash.flush", payload: event.payload } };
     case "extension_error":
-      return { ...base, patch: { patchType: "extension.error", payload: event.payload } };
+      return toNonAgentSessionSyncPatchEvent(patchBase, event);
     case "auth_notice":
     case "client_presence_updated":
     case "server_notice":
@@ -439,9 +582,137 @@ export function toSessionSyncPatchEvent(
     case "session_created":
     case "session_summary_updated":
       return undefined;
-    default:
-      return undefined;
   }
+
+  return undefined;
+}
+
+function toAgentSessionSyncPatchEvent(
+  patchBase: Omit<Extract<SessionSyncEvent, { type: "patch" }>, "patch">,
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): Extract<SessionSyncEvent, { type: "patch" }> | undefined {
+  if (isAssistantMessageUpdatePayload(payload)) {
+    return {
+      ...patchBase,
+      patch: {
+        patchType: "assistant.message",
+        payload: {
+          type: "message_update",
+          assistantMessageEvent: toAssistantMessageSyncEvent(payload.assistantMessageEvent),
+        },
+      },
+    };
+  }
+  if (isToolExecutionPayload(payload)) {
+    return {
+      ...patchBase,
+      patch: { patchType: "tool.execution", payload: toToolExecutionSyncPayload(payload) },
+    };
+  }
+  if (isQueueUpdatePayload(payload)) {
+    return {
+      ...patchBase,
+      patch: {
+        patchType: "queue.update",
+        payload: {
+          type: "queue_update",
+          steering: [...payload.steering],
+          followUp: [...payload.followUp],
+        },
+      },
+    };
+  }
+  if (isRetryStatusPayload(payload)) {
+    return { ...patchBase, patch: { patchType: "retry.status", payload } };
+  }
+  if (isCompactionStatusPayload(payload)) {
+    return { ...patchBase, patch: { patchType: "compaction.status", payload } };
+  }
+  if (isAgentLifecyclePayload(payload)) {
+    return { ...patchBase, patch: { patchType: "agent.lifecycle", payload } };
+  }
+  return undefined;
+}
+
+function toNonAgentSessionSyncPatchEvent(
+  patchBase: Omit<Extract<SessionSyncEvent, { type: "patch" }>, "patch">,
+  event: Exclude<
+    StreamEventEnvelope,
+    | { kind: "session_state_patch" }
+    | { kind: "agent_session_event" }
+    | { kind: "auth_notice" }
+    | { kind: "client_presence_updated" }
+    | { kind: "server_notice" }
+    | { kind: "session_closed" }
+    | { kind: "session_created" }
+    | { kind: "session_summary_updated" }
+  >,
+): Extract<SessionSyncEvent, { type: "patch" }> {
+  switch (event.kind) {
+    case "assistant_message_patch":
+      return { ...patchBase, patch: { patchType: "assistant.message", payload: event.payload } };
+    case "tool_execution_patch":
+      return { ...patchBase, patch: { patchType: "tool.execution", payload: event.payload } };
+    case "extension_custom_event":
+      return { ...patchBase, patch: { patchType: "extension.custom", payload: event.payload } };
+    case "extension_event":
+      return { ...patchBase, patch: { patchType: "extension.event", payload: event.payload } };
+    case "extension_ui_request":
+      return { ...patchBase, patch: { patchType: "extension.ui.request", payload: event.payload } };
+    case "extension_ui_resolved":
+      return {
+        ...patchBase,
+        patch: { patchType: "extension.ui.resolved", payload: event.payload },
+      };
+    case "command_accepted":
+      return { ...patchBase, patch: { patchType: "command.accepted", payload: event.payload } };
+    case "bash_start":
+      return { ...patchBase, patch: { patchType: "bash.start", payload: event.payload } };
+    case "bash_chunk":
+      return { ...patchBase, patch: { patchType: "bash.chunk", payload: event.payload } };
+    case "bash_end":
+      return { ...patchBase, patch: { patchType: "bash.end", payload: event.payload } };
+    case "bash_flush":
+      return { ...patchBase, patch: { patchType: "bash.flush", payload: event.payload } };
+    case "extension_error":
+      return { ...patchBase, patch: { patchType: "extension.error", payload: event.payload } };
+  }
+
+  throw new Error("Unsupported non-agent session sync patch event");
+}
+
+function toToolExecutionSyncPayload(
+  payload: Extract<
+    Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+    | { type: "tool_execution_start" }
+    | { type: "tool_execution_update" }
+    | { type: "tool_execution_end" }
+  >,
+): Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "tool.execution" }
+>["payload"] {
+  if (payload.type === "tool_execution_start") {
+    return {
+      type: "tool_execution_start",
+      toolCallId: payload.toolCallId,
+      toolName: payload.toolName,
+      args: payload.args,
+    };
+  }
+  if (payload.type === "tool_execution_update") {
+    return {
+      type: "tool_execution_update",
+      toolCallId: payload.toolCallId,
+      partialResult: payload.partialResult,
+    };
+  }
+  return {
+    type: "tool_execution_end",
+    toolCallId: payload.toolCallId,
+    result: payload.result,
+    isError: payload.isError,
+  };
 }
 
 function isAssistantMessageUpdatePayload(
@@ -456,9 +727,11 @@ function isAssistantMessageUpdatePayload(
 function isToolExecutionPayload(
   payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
 ): payload is Extract<
-  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
-  { patchType: "tool.execution" }
->["payload"] {
+  Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+  | { type: "tool_execution_start" }
+  | { type: "tool_execution_update" }
+  | { type: "tool_execution_end" }
+> {
   return (
     payload.type === "tool_execution_start" ||
     payload.type === "tool_execution_update" ||

@@ -194,8 +194,72 @@ export const AssistantMessageEventPayloadSchema = Type.Union([
 
 export const AssistantMessageSyncPatchPayloadSchema = Type.Object({
   type: Type.Literal("message_update"),
-  message: RuntimeAssistantMessageSchema,
-  assistantMessageEvent: AssistantMessageEventPayloadSchema,
+  assistantMessageEvent: Type.Union([
+    Type.Object({
+      type: Type.Literal("start"),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("text_start"),
+      contentIndex: Type.Number(),
+    }),
+    Type.Object({
+      type: Type.Literal("text_delta"),
+      contentIndex: Type.Number(),
+      delta: Type.String(),
+    }),
+    Type.Object({
+      type: Type.Literal("text_end"),
+      contentIndex: Type.Number(),
+      content: Type.String(),
+    }),
+    Type.Object({
+      type: Type.Literal("thinking_start"),
+      contentIndex: Type.Number(),
+    }),
+    Type.Object({
+      type: Type.Literal("thinking_delta"),
+      contentIndex: Type.Number(),
+      delta: Type.String(),
+    }),
+    Type.Object({
+      type: Type.Literal("thinking_end"),
+      contentIndex: Type.Number(),
+      content: Type.String(),
+    }),
+    Type.Object({
+      type: Type.Literal("toolcall_start"),
+      contentIndex: Type.Number(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("toolcall_delta"),
+      contentIndex: Type.Number(),
+      delta: Type.String(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("toolcall_end"),
+      contentIndex: Type.Number(),
+      toolCall: Type.Object({
+        type: Type.Literal("toolCall"),
+        id: Type.String(),
+        name: Type.String(),
+        arguments: Type.Record(Type.String(), JsonValueSchema),
+        thoughtSignature: Type.Optional(Type.String()),
+      }),
+    }),
+    Type.Object({
+      type: Type.Literal("done"),
+      reason: Type.Union([Type.Literal("stop"), Type.Literal("length"), Type.Literal("toolUse")]),
+      message: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("error"),
+      reason: Type.Union([Type.Literal("aborted"), Type.Literal("error")]),
+      error: RuntimeAssistantMessageSchema,
+    }),
+  ]),
 });
 
 export const AgentSessionMessageSchema = Type.Union([
@@ -213,14 +277,16 @@ export const ToolExecutionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("tool_execution_update"),
     toolCallId: Type.String(),
-    toolName: Type.String(),
-    args: JsonValueSchema,
     partialResult: JsonValueSchema,
+  }),
+  Type.Object({
+    type: Type.Literal("tool_execution_output_delta"),
+    toolCallId: Type.String(),
+    delta: Type.String(),
   }),
   Type.Object({
     type: Type.Literal("tool_execution_end"),
     toolCallId: Type.String(),
-    toolName: Type.String(),
     result: JsonValueSchema,
     isError: Type.Boolean(),
   }),
@@ -298,13 +364,6 @@ export const AgentLifecycleEventPayloadSchema = Type.Union([
   }),
 ]);
 
-const AgentSessionGenericFallbackPayloadSchema = Type.Object(
-  {
-    type: Type.String(),
-  },
-  { additionalProperties: true },
-);
-
 const AgentSessionEventKnownPayloadSchema = Type.Union([
   AgentLifecycleEventPayloadSchema,
   Type.Object({
@@ -318,10 +377,7 @@ const AgentSessionEventKnownPayloadSchema = Type.Union([
   CompactionStatusSyncPatchPayloadSchema,
 ]);
 
-const AgentSessionEventPayloadSchema = Type.Union([
-  AgentSessionEventKnownPayloadSchema,
-  AgentSessionGenericFallbackPayloadSchema,
-]);
+const AgentSessionEventPayloadSchema = AgentSessionEventKnownPayloadSchema;
 
 const ExtensionEventPayloadSchema = Type.Object(
   {
@@ -464,6 +520,16 @@ export const StreamEventEnvelopeSchema = Type.Union([
     ...StreamEventCommonProperties,
     kind: Type.Literal("agent_session_event"),
     payload: AgentSessionEventPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("assistant_message_patch"),
+    payload: AssistantMessageSyncPatchPayloadSchema,
+  }),
+  Type.Object({
+    ...StreamEventCommonProperties,
+    kind: Type.Literal("tool_execution_patch"),
+    payload: ToolExecutionSyncPatchPayloadSchema,
   }),
   Type.Object({
     ...StreamEventCommonProperties,

@@ -1,6 +1,8 @@
-import { SettingsManager } from "@mariozechner/pi-coding-agent";
-import type { SessionStats } from "@mariozechner/pi-coding-agent";
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import {
+  SettingsManager,
+  type SessionStats,
+  type AgentSessionEvent,
+} from "@mariozechner/pi-coding-agent";
 import type { SessionSyncEvent } from "../../schemas.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
 import {
@@ -30,11 +32,23 @@ import {
   replaySnapshotExtensionState,
   replaySnapshotLiveOverlay,
   replaySnapshotUiState,
+  toAssistantMessagePatchEvent,
 } from "./runtime-sync-support.js";
+import {
+  formatRemoteError,
+  getBackoffDelayMs,
+  readErrorMessage,
+  readErrorStatus,
+} from "./runtime-sync-errors.js";
+import {
+  applyToolExecutionSyncPatch,
+  type ActiveSyncToolExecutionState,
+} from "./tool-sync-patches.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   private initialSyncReady = false;
   protected readonly activeBashChunkCounts = new Map<string, number>();
+  private readonly activeSyncToolExecutions = new Map<string, ActiveSyncToolExecutionState>();
   private readonly appliedSnapshotExtensionState = new Map<string, string>();
   private readonly initialSyncReadyPromise = new Promise<void>((resolve) => {
     this.resolveInitialSyncReady = resolve;
@@ -111,6 +125,14 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.activeTools = [...snapshot.activeTools];
     initializeRemoteSessionMetadata(this.sessionManager, snapshot);
     this.queueDepth = snapshot.queue.depth;
+    this.activeSyncToolExecutions.clear();
+    for (const execution of liveState.activeToolExecutions) {
+      this.activeSyncToolExecutions.set(execution.toolCallId, {
+        toolName: execution.toolName,
+        args: execution.args,
+        partialResult: execution.partialResult,
+      });
+    }
     replaySnapshotUiState({
       pendingUiRequests: snapshot.pendingUiRequests,
       uiState: snapshot.uiState,
@@ -280,6 +302,25 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       patch: event,
       handleAgentSessionEvent: (agentEvent) => {
         this.applyAgentSessionEvent(agentEvent);
+      },
+      handleAssistantMessagePatch: (payload) => {
+        this.applyAgentSessionEvent(
+          toAssistantMessagePatchEvent(
+            payload,
+            this.state.streamingMessage?.role === "assistant"
+              ? this.state.streamingMessage
+              : undefined,
+          ),
+        );
+      },
+      handleToolExecutionPatch: (payload) => {
+        applyToolExecutionSyncPatch({
+          payload,
+          activeSyncToolExecutions: this.activeSyncToolExecutions,
+          applyAgentSessionEvent: (agentEvent) => {
+            this.applyAgentSessionEvent(agentEvent);
+          },
+        });
       },
       applySessionStatePatch: (payload) => {
         this.applySyncSessionStatePatch(payload);
@@ -737,45 +778,6 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-function readErrorStatus(error: unknown): number | undefined {
-  if (error === null || typeof error !== "object") {
-    return undefined;
-  }
-  const descriptor = Object.getOwnPropertyDescriptor(error, "status");
-  const status: unknown = descriptor?.value;
-  return typeof status === "number" ? status : undefined;
-}
-
 function isRetryableStatus(status: number): boolean {
   return status >= 500 || status === 408 || status === 425 || status === 429;
-}
-
-function formatRemoteError(error: unknown): string {
-  const status = readErrorStatus(error);
-  const message = readErrorMessage(error);
-  if (status === undefined) {
-    return message;
-  }
-  return `${message} (HTTP ${status})`;
-}
-
-function readErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (error !== null && typeof error === "object") {
-    const descriptor = Object.getOwnPropertyDescriptor(error, "message");
-    const message: unknown = descriptor?.value;
-    if (typeof message === "string") {
-      return message;
-    }
-  }
-
-  return String(error);
-}
-
-function getBackoffDelayMs(attempt: number): number {
-  const factor = 2 ** Math.max(0, attempt - 1);
-  return Math.min(500 * factor, 30_000);
 }

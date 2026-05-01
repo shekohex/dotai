@@ -1,0 +1,78 @@
+import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import type { JsonValue } from "../../json-schema.js";
+import type { SessionSyncEvent } from "../../schemas.js";
+import { appendToolOutputTextDelta } from "../../tool-output-text.js";
+
+type ToolExecutionPatchPayload = Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "tool.execution" }
+>["payload"];
+
+export type ActiveSyncToolExecutionState = {
+  toolName: string;
+  args: unknown;
+  partialResult?: JsonValue;
+};
+
+export function applyToolExecutionSyncPatch(input: {
+  payload: ToolExecutionPatchPayload;
+  activeSyncToolExecutions: Map<string, ActiveSyncToolExecutionState>;
+  applyAgentSessionEvent: (event: AgentSessionEvent) => void;
+}): void {
+  if (input.payload.type === "tool_execution_start") {
+    input.activeSyncToolExecutions.set(input.payload.toolCallId, {
+      toolName: input.payload.toolName,
+      args: input.payload.args,
+      partialResult: undefined,
+    });
+    input.applyAgentSessionEvent(input.payload);
+    return;
+  }
+
+  const activeExecution = input.activeSyncToolExecutions.get(input.payload.toolCallId);
+  if (!activeExecution) {
+    return;
+  }
+
+  if (input.payload.type === "tool_execution_output_delta") {
+    const partialResult = appendToolOutputDelta(activeExecution.partialResult, input.payload.delta);
+    if (partialResult === undefined) {
+      return;
+    }
+
+    activeExecution.partialResult = partialResult;
+    input.applyAgentSessionEvent({
+      type: "tool_execution_update",
+      toolCallId: input.payload.toolCallId,
+      toolName: activeExecution.toolName,
+      args: activeExecution.args,
+      partialResult,
+    });
+    return;
+  }
+
+  if (input.payload.type === "tool_execution_update") {
+    activeExecution.partialResult = input.payload.partialResult;
+    input.applyAgentSessionEvent({
+      type: "tool_execution_update",
+      toolCallId: input.payload.toolCallId,
+      toolName: activeExecution.toolName,
+      args: activeExecution.args,
+      partialResult: input.payload.partialResult,
+    });
+    return;
+  }
+
+  input.activeSyncToolExecutions.delete(input.payload.toolCallId);
+  input.applyAgentSessionEvent({
+    type: "tool_execution_end",
+    toolCallId: input.payload.toolCallId,
+    toolName: activeExecution.toolName,
+    result: input.payload.result,
+    isError: input.payload.isError,
+  });
+}
+
+function appendToolOutputDelta(current: JsonValue | undefined, delta: string) {
+  return appendToolOutputTextDelta(current, delta);
+}

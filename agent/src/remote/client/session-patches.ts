@@ -162,7 +162,7 @@ function applyRemoteContextUsagePatch(
     return;
   }
 
-  input.setContextUsage({ ...patch.contextUsage } as ContextUsage);
+  input.setContextUsage({ ...patch.contextUsage });
 }
 
 function applyRemoteSessionStatsPatch(

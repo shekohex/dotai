@@ -616,8 +616,9 @@ export class RemoteApiClient {
   ): Promise<void> {
     await readRemoteSessionSync({
       fetchImpl: this.fetchImpl,
-      origin: this.origin,
-      sessionId,
+      routeUrl: this.rpcClient.sessions[":sessionId"].sync
+        .$url({ param: { sessionId } })
+        .toString(),
       headers: await this.getAuthHeaders(),
       signal: input.signal,
       captureConnectionId: (response) => {

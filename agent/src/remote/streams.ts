@@ -116,6 +116,10 @@ function createStreamEventEnvelope(
       return { ...base, ...input };
     case "agent_session_event":
       return { ...base, ...input };
+    case "assistant_message_patch":
+      return { ...base, ...input };
+    case "tool_execution_patch":
+      return { ...base, ...input };
     case "extension_event":
       return { ...base, ...input };
     case "extension_custom_event":

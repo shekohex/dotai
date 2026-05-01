@@ -5,10 +5,19 @@ import type {
 } from "../../schemas.js";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import type { JsonValue } from "../../json-schema.js";
+import { JsonValueSchema } from "../../json-schema.js";
+import { createDurableExtensionRemovalEvent } from "../../session/durable-runtime-state.js";
 import { readRemoteExtensionSyncInfo } from "../../session-sync-metadata.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
 import type { ForwardableRemoteExtensionEvent } from "./local-extension-runner.js";
+
+const AppliedSnapshotExtensionStateSchema = Type.Object({
+  channel: Type.String(),
+  data: JsonValueSchema,
+});
 
 type ImmediateUiRequest = Extract<
   ExtensionUiRequestEventPayload,
@@ -101,23 +110,57 @@ export function replaySnapshotExtensionState(input: {
   emit: (channel: string, data: JsonValue) => void;
 }): void {
   const nextApplied = new Map<string, string>();
+  const previousApplied = new Map(input.appliedSnapshotExtensionState);
   for (const durableExtensionEvent of input.extensionState) {
     const syncInfo = readRemoteExtensionSyncInfo(
       durableExtensionEvent.channel,
       durableExtensionEvent.data,
     );
     const key = syncInfo.stateKey;
-    const serialized = JSON.stringify(durableExtensionEvent.data);
+    const serialized = serializeAppliedSnapshotExtensionState(
+      durableExtensionEvent.channel,
+      durableExtensionEvent.data,
+    );
     nextApplied.set(key, serialized);
     if (input.appliedSnapshotExtensionState.get(key) === serialized) {
       continue;
     }
     input.emit(durableExtensionEvent.channel, durableExtensionEvent.data);
   }
+  for (const [staleKey, staleValue] of previousApplied) {
+    if (nextApplied.has(staleKey)) {
+      continue;
+    }
+    const previousState = parseAppliedSnapshotExtensionState(staleValue);
+    if (previousState === undefined) {
+      continue;
+    }
+    const syncInfo = readRemoteExtensionSyncInfo(previousState.channel, previousState.data);
+    const removalEvent = createDurableExtensionRemovalEvent({
+      channel: previousState.channel,
+      replaceKey: syncInfo.replaceKey,
+    });
+    input.emit(removalEvent.channel, removalEvent.data);
+  }
   input.appliedSnapshotExtensionState.clear();
   for (const [key, value] of nextApplied) {
     input.appliedSnapshotExtensionState.set(key, value);
   }
+}
+
+function serializeAppliedSnapshotExtensionState(channel: string, data: JsonValue): string {
+  return JSON.stringify({ channel, data });
+}
+
+function parseAppliedSnapshotExtensionState(
+  value: string,
+): { channel: string; data: JsonValue } | undefined {
+  const parsed: unknown = JSON.parse(value);
+  if (!Value.Check(AppliedSnapshotExtensionStateSchema, parsed)) {
+    return undefined;
+  }
+
+  return Value.Parse(AppliedSnapshotExtensionStateSchema, parsed);
 }
 
 export function replaySnapshotLiveOverlay(input: {
@@ -166,6 +209,18 @@ export function replaySnapshotLiveOverlay(input: {
 export async function applySessionSyncPatch(input: {
   patch: Extract<SessionSyncEvent, { type: "patch" }>["patch"];
   handleAgentSessionEvent: (event: AgentSessionEvent) => void;
+  handleAssistantMessagePatch: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "assistant.message" }
+    >["payload"],
+  ) => void;
+  handleToolExecutionPatch: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "tool.execution" }
+    >["payload"],
+  ) => void;
   applySessionStatePatch: (
     payload: Extract<
       Extract<SessionSyncEvent, { type: "patch" }>["patch"],
@@ -208,14 +263,10 @@ export async function applySessionSyncPatch(input: {
       input.applySessionStatePatch(input.patch.payload);
       return;
     case "assistant.message":
-      input.handleAgentSessionEvent({
-        type: "message_update",
-        message: input.patch.payload.message,
-        assistantMessageEvent: input.patch.payload.assistantMessageEvent,
-      });
+      input.handleAssistantMessagePatch(input.patch.payload);
       return;
     case "tool.execution":
-      input.handleAgentSessionEvent(input.patch.payload);
+      input.handleToolExecutionPatch(input.patch.payload);
       return;
     case "queue.update":
       input.handleAgentSessionEvent(input.patch.payload);
@@ -261,6 +312,127 @@ export async function applySessionSyncPatch(input: {
       input.handleExtensionError(input.patch.payload.error);
       break;
   }
+}
+
+export function toAssistantMessagePatchEvent(
+  payload: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "assistant.message" }
+  >["payload"],
+  currentStreamingMessage?: AssistantMessage,
+): AgentSessionEvent {
+  if (payload.assistantMessageEvent.type === "done") {
+    return {
+      type: "message_update",
+      message: payload.assistantMessageEvent.message,
+      assistantMessageEvent: payload.assistantMessageEvent,
+    };
+  }
+
+  if (payload.assistantMessageEvent.type === "error") {
+    return {
+      type: "message_update",
+      message: payload.assistantMessageEvent.error,
+      assistantMessageEvent: payload.assistantMessageEvent,
+    };
+  }
+
+  if (payload.assistantMessageEvent.type === "start") {
+    return {
+      type: "message_update",
+      message: payload.assistantMessageEvent.partial,
+      assistantMessageEvent: payload.assistantMessageEvent,
+    };
+  }
+
+  const nextMessage = applyAssistantMessageSyncEvent(
+    currentStreamingMessage,
+    payload.assistantMessageEvent,
+  );
+  return {
+    type: "message_update",
+    message: nextMessage,
+    assistantMessageEvent: {
+      ...payload.assistantMessageEvent,
+      partial: nextMessage,
+    },
+  } as AgentSessionEvent;
+}
+
+function applyAssistantMessageSyncEvent(
+  currentStreamingMessage: AssistantMessage | undefined,
+  event: Exclude<
+    Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "assistant.message" }
+    >["payload"]["assistantMessageEvent"],
+    { type: "start" } | { type: "done" } | { type: "error" }
+  >,
+): AssistantMessage {
+  if (event.type === "toolcall_start" || event.type === "toolcall_delta") {
+    return event.partial;
+  }
+
+  const baseMessage = currentStreamingMessage ?? {
+    role: "assistant" as const,
+    content: [],
+    api: "remote",
+    provider: "remote",
+    model: "remote",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse" as const,
+    timestamp: Date.now(),
+  };
+
+  const nextContent = [...baseMessage.content];
+  switch (event.type) {
+    case "text_start":
+      nextContent[event.contentIndex] = { type: "text", text: "" };
+      break;
+    case "text_delta": {
+      const existingBlock = nextContent[event.contentIndex];
+      nextContent[event.contentIndex] = {
+        type: "text",
+        text: existingBlock?.type === "text" ? `${existingBlock.text}${event.delta}` : event.delta,
+      };
+      break;
+    }
+    case "text_end":
+      nextContent[event.contentIndex] = { type: "text", text: event.content };
+      break;
+    case "thinking_start":
+      nextContent[event.contentIndex] = { type: "thinking", thinking: "" };
+      break;
+    case "thinking_delta": {
+      const existingBlock = nextContent[event.contentIndex];
+      nextContent[event.contentIndex] = {
+        type: "thinking",
+        thinking:
+          existingBlock?.type === "thinking"
+            ? `${existingBlock.thinking}${event.delta}`
+            : event.delta,
+      };
+      break;
+    }
+    case "thinking_end":
+      nextContent[event.contentIndex] = { type: "thinking", thinking: event.content };
+      break;
+    case "toolcall_end":
+      nextContent[event.contentIndex] = event.toolCall;
+      break;
+  }
+
+  return {
+    ...baseMessage,
+    content: nextContent,
+  };
 }
 
 function toCompactionStatusEvent(

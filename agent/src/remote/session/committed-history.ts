@@ -6,9 +6,10 @@ import {
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 import { sanitizeSessionEntry } from "../schema-normalization.js";
+import type { RemoteSessionEntry } from "../schemas-core.js";
 
 export type CommittedSessionHistory = {
-  entries: SessionEntry[];
+  entries: RemoteSessionEntry[];
   transcript: AgentMessage[];
   totalEntries: number;
   totalTranscriptMessages: number;
@@ -26,7 +27,8 @@ export function readCommittedSessionHistory(input: {
   const normalizedEntries = normalizeCommittedSessionEntries(input.entries);
   const transcript = normalizedEntries
     .filter(
-      (entry): entry is Extract<SessionEntry, { type: "message" }> => entry.type === "message",
+      (entry): entry is Extract<RemoteSessionEntry, { type: "message" }> =>
+        entry.type === "message",
     )
     .map((entry) => structuredClone(entry.message));
 
@@ -56,7 +58,7 @@ export function loadCommittedSessionHistoryFromFile(input: {
   });
 }
 
-export function normalizeCommittedSessionEntries(entries: SessionEntry[]): SessionEntry[] {
+export function normalizeCommittedSessionEntries(entries: SessionEntry[]): RemoteSessionEntry[] {
   return entries
     .filter((entry) => isCommittedSessionEntry(entry))
     .map((entry) => cloneSessionEntry(entry));
@@ -80,7 +82,7 @@ function isCommittedSessionEntry(entry: SessionEntry): boolean {
   return entry.type !== "session_info";
 }
 
-function cloneSessionEntry(entry: SessionEntry): SessionEntry {
+function cloneSessionEntry(entry: SessionEntry): RemoteSessionEntry {
   return sanitizeSessionEntry({
     ...entry,
     ...(entry.type === "message" ? { message: structuredClone(entry.message) } : {}),

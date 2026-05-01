@@ -6,12 +6,14 @@ import {
   loadEntriesFromFile,
   type FileEntry,
   type SessionHeader,
-  type SessionEntry,
 } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
 import type { SessionSummary } from "./schemas.js";
-import { REMOTE_SESSION_VERSION_ENTRY } from "./session/durable-runtime-state.js";
+import {
+  REMOTE_SESSION_VERSION_ENTRY,
+  readRemoteSessionVersionEntryData,
+} from "./session/durable-runtime-state.js";
 import type { SessionRecord } from "./session/types.js";
-import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
+import { asRecord, readString } from "../utils/unknown-data.js";
 
 export interface SessionCatalogRecord {
   sessionId: string;
@@ -447,21 +449,16 @@ function createMovedCatalogRecord(
 function readDurableVersion(entries: FileEntry[]): number {
   let durableVersion = 0;
   for (const entry of entries) {
-    if (
-      entry.type === "custom" &&
-      entry.customType === REMOTE_SESSION_VERSION_ENTRY &&
-      isSessionVersionEntry(entry)
-    ) {
-      durableVersion = entry.data.version;
+    if (entry.type !== "custom" || entry.customType !== REMOTE_SESSION_VERSION_ENTRY) {
+      continue;
+    }
+
+    const versionEntry = readRemoteSessionVersionEntryData(entry.data);
+    if (versionEntry !== undefined) {
+      durableVersion = versionEntry.version;
     }
   }
   return durableVersion;
-}
-
-function isSessionVersionEntry(
-  entry: Extract<SessionEntry, { type: "custom" }>,
-): entry is Extract<SessionEntry, { type: "custom" }> & { data: { version: number } } {
-  return readNumber(asRecord(entry.data)?.version) !== undefined;
 }
 
 function resolveLifecycleStatus(

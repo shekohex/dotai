@@ -118,7 +118,7 @@ export function sanitizeSessionEntry(entry: SessionEntry): RemoteSessionEntry {
     };
   }
 
-  return entry;
+  return structuredClone(entry);
 }
 
 export function sanitizeBranchSummaryEntry(

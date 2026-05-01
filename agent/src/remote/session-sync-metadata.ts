@@ -6,7 +6,6 @@ export type RemoteExtensionSyncInfo = {
   sync: "ephemeral" | "replaceable" | "durable" | undefined;
   replaceKey: string | undefined;
   stateKey: string;
-  retentionKey: string | undefined;
 };
 
 export function readRemoteExtensionSyncInfo(
@@ -20,7 +19,6 @@ export function readRemoteExtensionSyncInfo(
     sync: metadata.sync,
     replaceKey: metadata.replaceKey,
     stateKey,
-    retentionKey: metadata.sync === "replaceable" ? stateKey : undefined,
   };
 }
 
@@ -29,13 +27,6 @@ export function readRemoteExtensionEventSyncClass(
   data: unknown,
 ): "ephemeral" | "replaceable" | "durable" | undefined {
   return readRemoteExtensionSyncInfo(channel, data).sync;
-}
-
-export function readRemoteExtensionRetentionKey(
-  channel: string,
-  data: unknown,
-): string | undefined {
-  return readRemoteExtensionSyncInfo(channel, data).retentionKey;
 }
 
 export function readAgentSessionEventReplaceKey(event: AgentSessionEvent): string | undefined {

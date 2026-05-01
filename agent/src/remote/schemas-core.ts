@@ -328,39 +328,20 @@ const SessionInfoEntrySchema = Type.Object({
 });
 
 export const RemoteSessionEntrySchema = Type.Union([
-  Type.Unsafe<Extract<SessionEntry, { type: "message" }>>(SessionMessageEntrySchema),
-  Type.Unsafe<Extract<SessionEntry, { type: "thinking_level_change" }>>(
-    ThinkingLevelChangeEntrySchema,
-  ),
-  Type.Unsafe<Extract<SessionEntry, { type: "model_change" }>>(ModelChangeEntrySchema),
+  SessionMessageEntrySchema,
+  ThinkingLevelChangeEntrySchema,
+  ModelChangeEntrySchema,
   CompactionEntrySchema,
   BranchSummaryEntrySchema,
   CustomEntrySchema,
   CustomMessageEntrySchema,
-  Type.Unsafe<Extract<SessionEntry, { type: "label" }>>(LabelEntrySchema),
-  Type.Unsafe<Extract<SessionEntry, { type: "session_info" }>>(SessionInfoEntrySchema),
+  LabelEntrySchema,
+  SessionInfoEntrySchema,
 ]);
 
-export type RemoteSessionEntry = Static<typeof RemoteSessionEntrySchema>;
+export type RemoteSessionEntry = SessionEntry;
 
-export const SessionEntrySchema = Type.Unsafe<SessionEntry>(RemoteSessionEntrySchema);
-
-type EnsureTrue<T extends true> = T;
-type KnownSessionEntryMembers =
-  | Extract<SessionEntry, { type: "message" }>
-  | Extract<SessionEntry, { type: "thinking_level_change" }>
-  | Extract<SessionEntry, { type: "model_change" }>
-  | Extract<SessionEntry, { type: "compaction" }>
-  | Extract<SessionEntry, { type: "branch_summary" }>
-  | Extract<SessionEntry, { type: "custom" }>
-  | Extract<SessionEntry, { type: "custom_message" }>
-  | Extract<SessionEntry, { type: "label" }>
-  | Extract<SessionEntry, { type: "session_info" }>;
-type AssertNoUnhandledSessionEntryMembers = EnsureTrue<
-  Exclude<SessionEntry, KnownSessionEntryMembers> extends never ? true : false
->;
-const sessionEntryMemberParity: AssertNoUnhandledSessionEntryMembers = true;
-void sessionEntryMemberParity;
+export const SessionEntrySchema = Type.Unsafe<RemoteSessionEntry>(RemoteSessionEntrySchema);
 
 export const NavigateTreeRequestSchema = Type.Object({
   targetId: Type.String({ minLength: 1 }),
@@ -792,16 +773,16 @@ export const CompactResponseSchema = Type.Object({
   firstKeptEntryId: Type.String(),
   tokensBefore: Type.Number(),
   details: Type.Optional(JsonValueSchema),
-  snapshot: Type.Optional(Type.Unknown()),
+  snapshot: Type.Optional(SessionSnapshotSchema),
 });
 
 export const BashExecuteResponseSchema = Type.Object({
   ...BashResultSchema.properties,
   chunks: Type.Optional(Type.Array(Type.String())),
   clientRequestId: Type.Optional(Type.String()),
-  snapshot: Type.Optional(Type.Unknown()),
+  snapshot: Type.Optional(SessionSnapshotSchema),
 });
 
 export const BashRecordResponseSchema = Type.Object({
-  snapshot: Type.Optional(Type.Unknown()),
+  snapshot: Type.Optional(SessionSnapshotSchema),
 });

@@ -50,6 +50,7 @@ export const REMOTE_BASH_STATE_ENTRY = "remote-bash-state";
 export const REMOTE_STREAMING_STATE_ENTRY = "remote-streaming-state";
 export const REMOTE_SESSION_VERSION_ENTRY = "remote-session-version";
 export const REMOTE_DURABLE_EXTENSION_EVENT_ENTRY = "remote-durable-extension-event";
+export { RemoteSessionVersionEntrySchema };
 
 type DurableRuntimeDomainState = {
   queue: { depth: number; nextSequence: number; updatedAt: number };
@@ -301,4 +302,14 @@ function readDurableRuntimeDomainState(
 
 function readDurableExtensionProjectionKey(channel: string, data: unknown): string {
   return readRemoteExtensionStateKey(channel, data);
+}
+
+export function readRemoteSessionVersionEntryData(
+  value: unknown,
+): { version: number; updatedAt: number } | undefined {
+  if (!Value.Check(RemoteSessionVersionEntrySchema, value)) {
+    return undefined;
+  }
+
+  return Value.Parse(RemoteSessionVersionEntrySchema, value);
 }

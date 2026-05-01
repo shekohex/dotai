@@ -3,6 +3,7 @@ import type { SessionSnapshot } from "../schemas.js";
 import { getExecutorState } from "../../extensions/executor/status.js";
 import { getGitState, serializeGitRuntimeState } from "../../extensions/git-state.js";
 import { sanitizeRemoteModel, sanitizeSessionEntry } from "../schema-normalization.js";
+import type { RemoteSessionEntry } from "../schemas-core.js";
 import { toTransportTranscript } from "../transcript-transport.js";
 import { buildDurableExtensionState } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
@@ -140,7 +141,7 @@ function readRuntimeSession(
   return runtime.session;
 }
 
-function cloneSessionEntry(entry: SessionEntry): SessionEntry {
+function cloneSessionEntry(entry: SessionEntry): RemoteSessionEntry {
   return sanitizeSessionEntry({
     ...entry,
     ...(entry.type === "message" ? { message: structuredClone(entry.message) } : {}),

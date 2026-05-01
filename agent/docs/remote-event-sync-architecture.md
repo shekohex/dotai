@@ -722,6 +722,7 @@ Outcome-first summary:
 - they no longer provide replay, resume, or cursor recovery semantics
 - durable session version remains authoritative for sync ordering and snapshot convergence
 - seeded session stream head on load remains required so post-reload live events keep monotonic offsets for active subscribers
+- TypeBox schemas for session entries are transport-owned, but exported TypeScript entry type still aliases upstream `SessionEntry` pending full transport-type decoupling
 - [x] treat `server.connected` as reconnect/resync signal
 
 ### Testing checklist

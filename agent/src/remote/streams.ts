@@ -6,9 +6,7 @@ import type { StreamEventEnvelope } from "./schemas.js";
 type StreamEventKind = StreamEventEnvelope["kind"];
 
 interface StreamState {
-  events: StreamEventEnvelope[];
   nextPosition: number;
-  retentionKeysByEventId: Map<string, string>;
 }
 
 interface AppendEventInput<TKind extends StreamEventKind = StreamEventKind> {
@@ -16,7 +14,6 @@ interface AppendEventInput<TKind extends StreamEventKind = StreamEventKind> {
   kind: TKind;
   payload: Extract<StreamEventEnvelope, { kind: TKind }>["payload"];
   ts?: number;
-  retentionKey?: string;
   sessionVersion?: string;
 }
 
@@ -31,42 +28,25 @@ function formatOffset(position: number): string {
 
 export class InMemoryDurableStreamStore {
   private readonly streams = new Map<string, StreamState>();
-  private readonly maxRetainedEventsPerStream: number;
-
-  constructor(options?: { maxRetainedEventsPerStream?: number }) {
-    this.maxRetainedEventsPerStream = options?.maxRetainedEventsPerStream ?? 512;
-  }
 
   ensureStream(streamId: string): void {
     if (this.streams.has(streamId)) {
       return;
     }
     this.streams.set(streamId, {
-      events: [],
       nextPosition: 0,
-      retentionKeysByEventId: new Map(),
     });
   }
 
   append(streamId: string, input: AppendEventInputUnion): StreamEventEnvelope {
     const stream = this.getOrCreate(streamId);
-    if (input.retentionKey !== undefined && input.retentionKey.length > 0) {
-      dropRetainedEventsByKey(stream, input.retentionKey);
-    }
     stream.nextPosition += 1;
-    const streamOffset = formatOffset(stream.nextPosition);
-    const event = createStreamEventEnvelope(
+    return createStreamEventEnvelope(
       randomUUID(),
-      streamOffset,
+      formatOffset(stream.nextPosition),
       input.ts ?? Date.now(),
       input,
     );
-    stream.events.push(event);
-    if (input.retentionKey !== undefined && input.retentionKey.length > 0) {
-      stream.retentionKeysByEventId.set(event.eventId, input.retentionKey);
-    }
-    this.trimRetainedEvents(stream);
-    return event;
   }
 
   appendLiveOnly(streamId: string, input: AppendEventInputUnion): StreamEventEnvelope {
@@ -102,24 +82,10 @@ export class InMemoryDurableStreamStore {
     }
 
     const created: StreamState = {
-      events: [],
       nextPosition: 0,
-      retentionKeysByEventId: new Map(),
     };
     this.streams.set(streamId, created);
     return created;
-  }
-
-  private trimRetainedEvents(stream: StreamState): void {
-    if (stream.events.length <= this.maxRetainedEventsPerStream) {
-      return;
-    }
-
-    const deleteCount = stream.events.length - this.maxRetainedEventsPerStream;
-    const removedEvents = stream.events.splice(0, deleteCount);
-    for (const removedEvent of removedEvents) {
-      stream.retentionKeysByEventId.delete(removedEvent.eventId);
-    }
   }
 }
 
@@ -175,22 +141,6 @@ function createStreamEventEnvelope(
   }
 
   throw new RemoteError("Unsupported stream event kind", 500);
-}
-
-function dropRetainedEventsByKey(stream: StreamState, retentionKey: string): void {
-  const removedEventIds = stream.events
-    .filter((event) => stream.retentionKeysByEventId.get(event.eventId) === retentionKey)
-    .map((event) => event.eventId);
-  const nextEvents = stream.events.filter((event) => !removedEventIds.includes(event.eventId));
-  if (nextEvents.length === stream.events.length) {
-    return;
-  }
-
-  for (const removedEventId of removedEventIds) {
-    stream.retentionKeysByEventId.delete(removedEventId);
-  }
-
-  stream.events = nextEvents;
 }
 
 export function appEventsStreamId(): string {

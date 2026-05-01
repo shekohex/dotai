@@ -1,6 +1,5 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { SessionLiveEventBus } from "../live-events.js";
-import { readAgentSessionEventReplaceKey } from "../session-sync-metadata.js";
 import {
   appEventsStreamId,
   appendAndPublish,
@@ -105,7 +104,6 @@ export function handleRegistrySessionEvent(input: {
         kind: "agent_session_event",
         sessionVersion,
         payload: targetEvent,
-        retentionKey: getAgentSessionEventRetentionKey(targetEvent),
         ts,
       });
     },
@@ -123,7 +121,6 @@ export function handleRegistrySessionEvent(input: {
             sequence: targetRecord.queue.nextSequence,
             patch,
           },
-          retentionKey: "session-state-patch",
           ts,
         },
       );
@@ -139,24 +136,6 @@ export function handleRegistrySessionEvent(input: {
     record,
     updatedAt: input.now,
   });
-}
-
-function getAgentSessionEventRetentionKey(event: AgentSessionEvent): string | undefined {
-  const replaceKey = readAgentSessionEventReplaceKey(event);
-  if (replaceKey === "agent_session_event:message_update:assistant") {
-    return "assistant-message-update";
-  }
-
-  if (
-    replaceKey !== undefined &&
-    replaceKey.startsWith("agent_session_event:tool_execution_update:")
-  ) {
-    return replaceKey
-      .replace("agent_session_event:", "")
-      .replace("tool_execution_update:", "tool-execution-update:");
-  }
-
-  return undefined;
 }
 
 function isLiveOnlyAgentSessionEvent(event: AgentSessionEvent): boolean {

@@ -102,7 +102,6 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
       channel: input.channel,
       data: jsonData,
     },
-    retentionKey: syncInfo.retentionKey,
     ts: input.ts,
   });
 }

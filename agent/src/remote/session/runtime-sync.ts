@@ -2,16 +2,13 @@ import type { AgentSessionRuntime, SessionStats } from "@mariozechner/pi-coding-
 import type { SessionSnapshot, SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
 import { parseResourceLoaderExtensionMetadata, parseRuntimeExtensionMetadata } from "./helpers.js";
+import { readRuntimeRemoteExtensionMetadata } from "./runtime-extension-metadata.js";
 import {
   applyRuntimeResourcesSnapshot,
   readRuntimeSettingsSnapshot,
 } from "./runtime-resources-sync.js";
 import { buildSessionSnapshotParts } from "./runtime-sync-snapshot.js";
 import { createEmptySessionStats, type SessionRecord } from "./types.js";
-
-type RuntimeWithExtensionMetadata = AgentSessionRuntime & {
-  remoteExtensionMetadata?: unknown;
-};
 
 function ensureLiveState(record: SessionRecord): SessionRecord["live"] {
   if (record.live !== undefined) {
@@ -140,11 +137,9 @@ function applyRuntimeSnapshot(
     session.pendingMessageCount +
     (session.isStreaming ? 1 : 0) +
     record.runtimeUndispatchedCommandCount;
-  liveState.retryAttempt = typeof session.retryAttempt === "number" ? session.retryAttempt : 0;
-  liveState.queuedSteeringMessages =
-    typeof session.getSteeringMessages === "function" ? [...session.getSteeringMessages()] : [];
-  liveState.queuedFollowUpMessages =
-    typeof session.getFollowUpMessages === "function" ? [...session.getFollowUpMessages()] : [];
+  liveState.retryAttempt = readRetryAttempt(session);
+  liveState.queuedSteeringMessages = readQueuedSteeringMessages(session);
+  liveState.queuedFollowUpMessages = readQueuedFollowUpMessages(session);
   record.status = deriveRuntimeSessionStatus(session, record.errorMessage);
 }
 
@@ -195,18 +190,60 @@ function readSessionStats(
   sessionId: string,
   session: NonNullable<AgentSessionRuntime["session"]>,
 ): SessionRecord["sessionStats"] {
-  if (typeof session.getSessionStats !== "function") {
+  if (!hasSessionStatsReader(session)) {
     const fallback = createEmptySessionStats(sessionId);
-    if (typeof session.getContextUsage === "function") {
-      const contextUsage = session.getContextUsage();
-      if (contextUsage) {
-        fallback.contextUsage = { ...contextUsage };
-      }
+    const contextUsage = readOptionalContextUsage(session);
+    if (contextUsage !== undefined) {
+      fallback.contextUsage = { ...contextUsage };
     }
     return fallback;
   }
 
-  return cloneSessionStats(session.getSessionStats());
+  const sessionStats = session.getSessionStats();
+  if (sessionStats.sessionId.length > 0) {
+    return cloneSessionStats(sessionStats);
+  }
+
+  const fallback = createEmptySessionStats(sessionId);
+  const contextUsage = readOptionalContextUsage(session);
+  if (contextUsage !== undefined) {
+    fallback.contextUsage = { ...contextUsage };
+  }
+  return fallback;
+}
+
+function readOptionalContextUsage(
+  session: NonNullable<AgentSessionRuntime["session"]>,
+): SessionRecord["contextUsage"] {
+  return typeof session.getContextUsage === "function" ? session.getContextUsage() : undefined;
+}
+
+function readQueuedSteeringMessages(
+  session: NonNullable<AgentSessionRuntime["session"]>,
+): string[] {
+  return typeof session.getSteeringMessages === "function"
+    ? [...session.getSteeringMessages()]
+    : [];
+}
+
+function readQueuedFollowUpMessages(
+  session: NonNullable<AgentSessionRuntime["session"]>,
+): string[] {
+  return typeof session.getFollowUpMessages === "function"
+    ? [...session.getFollowUpMessages()]
+    : [];
+}
+
+function readRetryAttempt(session: NonNullable<AgentSessionRuntime["session"]>): number {
+  return typeof session.retryAttempt === "number" ? session.retryAttempt : 0;
+}
+
+function hasSessionStatsReader(
+  session: NonNullable<AgentSessionRuntime["session"]>,
+): session is NonNullable<AgentSessionRuntime["session"]> & {
+  getSessionStats: () => SessionStats;
+} {
+  return typeof session.getSessionStats === "function";
 }
 
 function cloneSessionStats(stats: SessionStats): SessionRecord["sessionStats"] {
@@ -263,34 +300,22 @@ export function getRuntimeSessionFromRecord(
   return record.runtime.session;
 }
 
+export { readRuntimeRemoteExtensionMetadata };
+
 function readRuntimeExtensionMetadata(runtime: AgentSessionRuntime) {
   const runtimeMetadata = parseRuntimeExtensionMetadata(
-    (runtime as RuntimeWithExtensionMetadata).remoteExtensionMetadata,
+    readRuntimeRemoteExtensionMetadata(runtime),
   );
   if (runtimeMetadata.length > 0) {
     return runtimeMetadata;
   }
 
   const session = runtime.session;
-  if (session === undefined || session === null || typeof session !== "object") {
+  if (session === undefined) {
     return [];
   }
 
-  const resourceLoader = session.resourceLoader;
-  if (
-    resourceLoader === undefined ||
-    resourceLoader === null ||
-    typeof resourceLoader !== "object"
-  ) {
-    return [];
-  }
-
-  const loaded = resourceLoader.getExtensions();
-  if (loaded === undefined || loaded === null || typeof loaded !== "object") {
-    return [];
-  }
-
-  return parseResourceLoaderExtensionMetadata(loaded.extensions);
+  return parseResourceLoaderExtensionMetadata(session.resourceLoader.getExtensions().extensions);
 }
 
 export function requireRuntimeSessionFromRecord(

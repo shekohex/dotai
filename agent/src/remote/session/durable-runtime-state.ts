@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { readRemoteExtensionStateKey } from "../event-bus-bridge.js";
 import { JsonValueSchema, type JsonValue } from "../json-schema.js";
+import { readRemoteExtensionSyncInfo } from "../session-sync-metadata.js";
 import type { SessionRecord } from "./types.js";
 
 const RemoteQueueStateEntrySchema = Type.Object({
@@ -38,6 +39,7 @@ const RemoteSessionVersionEntrySchema = Type.Object({
 });
 
 const RemoteDurableExtensionEventEntrySchema = Type.Object({
+  op: Type.Union([Type.Literal("upsert"), Type.Literal("remove")]),
   channel: Type.String(),
   data: JsonValueSchema,
   ts: Type.Number(),
@@ -65,8 +67,10 @@ export function persistDurableRuntimeDomainState(input: {
   record: SessionRecord;
   updatedAt: number;
 }): void {
-  const sessionManager = input.record.runtime.session?.sessionManager;
-  if (!hasAppendCustomEntry(sessionManager)) {
+  const sessionManager = requireRemoteDurableSessionManagerWriter(
+    input.record.runtime.session?.sessionManager,
+  );
+  if (sessionManager === undefined) {
     return;
   }
 
@@ -99,8 +103,10 @@ export function persistDurableRuntimeDomainState(input: {
 }
 
 export function restoreDurableRuntimeDomainState(record: SessionRecord, now: number): void {
-  const sessionManager = record.runtime.session?.sessionManager;
-  if (!hasSessionEntries(sessionManager)) {
+  const sessionManager = requireRemoteDurableSessionManagerReader(
+    record.runtime.session?.sessionManager,
+  );
+  if (sessionManager === undefined) {
     return;
   }
 
@@ -160,17 +166,21 @@ export function appendDurableExtensionEvent(input: {
   data: JsonValue;
   ts: number;
 }): void {
-  const sessionManager = input.record.runtime.session?.sessionManager;
-  if (!hasAppendCustomEntry(sessionManager)) {
+  const sessionManager = requireRemoteDurableSessionManagerWriter(
+    input.record.runtime.session?.sessionManager,
+  );
+  if (sessionManager === undefined) {
     return;
   }
 
+  const syncInfo = readRemoteExtensionSyncInfo(input.channel, input.data);
   input.record.lastDurableSessionVersion += 1;
   sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
     version: input.record.lastDurableSessionVersion,
     updatedAt: input.ts,
   });
   sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_EVENT_ENTRY, {
+    op: syncInfo.deleted ? "remove" : "upsert",
     channel: input.channel,
     data: input.data,
     ts: input.ts,
@@ -178,16 +188,20 @@ export function appendDurableExtensionEvent(input: {
 }
 
 export function readDurableExtensionEvents(record: SessionRecord): Array<{
+  op: "upsert" | "remove";
   channel: string;
   data: JsonValue;
   ts: number;
 }> {
-  const sessionManager = record.runtime.session?.sessionManager;
-  if (!hasSessionEntries(sessionManager)) {
+  const sessionManager = requireRemoteDurableSessionManagerReader(
+    record.runtime.session?.sessionManager,
+  );
+  if (sessionManager === undefined) {
     return [];
   }
 
-  const result: Array<{ channel: string; data: JsonValue; ts: number }> = [];
+  const result: Array<{ op: "upsert" | "remove"; channel: string; data: JsonValue; ts: number }> =
+    [];
   for (const entry of sessionManager.getEntries()) {
     if (
       entry.type === "custom" &&
@@ -210,6 +224,14 @@ export function buildDurableExtensionState(record: SessionRecord): Array<{
 
   for (const event of readDurableExtensionEvents(record)) {
     const key = readDurableExtensionProjectionKey(event.channel, event.data);
+    if (event.op === "remove") {
+      projectedByKey.delete(key);
+      const existingIndex = orderedKeys.indexOf(key);
+      if (existingIndex >= 0) {
+        orderedKeys.splice(existingIndex, 1);
+      }
+      continue;
+    }
     if (!projectedByKey.has(key)) {
       orderedKeys.push(key);
     }
@@ -224,24 +246,33 @@ export function buildDurableExtensionState(record: SessionRecord): Array<{
     .filter((value): value is { channel: string; data: JsonValue } => value !== undefined);
 }
 
-function hasAppendCustomEntry(
-  sessionManager: SessionManager | undefined,
-): sessionManager is SessionManager & {
-  appendCustomEntry: (customType: string, data: unknown) => void;
-} {
-  return (
-    sessionManager !== undefined &&
-    typeof sessionManager.appendCustomEntry === "function" &&
-    typeof sessionManager.getEntries === "function"
-  );
+function requireRemoteDurableSessionManagerWriter(sessionManager: SessionManager | undefined):
+  | (SessionManager & {
+      appendCustomEntry: (customType: string, data: unknown) => void;
+      getEntries: () => SessionEntry[];
+    })
+  | undefined {
+  if (
+    sessionManager === undefined ||
+    typeof sessionManager.appendCustomEntry !== "function" ||
+    typeof sessionManager.getEntries !== "function"
+  ) {
+    return undefined;
+  }
+
+  return sessionManager;
 }
 
-function hasSessionEntries(
-  sessionManager: SessionManager | undefined,
-): sessionManager is SessionManager & {
-  getEntries: () => SessionEntry[];
-} {
-  return sessionManager !== undefined && typeof sessionManager.getEntries === "function";
+function requireRemoteDurableSessionManagerReader(sessionManager: SessionManager | undefined):
+  | (SessionManager & {
+      getEntries: () => SessionEntry[];
+    })
+  | undefined {
+  if (sessionManager === undefined || typeof sessionManager.getEntries !== "function") {
+    return undefined;
+  }
+
+  return sessionManager;
 }
 
 function readDurableRuntimeDomainState(
@@ -302,6 +333,20 @@ function readDurableRuntimeDomainState(
 
 function readDurableExtensionProjectionKey(channel: string, data: unknown): string {
   return readRemoteExtensionStateKey(channel, data);
+}
+
+export function createDurableExtensionRemovalEvent(input: {
+  channel: string;
+  replaceKey: string | undefined;
+}): { channel: string; data: JsonValue } {
+  return {
+    channel: input.channel,
+    data: {
+      sync: "durable",
+      ...(input.replaceKey === undefined ? {} : { replaceKey: input.replaceKey }),
+      deleted: true,
+    },
+  };
 }
 
 export function readRemoteSessionVersionEntryData(

@@ -6,6 +6,7 @@ export type RemoteExtensionSyncInfo = {
   sync: "ephemeral" | "replaceable" | "durable" | undefined;
   replaceKey: string | undefined;
   stateKey: string;
+  deleted: boolean;
 };
 
 export function readRemoteExtensionSyncInfo(
@@ -19,6 +20,7 @@ export function readRemoteExtensionSyncInfo(
     sync: metadata.sync,
     replaceKey: metadata.replaceKey,
     stateKey,
+    deleted: metadata.deleted,
   };
 }
 

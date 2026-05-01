@@ -48,6 +48,7 @@ import {
   parseThinkingLevelFromAllowedSet,
   restoreDurableRuntimeDomainState,
   pruneExpiredSessionPresence,
+  readRuntimeRemoteExtensionMetadata,
   requireRuntimeSessionFromRecord,
   syncSessionRecordFromRuntime,
   toSessionSnapshotRecord,
@@ -277,8 +278,7 @@ export abstract class SessionRegistryBase {
 
   protected readRuntimeExtensionMetadata(runtime: AgentSessionRuntime): RemoteExtensionMetadata[] {
     const runtimeMetadata = parseRuntimeExtensionMetadata(
-      (runtime as AgentSessionRuntime & { remoteExtensionMetadata?: unknown })
-        .remoteExtensionMetadata,
+      readRuntimeRemoteExtensionMetadata(runtime),
     );
     if (runtimeMetadata.length > 0) {
       return runtimeMetadata;
@@ -291,25 +291,11 @@ export abstract class SessionRegistryBase {
     runtime: AgentSessionRuntime,
   ): RemoteExtensionMetadata[] {
     const session = runtime.session;
-    if (session === undefined || session === null || typeof session !== "object") {
+    if (session === undefined) {
       return [];
     }
 
-    const resourceLoader = session.resourceLoader;
-    if (
-      resourceLoader === undefined ||
-      resourceLoader === null ||
-      typeof resourceLoader !== "object"
-    ) {
-      return [];
-    }
-
-    const loaded = resourceLoader.getExtensions();
-    if (loaded === undefined || loaded === null || typeof loaded !== "object") {
-      return [];
-    }
-
-    return parseResourceLoaderExtensionMetadata(loaded.extensions);
+    return parseResourceLoaderExtensionMetadata(session.resourceLoader.getExtensions().extensions);
   }
 
   protected requireRuntimeSession(record: SessionRecord): AgentSessionRuntime["session"] {

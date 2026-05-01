@@ -56,6 +56,7 @@ export {
   getRuntimeSessionFromRecord,
   parseModelRefStrict,
   pruneExpiredSessionPresence,
+  readRuntimeRemoteExtensionMetadata,
   requireRuntimeSessionFromRecord,
   syncSessionRecordFromRuntime,
   toSessionSnapshotRecord,

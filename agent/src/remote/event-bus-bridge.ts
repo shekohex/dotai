@@ -20,6 +20,7 @@ const RemoteExtensionSyncMetadataSchema = Type.Object(
       Type.Union([Type.Literal("ephemeral"), Type.Literal("replaceable"), Type.Literal("durable")]),
     ),
     replaceKey: Type.Optional(Type.String({ minLength: 1 })),
+    deleted: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },
 );
@@ -131,16 +132,18 @@ export function parseRemoteCustomExtensionEventPayload(
 export function parseRemoteExtensionSyncMetadata(value: unknown): {
   sync: "ephemeral" | "replaceable" | "durable" | undefined;
   replaceKey: string | undefined;
+  deleted: boolean;
 } {
   if (Value.Check(RemoteExtensionSyncMetadataSchema, value)) {
     const metadata = Value.Parse(RemoteExtensionSyncMetadataSchema, value);
     return {
       sync: metadata.sync,
       replaceKey: metadata.replaceKey,
+      deleted: metadata.deleted === true,
     };
   }
 
-  return { sync: undefined, replaceKey: undefined };
+  return { sync: undefined, replaceKey: undefined, deleted: false };
 }
 
 export function readRemoteExtensionStateKey(channel: string, data: unknown): string {

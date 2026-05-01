@@ -1,5 +1,7 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import type { JsonValue } from "../json-schema.js";
 import { toJsonValue } from "../json-value.js";
+import { readToolOutputText } from "../tool-output-text.js";
 import type { SessionRecord } from "./types.js";
 
 export function readDurableRuntimeState(record: SessionRecord): {
@@ -19,6 +21,24 @@ export function readDurableRuntimeState(record: SessionRecord): {
     isBashRunning: record.isBashRunning,
     hasPendingBashMessages: record.hasPendingBashMessages,
     streamingState: record.streamingState,
+  };
+}
+
+export function cloneLiveState(record: SessionRecord): SessionRecord["live"] {
+  return {
+    queuedSteeringMessages: [...record.live.queuedSteeringMessages],
+    queuedFollowUpMessages: [...record.live.queuedFollowUpMessages],
+    retryAttempt: record.live.retryAttempt,
+    streamingMessage:
+      record.live.streamingMessage === undefined
+        ? undefined
+        : structuredClone(record.live.streamingMessage),
+    activeToolExecutions: new Map(
+      [...record.live.activeToolExecutions.entries()].map(([toolCallId, execution]) => [
+        toolCallId,
+        structuredClone(execution),
+      ]),
+    ),
   };
 }
 
@@ -83,15 +103,21 @@ function applyLiveOverlayEvent(record: SessionRecord, event: AgentSessionEvent):
         toolName: event.toolName,
         args: toJsonValue(event.args) ?? null,
         partialResult: undefined,
+        partialOutputText: undefined,
       });
       break;
     case "tool_execution_update":
-      liveState.activeToolExecutions.set(event.toolCallId, {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        args: toJsonValue(event.args) ?? null,
-        partialResult: toJsonValue(event.partialResult) ?? null,
-      });
+      {
+        const partialResult = toJsonValue(event.partialResult) ?? null;
+        const partialOutputText = readToolPartialOutputText(partialResult);
+        liveState.activeToolExecutions.set(event.toolCallId, {
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: toJsonValue(event.args) ?? null,
+          partialResult,
+          partialOutputText,
+        });
+      }
       break;
     case "tool_execution_end":
       liveState.activeToolExecutions.delete(event.toolCallId);
@@ -105,6 +131,10 @@ function applyLiveOverlayEvent(record: SessionRecord, event: AgentSessionEvent):
       liveState.retryAttempt = event.attempt;
       break;
   }
+}
+
+function readToolPartialOutputText(value: JsonValue): string | undefined {
+  return readToolOutputText(value);
 }
 
 function hasContextUsageChange(
@@ -324,6 +354,7 @@ export function handleSessionEventForRecord(input: {
     event: AgentSessionEvent,
     ts: number,
     sessionVersion: string,
+    previousLiveState: SessionRecord["live"],
   ) => void;
   appendSessionStatePatch: (
     record: SessionRecord,
@@ -345,6 +376,7 @@ export function handleSessionEventForRecord(input: {
   emitSessionSummaryUpdated: (record: SessionRecord, ts: number) => void;
 }): boolean {
   const previousDurableRuntimeState = readDurableRuntimeState(input.record);
+  const previousLiveState = cloneLiveState(input.record);
 
   syncActiveRunFromEvent({
     record: input.record,
@@ -372,7 +404,7 @@ export function handleSessionEventForRecord(input: {
   const sessionVersion = String(
     input.record.lastDurableSessionVersion + (durableRuntimeStateChanged ? 1 : 0),
   );
-  input.appendAgentEvent(input.record, input.event, input.now, sessionVersion);
+  input.appendAgentEvent(input.record, input.event, input.now, sessionVersion, previousLiveState);
 
   appendSessionStatePatchIfChanged({
     record: input.record,

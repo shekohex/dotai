@@ -85,31 +85,34 @@ Desired client behavior:
 8. Client does not need full replay of missed transient progress events.
 9. Client converges to current server state with minimum useful data.
 
+## Historical Audit
+
+This section captures pre-refactor architecture that motivated work below.
+
 ## Current Local Architecture
 
 ### In-memory durable stream store
 
-Current remote mode keeps all events in memory per stream:
+Before snapshot/patch sync refactor, remote mode kept all events in memory per stream:
 
-- `InMemoryDurableStreamStore` stores `events: StreamEventEnvelope[]` in each `StreamState`. `src/remote/streams.ts:22-27`
-- `append()` assigns offset using `stream.events.length + 1` and pushes into array forever. `src/remote/streams.ts:85-105`
-- `read()` and `readAndSubscribe()` filter entire retained array by offset. `src/remote/streams.ts:108-172`
-- `waitForEvents()` also depends on same in-memory store. `src/remote/streams.ts:174-220`
+- `InMemoryDurableStreamStore` stored retained `events: StreamEventEnvelope[]` per stream in pre-refactor code.
+- `append()` assigned offsets from retained array length and pushed every event forever in pre-refactor code.
+- `read()`, `readAndSubscribe()`, and `waitForEvents()` all depended on same retained in-memory backlog in pre-refactor code.
 
 Implications:
 
 - memory grows without bound
 - high-rate transient events accumulate forever
-- reconnect path currently depends on replaying retained stream entries
-- current `upToDate` flag is always `true`, so there is no strong distinction between fresh catch-up and stale retained history. `src/remote/streams.ts:116-122`, `src/remote/streams.ts:150-156`
+- reconnect path previously depended on replaying retained stream entries
+- pre-refactor `upToDate` was always `true`, so there was no strong distinction between fresh catch-up and stale retained history
 
 ### Runtime events become retained stream entries
 
-Remote session registry subscribes to runtime session events and converts them into retained stream events:
+Pre-refactor remote session registry subscribed to runtime session events and converted them into retained stream events:
 
-- runtime subscription is installed in `initializeRuntimeRecord()`. `src/remote/session/registry-base.ts:377-401`
-- each `AgentSessionEvent` becomes `agent_session_event`. `src/remote/session/event-stream-ops.ts:80-94`
-- session-derived state changes also emit `session_state_patch`. `src/remote/session/event-stream-ops.ts:95-108`
+- runtime subscription was installed in `initializeRuntimeRecord()`
+- each `AgentSessionEvent` became `agent_session_event`
+- session-derived state changes also emitted `session_state_patch`
 
 Implications:
 
@@ -680,7 +683,7 @@ Outcome-first summary:
 - [x] define live progress patch shapes at protocol level
 - [x] define reconnect bootstrap flow
 - [x] define client reconciliation rule: merge by identity, snapshot wins on conflict
-- [~] define TypeBox schemas for snapshot and patch envelopes
+- [x] define TypeBox schemas for snapshot and patch envelopes
 - [x] define exact interrupted status enums for each runtime domain
 
 ### Storage checklist
@@ -711,6 +714,14 @@ Outcome-first summary:
 - [x] clear transient partial state when final durable event arrives
 - [x] support multi-client eventual consistency by honoring durable order
 - [x] tolerate reconnect where some transient updates were never observed
+- [x] handle unknown `agent_session_event` residue intentionally by excluding opaque fallback payloads from typed sync patch protocol until client semantics exist
+
+### Residual bookkeeping
+
+- session and app stream offsets still exist only as monotonic live event identifiers and presence freshness markers
+- they no longer provide replay, resume, or cursor recovery semantics
+- durable session version remains authoritative for sync ordering and snapshot convergence
+- seeded session stream head on load remains required so post-reload live events keep monotonic offsets for active subscribers
 - [x] treat `server.connected` as reconnect/resync signal
 
 ### Testing checklist
@@ -868,6 +879,7 @@ Goal: delete obsolete replay-centric architecture.
 1. Remove long-poll and offset replay endpoints.
 2. Remove dependence on `InMemoryDurableStreamStore` for recovery.
 3. Keep only paginated durable entries endpoint for history.
+4. Keep residual stream offsets only where they support live event identity or presence observability.
 
 Expected result:
 

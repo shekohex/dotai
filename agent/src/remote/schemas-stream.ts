@@ -564,11 +564,6 @@ export const SessionSyncPatchPayloadSchema = Type.Union([
     payload: AgentLifecycleEventPayloadSchema,
   }),
   Type.Object({
-    patchType: Type.Literal("agent.event"),
-    eventType: Type.String(),
-    payload: AgentSessionGenericFallbackPayloadSchema,
-  }),
-  Type.Object({
     patchType: Type.Literal("extension.custom"),
     payload: RemoteCustomExtensionEventPayloadSchema,
   }),

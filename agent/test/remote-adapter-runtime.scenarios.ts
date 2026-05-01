@@ -2200,7 +2200,7 @@ timedTest("milestone 3 adapter stops auth refresh loop when key is denied", asyn
   }
 });
 
-timedTest("milestone 3 adapter retries failed stream batch from same offset", async () => {
+timedTest("milestone 3 adapter ignores opaque agent.event sync residue", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
   const remote = createRemoteApp({
@@ -2285,19 +2285,16 @@ timedTest("milestone 3 adapter retries failed stream batch from same offset", as
     };
 
     const handled: string[] = [];
-    let transientFailureInjected = false;
-    sessionAny.handleEnvelope = async (envelope: { payload: { id: string } }) => {
-      if (!transientFailureInjected) {
-        transientFailureInjected = true;
-        throw { status: 500, message: "transient" };
+    sessionAny.handleEnvelope = async (envelope: { payload?: { id?: string } }) => {
+      if (envelope.payload?.id) {
+        handled.push(envelope.payload.id);
       }
-      handled.push(envelope.payload.id);
     };
 
     await sessionAny.pollEvents();
 
     expect(readCalls).toBe(3);
-    expect(handled).toEqual(["first", "second"]);
+    expect(handled).toEqual([]);
     expect(sessionAny.sessionVersion).toBe("3");
   } finally {
     await runtime?.dispose();

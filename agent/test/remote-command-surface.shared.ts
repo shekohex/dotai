@@ -1643,7 +1643,6 @@ function mapSyncPatchToEnvelope(
     case "tool.execution":
     case "queue.update":
     case "retry.status":
-    case "agent.event":
       return { kind: "agent_session_event", payload: patch.payload, streamOffset };
     case "session.state":
       return { kind: "session_state_patch", payload: patch.payload, streamOffset };

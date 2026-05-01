@@ -56,6 +56,12 @@ import {
   toSessionSyncPatchEvent,
 } from "../src/remote/routes/session-sync.ts";
 import { createV1Routes } from "../src/remote/routes.ts";
+import {
+  RemoteSessionEntrySchema,
+  SettingsUpdateRequestTransportSchema,
+} from "../src/remote/schemas-core.ts";
+import { SessionSyncPatchEventSchema } from "../src/remote/schemas-stream.ts";
+import { sanitizeSessionEntry } from "../src/remote/schema-normalization.ts";
 import { syncSessionRecordFromRuntime } from "../src/remote/session/runtime-sync.ts";
 import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
@@ -1672,7 +1678,6 @@ function mapSyncPatchToEnvelope(
     case "tool.execution":
     case "queue.update":
     case "retry.status":
-    case "agent.event":
       return { kind: "agent_session_event", payload: patch.payload, streamOffset };
     case "session.state":
       return { kind: "session_state_patch", payload: patch.payload, streamOffset };
@@ -2013,27 +2018,6 @@ timedTest("session sync compaction patches use explicit taxonomy", () => {
   });
 });
 
-timedTest("generic fallback patches buffered before snapshot are dropped", () => {
-  const covered = isPatchCoveredBySnapshot(
-    {
-      type: "patch",
-      sessionId: "buffer-session",
-      version: "0",
-      patch: {
-        patchType: "agent.event",
-        eventType: "message_end",
-        payload: {
-          type: "message_end",
-          message: { role: "assistant" },
-        },
-      },
-    },
-    buildEmptySnapshot(),
-  );
-
-  expect(covered).toBe(true);
-});
-
 timedTest("session sync lifecycle patches use explicit taxonomy", () => {
   const event = {
     eventId: "1",
@@ -2077,7 +2061,7 @@ timedTest("session sync keeps known lifecycle events out of fallback taxonomy", 
   expect(toSessionSyncPatchEvent("session-1", event)?.patch.patchType).toBe("agent.lifecycle");
 });
 
-timedTest("session sync keeps opaque agent.event fallback for unknown residue only", () => {
+timedTest("session sync drops opaque agent.event residue from typed sync protocol", () => {
   const event = {
     eventId: "1",
     sessionId: "session-1",
@@ -2091,16 +2075,22 @@ timedTest("session sync keeps opaque agent.event fallback for unknown residue on
     },
   } as const;
 
-  expect(toSessionSyncPatchEvent("session-1", event)).toEqual({
-    type: "patch",
-    sessionId: "session-1",
-    version: "3",
-    patch: {
-      patchType: "agent.event",
-      eventType: "unknown_future_event",
-      payload: event.payload,
-    },
-  });
+  expect(toSessionSyncPatchEvent("session-1", event)).toBeUndefined();
+});
+
+timedTest("session sync patch schema no longer accepts agent.event", () => {
+  expect(
+    Value.Check(SessionSyncPatchEventSchema, {
+      type: "patch",
+      sessionId: "session-1",
+      version: "3",
+      patch: {
+        patchType: "agent.event",
+        eventType: "unknown_future_event",
+        payload: { type: "unknown_future_event" },
+      },
+    }),
+  ).toBe(false);
 });
 
 timedTest("session tools rejects invalid metadata objects", async () => {
@@ -4845,4 +4835,73 @@ test("remote app watcher reconciles external session add change and remove", asy
     await remote.dispose();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+timedTest("sanitizeSessionEntry omits non-json custom data", async () => {
+  const entry = sanitizeSessionEntry({
+    type: "custom",
+    id: "custom-1",
+    parentId: null,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    customType: "test",
+    data: {
+      ok: true,
+      invalid: () => "nope",
+    },
+  });
+
+  expect("data" in entry).toBe(false);
+  expect(Value.Check(RemoteSessionEntrySchema, entry)).toBe(true);
+});
+
+timedTest("sanitizeSessionEntry preserves json-safe custom payloads", async () => {
+  const customEntry = sanitizeSessionEntry({
+    type: "custom",
+    id: "custom-2",
+    parentId: "parent-1",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    customType: "test",
+    data: {
+      nested: ["value", 1, true, null],
+    },
+  });
+  const customMessageEntry = sanitizeSessionEntry({
+    type: "custom_message",
+    id: "custom-message-1",
+    parentId: null,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    customType: "test",
+    content: "hello",
+    details: {
+      invalid: () => "nope",
+    },
+    display: true,
+  });
+
+  expect(customEntry).toMatchObject({
+    type: "custom",
+    customType: "test",
+    data: {
+      nested: ["value", 1, true, null],
+    },
+  });
+  expect("details" in customMessageEntry).toBe(false);
+  expect(Value.Check(RemoteSessionEntrySchema, customEntry)).toBe(true);
+  expect(Value.Check(RemoteSessionEntrySchema, customMessageEntry)).toBe(true);
+});
+
+timedTest("SettingsUpdateRequestTransportSchema enforces tuple payloads", async () => {
+  expect(
+    Value.Check(SettingsUpdateRequestTransportSchema, {
+      method: "setDefaultModelAndProvider",
+      args: ["model-only"],
+    }),
+  ).toBe(false);
+  expect(
+    Value.Check(SettingsUpdateRequestTransportSchema, {
+      method: "setDefaultModelAndProvider",
+      args: ["model", "provider"],
+      requestId: "request-1",
+    }),
+  ).toBe(true);
 });

@@ -24,7 +24,6 @@ import {
   enqueueSessionCreation,
   getAppSnapshot,
   getLastAppStreamOffsetForNewSession,
-  getLastSessionStreamOffset,
   getSessionSnapshot,
   registerCreatedSession,
   type SessionRecord,
@@ -331,8 +330,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       syncFromRuntime: (record) => {
         this.syncFromRuntime(record, { updateTimestamp: false });
       },
-      getLastSessionStreamOffset: (sessionId) =>
-        getLastSessionStreamOffset((streamId) => this.streams.getHeadOffset(streamId), sessionId),
     });
   }
 
@@ -343,11 +340,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       syncFromRuntime: (record) => {
         this.syncFromRuntime(record, { updateTimestamp: false });
       },
-      getLastSessionStreamOffset: (targetSessionId) =>
-        getLastSessionStreamOffset(
-          (streamId) => this.streams.getHeadOffset(streamId),
-          targetSessionId,
-        ),
     });
     if (!summary) {
       throw new RemoteError("Session not found", 404);

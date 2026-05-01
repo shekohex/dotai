@@ -120,21 +120,79 @@ const RuntimeAssistantMessageSchema = Type.Object({
 });
 
 const AssistantMessageEventPayloadSchema = Type.Unsafe<AssistantMessageEvent>(
-  Type.Object(
-    {
-      type: Type.String(),
-    },
-    { additionalProperties: true },
-  ),
-);
-
-const AgentSessionEventPayloadSchema = Type.Unsafe<AgentSessionEvent>(
-  Type.Object(
-    {
-      type: Type.String(),
-    },
-    { additionalProperties: true },
-  ),
+  Type.Union([
+    Type.Object({
+      type: Type.Literal("start"),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("text_start"),
+      contentIndex: Type.Number(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("text_delta"),
+      contentIndex: Type.Number(),
+      delta: Type.String(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("text_end"),
+      contentIndex: Type.Number(),
+      content: Type.String(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("thinking_start"),
+      contentIndex: Type.Number(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("thinking_delta"),
+      contentIndex: Type.Number(),
+      delta: Type.String(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("thinking_end"),
+      contentIndex: Type.Number(),
+      content: Type.String(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("toolcall_start"),
+      contentIndex: Type.Number(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("toolcall_delta"),
+      contentIndex: Type.Number(),
+      delta: Type.String(),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("toolcall_end"),
+      contentIndex: Type.Number(),
+      toolCall: Type.Object({
+        type: Type.Literal("toolCall"),
+        id: Type.String(),
+        name: Type.String(),
+        arguments: Type.Record(Type.String(), JsonValueSchema),
+        thoughtSignature: Type.Optional(Type.String()),
+      }),
+      partial: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("done"),
+      reason: Type.Union([Type.Literal("stop"), Type.Literal("length"), Type.Literal("toolUse")]),
+      message: RuntimeAssistantMessageSchema,
+    }),
+    Type.Object({
+      type: Type.Literal("error"),
+      reason: Type.Union([Type.Literal("aborted"), Type.Literal("error")]),
+      error: RuntimeAssistantMessageSchema,
+    }),
+  ]),
 );
 
 const AssistantMessageSyncPatchPayloadSchema = Type.Object({
@@ -187,6 +245,27 @@ const RetryStatusSyncPatchPayloadSchema = Type.Union([
     finalError: Type.Optional(Type.String()),
   }),
 ]);
+
+const AgentSessionGenericFallbackPayloadSchema = Type.Object(
+  {
+    type: Type.String(),
+  },
+  { additionalProperties: true },
+);
+
+const AgentSessionEventPayloadSchema = Type.Unsafe<AgentSessionEvent>(
+  Type.Union([
+    Type.Object({
+      type: Type.Literal("message_update"),
+      message: RuntimeAssistantMessageSchema,
+      assistantMessageEvent: AssistantMessageEventPayloadSchema,
+    }),
+    ToolExecutionSyncPatchPayloadSchema,
+    QueueUpdateSyncPatchPayloadSchema,
+    RetryStatusSyncPatchPayloadSchema,
+    AgentSessionGenericFallbackPayloadSchema,
+  ]),
+);
 
 const ExtensionEventPayloadSchema = Type.Object(
   {

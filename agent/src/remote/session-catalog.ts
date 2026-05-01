@@ -6,8 +6,10 @@ import {
   loadEntriesFromFile,
   type FileEntry,
   type SessionHeader,
+  type SessionEntry,
 } from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
 import type { SessionSummary } from "./schemas.js";
+import { REMOTE_SESSION_VERSION_ENTRY } from "./session/durable-runtime-state.js";
 import type { SessionRecord } from "./session/types.js";
 
 export interface SessionCatalogRecord {
@@ -23,6 +25,7 @@ export interface SessionCatalogRecord {
   parentSessionPath: string | null;
   persistence: "persistent";
   lifecycleStatus: "active" | "archived";
+  durableVersion: number;
 }
 
 interface RawCatalogRecord {
@@ -35,6 +38,7 @@ interface RawCatalogRecord {
   createdAt: number;
   modifiedAt: number;
   parentSessionPath: string | null;
+  durableVersion: number;
 }
 
 export interface SessionCatalogOptions {
@@ -154,13 +158,13 @@ export class SessionCatalog {
       persistence: "persistent",
       lifecycleStatus:
         existing?.lifecycleStatus ?? resolveLifecycleStatus(sessionPath, this.rootDir),
+      durableVersion: record.lastDurableSessionVersion,
     });
   }
 
   listSummaries(input: {
     sessions: Map<string, SessionRecord>;
     syncFromRuntime: (record: SessionRecord) => void;
-    getLastSessionStreamOffset: (sessionId: string) => string;
   }): SessionSummary[] {
     const summaries = new Map<string, SessionSummary>();
 
@@ -173,19 +177,13 @@ export class SessionCatalog {
           createSummaryFromRuntimeRecord(loadedRecord, {
             persistence: "persistent",
             lifecycleStatus: catalogRecord.lifecycleStatus,
-            getLastSessionStreamOffset: input.getLastSessionStreamOffset,
             parentSessionId: catalogRecord.parentSessionId,
           }),
         );
         continue;
       }
 
-      summaries.set(
-        catalogRecord.sessionId,
-        createSummaryFromCatalogRecord(catalogRecord, {
-          getLastSessionStreamOffset: input.getLastSessionStreamOffset,
-        }),
-      );
+      summaries.set(catalogRecord.sessionId, createSummaryFromCatalogRecord(catalogRecord));
     }
 
     for (const loadedRecord of input.sessions.values()) {
@@ -199,7 +197,6 @@ export class SessionCatalog {
         createSummaryFromRuntimeRecord(loadedRecord, {
           persistence: loadedRecord.persistence,
           lifecycleStatus: "active",
-          getLastSessionStreamOffset: input.getLastSessionStreamOffset,
           parentSessionId: null,
         }),
       );
@@ -212,7 +209,6 @@ export class SessionCatalog {
     sessionId: string;
     sessions: Map<string, SessionRecord>;
     syncFromRuntime: (record: SessionRecord) => void;
-    getLastSessionStreamOffset: (sessionId: string) => string;
   }): SessionSummary | undefined {
     const loadedRecord = input.sessions.get(input.sessionId);
     if (loadedRecord) {
@@ -221,7 +217,6 @@ export class SessionCatalog {
       return createSummaryFromRuntimeRecord(loadedRecord, {
         persistence: catalogRecord?.persistence ?? loadedRecord.persistence,
         lifecycleStatus: catalogRecord?.lifecycleStatus ?? "active",
-        getLastSessionStreamOffset: input.getLastSessionStreamOffset,
         parentSessionId: catalogRecord?.parentSessionId ?? null,
       });
     }
@@ -231,9 +226,7 @@ export class SessionCatalog {
       return undefined;
     }
 
-    return createSummaryFromCatalogRecord(catalogRecord, {
-      getLastSessionStreamOffset: input.getLastSessionStreamOffset,
-    });
+    return createSummaryFromCatalogRecord(catalogRecord);
   }
 
   private upsert(record: SessionCatalogRecord): void {
@@ -325,6 +318,7 @@ function buildRawCatalogRecord(sessionPath: string): RawCatalogRecord | null {
       createdAt: new Date(header.timestamp).getTime(),
       modifiedAt: Math.trunc(stats.mtimeMs),
       parentSessionPath: typeof header.parentSession === "string" ? header.parentSession : null,
+      durableVersion: readDurableVersion(entries),
     };
   } catch {
     return null;
@@ -423,6 +417,7 @@ function createCatalogRecord(
         : (sessionIdByPath.get(resolve(rawRecord.parentSessionPath)) ?? null),
     persistence: "persistent",
     lifecycleStatus: resolveLifecycleStatus(rawRecord.sessionPath, rootDir),
+    durableVersion: rawRecord.durableVersion,
   };
 }
 
@@ -444,7 +439,34 @@ function createMovedCatalogRecord(
     parentSessionPath: existingRecord.parentSessionPath ?? rawRecord.parentSessionPath,
     persistence: existingRecord.persistence,
     lifecycleStatus: resolveLifecycleStatus(rawRecord.sessionPath, rootDir),
+    durableVersion: rawRecord.durableVersion,
   };
+}
+
+function readDurableVersion(entries: FileEntry[]): number {
+  let durableVersion = 0;
+  for (const entry of entries) {
+    if (
+      entry.type === "custom" &&
+      entry.customType === REMOTE_SESSION_VERSION_ENTRY &&
+      isSessionVersionEntry(entry)
+    ) {
+      durableVersion = entry.data.version;
+    }
+  }
+  return durableVersion;
+}
+
+function isSessionVersionEntry(
+  entry: Extract<SessionEntry, { type: "custom" }>,
+): entry is Extract<SessionEntry, { type: "custom" }> & { data: { version: number } } {
+  return (
+    entry.data !== undefined &&
+    typeof entry.data === "object" &&
+    entry.data !== null &&
+    "version" in entry.data &&
+    typeof entry.data.version === "number"
+  );
 }
 
 function resolveLifecycleStatus(
@@ -479,10 +501,7 @@ function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
   return relativePath.length === 0 || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
-function createSummaryFromCatalogRecord(
-  record: SessionCatalogRecord,
-  input: { getLastSessionStreamOffset: (sessionId: string) => string },
-): SessionSummary {
+function createSummaryFromCatalogRecord(record: SessionCatalogRecord): SessionSummary {
   const summary: SessionSummary = {
     sessionId: record.sessionId,
     sessionName: record.sessionName,
@@ -497,7 +516,7 @@ function createSummaryFromCatalogRecord(
       loaded: false,
       state: record.lifecycleStatus,
     },
-    version: input.getLastSessionStreamOffset(record.sessionId),
+    version: String(record.durableVersion),
   };
   if (record.firstUserMessage === undefined) {
     return summary;
@@ -510,7 +529,6 @@ function createSummaryFromRuntimeRecord(
   input: {
     persistence: "persistent" | "ephemeral";
     lifecycleStatus: "active" | "archived";
-    getLastSessionStreamOffset: (sessionId: string) => string;
     parentSessionId: string | null;
   },
 ): SessionSummary {

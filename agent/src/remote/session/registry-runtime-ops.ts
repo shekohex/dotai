@@ -16,13 +16,14 @@ import type {
   ToolDefinitionMetadata,
 } from "../schemas.js";
 import { RemoteError } from "../errors.js";
+import type { JsonValue } from "../json-schema.js";
 import { SessionRegistryPromptCommands } from "./registry-prompt-commands.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
 
 export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
   async emitSessionExtensionCustomEvent(
     sessionId: string,
-    input: { channel: string; data: unknown },
+    input: { channel: string; data: JsonValue },
     client: AuthSession,
     connectionId?: string,
   ): Promise<void> {

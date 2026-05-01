@@ -81,16 +81,14 @@ export function handleRegistrySessionEvent(input: {
     return;
   }
 
-  const previousDurableRuntimeState = readDurableRuntimeState(record);
-
-  handleSessionEventForRecord({
+  const durableRuntimeStateChanged = handleSessionEventForRecord({
     record,
     event: input.event,
     now: input.now,
     createRunId: input.createRunId,
     syncFromRuntime: input.syncFromRuntime,
     hasExtensionMetadataChange,
-    appendAgentEvent: (targetRecord, targetEvent, ts) => {
+    appendAgentEvent: (targetRecord, targetEvent, ts, sessionVersion) => {
       const streamId = sessionEventsStreamId(targetRecord.sessionId);
       const append = isLiveOnlyAgentSessionEvent(targetEvent)
         ? input.streams.appendLiveOnly.bind(input.streams)
@@ -98,16 +96,17 @@ export function handleRegistrySessionEvent(input: {
       append(streamId, {
         sessionId: targetRecord.sessionId,
         kind: "agent_session_event",
+        sessionVersion,
         payload: targetEvent,
         retentionKey: getAgentSessionEventRetentionKey(targetEvent),
         ts,
       });
     },
-    appendSessionStatePatch: (targetRecord, patch, ts) => {
+    appendSessionStatePatch: (targetRecord, sessionVersion, patch, ts) => {
       input.streams.append(sessionEventsStreamId(targetRecord.sessionId), {
         sessionId: targetRecord.sessionId,
         kind: "session_state_patch",
-        sessionVersion: String(targetRecord.lastDurableSessionVersion),
+        sessionVersion,
         payload: {
           commandId: "server-state-sync",
           sequence: targetRecord.queue.nextSequence,
@@ -120,7 +119,7 @@ export function handleRegistrySessionEvent(input: {
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });
 
-  if (!didDurableRuntimeStateChange(previousDurableRuntimeState, record)) {
+  if (!durableRuntimeStateChanged) {
     return;
   }
   record.lastDurableSessionVersion += 1;
@@ -128,41 +127,6 @@ export function handleRegistrySessionEvent(input: {
     record,
     updatedAt: input.now,
   });
-}
-
-function readDurableRuntimeState(record: SessionRecord): {
-  queueDepth: number;
-  nextSequence: number;
-  retryStatus: SessionRecord["retry"]["status"];
-  compactionStatus: SessionRecord["compaction"]["status"];
-  isBashRunning: boolean;
-  hasPendingBashMessages: boolean;
-  streamingState: SessionRecord["streamingState"];
-} {
-  return {
-    queueDepth: record.queue.depth,
-    nextSequence: record.queue.nextSequence,
-    retryStatus: record.retry.status,
-    compactionStatus: record.compaction.status,
-    isBashRunning: record.isBashRunning,
-    hasPendingBashMessages: record.hasPendingBashMessages,
-    streamingState: record.streamingState,
-  };
-}
-
-function didDurableRuntimeStateChange(
-  previous: ReturnType<typeof readDurableRuntimeState>,
-  record: SessionRecord,
-): boolean {
-  return (
-    previous.queueDepth !== record.queue.depth ||
-    previous.nextSequence !== record.queue.nextSequence ||
-    previous.retryStatus !== record.retry.status ||
-    previous.compactionStatus !== record.compaction.status ||
-    previous.isBashRunning !== record.isBashRunning ||
-    previous.hasPendingBashMessages !== record.hasPendingBashMessages ||
-    previous.streamingState !== record.streamingState
-  );
 }
 
 function getAgentSessionEventRetentionKey(event: AgentSessionEvent): string | undefined {

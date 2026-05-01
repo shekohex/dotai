@@ -31,6 +31,7 @@ import type {
   CompactRequest,
   CompactResponse,
 } from "../schemas.js";
+import type { JsonValue } from "../json-schema.js";
 import {
   AppSnapshotSchema,
   CreateSessionResponseSchema,
@@ -229,20 +230,19 @@ export class RemoteApiClient {
     sessionId: string,
     options: { entriesLimit?: number; entriesOffset?: number },
   ): Promise<SessionEntriesResponse> {
-    const search = new URLSearchParams();
-    if (options.entriesLimit !== undefined) {
-      search.set("entriesLimit", String(options.entriesLimit));
-    }
-    if (options.entriesOffset !== undefined) {
-      search.set("entriesOffset", String(options.entriesOffset));
-    }
-    const query = search.toString();
-    const response = await this.fetchImpl(
-      `${this.origin}/v1/sessions/${encodeURIComponent(sessionId)}/entries${query.length > 0 ? `?${query}` : ""}`,
+    const response = await this.rpcClient.sessions[":sessionId"].entries.$get(
       {
-        method: "GET",
-        headers: await this.getAuthHeaders(),
+        param: { sessionId },
+        query: {
+          ...(options.entriesLimit === undefined
+            ? {}
+            : { entriesLimit: String(options.entriesLimit) }),
+          ...(options.entriesOffset === undefined
+            ? {}
+            : { entriesOffset: String(options.entriesOffset) }),
+        },
       },
+      { headers: await this.getAuthHeaders() },
     );
     this.captureConnectionId(response);
     if (response.status !== 200) throw await toRemoteHttpError(response);
@@ -597,7 +597,7 @@ export class RemoteApiClient {
 
   async emitSessionCustomEvent(
     sessionId: string,
-    body: { channel: string; data: unknown },
+    body: { channel: string; data: JsonValue },
   ): Promise<void> {
     await this.postSessionRoute((headers) =>
       this.rpcClient.sessions[":sessionId"]["extension-event"].$post(
@@ -636,14 +636,10 @@ export class RemoteApiClient {
   }
 
   private async postRenameSessionRoute(sessionId: string, sessionName: string): Promise<void> {
-    const response = await this.fetchImpl(`${this.origin}/v1/sessions/${sessionId}/rename`, {
-      method: "POST",
-      headers: {
-        ...(await this.getAuthHeaders()),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ sessionName }),
-    });
+    const response = await this.rpcClient.sessions[":sessionId"].rename.$post(
+      { param: { sessionId }, json: { sessionName } },
+      { headers: await this.getAuthHeaders() },
+    );
     this.captureConnectionId(response);
     if (!response.ok) {
       throw await toRemoteHttpError(response);

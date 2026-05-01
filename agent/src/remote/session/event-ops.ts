@@ -2,6 +2,41 @@ import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { toJsonValue } from "../json-value.js";
 import type { SessionRecord } from "./types.js";
 
+export function readDurableRuntimeState(record: SessionRecord): {
+  queueDepth: number;
+  nextSequence: number;
+  retryStatus: SessionRecord["retry"]["status"];
+  compactionStatus: SessionRecord["compaction"]["status"];
+  isBashRunning: boolean;
+  hasPendingBashMessages: boolean;
+  streamingState: SessionRecord["streamingState"];
+} {
+  return {
+    queueDepth: record.queue.depth,
+    nextSequence: record.queue.nextSequence,
+    retryStatus: record.retry.status,
+    compactionStatus: record.compaction.status,
+    isBashRunning: record.isBashRunning,
+    hasPendingBashMessages: record.hasPendingBashMessages,
+    streamingState: record.streamingState,
+  };
+}
+
+export function didDurableRuntimeStateChange(
+  previous: ReturnType<typeof readDurableRuntimeState>,
+  record: SessionRecord,
+): boolean {
+  return (
+    previous.queueDepth !== record.queue.depth ||
+    previous.nextSequence !== record.queue.nextSequence ||
+    previous.retryStatus !== record.retry.status ||
+    previous.compactionStatus !== record.compaction.status ||
+    previous.isBashRunning !== record.isBashRunning ||
+    previous.hasPendingBashMessages !== record.hasPendingBashMessages ||
+    previous.streamingState !== record.streamingState
+  );
+}
+
 function ensureLiveState(record: SessionRecord): SessionRecord["live"] {
   if (record.live !== undefined) {
     return record.live;
@@ -175,6 +210,7 @@ function syncActiveRunFromEvent(input: {
 
 function appendSessionStatePatchIfChanged(input: {
   record: SessionRecord;
+  sessionVersion: string;
   previousCwd: string;
   previousExtensions: SessionRecord["extensions"];
   previousContextUsage: SessionRecord["contextUsage"];
@@ -192,6 +228,7 @@ function appendSessionStatePatchIfChanged(input: {
   ) => boolean;
   appendSessionStatePatch: (
     record: SessionRecord,
+    sessionVersion: string,
     patch: {
       cwd?: string;
       extensions?: SessionRecord["extensions"];
@@ -246,6 +283,7 @@ function appendSessionStatePatchIfChanged(input: {
 
   input.appendSessionStatePatch(
     input.record,
+    input.sessionVersion,
     {
       ...(cwdChanged ? { cwd: input.record.cwd } : {}),
       ...(extensionsChanged ? { extensions: input.record.extensions } : {}),
@@ -281,9 +319,15 @@ export function handleSessionEventForRecord(input: {
     previous: SessionRecord["extensions"],
     next: SessionRecord["extensions"],
   ) => boolean;
-  appendAgentEvent: (record: SessionRecord, event: AgentSessionEvent, ts: number) => void;
+  appendAgentEvent: (
+    record: SessionRecord,
+    event: AgentSessionEvent,
+    ts: number,
+    sessionVersion: string,
+  ) => void;
   appendSessionStatePatch: (
     record: SessionRecord,
+    sessionVersion: string,
     patch: {
       cwd?: string;
       extensions?: SessionRecord["extensions"];
@@ -299,7 +343,9 @@ export function handleSessionEventForRecord(input: {
     ts: number,
   ) => void;
   emitSessionSummaryUpdated: (record: SessionRecord, ts: number) => void;
-}): void {
+}): boolean {
+  const previousDurableRuntimeState = readDurableRuntimeState(input.record);
+
   syncActiveRunFromEvent({
     record: input.record,
     event: input.event,
@@ -319,10 +365,18 @@ export function handleSessionEventForRecord(input: {
   const previousIsBashRunning = input.record.isBashRunning;
   const previousHasPendingBashMessages = input.record.hasPendingBashMessages;
   input.syncFromRuntime(input.record, { now: input.now, updateTimestamp: true });
-  input.appendAgentEvent(input.record, input.event, input.now);
+  const durableRuntimeStateChanged = didDurableRuntimeStateChange(
+    previousDurableRuntimeState,
+    input.record,
+  );
+  const sessionVersion = String(
+    input.record.lastDurableSessionVersion + (durableRuntimeStateChanged ? 1 : 0),
+  );
+  input.appendAgentEvent(input.record, input.event, input.now, sessionVersion);
 
   appendSessionStatePatchIfChanged({
     record: input.record,
+    sessionVersion,
     previousCwd,
     previousExtensions,
     previousContextUsage,
@@ -339,4 +393,5 @@ export function handleSessionEventForRecord(input: {
   });
 
   input.emitSessionSummaryUpdated(input.record, input.now);
+  return durableRuntimeStateChanged;
 }

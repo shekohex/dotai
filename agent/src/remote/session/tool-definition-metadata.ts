@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { toJsonValue } from "../json-value.js";
 import type { ToolDefinitionMetadata } from "../schemas.js";
 
 export function serializeToolDefinition(
@@ -15,9 +16,9 @@ export function serializeToolDefinition(
     description: definition.description,
     promptSnippet: definition.promptSnippet,
     promptGuidelines: definition.promptGuidelines,
-    parameters: definition.parameters,
+    parameters: toJsonValue(definition.parameters) ?? {},
     renderShell: definition.renderShell,
     executionMode: definition.executionMode,
-    sourceInfo,
+    sourceInfo: toJsonValue(sourceInfo),
   };
 }

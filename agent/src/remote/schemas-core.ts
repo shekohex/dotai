@@ -289,7 +289,7 @@ const CustomEntrySchema = Type.Object({
   parentId: Type.Union([Type.String(), Type.Null()]),
   timestamp: Type.String(),
   customType: Type.String(),
-  data: Type.Optional(Type.Unknown()),
+  data: Type.Optional(JsonValueSchema),
 });
 
 const CustomMessageEntrySchema = Type.Object({
@@ -371,10 +371,10 @@ export const ToolDefinitionMetadataSchema = Type.Object({
   description: Type.String(),
   promptSnippet: Type.Optional(Type.String()),
   promptGuidelines: Type.Optional(Type.Array(Type.String())),
-  parameters: Type.Unknown(),
+  parameters: JsonValueSchema,
   renderShell: Type.Optional(Type.Union([Type.Literal("default"), Type.Literal("self")])),
   executionMode: Type.Optional(Type.Union([Type.Literal("sequential"), Type.Literal("parallel")])),
-  sourceInfo: Type.Optional(Type.Unknown()),
+  sourceInfo: Type.Optional(JsonValueSchema),
 });
 
 export const NavigateTreeRequestSchema = Type.Object({
@@ -449,7 +449,7 @@ export const AbortOperationResponseSchema = Type.Object({
 
 export const ExtensionCustomEventRequestSchema = Type.Object({
   channel: Type.String({ minLength: 1 }),
-  data: Type.Unknown(),
+  data: JsonValueSchema,
 });
 
 export const ForkSessionRequestSchema = Type.Object({

@@ -153,7 +153,7 @@ function detachPresenceIfPresent(
   }
 }
 
-function bufferPatchEvent(
+export function bufferPatchEvent(
   bufferedPatchEvents: SessionSyncEvent[],
   bufferedPatchEventIndexesByKey: Map<string, number>,
   patchEvent: SessionSyncEvent,
@@ -193,7 +193,7 @@ function rebuildBufferedPatchEventIndexes(
   }
 }
 
-function isPatchCoveredBySnapshot(
+export function isPatchCoveredBySnapshot(
   patchEvent: SessionSyncEvent,
   snapshot: Extract<SessionSyncEvent, { type: "snapshot" }>["snapshot"],
 ): boolean {
@@ -320,10 +320,14 @@ function toSessionSyncPatchEvent(
   sessionId: string,
   event: StreamEventEnvelope,
 ): Extract<SessionSyncEvent, { type: "patch" }> | undefined {
+  if (event.sessionVersion === undefined) {
+    return undefined;
+  }
+
   const base = {
     type: "patch" as const,
     sessionId,
-    version: event.sessionVersion ?? event.streamOffset,
+    version: event.sessionVersion,
   };
 
   switch (event.kind) {
@@ -344,18 +348,14 @@ function toSessionSyncPatchEvent(
         };
       }
 
-      if (
-        event.payload.type === "tool_execution_start" ||
-        event.payload.type === "tool_execution_update" ||
-        event.payload.type === "tool_execution_end"
-      ) {
+      if (isToolExecutionPayload(event.payload)) {
         return {
           ...base,
           patch: { patchType: "tool.execution", payload: event.payload },
         };
       }
 
-      if (event.payload.type === "queue_update") {
+      if (isQueueUpdatePayload(event.payload)) {
         return {
           ...base,
           patch: {
@@ -369,7 +369,7 @@ function toSessionSyncPatchEvent(
         };
       }
 
-      if (event.payload.type === "auto_retry_start" || event.payload.type === "auto_retry_end") {
+      if (isRetryStatusPayload(event.payload)) {
         return {
           ...base,
           patch: { patchType: "retry.status", payload: event.payload },
@@ -421,6 +421,45 @@ function isAssistantMessageUpdatePayload(
   return payload.type === "message_update" && payload.message.role === "assistant";
 }
 
+function isToolExecutionPayload(
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): payload is Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "tool.execution" }
+>["payload"] {
+  return (
+    payload.type === "tool_execution_start" ||
+    payload.type === "tool_execution_update" ||
+    payload.type === "tool_execution_end"
+  );
+}
+
+function isQueueUpdatePayload(
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): payload is Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "queue.update" }
+>["payload"] {
+  return payload.type === "queue_update";
+}
+
+function isRetryStatusPayload(
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+): payload is Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "retry.status" }
+>["payload"] {
+  return payload.type === "auto_retry_start" || payload.type === "auto_retry_end";
+}
+
 function compareSessionVersions(left: string, right: string): number {
-  return Number(left) - Number(right);
+  const leftVersion = BigInt(left);
+  const rightVersion = BigInt(right);
+  if (leftVersion < rightVersion) {
+    return -1;
+  }
+  if (leftVersion > rightVersion) {
+    return 1;
+  }
+  return 0;
 }

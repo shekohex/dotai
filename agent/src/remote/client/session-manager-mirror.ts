@@ -46,7 +46,7 @@ export function rehydrateMirroredSessionManager(input: {
     return;
   }
 
-  const entries = input.entries;
+  const entries = input.entries.map((entry) => toSessionManagerEntry(entry));
 
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const labelsById = new Map<string, string>();
@@ -72,6 +72,17 @@ export function rehydrateMirroredSessionManager(input: {
     labelTimestampsById,
     leafId: input.leafId,
   });
+}
+
+function toSessionManagerEntry(entry: SessionEntry): SessionEntry {
+  if (entry.type === "label" && entry.label === undefined) {
+    return {
+      ...entry,
+      label: "",
+    };
+  }
+
+  return structuredClone(entry);
 }
 
 export function mirrorSessionEventMessage(

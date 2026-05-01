@@ -2,13 +2,13 @@ import type {
   ExtensionUiRequestEventPayload,
   SessionSnapshot,
   SessionSyncEvent,
-  StreamEventEnvelope,
 } from "../../schemas.js";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { JsonValue } from "../../json-schema.js";
 import { readRemoteExtensionSyncInfo } from "../../session-sync-metadata.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
+import type { ForwardableRemoteExtensionEvent } from "./local-extension-runner.js";
 
 type ImmediateUiRequest = Extract<
   ExtensionUiRequestEventPayload,
@@ -164,30 +164,55 @@ export function replaySnapshotLiveOverlay(input: {
 }
 
 export async function applySessionSyncPatch(input: {
-  sessionId: string;
-  streamOffset: string;
   patch: Extract<SessionSyncEvent, { type: "patch" }>["patch"];
-  handleEnvelope: (envelope: StreamEventEnvelope) => Promise<void>;
   handleAgentSessionEvent: (event: AgentSessionEvent) => void;
+  applySessionStatePatch: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "session.state" }
+    >["payload"],
+  ) => void;
+  handleExtensionEvent: (event: ForwardableRemoteExtensionEvent) => void;
+  isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
   emitExtensionCustom: (channel: string, data: JsonValue) => void;
   handleUiRequest: (request: ExtensionUiRequestEventPayload) => Promise<void>;
   cancelUiRequest: (requestId: string) => void;
+  handleExtensionError: (error: string) => void;
+  handleBashStart: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "bash.start" }
+    >["payload"],
+  ) => void;
+  handleBashChunk: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "bash.chunk" }
+    >["payload"],
+  ) => void;
+  handleBashEnd: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "bash.end" }
+    >["payload"],
+  ) => void;
+  handleBashFlush: (
+    payload: Extract<
+      Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+      { patchType: "bash.flush" }
+    >["payload"],
+  ) => void;
 }): Promise<void> {
   switch (input.patch.patchType) {
     case "session.state":
-      await input.handleEnvelope({
-        eventId: "sync-patch",
-        sessionId: input.sessionId,
-        streamOffset: input.streamOffset,
-        ts: Date.now(),
-        kind: "session_state_patch",
-        payload: input.patch.payload,
-      });
+      input.applySessionStatePatch(input.patch.payload);
       return;
     case "assistant.message":
-      await input.handleEnvelope(
-        toAssistantMessageUpdateEnvelope(input.sessionId, input.streamOffset, input.patch),
-      );
+      input.handleAgentSessionEvent({
+        type: "message_update",
+        message: input.patch.payload.message,
+        assistantMessageEvent: input.patch.payload.assistantMessageEvent,
+      });
       return;
     case "tool.execution":
       input.handleAgentSessionEvent(input.patch.payload);
@@ -199,37 +224,18 @@ export async function applySessionSyncPatch(input: {
       input.handleAgentSessionEvent(input.patch.payload);
       return;
     case "compaction.status":
-      await input.handleEnvelope({
-        eventId: "sync-patch",
-        sessionId: input.sessionId,
-        streamOffset: input.streamOffset,
-        ts: Date.now(),
-        kind: "agent_session_event",
-        payload: input.patch.payload,
-      });
+      input.handleAgentSessionEvent(toCompactionStatusEvent(input.patch.payload));
       return;
     case "agent.lifecycle":
-      await input.handleEnvelope({
-        eventId: "sync-patch",
-        sessionId: input.sessionId,
-        streamOffset: input.streamOffset,
-        ts: Date.now(),
-        kind: "agent_session_event",
-        payload: input.patch.payload,
-      });
+      input.handleAgentSessionEvent(toAgentLifecycleEvent(input.patch.payload));
       return;
     case "extension.custom":
       input.emitExtensionCustom(input.patch.payload.channel, input.patch.payload.data);
       return;
     case "extension.event":
-      await input.handleEnvelope({
-        eventId: "sync-patch",
-        sessionId: input.sessionId,
-        streamOffset: input.streamOffset,
-        ts: Date.now(),
-        kind: "extension_event",
-        payload: input.patch.payload,
-      });
+      if (input.isForwardableRemoteExtensionEvent(input.patch.payload)) {
+        input.handleExtensionEvent(input.patch.payload);
+      }
       return;
     case "extension.ui.request":
       await input.handleUiRequest(input.patch.payload);
@@ -238,82 +244,93 @@ export async function applySessionSyncPatch(input: {
       input.cancelUiRequest(input.patch.payload.id);
       return;
     case "command.accepted":
-      await input.handleEnvelope({
-        eventId: "sync-patch",
-        sessionId: input.sessionId,
-        streamOffset: input.streamOffset,
-        ts: Date.now(),
-        kind: "command_accepted",
-        payload: input.patch.payload,
-      });
       return;
     case "bash.start":
+      input.handleBashStart(input.patch.payload);
+      return;
     case "bash.chunk":
+      input.handleBashChunk(input.patch.payload);
+      return;
     case "bash.end":
+      input.handleBashEnd(input.patch.payload);
+      return;
     case "bash.flush":
+      input.handleBashFlush(input.patch.payload);
+      return;
     case "extension.error":
-      await input.handleEnvelope(
-        createSyntheticSyncEnvelope(input.sessionId, input.streamOffset, input.patch),
-      );
+      input.handleExtensionError(input.patch.payload.error);
       break;
   }
 }
 
-function createSyntheticSyncEnvelope(
-  sessionId: string,
-  streamOffset: string,
-  patch: Extract<SessionSyncEvent, { type: "patch" }>["patch"],
-): StreamEventEnvelope {
-  const base = { eventId: "sync-patch", sessionId, streamOffset, ts: Date.now() };
-  switch (patch.patchType) {
-    case "assistant.message":
-    case "tool.execution":
-    case "queue.update":
-    case "retry.status":
-    case "compaction.status":
-    case "agent.lifecycle":
-    case "command.accepted":
-    case "extension.custom":
-    case "extension.event":
-    case "extension.ui.request":
-    case "extension.ui.resolved":
-    case "session.state":
-      throw new Error("Unsupported synthetic sync patch");
-    case "bash.start":
-      return { ...base, kind: "bash_start", payload: patch.payload };
-    case "bash.chunk":
-      return { ...base, kind: "bash_chunk", payload: patch.payload };
-    case "bash.end":
-      return { ...base, kind: "bash_end", payload: patch.payload };
-    case "bash.flush":
-      return { ...base, kind: "bash_flush", payload: patch.payload };
-    case "extension.error":
-      return { ...base, kind: "extension_error", payload: patch.payload };
-    default:
-      throw new Error("Unsupported synthetic sync patch");
+function toCompactionStatusEvent(
+  payload: Extract<
+    Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    { patchType: "compaction.status" }
+  >["payload"],
+): AgentSessionEvent {
+  if (payload.type === "compaction_start") {
+    return {
+      type: "compaction_start",
+      reason: payload.reason,
+    };
   }
+
+  return {
+    type: "compaction_end",
+    reason: payload.reason,
+    result: undefined,
+    aborted: payload.aborted,
+    willRetry: payload.willRetry,
+    ...(payload.errorMessage === undefined ? {} : { errorMessage: payload.errorMessage }),
+  };
 }
 
-function toAssistantMessageUpdateEnvelope(
-  sessionId: string,
-  streamOffset: string,
-  patch: Extract<
+function toAgentLifecycleEvent(
+  payload: Extract<
     Extract<SessionSyncEvent, { type: "patch" }>["patch"],
-    { patchType: "assistant.message" }
-  >,
-): Extract<StreamEventEnvelope, { kind: "agent_session_event" }> {
-  return {
-    eventId: "sync-patch",
-    sessionId,
-    streamOffset,
-    ts: Date.now(),
-    kind: "agent_session_event",
-    payload: {
-      type: "message_update",
-      message: patch.payload.message,
-      assistantMessageEvent: patch.payload.assistantMessageEvent,
-    },
-  };
+    { patchType: "agent.lifecycle" }
+  >["payload"],
+): AgentSessionEvent {
+  switch (payload.type) {
+    case "agent_start":
+      return { type: "agent_start" };
+    case "turn_start":
+      return {
+        type: "turn_start",
+        ...(payload.turnIndex === undefined ? {} : { turnIndex: payload.turnIndex }),
+        ...(payload.timestamp === undefined ? {} : { timestamp: payload.timestamp }),
+      };
+    case "agent_end":
+      return {
+        type: "agent_end",
+        messages: fromTransportTranscript(payload.messages),
+      };
+    case "turn_end":
+      return {
+        type: "turn_end",
+        ...(payload.turnIndex === undefined ? {} : { turnIndex: payload.turnIndex }),
+        message: fromTransportTranscript([payload.message])[0],
+        toolResults: fromTransportTranscript(payload.toolResults).filter(
+          (
+            message,
+          ): message is Extract<AgentSessionEvent, { type: "turn_end" }>["toolResults"][number] =>
+            message.role === "toolResult",
+        ),
+      };
+    case "message_start":
+      return {
+        type: "message_start",
+        message: fromTransportTranscript([payload.message])[0],
+      };
+    case "message_end":
+      return {
+        type: "message_end",
+        message: fromTransportTranscript([payload.message])[0],
+      };
+  }
+
+  throw new Error("Unsupported agent lifecycle patch");
 }
 
 function toAssistantSessionMessage(

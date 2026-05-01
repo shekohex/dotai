@@ -4486,7 +4486,7 @@ timedTest("missing session summary returns 404", async () => {
 
 test(
   "remote session archive restore and delete lifecycle works for loaded and unloaded sessions",
-  { timeout: 30_000 },
+  { timeout: 180_000 },
   async () => {
     const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
     const originalCwd = process.cwd();

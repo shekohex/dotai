@@ -1,10 +1,10 @@
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { SessionStats } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import { Value } from "typebox/value";
-import type { SessionSyncEvent, StreamEventEnvelope } from "../../schemas.js";
+import type { SessionSyncEvent } from "../../schemas.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
 import {
+  applyRemoteSessionStatePatch,
   applyRemoteSettingsSnapshotInPlace,
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,
@@ -19,12 +19,7 @@ import {
   handleRemoteSessionErrorBridge,
 } from "../session-mutation-ops.js";
 import { initializeRemoteSessionMetadata } from "../session-bootstrap-ops.js";
-import {
-  createRemoteSessionPollingInput,
-  createRemoteSessionPollingStateHandlers,
-  handleRemoteSessionEnvelope,
-  type PollRemoteSessionRuntimeInput,
-} from "./polling-ops.js";
+import { createRemoteSessionPollingStateHandlers } from "./polling-ops.js";
 import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-modes-store.js";
 import { RemoteApiError } from "../../runtime-api/utils.js";
 import { RemoteAgentSessionSetupBase } from "./setup-base.js";
@@ -36,7 +31,6 @@ import {
   replaySnapshotLiveOverlay,
   replaySnapshotUiState,
 } from "./runtime-sync-support.js";
-import { RuntimeAgentSessionEventSchema } from "./runtime-agent-session-event-schema.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   private initialSyncReady = false;
@@ -283,13 +277,17 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     event: Extract<SessionSyncEvent, { type: "patch" }>["patch"],
   ): Promise<void> {
     await applySessionSyncPatch({
-      sessionId: this.sessionId,
-      streamOffset: this.sessionVersion,
       patch: event,
-      handleEnvelope: (envelope) => this.handleEnvelope(envelope),
       handleAgentSessionEvent: (agentEvent) => {
         this.applyAgentSessionEvent(agentEvent);
       },
+      applySessionStatePatch: (payload) => {
+        this.applySyncSessionStatePatch(payload);
+      },
+      handleExtensionEvent: (extensionEvent) => {
+        this.forwardRemoteExtensionEventToLocalExtensions(extensionEvent);
+      },
+      isForwardableRemoteExtensionEvent: (value) => this.isForwardableRemoteExtensionEvent(value),
       emitExtensionCustom: (channel, data) => {
         emitResourceLoaderEventLocally(
           this.resourceLoader,
@@ -302,100 +300,154 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
       cancelUiRequest: (requestId) => {
         cancelRemoteUiRequest(this.pendingInteractiveRequests, requestId);
       },
-    });
-  }
-
-  protected async handleEnvelope(envelope: StreamEventEnvelope): Promise<void> {
-    await handleRemoteSessionEnvelope(this.createPollingRuntimeInput(), envelope);
-  }
-
-  protected createPollingRuntimeInput(): PollRemoteSessionRuntimeInput {
-    return createRemoteSessionPollingInput({
-      handleRemoteError: (message) => {
-        this.handleRemoteError(message);
+      handleExtensionError: (error) => {
+        this.handleRemoteError(error);
       },
-      applyAgentSessionEvent: (event) => {
-        if (!isRuntimeAgentSessionEvent(event)) {
-          return;
-        }
-        this.applyAgentSessionEvent(event);
-      },
-      isForwardableRemoteExtensionEvent: (value) => {
-        return this.isForwardableRemoteExtensionEvent(value);
-      },
-      applyExtensionEvent: (event) => {
-        this.forwardRemoteExtensionEventToLocalExtensions(event);
-      },
-      applyExtensionCustomEvent: (channel: string, data: unknown) => {
-        emitResourceLoaderEventLocally(
-          this.resourceLoader,
-          channel,
-          data,
-          "RemoteAgentSessionRuntimeInternals",
-        );
-      },
-      handleEnvelope: async (envelope) => {
-        await this.handleEnvelope(envelope);
-      },
-      remoteModelSettings: this.remoteModelSettings,
-      stateHandlers: this.createPollingStateHandlers(),
-      client: this.client,
-      sessionId: this.sessionId,
       handleBashStart: (payload) => {
-        this._isBashRunning = true;
-        this.activeBashExecutions.set(payload.executionId, {
-          executionId: payload.executionId,
-          command: payload.command,
-          output: "",
-          clientRequestId: payload.clientRequestId,
-        });
-        if (payload.clientRequestId === undefined) {
-          return;
-        }
-        if (!this.activeBashRequests.has(payload.clientRequestId)) {
-          this.activeBashRequests.set(payload.clientRequestId, {});
-        }
+        this.handleSyncBashStart(payload);
       },
       handleBashChunk: (payload) => {
-        const currentExecution = this.activeBashExecutions.get(payload.executionId);
-        if (currentExecution) {
-          currentExecution.output += payload.chunk;
-        }
-        if (payload.clientRequestId === undefined) {
-          return;
-        }
-        const activeRequest = this.activeBashRequests.get(payload.clientRequestId);
-        if (!activeRequest) {
-          return;
-        }
-        this.activeBashChunkCounts.set(
-          payload.clientRequestId,
-          (this.activeBashChunkCounts.get(payload.clientRequestId) ?? 0) + 1,
-        );
-        activeRequest.onChunk?.(payload.chunk);
+        this.handleSyncBashChunk(payload);
       },
       handleBashEnd: (payload) => {
-        this._isBashRunning = false;
-        this.activeBashExecutions.delete(payload.executionId);
-        if (payload.message !== undefined) {
-          const message = toBashExecutionMessage(payload.message);
-          this.state.messages = [...this.state.messages, message];
-          this.sessionManager.appendMessage(message);
-        }
-        if (payload.clientRequestId !== undefined) {
-          this.activeBashChunkCounts.delete(payload.clientRequestId);
-          this.activeBashRequests.delete(payload.clientRequestId);
-        }
+        this.handleSyncBashEnd(payload);
       },
       handleBashFlush: (payload) => {
-        this._hasPendingBashMessages = false;
-        for (const message of payload.messages) {
-          const bashExecutionMessage = toBashExecutionMessage(message);
-          this.state.messages = [...this.state.messages, bashExecutionMessage];
-          this.sessionManager.appendMessage(bashExecutionMessage);
-        }
+        this.handleSyncBashFlush(payload);
       },
     });
+  }
+
+  protected applySyncSessionStatePatch(
+    payload: Parameters<typeof applyRemoteSessionStatePatch>[0]["payload"],
+  ): void {
+    applyRemoteSessionStatePatch({
+      payload,
+      remoteModelSettings: this.remoteModelSettings,
+      setRemoteAvailableModels: (models) => {
+        this.remoteAvailableModels = models;
+      },
+      setResolvedModel: (modelRef) => {
+        this.setResolvedModel(modelRef);
+      },
+      setThinkingLevel: (thinkingLevel) => {
+        this._thinkingLevel = thinkingLevel;
+        this.state.thinkingLevel = thinkingLevel;
+      },
+      applyAuthoritativeCwd: (cwd) => {
+        this.applyAuthoritativeCwdUpdate(cwd);
+      },
+      setRemoteExtensions: (extensions) => {
+        this.remoteExtensions = extensions;
+      },
+      setRemoteResources: (resources) => {
+        setRemoteModesSnapshot(this.sessionManager, resources.modes);
+      },
+      setSessionName: (sessionName) => {
+        if (sessionName !== undefined) {
+          this.sessionManager.appendSessionInfo(sessionName);
+        }
+      },
+      setActiveTools: (activeTools) => {
+        this.activeTools = [...activeTools];
+      },
+      setContextUsage: (contextUsage) => {
+        this.state.contextUsage = contextUsage;
+      },
+      setSessionStats: (sessionStats) => {
+        this.state.sessionStats = cloneSessionStats(sessionStats);
+        this.state.contextUsage = this.state.sessionStats.contextUsage;
+        this.state.usageCost = this.state.sessionStats.cost;
+      },
+      setUsageCost: (usageCost) => {
+        this.state.usageCost = usageCost;
+      },
+      setIsBashRunning: (isBashRunning) => {
+        this._isBashRunning = isBashRunning;
+      },
+      setHasPendingBashMessages: (hasPendingBashMessages) => {
+        this._hasPendingBashMessages = hasPendingBashMessages;
+      },
+      setAutoCompactionEnabled: (enabled) => {
+        this._autoCompactionEnabled = enabled;
+      },
+      setSteeringMode: (mode) => {
+        this._steeringMode = mode;
+      },
+      setFollowUpMode: (mode) => {
+        this._followUpMode = mode;
+      },
+      setRemoteSettings: (settings) => {
+        this.remoteSettings = { ...settings };
+        applyRemoteSettingsSnapshotInPlace(this.settingsManager, this.remoteSettings);
+      },
+    });
+  }
+
+  protected handleSyncBashStart(
+    payload: Parameters<Parameters<typeof applySessionSyncPatch>[0]["handleBashStart"]>[0],
+  ): void {
+    this._isBashRunning = true;
+    this.activeBashExecutions.set(payload.executionId, {
+      executionId: payload.executionId,
+      command: payload.command,
+      output: "",
+      clientRequestId: payload.clientRequestId,
+    });
+    if (
+      payload.clientRequestId !== undefined &&
+      !this.activeBashRequests.has(payload.clientRequestId)
+    ) {
+      this.activeBashRequests.set(payload.clientRequestId, {});
+    }
+  }
+
+  protected handleSyncBashChunk(
+    payload: Parameters<Parameters<typeof applySessionSyncPatch>[0]["handleBashChunk"]>[0],
+  ): void {
+    const currentExecution = this.activeBashExecutions.get(payload.executionId);
+    if (currentExecution) {
+      currentExecution.output += payload.chunk;
+    }
+    if (payload.clientRequestId === undefined) {
+      return;
+    }
+    const activeRequest = this.activeBashRequests.get(payload.clientRequestId);
+    if (!activeRequest) {
+      return;
+    }
+    this.activeBashChunkCounts.set(
+      payload.clientRequestId,
+      (this.activeBashChunkCounts.get(payload.clientRequestId) ?? 0) + 1,
+    );
+    activeRequest.onChunk?.(payload.chunk);
+  }
+
+  protected handleSyncBashEnd(
+    payload: Parameters<Parameters<typeof applySessionSyncPatch>[0]["handleBashEnd"]>[0],
+  ): void {
+    this._isBashRunning = false;
+    this.activeBashExecutions.delete(payload.executionId);
+    if (payload.message !== undefined) {
+      const message = toBashExecutionMessage(payload.message);
+      this.state.messages = [...this.state.messages, message];
+      this.sessionManager.appendMessage(message);
+    }
+    if (payload.clientRequestId !== undefined) {
+      this.activeBashChunkCounts.delete(payload.clientRequestId);
+      this.activeBashRequests.delete(payload.clientRequestId);
+    }
+  }
+
+  protected handleSyncBashFlush(
+    payload: Parameters<Parameters<typeof applySessionSyncPatch>[0]["handleBashFlush"]>[0],
+  ): void {
+    this._hasPendingBashMessages = false;
+    for (const message of payload.messages) {
+      const bashExecutionMessage = toBashExecutionMessage(message);
+      this.state.messages = [...this.state.messages, bashExecutionMessage];
+      this.sessionManager.appendMessage(bashExecutionMessage);
+    }
   }
 
   protected createPollingStateHandlers(): ReturnType<
@@ -606,12 +658,6 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this.resolveInitialSyncReady?.();
     this.resolveInitialSyncReady = undefined;
   }
-}
-
-function isRuntimeAgentSessionEvent(
-  value: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
-): value is AgentSessionEvent {
-  return Value.Check(RuntimeAgentSessionEventSchema, value);
 }
 
 type BashExecutionMessagePayload = {

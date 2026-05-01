@@ -2,37 +2,19 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ContextUsage, ExtensionUIContext, SessionStats } from "@mariozechner/pi-coding-agent";
 import type { RemoteApiClient } from "../../remote-api-client.js";
-import { parseRemoteCustomExtensionEventPayload } from "../../event-bus-bridge.js";
 import type {
-  ExtensionUiResolvedEventPayload,
   ExtensionUiRequestEventPayload,
   RemoteExtensionMetadata,
   RemoteResourceBundle,
   RemoteSettingsSnapshot,
-  StreamEventEnvelope,
 } from "../../schemas.js";
 import type { RemoteModelSettingsState } from "../contracts.js";
-import {
-  applyAgentSessionEnvelopePayload,
-  applyBashChunkEnvelopePayload,
-  applyBashEndEnvelopePayload,
-  applyBashFlushEnvelopePayload,
-  applyBashStartEnvelopePayload,
-  applyExtensionEnvelopePayload,
-  routeRemoteSessionEnvelope,
-} from "../session-envelope-ops.js";
 import { applyRemoteSessionStatePatch } from "../session-patches.js";
-import { handleRemoteUiRequest } from "../session-ui.js";
 import type { ForwardableRemoteExtensionEvent } from "./local-extension-runner.js";
 
 export type PollRemoteSessionRuntimeInput = {
   handleRemoteError: (message: string) => void;
-  applyAgentSessionEvent: (
-    event: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
-  ) => void;
   isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
-  applyExtensionEvent: (event: ForwardableRemoteExtensionEvent) => void;
-  applyExtensionCustomEvent: (channel: string, data: unknown) => void;
   remoteModelSettings: RemoteModelSettingsState;
   setRemoteAvailableModels: (models: Model<Api>[]) => void;
   setResolvedModel: (modelRef: string) => void;
@@ -57,17 +39,6 @@ export type PollRemoteSessionRuntimeInput = {
   cancelUiRequest: (requestId: string) => void;
   client: RemoteApiClient;
   sessionId: string;
-  handleBashStart: (
-    payload: Extract<StreamEventEnvelope, { kind: "bash_start" }>["payload"],
-  ) => void;
-  handleBashChunk: (
-    payload: Extract<StreamEventEnvelope, { kind: "bash_chunk" }>["payload"],
-  ) => void;
-  handleBashEnd: (payload: Extract<StreamEventEnvelope, { kind: "bash_end" }>["payload"]) => void;
-  handleBashFlush: (
-    payload: Extract<StreamEventEnvelope, { kind: "bash_flush" }>["payload"],
-  ) => void;
-  handleEnvelope?: (envelope: StreamEventEnvelope) => Promise<void>;
 };
 
 type PollingStateHandlers = Pick<
@@ -95,102 +66,35 @@ type PollingStateHandlers = Pick<
   | "cancelUiRequest"
 >;
 
-export function createRemoteSessionPollingInput(input: {
-  handleRemoteError: PollRemoteSessionRuntimeInput["handleRemoteError"];
-  applyAgentSessionEvent: PollRemoteSessionRuntimeInput["applyAgentSessionEvent"];
-  isForwardableRemoteExtensionEvent: PollRemoteSessionRuntimeInput["isForwardableRemoteExtensionEvent"];
-  applyExtensionEvent: PollRemoteSessionRuntimeInput["applyExtensionEvent"];
-  applyExtensionCustomEvent: PollRemoteSessionRuntimeInput["applyExtensionCustomEvent"];
-  handleEnvelope: PollRemoteSessionRuntimeInput["handleEnvelope"];
-  remoteModelSettings: PollRemoteSessionRuntimeInput["remoteModelSettings"];
-  stateHandlers: PollingStateHandlers;
-  client: PollRemoteSessionRuntimeInput["client"];
-  sessionId: PollRemoteSessionRuntimeInput["sessionId"];
-  handleBashStart: PollRemoteSessionRuntimeInput["handleBashStart"];
-  handleBashChunk: PollRemoteSessionRuntimeInput["handleBashChunk"];
-  handleBashEnd: PollRemoteSessionRuntimeInput["handleBashEnd"];
-  handleBashFlush: PollRemoteSessionRuntimeInput["handleBashFlush"];
-}): PollRemoteSessionRuntimeInput {
-  return {
-    handleRemoteError: input.handleRemoteError,
-    applyAgentSessionEvent: input.applyAgentSessionEvent,
-    isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
-    applyExtensionEvent: input.applyExtensionEvent,
-    applyExtensionCustomEvent: input.applyExtensionCustomEvent,
-    handleEnvelope: input.handleEnvelope,
-    remoteModelSettings: input.remoteModelSettings,
-    ...input.stateHandlers,
-    client: input.client,
-    sessionId: input.sessionId,
-    handleBashStart: input.handleBashStart,
-    handleBashChunk: input.handleBashChunk,
-    handleBashEnd: input.handleBashEnd,
-    handleBashFlush: input.handleBashFlush,
-  };
-}
-
 export function createRemoteSessionPollingStateHandlers(
   handlers: PollingStateHandlers,
 ): PollingStateHandlers {
   return handlers;
 }
 
-export async function handleRemoteSessionEnvelope(
-  input: PollRemoteSessionRuntimeInput,
-  envelope: StreamEventEnvelope,
-): Promise<void> {
-  await routeRemoteSessionEnvelope({
-    envelope,
-    onAgentSessionPayload: (payload) => {
-      applyAgentSessionEnvelopePayload({
-        payload,
-        applyAgentSessionEvent: input.applyAgentSessionEvent,
-      });
-    },
-    onExtensionEventPayload: (payload) => {
-      applyExtensionEnvelopePayload({
-        payload,
-        isForwardableRemoteExtensionEvent: input.isForwardableRemoteExtensionEvent,
-        applyExtensionEvent: input.applyExtensionEvent,
-      });
-    },
-    onExtensionCustomEventPayload: (payload) => {
-      const parsed = parseRemoteCustomExtensionEventPayload(payload);
-      if (!parsed) {
-        return;
-      }
-      input.applyExtensionCustomEvent(parsed.channel, parsed.data);
-    },
-    onSessionStatePatchPayload: (payload) => {
-      handleSessionStatePatchPayload(input, payload);
-    },
-    onExtensionErrorPayload: (payload) => {
-      input.handleRemoteError(payload.error);
-    },
-    onExtensionUiRequestPayload: async (payload) => {
-      await handleExtensionUiRequestPayload(input, payload);
-    },
-    onExtensionUiResolvedPayload: (payload) => {
-      handleExtensionUiResolvedPayload(input, payload);
-    },
-    onBashStartPayload: (payload) => {
-      applyBashStartEnvelopePayload({ payload, handleBashStart: input.handleBashStart });
-    },
-    onBashChunkPayload: (payload) => {
-      applyBashChunkEnvelopePayload({ payload, handleBashChunk: input.handleBashChunk });
-    },
-    onBashEndPayload: (payload) => {
-      applyBashEndEnvelopePayload({ payload, handleBashEnd: input.handleBashEnd });
-    },
-    onBashFlushPayload: (payload) => {
-      applyBashFlushEnvelopePayload({ payload, handleBashFlush: input.handleBashFlush });
-    },
-  });
-}
-
-function handleSessionStatePatchPayload(
-  input: PollRemoteSessionRuntimeInput,
-  payload: Extract<StreamEventEnvelope, { kind: "session_state_patch" }>["payload"],
+export function handleSessionStatePatchPayload(
+  input: Pick<
+    PollRemoteSessionRuntimeInput,
+    | "remoteModelSettings"
+    | "setRemoteAvailableModels"
+    | "setResolvedModel"
+    | "setThinkingLevel"
+    | "applyAuthoritativeCwd"
+    | "setRemoteExtensions"
+    | "setRemoteResources"
+    | "setSessionName"
+    | "setActiveTools"
+    | "setContextUsage"
+    | "setSessionStats"
+    | "setUsageCost"
+    | "setIsBashRunning"
+    | "setHasPendingBashMessages"
+    | "setAutoCompactionEnabled"
+    | "setSteeringMode"
+    | "setFollowUpMode"
+    | "setRemoteSettings"
+  >,
+  payload: Parameters<typeof applyRemoteSessionStatePatch>[0]["payload"],
 ): void {
   applyRemoteSessionStatePatch({
     payload,
@@ -213,30 +117,4 @@ function handleSessionStatePatchPayload(
     setFollowUpMode: input.setFollowUpMode,
     setRemoteSettings: input.setRemoteSettings,
   });
-}
-
-async function handleExtensionUiRequestPayload(
-  input: PollRemoteSessionRuntimeInput,
-  payload: ExtensionUiRequestEventPayload,
-): Promise<void> {
-  const uiContext = input.getUiContext();
-  if (!uiContext) {
-    input.bufferUiRequest(payload);
-    return;
-  }
-
-  await handleRemoteUiRequest({
-    uiContext,
-    request: payload,
-    client: input.client,
-    sessionId: input.sessionId,
-    pendingInteractiveRequests: input.pendingInteractiveRequests,
-  });
-}
-
-function handleExtensionUiResolvedPayload(
-  input: PollRemoteSessionRuntimeInput,
-  payload: ExtensionUiResolvedEventPayload,
-): void {
-  input.cancelUiRequest(payload.id);
 }

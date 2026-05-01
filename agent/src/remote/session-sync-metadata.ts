@@ -76,7 +76,6 @@ export function readSessionSyncPatchReplaceKey(
         : undefined;
     }
     case "agent.lifecycle":
-    case "agent.event":
     case "bash.chunk":
     case "bash.end":
     case "bash.flush":

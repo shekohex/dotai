@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { ToolDefinitionMetadata } from "../../schemas.js";
 import { JsonObjectSchema, JsonValueSchema } from "../../json-schema.js";
+import { asRecord } from "../../../utils/unknown-data.js";
 
 const ToolSchemaLikeSchema = Type.Object(
   {
@@ -40,16 +41,23 @@ export function buildRemoteToolDefinition(metadata: ToolDefinitionMetadata): Too
 }
 
 function normalizeToolParameters(parameters: unknown): ToolDefinition["parameters"] {
-  const schema = parseToolSchema(parameters);
+  const schema = parseToolParameterTransportSchema(parameters);
   if (schema !== undefined) {
     return schema;
   }
   return EmptyToolParametersSchema;
 }
 
-function parseToolSchema(value: unknown): TSchema | undefined {
+function parseToolParameterTransportSchema(value: unknown): TSchema | undefined {
   if (!Value.Check(ToolSchemaLikeSchema, value)) {
     return undefined;
   }
-  return value as TSchema;
+  if (!isTypeBoxTransportSchemaObject(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function isTypeBoxTransportSchemaObject(value: unknown): value is TSchema {
+  return asRecord(value) !== undefined;
 }

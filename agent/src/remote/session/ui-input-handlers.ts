@@ -2,6 +2,11 @@ import { hasSessionPrimitiveCapability } from "./capabilities.js";
 import type { RemoteUiInputHandlers } from "./types.js";
 import type { RemoteUiContextInput } from "./ui-context-types.js";
 import { requestRemoteUiValue } from "./ui-requests.js";
+import { asRecord } from "../../utils/unknown-data.js";
+
+type UiResponseValue = { id: string; value: string };
+type UiResponseConfirmation = { id: string; confirmed: boolean };
+type UiResponseCancelled = { id: string; cancelled: true };
 
 export function createRemoteUiInputHandlers(input: RemoteUiContextInput): RemoteUiInputHandlers {
   return {
@@ -34,7 +39,7 @@ function selectRemoteUiInput(
       timeout: opts?.timeout,
       signal: opts?.signal,
       defaultValue: undefined,
-      parse: (response) => ("value" in response ? response.value : undefined),
+      parse: (response) => readUiResponseValue(response),
     },
     input,
   );
@@ -56,7 +61,7 @@ function confirmRemoteUiInput(
       timeout: opts?.timeout,
       signal: opts?.signal,
       defaultValue: false,
-      parse: (response) => ("confirmed" in response ? response.confirmed : false),
+      parse: (response) => readUiResponseConfirmation(response),
     },
     input,
   );
@@ -78,7 +83,7 @@ function inputRemoteUiInput(
       timeout: opts?.timeout,
       signal: opts?.signal,
       defaultValue: undefined,
-      parse: (response) => ("value" in response ? response.value : undefined),
+      parse: (response) => readUiResponseValue(response),
     },
     input,
   );
@@ -97,10 +102,24 @@ function editorRemoteUiInput(
       title,
       prefill,
       defaultValue: undefined,
-      parse: (response) => ("value" in response ? response.value : undefined),
+      parse: (response) => readUiResponseValue(response),
     },
     input,
   );
+}
+
+function readUiResponseValue(
+  response: UiResponseValue | UiResponseConfirmation | UiResponseCancelled,
+): string | undefined {
+  const record = asRecord(response);
+  return typeof record?.value === "string" ? record.value : undefined;
+}
+
+function readUiResponseConfirmation(
+  response: UiResponseValue | UiResponseConfirmation | UiResponseCancelled,
+): boolean {
+  const record = asRecord(response);
+  return typeof record?.confirmed === "boolean" ? record.confirmed : false;
 }
 
 function assertUiPrimitiveCapability(

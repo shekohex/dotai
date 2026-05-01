@@ -250,8 +250,6 @@ export function isPatchCoveredBySnapshot(
     case "extension.ui.resolved":
     case "session.state":
       return true;
-    case "agent.event":
-      return true;
   }
 
   return false;
@@ -413,10 +411,7 @@ export function toSessionSyncPatchEvent(
         };
       }
 
-      return {
-        ...base,
-        patch: { patchType: "agent.event", eventType: event.payload.type, payload: event.payload },
-      };
+      return undefined;
     case "extension_custom_event":
       return { ...base, patch: { patchType: "extension.custom", payload: event.payload } };
     case "extension_event":

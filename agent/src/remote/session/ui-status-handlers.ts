@@ -202,13 +202,19 @@ function areWidgetLinesEqual(left: string[] | undefined, right: string[] | undef
 }
 
 function readWidgetPlacement(options: unknown): "aboveEditor" | "belowEditor" | undefined {
-  if (options === null || typeof options !== "object" || Array.isArray(options)) {
-    return undefined;
-  }
-
-  const placement = "placement" in options ? options.placement : undefined;
+  const placement = readObjectStringProperty(options, "placement");
   if (placement === "aboveEditor" || placement === "belowEditor") {
     return placement;
   }
   return undefined;
+}
+
+function readObjectStringProperty(value: unknown, key: string): string | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  const candidate: unknown = descriptor?.value;
+  return typeof candidate === "string" ? candidate : undefined;
 }

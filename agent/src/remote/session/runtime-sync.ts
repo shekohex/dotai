@@ -1,7 +1,6 @@
 import type { AgentSessionRuntime, SessionStats } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot, SessionStatus } from "../schemas.js";
 import { RemoteError } from "../errors.js";
-import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import { parseResourceLoaderExtensionMetadata, parseRuntimeExtensionMetadata } from "./helpers.js";
 import {
   applyRuntimeResourcesSnapshot,
@@ -347,15 +346,4 @@ export function parseModelRefStrict(model: string): { provider: string; modelId:
     provider: model.slice(0, separator),
     modelId: model.slice(separator + 1),
   };
-}
-
-export function updateLastSeenOffsets(
-  record: SessionRecord,
-  getHeadOffset: (streamId: string) => string,
-): void {
-  record.lastAppStreamOffsetSeenByServer = getHeadOffset(appEventsStreamId());
-  for (const presence of record.presence.values()) {
-    presence.lastSeenAppOffset = getHeadOffset(appEventsStreamId());
-    presence.lastSeenSessionOffset = getHeadOffset(sessionEventsStreamId(record.sessionId));
-  }
 }

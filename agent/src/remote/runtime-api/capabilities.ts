@@ -65,7 +65,8 @@ function isPromise(value: unknown): value is Promise<unknown> {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) {
     return false;
   }
-  return "then" in value && typeof value.then === "function";
+  const then: unknown = Reflect.get(value, "then");
+  return typeof then === "function";
 }
 
 function isCapabilitiesPostMethod(

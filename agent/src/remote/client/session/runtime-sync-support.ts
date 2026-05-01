@@ -209,7 +209,6 @@ export async function applySessionSyncPatch(input: {
       });
       return;
     case "agent.lifecycle":
-    case "agent.event":
       await input.handleEnvelope({
         eventId: "sync-patch",
         sessionId: input.sessionId,
@@ -273,7 +272,6 @@ function createSyntheticSyncEnvelope(
     case "retry.status":
     case "compaction.status":
     case "agent.lifecycle":
-    case "agent.event":
     case "command.accepted":
     case "extension.custom":
     case "extension.event":

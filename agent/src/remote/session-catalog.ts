@@ -11,6 +11,7 @@ import {
 import type { SessionSummary } from "./schemas.js";
 import { REMOTE_SESSION_VERSION_ENTRY } from "./session/durable-runtime-state.js";
 import type { SessionRecord } from "./session/types.js";
+import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
 
 export interface SessionCatalogRecord {
   sessionId: string;
@@ -296,7 +297,7 @@ function walkSessionFiles(rootDir: string): string[] {
 }
 
 function isMissingDirectoryError(error: unknown): boolean {
-  return error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT";
+  return readString(asRecord(error)?.code) === "ENOENT";
 }
 
 function buildRawCatalogRecord(sessionPath: string): RawCatalogRecord | null {
@@ -460,13 +461,7 @@ function readDurableVersion(entries: FileEntry[]): number {
 function isSessionVersionEntry(
   entry: Extract<SessionEntry, { type: "custom" }>,
 ): entry is Extract<SessionEntry, { type: "custom" }> & { data: { version: number } } {
-  return (
-    entry.data !== undefined &&
-    typeof entry.data === "object" &&
-    entry.data !== null &&
-    "version" in entry.data &&
-    typeof entry.data.version === "number"
-  );
+  return readNumber(asRecord(entry.data)?.version) !== undefined;
 }
 
 function resolveLifecycleStatus(

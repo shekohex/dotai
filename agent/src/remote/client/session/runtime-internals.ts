@@ -692,15 +692,11 @@ function delay(ms: number): Promise<void> {
 }
 
 function readErrorStatus(error: unknown): number | undefined {
-  if (typeof error !== "object" || error === null) {
+  if (error === null || typeof error !== "object") {
     return undefined;
   }
-
-  if (!("status" in error)) {
-    return undefined;
-  }
-
-  const status = error.status;
+  const descriptor = Object.getOwnPropertyDescriptor(error, "status");
+  const status: unknown = descriptor?.value;
   return typeof status === "number" ? status : undefined;
 }
 
@@ -720,6 +716,14 @@ function formatRemoteError(error: unknown): string {
 function readErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
+  }
+
+  if (error !== null && typeof error === "object") {
+    const descriptor = Object.getOwnPropertyDescriptor(error, "message");
+    const message: unknown = descriptor?.value;
+    if (typeof message === "string") {
+      return message;
+    }
   }
 
   return String(error);

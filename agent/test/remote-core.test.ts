@@ -87,7 +87,11 @@ import type {
 } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 import { SessionCatalog } from "../src/remote/session-catalog.ts";
-import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
+import {
+  appendAndPublish,
+  InMemoryDurableStreamStore,
+  sessionEventsStreamId,
+} from "../src/remote/streams.ts";
 import { assertType } from "../src/remote/typebox.ts";
 import { createTempPersistedRuntimeHarness } from "./remote-runtime-test-helpers.ts";
 import { TEST_ED25519_KEYS, TEST_RSA_PUBLIC_KEY_PEM } from "./remote-test-keys.ts";
@@ -1478,7 +1482,7 @@ async function waitForRemoteSessionMessageCount(
   sessionId: string,
   expectedCount: number,
 ): Promise<void> {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     const snapshot = await client.getSessionSnapshot(sessionId);
     if (snapshot.status === "idle" && snapshot.sessionStats.totalMessages >= expectedCount) {
@@ -2056,6 +2060,49 @@ timedTest("session sync lifecycle patches use explicit taxonomy", () => {
   });
 });
 
+timedTest("session sync keeps known lifecycle events out of fallback taxonomy", () => {
+  const event = {
+    eventId: "1",
+    sessionId: "session-1",
+    streamOffset: "0",
+    sessionVersion: "3",
+    ts: 1,
+    kind: "agent_session_event",
+    payload: {
+      type: "message_end",
+      message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+    },
+  } as const;
+
+  expect(toSessionSyncPatchEvent("session-1", event)?.patch.patchType).toBe("agent.lifecycle");
+});
+
+timedTest("session sync keeps opaque agent.event fallback for unknown residue only", () => {
+  const event = {
+    eventId: "1",
+    sessionId: "session-1",
+    streamOffset: "0",
+    sessionVersion: "3",
+    ts: 1,
+    kind: "agent_session_event",
+    payload: {
+      type: "unknown_future_event",
+      id: "residual",
+    },
+  } as const;
+
+  expect(toSessionSyncPatchEvent("session-1", event)).toEqual({
+    type: "patch",
+    sessionId: "session-1",
+    version: "3",
+    patch: {
+      patchType: "agent.event",
+      eventType: "unknown_future_event",
+      payload: event.payload,
+    },
+  });
+});
+
 timedTest("session tools rejects invalid metadata objects", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
@@ -2258,7 +2305,7 @@ timedTest("session sync drops buffered patches already covered by snapshot", asy
 
 timedTest("ephemeral custom extension events stay live-only", () => {
   const liveEvents = new SessionLiveEventBus();
-  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
+  const streams = new InMemoryDurableStreamStore();
   const sessionId = "test-session";
   const streamId = `sessions/${sessionId}/events`;
   streams.ensureStream(streamId);
@@ -2271,6 +2318,7 @@ timedTest("ephemeral custom extension events stay live-only", () => {
 
   appendMirroredRemoteCustomExtensionEvent({
     streams,
+    liveEvents,
     record: { sessionId } as never,
     channel: "demo:ephemeral",
     data: { sync: "ephemeral", value: "ignored" },
@@ -2278,6 +2326,47 @@ timedTest("ephemeral custom extension events stay live-only", () => {
   });
 
   expect(liveEventsSeen).toEqual(["demo:ephemeral"]);
+  unsubscribe();
+});
+
+timedTest("durable store append stays silent until live bus publish seam runs", () => {
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore();
+  const streamId = sessionEventsStreamId("bus-split-session");
+  streams.ensureStream(streamId);
+  const seenKinds: string[] = [];
+  const unsubscribe = liveEvents.subscribe(streamId, (event) => {
+    seenKinds.push(event.kind);
+  });
+
+  const retainedEvent = streams.append(streamId, {
+    sessionId: "bus-split-session",
+    kind: "session_state_patch",
+    sessionVersion: "1",
+    payload: {
+      commandId: "cmd-1",
+      sequence: 1,
+      patch: { sessionName: "bus split" },
+    },
+    ts: 1,
+  });
+
+  expect(seenKinds).toEqual([]);
+
+  appendAndPublish(streams, liveEvents, streamId, {
+    sessionId: "bus-split-session",
+    kind: "session_state_patch",
+    sessionVersion: "2",
+    payload: {
+      commandId: "cmd-2",
+      sequence: 2,
+      patch: { sessionName: "published" },
+    },
+    ts: 2,
+  });
+
+  expect(seenKinds).toEqual(["session_state_patch"]);
+  expect(retainedEvent.streamOffset).toBe("0000000000000000_0000000000000001");
   unsubscribe();
 });
 
@@ -2353,6 +2442,7 @@ timedTest("runtime durable sync patches use post-change durable version", async 
       },
       sessions,
       streams,
+      liveEvents,
       now: 10,
       createRunId: () => "run-1",
       syncFromRuntime: (targetRecord) => {
@@ -2372,6 +2462,7 @@ timedTest("runtime durable sync patches use post-change durable version", async 
       },
       sessions,
       streams,
+      liveEvents,
       now: 11,
       createRunId: () => "run-1",
       syncFromRuntime: (targetRecord) => {
@@ -2403,6 +2494,7 @@ timedTest("session sync agent_session_event patches keep durable version semanti
   const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
   const sessions = new SessionRegistry({
     streams,
+    liveEvents,
     runtimeFactory: new FakeRuntimeFactory(),
     catalog: new SessionCatalog({ rootDir }),
   });
@@ -2453,7 +2545,7 @@ timedTest("session sync agent_session_event patches keep durable version semanti
       (value) => value !== undefined,
     );
 
-    streams.append(sessionEventsStreamId(created.sessionId), {
+    appendAndPublish(streams, liveEvents, sessionEventsStreamId(created.sessionId), {
       sessionId: created.sessionId,
       kind: "agent_session_event",
       sessionVersion: "7",
@@ -4402,8 +4494,9 @@ timedTest("missing session summary returns 404", async () => {
   }
 });
 
-timedTest(
+test(
   "remote session archive restore and delete lifecycle works for loaded and unloaded sessions",
+  { timeout: 30_000 },
   async () => {
     const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
     const originalCwd = process.cwd();

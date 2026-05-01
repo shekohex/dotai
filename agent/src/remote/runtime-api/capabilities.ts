@@ -81,6 +81,14 @@ function readProperty(target: unknown, key: string): unknown {
   return Reflect.get(requireObject(target), key);
 }
 
+export function readHiddenProperty(target: object, key: string): unknown {
+  return Reflect.get(target, key);
+}
+
+export function writeHiddenProperty(target: object, key: string, value: unknown): void {
+  Reflect.set(target, key, value);
+}
+
 function requireObject(value: unknown): object {
   if (!isReflectTarget(value)) {
     throw new TypeError("Capabilities RPC route is not available");

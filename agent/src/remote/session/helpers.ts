@@ -1,7 +1,7 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { Value } from "typebox/value";
 import { RemoteExtensionMetadataSchema, type RemoteExtensionMetadata } from "../schemas.js";
-import { isRecord } from "../../utils/unknown-data.js";
+import { asRecord, isRecord } from "../../utils/unknown-data.js";
 
 export function isApiModel(value: unknown): value is Model<Api> {
   if (!isRecord(value)) {
@@ -75,12 +75,6 @@ export function parseResourceLoaderExtensionMetadata(value: unknown): RemoteExte
 }
 
 function hasPathProperty(value: unknown): value is { path: string } {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    "path" in value &&
-    typeof value.path === "string" &&
-    value.path.length > 0
-  );
+  const record = asRecord(value);
+  return typeof record?.path === "string" && record.path.length > 0;
 }

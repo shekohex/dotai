@@ -25,10 +25,7 @@ export {
   emitSessionSummaryUpdatedEvent,
   handleRegistrySessionEvent,
 } from "./event-stream-ops.js";
-export {
-  installRemoteExtensionEventMirror,
-  restoreMirroredRemoteDurableExtensionEvents,
-} from "./extension-event-stream.js";
+export { installRemoteExtensionEventMirror } from "./extension-event-stream.js";
 export {
   appendDurableExtensionEvent,
   persistDurableRuntimeDomainState,
@@ -63,6 +60,10 @@ export {
   toSessionSnapshotRecord,
 } from "./runtime-sync.js";
 export { DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT } from "./runtime-sync-snapshot.js";
+export {
+  getCommittedSessionHistory,
+  type CommittedSessionHistory,
+} from "./committed-history-ops.js";
 export {
   ALLOWED_THINKING_LEVELS,
   createEmptyModelSettings,

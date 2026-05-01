@@ -16,6 +16,13 @@ import {
   RemoteExtensionRuntimeSchema,
 } from "./schemas-capabilities.js";
 import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
+import {
+  ExtensionUiRequestEventPayloadSchema,
+  JsonValueSchema,
+  TranscriptAssistantMessageSchema,
+  TranscriptMessageTransportSchema,
+  TranscriptSchema,
+} from "./schemas-session-runtime.js";
 
 export {
   ClientCapabilitiesPrimitivesSchema,
@@ -33,6 +40,7 @@ export {
   RemoteSkillResourceSchema,
   RemoteThemeResourceSchema,
 } from "./schemas-settings.js";
+export { ExtensionUiRequestEventPayloadSchema } from "./schemas-session-runtime.js";
 
 export const SessionStatusSchema = Type.Union([
   Type.Literal("starting"),
@@ -113,7 +121,7 @@ export const SessionSummarySchema = Type.Object({
     loaded: Type.Boolean(),
     state: Type.Union([Type.Literal("active"), Type.Literal("archived")]),
   }),
-  lastSessionStreamOffset: Type.String(),
+  version: Type.String(),
 });
 
 export const SessionDeletedResponseSchema = Type.Object({
@@ -232,7 +240,7 @@ const SessionMessageEntrySchema = Type.Object({
   id: Type.String(),
   parentId: Type.Union([Type.String(), Type.Null()]),
   timestamp: Type.String(),
-  message: Type.Unknown(),
+  message: TranscriptMessageTransportSchema,
 });
 
 const ThinkingLevelChangeEntrySchema = Type.Object({
@@ -466,6 +474,11 @@ export const SessionSnapshotQuerySchema = Type.Object({
   entriesOffset: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
 });
 
+export const SessionEntriesQuerySchema = Type.Object({
+  entriesLimit: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
+  entriesOffset: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
+});
+
 export const SessionToolParamsSchema = Type.Object({
   sessionId: Type.String({ minLength: 1 }),
   toolName: Type.String({ minLength: 1 }),
@@ -653,8 +666,8 @@ export const SettingsUpdateRequestSchema = Type.Unsafe<SettingsUpdateRequestValu
 export const RemoteToolInfoSchema = Type.Object({
   name: Type.String(),
   description: Type.String(),
-  parameters: Type.Unknown(),
-  sourceInfo: Type.Unknown(),
+  parameters: JsonValueSchema,
+  sourceInfo: JsonValueSchema,
   definition: Type.Optional(ToolDefinitionMetadataSchema),
 });
 
@@ -728,10 +741,24 @@ export const SessionSnapshotSchema = Type.Object({
   gitState: Type.Optional(GitRuntimeStateSchema),
   entries: Type.Array(SessionEntrySchema),
   leafId: Type.Union([Type.String(), Type.Null()]),
-  transcript: Type.Array(Type.Unknown()),
+  transcript: TranscriptSchema,
   queue: Type.Object({
     depth: Type.Number(),
     nextSequence: Type.Number(),
+  }),
+  live: Type.Object({
+    queuedSteeringMessages: Type.Array(Type.String()),
+    queuedFollowUpMessages: Type.Array(Type.String()),
+    retryAttempt: Type.Number(),
+    streamingMessage: Type.Optional(TranscriptAssistantMessageSchema),
+    activeToolExecutions: Type.Array(
+      Type.Object({
+        toolCallId: Type.String(),
+        toolName: Type.String(),
+        args: JsonValueSchema,
+        partialResult: Type.Optional(JsonValueSchema),
+      }),
+    ),
   }),
   retry: Type.Object({
     status: RuntimeTaskStatusSchema,
@@ -759,23 +786,46 @@ export const SessionSnapshotSchema = Type.Object({
     bash: Type.Boolean(),
     streaming: Type.Boolean(),
   }),
-  durableExtensionEvents: Type.Array(RemoteCustomExtensionEventPayloadSchema),
-  lastSessionStreamOffset: Type.String(),
+  pendingUiRequests: Type.Array(ExtensionUiRequestEventPayloadSchema),
+  uiState: Type.Object({
+    statuses: Type.Array(
+      Type.Object({
+        statusKey: Type.String(),
+        statusText: Type.Optional(Type.String()),
+      }),
+    ),
+    widgets: Type.Array(
+      Type.Object({
+        widgetKey: Type.String(),
+        widgetLines: Type.Optional(Type.Array(Type.String())),
+        widgetPlacement: Type.Optional(
+          Type.Union([Type.Literal("aboveEditor"), Type.Literal("belowEditor")]),
+        ),
+      }),
+    ),
+    workingMessage: Type.Optional(Type.String()),
+    hiddenThinkingLabel: Type.Optional(Type.String()),
+    title: Type.Optional(Type.String()),
+    toolsExpanded: Type.Optional(Type.Boolean()),
+    editorText: Type.Optional(Type.String()),
+  }),
+  durableExtensionState: Type.Array(RemoteCustomExtensionEventPayloadSchema),
+  version: Type.String(),
   lastAppStreamOffsetSeenByServer: Type.String(),
   streamingState: StreamingStateSchema,
   isBashRunning: Type.Boolean(),
   hasPendingBashMessages: Type.Boolean(),
-  pendingToolCalls: Type.Array(Type.Unknown()),
+  pendingToolCalls: Type.Array(Type.String()),
   errorMessage: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.Number(),
   updatedAt: Type.Number(),
 });
 
-export const StreamReadQuerySchema = Type.Object({
-  offset: Type.Optional(Type.String()),
-  live: Type.Optional(
-    Type.Union([Type.Literal("json"), Type.Literal("sse"), Type.Literal("long-poll")]),
-  ),
-  cursor: Type.Optional(Type.String()),
-  timeoutMs: Type.Optional(Type.String({ pattern: "^[0-9]+$" })),
+export const SessionEntriesResponseSchema = Type.Object({
+  entries: Type.Array(SessionEntrySchema),
+  transcript: TranscriptSchema,
+  totalEntries: Type.Number(),
+  totalTranscriptMessages: Type.Number(),
+  entriesLimit: Type.Number(),
+  entriesOffset: Type.Number(),
 });

@@ -2,15 +2,16 @@ import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { SessionSnapshot } from "../schemas.js";
 import { getExecutorState } from "../../extensions/executor/status.js";
 import { getGitState, serializeGitRuntimeState } from "../../extensions/git-state.js";
-import { readDurableExtensionEvents } from "./durable-runtime-state.js";
+import { toTransportTranscript } from "../transcript-transport.js";
+import { buildDurableExtensionState } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
 
-export const DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT = 200;
+export const DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT = 100;
 
 export function buildSessionSnapshotParts(
   record: SessionRecord,
   options?: { entriesLimit?: number; entriesOffset?: number },
-): Omit<SessionSnapshot, "lastSessionStreamOffset" | "lastAppStreamOffsetSeenByServer"> {
+): Omit<SessionSnapshot, "version" | "lastAppStreamOffsetSeenByServer"> {
   const session = readRuntimeSession(record.runtime);
   const sessionEntries = session?.sessionManager.getEntries() ?? [];
   const entriesLimit = options?.entriesLimit ?? DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT;
@@ -22,6 +23,22 @@ export function buildSessionSnapshotParts(
   const queue = {
     depth: record.queue.depth,
     nextSequence: record.queue.nextSequence,
+  };
+  const live = {
+    queuedSteeringMessages: [...record.live.queuedSteeringMessages],
+    queuedFollowUpMessages: [...record.live.queuedFollowUpMessages],
+    retryAttempt: record.live.retryAttempt,
+    ...(record.live.streamingMessage === undefined
+      ? {}
+      : { streamingMessage: structuredClone(record.live.streamingMessage) }),
+    activeToolExecutions: [...record.live.activeToolExecutions.values()].map((execution) => ({
+      toolCallId: execution.toolCallId,
+      toolName: execution.toolName,
+      args: structuredClone(execution.args),
+      ...(execution.partialResult === undefined
+        ? {}
+        : { partialResult: structuredClone(execution.partialResult) }),
+    })),
   };
   return {
     sessionId: record.sessionId,
@@ -55,8 +72,9 @@ export function buildSessionSnapshotParts(
     gitState: structuredClone(serializeGitRuntimeState(getGitState(record.cwd))),
     entries: trimmedEntries.map((entry) => cloneSessionEntry(entry)),
     leafId,
-    transcript: trimmedTranscript.map((message) => structuredClone(message)),
+    transcript: toTransportTranscript(trimmedTranscript),
     queue,
+    live,
     retry: {
       status: record.retry.status,
     },
@@ -66,7 +84,32 @@ export function buildSessionSnapshotParts(
     presence: [...record.presence.values()],
     activeRun: record.activeRun,
     interruptedRuntimeDomains: { ...record.interruptedRuntimeDomains },
-    durableExtensionEvents: readDurableExtensionEvents(record).map((event) => ({
+    pendingUiRequests: [...record.pendingUiRequests.values()].map(({ request }) =>
+      structuredClone(request),
+    ),
+    uiState: {
+      statuses: [...record.uiState.statuses.entries()].map(([statusKey, statusText]) => ({
+        statusKey,
+        ...(statusText === undefined ? {} : { statusText }),
+      })),
+      widgets: [...record.uiState.widgets.entries()].map(([widgetKey, widget]) => ({
+        widgetKey,
+        ...(widget.lines === undefined ? {} : { widgetLines: [...widget.lines] }),
+        ...(widget.placement === undefined ? {} : { widgetPlacement: widget.placement }),
+      })),
+      ...(record.uiState.workingMessage === undefined
+        ? {}
+        : { workingMessage: record.uiState.workingMessage }),
+      ...(record.uiState.hiddenThinkingLabel === undefined
+        ? {}
+        : { hiddenThinkingLabel: record.uiState.hiddenThinkingLabel }),
+      ...(record.uiState.title === undefined ? {} : { title: record.uiState.title }),
+      ...(record.uiState.toolsExpanded === undefined
+        ? {}
+        : { toolsExpanded: record.uiState.toolsExpanded }),
+      ...(record.uiState.editorText === undefined ? {} : { editorText: record.uiState.editorText }),
+    },
+    durableExtensionState: buildDurableExtensionState(record).map((event) => ({
       channel: event.channel,
       data: structuredClone(event.data),
     })),
@@ -93,10 +136,6 @@ function sliceTrailingItems<T>(items: T[], limit: number, offset: number): T[] {
 function readRuntimeSession(
   runtime: SessionRecord["runtime"],
 ): SessionRecord["runtime"]["session"] | undefined {
-  if (!("session" in runtime)) {
-    return undefined;
-  }
-
   return runtime.session;
 }
 

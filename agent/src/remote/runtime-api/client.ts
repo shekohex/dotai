@@ -1,4 +1,5 @@
 import { hc } from "hono/client";
+import type { Static } from "typebox";
 import type { createV1Routes } from "../routes.js";
 import type {
   AbortOperationResponse,
@@ -38,6 +39,7 @@ import {
   RemoteKvReadResponseSchema,
   RemoteKvWriteResponseSchema,
   SessionDeletedResponseSchema,
+  SessionEntriesResponseSchema,
   SessionForkMessagesResponseSchema,
   SessionSummarySchema,
   SessionSnapshotSchema,
@@ -70,13 +72,10 @@ import {
   readRemoteConnectionIdHeader,
   resolveRemoteConnectionId,
 } from "./internals.js";
-import { readRemoteSessionEvents } from "./streams.js";
 import { readRemoteSessionSync } from "./sync.js";
-import {
-  type ReadSessionEventsOptions,
-  type StreamReadResult,
-  toRemoteHttpError,
-} from "./utils.js";
+import { toRemoteHttpError } from "./utils.js";
+
+type SessionEntriesResponse = Static<typeof SessionEntriesResponseSchema>;
 
 type RemoteV1Routes = ReturnType<typeof createV1Routes>;
 type AuthFlowMode = "normal" | "forced";
@@ -90,7 +89,6 @@ export class RemoteApiClient {
   private token: string | undefined;
   private connectionId: string | undefined;
   private authTask: Promise<void> | undefined;
-  private readonly sessionStreamCursors = new Map<string, string>();
   constructor(options: {
     origin: string;
     auth: RemoteApiClientAuthOptions;
@@ -206,24 +204,50 @@ export class RemoteApiClient {
     sessionId: string,
     options?: { entriesLimit?: number; entriesOffset?: number },
   ): Promise<SessionSnapshot> {
+    void options;
     const response = await this.rpcClient.sessions[":sessionId"].snapshot.$get(
-      {
-        param: { sessionId },
-        query: {
-          ...(options?.entriesLimit === undefined
-            ? {}
-            : { entriesLimit: String(options.entriesLimit) }),
-          ...(options?.entriesOffset === undefined
-            ? {}
-            : { entriesOffset: String(options.entriesOffset) }),
-        },
-      },
+      { param: { sessionId } },
       { headers: await this.getAuthHeaders() },
     );
     this.captureConnectionId(response);
     if (response.status !== 200) throw await toRemoteHttpError(response);
     const payload: unknown = await response.json();
     assertType(SessionSnapshotSchema, payload);
+    if (options?.entriesLimit === undefined && options?.entriesOffset === undefined) {
+      return payload;
+    }
+
+    const entries = await this.getSessionEntries(sessionId, options);
+    return {
+      ...payload,
+      entries: entries.entries,
+      transcript: entries.transcript,
+    };
+  }
+
+  async getSessionEntries(
+    sessionId: string,
+    options: { entriesLimit?: number; entriesOffset?: number },
+  ): Promise<SessionEntriesResponse> {
+    const search = new URLSearchParams();
+    if (options.entriesLimit !== undefined) {
+      search.set("entriesLimit", String(options.entriesLimit));
+    }
+    if (options.entriesOffset !== undefined) {
+      search.set("entriesOffset", String(options.entriesOffset));
+    }
+    const query = search.toString();
+    const response = await this.fetchImpl(
+      `${this.origin}/v1/sessions/${encodeURIComponent(sessionId)}/entries${query.length > 0 ? `?${query}` : ""}`,
+      {
+        method: "GET",
+        headers: await this.getAuthHeaders(),
+      },
+    );
+    this.captureConnectionId(response);
+    if (response.status !== 200) throw await toRemoteHttpError(response);
+    const payload: unknown = await response.json();
+    assertType(SessionEntriesResponseSchema, payload);
     return payload;
   }
 
@@ -571,29 +595,6 @@ export class RemoteApiClient {
     return payload;
   }
 
-  async readSessionEvents(
-    sessionId: string,
-    offset: string,
-    options?: ReadSessionEventsOptions,
-  ): Promise<StreamReadResult> {
-    return readRemoteSessionEvents({
-      fetchImpl: this.fetchImpl,
-      origin: this.origin,
-      sessionId,
-      offset,
-      cursor: this.sessionStreamCursors.get(sessionId),
-      headers: await this.getAuthHeaders(),
-      signal: options?.signal,
-      options,
-      captureConnectionId: (response) => {
-        this.captureConnectionId(response);
-      },
-      updateCursor: (cursor) => {
-        this.updateSessionStreamCursor(sessionId, cursor);
-      },
-    });
-  }
-
   async emitSessionCustomEvent(
     sessionId: string,
     body: { channel: string; data: unknown },
@@ -647,11 +648,6 @@ export class RemoteApiClient {
     if (!response.ok) {
       throw await toRemoteHttpError(response);
     }
-  }
-
-  private updateSessionStreamCursor(sessionId: string, cursor: string | undefined): void {
-    if (cursor !== undefined && cursor.length > 0) this.sessionStreamCursors.set(sessionId, cursor);
-    else this.sessionStreamCursors.delete(sessionId);
   }
 
   private async fetchKv(path: string, init: RequestInit): Promise<Response> {

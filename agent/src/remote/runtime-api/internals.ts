@@ -1,37 +1,3 @@
-import type { StreamReadResult } from "./utils.js";
-
-export function buildRemoteSessionEventsRequestUrl(input: {
-  origin: string;
-  sessionId: string;
-  offset: string;
-  cursor: string | undefined;
-}): string {
-  const query = new URLSearchParams({
-    live: "sse",
-    offset: input.offset,
-    ...(input.cursor !== undefined && input.cursor.length > 0 ? { cursor: input.cursor } : {}),
-  });
-  return `${input.origin}/v1/streams/sessions/${encodeURIComponent(input.sessionId)}/events?${query.toString()}`;
-}
-
-export function buildRemoteNoContentSessionEventsResult(input: {
-  response: Response;
-  fallbackOffset: string;
-}): {
-  streamCursor: string | undefined;
-  result: StreamReadResult;
-} {
-  const nextOffset = input.response.headers.get("Stream-Next-Offset") ?? input.fallbackOffset;
-  return {
-    streamCursor: input.response.headers.get("Stream-Cursor") ?? undefined,
-    result: {
-      events: [],
-      nextOffset,
-      streamClosed: input.response.headers.get("Stream-Closed") === "true",
-    },
-  };
-}
-
 export function buildRemoteAuthHeaders(input: {
   token: string | undefined;
   connectionId: string | undefined;

@@ -11,16 +11,26 @@ import type { AuthSession } from "../auth.js";
 import type { SessionCatalog } from "../session-catalog.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import type {
+  ActiveToolsUpdateRequest,
   CommandKind,
   CreateSessionRequest,
+  ExtensionUiRequestEventPayload,
+  FollowUpCommandRequest,
+  InterruptCommandRequest,
+  ModelUpdateRequest,
   Presence,
+  PromptCommandRequest,
   RemoteExtensionMetadata,
   RemoteResourceBundle,
   RemoteSettingsSnapshot,
+  SessionNameUpdateRequest,
   SessionSnapshot,
   SessionStatus,
+  SettingsUpdateRequest,
+  SteerCommandRequest,
   UiResponseRequest,
 } from "../schemas.js";
+import type { JsonValue } from "../json-schema.js";
 import type { InMemoryDurableStreamStore } from "../streams.js";
 
 export type RemoteUiInputHandlers = Pick<
@@ -72,6 +82,21 @@ export interface SessionRecord {
     depth: number;
     nextSequence: number;
   };
+  live: {
+    queuedSteeringMessages: string[];
+    queuedFollowUpMessages: string[];
+    retryAttempt: number;
+    streamingMessage: Extract<AgentMessage, { role: "assistant" }> | undefined;
+    activeToolExecutions: Map<
+      string,
+      {
+        toolCallId: string;
+        toolName: string;
+        args: JsonValue;
+        partialResult?: JsonValue;
+      }
+    >;
+  };
   retry: {
     status: "idle" | "running" | "interrupted";
   };
@@ -82,7 +107,7 @@ export interface SessionRecord {
   streamingState: "idle" | "streaming" | "interrupted";
   isBashRunning: boolean;
   hasPendingBashMessages: boolean;
-  pendingToolCalls: unknown[];
+  pendingToolCalls: string[];
   lastDurableSessionVersion: number;
   interruptedRuntimeDomains: {
     queue: boolean;
@@ -102,7 +127,10 @@ export interface SessionRecord {
   runtimeDispatchQueue: Promise<void>;
   runtimeUndispatchedCommandCount: number;
   hasLocalCommandError: boolean;
-  pendingUiRequests: Map<string, { resolve: (value: UiResponseRequest) => void }>;
+  pendingUiRequests: Map<
+    string,
+    { resolve: (value: UiResponseRequest) => void; request: ExtensionUiRequestEventPayload }
+  >;
   uiState: {
     statuses: Map<string, string | undefined>;
     widgets: Map<
@@ -117,16 +145,32 @@ export interface SessionRecord {
   };
 }
 
-export interface AcceptedSessionCommand {
+type AcceptedSessionCommandPayloadByKind = {
+  prompt: PromptCommandRequest;
+  steer: SteerCommandRequest;
+  "follow-up": FollowUpCommandRequest;
+  interrupt: InterruptCommandRequest;
+  "active-tools": ActiveToolsUpdateRequest;
+  model: ModelUpdateRequest;
+  "session-name": SessionNameUpdateRequest;
+  settings: SettingsUpdateRequest;
+};
+
+type AcceptedSessionCommandBase = {
   commandId: string;
   sessionId: string;
   clientId: string;
   requestId: string | null;
-  kind: CommandKind;
-  payload: unknown;
   acceptedAt: number;
   sequence: number;
-}
+};
+
+export type AcceptedSessionCommandPayload = AcceptedSessionCommandPayloadByKind[CommandKind];
+
+export type AcceptedSessionCommand = AcceptedSessionCommandBase & {
+  kind: CommandKind;
+  payload: AcceptedSessionCommandPayload;
+};
 
 export interface AcceptCommandHooks {
   beforeAccepted?: (accepted: AcceptedSessionCommand) => Promise<void> | void;

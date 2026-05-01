@@ -2,17 +2,15 @@ import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { SessionStats } from "@mariozechner/pi-coding-agent";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { errorMessage } from "../../../utils/error-message.js";
+import { asRecord } from "../../../utils/unknown-data.js";
 import type { SessionSyncEvent, StreamEventEnvelope } from "../../schemas.js";
+import { fromTransportTranscript } from "../../transcript-transport.js";
 import {
   applyRemoteSettingsSnapshotInPlace,
   applyRemoteExtensionsSnapshot,
   applyRemoteSettingsSnapshot,
   cancelRemoteUiRequest,
-  isAgentMessageLike,
-  isAgentSessionEventLike,
-  normalizeTranscript,
   readRemoteSettingsSnapshot,
-  readPendingToolCallId,
   resolveThinkingLevel,
 } from "../session-deps.js";
 import { mirrorSessionEventMessage } from "../session-manager-mirror.js";
@@ -32,10 +30,18 @@ import { clearRemoteModesSnapshot, setRemoteModesSnapshot } from "../remote-mode
 import { RemoteApiError } from "../../runtime-api/utils.js";
 import { RemoteAgentSessionSetupBase } from "./setup-base.js";
 import { emitResourceLoaderEventLocally } from "../../event-bus-bridge.js";
+import {
+  applySessionSyncPatch,
+  readSnapshotLiveState,
+  replaySnapshotExtensionState,
+  replaySnapshotLiveOverlay,
+  replaySnapshotUiState,
+} from "./runtime-sync-support.js";
 
 export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSessionSetupBase {
   private initialSyncReady = false;
   protected readonly activeBashChunkCounts = new Map<string, number>();
+  private readonly appliedSnapshotExtensionState = new Map<string, string>();
   private readonly initialSyncReadyPromise = new Promise<void>((resolve) => {
     this.resolveInitialSyncReady = resolve;
   });
@@ -70,7 +76,8 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     snapshot: Parameters<typeof applyRemoteSettingsSnapshot>[1],
     options?: { resetTransientBashState?: boolean },
   ): void {
-    this.streamOffset = snapshot.lastSessionStreamOffset;
+    const liveState = readSnapshotLiveState(snapshot);
+    this.sessionVersion = snapshot.version;
     if (options?.resetTransientBashState === true) {
       this.activeBashExecutions.clear();
       this.activeBashRequests.clear();
@@ -85,13 +92,13 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._thinkingLevel = resolveThinkingLevel(snapshot.thinkingLevel, this._thinkingLevel);
     this.state.thinkingLevel = this._thinkingLevel;
     this.setResolvedModel(snapshot.model);
-    this.state.messages = normalizeTranscript(snapshot.transcript);
-    this.state.pendingToolCalls = new Set(
-      snapshot.pendingToolCalls
-        .map((call) => readPendingToolCallId(call))
-        .filter((value): value is string => value !== undefined),
-    );
+    this.state.messages = fromTransportTranscript(snapshot.transcript);
+    this.state.pendingToolCalls = new Set(snapshot.pendingToolCalls);
     this.state.isStreaming = snapshot.streamingState === "streaming";
+    this.state.streamingMessage =
+      liveState.streamingMessage === undefined
+        ? undefined
+        : fromTransportTranscript([liveState.streamingMessage])[0];
     this._isBashRunning = snapshot.isBashRunning;
     this._hasPendingBashMessages = snapshot.hasPendingBashMessages;
     this.state.sessionStats = cloneSessionStats(snapshot.sessionStats);
@@ -102,22 +109,47 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
     this._steeringMode = snapshot.steeringMode;
     this._followUpMode = snapshot.followUpMode;
     this._isRetrying = snapshot.retry.status === "running";
-    this._retryAttempt = 0;
+    this._retryAttempt = liveState.retryAttempt;
     this._isCompacting = snapshot.compaction.status === "running";
-    this.queuedSteeringMessages = [];
-    this.queuedFollowUpMessages = [];
+    this.queuedSteeringMessages = [...liveState.queuedSteeringMessages];
+    this.queuedFollowUpMessages = [...liveState.queuedFollowUpMessages];
     this.reloadResourceLoader(snapshot);
     this.activeTools = [...snapshot.activeTools];
     initializeRemoteSessionMetadata(this.sessionManager, snapshot);
     this.queueDepth = snapshot.queue.depth;
-    for (const durableExtensionEvent of snapshot.durableExtensionEvents) {
-      emitResourceLoaderEventLocally(
-        this.resourceLoader,
-        durableExtensionEvent.channel,
-        durableExtensionEvent.data,
-        "RemoteAgentSessionRuntimeInternals.applySnapshot",
-      );
-    }
+    replaySnapshotUiState({
+      pendingUiRequests: snapshot.pendingUiRequests,
+      uiState: snapshot.uiState,
+      applyImmediateUiState: (request) => {
+        if (!this.uiContext) {
+          this.bufferedUiRequests.push(request);
+          return;
+        }
+        void this.handleUiRequest(request);
+      },
+      replaceBufferedUiRequests: (requests) => {
+        this.bufferedUiRequests.length = 0;
+        this.bufferedUiRequests.push(...requests);
+      },
+    });
+    replaySnapshotExtensionState({
+      extensionState: snapshot.durableExtensionState,
+      appliedSnapshotExtensionState: this.appliedSnapshotExtensionState,
+      emit: (channel, data) => {
+        emitResourceLoaderEventLocally(
+          this.resourceLoader,
+          channel,
+          data,
+          "RemoteAgentSessionRuntimeInternals.applySnapshot",
+        );
+      },
+    });
+    replaySnapshotLiveOverlay({
+      snapshot,
+      forwardAgentSessionEventToLocalExtensions: (event) => {
+        this.forwardAgentSessionEventToLocalExtensions(event);
+      },
+    });
   }
 
   protected async waitForPendingMutations(): Promise<void> {
@@ -219,12 +251,16 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   protected async handleSyncEvent(event: SessionSyncEvent): Promise<void> {
     if (event.type === "server.connected") {
+      for (const pendingRequest of this.pendingInteractiveRequests.values()) {
+        pendingRequest.abort();
+      }
+      this.pendingInteractiveRequests.clear();
       return;
     }
 
-    const previousOffset = this.streamOffset;
+    const previousVersion = this.sessionVersion;
     const previousErrorMessage = this.state.errorMessage;
-    this.streamOffset = event.version;
+    this.sessionVersion = event.version;
 
     if (event.type === "snapshot") {
       this.applySnapshot(event.snapshot, { resetTransientBashState: true });
@@ -233,14 +269,40 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         previousErrorMessage !== undefined &&
         previousErrorMessage.length > 0 &&
         event.snapshot.errorMessage === null &&
-        previousOffset === event.version
+        previousVersion === event.version
       ) {
         this.state.errorMessage = previousErrorMessage;
       }
       return;
     }
 
-    await this.handleEnvelope(event.event);
+    await this.handleSyncPatch(event.patch);
+  }
+
+  protected async handleSyncPatch(
+    event: Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  ): Promise<void> {
+    await applySessionSyncPatch({
+      sessionId: this.sessionId,
+      streamOffset: this.sessionVersion,
+      patch: event,
+      handleEnvelope: (envelope) => this.handleEnvelope(envelope),
+      handleAgentSessionEvent: (agentEvent) => {
+        this.applyAgentSessionEvent(agentEvent);
+      },
+      emitExtensionCustom: (channel, data) => {
+        emitResourceLoaderEventLocally(
+          this.resourceLoader,
+          channel,
+          data,
+          "RemoteAgentSessionRuntimeInternals.handleSyncPatch",
+        );
+      },
+      handleUiRequest: (request) => this.handleUiRequest(request),
+      cancelUiRequest: (requestId) => {
+        cancelRemoteUiRequest(this.pendingInteractiveRequests, requestId);
+      },
+    });
   }
 
   protected async handleEnvelope(envelope: StreamEventEnvelope): Promise<void> {
@@ -249,31 +311,9 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
 
   protected createPollingRuntimeInput(): PollRemoteSessionRuntimeInput {
     return createRemoteSessionPollingInput({
-      isClosed: () => this.closed,
-      getStreamOffset: () => this.streamOffset,
-      setStreamOffset: (offset) => {
-        this.streamOffset = offset;
-      },
-      setActiveReadAbortController: (controller) => {
-        this.activeReadAbortController = controller;
-      },
-      readSessionEvents: (options) =>
-        this.client.readSessionEvents(this.sessionId, options.offset, {
-          signal: options.signal,
-          onEvent: options.onEvent,
-          onControl: (control) => {
-            options.onControl(control.nextOffset);
-          },
-        }),
       handleRemoteError: (message) => {
         this.handleRemoteError(message);
       },
-      handleRemoteWarning: (message) => {
-        this.handleRemoteWarning(message);
-      },
-      reauthenticate: () => this.client.reauthenticate(),
-      onReauthenticated: () => this.resyncAfterReauthentication(),
-      isAgentSessionEventLike,
       applyAgentSessionEvent: (event) => {
         this.applyAgentSessionEvent(event);
       },
@@ -453,7 +493,6 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
         this.state.errorMessage = nextMessage;
       },
       uiContext: this.uiContext,
-      isAgentMessageLike,
       applyAgentSessionEvent: (event) => {
         this.applyAgentSessionEvent(event);
       },
@@ -644,11 +683,12 @@ function delay(ms: number): Promise<void> {
 }
 
 function readErrorStatus(error: unknown): number | undefined {
-  if (error === null || typeof error !== "object" || !("status" in error)) {
+  const record = asRecord(error);
+  if (!record) {
     return undefined;
   }
 
-  const status = error.status;
+  const status = record.status;
   return typeof status === "number" ? status : undefined;
 }
 

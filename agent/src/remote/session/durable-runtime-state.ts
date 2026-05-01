@@ -1,6 +1,8 @@
 import type { SessionEntry, SessionManager } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { readRemoteExtensionStateKey } from "../event-bus-bridge.js";
+import { JsonValueSchema, type JsonValue } from "../json-schema.js";
 import type { SessionRecord } from "./types.js";
 
 const RemoteQueueStateEntrySchema = Type.Object({
@@ -37,7 +39,7 @@ const RemoteSessionVersionEntrySchema = Type.Object({
 
 const RemoteDurableExtensionEventEntrySchema = Type.Object({
   channel: Type.String(),
-  data: Type.Unknown(),
+  data: JsonValueSchema,
   ts: Type.Number(),
 });
 
@@ -154,7 +156,7 @@ export function restoreDurableRuntimeDomainState(record: SessionRecord, now: num
 export function appendDurableExtensionEvent(input: {
   record: SessionRecord;
   channel: string;
-  data: unknown;
+  data: JsonValue;
   ts: number;
 }): void {
   const sessionManager = input.record.runtime.session?.sessionManager;
@@ -162,6 +164,11 @@ export function appendDurableExtensionEvent(input: {
     return;
   }
 
+  input.record.lastDurableSessionVersion += 1;
+  sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
+    version: input.record.lastDurableSessionVersion,
+    updatedAt: input.ts,
+  });
   sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_EVENT_ENTRY, {
     channel: input.channel,
     data: input.data,
@@ -171,7 +178,7 @@ export function appendDurableExtensionEvent(input: {
 
 export function readDurableExtensionEvents(record: SessionRecord): Array<{
   channel: string;
-  data: unknown;
+  data: JsonValue;
   ts: number;
 }> {
   const sessionManager = record.runtime.session?.sessionManager;
@@ -179,7 +186,7 @@ export function readDurableExtensionEvents(record: SessionRecord): Array<{
     return [];
   }
 
-  const result: Array<{ channel: string; data: unknown; ts: number }> = [];
+  const result: Array<{ channel: string; data: JsonValue; ts: number }> = [];
   for (const entry of sessionManager.getEntries()) {
     if (
       entry.type === "custom" &&
@@ -191,6 +198,29 @@ export function readDurableExtensionEvents(record: SessionRecord): Array<{
   }
 
   return result;
+}
+
+export function buildDurableExtensionState(record: SessionRecord): Array<{
+  channel: string;
+  data: JsonValue;
+}> {
+  const projectedByKey = new Map<string, { channel: string; data: JsonValue }>();
+  const orderedKeys: string[] = [];
+
+  for (const event of readDurableExtensionEvents(record)) {
+    const key = readDurableExtensionProjectionKey(event.channel, event.data);
+    if (!projectedByKey.has(key)) {
+      orderedKeys.push(key);
+    }
+    projectedByKey.set(key, {
+      channel: event.channel,
+      data: structuredClone(event.data),
+    });
+  }
+
+  return orderedKeys
+    .map((key) => projectedByKey.get(key))
+    .filter((value): value is { channel: string; data: JsonValue } => value !== undefined);
 }
 
 function hasAppendCustomEntry(
@@ -267,4 +297,8 @@ function readDurableRuntimeDomainState(
   }
 
   return result;
+}
+
+function readDurableExtensionProjectionKey(channel: string, data: unknown): string {
+  return readRemoteExtensionStateKey(channel, data);
 }

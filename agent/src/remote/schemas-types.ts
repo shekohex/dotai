@@ -34,8 +34,10 @@ import {
   RemoteExtensionRuntimeSchema,
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
+  ExtensionUiRequestEventPayloadSchema,
   SessionNameUpdateRequestSchema,
   SessionDeletedResponseSchema,
+  SessionEntriesResponseSchema,
   SessionForkMessagesResponseSchema,
   SessionSnapshotSchema,
   SessionToolsResponseSchema,
@@ -57,13 +59,11 @@ import {
 } from "./kv/schemas.js";
 import {
   ExtensionUiResolvedEventPayloadSchema,
-  ExtensionUiRequestEventPayloadSchema,
   SessionSyncConnectedEventSchema,
   SessionSyncEventSchema,
   SessionSyncPatchEventSchema,
   SessionSyncSnapshotEventSchema,
   StreamEventEnvelopeSchema,
-  StreamReadResponseSchema,
 } from "./schemas-stream.js";
 
 export type AuthChallengeRequest = Static<typeof AuthChallengeRequestSchema>;
@@ -110,13 +110,13 @@ export type CommandKind = Static<typeof CommandKindSchema>;
 export type CommandAcceptedResponse = Static<typeof CommandAcceptedResponseSchema>;
 export type SessionStatus = Static<typeof SessionStatusSchema>;
 export type SessionDeletedResponse = Static<typeof SessionDeletedResponseSchema>;
+export type SessionEntriesResponse = Static<typeof SessionEntriesResponseSchema>;
 export type SessionForkMessagesResponse = Static<typeof SessionForkMessagesResponseSchema>;
 export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;
 export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;
 export type ExtensionUiRequestEventPayload = Static<typeof ExtensionUiRequestEventPayloadSchema>;
 export type ExtensionUiResolvedEventPayload = Static<typeof ExtensionUiResolvedEventPayloadSchema>;
-export type StreamReadResponse = Static<typeof StreamReadResponseSchema>;
 export type SessionSyncConnectedEvent = Static<typeof SessionSyncConnectedEventSchema>;
 export type SessionSyncSnapshotEvent = Static<typeof SessionSyncSnapshotEventSchema>;
 export type SessionSyncPatchEvent = Static<typeof SessionSyncPatchEventSchema>;

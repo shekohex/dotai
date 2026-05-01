@@ -14,6 +14,22 @@ type RuntimeWithExtensionMetadata = AgentSessionRuntime & {
   remoteExtensionMetadata?: unknown;
 };
 
+function ensureLiveState(record: SessionRecord): SessionRecord["live"] {
+  if (record.live !== undefined) {
+    return record.live;
+  }
+
+  const liveState: SessionRecord["live"] = {
+    queuedSteeringMessages: [],
+    queuedFollowUpMessages: [],
+    retryAttempt: 0,
+    streamingMessage: undefined,
+    activeToolExecutions: new Map(),
+  };
+  record.live = liveState;
+  return liveState;
+}
+
 export function syncSessionRecordFromRuntime(input: {
   record: SessionRecord;
   now: () => number;
@@ -77,6 +93,7 @@ function applyRuntimeSnapshot(
   syncResources: boolean,
   interruptedRuntimeDomains: SessionRecord["interruptedRuntimeDomains"],
 ): void {
+  const liveState = ensureLiveState(record);
   record.cwd = session.sessionManager.getCwd();
   record.extensions = readRuntimeExtensionMetadata(record.runtime);
   record.settings = readRuntimeSettingsSnapshot(session);
@@ -85,6 +102,10 @@ function applyRuntimeSnapshot(
   }
   applyRuntimeModelSnapshot(record, session);
   record.transcript = [...session.messages];
+  liveState.streamingMessage =
+    session.state.streamingMessage?.role === "assistant"
+      ? session.state.streamingMessage
+      : undefined;
   if (session.isStreaming) {
     record.streamingState = "streaming";
   } else if (interruptedRuntimeDomains.streaming) {
@@ -95,6 +116,11 @@ function applyRuntimeSnapshot(
   record.isBashRunning = session.isBashRunning;
   record.hasPendingBashMessages = session.hasPendingBashMessages;
   record.pendingToolCalls = [...session.state.pendingToolCalls.values()];
+  for (const toolCallId of liveState.activeToolExecutions.keys()) {
+    if (!session.state.pendingToolCalls.has(toolCallId)) {
+      liveState.activeToolExecutions.delete(toolCallId);
+    }
+  }
   applyRuntimeErrorSnapshot(record, session.state.errorMessage ?? null);
   if (session.isRetrying) {
     record.retry.status = "running";
@@ -115,6 +141,11 @@ function applyRuntimeSnapshot(
     session.pendingMessageCount +
     (session.isStreaming ? 1 : 0) +
     record.runtimeUndispatchedCommandCount;
+  liveState.retryAttempt = typeof session.retryAttempt === "number" ? session.retryAttempt : 0;
+  liveState.queuedSteeringMessages =
+    typeof session.getSteeringMessages === "function" ? [...session.getSteeringMessages()] : [];
+  liveState.queuedFollowUpMessages =
+    typeof session.getFollowUpMessages === "function" ? [...session.getFollowUpMessages()] : [];
   record.status = deriveRuntimeSessionStatus(session, record.errorMessage);
 }
 
@@ -303,7 +334,7 @@ export function toSessionSnapshotRecord(
 ): SessionSnapshot {
   const snapshotParts = buildSessionSnapshotParts(record, options);
   const streamOffsets = {
-    lastSessionStreamOffset: getHeadOffset(sessionEventsStreamId(record.sessionId)),
+    version: String(record.lastDurableSessionVersion),
     lastAppStreamOffsetSeenByServer: record.lastAppStreamOffsetSeenByServer,
   };
   return {

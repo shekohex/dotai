@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 export { dirname, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 export { SessionManager } from "@mariozechner/pi-coding-agent";
+import { parseSseStream } from "../src/remote/sse.ts";
 import type {
   ExtensionFactory,
   ExtensionUIContext,
@@ -99,8 +100,6 @@ import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 export { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
 export type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
-import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
-export { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 export { SessionRegistry } from "../src/remote/session-registry.ts";
 import { SessionCatalog } from "../src/remote/session-catalog.ts";
@@ -1532,29 +1531,50 @@ export async function readSessionEvents(
   events: Array<{ kind: string; payload: any; streamOffset: string }>;
   nextOffset: string;
 }> {
-  const response = await app.request(
-    `/v1/streams/sessions/${sessionId}/events?live=long-poll&offset=${encodeURIComponent(offset)}&timeoutMs=${timeoutMs}`,
-    {
-      headers: { authorization: `Bearer ${token}` },
-    },
-  );
-
-  if (response.status === 204) {
-    return {
-      events: [],
-      nextOffset: response.headers.get("Stream-Next-Offset") ?? offset,
-    };
-  }
+  const response = await app.request(`/v1/sessions/${sessionId}/sync`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
 
   expect(response.status).toBe(200);
-  const body = (await response.json()) as {
-    events: Array<{ kind: string; payload: any; streamOffset: string }>;
-    nextOffset: string;
-  };
-  return {
-    events: body.events,
-    nextOffset: body.nextOffset,
-  };
+  const stream = response.body;
+  expect(stream).toBeTruthy();
+  if (!stream) {
+    return { events: [], nextOffset: offset };
+  }
+
+  const events: Array<{ kind: string; payload: any; streamOffset: string }> = [];
+  let nextOffset = offset;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    for await (const event of parseSseStream(stream, controller.signal)) {
+      if (event.type !== "data") {
+        continue;
+      }
+      const payload = JSON.parse(event.data) as {
+        type: string;
+        version?: string;
+        patch?: { patchType: string; payload: unknown };
+      };
+      if (payload.type !== "patch" || payload.version === undefined || payload.version <= offset) {
+        continue;
+      }
+      nextOffset = payload.version;
+      const mapped = mapSyncPatchToEnvelope(payload.version, payload.patch);
+      if (mapped !== undefined) {
+        events.push(mapped);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "AbortError") {
+      throw error;
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return { events, nextOffset };
 }
 
 export async function waitForSessionEvent(
@@ -1597,6 +1617,48 @@ export async function waitForValue<T>(
   }
 
   throw new Error("Timed out waiting for value");
+}
+
+function mapSyncPatchToEnvelope(
+  streamOffset: string,
+  patch: { patchType: string; payload: unknown } | undefined,
+): { kind: string; payload: any; streamOffset: string } | undefined {
+  if (patch === undefined) {
+    return undefined;
+  }
+
+  switch (patch.patchType) {
+    case "assistant.message":
+    case "tool.execution":
+    case "queue.update":
+    case "retry.status":
+    case "agent.event":
+      return { kind: "agent_session_event", payload: patch.payload, streamOffset };
+    case "session.state":
+      return { kind: "session_state_patch", payload: patch.payload, streamOffset };
+    case "extension.custom":
+      return { kind: "extension_custom_event", payload: patch.payload, streamOffset };
+    case "extension.event":
+      return { kind: "extension_event", payload: patch.payload, streamOffset };
+    case "extension.ui.request":
+      return { kind: "extension_ui_request", payload: patch.payload, streamOffset };
+    case "extension.ui.resolved":
+      return { kind: "extension_ui_resolved", payload: patch.payload, streamOffset };
+    case "command.accepted":
+      return { kind: "command_accepted", payload: patch.payload, streamOffset };
+    case "bash.start":
+      return { kind: "bash_start", payload: patch.payload, streamOffset };
+    case "bash.chunk":
+      return { kind: "bash_chunk", payload: patch.payload, streamOffset };
+    case "bash.end":
+      return { kind: "bash_end", payload: patch.payload, streamOffset };
+    case "bash.flush":
+      return { kind: "bash_flush", payload: patch.payload, streamOffset };
+    case "extension.error":
+      return { kind: "extension_error", payload: patch.payload, streamOffset };
+    default:
+      return undefined;
+  }
 }
 
 export async function writeSessionFile(input: {

@@ -4,6 +4,7 @@ import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { parseSseStream } from "../src/remote/sse.ts";
 import type {
   ExtensionFactory,
   ExtensionUIContext,
@@ -51,7 +52,6 @@ import {
 } from "../src/extensions/coreui/tools.ts";
 import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
-import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 import { SessionCatalog } from "../src/remote/session-catalog.ts";
 import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
@@ -1473,29 +1473,49 @@ async function readSessionEvents(
   events: Array<{ kind: string; payload: any; streamOffset: string }>;
   nextOffset: string;
 }> {
-  const response = await app.request(
-    `/v1/streams/sessions/${sessionId}/events?live=long-poll&offset=${encodeURIComponent(offset)}&timeoutMs=${timeoutMs}`,
-    {
-      headers: { authorization: `Bearer ${token}` },
-    },
-  );
-
-  if (response.status === 204) {
-    return {
-      events: [],
-      nextOffset: response.headers.get("Stream-Next-Offset") ?? offset,
-    };
-  }
+  const response = await app.request(`/v1/sessions/${sessionId}/sync`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
 
   expect(response.status).toBe(200);
-  const body = (await response.json()) as {
-    events: Array<{ kind: string; payload: any; streamOffset: string }>;
-    nextOffset: string;
-  };
-  return {
-    events: body.events,
-    nextOffset: body.nextOffset,
-  };
+  const stream = response.body;
+  expect(stream).toBeTruthy();
+  if (!stream) {
+    return { events: [], nextOffset: offset };
+  }
+
+  const events: Array<{ kind: string; payload: any; streamOffset: string }> = [];
+  let nextOffset = offset;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    for await (const event of parseSseStream(stream, controller.signal)) {
+      if (event.type !== "data") {
+        continue;
+      }
+      const payload = JSON.parse(event.data) as {
+        type: string;
+        version?: string;
+        patch?: { patchType: string; payload: unknown };
+      };
+      if (payload.type !== "patch" || payload.version === undefined || payload.version <= offset) {
+        continue;
+      }
+      nextOffset = payload.version;
+      const mapped = mapSyncPatchToEnvelope(payload.version, payload.patch);
+      if (mapped !== undefined) {
+        events.push(mapped);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "AbortError") {
+      throw error;
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return { events, nextOffset };
 }
 
 async function waitForSessionEvent(
@@ -1538,6 +1558,48 @@ async function waitForValue<T>(
   }
 
   throw new Error("Timed out waiting for value");
+}
+
+function mapSyncPatchToEnvelope(
+  streamOffset: string,
+  patch: { patchType: string; payload: unknown } | undefined,
+): { kind: string; payload: any; streamOffset: string } | undefined {
+  if (patch === undefined) {
+    return undefined;
+  }
+
+  switch (patch.patchType) {
+    case "assistant.message":
+    case "tool.execution":
+    case "queue.update":
+    case "retry.status":
+    case "agent.event":
+      return { kind: "agent_session_event", payload: patch.payload, streamOffset };
+    case "session.state":
+      return { kind: "session_state_patch", payload: patch.payload, streamOffset };
+    case "extension.custom":
+      return { kind: "extension_custom_event", payload: patch.payload, streamOffset };
+    case "extension.event":
+      return { kind: "extension_event", payload: patch.payload, streamOffset };
+    case "extension.ui.request":
+      return { kind: "extension_ui_request", payload: patch.payload, streamOffset };
+    case "extension.ui.resolved":
+      return { kind: "extension_ui_resolved", payload: patch.payload, streamOffset };
+    case "command.accepted":
+      return { kind: "command_accepted", payload: patch.payload, streamOffset };
+    case "bash.start":
+      return { kind: "bash_start", payload: patch.payload, streamOffset };
+    case "bash.chunk":
+      return { kind: "bash_chunk", payload: patch.payload, streamOffset };
+    case "bash.end":
+      return { kind: "bash_end", payload: patch.payload, streamOffset };
+    case "bash.flush":
+      return { kind: "bash_flush", payload: patch.payload, streamOffset };
+    case "extension.error":
+      return { kind: "extension_error", payload: patch.payload, streamOffset };
+    default:
+      return undefined;
+  }
 }
 
 async function writeSessionFile(input: {
@@ -1684,31 +1746,6 @@ timedTest("archive and delete updates are visible to multiple remote clients", a
         ((await deletedSnapshotB.json()) as { sessionSummaries: Array<{ sessionId: string }> })
           .sessionSummaries,
       ).toEqual([]);
-
-      const [appEventsAResponse, appEventsBResponse] = await Promise.all([
-        remote.app.request("/v1/streams/app-events", {
-          headers: { authorization: `Bearer ${tokenA}` },
-        }),
-        remote.app.request("/v1/streams/app-events", {
-          headers: { authorization: `Bearer ${tokenB}` },
-        }),
-      ]);
-      expect(appEventsAResponse.status).toBe(200);
-      expect(appEventsBResponse.status).toBe(200);
-      const appEventsA = (await appEventsAResponse.json()) as { events: Array<{ kind: string }> };
-      const appEventsB = (await appEventsBResponse.json()) as { events: Array<{ kind: string }> };
-      const eventKindsA = appEventsA.events.map((event) => event.kind);
-      const eventKindsB = appEventsB.events.map((event) => event.kind);
-      expect(eventKindsA[0]).toBe("session_created");
-      expect(eventKindsA.at(-1)).toBe("session_closed");
-      expect(
-        eventKindsA.filter((kind) => kind === "session_summary_updated").length,
-      ).toBeGreaterThan(0);
-      expect(eventKindsB[0]).toBe("session_created");
-      expect(eventKindsB.at(-1)).toBe("session_closed");
-      expect(
-        eventKindsB.filter((kind) => kind === "session_summary_updated").length,
-      ).toBeGreaterThan(0);
     } finally {
       await remote.dispose();
     }
@@ -3643,6 +3680,80 @@ timedTest("ephemeral cleanup failure is contained and surfaces session error", a
   }
 });
 
+timedTest("session snapshot version resumes from durable state after restart", async () => {
+  const harness = await createTempPersistedRuntimeHarness({
+    prefix: "remote-session-version-restart-",
+  });
+  const auth = testAuthSession();
+
+  let registry = new SessionRegistry({
+    streams: new InMemoryDurableStreamStore(),
+    runtimeFactory: harness.runtimeFactory,
+    catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+  });
+
+  try {
+    const created = await registry.createSession(
+      {
+        workspaceCwd: harness.workspaceDir,
+      },
+      auth,
+      "conn-a",
+    );
+
+    await registry.updateSessionName(
+      created.sessionId,
+      {
+        sessionName: "restart-version",
+      },
+      auth,
+      "conn-a",
+    );
+
+    await registry.prompt(
+      created.sessionId,
+      {
+        text: "persist durable version",
+      },
+      auth,
+      "conn-a",
+    );
+
+    await waitForSessionToBecomeIdle(registry, created.sessionId, auth);
+    await waitForPersistedSessionFile(harness.sessionDir, created.sessionId);
+
+    const beforeRestart = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+    expect(Number(beforeRestart.version)).toBeGreaterThan(0);
+
+    await registry.dispose();
+
+    registry = new SessionRegistry({
+      streams: new InMemoryDurableStreamStore(),
+      runtimeFactory: harness.runtimeFactory,
+      catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+    });
+
+    await registry.ensureLoaded(created.sessionId);
+    const afterRestart = registry.getSessionSnapshot(created.sessionId, auth, "conn-b");
+    expect(afterRestart.version).toBe(beforeRestart.version);
+
+    await registry.updateSessionName(
+      created.sessionId,
+      {
+        sessionName: "restart-version-next",
+      },
+      auth,
+      "conn-b",
+    );
+
+    const afterNextDurableChange = registry.getSessionSnapshot(created.sessionId, auth, "conn-b");
+    expect(Number(afterNextDurableChange.version)).toBe(Number(beforeRestart.version) + 1);
+  } finally {
+    await registry.dispose();
+    await harness.cleanup();
+  }
+});
+
 timedTest("touchSessionPresence reports prune-to-zero transitions", async () => {
   const session = new RecordingSession();
   const runtime = {
@@ -4430,27 +4541,24 @@ test(
       const updatedStats = runtime.session.getSessionStats();
       expect(updatedStats.totalMessages > initialStats.totalMessages).toBeTruthy();
 
-      const replayResponse = await remote.app.request(
-        `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(snapshot.lastSessionStreamOffset)}`,
-        {
-          headers: { authorization: `Bearer ${token}` },
+      const updatedSnapshot = await waitForValue(
+        async () => {
+          const updatedSnapshotResponse = await remote.app.request(
+            `/v1/sessions/${created.sessionId}/snapshot`,
+            {
+              headers: { authorization: `Bearer ${token}` },
+            },
+          );
+          expect(updatedSnapshotResponse.status).toBe(200);
+          return (await updatedSnapshotResponse.json()) as {
+            sessionStats: { totalMessages: number };
+          };
         },
+        (value) => value.sessionStats.totalMessages > snapshot.sessionStats.totalMessages,
       );
-      expect(replayResponse.status).toBe(200);
-      const replay = (await replayResponse.json()) as {
-        events: Array<{
-          kind: string;
-          payload: { patch?: { sessionStats?: { totalMessages: number } } };
-        }>;
-      };
-      expect(
-        replay.events.some(
-          (event) =>
-            event.kind === "session_state_patch" &&
-            event.payload.patch?.sessionStats !== undefined &&
-            event.payload.patch.sessionStats.totalMessages > snapshot.sessionStats.totalMessages,
-        ),
-      ).toBe(true);
+      expect(updatedSnapshot.sessionStats.totalMessages).toBeGreaterThan(
+        snapshot.sessionStats.totalMessages,
+      );
     } finally {
       await runtime?.dispose();
       await remote.dispose();

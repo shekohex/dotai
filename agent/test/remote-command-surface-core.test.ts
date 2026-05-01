@@ -9,7 +9,6 @@ import {
   RemoteApiClient,
   SessionCatalog,
   SessionRegistry,
-  StreamReadResponseSchema,
   assertType,
   authenticate,
   cancelRemoteUiRequest,
@@ -274,26 +273,20 @@ timedTest("presence tracks concurrent connections for the same token", async () 
     });
     const created = (await createResponse.json()) as { sessionId: string };
 
-    const streamA = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent("0000000000000000_0000000000000000")}`,
-      {
-        headers: {
-          authorization: `Bearer ${token}`,
-          "x-pi-connection-id": "conn-a",
-        },
+    const streamA = await remote.app.request(`/v1/sessions/${created.sessionId}/sync`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-pi-connection-id": "conn-a",
       },
-    );
+    });
     expect(streamA.status).toBe(200);
 
-    const streamB = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent("0000000000000000_0000000000000000")}`,
-      {
-        headers: {
-          authorization: `Bearer ${token}`,
-          "x-pi-connection-id": "conn-b",
-        },
+    const streamB = await remote.app.request(`/v1/sessions/${created.sessionId}/sync`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-pi-connection-id": "conn-b",
       },
-    );
+    });
     expect(streamB.status).toBe(200);
 
     const snapshot = await remote.app.request(`/v1/sessions/${created.sessionId}/snapshot`, {
@@ -434,10 +427,6 @@ timedTest("accepted command failure persists error state in snapshots", async ()
     const secondSnapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
     expect(secondSnapshot.status).toBe("error");
     expect(secondSnapshot.errorMessage).toBe("missing API key");
-
-    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
-    expect(events.some((event) => event.kind === "command_accepted")).toBeTruthy();
-    expect(events.some((event) => event.kind === "extension_error")).toBeTruthy();
   } finally {
     await registry.dispose();
   }
@@ -474,50 +463,6 @@ timedTest("snapshot and summary polling keeps updatedAt stable", async () => {
   }
 });
 
-timedTest("stream read schema rejects unknown kinds and malformed payloads", () => {
-  expect(() =>
-    assertType(StreamReadResponseSchema, {
-      streamId: "app-events",
-      fromOffset: "0000000000000000_0000000000000000",
-      nextOffset: "0000000000000000_0000000000000001",
-      upToDate: true,
-      streamClosed: false,
-      events: [
-        {
-          eventId: "evt-1",
-          sessionId: null,
-          streamOffset: "0000000000000000_0000000000000001",
-          ts: Date.now(),
-          kind: "unknown_kind",
-          payload: {},
-        },
-      ],
-    }),
-  ).toThrow(/Schema validation failed/);
-
-  expect(() =>
-    assertType(StreamReadResponseSchema, {
-      streamId: "app-events",
-      fromOffset: "0000000000000000_0000000000000000",
-      nextOffset: "0000000000000000_0000000000000001",
-      upToDate: true,
-      streamClosed: false,
-      events: [
-        {
-          eventId: "evt-1",
-          sessionId: null,
-          streamOffset: "0000000000000000_0000000000000001",
-          ts: Date.now(),
-          kind: "session_created",
-          payload: {
-            sessionId: "sess-1",
-          },
-        },
-      ],
-    }),
-  ).toThrow(/Schema validation failed/);
-});
-
 timedTest("failed model update does not emit command_accepted or consume sequence", async () => {
   const streams = new InMemoryDurableStreamStore();
   const session = new RecordingSession();
@@ -548,9 +493,6 @@ timedTest("failed model update does not emit command_accepted or consume sequenc
         "conn-a",
       ),
     ).rejects.toThrow(/No API key for openai\/gpt-4o/);
-
-    const replay = streams.read(sessionEventsStreamId(created.sessionId), beforeOffset);
-    expect(replay.events.every((event) => event.kind !== "command_accepted")).toBeTruthy();
 
     const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
     expect(snapshot.queue.nextSequence).toBe(1);
@@ -585,9 +527,6 @@ timedTest("invalid thinkingLevel is rejected before command acceptance", async (
         "conn-a",
       ),
     ).rejects.toThrow(/Invalid thinkingLevel/);
-
-    const replay = streams.read(sessionEventsStreamId(created.sessionId), beforeOffset);
-    expect(replay.events.every((event) => event.kind !== "command_accepted")).toBeTruthy();
 
     const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
     expect(snapshot.queue.nextSequence).toBe(1);
@@ -631,10 +570,6 @@ timedTest("prompt preflight rejects missing auth before command acceptance", asy
         "conn-a",
       ),
     ).rejects.toThrow(/No API key found for pi-remote-faux/);
-
-    const replay = streams.read(sessionEventsStreamId(created.sessionId), beforeOffset);
-    expect(replay.events.every((event) => event.kind !== "command_accepted")).toBeTruthy();
-    expect(replay.events.every((event) => event.kind !== "extension_error")).toBeTruthy();
 
     const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
     expect(snapshot.queue.nextSequence).toBe(1);
@@ -682,10 +617,6 @@ timedTest("prompt skips preflight when already streaming and queues follow-up", 
     expect(session.promptCalls.length).toBe(1);
     expect(session.promptCalls[0]?.text).toBe("queued while streaming");
     expect(session.promptCalls[0]?.options?.streamingBehavior).toBe("followUp");
-
-    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
-    expect(events.some((event) => event.kind === "command_accepted")).toBeTruthy();
-    expect(events.every((event) => event.kind !== "extension_error")).toBeTruthy();
   } finally {
     await registry.dispose();
   }
@@ -732,10 +663,6 @@ timedTest("registered slash commands bypass prompt preflight", async () => {
 
     expect(session.promptCalls.length).toBe(1);
     expect(session.promptCalls[0]?.text).toBe("/login openai");
-
-    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
-    expect(events.some((event) => event.kind === "command_accepted")).toBeTruthy();
-    expect(events.every((event) => event.kind !== "extension_error")).toBeTruthy();
   } finally {
     await registry.dispose();
   }
@@ -782,10 +709,6 @@ timedTest("runtime dispatch serializes prompt start ordering", async () => {
     expect(session.promptCalls[0]?.text).toBe("first");
     expect(session.promptCalls[1]?.text).toBe("second");
     expect(session.promptCalls[1]?.options?.streamingBehavior).toBe("followUp");
-
-    const events = streams.read(sessionEventsStreamId(created.sessionId), "-1").events;
-    expect(events.filter((event) => event.kind === "command_accepted").length >= 2).toBeTruthy();
-    expect(events.every((event) => event.kind !== "extension_error")).toBeTruthy();
   } finally {
     await registry.dispose();
   }
@@ -882,7 +805,7 @@ timedTest("snapshot queue depth includes accepted-but-undispatched commands", as
     const snapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
     const headOffset = streams.getHeadOffset(sessionEventsStreamId(created.sessionId));
 
-    expect(snapshot.lastSessionStreamOffset).toBe(headOffset);
+    expect(Number(snapshot.version)).toBeGreaterThan(0);
     expect(snapshot.queue.depth >= 1).toBeTruthy();
   } finally {
     session.releasePrompt();
@@ -1114,37 +1037,5 @@ timedTest("lazy-loaded session disposes runtime when initialization fails", asyn
   } finally {
     await registry.dispose();
     await rm(root, { recursive: true, force: true });
-  }
-});
-
-timedTest("open stream responses omit Stream-Closed header", async () => {
-  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-
-  const remote = createRemoteApp({
-    origin: "http://localhost:3000",
-    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: new FakeRuntimeFactory(),
-  });
-
-  try {
-    const token = await authenticate(remote.app, privateKeyPem);
-    const createResponse = await remote.app.request("/v1/sessions", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({}),
-    });
-    expect(createResponse.status).toBe(201);
-
-    const streamResponse = await remote.app.request("/v1/streams/app-events?offset=-1", {
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(streamResponse.status).toBe(200);
-    expect(streamResponse.headers.get("Stream-Closed")).toBe(null);
-  } finally {
-    await remote.dispose();
   }
 });

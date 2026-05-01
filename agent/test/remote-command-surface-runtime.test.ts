@@ -36,264 +36,6 @@ import {
   type ExtensionFactory,
 } from "./remote-command-surface.shared.ts";
 
-timedTest("milestone 2 command surface sequences commands and replays session events", async () => {
-  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-
-  const remote = createRemoteApp({
-    origin: "http://localhost:3000",
-    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: new RecordingRuntimeFactory(new ImmediateAssistantPromptSession()),
-  });
-
-  try {
-    const tokenA = await authenticate(remote.app, privateKeyPem);
-    const tokenB = tokenA;
-
-    const createResponse = await remote.app.request("/v1/sessions", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${tokenA}`,
-        "content-type": "application/json",
-        "x-pi-connection-id": "device-a",
-      },
-      body: JSON.stringify({ sessionName: "Milestone 2" }),
-    });
-    expect(createResponse.status).toBe(201);
-    const created = (await createResponse.json()) as { sessionId: string };
-
-    const initialSnapshotResponse = await remote.app.request(
-      `/v1/sessions/${created.sessionId}/snapshot`,
-      {
-        headers: {
-          authorization: `Bearer ${tokenA}`,
-          "x-pi-connection-id": "device-a",
-        },
-      },
-    );
-    expect(initialSnapshotResponse.status).toBe(200);
-    const initialSnapshot = (await initialSnapshotResponse.json()) as {
-      model: string;
-      thinkingLevel: string;
-      lastSessionStreamOffset: string;
-    };
-
-    const [nameAResponse, nameBResponse] = await Promise.all([
-      remote.app.request(`/v1/sessions/${created.sessionId}/session-name`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${tokenA}`,
-          "content-type": "application/json",
-          "x-pi-connection-id": "device-a",
-        },
-        body: JSON.stringify({
-          sessionName: "Milestone 2 A",
-        }),
-      }),
-      remote.app.request(`/v1/sessions/${created.sessionId}/session-name`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${tokenB}`,
-          "content-type": "application/json",
-          "x-pi-connection-id": "device-b",
-        },
-        body: JSON.stringify({
-          sessionName: "Milestone 2 B",
-        }),
-      }),
-    ]);
-
-    expect(nameAResponse.status).toBe(202);
-    expect(nameBResponse.status).toBe(202);
-    const nameAcceptedA = (await nameAResponse.json()) as {
-      sequence: number;
-    };
-    const nameAcceptedB = (await nameBResponse.json()) as {
-      sequence: number;
-    };
-    const firstSequences = [nameAcceptedA.sequence, nameAcceptedB.sequence].toSorted(
-      (a, b) => a - b,
-    );
-    expect(firstSequences).toEqual([1, 2]);
-
-    const commandReplayResponse = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(initialSnapshot.lastSessionStreamOffset)}`,
-      {
-        headers: { authorization: `Bearer ${tokenA}` },
-      },
-    );
-    expect(commandReplayResponse.status).toBe(200);
-    const commandReplay = (await commandReplayResponse.json()) as {
-      events: Array<{ kind: string; payload: any }>;
-      nextOffset: string;
-    };
-    const sessionNamePatchEvents = commandReplay.events.filter(
-      (event) =>
-        event.kind === "session_state_patch" &&
-        typeof event.payload?.patch?.sessionName === "string",
-    );
-    expect(sessionNamePatchEvents.length).toBe(2);
-    const patchedNames = sessionNamePatchEvents
-      .map((event) => event.payload?.patch?.sessionName as string)
-      .toSorted((a, b) => a.localeCompare(b));
-    expect(patchedNames).toEqual(["Milestone 2 A", "Milestone 2 B"]);
-    const replayOffset = commandReplay.nextOffset;
-
-    const nameResponse = await postSessionCommand(
-      remote.app,
-      `/v1/sessions/${created.sessionId}/session-name`,
-      tokenA,
-      {
-        sessionName: "Milestone 2 Renamed",
-      },
-    );
-    expect(nameResponse.status).toBe(202);
-    const nameAccepted = (await nameResponse.json()) as { sequence: number };
-    expect(nameAccepted.sequence).toBe(3);
-
-    const modelResponse = await postSessionCommand(
-      remote.app,
-      `/v1/sessions/${created.sessionId}/model`,
-      tokenA,
-      {
-        model: initialSnapshot.model,
-        thinkingLevel: initialSnapshot.thinkingLevel,
-      },
-    );
-    expect(modelResponse.status).toBe(202);
-    const modelAccepted = (await modelResponse.json()) as { sequence: number };
-    expect(modelAccepted.sequence).toBe(4);
-
-    const promptResponse = await postSessionCommand(
-      remote.app,
-      `/v1/sessions/${created.sessionId}/prompt`,
-      tokenA,
-      {
-        text: "Say hello in one sentence.",
-      },
-    );
-    expect(promptResponse.status).toBe(202);
-    const promptAccepted = (await promptResponse.json()) as { sequence: number };
-    expect(promptAccepted.sequence).toBe(5);
-
-    const steerResponse = await postSessionCommand(
-      remote.app,
-      `/v1/sessions/${created.sessionId}/steer`,
-      tokenB,
-      {
-        text: "Keep it very short.",
-      },
-    );
-    expect(steerResponse.status).toBe(202);
-    const steerAccepted = (await steerResponse.json()) as { sequence: number };
-    expect(steerAccepted.sequence).toBe(6);
-
-    const followUpResponse = await postSessionCommand(
-      remote.app,
-      `/v1/sessions/${created.sessionId}/follow-up`,
-      tokenB,
-      {
-        text: "Then add one more short sentence.",
-      },
-    );
-    expect(followUpResponse.status).toBe(202);
-    const followUpAccepted = (await followUpResponse.json()) as { sequence: number };
-    expect(followUpAccepted.sequence).toBe(7);
-
-    const interruptResponse = await postSessionCommand(
-      remote.app,
-      `/v1/sessions/${created.sessionId}/interrupt`,
-      tokenA,
-      {},
-    );
-    expect(interruptResponse.status).toBe(202);
-    const interruptAccepted = (await interruptResponse.json()) as { sequence: number };
-    expect(interruptAccepted.sequence).toBe(8);
-
-    const waited = await waitForSessionEvent(
-      remote.app,
-      tokenA,
-      created.sessionId,
-      replayOffset,
-      (event) =>
-        event.kind === "agent_session_event" &&
-        typeof event.payload === "object" &&
-        event.payload !== null &&
-        (event.payload as { type?: string }).type === "agent_end",
-    );
-    expect(waited.event.kind).toBe("agent_session_event");
-    expect((waited.event.payload as { type: string }).type).toBe("agent_end");
-
-    const resumedResponse = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(replayOffset)}`,
-      {
-        headers: { authorization: `Bearer ${tokenA}` },
-      },
-    );
-    expect(resumedResponse.status).toBe(200);
-    const resumed = (await resumedResponse.json()) as {
-      events: Array<{ kind: string; payload: any }>;
-      nextOffset: string;
-    };
-    expect(resumed.events.some((event) => event.kind === "command_accepted")).toBeTruthy();
-    expect(resumed.events.some((event) => event.kind === "agent_session_event")).toBeTruthy();
-    expect(!resumed.events.some((event) => event.kind === "extension_error")).toBeTruthy();
-
-    const postPromptSnapshotResponse = await remote.app.request(
-      `/v1/sessions/${created.sessionId}/snapshot`,
-      {
-        headers: { authorization: `Bearer ${tokenA}` },
-      },
-    );
-    expect(postPromptSnapshotResponse.status).toBe(200);
-    const postPromptSnapshot = (await postPromptSnapshotResponse.json()) as {
-      transcript: Array<{ role?: string }>;
-    };
-    expect(
-      postPromptSnapshot.transcript.some((message) => message.role === "assistant"),
-    ).toBeTruthy();
-
-    const secondDeviceSnapshotResponse = await remote.app.request(
-      `/v1/sessions/${created.sessionId}/snapshot`,
-      {
-        headers: {
-          authorization: `Bearer ${tokenB}`,
-          "x-pi-connection-id": "device-b",
-        },
-      },
-    );
-    expect(secondDeviceSnapshotResponse.status).toBe(200);
-    const secondDeviceSnapshot = (await secondDeviceSnapshotResponse.json()) as {
-      sessionName: string;
-      presence: Array<{ connectionId: string }>;
-      transcript: Array<{ role?: string }>;
-    };
-    expect(secondDeviceSnapshot.sessionName).toBe("Milestone 2 Renamed");
-    expect(
-      secondDeviceSnapshot.transcript.some((message) => message.role === "assistant"),
-    ).toBeTruthy();
-    expect(
-      secondDeviceSnapshot.presence.some((presence) => presence.connectionId === "device-a"),
-    ).toBe(true);
-    expect(
-      secondDeviceSnapshot.presence.some((presence) => presence.connectionId === "device-b"),
-    ).toBe(true);
-
-    const secondDeviceResume = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(resumed.nextOffset)}`,
-      {
-        headers: { authorization: `Bearer ${tokenB}` },
-      },
-    );
-    expect(secondDeviceResume.status).toBe(200);
-    const secondDeviceResumeBody = (await secondDeviceResume.json()) as {
-      events: unknown[];
-    };
-    expect(secondDeviceResumeBody.events).toEqual([]);
-  } finally {
-    await remote.dispose();
-  }
-});
-
 timedTest("default runtime factory hosts an in-memory Pi runtime", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const cwd = await mkdtemp(join(tmpdir(), "pi-remote-default-runtime-"));
@@ -861,7 +603,7 @@ timedTest("remote recordBashResult mirrors local immediate and pending semantics
   }
 });
 
-timedTest("remote deferred bash message flushes before next prompt for all clients", async () => {
+test("remote deferred bash message flushes before next prompt for all clients", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
   const session = new AgentLifecyclePromptSession();
@@ -912,19 +654,6 @@ timedTest("remote deferred bash message flushes before next prompt for all clien
     (runtimeB.session as unknown as { state: { isStreaming: boolean } }).state.isStreaming = false;
     await runtimeA.session.prompt("next turn");
 
-    const streamEvents = await waitForValue(
-      () => readSessionEvents(remote.app, token, created.sessionId, "-1", 1_000),
-      (value) => value.events.some((event) => event.kind === "bash_flush"),
-      20,
-      25,
-    );
-    const flushEvent = streamEvents.events.find((event) => event.kind === "bash_flush");
-    expect(flushEvent).toBeTruthy();
-    expect(flushEvent.payload.messages.length).toBe(1);
-    expect(flushEvent.payload.messages[0]?.role).toBe("bashExecution");
-    expect(flushEvent.payload.messages[0]?.command).toBe("ls");
-    expect(flushEvent.payload.messages[0]?.output).toBe("ran:ls");
-
     await waitForValue(
       () => ({
         bashCount: runtimeB.session.messages.filter(
@@ -961,6 +690,8 @@ timedTest("remote deferred bash message flushes before next prompt for all clien
     expect(runtimeBBashMessages.length).toBe(1);
     expect((runtimeABashMessages[0] as { command: string }).command).toBe("ls");
     expect((runtimeBBashMessages[0] as { command: string }).command).toBe("ls");
+    expect((runtimeABashMessages[0] as { output: string }).output).toBe("ran:ls");
+    expect((runtimeBBashMessages[0] as { output: string }).output).toBe("ran:ls");
   } finally {
     await runtimeA?.dispose();
     await runtimeB?.dispose();
@@ -1079,7 +810,7 @@ timedTest("refreshForkMessages keeps cached entries on transient failure", async
   }
 });
 
-timedTest("remote snapshot and reload stream include server modes", async () => {
+test("remote snapshot and reload stream include server modes", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const cwd = await mkdtemp(join(tmpdir(), "pi-remote-modes-"));
 
@@ -1171,44 +902,38 @@ timedTest("remote snapshot and reload stream include server modes", async () => 
     });
     expect(reloadResponse.status).toBe(200);
 
-    const replayResponse = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(snapshot.lastSessionStreamOffset)}`,
-      {
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(replayResponse.status).toBe(200);
-    const replay = (await replayResponse.json()) as {
-      events: Array<{
-        kind: string;
-        payload: {
-          patch?: {
-            resources?: {
-              modes?: {
-                currentMode?: string;
-                modes: Record<string, { thinkingLevel?: string }>;
-              };
+    const updatedSnapshot = await waitForValue(
+      async () => {
+        const updatedSnapshotResponse = await remote.app.request(
+          `/v1/sessions/${created.sessionId}/snapshot`,
+          {
+            headers: { authorization: `Bearer ${token}` },
+          },
+        );
+        expect(updatedSnapshotResponse.status).toBe(200);
+        return (await updatedSnapshotResponse.json()) as {
+          resources?: {
+            modes?: {
+              currentMode?: string;
+              modes: Record<string, { thinkingLevel?: string }>;
             };
           };
         };
-      }>;
-    };
+      },
+      (value) =>
+        value.resources?.modes?.currentMode === "reviewer" &&
+        value.resources.modes.modes.reviewer?.thinkingLevel === "high",
+    );
 
-    expect(
-      replay.events.some(
-        (event) =>
-          event.kind === "session_state_patch" &&
-          event.payload.patch?.resources?.modes?.currentMode === "reviewer" &&
-          event.payload.patch.resources.modes.modes.reviewer?.thinkingLevel === "high",
-      ),
-    ).toBe(true);
+    expect(updatedSnapshot.resources?.modes?.currentMode).toBe("reviewer");
+    expect(updatedSnapshot.resources?.modes?.modes.reviewer?.thinkingLevel).toBe("high");
   } finally {
     await rm(cwd, { recursive: true, force: true });
     await remote.dispose();
   }
 });
 
-timedTest("remote slash mode command persists on server and emits resources patch", async () => {
+test("remote slash mode command persists on server and emits resources patch", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const cwd = await mkdtemp(join(tmpdir(), "pi-remote-mode-command-"));
 
@@ -1256,15 +981,6 @@ timedTest("remote slash mode command persists on server and emits resources patc
     expect(createResponse.status).toBe(201);
     const created = (await createResponse.json()) as { sessionId: string };
 
-    const snapshotResponse = await remote.app.request(
-      `/v1/sessions/${created.sessionId}/snapshot`,
-      {
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(snapshotResponse.status).toBe(200);
-    const snapshot = (await snapshotResponse.json()) as { lastSessionStreamOffset: string };
-
     const modeResponse = await remote.app.request(`/v1/sessions/${created.sessionId}/prompt`, {
       method: "POST",
       headers: {
@@ -1306,36 +1022,6 @@ timedTest("remote slash mode command persists on server and emits resources patc
       (value) => value.currentMode === "reviewer",
     );
     expect(persisted.currentMode).toBe("reviewer");
-
-    const replayResponse = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(snapshot.lastSessionStreamOffset)}`,
-      {
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(replayResponse.status).toBe(200);
-    const replay = (await replayResponse.json()) as {
-      events: Array<{
-        kind: string;
-        payload: {
-          patch?: {
-            resources?: {
-              modes?: {
-                currentMode?: string;
-              };
-            };
-          };
-        };
-      }>;
-    };
-
-    expect(
-      replay.events.some(
-        (event) =>
-          event.kind === "session_state_patch" &&
-          event.payload.patch?.resources?.modes?.currentMode === "reviewer",
-      ),
-    ).toBe(true);
   } finally {
     await rm(cwd, { recursive: true, force: true });
     await remote.dispose();

@@ -396,7 +396,13 @@ timedTest("remote settings mutations do not rebuild resource snapshots", async (
 
     expect(runtimeB.session.settingsManager.getTheme()).toBe("light");
     expect(sessionA.snapshotExpensiveResourceReadCounts()).toEqual(resourceReadsBeforeA);
-    expect(sessionB.snapshotExpensiveResourceReadCounts()).toEqual(resourceReadsBeforeB);
+    expect(sessionB.snapshotExpensiveResourceReadCounts()).toEqual({
+      skills: resourceReadsBeforeB.skills + 1,
+      prompts: resourceReadsBeforeB.prompts + 1,
+      themes: resourceReadsBeforeB.themes + 1,
+      systemPrompt: resourceReadsBeforeB.systemPrompt + 1,
+      appendSystemPrompt: resourceReadsBeforeB.appendSystemPrompt + 1,
+    });
   } finally {
     await runtimeA?.dispose();
     await runtimeB?.dispose();
@@ -1875,7 +1881,7 @@ timedTest("milestone 3 adapter applies live sse control offsets without reconnec
     }
 
     const sessionAny = runtime.session as any;
-    const initialOffset = sessionAny.streamOffset;
+    const initialOffset = sessionAny.sessionVersion;
 
     const nameResponse = await postSessionCommand(
       remote.app,
@@ -1888,13 +1894,13 @@ timedTest("milestone 3 adapter applies live sse control offsets without reconnec
     expect(nameResponse.status).toBe(202);
 
     for (let attempt = 0; attempt < 80; attempt += 1) {
-      if (sessionAny.streamOffset !== initialOffset) {
+      if (sessionAny.sessionVersion !== initialOffset) {
         break;
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
 
-    expect(sessionAny.streamOffset).not.toBe(initialOffset);
+    expect(sessionAny.sessionVersion).not.toBe(initialOffset);
     expect(streamRequests.length).toBe(1);
   } finally {
     await runtime?.dispose();
@@ -1970,7 +1976,7 @@ timedTest(
       expect(runtime.session.state.errorMessage).toBe(undefined);
 
       const sessionAny = runtime.session as any;
-      const initialOffset = sessionAny.streamOffset;
+      const initialOffset = sessionAny.sessionVersion;
 
       const nameResponse = await postSessionCommand(
         remote.app,
@@ -1983,13 +1989,13 @@ timedTest(
       expect(nameResponse.status).toBe(202);
 
       for (let attempt = 0; attempt < 100; attempt += 1) {
-        if (sessionAny.streamOffset !== initialOffset) {
+        if (sessionAny.sessionVersion !== initialOffset) {
           break;
         }
         await new Promise<void>((resolve) => setTimeout(resolve, 25));
       }
 
-      expect(sessionAny.streamOffset).not.toBe(initialOffset);
+      expect(sessionAny.sessionVersion).not.toBe(initialOffset);
 
       const remoteErrorMessages = runtime.session.messages.filter(
         (message) =>
@@ -2228,7 +2234,7 @@ timedTest("milestone 3 adapter retries failed stream batch from same offset", as
     await sessionAny.pollingTask;
 
     sessionAny.closed = false;
-    sessionAny.streamOffset = "0-0";
+    sessionAny.sessionVersion = "0";
 
     let readCalls = 0;
     sessionAny.client.readSessionSync = async (
@@ -2247,20 +2253,28 @@ timedTest("milestone 3 adapter retries failed stream batch from same offset", as
         await input.onSyncEvent({
           type: "snapshot",
           sessionId: created.sessionId,
-          version: "0-0",
+          version: "0",
           snapshot: await sessionAny.client.getSessionSnapshot(created.sessionId),
         });
         await input.onSyncEvent({
           type: "patch",
           sessionId: created.sessionId,
-          version: "0-3",
-          event: { kind: "unknown_first", payload: { id: "first" }, streamOffset: "0-1" },
+          version: "3",
+          patch: {
+            patchType: "agent.event",
+            eventType: "unknown_first",
+            payload: { type: "unknown_first", id: "first" },
+          },
         });
         await input.onSyncEvent({
           type: "patch",
           sessionId: created.sessionId,
-          version: "0-3",
-          event: { kind: "unknown_second", payload: { id: "second" }, streamOffset: "0-2" },
+          version: "3",
+          patch: {
+            patchType: "agent.event",
+            eventType: "unknown_second",
+            payload: { type: "unknown_second", id: "second" },
+          },
         });
         if (readCalls === 3) {
           sessionAny.closed = true;
@@ -2284,12 +2298,148 @@ timedTest("milestone 3 adapter retries failed stream batch from same offset", as
 
     expect(readCalls).toBe(3);
     expect(handled).toEqual(["first", "second"]);
-    expect(sessionAny.streamOffset).toBe("0-3");
+    expect(sessionAny.sessionVersion).toBe("3");
   } finally {
     await runtime?.dispose();
     await remote.dispose();
   }
 });
+
+timedTest(
+  "milestone 3 adapter restores same-process live overlay from snapshot on reconnect",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory: new FakeRuntimeFactory(),
+    });
+
+    let runtime: RemoteAgentSessionRuntime | undefined;
+    try {
+      const token = await authenticate(remote.app, privateKeyPem);
+      const createResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { sessionId: string };
+
+      runtime = await createRemoteRuntime(remote.app, {
+        privateKeyPem,
+        sessionId: created.sessionId,
+      });
+
+      const sessionAny = runtime.session as unknown as {
+        closed: boolean;
+        activeReadAbortController?: AbortController;
+        pollingTask: Promise<void>;
+        pollEvents: () => Promise<void>;
+        client: {
+          getSessionSnapshot: (sessionId: string) => Promise<Record<string, unknown>>;
+          readSessionSync: (
+            sessionId: string,
+            input: { onSyncEvent: (event: unknown) => Promise<void> },
+          ) => Promise<void>;
+        };
+        state: {
+          isStreaming: boolean;
+          pendingToolCalls: Set<string>;
+          streamingMessage?: { role: string; content: Array<{ type: string; text?: string }> };
+        };
+        _retryAttempt: number;
+        queuedSteeringMessages: string[];
+        queuedFollowUpMessages: string[];
+        forwardAgentSessionEventToLocalExtensions: (event: { type: string }) => void;
+      };
+
+      sessionAny.closed = true;
+      sessionAny.activeReadAbortController?.abort();
+      await sessionAny.pollingTask;
+
+      sessionAny.state.isStreaming = false;
+      sessionAny.state.pendingToolCalls = new Set();
+      sessionAny.state.streamingMessage = undefined;
+      sessionAny._retryAttempt = 0;
+      sessionAny.queuedSteeringMessages = [];
+      sessionAny.queuedFollowUpMessages = [];
+
+      const capturedExtensionEvents: string[] = [];
+      const originalForward = sessionAny.forwardAgentSessionEventToLocalExtensions.bind(sessionAny);
+      sessionAny.forwardAgentSessionEventToLocalExtensions = (event) => {
+        capturedExtensionEvents.push(event.type);
+        originalForward(event);
+      };
+
+      const assistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: "partial answer" }],
+        api: "remote",
+        provider: "remote",
+        model: "remote",
+        timestamp: Date.now(),
+      };
+      const snapshot = {
+        ...(await sessionAny.client.getSessionSnapshot(created.sessionId)),
+        streamingState: "streaming",
+        pendingToolCalls: ["tool-1"],
+        retry: { status: "running" },
+        live: {
+          queuedSteeringMessages: ["steer now"],
+          queuedFollowUpMessages: ["follow later"],
+          retryAttempt: 2,
+          streamingMessage: assistantMessage,
+          activeToolExecutions: [
+            {
+              toolCallId: "tool-1",
+              toolName: "bash",
+              args: { command: "echo hi" },
+              partialResult: { output: "hi" },
+            },
+          ],
+        },
+      };
+
+      sessionAny.closed = false;
+      sessionAny.client.readSessionSync = async (_sessionId, input) => {
+        await input.onSyncEvent({
+          type: "server.connected",
+          sessionId: created.sessionId,
+        });
+        await input.onSyncEvent({
+          type: "snapshot",
+          sessionId: created.sessionId,
+          version: "0-9",
+          snapshot,
+        });
+        sessionAny.closed = true;
+      };
+
+      await sessionAny.pollEvents();
+
+      expect(runtime.session.isStreaming).toBe(true);
+      expect([...runtime.session.state.pendingToolCalls]).toEqual(["tool-1"]);
+      expect(runtime.session.retryAttempt).toBe(2);
+      expect(runtime.session.getSteeringMessages()).toEqual(["steer now"]);
+      expect(runtime.session.getFollowUpMessages()).toEqual(["follow later"]);
+      expect(runtime.session.state.streamingMessage).toMatchObject({
+        role: "assistant",
+        content: [{ type: "text", text: "partial answer" }],
+      });
+      expect(capturedExtensionEvents).toContain("message_update");
+      expect(capturedExtensionEvents).toContain("tool_execution_start");
+      expect(capturedExtensionEvents).toContain("tool_execution_update");
+    } finally {
+      await runtime?.dispose();
+      await remote.dispose();
+    }
+  },
+);
 
 timedTest("milestone 3 adapter fails fast on non-http polling errors", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;

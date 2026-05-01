@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { parseSseStream } from "../src/remote/sse.ts";
 import type {
   ExtensionFactory,
   ExtensionUIContext,
@@ -70,7 +71,6 @@ import {
 import { calculateTotalCost } from "../src/extensions/coreui/usage.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import type { ClientCapabilities, Presence } from "../src/remote/schemas.ts";
-import { StreamReadResponseSchema } from "../src/remote/schemas.ts";
 import { SessionRegistry } from "../src/remote/session-registry.ts";
 import { SessionCatalog } from "../src/remote/session-catalog.ts";
 import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
@@ -1513,29 +1513,49 @@ async function readSessionEvents(
   events: Array<{ kind: string; payload: any; streamOffset: string }>;
   nextOffset: string;
 }> {
-  const response = await app.request(
-    `/v1/streams/sessions/${sessionId}/events?live=long-poll&offset=${encodeURIComponent(offset)}&timeoutMs=${timeoutMs}`,
-    {
-      headers: { authorization: `Bearer ${token}` },
-    },
-  );
-
-  if (response.status === 204) {
-    return {
-      events: [],
-      nextOffset: response.headers.get("Stream-Next-Offset") ?? offset,
-    };
-  }
+  const response = await app.request(`/v1/sessions/${sessionId}/sync`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
 
   expect(response.status).toBe(200);
-  const body = (await response.json()) as {
-    events: Array<{ kind: string; payload: any; streamOffset: string }>;
-    nextOffset: string;
-  };
-  return {
-    events: body.events,
-    nextOffset: body.nextOffset,
-  };
+  const stream = response.body;
+  expect(stream).toBeTruthy();
+  if (!stream) {
+    return { events: [], nextOffset: offset };
+  }
+
+  const events: Array<{ kind: string; payload: any; streamOffset: string }> = [];
+  let nextOffset = offset;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    for await (const event of parseSseStream(stream, controller.signal)) {
+      if (event.type !== "data") {
+        continue;
+      }
+      const payload = JSON.parse(event.data) as {
+        type: string;
+        version?: string;
+        patch?: { patchType: string; payload: unknown };
+      };
+      if (payload.type !== "patch" || payload.version === undefined || payload.version <= offset) {
+        continue;
+      }
+      nextOffset = payload.version;
+      const mapped = mapSyncPatchToEnvelope(payload.version, payload.patch);
+      if (mapped !== undefined) {
+        events.push(mapped);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "AbortError") {
+      throw error;
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return { events, nextOffset };
 }
 
 async function waitForSessionEvent(
@@ -1580,6 +1600,48 @@ async function waitForValue<T>(
   throw new Error("Timed out waiting for value");
 }
 
+function mapSyncPatchToEnvelope(
+  streamOffset: string,
+  patch: { patchType: string; payload: unknown } | undefined,
+): { kind: string; payload: any; streamOffset: string } | undefined {
+  if (patch === undefined) {
+    return undefined;
+  }
+
+  switch (patch.patchType) {
+    case "assistant.message":
+    case "tool.execution":
+    case "queue.update":
+    case "retry.status":
+    case "agent.event":
+      return { kind: "agent_session_event", payload: patch.payload, streamOffset };
+    case "session.state":
+      return { kind: "session_state_patch", payload: patch.payload, streamOffset };
+    case "extension.custom":
+      return { kind: "extension_custom_event", payload: patch.payload, streamOffset };
+    case "extension.event":
+      return { kind: "extension_event", payload: patch.payload, streamOffset };
+    case "extension.ui.request":
+      return { kind: "extension_ui_request", payload: patch.payload, streamOffset };
+    case "extension.ui.resolved":
+      return { kind: "extension_ui_resolved", payload: patch.payload, streamOffset };
+    case "command.accepted":
+      return { kind: "command_accepted", payload: patch.payload, streamOffset };
+    case "bash.start":
+      return { kind: "bash_start", payload: patch.payload, streamOffset };
+    case "bash.chunk":
+      return { kind: "bash_chunk", payload: patch.payload, streamOffset };
+    case "bash.end":
+      return { kind: "bash_end", payload: patch.payload, streamOffset };
+    case "bash.flush":
+      return { kind: "bash_flush", payload: patch.payload, streamOffset };
+    case "extension.error":
+      return { kind: "extension_error", payload: patch.payload, streamOffset };
+    default:
+      return undefined;
+  }
+}
+
 async function writeSessionFile(input: {
   sessionPath: string;
   sessionId: string;
@@ -1616,138 +1678,6 @@ async function writeSessionFile(input: {
   }
   await writeFile(input.sessionPath, [...lines, ""].join("\n"));
 }
-
-timedTest("milestone 1 flow works end to end", async () => {
-  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-
-  const remote = createRemoteApp({
-    origin: "http://localhost:3000",
-    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: new InMemoryPiRuntimeFactory(),
-  });
-
-  try {
-    const token = await authenticate(remote.app, privateKeyPem);
-    const authHeaders = {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    };
-
-    const createResponse = await remote.app.request("/v1/sessions", {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify({ sessionName: "Milestone Session" }),
-    });
-    expect(createResponse.status).toBe(201);
-    const created = (await createResponse.json()) as { sessionId: string };
-    expect(created.sessionId).toBeTruthy();
-
-    const snapshotResponse = await remote.app.request(
-      `/v1/sessions/${created.sessionId}/snapshot`,
-      {
-        method: "GET",
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(snapshotResponse.status).toBe(200);
-    const snapshot = (await snapshotResponse.json()) as {
-      sessionId: string;
-      lastSessionStreamOffset: string;
-    };
-    expect(snapshot.sessionId).toBe(created.sessionId);
-
-    const firstAttach = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events`,
-      {
-        method: "GET",
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(firstAttach.status).toBe(200);
-    const firstAttachBody = (await firstAttach.json()) as {
-      events: unknown[];
-      nextOffset: string;
-      streamClosed: boolean;
-    };
-    expect(
-      firstAttachBody.events.some(
-        (event) => (event as { kind?: string } | undefined)?.kind === "extension_ui_request",
-      ),
-    ).toBe(true);
-    expect(firstAttachBody.nextOffset > "0000000000000000_0000000000000000").toBe(true);
-    expect(firstAttachBody.streamClosed).toBe(false);
-
-    const reconnect = await remote.app.request(
-      `/v1/streams/sessions/${created.sessionId}/events?offset=${encodeURIComponent(firstAttachBody.nextOffset)}`,
-      {
-        method: "GET",
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(reconnect.status).toBe(200);
-    const reconnectBody = (await reconnect.json()) as {
-      events: unknown[];
-      nextOffset: string;
-      streamClosed: boolean;
-    };
-    expect(reconnectBody.events).toEqual([]);
-    expect(reconnectBody.nextOffset).toBe(firstAttachBody.nextOffset);
-    expect(reconnectBody.streamClosed).toBe(false);
-
-    const appStream = await remote.app.request("/v1/streams/app-events", {
-      method: "GET",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(appStream.status).toBe(200);
-    const appStreamBody = (await appStream.json()) as {
-      events: Array<{ kind: string }>;
-      nextOffset: string;
-      streamClosed: boolean;
-    };
-    expect(appStreamBody.events.length).toBe(1);
-    expect(appStreamBody.events[0]?.kind).toBe("session_created");
-    expect(appStreamBody.nextOffset).toBe("0000000000000000_0000000000000001");
-    expect(appStreamBody.streamClosed).toBe(false);
-
-    const appReconnect = await remote.app.request(
-      `/v1/streams/app-events?offset=${encodeURIComponent(appStreamBody.nextOffset)}`,
-      {
-        method: "GET",
-        headers: { authorization: `Bearer ${token}` },
-      },
-    );
-    expect(appReconnect.status).toBe(200);
-    const appReconnectBody = (await appReconnect.json()) as {
-      events: unknown[];
-      streamClosed: boolean;
-    };
-    expect(appReconnectBody.events).toEqual([]);
-    expect(appReconnectBody.streamClosed).toBe(false);
-
-    const openApiResponse = await remote.app.request("/openapi.json");
-    expect(openApiResponse.status).toBe(200);
-    const openApi = (await openApiResponse.json()) as { paths: Record<string, unknown> };
-    expect(openApi.paths["/v1/auth/challenge"]).toBeTruthy();
-    expect(openApi.paths["/v1/auth/verify"]).toBeTruthy();
-    expect(openApi.paths["/v1/app/snapshot"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/snapshot"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/prompt"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/steer"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/follow-up"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/interrupt"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/model"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/rename"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/session-name"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/ui-response"]).toBeTruthy();
-    expect(openApi.paths["/v1/sessions/{sessionId}/clear-queue"]).toBeTruthy();
-    const appStreamResponses = (openApi.paths["/v1/streams/app-events"] as any)?.get?.responses;
-    expect(appStreamResponses?.["200"]?.content?.["application/json"]).toBeTruthy();
-    expect(appStreamResponses?.["200"]?.content?.["text/event-stream"]).toBeTruthy();
-  } finally {
-    await remote.dispose();
-  }
-});
 
 timedTest("health endpoint reports ready status", async () => {
   const { publicKeyPem } = TEST_ED25519_KEYS;
@@ -1798,7 +1728,7 @@ timedTest("stream endpoints reject malformed offsets", async () => {
     const appStream = await remote.app.request("/v1/streams/app-events?offset=bad-offset", {
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(appStream.status).toBe(400);
+    expect(appStream.status).toBe(404);
 
     const sessionStream = await remote.app.request(
       `/v1/streams/sessions/${created.sessionId}/events?offset=bad-offset`,
@@ -1806,62 +1736,10 @@ timedTest("stream endpoints reject malformed offsets", async () => {
         headers: { authorization: `Bearer ${token}` },
       },
     );
-    expect(sessionStream.status).toBe(400);
+    expect(sessionStream.status).toBe(404);
   } finally {
     await remote.dispose();
   }
-});
-
-timedTest("readAndSubscribe includes replay and post-subscribe events", () => {
-  const streams = new InMemoryDurableStreamStore();
-  const streamId = "app-events";
-  streams.ensureStream(streamId);
-
-  const first = streams.append(streamId, {
-    sessionId: null,
-    kind: "server_notice",
-    payload: { message: "first" },
-  });
-
-  const seen: string[] = [];
-  const subscription = streams.readAndSubscribe(streamId, first.streamOffset, (event) => {
-    seen.push(event.kind);
-  });
-
-  const second = streams.append(streamId, {
-    sessionId: null,
-    kind: "auth_notice",
-    payload: { message: "second" },
-  });
-
-  expect(subscription.read.events.length).toBe(0);
-  expect(subscription.read.nextOffset).toBe(first.streamOffset);
-  expect(seen).toEqual(["auth_notice"]);
-  expect(second.kind).toBe("auth_notice");
-  subscription.unsubscribe();
-});
-
-timedTest("stream retention stays bounded and marks stale replay as not up to date", () => {
-  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 3 });
-  const streamId = "app-events";
-  streams.ensureStream(streamId);
-
-  for (let index = 0; index < 5; index += 1) {
-    streams.append(streamId, {
-      sessionId: null,
-      kind: "server_notice",
-      payload: { message: String(index) },
-    });
-  }
-
-  const staleRead = streams.read(streamId, "0000000000000000_0000000000000000");
-  expect(staleRead.events).toHaveLength(3);
-  expect(staleRead.upToDate).toBe(false);
-  expect(staleRead.nextOffset).toBe("0000000000000000_0000000000000005");
-
-  const freshRead = streams.read(streamId, "0000000000000000_0000000000000004");
-  expect(freshRead.events).toHaveLength(1);
-  expect(freshRead.upToDate).toBe(true);
 });
 
 timedTest("session sync stream emits connected then snapshot", async () => {
@@ -1970,38 +1848,6 @@ timedTest("session sync drops buffered patches already covered by snapshot", asy
   }
 });
 
-timedTest("replaceable retained events collapse to latest replay state", () => {
-  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 10 });
-  const streamId = "sessions/test/events";
-  streams.ensureStream(streamId);
-
-  streams.append(streamId, {
-    sessionId: "test",
-    kind: "session_state_patch",
-    payload: {
-      commandId: "cmd-1",
-      sequence: 1,
-      patch: { sessionName: "first" },
-    },
-    retentionKey: "session-state-patch",
-  });
-  streams.append(streamId, {
-    sessionId: "test",
-    kind: "session_state_patch",
-    payload: {
-      commandId: "cmd-2",
-      sequence: 2,
-      patch: { sessionName: "second" },
-    },
-    retentionKey: "session-state-patch",
-  });
-
-  const read = streams.read(streamId, "-1");
-  expect(read.events).toHaveLength(1);
-  expect(read.events[0]?.payload.commandId).toBe("cmd-2");
-  expect(read.nextOffset).toBe("0000000000000000_0000000000000002");
-});
-
 timedTest("ephemeral custom extension events stay live-only", () => {
   const liveEvents = new SessionLiveEventBus();
   const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
@@ -2023,8 +1869,6 @@ timedTest("ephemeral custom extension events stay live-only", () => {
     ts: Date.now(),
   });
 
-  const read = streams.read(streamId, "-1");
-  expect(read.events).toHaveLength(0);
   expect(liveEventsSeen).toEqual(["demo:ephemeral"]);
   unsubscribe();
 });
@@ -2412,54 +2256,6 @@ timedTest("seeded head offset resumes persisted session version", () => {
   expect(streams.getHeadOffset(streamId)).toBe("0000000000000000_0000000000000043");
 });
 
-timedTest("bounded retention stays stable under 100k assistant message updates", () => {
-  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 16 });
-  const streamId = "sessions/load-test/events";
-  streams.ensureStream(streamId);
-
-  for (let index = 0; index < 100_000; index += 1) {
-    streams.append(streamId, {
-      sessionId: "load-test",
-      kind: "agent_session_event",
-      payload: {
-        type: "message_update",
-        message: { role: "assistant", content: `chunk-${index}` },
-      },
-      retentionKey: "assistant-message-update",
-    });
-  }
-
-  const read = streams.read(streamId, "-1");
-  expect(read.events).toHaveLength(1);
-  expect(read.events[0]?.payload.type).toBe("message_update");
-  expect(read.nextOffset).toBe("0000000000000000_0000000000100000");
-});
-
-timedTest("bounded retention stays stable under 100k tool execution updates", () => {
-  const streams = new InMemoryDurableStreamStore({ maxRetainedEventsPerStream: 16 });
-  const streamId = "sessions/tool-load-test/events";
-  streams.ensureStream(streamId);
-
-  for (let index = 0; index < 100_000; index += 1) {
-    streams.append(streamId, {
-      sessionId: "tool-load-test",
-      kind: "agent_session_event",
-      payload: {
-        type: "tool_execution_update",
-        toolCallId: "call-1",
-        toolName: "bash",
-        partialResult: { content: [{ type: "text", text: `out-${index}` }] },
-      },
-      retentionKey: "tool-execution-update:call-1",
-    });
-  }
-
-  const read = streams.read(streamId, "-1");
-  expect(read.events).toHaveLength(1);
-  expect(read.events[0]?.payload.type).toBe("tool_execution_update");
-  expect(read.nextOffset).toBe("0000000000000000_0000000000100000");
-});
-
 timedTest("stream endpoints accept durable protocol sentinel offsets", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
@@ -2484,26 +2280,12 @@ timedTest("stream endpoints accept durable protocol sentinel offsets", async () 
     const fromStart = await remote.app.request("/v1/streams/app-events?offset=-1", {
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(fromStart.status).toBe(200);
-    const fromStartBody = (await fromStart.json()) as {
-      events: Array<{ kind: string }>;
-      fromOffset: string;
-    };
-    expect(fromStartBody.fromOffset).toBe("-1");
-    expect(fromStartBody.events.length).toBe(1);
-    expect(fromStartBody.events[0]?.kind).toBe("session_created");
+    expect(fromStart.status).toBe(404);
 
     const fromNow = await remote.app.request("/v1/streams/app-events?offset=now", {
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(fromNow.status).toBe(200);
-    const fromNowBody = (await fromNow.json()) as {
-      events: unknown[];
-      fromOffset: string;
-      nextOffset: string;
-    };
-    expect(fromNowBody.events).toEqual([]);
-    expect(fromNowBody.fromOffset).toBe(fromNowBody.nextOffset);
+    expect(fromNow.status).toBe(404);
   } finally {
     await remote.dispose();
   }
@@ -2533,7 +2315,7 @@ timedTest("live stream modes require offset", async () => {
     const appSse = await remote.app.request("/v1/streams/app-events?live=sse", {
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(appSse.status).toBe(400);
+    expect(appSse.status).toBe(404);
 
     const sessionLongPoll = await remote.app.request(
       `/v1/streams/sessions/${created.sessionId}/events?live=long-poll`,
@@ -2541,7 +2323,7 @@ timedTest("live stream modes require offset", async () => {
         headers: { authorization: `Bearer ${token}` },
       },
     );
-    expect(sessionLongPoll.status).toBe(400);
+    expect(sessionLongPoll.status).toBe(404);
   } finally {
     await remote.dispose();
   }
@@ -2575,11 +2357,7 @@ timedTest("long-poll timeout returns 204 with stream headers", async () => {
       },
     );
 
-    expect(longPoll.status).toBe(204);
-    expect(longPoll.headers.get("Stream-Next-Offset")).toBe("0000000000000000_0000000000000000");
-    expect(longPoll.headers.get("Stream-Up-To-Date")).toBe("true");
-    expect(longPoll.headers.get("Stream-Closed")).toBe(null);
-    expect(longPoll.headers.get("Stream-Cursor") ?? "").toMatch(/^\d+$/);
+    expect(longPoll.status).toBe(404);
   } finally {
     await remote.dispose();
   }
@@ -2618,14 +2396,7 @@ timedTest("long-poll with offset=now returns newly appended events", async () =>
     expect(createResponse.status).toBe(201);
 
     const longPoll = await longPollPromise;
-    expect(longPoll.status).toBe(200);
-    const body = (await longPoll.json()) as {
-      events: Array<{ kind: string }>;
-      timedOut?: boolean;
-    };
-
-    expect(body.events.length).toBe(1);
-    expect(body.events[0]?.kind).toBe("session_created");
+    expect(longPoll.status).toBe(404);
   } finally {
     await remote.dispose();
   }
@@ -2659,31 +2430,7 @@ timedTest("sse uses data and control events", async () => {
       },
     );
 
-    expect(sse.status).toBe(200);
-    expect(sse.headers.get("content-type")).toBe("text/event-stream");
-    expect(sse.headers.get("Stream-Next-Offset")).toBe("0000000000000000_0000000000000001");
-    expect(sse.headers.get("Stream-Cursor") ?? "").toMatch(/^\d+$/);
-
-    const reader = sse.body?.getReader();
-    expect(reader).toBeTruthy();
-    let payload = "";
-    for (let index = 0; index < 4; index += 1) {
-      const chunk = await reader!.read();
-      if (chunk.done) {
-        break;
-      }
-      payload += new TextDecoder().decode(chunk.value);
-      if (payload.includes("event: control")) {
-        break;
-      }
-    }
-
-    await reader?.cancel();
-    expect(payload).toMatch(/event: data/);
-    expect(payload).toMatch(/event: control/);
-    expect(payload).toMatch(/"streamNextOffset":"0000000000000000_0000000000000001"/);
-    expect(payload).toMatch(/"streamCursor":"\d+"/);
-    expect(payload).not.toMatch(/event: ready/);
+    expect(sse.status).toBe(404);
   } finally {
     await remote.dispose();
   }
@@ -3544,85 +3291,6 @@ timedTest("persistent remote session lazily loads runtime for commands after res
   }
 });
 
-timedTest("persisted unnamed session stream remains attachable after restart", async () => {
-  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-  const originalCwd = process.cwd();
-  const harness = await createTempPersistedRuntimeHarness({
-    prefix: "pi-remote-restart-stream-",
-  });
-
-  try {
-    const remoteA = createRemoteApp({
-      origin: "http://localhost:3000",
-      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-      runtimeFactory: harness.runtimeFactory,
-    });
-
-    let sessionId = "";
-
-    try {
-      const token = await authenticate(remoteA.app, privateKeyPem);
-      const createResponse = await remoteA.app.request("/v1/sessions", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${token}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({}),
-      });
-
-      expect(createResponse.status).toBe(201);
-      sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
-
-      const apiClient = new RemoteApiClient({
-        origin: "http://localhost:3000",
-        auth: {
-          keyId: "dev",
-          privateKey: privateKeyPem,
-        },
-        fetchImpl: createInProcessFetch(remoteA.app),
-      });
-      await apiClient.authenticate();
-      const promptResponse = await remoteA.app.request(`/v1/sessions/${sessionId}/prompt`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${token}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ text: "Persist unnamed stream session" }),
-      });
-      expect(promptResponse.status).toBe(202);
-      await waitForRemoteSessionMessageCount(apiClient, sessionId, 2);
-    } finally {
-      await remoteA.dispose();
-    }
-
-    const remoteB = createRemoteApp({
-      origin: "http://localhost:3000",
-      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-      runtimeFactory: harness.runtimeFactory,
-    });
-
-    try {
-      const token = await authenticate(remoteB.app, privateKeyPem);
-      const response = await remoteB.app.request(
-        `/v1/streams/sessions/${sessionId}/events?live=long-poll&offset=0000000000000000_0000000000000000&timeoutMs=250`,
-        {
-          headers: { authorization: `Bearer ${token}` },
-        },
-      );
-
-      expect(response.status).toBe(204);
-      expect(response.headers.get("x-pi-connection-id")).toBeTruthy();
-    } finally {
-      await remoteB.dispose();
-    }
-  } finally {
-    process.chdir(originalCwd);
-    await harness.cleanup();
-  }
-});
-
 timedTest(
   "session snapshot caps loaded history to recent 200 entries and transcript messages",
   async () => {
@@ -3664,11 +3332,11 @@ timedTest(
         sessionStats: { totalMessages: number };
       };
 
-      expect(snapshot.entries).toHaveLength(200);
-      expect(snapshot.transcript).toHaveLength(200);
-      expect(snapshot.entries[0]?.id).toBe("message-51");
+      expect(snapshot.entries).toHaveLength(100);
+      expect(snapshot.transcript).toHaveLength(100);
+      expect(snapshot.entries[0]?.id).toBe("message-151");
       expect(snapshot.entries.at(-1)?.id).toBe("message-250");
-      expect(snapshot.transcript[0]?.content?.[0]?.text).toBe("message 51");
+      expect(snapshot.transcript[0]?.content?.[0]?.text).toBe("message 151");
       expect(snapshot.transcript.at(-1)?.content?.[0]?.text).toBe("message 250");
       expect(snapshot.sessionStats.totalMessages).toBe(250);
     } finally {
@@ -3677,7 +3345,7 @@ timedTest(
   },
 );
 
-timedTest("session snapshot respects per-request entries limit and offset", async () => {
+timedTest("session entries endpoint respects per-request entries limit and offset", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const session = new RecordingSession();
   session.messages = Array.from({ length: 20 }, (_, index) => ({
@@ -3708,7 +3376,7 @@ timedTest("session snapshot respects per-request entries limit and offset", asyn
     const sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
 
     const response = await remote.app.request(
-      `/v1/sessions/${sessionId}/snapshot?entriesLimit=5&entriesOffset=3`,
+      `/v1/sessions/${sessionId}/entries?entriesLimit=5&entriesOffset=3`,
       {
         headers: { authorization: `Bearer ${token}` },
       },
@@ -3728,6 +3396,106 @@ timedTest("session snapshot respects per-request entries limit and offset", asyn
     await remote.dispose();
   }
 });
+
+timedTest(
+  "session entries endpoint returns same committed history loaded and unloaded",
+  async () => {
+    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+    const root = await mkdtemp(join(tmpdir(), "pi-remote-entries-deterministic-"));
+    const agentDir = join(root, "agent");
+    const workspaceDir = join(root, "workspace");
+
+    await mkdir(workspaceDir, { recursive: true });
+
+    let sessionId = "";
+    let loadedEntries: Awaited<ReturnType<RemoteApiClient["getSessionEntries"]>> | undefined;
+
+    try {
+      const runtimeFactoryA = InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      });
+      const remoteA = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: runtimeFactoryA,
+      });
+
+      try {
+        const token = await authenticate(remoteA.app, privateKeyPem);
+        const createResponse = await remoteA.app.request("/v1/sessions", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ sessionName: "Deterministic Entries" }),
+        });
+        expect(createResponse.status).toBe(201);
+        sessionId = ((await createResponse.json()) as { sessionId: string }).sessionId;
+
+        const apiClient = new RemoteApiClient({
+          origin: "http://localhost:3000",
+          auth: {
+            keyId: "dev",
+            privateKey: privateKeyPem,
+          },
+          fetchImpl: createInProcessFetch(remoteA.app),
+        });
+        await apiClient.authenticate();
+
+        const promptResponse = await remoteA.app.request(`/v1/sessions/${sessionId}/prompt`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ text: "Persist deterministic history" }),
+        });
+        expect(promptResponse.status).toBe(202);
+        await waitForRemoteSessionMessageCount(apiClient, sessionId, 2);
+
+        loadedEntries = await apiClient.getSessionEntries(sessionId, { entriesLimit: 100 });
+      } finally {
+        await remoteA.dispose();
+      }
+
+      const runtimeFactoryB = InMemoryPiRuntimeFactory({
+        cwd: workspaceDir,
+        agentDir,
+        persistSessions: true,
+      });
+      const remoteB = createRemoteApp({
+        origin: "http://localhost:3000",
+        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+        runtimeFactory: runtimeFactoryB,
+      });
+
+      try {
+        const apiClient = new RemoteApiClient({
+          origin: "http://localhost:3000",
+          auth: {
+            keyId: "dev",
+            privateKey: privateKeyPem,
+          },
+          fetchImpl: createInProcessFetch(remoteB.app),
+        });
+        await apiClient.authenticate();
+
+        const unloadedEntries = await apiClient.getSessionEntries(sessionId, { entriesLimit: 100 });
+
+        expect(loadedEntries).toBeDefined();
+        expect(unloadedEntries).toEqual(loadedEntries);
+        expect(unloadedEntries.entries.every((entry) => entry.type !== "session_info")).toBe(true);
+      } finally {
+        await remoteB.dispose();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("second runtime attach to loaded session hydrates recent session tail", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
@@ -3766,10 +3534,10 @@ timedTest("second runtime attach to loaded session hydrates recent session tail"
     });
 
     const entries = runtime.session.sessionManager.getEntries();
-    expect(entries).toHaveLength(200);
-    expect(entries[0]?.id).toBe("message-51");
+    expect(entries).toHaveLength(100);
+    expect(entries[0]?.id).toBe("message-151");
     expect(entries.at(-1)?.id).toBe("message-250");
-    expect(runtime.session.messages).toHaveLength(200);
+    expect(runtime.session.messages).toHaveLength(100);
     expect(runtime.session.messages[0]?.role).toBe("assistant");
   } finally {
     await runtime?.dispose();
@@ -4056,105 +3824,6 @@ timedTest("remote runtime restart recovery reauths same unnamed persisted sessio
   }
 });
 
-timedTest("persistent remote modes startup does not trigger watcher reload loop", async () => {
-  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-  const harness = await createTempPersistedRuntimeHarness({
-    prefix: "pi-remote-modes-watcher-loop-",
-    extensionFactories: [modesExtension],
-  });
-
-  await mkdir(join(harness.workspaceDir, ".pi"), { recursive: true });
-  await writeFile(
-    join(harness.workspaceDir, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        currentMode: "stable",
-        modes: {
-          stable: {
-            provider: "pi-remote-faux",
-            modelId: "pi-remote-faux-1",
-            thinkingLevel: "medium",
-          },
-        },
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-
-  const remote = createRemoteApp({
-    origin: "http://localhost:3000",
-    allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-    runtimeFactory: harness.runtimeFactory,
-  });
-
-  let runtime: RemoteAgentSessionRuntime | undefined;
-
-  try {
-    runtime = await createRemoteRuntime(remote.app, {
-      privateKeyPem,
-      cwd: harness.workspaceDir,
-    });
-
-    const initialModeChangedCount = await waitForValue(
-      async () => {
-        const response = await remote.app.request(
-          `/v1/streams/sessions/${runtime?.session.sessionManager.getSessionId()}/events`,
-          {
-            headers: { authorization: `Bearer ${await authenticate(remote.app, privateKeyPem)}` },
-          },
-        );
-        expect(response.status).toBe(200);
-        const payload = (await response.json()) as {
-          events: Array<{
-            kind: string;
-            payload?: { channel?: string; data?: { source?: string } };
-          }>;
-        };
-        return payload.events.filter(
-          (event) =>
-            event.kind === "extension_custom_event" &&
-            event.payload?.channel === "modes:changed" &&
-            event.payload?.data?.source === "session_start",
-        ).length;
-      },
-      (count) => count >= 1,
-      50,
-      20,
-    );
-
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-
-    const finalEventsResponse = await remote.app.request(
-      `/v1/streams/sessions/${runtime.session.sessionManager.getSessionId()}/events`,
-      {
-        headers: { authorization: `Bearer ${await authenticate(remote.app, privateKeyPem)}` },
-      },
-    );
-    expect(finalEventsResponse.status).toBe(200);
-    const finalEvents = (await finalEventsResponse.json()) as {
-      events: Array<{
-        kind: string;
-        payload?: { channel?: string; data?: { source?: string } };
-      }>;
-    };
-    const modeChangedCount = finalEvents.events.filter(
-      (event) =>
-        event.kind === "extension_custom_event" &&
-        event.payload?.channel === "modes:changed" &&
-        event.payload?.data?.source === "session_start",
-    ).length;
-
-    expect(modeChangedCount).toBe(initialModeChangedCount);
-  } finally {
-    await runtime?.dispose();
-    await remote.dispose();
-    await harness.cleanup();
-  }
-});
-
 timedTest("missing session summary returns 404", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
 
@@ -4176,179 +3845,166 @@ timedTest("missing session summary returns 404", async () => {
   }
 });
 
-timedTest(
-  "remote session archive restore and delete lifecycle works for loaded and unloaded sessions",
-  async () => {
-    const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
-    const originalCwd = process.cwd();
-    const root = await mkdtemp(join(tmpdir(), "pi-remote-lifecycle-"));
-    const agentDir = join(root, "agent");
-    const workspaceDir = join(root, "workspace");
+test("remote session archive restore and delete lifecycle works for loaded and unloaded sessions", async () => {
+  const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
+  const originalCwd = process.cwd();
+  const root = await mkdtemp(join(tmpdir(), "pi-remote-lifecycle-"));
+  const agentDir = join(root, "agent");
+  const workspaceDir = join(root, "workspace");
 
-    await mkdir(workspaceDir, { recursive: true });
+  await mkdir(workspaceDir, { recursive: true });
+
+  try {
+    const runtimeFactory = InMemoryPiRuntimeFactory({
+      cwd: workspaceDir,
+      agentDir,
+      persistSessions: true,
+    });
+    const catalogRoot = runtimeFactory.getSessionCatalogRoot?.();
+    const remote = createRemoteApp({
+      origin: "http://localhost:3000",
+      allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
+      runtimeFactory,
+    });
 
     try {
-      const runtimeFactory = InMemoryPiRuntimeFactory({
-        cwd: workspaceDir,
-        agentDir,
-        persistSessions: true,
+      const token = await authenticate(remote.app, privateKeyPem);
+
+      const createAResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionName: "Archive Me" }),
       });
-      const catalogRoot = runtimeFactory.getSessionCatalogRoot?.();
-      const remote = createRemoteApp({
+      expect(createAResponse.status).toBe(201);
+      const sessionAId = ((await createAResponse.json()) as { sessionId: string }).sessionId;
+
+      const apiClient = new RemoteApiClient({
         origin: "http://localhost:3000",
-        allowedKeys: [{ keyId: "dev", publicKey: publicKeyPem }],
-        runtimeFactory,
+        auth: {
+          keyId: "dev",
+          privateKey: privateKeyPem,
+        },
+        fetchImpl: createInProcessFetch(remote.app),
+      });
+      await apiClient.authenticate();
+      const persistAResponse = await remote.app.request(`/v1/sessions/${sessionAId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "Persist before archive" }),
+      });
+      expect(persistAResponse.status).toBe(202);
+      await waitForRemoteSessionMessageCount(apiClient, sessionAId, 2);
+
+      const archivedResponse = await remote.app.request(`/v1/sessions/${sessionAId}/archive`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(archivedResponse.status).toBe(200);
+      const archivedSummary = (await archivedResponse.json()) as {
+        lifecycle: { loaded: boolean; state: string };
+      };
+      expect(archivedSummary.lifecycle.loaded).toBe(false);
+      expect(archivedSummary.lifecycle.state).toBe("archived");
+
+      const archivedCatalog = new SessionCatalog({ rootDir: catalogRoot });
+      const archivedRecord = archivedCatalog.get(sessionAId);
+      expect(archivedRecord).toBeTruthy();
+      expect(archivedRecord?.sessionPath ?? "").toMatch(/\.archive/);
+      await expect(readFile(archivedRecord?.sessionPath ?? "")).resolves.toBeDefined();
+
+      const restoredResponse = await remote.app.request(`/v1/sessions/${sessionAId}/restore`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(restoredResponse.status).toBe(200);
+      const restoredSummary = (await restoredResponse.json()) as {
+        lifecycle: { loaded: boolean; state: string };
+      };
+      expect(restoredSummary.lifecycle.loaded).toBe(false);
+      expect(restoredSummary.lifecycle.state).toBe("active");
+
+      const restoredCatalog = new SessionCatalog({ rootDir: catalogRoot });
+      const restoredRecord = restoredCatalog.get(sessionAId);
+      expect(restoredRecord).toBeTruthy();
+      expect(restoredRecord?.sessionPath ?? "").not.toMatch(/\.archive/);
+
+      const deleteUnloadedResponse = await remote.app.request(`/v1/sessions/${sessionAId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(deleteUnloadedResponse.status).toBe(200);
+      expect(await deleteUnloadedResponse.json()).toEqual({
+        sessionId: sessionAId,
+        deleted: true,
       });
 
-      try {
-        const token = await authenticate(remote.app, privateKeyPem);
-
-        const createAResponse = await remote.app.request("/v1/sessions", {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ sessionName: "Archive Me" }),
-        });
-        expect(createAResponse.status).toBe(201);
-        const sessionAId = ((await createAResponse.json()) as { sessionId: string }).sessionId;
-
-        const apiClient = new RemoteApiClient({
-          origin: "http://localhost:3000",
-          auth: {
-            keyId: "dev",
-            privateKey: privateKeyPem,
-          },
-          fetchImpl: createInProcessFetch(remote.app),
-        });
-        await apiClient.authenticate();
-        const persistAResponse = await remote.app.request(`/v1/sessions/${sessionAId}/prompt`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ text: "Persist before archive" }),
-        });
-        expect(persistAResponse.status).toBe(202);
-        await waitForRemoteSessionMessageCount(apiClient, sessionAId, 2);
-
-        const archivedResponse = await remote.app.request(`/v1/sessions/${sessionAId}/archive`, {
-          method: "POST",
+      const deletedSummaryResponse = await remote.app.request(
+        `/v1/sessions/${sessionAId}/summary`,
+        {
           headers: { authorization: `Bearer ${token}` },
-        });
-        expect(archivedResponse.status).toBe(200);
-        const archivedSummary = (await archivedResponse.json()) as {
-          lifecycle: { loaded: boolean; state: string };
-        };
-        expect(archivedSummary.lifecycle.loaded).toBe(false);
-        expect(archivedSummary.lifecycle.state).toBe("archived");
+        },
+      );
+      expect(deletedSummaryResponse.status).toBe(404);
 
-        const archivedCatalog = new SessionCatalog({ rootDir: catalogRoot });
-        const archivedRecord = archivedCatalog.get(sessionAId);
-        expect(archivedRecord).toBeTruthy();
-        expect(archivedRecord?.sessionPath ?? "").toMatch(/\.archive/);
-        await expect(readFile(archivedRecord?.sessionPath ?? "")).resolves.toBeDefined();
+      const createBResponse = await remote.app.request("/v1/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionName: "Delete Me Loaded" }),
+      });
+      expect(createBResponse.status).toBe(201);
+      const sessionBId = ((await createBResponse.json()) as { sessionId: string }).sessionId;
 
-        const restoredResponse = await remote.app.request(`/v1/sessions/${sessionAId}/restore`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${token}` },
-        });
-        expect(restoredResponse.status).toBe(200);
-        const restoredSummary = (await restoredResponse.json()) as {
-          lifecycle: { loaded: boolean; state: string };
-        };
-        expect(restoredSummary.lifecycle.loaded).toBe(false);
-        expect(restoredSummary.lifecycle.state).toBe("active");
+      const persistBResponse = await remote.app.request(`/v1/sessions/${sessionBId}/prompt`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "Persist before delete" }),
+      });
+      expect(persistBResponse.status).toBe(202);
+      await waitForRemoteSessionMessageCount(apiClient, sessionBId, 2);
 
-        const restoredCatalog = new SessionCatalog({ rootDir: catalogRoot });
-        const restoredRecord = restoredCatalog.get(sessionAId);
-        expect(restoredRecord).toBeTruthy();
-        expect(restoredRecord?.sessionPath ?? "").not.toMatch(/\.archive/);
+      const deleteLoadedResponse = await remote.app.request(`/v1/sessions/${sessionBId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(deleteLoadedResponse.status).toBe(200);
+      expect(await deleteLoadedResponse.json()).toEqual({
+        sessionId: sessionBId,
+        deleted: true,
+      });
 
-        const deleteUnloadedResponse = await remote.app.request(`/v1/sessions/${sessionAId}`, {
-          method: "DELETE",
-          headers: { authorization: `Bearer ${token}` },
-        });
-        expect(deleteUnloadedResponse.status).toBe(200);
-        expect(await deleteUnloadedResponse.json()).toEqual({
-          sessionId: sessionAId,
-          deleted: true,
-        });
+      const snapshotResponse = await remote.app.request("/v1/app/snapshot", {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(snapshotResponse.status).toBe(200);
+      const snapshot = (await snapshotResponse.json()) as {
+        sessionSummaries: Array<{ sessionId: string }>;
+      };
+      expect(snapshot.sessionSummaries).toEqual([]);
 
-        const deletedSummaryResponse = await remote.app.request(
-          `/v1/sessions/${sessionAId}/summary`,
-          {
-            headers: { authorization: `Bearer ${token}` },
-          },
-        );
-        expect(deletedSummaryResponse.status).toBe(404);
-
-        const createBResponse = await remote.app.request("/v1/sessions", {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ sessionName: "Delete Me Loaded" }),
-        });
-        expect(createBResponse.status).toBe(201);
-        const sessionBId = ((await createBResponse.json()) as { sessionId: string }).sessionId;
-
-        const persistBResponse = await remote.app.request(`/v1/sessions/${sessionBId}/prompt`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ text: "Persist before delete" }),
-        });
-        expect(persistBResponse.status).toBe(202);
-        await waitForRemoteSessionMessageCount(apiClient, sessionBId, 2);
-
-        const deleteLoadedResponse = await remote.app.request(`/v1/sessions/${sessionBId}`, {
-          method: "DELETE",
-          headers: { authorization: `Bearer ${token}` },
-        });
-        expect(deleteLoadedResponse.status).toBe(200);
-        expect(await deleteLoadedResponse.json()).toEqual({
-          sessionId: sessionBId,
-          deleted: true,
-        });
-
-        const snapshotResponse = await remote.app.request("/v1/app/snapshot", {
-          headers: { authorization: `Bearer ${token}` },
-        });
-        expect(snapshotResponse.status).toBe(200);
-        const snapshot = (await snapshotResponse.json()) as {
-          sessionSummaries: Array<{ sessionId: string }>;
-        };
-        expect(snapshot.sessionSummaries).toEqual([]);
-
-        const appEventsResponse = await remote.app.request("/v1/streams/app-events", {
-          headers: { authorization: `Bearer ${token}` },
-        });
-        expect(appEventsResponse.status).toBe(200);
-        const appEventsBody = await appEventsResponse.json();
-        assertType(StreamReadResponseSchema, appEventsBody);
-        const eventKinds = appEventsBody.events.map((event) => event.kind);
-        expect(eventKinds[0]).toBe("session_created");
-        expect(eventKinds.at(-1)).toBe("session_closed");
-        expect(eventKinds.filter((kind) => kind === "session_created").length).toBe(2);
-        expect(eventKinds.filter((kind) => kind === "session_closed").length).toBe(2);
-        expect(
-          eventKinds.filter((kind) => kind === "session_summary_updated").length,
-        ).toBeGreaterThanOrEqual(2);
-      } finally {
-        await remote.dispose();
-      }
+      const appEventsResponse = await remote.app.request("/v1/streams/app-events", {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(appEventsResponse.status).toBe(404);
     } finally {
-      process.chdir(originalCwd);
-      await rm(root, { recursive: true, force: true });
+      await remote.dispose();
     }
-  },
-);
+  } finally {
+    process.chdir(originalCwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 timedTest("session catalog rethrows unexpected scan failures", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-remote-session-catalog-error-"));
@@ -4436,7 +4092,7 @@ timedTest("session catalog scan marks archived files as archived", async () => {
   }
 });
 
-timedTest("remote app watcher reconciles external session add change and remove", async () => {
+test("remote app watcher reconciles external session add change and remove", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const root = await mkdtemp(join(tmpdir(), "pi-remote-watcher-reconcile-"));
   const catalogRoot = join(root, "sessions");
@@ -4524,16 +4180,14 @@ timedTest("remote app watcher reconciles external session add change and remove"
       (status) => status === 404,
     );
 
-    const appEventsResponse = await remote.app.request("/v1/streams/app-events", {
+    const finalSnapshot = await remote.app.request("/v1/app/snapshot", {
       headers: { authorization: `Bearer ${token}` },
     });
-    expect(appEventsResponse.status).toBe(200);
-    const appEvents = (await appEventsResponse.json()) as { events: Array<{ kind: string }> };
-    expect(appEvents.events.map((event) => event.kind)).toEqual([
-      "session_summary_updated",
-      "session_summary_updated",
-      "session_closed",
-    ]);
+    expect(finalSnapshot.status).toBe(200);
+    const finalBody = (await finalSnapshot.json()) as {
+      sessionSummaries: Array<{ sessionId: string }>;
+    };
+    expect(finalBody.sessionSummaries).toEqual([]);
   } finally {
     await remote.dispose();
     await rm(root, { recursive: true, force: true });

@@ -95,6 +95,7 @@ export interface SessionRecord {
         toolName: string;
         args: JsonValue;
         partialResult?: JsonValue;
+        partialOutputText?: string;
       }
     >;
   };

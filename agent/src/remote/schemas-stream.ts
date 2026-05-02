@@ -206,6 +206,7 @@ export const AssistantMessageSyncPatchPayloadSchema = Type.Object({
     Type.Object({
       type: Type.Literal("text_delta"),
       contentIndex: Type.Number(),
+      start: Type.Number(),
       delta: Type.String(),
     }),
     Type.Object({
@@ -220,6 +221,7 @@ export const AssistantMessageSyncPatchPayloadSchema = Type.Object({
     Type.Object({
       type: Type.Literal("thinking_delta"),
       contentIndex: Type.Number(),
+      start: Type.Number(),
       delta: Type.String(),
     }),
     Type.Object({
@@ -230,13 +232,25 @@ export const AssistantMessageSyncPatchPayloadSchema = Type.Object({
     Type.Object({
       type: Type.Literal("toolcall_start"),
       contentIndex: Type.Number(),
-      partial: RuntimeAssistantMessageSchema,
+      toolCall: Type.Object({
+        type: Type.Literal("toolCall"),
+        id: Type.String(),
+        name: Type.String(),
+        arguments: Type.Record(Type.String(), JsonValueSchema),
+        thoughtSignature: Type.Optional(Type.String()),
+      }),
     }),
     Type.Object({
       type: Type.Literal("toolcall_delta"),
       contentIndex: Type.Number(),
       delta: Type.String(),
-      partial: RuntimeAssistantMessageSchema,
+      toolCall: Type.Object({
+        type: Type.Literal("toolCall"),
+        id: Type.String(),
+        name: Type.String(),
+        arguments: Type.Record(Type.String(), JsonValueSchema),
+        thoughtSignature: Type.Optional(Type.String()),
+      }),
     }),
     Type.Object({
       type: Type.Literal("toolcall_end"),
@@ -267,6 +281,26 @@ export const AgentSessionMessageSchema = Type.Union([
   RuntimeAssistantMessageSchema,
 ]);
 
+const JsonPatchPathSchema = Type.Array(Type.Union([Type.String(), Type.Number()]));
+
+const ToolExecutionPartialPatchOperationSchema = Type.Union([
+  Type.Object({
+    op: Type.Literal("replace"),
+    path: JsonPatchPathSchema,
+    value: JsonValueSchema,
+  }),
+  Type.Object({
+    op: Type.Literal("remove"),
+    path: JsonPatchPathSchema,
+  }),
+  Type.Object({
+    op: Type.Literal("append_text"),
+    path: JsonPatchPathSchema,
+    start: Type.Number(),
+    delta: Type.String(),
+  }),
+]);
+
 export const ToolExecutionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("tool_execution_start"),
@@ -282,7 +316,13 @@ export const ToolExecutionSyncPatchPayloadSchema = Type.Union([
   Type.Object({
     type: Type.Literal("tool_execution_output_delta"),
     toolCallId: Type.String(),
+    start: Type.Number(),
     delta: Type.String(),
+  }),
+  Type.Object({
+    type: Type.Literal("tool_execution_partial_patch"),
+    toolCallId: Type.String(),
+    ops: Type.Array(ToolExecutionPartialPatchOperationSchema),
   }),
   Type.Object({
     type: Type.Literal("tool_execution_end"),

@@ -1,7 +1,7 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { JsonValue } from "../../json-schema.js";
 import type { SessionSyncEvent } from "../../schemas.js";
-import { appendToolOutputTextDelta } from "../../tool-output-text.js";
+import { applyToolPartialPatch, appendToolOutputTextDelta } from "../../tool-output-text.js";
 
 type ToolExecutionPatchPayload = Extract<
   Extract<SessionSyncEvent, { type: "patch" }>["patch"],
@@ -35,7 +35,28 @@ export function applyToolExecutionSyncPatch(input: {
   }
 
   if (input.payload.type === "tool_execution_output_delta") {
-    const partialResult = appendToolOutputDelta(activeExecution.partialResult, input.payload.delta);
+    const partialResult = appendToolOutputDelta(
+      activeExecution.partialResult,
+      input.payload.start,
+      input.payload.delta,
+    );
+    if (partialResult === undefined) {
+      return;
+    }
+
+    activeExecution.partialResult = partialResult;
+    input.applyAgentSessionEvent({
+      type: "tool_execution_update",
+      toolCallId: input.payload.toolCallId,
+      toolName: activeExecution.toolName,
+      args: activeExecution.args,
+      partialResult,
+    });
+    return;
+  }
+
+  if (input.payload.type === "tool_execution_partial_patch") {
+    const partialResult = applyToolPartialPatch(activeExecution.partialResult, input.payload.ops);
     if (partialResult === undefined) {
       return;
     }
@@ -73,6 +94,31 @@ export function applyToolExecutionSyncPatch(input: {
   });
 }
 
-function appendToolOutputDelta(current: JsonValue | undefined, delta: string) {
-  return appendToolOutputTextDelta(current, delta);
+function appendToolOutputDelta(current: JsonValue | undefined, start: number, delta: string) {
+  return isAppendableToolOutput(current) && current.content[0].text.length === start
+    ? appendToolOutputTextDelta(current, delta)
+    : undefined;
+}
+
+function isAppendableToolOutput(value: JsonValue | undefined): value is {
+  content: [{ type: "text"; text: string }];
+  details?: JsonValue;
+} {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const { content } = value;
+  if (!Array.isArray(content) || content.length !== 1) {
+    return false;
+  }
+
+  const [firstContent] = content;
+  return (
+    typeof firstContent === "object" &&
+    firstContent !== null &&
+    !Array.isArray(firstContent) &&
+    firstContent.type === "text" &&
+    typeof firstContent.text === "string"
+  );
 }

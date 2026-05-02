@@ -597,7 +597,7 @@ export class RemoteApiClient {
 
   async emitSessionCustomEvent(
     sessionId: string,
-    body: { channel: string; data: JsonValue },
+    body: { channel: string; data: JsonValue; originConnectionId?: string },
   ): Promise<void> {
     await this.postSessionRoute((headers) =>
       this.rpcClient.sessions[":sessionId"]["extension-event"].$post(
@@ -605,6 +605,10 @@ export class RemoteApiClient {
         { headers },
       ),
     );
+  }
+
+  readConnectionId(): string | undefined {
+    return this.connectionId;
   }
 
   async readSessionSync(

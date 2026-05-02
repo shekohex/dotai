@@ -230,6 +230,7 @@ export async function applySessionSyncPatch(input: {
   handleExtensionEvent: (event: ForwardableRemoteExtensionEvent) => void;
   isForwardableRemoteExtensionEvent: (value: unknown) => value is ForwardableRemoteExtensionEvent;
   emitExtensionCustom: (channel: string, data: JsonValue) => void;
+  localConnectionId?: string;
   handleUiRequest: (request: ExtensionUiRequestEventPayload) => Promise<void>;
   cancelUiRequest: (requestId: string) => void;
   handleExtensionError: (error: string) => void;
@@ -281,6 +282,12 @@ export async function applySessionSyncPatch(input: {
       input.handleAgentSessionEvent(toAgentLifecycleEvent(input.patch.payload));
       return;
     case "extension.custom":
+      if (
+        input.localConnectionId !== undefined &&
+        input.patch.payload.originConnectionId === input.localConnectionId
+      ) {
+        break;
+      }
       input.emitExtensionCustom(input.patch.payload.channel, input.patch.payload.data);
       return;
     case "extension.event":
@@ -370,26 +377,16 @@ function applyAssistantMessageSyncEvent(
   >,
 ): AssistantMessage {
   if (event.type === "toolcall_start" || event.type === "toolcall_delta") {
-    return event.partial;
+    const baseMessage = currentStreamingMessage ?? createFallbackAssistantMessage();
+    const nextContent = [...baseMessage.content];
+    nextContent[event.contentIndex] = event.toolCall;
+    return {
+      ...baseMessage,
+      content: nextContent,
+    };
   }
 
-  const baseMessage = currentStreamingMessage ?? {
-    role: "assistant" as const,
-    content: [],
-    api: "remote",
-    provider: "remote",
-    model: "remote",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "toolUse" as const,
-    timestamp: Date.now(),
-  };
+  const baseMessage = currentStreamingMessage ?? createFallbackAssistantMessage();
 
   const nextContent = [...baseMessage.content];
   switch (event.type) {
@@ -432,6 +429,26 @@ function applyAssistantMessageSyncEvent(
   return {
     ...baseMessage,
     content: nextContent,
+  };
+}
+
+function createFallbackAssistantMessage(): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: "remote",
+    provider: "remote",
+    model: "remote",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
+    timestamp: Date.now(),
   };
 }
 

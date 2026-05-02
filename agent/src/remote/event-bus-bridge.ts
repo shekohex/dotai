@@ -10,6 +10,7 @@ export const RemoteCustomExtensionEventPayloadSchema = Type.Object(
   {
     channel: Type.String({ minLength: 1 }),
     data: JsonValueSchema,
+    originConnectionId: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );
@@ -120,7 +121,7 @@ function hasEventBusMethod(
 
 export function parseRemoteCustomExtensionEventPayload(
   value: unknown,
-): { channel: string; data: JsonValue } | undefined {
+): { channel: string; data: JsonValue; originConnectionId?: string } | undefined {
   if (!Value.Check(RemoteCustomExtensionEventPayloadSchema, value)) {
     return undefined;
   }

@@ -37,12 +37,9 @@ import {
   appendDurableExtensionEvent,
   buildDurableExtensionState,
   createDurableExtensionRemovalEvent,
-  REMOTE_BASH_STATE_ENTRY,
-  REMOTE_COMPACTION_STATE_ENTRY,
-  REMOTE_QUEUE_STATE_ENTRY,
-  REMOTE_RETRY_STATE_ENTRY,
+  REMOTE_DURABLE_EXTENSION_STATE_ENTRY,
+  REMOTE_RUNTIME_TRANSITION_ENTRY,
   REMOTE_SESSION_VERSION_ENTRY,
-  REMOTE_STREAMING_STATE_ENTRY,
   readDurableExtensionEvents,
   restoreDurableRuntimeDomainState,
 } from "../src/remote/session/durable-runtime-state.ts";
@@ -1502,7 +1499,11 @@ async function waitForRemoteSessionMessageCount(
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     const snapshot = await client.getSessionSnapshot(sessionId);
-    if (snapshot.status === "idle" && snapshot.sessionStats.totalMessages >= expectedCount) {
+    if (
+      snapshot.status === "idle" &&
+      (snapshot.transcript.length >= expectedCount ||
+        snapshot.sessionStats.totalMessages >= expectedCount)
+    ) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -2186,6 +2187,7 @@ timedTest("session sync assistant patches send minimal text deltas", () => {
         assistantMessageEvent: {
           type: "text_delta",
           contentIndex: 0,
+          start: 7,
           delta: " answer",
         },
       },
@@ -2280,12 +2282,367 @@ timedTest("session sync tool patches send output deltas when output grows", () =
       payload: {
         type: "tool_execution_output_delta",
         toolCallId: "tool-1",
+        start: 2,
         delta: " there",
       },
     });
   } finally {
     unsubscribe();
   }
+});
+
+timedTest("session sync tool patches send structured partial ops for nested changes", () => {
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
+  const runtime = {
+    cwd: "/tmp/runtime-tool-partial-patch",
+    dispose: async () => {},
+  } as never;
+  const record = createSessionRecord({
+    sessionId: "runtime-tool-partial-patch-session",
+    persistence: "ephemeral",
+    cwd: "/tmp/runtime-tool-partial-patch",
+    createdAt: 1,
+    runtime,
+    readRuntimeExtensionMetadata: () => [],
+  });
+  const sessions = new Map([[record.sessionId, record]]);
+  const toolEvents = [] as Array<Extract<SessionSyncEvent, { type: "patch" }>["patch"]>;
+  const unsubscribe = liveEvents.subscribe(sessionEventsStreamId(record.sessionId), (event) => {
+    const patchEvent = toSessionSyncPatchEvent(record.sessionId, event);
+    if (patchEvent?.type === "patch" && patchEvent.patch.patchType === "tool.execution") {
+      toolEvents.push(patchEvent.patch);
+    }
+  });
+
+  try {
+    handleRegistrySessionEvent({
+      sessionId: record.sessionId,
+      event: {
+        type: "tool_execution_start",
+        toolCallId: "tool-1",
+        toolName: "bash",
+        args: { command: "echo hi" },
+      },
+      sessions,
+      streams,
+      liveEvents,
+      now: 1,
+      createRunId: () => "run-1",
+      syncFromRuntime: () => {},
+      emitSessionSummaryUpdated: () => {},
+    });
+    handleRegistrySessionEvent({
+      sessionId: record.sessionId,
+      event: {
+        type: "tool_execution_update",
+        toolCallId: "tool-1",
+        toolName: "bash",
+        args: { command: "echo hi" },
+        partialResult: {
+          content: [{ type: "text", text: "hi" }],
+          details: { truncation: null, fullOutputPath: null },
+        },
+      },
+      sessions,
+      streams,
+      liveEvents,
+      now: 2,
+      createRunId: () => "run-1",
+      syncFromRuntime: () => {},
+      emitSessionSummaryUpdated: () => {},
+    });
+    handleRegistrySessionEvent({
+      sessionId: record.sessionId,
+      event: {
+        type: "tool_execution_update",
+        toolCallId: "tool-1",
+        toolName: "bash",
+        args: { command: "echo hi" },
+        partialResult: {
+          content: [{ type: "text", text: "hi" }],
+          details: { truncation: "tail", fullOutputPath: null },
+        },
+      },
+      sessions,
+      streams,
+      liveEvents,
+      now: 3,
+      createRunId: () => "run-1",
+      syncFromRuntime: () => {},
+      emitSessionSummaryUpdated: () => {},
+    });
+
+    expect(toolEvents.at(-1)).toEqual({
+      patchType: "tool.execution",
+      payload: {
+        type: "tool_execution_partial_patch",
+        toolCallId: "tool-1",
+        ops: [
+          {
+            op: "replace",
+            path: ["details", "truncation"],
+            value: "tail",
+          },
+        ],
+      },
+    });
+  } finally {
+    unsubscribe();
+  }
+});
+
+timedTest("snapshot handoff keeps assistant trailing duplicate substring delta", () => {
+  const patchEvent: SessionSyncEvent = {
+    type: "patch",
+    sessionId: "session-1",
+    version: "3",
+    patch: {
+      patchType: "assistant.message",
+      payload: {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "abc",
+        },
+      },
+    },
+  };
+
+  const snapshot = {
+    version: "3",
+    transcript: [],
+    live: {
+      queuedSteeringMessages: [],
+      queuedFollowUpMessages: [],
+      retryAttempt: 0,
+      activeToolExecutions: [],
+      streamingMessage: {
+        role: "assistant",
+        content: [{ type: "text", text: "abc...earlier...abc" }],
+        api: "responses",
+        provider: "demo",
+        model: "demo",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "toolUse",
+        timestamp: 1,
+      },
+    },
+    queue: { depth: 0, nextSequence: 0, steering: [], followUp: [] },
+    retry: { status: "idle" },
+    compaction: { status: "idle" },
+    streamingState: "streaming",
+    isBashRunning: false,
+    hasPendingBashMessages: false,
+    pendingToolCalls: [],
+    interruptedRuntimeDomains: {
+      queue: false,
+      retry: false,
+      compaction: false,
+      bash: false,
+      streaming: false,
+    },
+    pendingUiRequests: [],
+    uiState: { statuses: [], widgets: [] },
+    durableExtensionState: [],
+    errorMessage: null,
+    model: "demo/demo",
+    thinkingLevel: "medium",
+    activeTools: [],
+    autoCompactionEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
+    resources: { prompts: [], rules: [], mcps: [] },
+    settings: { global: {}, project: {} },
+    availableModels: [],
+    modelSettings: {
+      defaultProvider: null,
+      defaultModel: null,
+      defaultThinkingLevel: null,
+      enabledModels: null,
+    },
+    sessionStats: {
+      sessionId: "session-1",
+      turns: 0,
+      messages: 0,
+      toolCalls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cost: 0,
+    },
+    usageCost: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    cwd: "/tmp",
+    status: "running",
+    presence: [],
+    extensions: [],
+  } as SessionSnapshot;
+
+  expect(isPatchCoveredBySnapshot(patchEvent, snapshot)).toBe(false);
+});
+
+timedTest("snapshot handoff keeps tool trailing duplicate substring delta", () => {
+  const patchEvent: SessionSyncEvent = {
+    type: "patch",
+    sessionId: "session-1",
+    version: "3",
+    patch: {
+      patchType: "tool.execution",
+      payload: {
+        type: "tool_execution_output_delta",
+        toolCallId: "tool-1",
+        delta: "abc",
+      },
+    },
+  };
+
+  const snapshot = {
+    version: "3",
+    transcript: [],
+    live: {
+      queuedSteeringMessages: [],
+      queuedFollowUpMessages: [],
+      retryAttempt: 0,
+      streamingMessage: undefined,
+      activeToolExecutions: [
+        {
+          toolCallId: "tool-1",
+          toolName: "bash",
+          args: { command: "echo" },
+          partialResult: {
+            content: [{ type: "text", text: "abc...earlier...abc" }],
+            details: { truncation: null, fullOutputPath: null },
+          },
+        },
+      ],
+    },
+    queue: { depth: 0, nextSequence: 0, steering: [], followUp: [] },
+    retry: { status: "idle" },
+    compaction: { status: "idle" },
+    streamingState: "idle",
+    isBashRunning: false,
+    hasPendingBashMessages: false,
+    pendingToolCalls: ["tool-1"],
+    interruptedRuntimeDomains: {
+      queue: false,
+      retry: false,
+      compaction: false,
+      bash: false,
+      streaming: false,
+    },
+    pendingUiRequests: [],
+    uiState: { statuses: [], widgets: [] },
+    durableExtensionState: [],
+    errorMessage: null,
+    model: "demo/demo",
+    thinkingLevel: "medium",
+    activeTools: [],
+    autoCompactionEnabled: false,
+    steeringMode: "all",
+    followUpMode: "all",
+    resources: { prompts: [], rules: [], mcps: [] },
+    settings: { global: {}, project: {} },
+    availableModels: [],
+    modelSettings: {
+      defaultProvider: null,
+      defaultModel: null,
+      defaultThinkingLevel: null,
+      enabledModels: null,
+    },
+    sessionStats: {
+      sessionId: "session-1",
+      turns: 0,
+      messages: 0,
+      toolCalls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cost: 0,
+    },
+    usageCost: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    cwd: "/tmp",
+    status: "running",
+    presence: [],
+    extensions: [],
+  } as SessionSnapshot;
+
+  expect(isPatchCoveredBySnapshot(patchEvent, snapshot)).toBe(false);
+});
+
+timedTest("assistant toolcall sync patch drops partial payload on delta path", () => {
+  const event = {
+    eventId: "1",
+    sessionId: "session-1",
+    streamOffset: "0",
+    sessionVersion: "3",
+    ts: 1,
+    kind: "agent_session_event",
+    payload: {
+      type: "message_update",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: {} }],
+        api: "responses",
+        provider: "demo",
+        model: "demo",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "toolUse",
+        timestamp: 1,
+      },
+      assistantMessageEvent: {
+        type: "toolcall_delta",
+        contentIndex: 0,
+        delta: '{"command":"ls"}',
+        partial: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "tool-1",
+              name: "bash",
+              arguments: { command: "ls" },
+            },
+          ],
+          api: "responses",
+          provider: "demo",
+          model: "demo",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "toolUse",
+          timestamp: 1,
+        },
+      },
+    },
+  } as const;
+
+  const patch = toSessionSyncPatchEvent("session-1", event);
+  expect(patch?.type).toBe("patch");
+  expect(JSON.stringify(patch)).not.toContain("partial");
 });
 
 timedTest("session sync patch schema no longer accepts agent.event", () => {
@@ -2606,24 +2963,8 @@ timedTest("session sync drains only uncovered buffered live patches after snapsh
         assistantMessageEvent: {
           type: "text_delta",
           contentIndex: 0,
+          start: 0,
           delta: "partial",
-          partial: {
-            role: "assistant",
-            content: [{ type: "text", text: "partial" }],
-            api: "remote",
-            provider: "remote",
-            model: "remote",
-            usage: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 0,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-            },
-            stopReason: "toolUse",
-            timestamp: 1,
-          },
         },
       },
     });
@@ -2772,24 +3113,8 @@ timedTest(
           assistantMessageEvent: {
             type: "text_delta",
             contentIndex: 0,
+            start: 0,
             delta: "partial",
-            partial: {
-              role: "assistant",
-              content: [{ type: "text", text: "partial" }],
-              api: "remote",
-              provider: "remote",
-              model: "remote",
-              usage: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-                totalTokens: 0,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              },
-              stopReason: "toolUse",
-              timestamp: 1,
-            },
           },
         },
       });
@@ -2965,24 +3290,8 @@ timedTest("active snapshot suppresses older buffered assistant partials", () => 
         assistantMessageEvent: {
           type: "text_delta",
           contentIndex: 0,
+          start: 0,
           delta: "partial",
-          partial: {
-            role: "assistant",
-            content: [{ type: "text", text: "partial" }],
-            api: "responses",
-            provider: "demo",
-            model: "demo",
-            usage: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 0,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-            },
-            stopReason: "toolUse",
-            timestamp: 1,
-          },
         },
       },
     },
@@ -3018,6 +3327,108 @@ timedTest("active snapshot suppresses older buffered assistant partials", () => 
       },
     }),
   ).toBe(true);
+});
+
+timedTest("snapshot handoff keeps assistant later duplicate text delta", () => {
+  const patchEvent: SessionSyncEvent = {
+    type: "patch",
+    sessionId: "session-1",
+    version: "5",
+    patch: {
+      patchType: "assistant.message",
+      payload: {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          start: 14,
+          delta: "abc",
+        },
+      },
+    },
+  };
+
+  expect(
+    isPatchCoveredBySnapshot(patchEvent, {
+      ...buildEmptySnapshot(),
+      version: "5",
+      streamingState: "streaming",
+      live: {
+        queuedSteeringMessages: [],
+        queuedFollowUpMessages: [],
+        retryAttempt: 0,
+        streamingMessage: {
+          role: "assistant",
+          content: [{ type: "text", text: "abc...earlier...xyz" }],
+          api: "responses",
+          provider: "demo",
+          model: "demo",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "toolUse",
+          timestamp: 2,
+        },
+        activeToolExecutions: [],
+      },
+    }),
+  ).toBe(false);
+});
+
+timedTest("snapshot handoff keeps assistant later duplicate thinking delta", () => {
+  const patchEvent: SessionSyncEvent = {
+    type: "patch",
+    sessionId: "session-1",
+    version: "5",
+    patch: {
+      patchType: "assistant.message",
+      payload: {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "thinking_delta",
+          contentIndex: 0,
+          start: 14,
+          delta: "abc",
+        },
+      },
+    },
+  };
+
+  expect(
+    isPatchCoveredBySnapshot(patchEvent, {
+      ...buildEmptySnapshot(),
+      version: "5",
+      streamingState: "streaming",
+      live: {
+        queuedSteeringMessages: [],
+        queuedFollowUpMessages: [],
+        retryAttempt: 0,
+        streamingMessage: {
+          role: "assistant",
+          content: [{ type: "thinking", thinking: "abc...earlier...xyz" }],
+          api: "responses",
+          provider: "demo",
+          model: "demo",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "toolUse",
+          timestamp: 2,
+        },
+        activeToolExecutions: [],
+      },
+    }),
+  ).toBe(false);
 });
 
 timedTest("completed snapshot suppresses stale tool progress patches", () => {
@@ -3099,29 +3510,11 @@ timedTest("active snapshot suppresses equal buffered assistant tool call content
         assistantMessageEvent: {
           type: "toolcall_start",
           contentIndex: 0,
-          partial: {
-            role: "assistant",
-            content: [
-              {
-                type: "toolCall",
-                id: "tool-1",
-                name: "read",
-                arguments: { path: "README.md" },
-              },
-            ],
-            api: "responses",
-            provider: "demo",
-            model: "demo",
-            usage: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 0,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-            },
-            stopReason: "toolUse",
-            timestamp: 1,
+          toolCall: {
+            type: "toolCall",
+            id: "tool-1",
+            name: "read",
+            arguments: { path: "README.md" },
           },
         },
       },
@@ -3191,6 +3584,40 @@ timedTest("ephemeral custom extension events stay live-only", () => {
 
   expect(liveEventsSeen).toEqual(["demo:ephemeral"]);
   unsubscribe();
+});
+
+timedTest("origin client suppresses echoed custom extension patch", async () => {
+  const seen: Array<{ channel: string; data: unknown }> = [];
+
+  await applySessionSyncPatch({
+    patch: {
+      patchType: "extension.custom",
+      payload: {
+        channel: "demo:custom",
+        data: { sync: "replaceable", replaceKey: "slot", value: 1 },
+        originConnectionId: "conn-1",
+      },
+    } as Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+    handleAgentSessionEvent: () => {},
+    handleAssistantMessagePatch: () => {},
+    handleToolExecutionPatch: () => {},
+    applySessionStatePatch: () => {},
+    handleExtensionEvent: () => {},
+    isForwardableRemoteExtensionEvent: () => false,
+    emitExtensionCustom: (channel, data) => {
+      seen.push({ channel, data });
+    },
+    handleUiRequest: async () => {},
+    cancelUiRequest: () => {},
+    handleExtensionError: () => {},
+    handleBashStart: () => {},
+    handleBashChunk: () => {},
+    handleBashEnd: () => {},
+    handleBashFlush: () => {},
+    localConnectionId: "conn-1",
+  });
+
+  expect(seen).toEqual([]);
 });
 
 timedTest("durable store append stays silent until live bus publish seam runs", () => {
@@ -3922,25 +4349,45 @@ timedTest("extension custom event route rejects missing json payload data", asyn
 
 timedTest("durable runtime state rebuild marks interrupted domains on restart", () => {
   const sessionManager = SessionManager.inMemory(process.cwd());
-  sessionManager.appendCustomEntry(REMOTE_QUEUE_STATE_ENTRY, {
-    depth: 2,
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "queue",
+    op: "depth_delta",
+    delta: 2,
+    updatedAt: 1,
+  });
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "queue",
+    op: "next_sequence_set",
     nextSequence: 7,
     updatedAt: 1,
   });
-  sessionManager.appendCustomEntry(REMOTE_RETRY_STATE_ENTRY, {
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "retry",
+    op: "status_set",
     status: "running",
     updatedAt: 1,
   });
-  sessionManager.appendCustomEntry(REMOTE_COMPACTION_STATE_ENTRY, {
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "compaction",
+    op: "status_set",
     status: "running",
     updatedAt: 1,
   });
-  sessionManager.appendCustomEntry(REMOTE_BASH_STATE_ENTRY, {
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "bash",
+    op: "running_set",
     isRunning: true,
+    updatedAt: 1,
+  });
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "bash",
+    op: "pending_messages_set",
     hasPendingMessages: true,
     updatedAt: 1,
   });
-  sessionManager.appendCustomEntry(REMOTE_STREAMING_STATE_ENTRY, {
+  sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+    domain: "streaming",
+    op: "status_set",
     status: "streaming",
     updatedAt: 1,
   });
@@ -4143,7 +4590,13 @@ timedTest("durable extension events persist to session history", () => {
   });
 
   expect(readDurableExtensionEvents(record)).toEqual([
-    { op: "upsert", channel: "demo:durable", data: { sync: "durable", value: 1 }, ts: 1 },
+    {
+      op: "upsert",
+      stateKey: "demo:durable",
+      channel: "demo:durable",
+      data: { sync: "durable", value: 1 },
+      ts: 1,
+    },
   ]);
 });
 
@@ -4247,8 +4700,13 @@ timedTest("command acceptance persists queue state after onAccepted mutation", a
     entriesAfter.some(
       (entry) =>
         entry.type === "custom" &&
-        entry.customType === REMOTE_QUEUE_STATE_ENTRY &&
-        (entry.data as { depth?: number }).depth === 1,
+        entry.customType === REMOTE_RUNTIME_TRANSITION_ENTRY &&
+        typeof entry.data === "object" &&
+        entry.data !== null &&
+        !Array.isArray(entry.data) &&
+        entry.data.domain === "queue" &&
+        entry.data.op === "depth_delta" &&
+        entry.data.delta === 1,
     ),
   ).toBe(true);
 });
@@ -5979,16 +6437,7 @@ test(
         expect(createBResponse.status).toBe(201);
         const sessionBId = ((await createBResponse.json()) as { sessionId: string }).sessionId;
 
-        const persistBResponse = await remote.app.request(`/v1/sessions/${sessionBId}/prompt`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ text: "Persist before delete" }),
-        });
-        expect(persistBResponse.status).toBe(202);
-        await waitForRemoteSessionMessageCount(apiClient, sessionBId, 2);
+        await waitForRemoteSessionIdle(apiClient, sessionBId);
 
         const deleteLoadedResponse = await remote.app.request(`/v1/sessions/${sessionBId}`, {
           method: "DELETE",

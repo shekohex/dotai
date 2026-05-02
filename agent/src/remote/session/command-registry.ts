@@ -82,6 +82,7 @@ export function createSessionRecord(input: {
     isBashRunning: false,
     hasPendingBashMessages: false,
     pendingToolCalls: [],
+    durableExtensionState: new Map(),
     lastDurableSessionVersion: 0,
     interruptedRuntimeDomains: createInitialInterruptedRuntimeDomains(),
     errorMessage: null,

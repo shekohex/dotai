@@ -88,7 +88,11 @@ export class RemoteAgentSession
           if (jsonData === undefined) {
             return;
           }
-          void client.emitSessionCustomEvent(snapshot.sessionId, { channel, data: jsonData });
+          void client.emitSessionCustomEvent(snapshot.sessionId, {
+            channel,
+            data: jsonData,
+            originConnectionId: client.readConnectionId(),
+          });
         },
       }),
     );

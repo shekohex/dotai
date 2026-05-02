@@ -337,6 +337,7 @@ export abstract class RemoteAgentSessionRuntimeInternals extends RemoteAgentSess
           "RemoteAgentSessionRuntimeInternals.handleSyncPatch",
         );
       },
+      localConnectionId: this.client.readConnectionId(),
       handleUiRequest: (request) => this.handleUiRequest(request),
       cancelUiRequest: (requestId) => {
         cancelRemoteUiRequest(this.pendingInteractiveRequests, requestId);

@@ -6,10 +6,7 @@ import {
   readRemoteExtensionSyncInfo,
   readSessionSyncPatchReplaceKey,
 } from "../session-sync-metadata.js";
-import {
-  AgentLifecycleEventPayloadSchema,
-  AssistantMessageSyncPatchPayloadSchema,
-} from "../schemas-stream.js";
+import { AgentLifecycleEventPayloadSchema } from "../schemas-stream.js";
 import {
   SessionSyncEventSchema,
   type SessionSyncEvent,
@@ -286,7 +283,15 @@ function isToolExecutionPatchCoveredBySnapshot(
       return !snapshot.pendingToolCalls.includes(payload.toolCallId);
     }
 
-    return toolOutputDeltaCoveredBySnapshot(activeExecution.partialResult, payload.delta);
+    return toolOutputDeltaCoveredBySnapshot(
+      activeExecution.partialResult,
+      payload.delta,
+      payload.start,
+    );
+  }
+
+  if (payload.type === "tool_execution_partial_patch") {
+    return false;
   }
 
   if (activeExecution !== undefined) {
@@ -302,9 +307,10 @@ function isToolExecutionPatchCoveredBySnapshot(
 function toolOutputDeltaCoveredBySnapshot(
   partialResult: JsonValue | undefined,
   delta: string,
+  start: number,
 ): boolean {
   const text = readToolOutputText(partialResult);
-  return text?.includes(delta) ?? false;
+  return text !== undefined && text.slice(start, start + delta.length) === delta;
 }
 
 function isAssistantMessagePatchCoveredBySnapshot(
@@ -346,9 +352,10 @@ function readAssistantPatchEventMessage(
 ): Extract<SessionSyncEvent, { type: "snapshot" }>["snapshot"]["live"]["streamingMessage"] | null {
   switch (event.type) {
     case "start":
+      return event.partial;
     case "toolcall_start":
     case "toolcall_delta":
-      return event.partial;
+      return null;
     case "done":
       return event.message;
     case "error":
@@ -389,21 +396,35 @@ function assistantMessageEventCoveredBySnapshot(
     case "text_start":
       return snapshotBlock?.type === "text";
     case "text_delta":
-      return snapshotBlock?.type === "text" && snapshotBlock.text.includes(patchEvent.delta);
+      return (
+        snapshotBlock?.type === "text" &&
+        snapshotBlock.text.slice(patchEvent.start, patchEvent.start + patchEvent.delta.length) ===
+          patchEvent.delta
+      );
     case "text_end":
       return snapshotBlock?.type === "text" && snapshotBlock.text === patchEvent.content;
     case "thinking_start":
       return snapshotBlock?.type === "thinking";
     case "thinking_delta":
       return (
-        snapshotBlock?.type === "thinking" && snapshotBlock.thinking.includes(patchEvent.delta)
+        snapshotBlock?.type === "thinking" &&
+        snapshotBlock.thinking.slice(
+          patchEvent.start,
+          patchEvent.start + patchEvent.delta.length,
+        ) === patchEvent.delta
       );
     case "thinking_end":
       return snapshotBlock?.type === "thinking" && snapshotBlock.thinking === patchEvent.content;
     case "toolcall_start":
-      return assistantMessageCovers(snapshotMessage, patchEvent.partial);
+      return (
+        snapshotBlock?.type === "toolCall" &&
+        serializedSyncValue(snapshotBlock) === serializedSyncValue(patchEvent.toolCall)
+      );
     case "toolcall_delta":
-      return assistantMessageCovers(snapshotMessage, patchEvent.partial);
+      return (
+        snapshotBlock?.type === "toolCall" &&
+        serializedSyncValue(snapshotBlock) === serializedSyncValue(patchEvent.toolCall)
+      );
     case "toolcall_end":
       return (
         snapshotBlock?.type === "toolCall" &&
@@ -721,7 +742,7 @@ function isAssistantMessageUpdatePayload(
   Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
   { type: "message_update" }
 > & { message: { role: "assistant" } } {
-  return Value.Check(AssistantMessageSyncPatchPayloadSchema, payload);
+  return payload.type === "message_update" && payload.message.role === "assistant";
 }
 
 function isToolExecutionPayload(

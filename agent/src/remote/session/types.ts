@@ -110,6 +110,7 @@ export interface SessionRecord {
   isBashRunning: boolean;
   hasPendingBashMessages: boolean;
   pendingToolCalls: string[];
+  durableExtensionState: Map<string, { channel: string; data: JsonValue }>;
   lastDurableSessionVersion: number;
   interruptedRuntimeDomains: {
     queue: boolean;

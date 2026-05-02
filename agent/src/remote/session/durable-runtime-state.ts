@@ -1,58 +1,96 @@
 import type { SessionEntry, SessionManager } from "@mariozechner/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { asRecord } from "../../utils/unknown-data.js";
 import { readRemoteExtensionStateKey } from "../event-bus-bridge.js";
 import { JsonValueSchema, type JsonValue } from "../json-schema.js";
 import { readRemoteExtensionSyncInfo } from "../session-sync-metadata.js";
 import type { SessionRecord } from "./types.js";
 
-const RemoteQueueStateEntrySchema = Type.Object({
-  depth: Type.Number(),
+const RemoteQueueDepthTransitionSchema = Type.Object({
+  domain: Type.Literal("queue"),
+  op: Type.Literal("depth_delta"),
+  delta: Type.Number(),
+  updatedAt: Type.Number(),
+});
+
+const RemoteQueueSequenceTransitionSchema = Type.Object({
+  domain: Type.Literal("queue"),
+  op: Type.Literal("next_sequence_set"),
   nextSequence: Type.Number(),
   updatedAt: Type.Number(),
 });
 
-const RemoteRetryStateEntrySchema = Type.Object({
+const RemoteRetryTransitionSchema = Type.Object({
+  domain: Type.Literal("retry"),
+  op: Type.Literal("status_set"),
   status: Type.Union([Type.Literal("idle"), Type.Literal("running")]),
   updatedAt: Type.Number(),
 });
 
-const RemoteCompactionStateEntrySchema = Type.Object({
+const RemoteCompactionTransitionSchema = Type.Object({
+  domain: Type.Literal("compaction"),
+  op: Type.Literal("status_set"),
   status: Type.Union([Type.Literal("idle"), Type.Literal("running")]),
   updatedAt: Type.Number(),
 });
 
-const RemoteBashStateEntrySchema = Type.Object({
+const RemoteBashRunningTransitionSchema = Type.Object({
+  domain: Type.Literal("bash"),
+  op: Type.Literal("running_set"),
   isRunning: Type.Boolean(),
+  updatedAt: Type.Number(),
+});
+
+const RemoteBashPendingMessagesTransitionSchema = Type.Object({
+  domain: Type.Literal("bash"),
+  op: Type.Literal("pending_messages_set"),
   hasPendingMessages: Type.Boolean(),
   updatedAt: Type.Number(),
 });
 
-const RemoteStreamingStateEntrySchema = Type.Object({
+const RemoteStreamingTransitionSchema = Type.Object({
+  domain: Type.Literal("streaming"),
+  op: Type.Literal("status_set"),
   status: Type.Union([Type.Literal("idle"), Type.Literal("streaming")]),
   updatedAt: Type.Number(),
 });
+
+export const RemoteRuntimeTransitionEntrySchema = Type.Union([
+  RemoteQueueDepthTransitionSchema,
+  RemoteQueueSequenceTransitionSchema,
+  RemoteRetryTransitionSchema,
+  RemoteCompactionTransitionSchema,
+  RemoteBashRunningTransitionSchema,
+  RemoteBashPendingMessagesTransitionSchema,
+  RemoteStreamingTransitionSchema,
+]);
 
 const RemoteSessionVersionEntrySchema = Type.Object({
   version: Type.Number(),
   updatedAt: Type.Number(),
 });
 
-const RemoteDurableExtensionEventEntrySchema = Type.Object({
+const RemoteDurableExtensionStateEntrySchema = Type.Object({
   op: Type.Union([Type.Literal("upsert"), Type.Literal("remove")]),
+  stateKey: Type.String(),
   channel: Type.String(),
   data: JsonValueSchema,
   ts: Type.Number(),
 });
 
+export const REMOTE_RUNTIME_TRANSITION_ENTRY = "remote-runtime-transition";
+export const REMOTE_SESSION_VERSION_ENTRY = "remote-session-version";
+export const REMOTE_DURABLE_EXTENSION_STATE_ENTRY = "remote-durable-extension-state";
 export const REMOTE_QUEUE_STATE_ENTRY = "remote-queue-state";
 export const REMOTE_RETRY_STATE_ENTRY = "remote-retry-state";
 export const REMOTE_COMPACTION_STATE_ENTRY = "remote-compaction-state";
 export const REMOTE_BASH_STATE_ENTRY = "remote-bash-state";
 export const REMOTE_STREAMING_STATE_ENTRY = "remote-streaming-state";
-export const REMOTE_SESSION_VERSION_ENTRY = "remote-session-version";
 export const REMOTE_DURABLE_EXTENSION_EVENT_ENTRY = "remote-durable-extension-event";
 export { RemoteSessionVersionEntrySchema };
+
+type RuntimeTransition = Static<typeof RemoteRuntimeTransitionEntrySchema>;
 
 type DurableRuntimeDomainState = {
   queue: { depth: number; nextSequence: number; updatedAt: number };
@@ -62,6 +100,41 @@ type DurableRuntimeDomainState = {
   streaming: { status: "idle" | "streaming"; updatedAt: number };
   version: { version: number; updatedAt: number };
 };
+
+type DurableExtensionStateTransition = {
+  op: "upsert" | "remove";
+  stateKey: string;
+  channel: string;
+  data: JsonValue;
+  ts: number;
+};
+
+type RemoteDurableSessionManagerWriter = SessionManager & {
+  appendCustomEntry: (customType: string, data: unknown) => void;
+  getEntries: () => SessionEntry[];
+};
+
+type RemoteDurableSessionManagerReader = SessionManager & {
+  getEntries: () => SessionEntry[];
+};
+
+function isRemoteDurableSessionManagerWriter(
+  sessionManager: SessionManager | undefined,
+): sessionManager is RemoteDurableSessionManagerWriter {
+  const candidate = asRecord(sessionManager);
+  return (
+    candidate !== undefined &&
+    typeof candidate.appendCustomEntry === "function" &&
+    typeof candidate.getEntries === "function"
+  );
+}
+
+function isRemoteDurableSessionManagerReader(
+  sessionManager: SessionManager | undefined,
+): sessionManager is RemoteDurableSessionManagerReader {
+  const candidate = asRecord(sessionManager);
+  return candidate !== undefined && typeof candidate.getEntries === "function";
+}
 
 export function persistDurableRuntimeDomainState(input: {
   record: SessionRecord;
@@ -74,32 +147,13 @@ export function persistDurableRuntimeDomainState(input: {
     return;
   }
 
-  sessionManager.appendCustomEntry(REMOTE_QUEUE_STATE_ENTRY, {
-    depth: input.record.queue.depth,
-    nextSequence: input.record.queue.nextSequence,
-    updatedAt: input.updatedAt,
-  });
-  sessionManager.appendCustomEntry(REMOTE_RETRY_STATE_ENTRY, {
-    status: input.record.retry.status === "running" ? "running" : "idle",
-    updatedAt: input.updatedAt,
-  });
-  sessionManager.appendCustomEntry(REMOTE_COMPACTION_STATE_ENTRY, {
-    status: input.record.compaction.status === "running" ? "running" : "idle",
-    updatedAt: input.updatedAt,
-  });
-  sessionManager.appendCustomEntry(REMOTE_BASH_STATE_ENTRY, {
-    isRunning: input.record.isBashRunning,
-    hasPendingMessages: input.record.hasPendingBashMessages,
-    updatedAt: input.updatedAt,
-  });
-  sessionManager.appendCustomEntry(REMOTE_STREAMING_STATE_ENTRY, {
-    status: input.record.streamingState === "streaming" ? "streaming" : "idle",
-    updatedAt: input.updatedAt,
-  });
-  sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
-    version: input.record.lastDurableSessionVersion,
-    updatedAt: input.updatedAt,
-  });
+  ensureDurableExtensionStateMap(input.record);
+  const previous = readDurableRuntimeDomainState(sessionManager.getEntries());
+  const next = readRuntimeStateFromRecord(input.record, input.updatedAt);
+  appendRuntimeTransitions(sessionManager, previous, next);
+  if (previous.version.version !== next.version.version) {
+    sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, next.version);
+  }
 }
 
 export function restoreDurableRuntimeDomainState(record: SessionRecord, now: number): void {
@@ -110,17 +164,17 @@ export function restoreDurableRuntimeDomainState(record: SessionRecord, now: num
     return;
   }
 
+  ensureDurableExtensionStateMap(record);
   const persistedState = readDurableRuntimeDomainState(sessionManager.getEntries());
-  if (persistedState.version !== undefined) {
-    record.lastDurableSessionVersion = persistedState.version.version;
-  }
+  restoreDurableExtensionState(record);
+  record.lastDurableSessionVersion = persistedState.version.version;
+
   const interruptedRuntimeDomains = {
-    queue: persistedState.queue?.depth !== undefined && persistedState.queue.depth > 0,
-    retry: persistedState.retry?.status === "running",
-    compaction: persistedState.compaction?.status === "running",
-    bash:
-      persistedState.bash?.isRunning === true || persistedState.bash?.hasPendingMessages === true,
-    streaming: persistedState.streaming?.status === "streaming",
+    queue: persistedState.queue.depth > 0,
+    retry: persistedState.retry.status === "running",
+    compaction: persistedState.compaction.status === "running",
+    bash: persistedState.bash.isRunning || persistedState.bash.hasPendingMessages,
+    streaming: persistedState.streaming.status === "streaming",
   };
 
   record.interruptedRuntimeDomains = interruptedRuntimeDomains;
@@ -142,13 +196,7 @@ export function restoreDurableRuntimeDomainState(record: SessionRecord, now: num
     record.hasPendingBashMessages = false;
   }
 
-  if (
-    interruptedRuntimeDomains.queue ||
-    interruptedRuntimeDomains.retry ||
-    interruptedRuntimeDomains.compaction ||
-    interruptedRuntimeDomains.bash ||
-    interruptedRuntimeDomains.streaming
-  ) {
+  if (Object.values(interruptedRuntimeDomains).some(Boolean)) {
     record.activeRun = {
       runId: "interrupted",
       status: "interrupted",
@@ -173,26 +221,28 @@ export function appendDurableExtensionEvent(input: {
     return;
   }
 
+  ensureDurableExtensionStateMap(input.record);
   const syncInfo = readRemoteExtensionSyncInfo(input.channel, input.data);
+  const transition: DurableExtensionStateTransition = {
+    op: syncInfo.deleted ? "remove" : "upsert",
+    stateKey: syncInfo.stateKey,
+    channel: input.channel,
+    data: input.data,
+    ts: input.ts,
+  };
+
   input.record.lastDurableSessionVersion += 1;
   sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
     version: input.record.lastDurableSessionVersion,
     updatedAt: input.ts,
   });
-  sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_EVENT_ENTRY, {
-    op: syncInfo.deleted ? "remove" : "upsert",
-    channel: input.channel,
-    data: input.data,
-    ts: input.ts,
-  });
+  sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_STATE_ENTRY, transition);
+  applyDurableExtensionTransition(input.record.durableExtensionState, transition);
 }
 
-export function readDurableExtensionEvents(record: SessionRecord): Array<{
-  op: "upsert" | "remove";
-  channel: string;
-  data: JsonValue;
-  ts: number;
-}> {
+export function readDurableExtensionEvents(
+  record: SessionRecord,
+): DurableExtensionStateTransition[] {
   const sessionManager = requireRemoteDurableSessionManagerReader(
     record.runtime.session?.sessionManager,
   );
@@ -200,124 +250,101 @@ export function readDurableExtensionEvents(record: SessionRecord): Array<{
     return [];
   }
 
-  const result: Array<{ op: "upsert" | "remove"; channel: string; data: JsonValue; ts: number }> =
-    [];
-  for (const entry of sessionManager.getEntries()) {
-    if (
-      entry.type === "custom" &&
-      entry.customType === REMOTE_DURABLE_EXTENSION_EVENT_ENTRY &&
-      Value.Check(RemoteDurableExtensionEventEntrySchema, entry.data)
-    ) {
-      result.push(Value.Parse(RemoteDurableExtensionEventEntrySchema, entry.data));
-    }
-  }
-
-  return result;
+  return readDurableExtensionTransitions(sessionManager.getEntries());
 }
 
 export function buildDurableExtensionState(record: SessionRecord): Array<{
   channel: string;
   data: JsonValue;
 }> {
-  const projectedByKey = new Map<string, { channel: string; data: JsonValue }>();
-  const orderedKeys: string[] = [];
-
-  for (const event of readDurableExtensionEvents(record)) {
-    const key = readDurableExtensionProjectionKey(event.channel, event.data);
-    if (event.op === "remove") {
-      projectedByKey.delete(key);
-      const existingIndex = orderedKeys.indexOf(key);
-      if (existingIndex >= 0) {
-        orderedKeys.splice(existingIndex, 1);
-      }
-      continue;
-    }
-    if (!projectedByKey.has(key)) {
-      orderedKeys.push(key);
-    }
-    projectedByKey.set(key, {
-      channel: event.channel,
-      data: structuredClone(event.data),
-    });
+  const durableExtensionState = ensureDurableExtensionStateMap(record);
+  if (durableExtensionState.size === 0) {
+    restoreDurableExtensionState(record);
   }
 
-  return orderedKeys
-    .map((key) => projectedByKey.get(key))
-    .filter((value): value is { channel: string; data: JsonValue } => value !== undefined);
+  return [...durableExtensionState.values()].map((value) => ({
+    channel: value.channel,
+    data: structuredClone(value.data),
+  }));
 }
 
-function requireRemoteDurableSessionManagerWriter(sessionManager: SessionManager | undefined):
-  | (SessionManager & {
-      appendCustomEntry: (customType: string, data: unknown) => void;
-      getEntries: () => SessionEntry[];
-    })
-  | undefined {
-  if (
-    sessionManager === undefined ||
-    typeof sessionManager.appendCustomEntry !== "function" ||
-    typeof sessionManager.getEntries !== "function"
-  ) {
+function requireRemoteDurableSessionManagerWriter(
+  sessionManager: SessionManager | undefined,
+): RemoteDurableSessionManagerWriter | undefined {
+  if (!isRemoteDurableSessionManagerWriter(sessionManager)) {
     return undefined;
   }
 
   return sessionManager;
 }
 
-function requireRemoteDurableSessionManagerReader(sessionManager: SessionManager | undefined):
-  | (SessionManager & {
-      getEntries: () => SessionEntry[];
-    })
-  | undefined {
-  if (sessionManager === undefined || typeof sessionManager.getEntries !== "function") {
+function requireRemoteDurableSessionManagerReader(
+  sessionManager: SessionManager | undefined,
+): RemoteDurableSessionManagerReader | undefined {
+  if (!isRemoteDurableSessionManagerReader(sessionManager)) {
     return undefined;
   }
 
   return sessionManager;
 }
 
-function readDurableRuntimeDomainState(
-  entries: SessionEntry[],
-): Partial<DurableRuntimeDomainState> {
-  const result: Partial<DurableRuntimeDomainState> = {};
+function readRuntimeStateFromRecord(
+  record: SessionRecord,
+  updatedAt: number,
+): DurableRuntimeDomainState {
+  return {
+    queue: {
+      depth: record.queue.depth,
+      nextSequence: record.queue.nextSequence,
+      updatedAt,
+    },
+    retry: {
+      status: record.retry.status === "running" ? "running" : "idle",
+      updatedAt,
+    },
+    compaction: {
+      status: record.compaction.status === "running" ? "running" : "idle",
+      updatedAt,
+    },
+    bash: {
+      isRunning: record.isBashRunning,
+      hasPendingMessages: record.hasPendingBashMessages,
+      updatedAt,
+    },
+    streaming: {
+      status: record.streamingState === "streaming" ? "streaming" : "idle",
+      updatedAt,
+    },
+    version: {
+      version: record.lastDurableSessionVersion,
+      updatedAt,
+    },
+  };
+}
+
+function createInitialDurableRuntimeDomainState(): DurableRuntimeDomainState {
+  return {
+    queue: { depth: 0, nextSequence: 1, updatedAt: 0 },
+    retry: { status: "idle", updatedAt: 0 },
+    compaction: { status: "idle", updatedAt: 0 },
+    bash: { isRunning: false, hasPendingMessages: false, updatedAt: 0 },
+    streaming: { status: "idle", updatedAt: 0 },
+    version: { version: 0, updatedAt: 0 },
+  };
+}
+
+function readDurableRuntimeDomainState(entries: SessionEntry[]): DurableRuntimeDomainState {
+  const result = createInitialDurableRuntimeDomainState();
 
   for (const entry of entries) {
     if (entry.type !== "custom") {
       continue;
     }
-
     if (
-      entry.customType === REMOTE_QUEUE_STATE_ENTRY &&
-      Value.Check(RemoteQueueStateEntrySchema, entry.data)
+      entry.customType === REMOTE_RUNTIME_TRANSITION_ENTRY &&
+      Value.Check(RemoteRuntimeTransitionEntrySchema, entry.data)
     ) {
-      result.queue = Value.Parse(RemoteQueueStateEntrySchema, entry.data);
-      continue;
-    }
-    if (
-      entry.customType === REMOTE_RETRY_STATE_ENTRY &&
-      Value.Check(RemoteRetryStateEntrySchema, entry.data)
-    ) {
-      result.retry = Value.Parse(RemoteRetryStateEntrySchema, entry.data);
-      continue;
-    }
-    if (
-      entry.customType === REMOTE_COMPACTION_STATE_ENTRY &&
-      Value.Check(RemoteCompactionStateEntrySchema, entry.data)
-    ) {
-      result.compaction = Value.Parse(RemoteCompactionStateEntrySchema, entry.data);
-      continue;
-    }
-    if (
-      entry.customType === REMOTE_BASH_STATE_ENTRY &&
-      Value.Check(RemoteBashStateEntrySchema, entry.data)
-    ) {
-      result.bash = Value.Parse(RemoteBashStateEntrySchema, entry.data);
-      continue;
-    }
-    if (
-      entry.customType === REMOTE_STREAMING_STATE_ENTRY &&
-      Value.Check(RemoteStreamingStateEntrySchema, entry.data)
-    ) {
-      result.streaming = Value.Parse(RemoteStreamingStateEntrySchema, entry.data);
+      applyRuntimeTransition(result, Value.Parse(RemoteRuntimeTransitionEntrySchema, entry.data));
       continue;
     }
     if (
@@ -331,8 +358,153 @@ function readDurableRuntimeDomainState(
   return result;
 }
 
-function readDurableExtensionProjectionKey(channel: string, data: unknown): string {
-  return readRemoteExtensionStateKey(channel, data);
+function appendRuntimeTransitions(
+  sessionManager: RemoteDurableSessionManagerWriter,
+  previous: DurableRuntimeDomainState,
+  next: DurableRuntimeDomainState,
+): void {
+  if (previous.queue.depth !== next.queue.depth) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "queue",
+      op: "depth_delta",
+      delta: next.queue.depth - previous.queue.depth,
+      updatedAt: next.queue.updatedAt,
+    });
+  }
+  if (previous.queue.nextSequence !== next.queue.nextSequence) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "queue",
+      op: "next_sequence_set",
+      nextSequence: next.queue.nextSequence,
+      updatedAt: next.queue.updatedAt,
+    });
+  }
+  if (previous.retry.status !== next.retry.status) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "retry",
+      op: "status_set",
+      status: next.retry.status,
+      updatedAt: next.retry.updatedAt,
+    });
+  }
+  if (previous.compaction.status !== next.compaction.status) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "compaction",
+      op: "status_set",
+      status: next.compaction.status,
+      updatedAt: next.compaction.updatedAt,
+    });
+  }
+  if (previous.bash.isRunning !== next.bash.isRunning) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "bash",
+      op: "running_set",
+      isRunning: next.bash.isRunning,
+      updatedAt: next.bash.updatedAt,
+    });
+  }
+  if (previous.bash.hasPendingMessages !== next.bash.hasPendingMessages) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "bash",
+      op: "pending_messages_set",
+      hasPendingMessages: next.bash.hasPendingMessages,
+      updatedAt: next.bash.updatedAt,
+    });
+  }
+  if (previous.streaming.status !== next.streaming.status) {
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "streaming",
+      op: "status_set",
+      status: next.streaming.status,
+      updatedAt: next.streaming.updatedAt,
+    });
+  }
+}
+
+function applyRuntimeTransition(
+  state: DurableRuntimeDomainState,
+  transition: RuntimeTransition,
+): void {
+  switch (transition.domain) {
+    case "queue":
+      if (transition.op === "depth_delta") {
+        state.queue.depth = Math.max(0, state.queue.depth + transition.delta);
+      } else {
+        state.queue.nextSequence = transition.nextSequence;
+      }
+      state.queue.updatedAt = transition.updatedAt;
+      return;
+    case "retry":
+      state.retry = { status: transition.status, updatedAt: transition.updatedAt };
+      return;
+    case "compaction":
+      state.compaction = { status: transition.status, updatedAt: transition.updatedAt };
+      return;
+    case "bash":
+      if (transition.op === "running_set") {
+        state.bash.isRunning = transition.isRunning;
+      } else {
+        state.bash.hasPendingMessages = transition.hasPendingMessages;
+      }
+      state.bash.updatedAt = transition.updatedAt;
+      return;
+    case "streaming":
+      state.streaming = { status: transition.status, updatedAt: transition.updatedAt };
+      break;
+  }
+}
+
+function readDurableExtensionTransitions(
+  entries: SessionEntry[],
+): DurableExtensionStateTransition[] {
+  const result: DurableExtensionStateTransition[] = [];
+
+  for (const entry of entries) {
+    if (
+      entry.type === "custom" &&
+      entry.customType === REMOTE_DURABLE_EXTENSION_STATE_ENTRY &&
+      Value.Check(RemoteDurableExtensionStateEntrySchema, entry.data)
+    ) {
+      result.push(Value.Parse(RemoteDurableExtensionStateEntrySchema, entry.data));
+    }
+  }
+
+  return result;
+}
+
+function restoreDurableExtensionState(record: SessionRecord): void {
+  const durableExtensionState = ensureDurableExtensionStateMap(record);
+  durableExtensionState.clear();
+  for (const transition of readDurableExtensionEvents(record)) {
+    applyDurableExtensionTransition(durableExtensionState, transition);
+  }
+}
+
+function ensureDurableExtensionStateMap(
+  record: SessionRecord,
+): Map<string, { channel: string; data: JsonValue }> {
+  if (record.durableExtensionState instanceof Map) {
+    return record.durableExtensionState;
+  }
+
+  const durableExtensionState = new Map<string, { channel: string; data: JsonValue }>();
+  record.durableExtensionState = durableExtensionState;
+  return durableExtensionState;
+}
+
+function applyDurableExtensionTransition(
+  state: Map<string, { channel: string; data: JsonValue }>,
+  transition: DurableExtensionStateTransition,
+): void {
+  if (transition.op === "remove") {
+    state.delete(transition.stateKey);
+    return;
+  }
+
+  state.set(transition.stateKey, {
+    channel: transition.channel,
+    data: structuredClone(transition.data),
+  });
 }
 
 export function createDurableExtensionRemovalEvent(input: {
@@ -357,4 +529,8 @@ export function readRemoteSessionVersionEntryData(
   }
 
   return Value.Parse(RemoteSessionVersionEntrySchema, value);
+}
+
+export function readDurableExtensionProjectionKey(channel: string, data: unknown): string {
+  return readRemoteExtensionStateKey(channel, data);
 }

@@ -3,7 +3,7 @@ import { toAssistantMessageSyncEvent } from "../assistant-message-sync.js";
 import type { JsonValue } from "../json-schema.js";
 import { toJsonValue } from "../json-value.js";
 import { toTransportTranscript } from "../transcript-transport.js";
-import { readToolOutputText } from "../tool-output-text.js";
+import { diffToolPartialResult, readToolOutputText } from "../tool-output-text.js";
 import type { SessionLiveEventBus } from "../live-events.js";
 import {
   appEventsStreamId,
@@ -392,7 +392,26 @@ function toLivePatchStreamEvent(
         payload: {
           type: "tool_execution_output_delta",
           toolCallId: event.toolCallId,
-          delta: outputDelta,
+          start: outputDelta.start,
+          delta: outputDelta.delta,
+        },
+        ts,
+      };
+    }
+
+    const partialPatchOperations = diffToolPartialResult(
+      activeExecution?.partialResult,
+      nextPartialResult,
+    );
+    if (partialPatchOperations !== undefined) {
+      return {
+        sessionId,
+        kind: "tool_execution_patch",
+        sessionVersion,
+        payload: {
+          type: "tool_execution_partial_patch",
+          toolCallId: event.toolCallId,
+          ops: partialPatchOperations,
         },
         ts,
       };
@@ -432,14 +451,21 @@ function toLivePatchStreamEvent(
 function readToolPartialOutputDelta(
   previous: JsonValue | undefined,
   next: JsonValue,
-): string | undefined {
+): { start: number; delta: string } | undefined {
   const previousText = readToolPartialOutputText(previous);
   const nextText = readToolPartialOutputText(next);
   if (previousText === undefined || nextText === undefined || !nextText.startsWith(previousText)) {
     return undefined;
   }
 
-  return nextText.slice(previousText.length);
+  if (nextText.length === previousText.length) {
+    return undefined;
+  }
+
+  return {
+    start: previousText.length,
+    delta: nextText.slice(previousText.length),
+  };
 }
 
 function readToolPartialOutputText(value: JsonValue | undefined): string | undefined {

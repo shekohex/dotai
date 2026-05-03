@@ -57,6 +57,12 @@ export function appendExtensionUiRequestEvent(input: {
     payload: input.payload,
     ts: input.ts,
   });
+  input.liveEvents?.publishSessionSyncEvent(input.record.sessionId, {
+    type: "patch",
+    sessionId: input.record.sessionId,
+    version: String(input.record.lastDurableSessionVersion),
+    patch: { patchType: "extension.ui.request", payload: input.payload },
+  });
 }
 
 export function appendExtensionUiResolvedEvent(input: {
@@ -72,6 +78,12 @@ export function appendExtensionUiResolvedEvent(input: {
     sessionVersion: String(input.record.lastDurableSessionVersion),
     payload: input.payload,
     ts: input.ts,
+  });
+  input.liveEvents?.publishSessionSyncEvent(input.record.sessionId, {
+    type: "patch",
+    sessionId: input.record.sessionId,
+    version: String(input.record.lastDurableSessionVersion),
+    patch: { patchType: "extension.ui.resolved", payload: input.payload },
   });
 }
 
@@ -94,6 +106,8 @@ export function handleRegistrySessionEvent(input: {
     return;
   }
 
+  const appendAgentEvent = createAppendAgentEvent(input.streams, input.liveEvents);
+
   const durableRuntimeStateChanged = handleSessionEventForRecord({
     record,
     event: input.event,
@@ -101,38 +115,7 @@ export function handleRegistrySessionEvent(input: {
     createRunId: input.createRunId,
     syncFromRuntime: input.syncFromRuntime,
     hasExtensionMetadataChange,
-    appendAgentEvent: (targetRecord, targetEvent, ts, sessionVersion, previousLiveState) => {
-      const streamId = sessionEventsStreamId(targetRecord.sessionId);
-      const append = isLiveOnlyAgentSessionEvent(targetEvent)
-        ? appendLiveOnlyAndPublish
-        : appendAndPublish;
-      const livePatchEvent = toLivePatchStreamEvent(
-        targetRecord.sessionId,
-        targetEvent,
-        sessionVersion,
-        ts,
-        previousLiveState,
-      );
-      const knownAgentEvent =
-        livePatchEvent === undefined
-          ? toKnownAgentSessionStreamEvent(targetRecord.sessionId, targetEvent, sessionVersion, ts)
-          : undefined;
-      if (
-        targetEvent.type === "message_update" &&
-        targetEvent.message.role === "assistant" &&
-        livePatchEvent === undefined
-      ) {
-        return;
-      }
-      if (livePatchEvent === undefined && knownAgentEvent === undefined) {
-        return;
-      }
-      const eventToAppend = livePatchEvent ?? knownAgentEvent;
-      if (eventToAppend === undefined) {
-        return;
-      }
-      append(input.streams, input.liveEvents, streamId, eventToAppend);
-    },
+    appendAgentEvent,
     appendSessionStatePatch: (targetRecord, sessionVersion, patch, ts) => {
       appendAndPublish(
         input.streams,
@@ -150,6 +133,19 @@ export function handleRegistrySessionEvent(input: {
           ts,
         },
       );
+      input.liveEvents?.publishSessionSyncEvent(targetRecord.sessionId, {
+        type: "patch",
+        sessionId: targetRecord.sessionId,
+        version: sessionVersion,
+        patch: {
+          patchType: "session.state",
+          payload: {
+            commandId: "server-state-sync",
+            sequence: targetRecord.queue.nextSequence,
+            patch,
+          },
+        },
+      });
     },
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });
@@ -162,6 +158,148 @@ export function handleRegistrySessionEvent(input: {
     record,
     updatedAt: input.now,
   });
+}
+
+function createAppendAgentEvent(
+  streams: InMemoryDurableStreamStore,
+  liveEvents: SessionLiveEventBus | undefined,
+) {
+  return (
+    targetRecord: SessionRecord,
+    targetEvent: AgentSessionEvent,
+    ts: number,
+    sessionVersion: string,
+    previousLiveState: SessionRecord["live"],
+  ): void => {
+    const streamId = sessionEventsStreamId(targetRecord.sessionId);
+    const append = isLiveOnlyAgentSessionEvent(targetEvent)
+      ? appendLiveOnlyAndPublish
+      : appendAndPublish;
+    const livePatchEvent = toLivePatchStreamEvent(
+      targetRecord.sessionId,
+      targetEvent,
+      sessionVersion,
+      ts,
+      previousLiveState,
+    );
+    const knownAgentEvent =
+      livePatchEvent === undefined
+        ? toKnownAgentSessionStreamEvent(targetRecord.sessionId, targetEvent, sessionVersion, ts)
+        : undefined;
+    if (
+      targetEvent.type === "message_update" &&
+      targetEvent.message.role === "assistant" &&
+      livePatchEvent === undefined
+    ) {
+      return;
+    }
+    if (livePatchEvent === undefined && knownAgentEvent === undefined) {
+      return;
+    }
+    const eventToAppend = livePatchEvent ?? knownAgentEvent;
+    if (eventToAppend === undefined) {
+      return;
+    }
+    append(streams, liveEvents, streamId, eventToAppend);
+    publishSyncPatch(
+      liveEvents,
+      targetRecord.sessionId,
+      sessionVersion,
+      livePatchEvent,
+      knownAgentEvent?.payload,
+    );
+  };
+}
+
+function publishSyncPatch(
+  liveEvents: SessionLiveEventBus | undefined,
+  sessionId: string,
+  sessionVersion: string,
+  livePatchEvent: ReturnType<typeof toLivePatchStreamEvent>,
+  knownPayload:
+    | Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"]
+    | undefined,
+): void {
+  if (livePatchEvent?.kind === "assistant_message_patch") {
+    liveEvents?.publishSessionSyncEvent(sessionId, {
+      type: "patch",
+      sessionId,
+      version: sessionVersion,
+      patch: { patchType: "assistant.message", payload: livePatchEvent.payload },
+    });
+    return;
+  }
+  if (livePatchEvent?.kind === "tool_execution_patch") {
+    liveEvents?.publishSessionSyncEvent(sessionId, {
+      type: "patch",
+      sessionId,
+      version: sessionVersion,
+      patch: { patchType: "tool.execution", payload: livePatchEvent.payload },
+    });
+    return;
+  }
+  if (knownPayload === undefined) {
+    return;
+  }
+  const sessionSyncEvent = toKnownAgentSessionSyncEvent(sessionId, knownPayload, sessionVersion);
+  if (sessionSyncEvent !== undefined) {
+    liveEvents?.publishSessionSyncEvent(sessionId, sessionSyncEvent);
+  }
+}
+
+function toKnownAgentSessionSyncEvent(
+  sessionId: string,
+  payload: Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+  version: string,
+): Extract<SessionSyncEvent, { type: "patch" }> | undefined {
+  switch (payload.type) {
+    case "agent_start":
+    case "turn_start":
+    case "turn_end":
+    case "agent_end":
+      return {
+        sessionId,
+        type: "patch",
+        version,
+        patch: { patchType: "agent.lifecycle", payload },
+      };
+    case "message_start":
+    case "message_end":
+    case "message_update":
+    case "tool_execution_start":
+    case "tool_execution_update":
+    case "tool_execution_end":
+    case "tool_execution_output_delta":
+    case "tool_execution_partial_patch":
+      return undefined;
+    case "queue_update":
+      return {
+        sessionId,
+        type: "patch",
+        version,
+        patch: {
+          patchType: "queue.update",
+          payload: {
+            type: "queue_update",
+            steering: [...payload.steering],
+            followUp: [...payload.followUp],
+          },
+        },
+      };
+    case "auto_retry_start":
+    case "auto_retry_end":
+      return { sessionId, type: "patch", version, patch: { patchType: "retry.status", payload } };
+    case "compaction_start":
+    case "compaction_end":
+      return {
+        sessionId,
+        type: "patch",
+        version,
+        patch: { patchType: "compaction.status", payload },
+      };
+    default:
+      return undefined;
+  }
 }
 
 function toKnownAgentSessionStreamEvent(

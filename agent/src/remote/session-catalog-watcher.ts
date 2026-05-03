@@ -67,9 +67,12 @@ export class SessionCatalogWatcher {
       if (this.watchersByDir.has(dirPath)) {
         continue;
       }
-      const watcher = watch(dirPath, () => {
+      const watcher = createDirectoryWatcher(dirPath, () => {
         this.scheduleReconcile();
       });
+      if (watcher === undefined) {
+        continue;
+      }
       watcher.unref();
       watcher.on("error", () => {
         this.scheduleReconcile();
@@ -142,4 +145,16 @@ function readDirectoryEntries(path: string) {
 
 function isMissingDirectoryError(error: unknown): boolean {
   return error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT";
+}
+
+function createDirectoryWatcher(dirPath: string, onChange: () => void): FSWatcher | undefined {
+  try {
+    return watch(dirPath, onChange);
+  } catch (error) {
+    if (isMissingDirectoryError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
 }

@@ -26,6 +26,12 @@ const RemoteExtensionSyncMetadataSchema = Type.Object(
   { additionalProperties: true },
 );
 
+type RemoteExtensionSyncMetadata = {
+  sync: "ephemeral" | "replaceable" | "durable" | undefined;
+  replaceKey: string | undefined;
+  deleted: boolean;
+};
+
 type EventBusLike = {
   emit: (channel: string, data: unknown) => void;
   on: (channel: string, handler: (data: unknown) => void) => () => void;
@@ -130,13 +136,10 @@ export function parseRemoteCustomExtensionEventPayload(
   return value;
 }
 
-export function parseRemoteExtensionSyncMetadata(value: unknown): {
-  sync: "ephemeral" | "replaceable" | "durable" | undefined;
-  replaceKey: string | undefined;
-  deleted: boolean;
-} {
+export function parseRemoteExtensionSyncMetadata(value: unknown): RemoteExtensionSyncMetadata {
   if (Value.Check(RemoteExtensionSyncMetadataSchema, value)) {
-    const metadata = Value.Parse(RemoteExtensionSyncMetadataSchema, value);
+    assertType(RemoteExtensionSyncMetadataSchema, value);
+    const metadata = value;
     return {
       sync: metadata.sync,
       replaceKey: metadata.replaceKey,

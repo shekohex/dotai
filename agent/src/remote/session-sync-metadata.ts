@@ -1,5 +1,6 @@
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { parseRemoteExtensionSyncMetadata } from "./event-bus-bridge.js";
+import type { JsonValue } from "./json-schema.js";
 import type { SessionSyncEvent } from "./schemas.js";
 
 export type RemoteExtensionSyncInfo = {
@@ -11,7 +12,7 @@ export type RemoteExtensionSyncInfo = {
 
 export function readRemoteExtensionSyncInfo(
   channel: string,
-  data: unknown,
+  data: JsonValue,
 ): RemoteExtensionSyncInfo {
   const metadata = parseRemoteExtensionSyncMetadata(data);
   const stateKey =
@@ -26,7 +27,7 @@ export function readRemoteExtensionSyncInfo(
 
 export function readRemoteExtensionEventSyncClass(
   channel: string,
-  data: unknown,
+  data: JsonValue,
 ): "ephemeral" | "replaceable" | "durable" | undefined {
   return readRemoteExtensionSyncInfo(channel, data).sync;
 }
@@ -37,7 +38,7 @@ export function readAgentSessionEventReplaceKey(event: AgentSessionEvent): strin
   }
 
   if (event.type === "tool_execution_update") {
-    return `agent_session_event:tool_execution_update:${event.toolCallId}`;
+    return `agent_session_event:tool_execution:${event.toolCallId}`;
   }
 
   return undefined;
@@ -52,7 +53,7 @@ export function readSessionSyncPatchReplaceKey(
     case "assistant.message":
       return "agent_session_event:message_update:assistant";
     case "tool.execution": {
-      return `agent_session_event:${patch.payload.type}:${patch.payload.toolCallId}`;
+      return `agent_session_event:tool_execution:${patch.payload.toolCallId}`;
     }
     case "queue.update":
       return "agent_session_event:queue_update";

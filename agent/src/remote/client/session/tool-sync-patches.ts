@@ -10,7 +10,7 @@ type ToolExecutionPatchPayload = Extract<
 
 export type ActiveSyncToolExecutionState = {
   toolName: string;
-  args: unknown;
+  args: JsonValue;
   partialResult?: JsonValue;
 };
 

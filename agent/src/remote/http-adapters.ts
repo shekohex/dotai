@@ -81,6 +81,74 @@ function formatLogPayload(payload: unknown, options: RemoteLoggerOptions): strin
   return JSON.stringify(redacted, null, 2);
 }
 
+function describeValueShape(value: unknown, depth: number = 0): unknown {
+  if (value === null) {
+    return "null";
+  }
+  if (value === undefined) {
+    return "undefined";
+  }
+  if (typeof value === "string") {
+    return "string";
+  }
+  if (typeof value === "number") {
+    return "number";
+  }
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  if (typeof value === "bigint") {
+    return "bigint";
+  }
+  if (typeof value === "symbol") {
+    return "symbol";
+  }
+  if (typeof value === "function") {
+    return "function";
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return [];
+    }
+    return [describeValueShape(value[0], depth + 1)];
+  }
+  if (!isPlainObject(value)) {
+    return Object.prototype.toString.call(value);
+  }
+  if (depth >= 4) {
+    return "object";
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .toSorted(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .map(([key, item]) => [key, describeValueShape(item, depth + 1)]),
+  );
+}
+
+function summarizeSsePayload(frameType: "data" | "control", payload: unknown): unknown {
+  const base = {
+    frameType,
+    payloadShape: describeValueShape(payload),
+  };
+
+  if (!isPlainObject(payload) || typeof payload.type !== "string") {
+    return base;
+  }
+
+  if (payload.type !== "patch" || !isPlainObject(payload.patch)) {
+    return {
+      ...base,
+      eventType: payload.type,
+    };
+  }
+
+  return {
+    ...base,
+    eventType: payload.type,
+    patchType: typeof payload.patch.patchType === "string" ? payload.patch.patchType : undefined,
+  };
+}
+
 function emitLog(kind: "http" | "http_error" | "sse", payload: unknown): void {
   const options = activeLoggerOptions;
   if (!options.enabled) {
@@ -251,8 +319,5 @@ export function logSseFrame(frameType: "data" | "control", payload: unknown): vo
   if (!activeLoggerOptions.logSse) {
     return;
   }
-  emitLog("sse", {
-    frameType,
-    payload,
-  });
+  emitLog("sse", summarizeSsePayload(frameType, payload));
 }

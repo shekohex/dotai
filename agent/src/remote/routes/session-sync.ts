@@ -9,6 +9,7 @@ import { applyToolPartialPatch, readToolOutputText } from "../tool-output-text.j
 import { RemoteError } from "../errors.js";
 import { compareSessionVersions } from "../session-sync-patch-events.js";
 import { assertType } from "../typebox.js";
+import { logSseFrame } from "../http-adapters.js";
 import { authError } from "./auth.js";
 import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./types.js";
 
@@ -19,6 +20,15 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 
 function sseChunk(payload: SessionSyncEvent): string {
   return `event: data\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+function writeSseEvent(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  payload: SessionSyncEvent,
+): void {
+  logSseFrame("data", payload);
+  controller.enqueue(encoder.encode(sseChunk(payload)));
 }
 
 function buildHeaders(connectionId: string): Record<string, string> {
@@ -60,7 +70,7 @@ export async function handleSessionSync(
         return;
       }
 
-      controller.enqueue(encoder.encode(sseChunk(patchEvent)));
+      writeSseEvent(controller, encoder, patchEvent);
     };
 
     unsubscribe = dependencies.liveEvents.subscribeSessionSyncEvent(sessionId, (event) => {
@@ -90,8 +100,8 @@ export async function handleSessionSync(
     const body = new ReadableStream<Uint8Array>({
       start(activeController) {
         controller = activeController;
-        activeController.enqueue(encoder.encode(sseChunk(connectedPayload)));
-        activeController.enqueue(encoder.encode(sseChunk(snapshotPayload)));
+        writeSseEvent(activeController, encoder, connectedPayload);
+        writeSseEvent(activeController, encoder, snapshotPayload);
         heartbeat = setInterval(() => {
           if (controller === undefined) {
             return;
@@ -102,7 +112,7 @@ export async function handleSessionSync(
           if (isPatchCoveredBySnapshot(bufferedPatchEvent, snapshot)) {
             continue;
           }
-          activeController.enqueue(encoder.encode(sseChunk(bufferedPatchEvent)));
+          writeSseEvent(activeController, encoder, bufferedPatchEvent);
         }
         bufferedPatchEvents.length = 0;
       },

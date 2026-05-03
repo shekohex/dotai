@@ -2,6 +2,7 @@ import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import type { JsonValue } from "../../json-schema.js";
 import type { SessionSyncEvent } from "../../schemas.js";
 import { applyToolPartialPatch, appendToolOutputTextDelta } from "../../tool-output-text.js";
+import { normalizeToolResultForAgentEvent } from "./tool-result-normalization.js";
 
 type ToolExecutionPatchPayload = Extract<
   Extract<SessionSyncEvent, { type: "patch" }>["patch"],
@@ -50,7 +51,7 @@ export function applyToolExecutionSyncPatch(input: {
       toolCallId: input.payload.toolCallId,
       toolName: activeExecution.toolName,
       args: activeExecution.args,
-      partialResult,
+      partialResult: normalizeToolResultForAgentEvent(partialResult),
     });
     return;
   }
@@ -67,7 +68,7 @@ export function applyToolExecutionSyncPatch(input: {
       toolCallId: input.payload.toolCallId,
       toolName: activeExecution.toolName,
       args: activeExecution.args,
-      partialResult,
+      partialResult: normalizeToolResultForAgentEvent(partialResult),
     });
     return;
   }
@@ -79,7 +80,7 @@ export function applyToolExecutionSyncPatch(input: {
       toolCallId: input.payload.toolCallId,
       toolName: activeExecution.toolName,
       args: activeExecution.args,
-      partialResult: input.payload.partialResult,
+      partialResult: normalizeToolResultForAgentEvent(input.payload.partialResult),
     });
     return;
   }

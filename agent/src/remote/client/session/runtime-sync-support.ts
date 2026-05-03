@@ -13,6 +13,7 @@ import { createDurableExtensionRemovalEvent } from "../../session/durable-runtim
 import { readRemoteExtensionSyncInfo } from "../../session-sync-metadata.js";
 import { fromTransportTranscript } from "../../transcript-transport.js";
 import type { ForwardableRemoteExtensionEvent } from "./local-extension-runner.js";
+import { normalizeToolResultForAgentEvent } from "./tool-result-normalization.js";
 
 const AppliedSnapshotExtensionStateSchema = Type.Object({
   channel: Type.String(),
@@ -210,7 +211,7 @@ export function replaySnapshotLiveOverlay(input: {
         toolCallId: execution.toolCallId,
         toolName: execution.toolName,
         args: execution.args,
-        partialResult: execution.partialResult,
+        partialResult: normalizeToolResultForAgentEvent(execution.partialResult),
       });
     }
   }

@@ -1,4 +1,4 @@
-model = "gpt-5.4"
+model = "gpt-5.5"
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 profile = "balanced"
@@ -22,31 +22,32 @@ ghost_commit = false
 experimental_windows_sandbox = false
 shell_snapshot = true
 multi_agent = true
+goals = true
 
 [profiles.balanced]
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model = "gpt-5.5"
+model_reasoning_effort = "low"
 web_search = "live"
 
 [profiles.safe]
 approval_policy = "on-failure"
 sandbox_mode = "workspace-write"
-model = "gpt-5.4"
+model = "gpt-5.5"
 model_reasoning_effort = "medium"
 web_search = "disabled"
 
 [profiles.minimal]
-model = "gpt-5.3-codex"
+model = "gpt-5.5"
 model_reasoning_effort = "medium"
 web_search = "disabled"
 
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
-model = "gpt-5.4"
-model_reasoning_effort = "high"
+model = "gpt-5.5"
+model_reasoning_effort = "low"
 tool_output_token_limit = 25000
 web_search = "live"
 
@@ -56,3 +57,6 @@ ignore_default_excludes = true
 experimental_use_profile = true
 
 [mcp_servers]
+
+[projects."/home/coder/dotai"]
+trust_level = "trusted"

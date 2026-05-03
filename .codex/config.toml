@@ -11,6 +11,9 @@ notifications = false
 show_raw_agent_reasoning = true
 hide_agent_reasoning = false
 
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
 [features]
 unified_exec = false
 streamable_shell = false
@@ -23,6 +26,7 @@ experimental_windows_sandbox = false
 shell_snapshot = true
 multi_agent = true
 goals = true
+remote_connections = true
 
 [profiles.balanced]
 approval_policy = "on-request"

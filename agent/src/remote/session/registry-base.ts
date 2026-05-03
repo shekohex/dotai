@@ -46,6 +46,7 @@ import {
   parseResourceLoaderExtensionMetadata,
   parseRuntimeExtensionMetadata,
   parseThinkingLevelFromAllowedSet,
+  persistAuthoritativeSessionMetadata,
   restoreDurableRuntimeDomainState,
   pruneExpiredSessionPresence,
   readRuntimeRemoteExtensionMetadata,
@@ -268,6 +269,7 @@ export abstract class SessionRegistryBase {
       getRuntimeSession: (sessionRecord) => this.getRuntimeSession(sessionRecord),
     });
     if (record.persistence === "persistent") {
+      persistAuthoritativeSessionMetadata(record, options?.now ?? this.now());
       this.catalog.registerPersistedRuntimeRecord(record);
     }
   }

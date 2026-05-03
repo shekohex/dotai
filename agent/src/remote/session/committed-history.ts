@@ -7,6 +7,12 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { sanitizeSessionEntry } from "../schema-normalization.js";
 import type { RemoteSessionEntry } from "../schemas-core.js";
+import { REMOTE_AUTHORITATIVE_SESSION_METADATA_ENTRY } from "./authoritative-session-metadata.js";
+import {
+  REMOTE_DURABLE_EXTENSION_STATE_ENTRY,
+  REMOTE_RUNTIME_TRANSITION_ENTRY,
+  REMOTE_SESSION_VERSION_ENTRY,
+} from "./durable-runtime-state.js";
 
 export type CommittedSessionHistory = {
   entries: RemoteSessionEntry[];
@@ -79,7 +85,17 @@ function isSessionEntry(entry: FileEntry): entry is SessionEntry {
 }
 
 function isCommittedSessionEntry(entry: SessionEntry): boolean {
-  return entry.type !== "session_info";
+  return entry.type !== "session_info" && !isInternalRemoteCustomEntry(entry);
+}
+
+function isInternalRemoteCustomEntry(entry: SessionEntry): boolean {
+  return (
+    entry.type === "custom" &&
+    (entry.customType === REMOTE_RUNTIME_TRANSITION_ENTRY ||
+      entry.customType === REMOTE_SESSION_VERSION_ENTRY ||
+      entry.customType === REMOTE_DURABLE_EXTENSION_STATE_ENTRY ||
+      entry.customType === REMOTE_AUTHORITATIVE_SESSION_METADATA_ENTRY)
+  );
 }
 
 function cloneSessionEntry(entry: SessionEntry): RemoteSessionEntry {

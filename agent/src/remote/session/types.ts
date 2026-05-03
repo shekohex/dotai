@@ -33,6 +33,7 @@ import type {
 } from "../schemas.js";
 import type { JsonValue } from "../json-schema.js";
 import type { InMemoryDurableStreamStore } from "../streams.js";
+import type { AuthoritativeSessionMetadata } from "./authoritative-session-metadata.js";
 
 export type RemoteUiInputHandlers = Pick<
   ExtensionUIContext,
@@ -111,6 +112,16 @@ export interface SessionRecord {
   hasPendingBashMessages: boolean;
   pendingToolCalls: string[];
   durableExtensionState: Map<string, { channel: string; data: JsonValue }>;
+  durableExtensionStateHydrated: boolean;
+  durableRuntimeStateCache: {
+    queue: { depth: number; nextSequence: number; updatedAt: number };
+    retry: { status: "idle" | "running"; updatedAt: number };
+    compaction: { status: "idle" | "running"; updatedAt: number };
+    bash: { isRunning: boolean; hasPendingMessages: boolean; updatedAt: number };
+    streaming: { status: "idle" | "streaming"; updatedAt: number };
+    version: { version: number; updatedAt: number };
+  };
+  authoritativeMetadataCache?: AuthoritativeSessionMetadata;
   lastDurableSessionVersion: number;
   interruptedRuntimeDomains: {
     queue: boolean;
@@ -225,6 +236,17 @@ export function createInitialQueue(): SessionRecord["queue"] {
 
 export function createIdleTaskState(): { status: "idle" } {
   return { status: "idle" };
+}
+
+export function createInitialDurableRuntimeStateCache(): SessionRecord["durableRuntimeStateCache"] {
+  return {
+    queue: { depth: 0, nextSequence: 1, updatedAt: 0 },
+    retry: { status: "idle", updatedAt: 0 },
+    compaction: { status: "idle", updatedAt: 0 },
+    bash: { isRunning: false, hasPendingMessages: false, updatedAt: 0 },
+    streaming: { status: "idle", updatedAt: 0 },
+    version: { version: 0, updatedAt: 0 },
+  };
 }
 
 export function createInitialInterruptedRuntimeDomains(): SessionRecord["interruptedRuntimeDomains"] {

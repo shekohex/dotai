@@ -66,8 +66,16 @@ export {
   getCommittedSessionHistory,
   type CommittedSessionHistory,
 } from "./committed-history-ops.js";
+export { loadUnloadedSessionSnapshot } from "./unloaded-session-snapshot.js";
+export { loadSessionSnapshotRecord } from "./unloaded-session-snapshot-ops.js";
+export {
+  persistAuthoritativeSessionMetadata,
+  readAuthoritativeSessionMetadata,
+  REMOTE_AUTHORITATIVE_SESSION_METADATA_ENTRY,
+} from "./authoritative-session-metadata.js";
 export {
   ALLOWED_THINKING_LEVELS,
+  createInitialDurableRuntimeStateCache,
   createEmptyModelSettings,
   createInitialInterruptedRuntimeDomains,
   createIdleTaskState,

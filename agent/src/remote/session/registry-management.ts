@@ -24,6 +24,7 @@ import {
   enqueueSessionCreation,
   getAppSnapshot,
   getLastAppStreamOffsetForNewSession,
+  loadSessionSnapshotRecord,
   getSessionSnapshot,
   registerCreatedSession,
   sanitizeRemoteModel,
@@ -154,14 +155,25 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     });
   }
 
-  async loadSessionSnapshot(
+  loadSessionSnapshot(
     sessionId: string,
     client: AuthSession,
     connectionId?: string,
     options?: { entriesLimit?: number; entriesOffset?: number },
   ): Promise<SessionSnapshot> {
-    await this.ensureLoaded(sessionId);
-    return this.getSessionSnapshot(sessionId, client, connectionId, options);
+    return Promise.resolve(
+      loadSessionSnapshotRecord({
+        sessionId,
+        client,
+        connectionId,
+        options,
+        loadedRecord: this.getLoadedSessions().get(sessionId),
+        catalog: this.catalog,
+        touchPresence: this.touchPresence.bind(this),
+        getLoadedSnapshot: (targetSessionId, targetClient, targetConnectionId, targetOptions) =>
+          this.getSessionSnapshot(targetSessionId, targetClient, targetConnectionId, targetOptions),
+      }),
+    );
   }
 
   async reload(

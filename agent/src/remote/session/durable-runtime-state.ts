@@ -5,6 +5,7 @@ import { asRecord } from "../../utils/unknown-data.js";
 import { readRemoteExtensionStateKey } from "../event-bus-bridge.js";
 import { JsonValueSchema, type JsonValue } from "../json-schema.js";
 import { readRemoteExtensionSyncInfo } from "../session-sync-metadata.js";
+import { createInitialDurableRuntimeStateCache } from "./types.js";
 import type { SessionRecord } from "./types.js";
 
 const RemoteQueueDepthTransitionSchema = Type.Object({
@@ -101,6 +102,8 @@ type DurableRuntimeDomainState = {
   version: { version: number; updatedAt: number };
 };
 
+export type { DurableRuntimeDomainState };
+
 type DurableExtensionStateTransition = {
   op: "upsert" | "remove";
   stateKey: string;
@@ -148,12 +151,15 @@ export function persistDurableRuntimeDomainState(input: {
   }
 
   ensureDurableExtensionStateMap(input.record);
-  const previous = readDurableRuntimeDomainState(sessionManager.getEntries());
+  const previous = cloneDurableRuntimeDomainState(
+    input.record.durableRuntimeStateCache ?? createInitialDurableRuntimeStateCache(),
+  );
   const next = readRuntimeStateFromRecord(input.record, input.updatedAt);
   appendRuntimeTransitions(sessionManager, previous, next);
   if (previous.version.version !== next.version.version) {
     sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, next.version);
   }
+  input.record.durableRuntimeStateCache = cloneDurableRuntimeDomainState(next);
 }
 
 export function restoreDurableRuntimeDomainState(record: SessionRecord, now: number): void {
@@ -164,8 +170,9 @@ export function restoreDurableRuntimeDomainState(record: SessionRecord, now: num
     return;
   }
 
-  ensureDurableExtensionStateMap(record);
   const persistedState = readDurableRuntimeDomainState(sessionManager.getEntries());
+  record.durableRuntimeStateCache = cloneDurableRuntimeDomainState(persistedState);
+  ensureDurableExtensionStateMap(record);
   restoreDurableExtensionState(record);
   record.lastDurableSessionVersion = persistedState.version.version;
 
@@ -258,7 +265,7 @@ export function buildDurableExtensionState(record: SessionRecord): Array<{
   data: JsonValue;
 }> {
   const durableExtensionState = ensureDurableExtensionStateMap(record);
-  if (durableExtensionState.size === 0) {
+  if (!record.durableExtensionStateHydrated) {
     restoreDurableExtensionState(record);
   }
 
@@ -333,7 +340,20 @@ function createInitialDurableRuntimeDomainState(): DurableRuntimeDomainState {
   };
 }
 
-function readDurableRuntimeDomainState(entries: SessionEntry[]): DurableRuntimeDomainState {
+function cloneDurableRuntimeDomainState(
+  state: DurableRuntimeDomainState,
+): DurableRuntimeDomainState {
+  return {
+    queue: { ...state.queue },
+    retry: { ...state.retry },
+    compaction: { ...state.compaction },
+    bash: { ...state.bash },
+    streaming: { ...state.streaming },
+    version: { ...state.version },
+  };
+}
+
+export function readDurableRuntimeDomainState(entries: SessionEntry[]): DurableRuntimeDomainState {
   const result = createInitialDurableRuntimeDomainState();
 
   for (const entry of entries) {
@@ -478,6 +498,7 @@ function restoreDurableExtensionState(record: SessionRecord): void {
   for (const transition of readDurableExtensionEvents(record)) {
     applyDurableExtensionTransition(durableExtensionState, transition);
   }
+  record.durableExtensionStateHydrated = true;
 }
 
 function ensureDurableExtensionStateMap(
@@ -519,6 +540,20 @@ export function createDurableExtensionRemovalEvent(input: {
       deleted: true,
     },
   };
+}
+
+export function readDurableExtensionStateFromEntries(entries: SessionEntry[]): Array<{
+  channel: string;
+  data: JsonValue;
+}> {
+  const state = new Map<string, { channel: string; data: JsonValue }>();
+  for (const transition of readDurableExtensionTransitions(entries)) {
+    applyDurableExtensionTransition(state, transition);
+  }
+  return [...state.values()].map((value) => ({
+    channel: value.channel,
+    data: structuredClone(value.data),
+  }));
 }
 
 export function readRemoteSessionVersionEntryData(

@@ -9,7 +9,6 @@ This project has rules that are more specific than generic TypeScript or Oxlint 
 - no dynamic `import()`
 - no inline import types
 - no `Reflect.*` outside approved boundary files
-- no direct `fetch` under `src/remote/`; use typed Hono RPC instead
 - no redundant runtime narrowing when same-file TypeScript types already prove shape
 - no redundant checks after TypeBox validation
 - no object-shape casts from `unknown`
@@ -73,12 +72,6 @@ import type { State } from "./types.js";
 Disallows `Reflect.*` unless current file is explicitly allowlisted.
 
 Use this only for true boundary helpers that must touch upstream-private internals.
-
-### `project-rules/no-direct-fetch-in-remote`
-
-Disallows direct `fetch(...)` in remote code.
-
-Use typed Hono RPC routes and clients instead.
 
 ### `project-rules/no-redundant-runtime-narrowing`
 

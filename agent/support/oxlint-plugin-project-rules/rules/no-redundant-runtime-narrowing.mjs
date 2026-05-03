@@ -10,8 +10,6 @@ import { readRuleOptions } from "../utils/options.mjs";
 
 const supportedChecks = new Set(["array", "in", "typeof"]);
 const defaultAllowFiles = [
-  "src/remote/http-adapters.ts",
-  "src/remote/runtime-api/utils.ts",
   "src/extensions/subagent/render-state.ts",
   "src/extensions/modes/events.ts",
 ];

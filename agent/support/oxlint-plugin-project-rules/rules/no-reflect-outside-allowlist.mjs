@@ -6,10 +6,6 @@ import { readRuleOptions } from "../utils/options.mjs";
 const defaultAllowFiles = [
   "src/extensions/bundled-resources.ts",
   "src/extensions/model-family-system-prompt.ts",
-  "src/remote/client/session-settings.ts",
-  "src/remote/session-manager-storage.ts",
-  "src/remote/runtime-api/capabilities.ts",
-  "src/remote/session/registry-runtime-ops.ts",
 ];
 
 function createNoReflectOutsideAllowlistRule() {

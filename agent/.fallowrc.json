@@ -1,0 +1,6 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/refs/heads/main/schema.json",
+  "ignoreDependencies": ["mermaid"],
+  "dynamicallyLoaded": ["support/oxlint-plugin-project-rules/**/*.mjs"],
+  "overrides": []
+}

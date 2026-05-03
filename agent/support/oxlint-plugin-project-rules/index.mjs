@@ -1,5 +1,4 @@
 import { eslintCompatPlugin } from "@oxlint/plugins";
-import { createNoDirectFetchInRemoteRule } from "./rules/no-direct-fetch-in-remote.mjs";
 import { createNoDynamicImportRule } from "./rules/no-dynamic-import.mjs";
 import { createNoInlineErrorMessageExtractionRule } from "./rules/no-inline-error-message-extraction.mjs";
 import { createNoInlineImportTypeRule } from "./rules/no-inline-import-type.mjs";
@@ -15,7 +14,6 @@ const plugin = eslintCompatPlugin({
     name: "project-rules",
   },
   rules: {
-    "no-direct-fetch-in-remote": createNoDirectFetchInRemoteRule(),
     "no-dynamic-import": createNoDynamicImportRule(),
     "no-inline-error-message-extraction": createNoInlineErrorMessageExtractionRule(),
     "no-inline-import-type": createNoInlineImportTypeRule(),

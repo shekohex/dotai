@@ -47,11 +47,7 @@
       {
         "allowFiles": [
           "src/extensions/bundled-resources.ts",
-          "src/extensions/model-family-system-prompt.ts",
-          "src/remote/client/session-settings.ts",
-          "src/remote/session-manager-storage.ts",
-          "src/remote/runtime-api/capabilities.ts",
-          "src/remote/session/registry-runtime-ops.ts"
+          "src/extensions/model-family-system-prompt.ts"
         ]
       }
     ],
@@ -59,12 +55,7 @@
       "error",
       {
         "checks": ["typeof", "array", "in"],
-        "allowFiles": [
-          "src/remote/http-adapters.ts",
-          "src/remote/runtime-api/utils.ts",
-          "src/extensions/subagent/render-state.ts",
-          "src/extensions/modes/events.ts"
-        ]
+        "allowFiles": ["src/extensions/subagent/render-state.ts", "src/extensions/modes/events.ts"]
       }
     ],
     "project-rules/no-redundant-check-after-typebox": "error",
@@ -73,14 +64,7 @@
     "project-rules/no-inline-error-message-extraction": "error",
     "project-rules/no-local-unknown-record-helper": "error"
   },
-  "overrides": [
-    {
-      "files": ["src/remote/**/*.ts"],
-      "rules": {
-        "project-rules/no-direct-fetch-in-remote": "error"
-      }
-    }
-  ],
+  "overrides": [],
   "env": {
     "builtin": true
   }

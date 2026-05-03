@@ -1,7 +1,7 @@
 ---
 name: executor
 description: >-
-  Load before using the `execute` tool, remote systems, and
+  Load before using the `execute` tool, external systems, and
   configured MCP/OpenAPI/GraphQL integrations. Use `tools.search({ ... })`,
   then `tools.describe.tool({ path })`, then call the full
   `tools.<namespace>.<tool>(args)` path.
@@ -100,7 +100,7 @@ const unwrap = (value: any) => {
 Use Executor for:
 
 - SaaS APIs
-- remote systems
+- external systems
 - configured integrations
 - auth or approval managed actions
 

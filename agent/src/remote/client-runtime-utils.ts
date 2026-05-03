@@ -19,17 +19,25 @@ export function createInProcessFetch(app: {
 }): typeof fetch {
   return ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     let requestUrl: URL;
+    let requestInit = init;
     if (typeof input === "string") {
       requestUrl = new URL(input);
     } else if (input instanceof URL) {
       requestUrl = input;
     } else if (input instanceof Request) {
       requestUrl = new URL(input.url);
+      requestInit = {
+        method: input.method,
+        headers: input.headers,
+        body: input.body,
+        signal: input.signal,
+        ...init,
+      };
     } else {
       throw new TypeError("Unsupported RequestInfo input for in-process fetch");
     }
     const path = `${requestUrl.pathname}${requestUrl.search}`;
-    return app.request(path, init);
+    return app.request(path, requestInit);
   }) as typeof fetch;
 }
 

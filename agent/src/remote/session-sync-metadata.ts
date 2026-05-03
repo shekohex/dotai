@@ -5,6 +5,7 @@ import type { SessionSyncEvent } from "./schemas.js";
 
 export type RemoteExtensionSyncInfo = {
   sync: "ephemeral" | "replaceable" | "durable" | undefined;
+  reducer: "replace" | "merge";
   replaceKey: string | undefined;
   stateKey: string;
   deleted: boolean;
@@ -19,6 +20,7 @@ export function readRemoteExtensionSyncInfo(
     metadata.replaceKey === undefined ? channel : `${channel}:${metadata.replaceKey}`;
   return {
     sync: metadata.sync,
+    reducer: metadata.reducer,
     replaceKey: metadata.replaceKey,
     stateKey,
     deleted: metadata.deleted,

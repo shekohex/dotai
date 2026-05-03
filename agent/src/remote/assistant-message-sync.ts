@@ -1,5 +1,8 @@
 import type { JsonValue } from "./json-schema.js";
 import type { SessionSyncEvent, StreamEventEnvelope } from "./schemas.js";
+import { JsonValueSchema } from "./json-schema.js";
+import { assertType } from "./typebox.js";
+import { asRecord } from "../utils/unknown-data.js";
 
 type AssistantMessageUpdateEvent = Extract<
   Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
@@ -22,13 +25,37 @@ function readToolCallBlock(
     throw new Error("Assistant toolcall sync event missing toolCall block");
   }
 
+  assertType(JsonValueSchema, block.arguments);
+  if (block.arguments === null || Array.isArray(block.arguments)) {
+    throw new Error("Assistant toolcall sync event arguments must be object");
+  }
+
   return {
     type: "toolCall",
     id: block.id,
     name: block.name,
-    arguments: block.arguments as Record<string, JsonValue>,
+    arguments: readToolCallArguments(block.arguments),
     ...(block.thoughtSignature === undefined ? {} : { thoughtSignature: block.thoughtSignature }),
   };
+}
+
+function readToolCallArguments(value: unknown): Record<string, JsonValue> {
+  assertType(JsonValueSchema, value);
+  if (value === null || Array.isArray(value)) {
+    throw new Error("Assistant toolcall sync event arguments must be object");
+  }
+
+  const source = asRecord(value);
+  if (source === undefined) {
+    throw new Error("Assistant toolcall sync event arguments must be object");
+  }
+
+  const result: Record<string, JsonValue> = {};
+  for (const [key, entry] of Object.entries(source)) {
+    assertType(JsonValueSchema, entry);
+    result[key] = entry;
+  }
+  return result;
 }
 
 function readTextDeltaStart(partialText: string, delta: string): number {

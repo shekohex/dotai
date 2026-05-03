@@ -7,12 +7,7 @@ import {
 import { SessionSyncEventSchema, type SessionSyncEvent } from "../schemas.js";
 import { applyToolPartialPatch, readToolOutputText } from "../tool-output-text.js";
 import { RemoteError } from "../errors.js";
-import {
-  compareSessionVersions,
-  readPatchFingerprint,
-  toSessionSyncPatchEvent,
-} from "../session-sync-patch-events.js";
-import { sessionEventsStreamId } from "../streams.js";
+import { compareSessionVersions } from "../session-sync-patch-events.js";
 import { assertType } from "../typebox.js";
 import { authError } from "./auth.js";
 import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./types.js";
@@ -60,16 +55,8 @@ export async function handleSessionSync(
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
     const bufferedPatchEvents: SessionSyncEvent[] = [];
     const bufferedPatchEventIndexesByKey = new Map<string, number>();
-    const sentPatchFingerprints = new Set<string>();
 
     const enqueuePatchEvent = (patchEvent: SessionSyncEvent): void => {
-      const patchFingerprint = readPatchFingerprint(patchEvent);
-      if (patchFingerprint !== undefined) {
-        if (sentPatchFingerprints.has(patchFingerprint)) {
-          return;
-        }
-        sentPatchFingerprints.add(patchFingerprint);
-      }
       if (controller === undefined) {
         bufferPatchEvent(bufferedPatchEvents, bufferedPatchEventIndexesByKey, patchEvent);
         return;
@@ -82,22 +69,6 @@ export async function handleSessionSync(
       assertType(SessionSyncEventSchema, event);
       enqueuePatchEvent(event);
     });
-    const unsubscribeEnvelope = dependencies.liveEvents.subscribe(
-      sessionEventsStreamId(sessionId),
-      (event) => {
-        const payload = toSessionSyncPatchEvent(sessionId, event);
-        if (payload === undefined) {
-          return;
-        }
-        assertType(SessionSyncEventSchema, payload);
-        enqueuePatchEvent(payload);
-      },
-    );
-    const previousUnsubscribe = unsubscribe;
-    unsubscribe = () => {
-      previousUnsubscribe?.();
-      unsubscribeEnvelope();
-    };
 
     const snapshot = await dependencies.sessions.loadSessionSnapshot(
       sessionId,

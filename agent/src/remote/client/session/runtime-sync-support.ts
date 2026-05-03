@@ -30,6 +30,16 @@ type ImmediateUiRequest = Extract<
   | { method: "set_editor_text" }
 >;
 
+type AssistantMessagePatchEvent = Extract<
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "assistant.message" }
+>["payload"]["assistantMessageEvent"];
+
+type IncrementalAssistantMessagePatchEvent = Exclude<
+  AssistantMessagePatchEvent,
+  { type: "done" } | { type: "error" } | { type: "start" }
+>;
+
 export function readSnapshotLiveState(snapshot: SessionSnapshot): SessionSnapshot["live"] {
   return (
     snapshot.live ?? {
@@ -359,11 +369,64 @@ export function toAssistantMessagePatchEvent(
   return {
     type: "message_update",
     message: nextMessage,
-    assistantMessageEvent: {
-      ...payload.assistantMessageEvent,
-      partial: nextMessage,
-    },
-  } as AgentSessionEvent;
+    assistantMessageEvent: toAssistantMessageUpdateEvent(
+      payload.assistantMessageEvent,
+      nextMessage,
+    ),
+  };
+}
+
+function toAssistantMessageUpdateEvent(
+  event: IncrementalAssistantMessagePatchEvent,
+  partial: AssistantMessage,
+): Extract<AgentSessionEvent, { type: "message_update" }>["assistantMessageEvent"] {
+  switch (event.type) {
+    case "text_start":
+      return { type: "text_start", contentIndex: event.contentIndex, partial };
+    case "text_delta":
+      return { type: "text_delta", contentIndex: event.contentIndex, delta: event.delta, partial };
+    case "text_end":
+      return {
+        type: "text_end",
+        contentIndex: event.contentIndex,
+        content: event.content,
+        partial,
+      };
+    case "thinking_start":
+      return { type: "thinking_start", contentIndex: event.contentIndex, partial };
+    case "thinking_delta":
+      return {
+        type: "thinking_delta",
+        contentIndex: event.contentIndex,
+        delta: event.delta,
+        partial,
+      };
+    case "thinking_end":
+      return {
+        type: "thinking_end",
+        contentIndex: event.contentIndex,
+        content: event.content,
+        partial,
+      };
+    case "toolcall_start":
+      return { type: "toolcall_start", contentIndex: event.contentIndex, partial };
+    case "toolcall_delta":
+      return {
+        type: "toolcall_delta",
+        contentIndex: event.contentIndex,
+        delta: event.delta,
+        partial,
+      };
+    case "toolcall_end":
+      return {
+        type: "toolcall_end",
+        contentIndex: event.contentIndex,
+        toolCall: event.toolCall,
+        partial,
+      };
+  }
+
+  throw new Error("Unsupported assistant message patch event");
 }
 
 function applyAssistantMessageSyncEvent(

@@ -5,17 +5,19 @@ import { toRemoteHttpError } from "./utils.js";
 
 export async function readRemoteSessionSync(input: {
   fetchImpl: typeof fetch;
-  routeUrl: string;
+  createRequest: () => Request;
   headers: Record<string, string>;
   signal: AbortSignal | undefined;
   captureConnectionId: (response: Response) => void;
   onSyncEvent: (event: SessionSyncEvent) => Promise<void> | void;
 }): Promise<void> {
-  const response = await input.fetchImpl(input.routeUrl, {
-    method: "GET",
-    headers: input.headers,
-    signal: input.signal,
-  });
+  const request = input.createRequest();
+  const response = await input.fetchImpl(
+    new Request(request, {
+      headers: input.headers,
+      signal: input.signal,
+    }),
+  );
   input.captureConnectionId(response);
   if (!response.ok) {
     throw await toRemoteHttpError(response);

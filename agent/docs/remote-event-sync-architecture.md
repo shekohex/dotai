@@ -921,3 +921,219 @@ That architecture best satisfies goals from this session:
 - minimal diff
 - reconnect safety
 - eventual consistency across clients
+
+## Actionable Fix Backlog
+
+This section translates current known implementation limits into concrete work items that can be shipped independently.
+
+### 1. Resumable patch stream instead of forced snapshot-first reconnect
+
+Problem:
+
+- current client always reconnects with plain `GET /sync`
+- current server always replies `server.connected`, then full `snapshot`, then live patches
+- this is correct, but expensive on unstable or metered links
+
+Current evidence:
+
+- client read path: `src/remote/runtime-api/client.ts:614-633`
+- server sync route: `src/remote/routes/session-sync.ts:71-121`
+
+Action:
+
+1. Add uniform patch envelope `seq` field.
+2. Add `afterSeq` query parameter on session sync endpoint.
+3. Serve patch-only catch-up when server still has contiguous patch history.
+4. Fall back to full snapshot only on missing history, schema mismatch, or explicit resync.
+
+Verification:
+
+- reconnect after short network flap does not resend snapshot when `afterSeq` is still available
+- reconnect after history eviction falls back to snapshot and still converges
+
+### 2. Continuous live coalescing for replaceable updates
+
+Problem:
+
+- current replace-key buffering only applies before initial snapshot flush
+- once stream is live, every replaceable patch is sent immediately
+
+Current evidence:
+
+- pre-snapshot buffering only: `src/remote/routes/session-sync.ts:149-174`
+- replace-key metadata: `src/remote/session-sync-metadata.ts:37-88`
+
+Action:
+
+1. Add optional per-connection bounded coalescing queue for replaceable patch classes.
+2. Coalesce at least:
+   - assistant message update stream
+   - tool execution update stream per tool call id
+   - queue update
+   - retry status
+   - compaction status
+   - replaceable extension custom events
+3. Flush coalesced queue on render tick or short timer.
+4. Keep non-replaceable lifecycle/finalization patches immediate.
+
+Verification:
+
+- sustained `message_update` and `tool_execution_update` load reduces bytes written per client
+- final client state remains identical to uncoalesced stream
+
+### 3. Assistant delta apply should validate offsets
+
+Problem:
+
+- server computes `start` offsets for assistant text/thinking deltas
+- client currently ignores `start` and only appends `delta`
+- tool delta path already validates `start`; assistant path should match that safety bar
+
+Current evidence:
+
+- server assistant delta shape: `src/remote/assistant-message-sync.ts:62-103`
+- client assistant apply path: `src/remote/client/session/runtime-sync-support.ts:455-487`
+- client tool delta validation: `src/remote/client/session/tool-sync-patches.ts:38-56`, `src/remote/client/session/tool-sync-patches.ts:98-101`
+
+Action:
+
+1. Change assistant delta reconstruction to check `start` before append.
+2. If offset mismatch occurs, mark active assistant stream dirty.
+3. Trigger targeted resync for active session state or force snapshot fallback.
+
+Verification:
+
+- injected duplicate or skipped assistant delta does not silently corrupt local partial message
+- client either repairs or resyncs deterministically
+
+### 4. Apply live resource patches to full remote resource-loader view
+
+Problem:
+
+- live `session.state.resources` patches exist
+- client currently only updates remote modes snapshot from live resource patch
+- snapshot path fully rebuilds resource loader, but live patch path does not
+
+Current evidence:
+
+- resource field in patch schema: `src/remote/schemas-stream.ts:394-420`
+- server publishes reload resource patch: `src/remote/session/registry-management.ts:184-194`, `src/remote/session/session-state-patch.ts:27-63`
+- live client patch application only updates modes: `src/remote/client/session/runtime-internals.ts:383-387`
+- snapshot rebuild path: `src/remote/client/session/setup-base.ts:371-378`
+
+Action:
+
+1. Introduce mutable remote resource state on client mirror.
+2. Rebuild `resourceLoader` view when `patch.resources` arrives.
+3. Re-register remote themes and prompt/skill data without requiring full snapshot reload.
+
+Verification:
+
+- server-side prompt/theme/skill reload propagates to connected client without explicit full session reload
+
+### 5. Remove or promote dead SSE control-offset path
+
+Problem:
+
+- SSE parser still understands `control` frames with `streamNextOffset` and friends
+- sync reader ignores them
+- server sync route does not emit them
+
+Current evidence:
+
+- parser control schema: `src/remote/sse.ts:9-42`
+- sync reader ignores control: `src/remote/runtime-api/sync.ts:31-37`
+- server emits only data events and heartbeat comments: `src/remote/routes/session-sync.ts:20-31`, `src/remote/routes/session-sync.ts:90-121`
+
+Action:
+
+1. Choose one path:
+   - delete dead control-offset code
+   - or revive it as real resumable stream control plane for `afterSeq`/resync negotiation
+2. Do not keep half-active transport mechanisms.
+
+Verification:
+
+- no dead-code path remains in sync transport
+- transport docs match actual wire protocol
+
+### 6. Add uniform patch envelope sequencing
+
+Problem:
+
+- top-level patch event has `version` but no uniform per-patch `seq`
+- some payloads contain local `sequence`, but not all patch kinds do
+- this makes gap detection and precise resume harder than necessary
+
+Current evidence:
+
+- patch envelope schema: `src/remote/schemas-stream.ts:556-561`
+- `command.accepted` payload has `sequence`: `src/remote/schemas-stream.ts:374-392`
+- `session.state` payload has `sequence`: `src/remote/schemas-stream.ts:394-420`
+- command acceptance increments queue sequence: `src/remote/session/command-acceptance.ts:121-130`
+
+Action:
+
+1. Add top-level `seq` to every `patch` event.
+2. Keep `version` for durable convergence semantics.
+3. Reserve `seq` for transport ordering and resume.
+4. Make `afterSeq` resume logic depend on envelope `seq`, not payload-specific fields.
+
+Verification:
+
+- client can detect missing live patches without guessing from domain state
+- server can resume from exact next patch boundary
+
+### 7. Reduce heavy lifecycle payload duplication
+
+Problem:
+
+- `agent.lifecycle` patch still sends full message payloads for `message_start`, `message_end`, `turn_end`, and `agent_end`
+- this weakens benefits gained from compact assistant/tool incremental patches
+
+Current evidence:
+
+- lifecycle payload schema: `src/remote/schemas-stream.ts:340-365`
+- lifecycle patch encoder: `src/remote/session/event-stream-ops.ts:261-315`
+
+Action:
+
+1. Audit which lifecycle payloads must remain full for client and extension semantics.
+2. Replace heavy payloads with id/ref forms where local mirror already has authoritative object.
+3. Keep full payloads only where order-sensitive extension behavior truly needs them.
+
+Verification:
+
+- end-of-turn and end-of-agent network volume drops under long conversations with large tool results
+- local extension semantics remain intact
+
+### 8. Make reconnect semantics explicit in protocol docs and tests
+
+Problem:
+
+- current code behavior is snapshot-first reconnect, but target direction is evolving toward resumable patch stream
+- tests and docs should clearly separate:
+  - same-process reconnect
+  - reconnect after history loss
+  - reconnect after restart
+
+Action:
+
+1. Split protocol expectations into three reconnect classes.
+2. Add explicit tests for each class.
+3. Document when snapshot is mandatory vs optional fallback.
+
+Verification:
+
+- reconnect behavior is deterministic and visible in docs, not inferred from implementation
+
+### Suggested execution order
+
+1. Add uniform patch `seq`.
+2. Implement `afterSeq` resume and snapshot fallback.
+3. Fix assistant delta offset validation.
+4. Add continuous live coalescing.
+5. Fix live resource patch application.
+6. Remove or formalize SSE control-offset path.
+7. Trim heavy lifecycle payloads.
+8. Expand reconnect protocol tests and docs.

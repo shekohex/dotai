@@ -56,6 +56,56 @@ test("tool sync patch normalizes structured partial results for agent events", (
   });
 });
 
+test("tool sync patch normalizes structured final results for agent events", () => {
+  const seenEvents: AgentSessionEvent[] = [];
+  const activeSyncToolExecutions = new Map();
+
+  applyToolExecutionSyncPatch({
+    payload: {
+      type: "tool_execution_start",
+      toolCallId: "tool-1",
+      toolName: "session_query",
+      args: {
+        sessionPath: "/tmp/parent.jsonl",
+        question: "What changed?",
+      },
+    },
+    activeSyncToolExecutions,
+    applyAgentSessionEvent: (event) => {
+      seenEvents.push(event);
+    },
+  });
+
+  applyToolExecutionSyncPatch({
+    payload: {
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      result: {
+        output: "done",
+      },
+      isError: false,
+    },
+    activeSyncToolExecutions,
+    applyAgentSessionEvent: (event) => {
+      seenEvents.push(event);
+    },
+  });
+
+  expect(seenEvents).toHaveLength(2);
+  expect(seenEvents[1]).toEqual({
+    type: "tool_execution_end",
+    toolCallId: "tool-1",
+    toolName: "session_query",
+    result: {
+      content: [],
+      details: {
+        output: "done",
+      },
+    },
+    isError: false,
+  });
+});
+
 test("snapshot replay normalizes active tool partial results for agent events", () => {
   const seenEvents: AgentSessionEvent[] = [];
 

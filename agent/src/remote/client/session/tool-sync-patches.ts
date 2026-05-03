@@ -90,7 +90,7 @@ export function applyToolExecutionSyncPatch(input: {
     type: "tool_execution_end",
     toolCallId: input.payload.toolCallId,
     toolName: activeExecution.toolName,
-    result: input.payload.result,
+    result: normalizeToolResultForAgentEvent(input.payload.result),
     isError: input.payload.isError,
   });
 }

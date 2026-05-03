@@ -5,7 +5,7 @@ import {
 } from "../streams.js";
 import type { AuthSession } from "../auth.js";
 import type { SessionLiveEventBus } from "../live-events.js";
-import type { CommandAcceptedResponse, CommandKind } from "../schemas.js";
+import type { CommandAcceptedResponse, CommandKind, SessionSyncEvent } from "../schemas.js";
 import { acceptSessionCommand } from "./command-acceptance.js";
 import { dispatchRuntimeCommand } from "./runtime-command.js";
 import type {
@@ -14,6 +14,14 @@ import type {
   AcceptedSessionCommandPayload,
   SessionRecord,
 } from "./types.js";
+
+function publishSessionSyncPatch(
+  liveEvents: SessionLiveEventBus | undefined,
+  sessionId: string,
+  event: Extract<SessionSyncEvent, { type: "patch" }>,
+): void {
+  liveEvents?.publishSessionSyncEvent(sessionId, event);
+}
 
 type AcceptSessionCommandWithStreamsInput = {
   [TKind in CommandKind]: {
@@ -53,6 +61,7 @@ export function acceptSessionCommandWithStreams(
       accepted: AcceptedSessionCommand,
       acceptedAt: number,
     ) => {
+      const payload = toCommandAcceptedEventPayload(accepted);
       appendAndPublish(
         input.streams,
         input.liveEvents,
@@ -61,10 +70,16 @@ export function acceptSessionCommandWithStreams(
           sessionId: targetRecord.sessionId,
           kind: "command_accepted",
           sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload: toCommandAcceptedEventPayload(accepted),
+          payload,
           ts: acceptedAt,
         },
       );
+      publishSessionSyncPatch(input.liveEvents, targetRecord.sessionId, {
+        type: "patch",
+        sessionId: targetRecord.sessionId,
+        version: String(targetRecord.lastDurableSessionVersion),
+        patch: { patchType: "command.accepted", payload },
+      });
     },
     syncFromRuntime: input.syncFromRuntime,
   };
@@ -210,6 +225,11 @@ export function dispatchRuntimeCommandWithStreams(input: {
     getRuntimeSession: input.getRuntimeSession,
     now: input.now,
     appendExtensionError: (targetRecord, acceptedCommand, message) => {
+      const payload = {
+        commandId: acceptedCommand.commandId,
+        kind: acceptedCommand.kind,
+        error: message,
+      };
       appendAndPublish(
         input.streams,
         input.liveEvents,
@@ -218,14 +238,16 @@ export function dispatchRuntimeCommandWithStreams(input: {
           sessionId: targetRecord.sessionId,
           kind: "extension_error",
           sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload: {
-            commandId: acceptedCommand.commandId,
-            kind: acceptedCommand.kind,
-            error: message,
-          },
+          payload,
           ts: targetRecord.updatedAt,
         },
       );
+      publishSessionSyncPatch(input.liveEvents, targetRecord.sessionId, {
+        type: "patch",
+        sessionId: targetRecord.sessionId,
+        version: String(targetRecord.lastDurableSessionVersion),
+        patch: { patchType: "extension.error", payload },
+      });
     },
     emitSessionSummaryUpdated: input.emitSessionSummaryUpdated,
   });

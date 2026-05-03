@@ -6,6 +6,7 @@ import type {
 import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
 import type { SessionLiveEventBus } from "../live-events.js";
 import { toJsonValue } from "../json-value.js";
+import type { SessionSyncEvent } from "../schemas.js";
 import { readRemoteExtensionSyncInfo } from "../session-sync-metadata.js";
 import {
   appendAndPublish,
@@ -15,6 +16,14 @@ import {
 } from "../streams.js";
 import { appendDurableExtensionEvent } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
+
+function publishSessionSyncPatch(
+  liveEvents: SessionLiveEventBus | undefined,
+  sessionId: string,
+  event: Extract<SessionSyncEvent, { type: "patch" }>,
+): void {
+  liveEvents?.publishSessionSyncEvent(sessionId, event);
+}
 
 export type MirroredRemoteExtensionEvent = Extract<
   ExtensionEvent,
@@ -51,6 +60,12 @@ export function appendMirroredRemoteExtensionEvent(input: {
     payload: input.event,
     ts: input.ts,
   });
+  publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
+    type: "patch",
+    sessionId: input.record.sessionId,
+    version: String(input.record.lastDurableSessionVersion),
+    patch: { patchType: "extension.event", payload: input.event },
+  });
 }
 
 export function appendMirroredRemoteCustomExtensionEvent(input: {
@@ -82,6 +97,18 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
         ts: input.ts,
       },
     );
+    publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
+      type: "patch",
+      sessionId: input.record.sessionId,
+      version: String(input.record.lastDurableSessionVersion),
+      patch: {
+        patchType: "extension.custom",
+        payload: {
+          channel: input.channel,
+          data: jsonData,
+        },
+      },
+    });
     return;
   }
 
@@ -103,6 +130,18 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
       data: jsonData,
     },
     ts: input.ts,
+  });
+  publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
+    type: "patch",
+    sessionId: input.record.sessionId,
+    version: String(input.record.lastDurableSessionVersion),
+    patch: {
+      patchType: "extension.custom",
+      payload: {
+        channel: input.channel,
+        data: jsonData,
+      },
+    },
   });
 }
 

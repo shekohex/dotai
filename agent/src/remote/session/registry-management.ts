@@ -26,8 +26,9 @@ import {
   getLastAppStreamOffsetForNewSession,
   loadSessionSnapshotRecord,
   getSessionSnapshot,
+  buildReloadSessionStatePatchPayload,
+  publishSessionStatePatch,
   registerCreatedSession,
-  sanitizeRemoteModel,
   type SessionRecord,
 } from "./deps.js";
 import {
@@ -196,34 +197,14 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     }
     await session.reload();
     this.syncFromRuntime(record, { updateTimestamp: false, syncResources: true });
-    const updatedAt = this.now();
-    record.updatedAt = updatedAt;
-    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
+    const updatedAt = (record.updatedAt = this.now());
+    const payload = buildReloadSessionStatePatchPayload(record, buildReloadResourcePatch(record));
+    publishSessionStatePatch({
+      streams: this.streams,
+      liveEvents: this.liveEvents,
       sessionId: record.sessionId,
-      kind: "session_state_patch",
-      sessionVersion: String(record.lastDurableSessionVersion),
-      payload: {
-        commandId: "server-reload",
-        sequence: record.queue.nextSequence,
-        patch: {
-          cwd: record.cwd,
-          extensions: record.extensions.map((extension) => ({ ...extension })),
-          resources: buildReloadResourcePatch(record),
-          settings: { ...record.settings },
-          availableModels: record.availableModels.map((model) => sanitizeRemoteModel(model)),
-          modelSettings: {
-            defaultProvider: record.modelSettings.defaultProvider,
-            defaultModel: record.modelSettings.defaultModel,
-            defaultThinkingLevel: record.modelSettings.defaultThinkingLevel,
-            enabledModels: record.modelSettings.enabledModels
-              ? [...record.modelSettings.enabledModels]
-              : null,
-          },
-          autoCompactionEnabled: record.autoCompactionEnabled,
-          steeringMode: record.steeringMode,
-          followUpMode: record.followUpMode,
-        },
-      },
+      version: String(record.lastDurableSessionVersion),
+      payload,
       ts: updatedAt,
     });
     this.emitSessionSummaryUpdated(record, updatedAt);

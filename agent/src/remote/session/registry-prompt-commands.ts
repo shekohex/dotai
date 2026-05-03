@@ -5,6 +5,7 @@ import type {
   FollowUpCommandRequest,
   InterruptCommandRequest,
   PromptCommandRequest,
+  SessionSyncEvent,
   SteerCommandRequest,
 } from "../schemas.js";
 import {
@@ -15,6 +16,14 @@ import {
 } from "./deps.js";
 import { sanitizeRemoteModel } from "../schema-normalization.js";
 import { SessionRegistryManagement } from "./registry-management.js";
+
+function publishSessionSyncPatch(
+  liveEvents: SessionRegistryPromptCommands["liveEvents"],
+  sessionId: string,
+  event: Extract<SessionSyncEvent, { type: "patch" }>,
+): void {
+  liveEvents?.publishSessionSyncEvent(sessionId, event);
+}
 
 export class SessionRegistryPromptCommands extends SessionRegistryManagement {
   async prompt(
@@ -49,6 +58,55 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
           const updatedAt = this.now();
           this.syncFromRuntime(targetRecord, { updateTimestamp: false, syncResources: true });
           targetRecord.updatedAt = updatedAt;
+          const payload = {
+            commandId: accepted.commandId,
+            sequence: accepted.sequence,
+            patch: {
+              model: targetRecord.model,
+              thinkingLevel: targetRecord.thinkingLevel,
+              activeTools: [...targetRecord.activeTools],
+              cwd: targetRecord.cwd,
+              extensions: targetRecord.extensions,
+              resources: {
+                skills: targetRecord.resources.skills.map((skill) => ({ ...skill })),
+                prompts: targetRecord.resources.prompts.map((prompt) => ({ ...prompt })),
+                themes: targetRecord.resources.themes.map((theme) => ({ ...theme })),
+                ...(targetRecord.resources.modes === undefined
+                  ? {}
+                  : { modes: structuredClone(targetRecord.resources.modes) }),
+                systemPrompt: targetRecord.resources.systemPrompt,
+                appendSystemPrompt: [...targetRecord.resources.appendSystemPrompt],
+              },
+              availableModels: targetRecord.availableModels.map((model) =>
+                sanitizeRemoteModel({ ...model }),
+              ),
+              modelSettings: {
+                defaultProvider: targetRecord.modelSettings.defaultProvider,
+                defaultModel: targetRecord.modelSettings.defaultModel,
+                defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
+                enabledModels: targetRecord.modelSettings.enabledModels
+                  ? [...targetRecord.modelSettings.enabledModels]
+                  : null,
+              },
+              sessionStats: {
+                ...targetRecord.sessionStats,
+                tokens: {
+                  input: targetRecord.sessionStats.tokens.input,
+                  output: targetRecord.sessionStats.tokens.output,
+                  cacheRead: targetRecord.sessionStats.tokens.cacheRead,
+                  cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
+                  total: targetRecord.sessionStats.tokens.total,
+                },
+                ...(targetRecord.sessionStats.contextUsage
+                  ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
+                  : {}),
+              },
+              ...(targetRecord.contextUsage
+                ? { contextUsage: { ...targetRecord.contextUsage } }
+                : {}),
+              usageCost: targetRecord.usageCost,
+            },
+          };
           appendAndPublish(
             this.streams,
             this.liveEvents,
@@ -57,58 +115,16 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
               sessionId: targetRecord.sessionId,
               kind: "session_state_patch",
               sessionVersion: String(targetRecord.lastDurableSessionVersion),
-              payload: {
-                commandId: accepted.commandId,
-                sequence: accepted.sequence,
-                patch: {
-                  model: targetRecord.model,
-                  thinkingLevel: targetRecord.thinkingLevel,
-                  activeTools: [...targetRecord.activeTools],
-                  cwd: targetRecord.cwd,
-                  extensions: targetRecord.extensions,
-                  resources: {
-                    skills: targetRecord.resources.skills.map((skill) => ({ ...skill })),
-                    prompts: targetRecord.resources.prompts.map((prompt) => ({ ...prompt })),
-                    themes: targetRecord.resources.themes.map((theme) => ({ ...theme })),
-                    ...(targetRecord.resources.modes === undefined
-                      ? {}
-                      : { modes: structuredClone(targetRecord.resources.modes) }),
-                    systemPrompt: targetRecord.resources.systemPrompt,
-                    appendSystemPrompt: [...targetRecord.resources.appendSystemPrompt],
-                  },
-                  availableModels: targetRecord.availableModels.map((model) =>
-                    sanitizeRemoteModel({ ...model }),
-                  ),
-                  modelSettings: {
-                    defaultProvider: targetRecord.modelSettings.defaultProvider,
-                    defaultModel: targetRecord.modelSettings.defaultModel,
-                    defaultThinkingLevel: targetRecord.modelSettings.defaultThinkingLevel,
-                    enabledModels: targetRecord.modelSettings.enabledModels
-                      ? [...targetRecord.modelSettings.enabledModels]
-                      : null,
-                  },
-                  sessionStats: {
-                    ...targetRecord.sessionStats,
-                    tokens: {
-                      input: targetRecord.sessionStats.tokens.input,
-                      output: targetRecord.sessionStats.tokens.output,
-                      cacheRead: targetRecord.sessionStats.tokens.cacheRead,
-                      cacheWrite: targetRecord.sessionStats.tokens.cacheWrite,
-                      total: targetRecord.sessionStats.tokens.total,
-                    },
-                    ...(targetRecord.sessionStats.contextUsage
-                      ? { contextUsage: { ...targetRecord.sessionStats.contextUsage } }
-                      : {}),
-                  },
-                  ...(targetRecord.contextUsage
-                    ? { contextUsage: { ...targetRecord.contextUsage } }
-                    : {}),
-                  usageCost: targetRecord.usageCost,
-                },
-              },
+              payload,
               ts: updatedAt,
             },
           );
+          publishSessionSyncPatch(this.liveEvents, targetRecord.sessionId, {
+            type: "patch",
+            sessionId: targetRecord.sessionId,
+            version: String(targetRecord.lastDurableSessionVersion),
+            patch: { patchType: "session.state", payload },
+          });
           this.emitSessionSummaryUpdated(targetRecord, updatedAt);
         }
 
@@ -128,20 +144,41 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
         if (messages.length === 0) {
           return;
         }
-        appendAndPublish(
-          this.streams,
-          this.liveEvents,
-          sessionEventsStreamId(targetRecord.sessionId),
-          {
-            sessionId: targetRecord.sessionId,
-            kind: "bash_flush",
-            sessionVersion: String(targetRecord.lastDurableSessionVersion),
-            payload: {
-              messages,
-            },
-            ts: this.now(),
-          },
+        this.appendBashFlushEvent(
+          targetRecord.sessionId,
+          messages,
+          targetRecord.lastDurableSessionVersion,
         );
+      },
+    });
+  }
+
+  private appendBashFlushEvent(
+    sessionId: string,
+    messages: Extract<
+      Parameters<typeof handlePromptCommand>[0]["session"]["messages"][number],
+      { role: "bashExecution" }
+    >[],
+    sessionVersion: number,
+  ): void {
+    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(sessionId), {
+      sessionId,
+      kind: "bash_flush",
+      sessionVersion: String(sessionVersion),
+      payload: {
+        messages,
+      },
+      ts: this.now(),
+    });
+    publishSessionSyncPatch(this.liveEvents, sessionId, {
+      type: "patch",
+      sessionId,
+      version: String(sessionVersion),
+      patch: {
+        patchType: "bash.flush",
+        payload: {
+          messages,
+        },
       },
     });
   }

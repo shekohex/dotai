@@ -80,6 +80,12 @@ const RemoteDurableExtensionStateEntrySchema = Type.Object({
   ts: Type.Number(),
 });
 
+const RemoteDurableExtensionEventEntrySchema = Type.Object({
+  channel: Type.String(),
+  data: JsonValueSchema,
+  ts: Type.Number(),
+});
+
 export const REMOTE_RUNTIME_TRANSITION_ENTRY = "remote-runtime-transition";
 export const REMOTE_SESSION_VERSION_ENTRY = "remote-session-version";
 export const REMOTE_DURABLE_EXTENSION_STATE_ENTRY = "remote-durable-extension-state";
@@ -111,6 +117,8 @@ type DurableExtensionStateTransition = {
   data: JsonValue;
   ts: number;
 };
+
+type DurableExtensionEvent = Static<typeof RemoteDurableExtensionEventEntrySchema>;
 
 type RemoteDurableSessionManagerWriter = SessionManager & {
   appendCustomEntry: (customType: string, data: unknown) => void;
@@ -243,13 +251,20 @@ export function appendDurableExtensionEvent(input: {
     version: input.record.lastDurableSessionVersion,
     updatedAt: input.ts,
   });
+  sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_EVENT_ENTRY, {
+    channel: input.channel,
+    data: input.data,
+    ts: input.ts,
+  });
   sessionManager.appendCustomEntry(REMOTE_DURABLE_EXTENSION_STATE_ENTRY, transition);
-  applyDurableExtensionTransition(input.record.durableExtensionState, transition);
+  applyDurableExtensionEvent(input.record.durableExtensionState, {
+    channel: input.channel,
+    data: input.data,
+    ts: input.ts,
+  });
 }
 
-export function readDurableExtensionEvents(
-  record: SessionRecord,
-): DurableExtensionStateTransition[] {
+export function readDurableExtensionEvents(record: SessionRecord): DurableExtensionEvent[] {
   const sessionManager = requireRemoteDurableSessionManagerReader(
     record.runtime.session?.sessionManager,
   );
@@ -257,7 +272,7 @@ export function readDurableExtensionEvents(
     return [];
   }
 
-  return readDurableExtensionTransitions(sessionManager.getEntries());
+  return readDurableExtensionEventEntries(sessionManager.getEntries());
 }
 
 export function buildDurableExtensionState(record: SessionRecord): Array<{
@@ -492,11 +507,35 @@ function readDurableExtensionTransitions(
   return result;
 }
 
+function readDurableExtensionEventEntries(entries: SessionEntry[]): DurableExtensionEvent[] {
+  const result: DurableExtensionEvent[] = [];
+
+  for (const entry of entries) {
+    if (
+      entry.type === "custom" &&
+      entry.customType === REMOTE_DURABLE_EXTENSION_EVENT_ENTRY &&
+      Value.Check(RemoteDurableExtensionEventEntrySchema, entry.data)
+    ) {
+      result.push(Value.Parse(RemoteDurableExtensionEventEntrySchema, entry.data));
+    }
+  }
+
+  if (result.length > 0) {
+    return result;
+  }
+
+  return readDurableExtensionTransitions(entries).map((entry) => ({
+    channel: entry.channel,
+    data: structuredClone(entry.data),
+    ts: entry.ts,
+  }));
+}
+
 function restoreDurableExtensionState(record: SessionRecord): void {
   const durableExtensionState = ensureDurableExtensionStateMap(record);
   durableExtensionState.clear();
   for (const transition of readDurableExtensionEvents(record)) {
-    applyDurableExtensionTransition(durableExtensionState, transition);
+    applyDurableExtensionEvent(durableExtensionState, transition);
   }
   record.durableExtensionStateHydrated = true;
 }
@@ -513,19 +552,44 @@ function ensureDurableExtensionStateMap(
   return durableExtensionState;
 }
 
-function applyDurableExtensionTransition(
+function applyDurableExtensionEvent(
   state: Map<string, { channel: string; data: JsonValue }>,
-  transition: DurableExtensionStateTransition,
+  event: DurableExtensionEvent,
 ): void {
-  if (transition.op === "remove") {
-    state.delete(transition.stateKey);
+  const syncInfo = readRemoteExtensionSyncInfo(event.channel, event.data);
+  if (syncInfo.deleted) {
+    state.delete(syncInfo.stateKey);
     return;
   }
 
-  state.set(transition.stateKey, {
-    channel: transition.channel,
-    data: structuredClone(transition.data),
+  const previous = state.get(syncInfo.stateKey);
+  state.set(syncInfo.stateKey, {
+    channel: event.channel,
+    data: reduceDurableExtensionEventData(previous?.data, event.data, syncInfo.reducer),
   });
+}
+
+function reduceDurableExtensionEventData(
+  previous: JsonValue | undefined,
+  next: JsonValue,
+  reducer: "replace" | "merge",
+): JsonValue {
+  if (reducer === "replace") {
+    return structuredClone(next);
+  }
+
+  if (!isPlainJsonObject(previous) || !isPlainJsonObject(next)) {
+    return structuredClone(next);
+  }
+
+  return {
+    ...structuredClone(previous),
+    ...structuredClone(next),
+  };
+}
+
+function isPlainJsonObject(value: JsonValue | undefined): value is Record<string, JsonValue> {
+  return value !== undefined && value !== null && !Array.isArray(value);
 }
 
 export function createDurableExtensionRemovalEvent(input: {
@@ -547,8 +611,8 @@ export function readDurableExtensionStateFromEntries(entries: SessionEntry[]): A
   data: JsonValue;
 }> {
   const state = new Map<string, { channel: string; data: JsonValue }>();
-  for (const transition of readDurableExtensionTransitions(entries)) {
-    applyDurableExtensionTransition(state, transition);
+  for (const event of readDurableExtensionEventEntries(entries)) {
+    applyDurableExtensionEvent(state, event);
   }
   return [...state.values()].map((value) => ({
     channel: value.channel,

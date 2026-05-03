@@ -57,7 +57,7 @@ export function loadUnloadedSessionSnapshot(input: {
   return {
     sessionId: input.record.sessionId,
     ...(input.record.sessionName === undefined ? {} : { sessionName: input.record.sessionName }),
-    status: activeRun === null ? "idle" : "running",
+    status: "idle",
     cwd: input.record.cwd,
     model: authoritativeMetadata?.model ?? "pi-remote-faux/pi-remote-faux-1",
     thinkingLevel: authoritativeMetadata?.thinkingLevel ?? "medium",

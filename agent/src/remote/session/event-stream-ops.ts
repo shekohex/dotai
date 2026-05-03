@@ -23,6 +23,14 @@ import { persistDurableRuntimeDomainState } from "./durable-runtime-state.js";
 import { handleSessionEventForRecord } from "./event-ops.js";
 import type { SessionRecord } from "./types.js";
 
+function publishSessionSyncPatch(
+  liveEvents: SessionLiveEventBus | undefined,
+  sessionId: string,
+  event: Extract<SessionSyncEvent, { type: "patch" }>,
+): void {
+  liveEvents?.publishSessionSyncEvent(sessionId, event);
+}
+
 export function emitSessionSummaryUpdatedEvent(input: {
   streams: InMemoryDurableStreamStore;
   liveEvents?: SessionLiveEventBus;
@@ -57,7 +65,7 @@ export function appendExtensionUiRequestEvent(input: {
     payload: input.payload,
     ts: input.ts,
   });
-  input.liveEvents?.publishSessionSyncEvent(input.record.sessionId, {
+  publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
     type: "patch",
     sessionId: input.record.sessionId,
     version: String(input.record.lastDurableSessionVersion),
@@ -79,7 +87,7 @@ export function appendExtensionUiResolvedEvent(input: {
     payload: input.payload,
     ts: input.ts,
   });
-  input.liveEvents?.publishSessionSyncEvent(input.record.sessionId, {
+  publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
     type: "patch",
     sessionId: input.record.sessionId,
     version: String(input.record.lastDurableSessionVersion),
@@ -133,7 +141,7 @@ export function handleRegistrySessionEvent(input: {
           ts,
         },
       );
-      input.liveEvents?.publishSessionSyncEvent(targetRecord.sessionId, {
+      publishSessionSyncPatch(input.liveEvents, targetRecord.sessionId, {
         type: "patch",
         sessionId: targetRecord.sessionId,
         version: sessionVersion,
@@ -221,7 +229,7 @@ function publishSyncPatch(
     | undefined,
 ): void {
   if (livePatchEvent?.kind === "assistant_message_patch") {
-    liveEvents?.publishSessionSyncEvent(sessionId, {
+    publishSessionSyncPatch(liveEvents, sessionId, {
       type: "patch",
       sessionId,
       version: sessionVersion,
@@ -230,7 +238,7 @@ function publishSyncPatch(
     return;
   }
   if (livePatchEvent?.kind === "tool_execution_patch") {
-    liveEvents?.publishSessionSyncEvent(sessionId, {
+    publishSessionSyncPatch(liveEvents, sessionId, {
       type: "patch",
       sessionId,
       version: sessionVersion,
@@ -243,7 +251,7 @@ function publishSyncPatch(
   }
   const sessionSyncEvent = toKnownAgentSessionSyncEvent(sessionId, knownPayload, sessionVersion);
   if (sessionSyncEvent !== undefined) {
-    liveEvents?.publishSessionSyncEvent(sessionId, sessionSyncEvent);
+    publishSessionSyncPatch(liveEvents, sessionId, sessionSyncEvent);
   }
 }
 
@@ -255,6 +263,8 @@ function toKnownAgentSessionSyncEvent(
   switch (payload.type) {
     case "agent_start":
     case "turn_start":
+    case "message_start":
+    case "message_end":
     case "turn_end":
     case "agent_end":
       return {
@@ -263,8 +273,6 @@ function toKnownAgentSessionSyncEvent(
         version,
         patch: { patchType: "agent.lifecycle", payload },
       };
-    case "message_start":
-    case "message_end":
     case "message_update":
     case "tool_execution_start":
     case "tool_execution_update":

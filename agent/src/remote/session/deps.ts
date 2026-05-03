@@ -26,6 +26,10 @@ export {
   emitSessionSummaryUpdatedEvent,
   handleRegistrySessionEvent,
 } from "./event-stream-ops.js";
+export {
+  buildReloadSessionStatePatchPayload,
+  publishSessionStatePatch,
+} from "./session-state-patch.js";
 export { installRemoteExtensionEventMirror } from "./extension-event-stream.js";
 export {
   appendDurableExtensionEvent,

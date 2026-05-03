@@ -13,6 +13,7 @@ import type {
   CompactResponse,
   NavigateTreeRequest,
   NavigateTreeResponse,
+  SessionSyncEvent,
   ToolDefinitionMetadata,
 } from "../schemas.js";
 import { RemoteError } from "../errors.js";
@@ -21,6 +22,14 @@ import { sanitizeBranchSummaryEntry, sanitizeCompactDetails } from "../schema-no
 import { SessionRegistryPromptCommands } from "./registry-prompt-commands.js";
 import { serializeToolDefinition } from "./tool-definition-metadata.js";
 import type { SessionRecord } from "./types.js";
+
+function publishSessionSyncPatch(
+  liveEvents: SessionRegistryRuntimeOps["liveEvents"],
+  sessionId: string,
+  event: Extract<SessionSyncEvent, { type: "patch" }>,
+): void {
+  liveEvents?.publishSessionSyncEvent(sessionId, event);
+}
 
 export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
   async emitSessionExtensionCustomEvent(
@@ -241,17 +250,24 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     executionId: string,
     request: BashExecuteRequest,
   ): void {
+    const payload = {
+      executionId,
+      command: request.command,
+      clientRequestId: request.clientRequestId,
+      excludeFromContext: request.excludeFromContext,
+    };
     appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_start",
       sessionVersion: String(record.lastDurableSessionVersion),
-      payload: {
-        executionId,
-        command: request.command,
-        clientRequestId: request.clientRequestId,
-        excludeFromContext: request.excludeFromContext,
-      },
+      payload,
       ts: this.now(),
+    });
+    publishSessionSyncPatch(this.liveEvents, record.sessionId, {
+      type: "patch",
+      sessionId: record.sessionId,
+      version: String(record.lastDurableSessionVersion),
+      patch: { patchType: "bash.start", payload },
     });
   }
 
@@ -261,16 +277,23 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     chunk: string,
     clientRequestId?: string,
   ): void {
+    const payload = {
+      executionId,
+      chunk,
+      clientRequestId,
+    };
     appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_chunk",
       sessionVersion: String(record.lastDurableSessionVersion),
-      payload: {
-        executionId,
-        chunk,
-        clientRequestId,
-      },
+      payload,
       ts: this.now(),
+    });
+    publishSessionSyncPatch(this.liveEvents, record.sessionId, {
+      type: "patch",
+      sessionId: record.sessionId,
+      version: String(record.lastDurableSessionVersion),
+      patch: { patchType: "bash.chunk", payload },
     });
   }
 
@@ -281,48 +304,62 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
     result: Omit<BashExecuteResponse, "snapshot" | "clientRequestId">,
   ): void {
     const bashMessage = readLastBashExecutionMessage(record.transcript);
+    const payload = {
+      executionId,
+      clientRequestId: request.clientRequestId,
+      result,
+      deferredUntilTurnEnd: record.hasPendingBashMessages,
+      ...(bashMessage ? { message: bashMessage } : {}),
+    };
     appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "bash_end",
       sessionVersion: String(record.lastDurableSessionVersion),
-      payload: {
-        executionId,
-        clientRequestId: request.clientRequestId,
-        result,
-        deferredUntilTurnEnd: record.hasPendingBashMessages,
-        ...(bashMessage ? { message: bashMessage } : {}),
-      },
+      payload,
       ts: this.now(),
+    });
+    publishSessionSyncPatch(this.liveEvents, record.sessionId, {
+      type: "patch",
+      sessionId: record.sessionId,
+      version: String(record.lastDurableSessionVersion),
+      patch: { patchType: "bash.end", payload },
     });
   }
 
   private appendBashStatePatch(record: Parameters<typeof this.toSessionSnapshot>[0]): void {
+    const payload = {
+      commandId: "server-state-sync",
+      sequence: record.queue.nextSequence,
+      patch: {
+        isBashRunning: record.isBashRunning,
+        hasPendingBashMessages: record.hasPendingBashMessages,
+        sessionStats: {
+          ...record.sessionStats,
+          tokens: {
+            input: record.sessionStats.tokens.input,
+            output: record.sessionStats.tokens.output,
+            cacheRead: record.sessionStats.tokens.cacheRead,
+            cacheWrite: record.sessionStats.tokens.cacheWrite,
+            total: record.sessionStats.tokens.total,
+          },
+          ...(record.sessionStats.contextUsage
+            ? { contextUsage: { ...record.sessionStats.contextUsage } }
+            : {}),
+        },
+      },
+    };
     appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
       sessionId: record.sessionId,
       kind: "session_state_patch",
       sessionVersion: String(record.lastDurableSessionVersion),
-      payload: {
-        commandId: "server-state-sync",
-        sequence: record.queue.nextSequence,
-        patch: {
-          isBashRunning: record.isBashRunning,
-          hasPendingBashMessages: record.hasPendingBashMessages,
-          sessionStats: {
-            ...record.sessionStats,
-            tokens: {
-              input: record.sessionStats.tokens.input,
-              output: record.sessionStats.tokens.output,
-              cacheRead: record.sessionStats.tokens.cacheRead,
-              cacheWrite: record.sessionStats.tokens.cacheWrite,
-              total: record.sessionStats.tokens.total,
-            },
-            ...(record.sessionStats.contextUsage
-              ? { contextUsage: { ...record.sessionStats.contextUsage } }
-              : {}),
-          },
-        },
-      },
+      payload,
       ts: this.now(),
+    });
+    publishSessionSyncPatch(this.liveEvents, record.sessionId, {
+      type: "patch",
+      sessionId: record.sessionId,
+      version: String(record.lastDurableSessionVersion),
+      patch: { patchType: "session.state", payload },
     });
   }
 }

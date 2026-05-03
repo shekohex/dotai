@@ -62,6 +62,7 @@ import {
 import { SessionSyncPatchEventSchema } from "../src/remote/schemas-stream.ts";
 import { sanitizeSessionEntry } from "../src/remote/schema-normalization.ts";
 import { syncSessionRecordFromRuntime } from "../src/remote/session/runtime-sync.ts";
+import { loadUnloadedSessionSnapshot } from "../src/remote/session/unloaded-session-snapshot.ts";
 import { touchSessionPresence } from "../src/remote/session/presence-ops.ts";
 import { createRemoteUiContext } from "../src/remote/session/ui-context.ts";
 import {
@@ -2954,28 +2955,34 @@ timedTest("session sync drains only uncovered buffered live patches after snapsh
       (value) => value !== undefined,
     );
 
-    appendAndPublish(streams, liveEvents, sessionEventsStreamId(created.sessionId), {
+    liveEvents.publishSessionSyncEvent(created.sessionId, {
+      type: "patch",
       sessionId: created.sessionId,
-      kind: "assistant_message_patch",
-      sessionVersion: "7",
-      payload: {
-        type: "message_update",
-        assistantMessageEvent: {
-          type: "text_delta",
-          contentIndex: 0,
-          start: 0,
-          delta: "partial",
+      version: "7",
+      patch: {
+        patchType: "assistant.message",
+        payload: {
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            contentIndex: 0,
+            start: 0,
+            delta: "partial",
+          },
         },
       },
     });
-    appendAndPublish(streams, liveEvents, sessionEventsStreamId(created.sessionId), {
+    liveEvents.publishSessionSyncEvent(created.sessionId, {
+      type: "patch",
       sessionId: created.sessionId,
-      kind: "tool_execution_patch",
-      sessionVersion: "8",
-      payload: {
-        type: "tool_execution_update",
-        toolCallId: "tool-1",
-        partialResult: { output: "newer" },
+      version: "8",
+      patch: {
+        patchType: "tool.execution",
+        payload: {
+          type: "tool_execution_update",
+          toolCallId: "tool-1",
+          partialResult: { output: "newer" },
+        },
       },
     });
 
@@ -3104,28 +3111,34 @@ timedTest(
         (value) => value !== undefined,
       );
 
-      appendAndPublish(streams, liveEvents, sessionEventsStreamId(created.sessionId), {
+      liveEvents.publishSessionSyncEvent(created.sessionId, {
+        type: "patch",
         sessionId: created.sessionId,
-        kind: "assistant_message_patch",
-        sessionVersion: "7",
-        payload: {
-          type: "message_update",
-          assistantMessageEvent: {
-            type: "text_delta",
-            contentIndex: 0,
-            start: 0,
-            delta: "partial",
+        version: "7",
+        patch: {
+          patchType: "assistant.message",
+          payload: {
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              contentIndex: 0,
+              start: 0,
+              delta: "partial",
+            },
           },
         },
       });
-      appendAndPublish(streams, liveEvents, sessionEventsStreamId(created.sessionId), {
+      liveEvents.publishSessionSyncEvent(created.sessionId, {
+        type: "patch",
         sessionId: created.sessionId,
-        kind: "tool_execution_patch",
-        sessionVersion: "8",
-        payload: {
-          type: "tool_execution_update",
-          toolCallId: "tool-1",
-          partialResult: { output: "newer" },
+        version: "8",
+        patch: {
+          patchType: "tool.execution",
+          payload: {
+            type: "tool_execution_update",
+            toolCallId: "tool-1",
+            partialResult: { output: "newer" },
+          },
         },
       });
 
@@ -3584,6 +3597,67 @@ timedTest("ephemeral custom extension events stay live-only", () => {
 
   expect(liveEventsSeen).toEqual(["demo:ephemeral"]);
   unsubscribe();
+});
+
+timedTest("custom extension sync publishes typed session sync patches", () => {
+  const liveEvents = new SessionLiveEventBus();
+  const streams = new InMemoryDurableStreamStore();
+  const sessionSyncEvents: SessionSyncEvent[] = [];
+  const unsubscribe = liveEvents.subscribeSessionSyncEvent("test-session", (event) => {
+    sessionSyncEvents.push(event);
+  });
+
+  try {
+    appendMirroredRemoteCustomExtensionEvent({
+      streams,
+      liveEvents,
+      record: { sessionId: "test-session", lastDurableSessionVersion: 7 } as never,
+      channel: "demo:ephemeral",
+      data: { sync: "ephemeral", value: "live" },
+      ts: 1,
+    });
+
+    appendMirroredRemoteCustomExtensionEvent({
+      streams,
+      liveEvents,
+      record: {
+        sessionId: "test-session",
+        lastDurableSessionVersion: 7,
+        runtime: { session: { sessionManager: SessionManager.inMemory(process.cwd()) } },
+        durableExtensionState: new Map(),
+        durableExtensionStateHydrated: true,
+      } as never,
+      channel: "demo:durable",
+      data: { sync: "durable", replaceKey: "slot", value: 1 },
+      ts: 2,
+    });
+
+    expect(sessionSyncEvents).toEqual([
+      {
+        type: "patch",
+        sessionId: "test-session",
+        version: "7",
+        patch: {
+          patchType: "extension.custom",
+          payload: { channel: "demo:ephemeral", data: { sync: "ephemeral", value: "live" } },
+        },
+      },
+      {
+        type: "patch",
+        sessionId: "test-session",
+        version: "8",
+        patch: {
+          patchType: "extension.custom",
+          payload: {
+            channel: "demo:durable",
+            data: { sync: "durable", replaceKey: "slot", value: 1 },
+          },
+        },
+      },
+    ]);
+  } finally {
+    unsubscribe();
+  }
 });
 
 timedTest("origin client suppresses echoed custom extension patch", async () => {
@@ -4145,14 +4219,17 @@ timedTest("session sync agent_session_event patches keep durable version semanti
       (value) => value !== undefined,
     );
 
-    appendAndPublish(streams, liveEvents, sessionEventsStreamId(created.sessionId), {
+    liveEvents.publishSessionSyncEvent(created.sessionId, {
+      type: "patch",
       sessionId: created.sessionId,
-      kind: "agent_session_event",
-      sessionVersion: "7",
-      payload: {
-        type: "queue_update",
-        steering: ["queued"],
-        followUp: [],
+      version: "7",
+      patch: {
+        patchType: "queue.update",
+        payload: {
+          type: "queue_update",
+          steering: ["queued"],
+          followUp: [],
+        },
       },
     });
 
@@ -4571,6 +4648,61 @@ timedTest("durable runtime state rebuild marks interrupted domains on restart", 
   expect(record.lastDurableSessionVersion).toBe(42);
 });
 
+timedTest("unloaded interrupted snapshot stays idle at top level", async () => {
+  const sessionDir = await mkdtemp(join(tmpdir(), "pi-remote-unloaded-status-"));
+  const workspaceDir = await mkdtemp(join(tmpdir(), "pi-remote-unloaded-workspace-"));
+
+  try {
+    const sessionManager = SessionManager.create(workspaceDir, sessionDir);
+    sessionManager.appendCustomEntry(REMOTE_RUNTIME_TRANSITION_ENTRY, {
+      domain: "streaming",
+      op: "status_set",
+      status: "streaming",
+      updatedAt: 1,
+    });
+    sessionManager.appendCustomEntry(REMOTE_SESSION_VERSION_ENTRY, {
+      version: 3,
+      updatedAt: 1,
+    });
+
+    const sessionPath = sessionManager.getSessionFile();
+    if (sessionPath === undefined) {
+      throw new Error("Expected persisted session file");
+    }
+    await writeFile(
+      sessionPath,
+      `${sessionManager
+        .getEntries()
+        .map((entry) => JSON.stringify(entry))
+        .join("\n")}\n`,
+      "utf8",
+    );
+
+    const snapshot = loadUnloadedSessionSnapshot({
+      record: {
+        sessionId: sessionManager.getSessionId(),
+        sessionPath,
+        cwd: workspaceDir,
+        messageCount: 0,
+        createdAt: 1,
+        modifiedAt: 1,
+        parentSessionId: null,
+        parentSessionPath: null,
+        persistence: "persistent",
+        lifecycleStatus: "active",
+        durableVersion: 3,
+      },
+    });
+
+    expect(snapshot.status).toBe("idle");
+    expect(snapshot.streamingState).toBe("interrupted");
+    expect(snapshot.activeRun?.status).toBe("interrupted");
+  } finally {
+    await rm(sessionDir, { recursive: true, force: true });
+    await rm(workspaceDir, { recursive: true, force: true });
+  }
+});
+
 timedTest("snapshot clears stale bash execution caches", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;
   const remote = createRemoteApp({
@@ -4727,8 +4859,6 @@ timedTest("durable extension events persist to session history", () => {
 
   expect(readDurableExtensionEvents(record)).toEqual([
     {
-      op: "upsert",
-      stateKey: "demo:durable",
       channel: "demo:durable",
       data: { sync: "durable", value: 1 },
       ts: 1,
@@ -4763,6 +4893,40 @@ timedTest("durable extension reducer removes stale state by key", () => {
   });
 
   expect(buildDurableExtensionState(record)).toEqual([]);
+});
+
+timedTest("durable extension reducer rebuilds merged state from durable events", () => {
+  const sessionManager = SessionManager.inMemory(process.cwd());
+  const record = {
+    runtime: { session: { sessionManager } },
+    lastDurableSessionVersion: 0,
+  } as never;
+
+  appendDurableExtensionEvent({
+    record,
+    channel: "demo:durable",
+    data: { sync: "durable", reducer: "merge", replaceKey: "slot", value: 1 },
+    ts: 1,
+  });
+  appendDurableExtensionEvent({
+    record,
+    channel: "demo:durable",
+    data: { sync: "durable", reducer: "merge", replaceKey: "slot", other: 2 },
+    ts: 2,
+  });
+
+  expect(buildDurableExtensionState(record)).toEqual([
+    {
+      channel: "demo:durable",
+      data: {
+        sync: "durable",
+        reducer: "merge",
+        replaceKey: "slot",
+        value: 1,
+        other: 2,
+      },
+    },
+  ]);
 });
 
 timedTest("snapshot replay emits removal for stale durable extension state", () => {

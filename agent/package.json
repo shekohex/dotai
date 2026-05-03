@@ -44,7 +44,7 @@
     "test:subagent": "vitest run ./test/commit.test.ts ./test/subagent.test.ts ./test/subagent-sdk.test.ts"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "0.70.0",
+    "@mariozechner/pi-coding-agent": "0.72.1",
     "@mendable/firecrawl-js": "^4.18.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@oxlint/plugins": "^1.61.0",

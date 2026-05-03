@@ -3779,6 +3779,142 @@ timedTest("session sync bounds 100k tool execution updates to one buffered patch
   });
 });
 
+timedTest("session sync coalesces mixed tool patch forms by toolCallId", () => {
+  const bufferedPatchEvents: SessionSyncEvent[] = [];
+  const bufferedPatchEventIndexesByKey = new Map<string, number>();
+
+  bufferPatchEvent(bufferedPatchEvents, bufferedPatchEventIndexesByKey, {
+    type: "patch",
+    sessionId: "buffer-session",
+    version: "1",
+    patch: {
+      patchType: "tool.execution",
+      payload: {
+        type: "tool_execution_update",
+        toolCallId: "tool-1",
+        partialResult: { line: 1 },
+      },
+    },
+  });
+  bufferPatchEvent(bufferedPatchEvents, bufferedPatchEventIndexesByKey, {
+    type: "patch",
+    sessionId: "buffer-session",
+    version: "2",
+    patch: {
+      patchType: "tool.execution",
+      payload: {
+        type: "tool_execution_output_delta",
+        toolCallId: "tool-1",
+        start: 0,
+        delta: "hi",
+      },
+    },
+  });
+  bufferPatchEvent(bufferedPatchEvents, bufferedPatchEventIndexesByKey, {
+    type: "patch",
+    sessionId: "buffer-session",
+    version: "3",
+    patch: {
+      patchType: "tool.execution",
+      payload: {
+        type: "tool_execution_partial_patch",
+        toolCallId: "tool-1",
+        ops: [{ op: "replace", path: ["details", "truncation"], value: "tail" }],
+      },
+    },
+  });
+
+  expect(bufferedPatchEvents).toHaveLength(1);
+  expect(bufferedPatchEvents[0]).toMatchObject({
+    type: "patch",
+    version: "3",
+    patch: {
+      patchType: "tool.execution",
+      payload: { type: "tool_execution_partial_patch", toolCallId: "tool-1" },
+    },
+  });
+});
+
+timedTest("session sync live bus keeps bounded mixed tool patch buffer at 100k events", () => {
+  const liveEvents = new SessionLiveEventBus();
+  const bufferedPatchEvents: SessionSyncEvent[] = [];
+  const bufferedPatchEventIndexesByKey = new Map<string, number>();
+  const unsubscribe = liveEvents.subscribeSessionSyncEvent("buffer-session", (event) => {
+    bufferPatchEvent(bufferedPatchEvents, bufferedPatchEventIndexesByKey, event);
+  });
+
+  try {
+    for (let index = 0; index < 100_000; index += 1) {
+      liveEvents.publishSessionSyncEvent("buffer-session", {
+        type: "patch",
+        sessionId: "buffer-session",
+        version: String(index + 1),
+        patch: {
+          patchType: "tool.execution",
+          payload: {
+            type: index % 2 === 0 ? "tool_execution_update" : "tool_execution_partial_patch",
+            toolCallId: "tool-1",
+            ...(index % 2 === 0
+              ? { partialResult: { line: index } }
+              : { ops: [{ op: "replace", path: ["line"], value: index }] }),
+          },
+        },
+      });
+    }
+
+    expect(bufferedPatchEvents).toHaveLength(1);
+    expect(bufferedPatchEvents[0]).toMatchObject({
+      type: "patch",
+      version: "100000",
+      patch: {
+        patchType: "tool.execution",
+        payload: { toolCallId: "tool-1" },
+      },
+    });
+    expect(JSON.stringify(bufferedPatchEvents).length).toBeLessThan(512);
+  } finally {
+    unsubscribe();
+  }
+});
+
+timedTest("snapshot suppresses buffered tool partial patch when snapshot already covers it", () => {
+  const patchEvent: SessionSyncEvent = {
+    type: "patch",
+    sessionId: "session-1",
+    version: "3",
+    patch: {
+      patchType: "tool.execution",
+      payload: {
+        type: "tool_execution_partial_patch",
+        toolCallId: "tool-1",
+        ops: [{ op: "replace", path: ["details", "truncation"], value: "tail" }],
+      },
+    },
+  };
+
+  const snapshot = {
+    ...buildEmptySnapshot(),
+    version: "3",
+    pendingToolCalls: ["tool-1"],
+    live: {
+      ...buildEmptySnapshot().live,
+      activeToolExecutions: [
+        {
+          toolCallId: "tool-1",
+          toolName: "bash",
+          args: { command: "echo hi" },
+          partialResult: {
+            content: [{ type: "text", text: "hi" }],
+            details: { truncation: "tail", fullOutputPath: null },
+          },
+        },
+      ],
+    },
+  } as SessionSnapshot;
+
+  expect(isPatchCoveredBySnapshot(patchEvent, snapshot)).toBe(true);
+});
+
 timedTest("runtime durable sync patches use post-change durable version", async () => {
   const liveEvents = new SessionLiveEventBus();
   const streams = new InMemoryDurableStreamStore({ liveEventBus: liveEvents });
@@ -5632,7 +5768,7 @@ timedTest("persistent remote session lazily loads runtime on attach after restar
       expect(sessionSnapshot.sessionId).toBe(createdSessionId);
       expect(sessionSnapshot.cwd).toBe(harness.workspaceDir);
       expect(runtimeFactoryB.createCalls).toBe(0);
-      expect(runtimeFactoryB.loadCalls).toBe(1);
+      expect(runtimeFactoryB.loadCalls).toBe(0);
 
       const summaryResponse = await remoteB.app.request(
         `/v1/sessions/${createdSessionId}/summary`,
@@ -5645,7 +5781,7 @@ timedTest("persistent remote session lazily loads runtime on attach after restar
         lifecycle: { loaded: boolean };
       };
 
-      expect(summary.lifecycle.loaded).toBe(true);
+      expect(summary.lifecycle.loaded).toBe(false);
 
       const secondSnapshotResponse = await remoteB.app.request(
         `/v1/sessions/${createdSessionId}/snapshot`,
@@ -5654,7 +5790,7 @@ timedTest("persistent remote session lazily loads runtime on attach after restar
         },
       );
       expect(secondSnapshotResponse.status).toBe(200);
-      expect(runtimeFactoryB.loadCalls).toBe(1);
+      expect(runtimeFactoryB.loadCalls).toBe(0);
     } finally {
       await remoteB.dispose();
     }

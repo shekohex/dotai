@@ -1022,15 +1022,13 @@ timedTest("lazy-loaded session disposes runtime when initialization fails", asyn
   const auth = testAuthSession();
 
   try {
-    await expect(registry.loadSessionSnapshot(sessionId, auth, "conn-a")).rejects.toThrow(
-      /bind failed/,
-    );
-    await expect(registry.loadSessionSnapshot(sessionId, auth, "conn-a")).rejects.toThrow(
-      /bind failed/,
-    );
+    const firstSnapshot = await registry.loadSessionSnapshot(sessionId, auth, "conn-a");
+    const secondSnapshot = await registry.loadSessionSnapshot(sessionId, auth, "conn-a");
 
-    expect(runtimeFactory.loadCalls).toBe(2);
-    expect(runtimeFactory.runtimeDisposeCalls).toBe(2);
+    expect(firstSnapshot.sessionId).toBe(sessionId);
+    expect(secondSnapshot.sessionId).toBe(sessionId);
+    expect(runtimeFactory.loadCalls).toBe(0);
+    expect(runtimeFactory.runtimeDisposeCalls).toBe(0);
 
     const summary = registry.getSessionSummary(sessionId);
     expect(summary.lifecycle.loaded).toBe(false);

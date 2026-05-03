@@ -1905,8 +1905,8 @@ timedTest("session registry evicts idle persistent runtime and reloads on demand
 
     const snapshot = await registry.loadSessionSnapshot("evict-session", auth, "conn-b");
     expect(snapshot.sessionId).toBe("evict-session");
-    expect(runtimeFactory.loadCalls).toBe(1);
-    expect(registry.getSessionSummary("evict-session").lifecycle.loaded).toBe(true);
+    expect(runtimeFactory.loadCalls).toBe(0);
+    expect(registry.getSessionSummary("evict-session").lifecycle.loaded).toBe(false);
   } finally {
     await registry.dispose();
     await rm(root, { recursive: true, force: true });
@@ -1966,7 +1966,7 @@ timedTest("session summary version stays durable across unloaded and loaded view
 
     const loadedSummary = registry.getSessionSummary("versioned-session");
     expect(loadedSummary.version).toBe("42");
-    expect(loadedSummary.lifecycle.loaded).toBe(true);
+    expect(loadedSummary.lifecycle.loaded).toBe(false);
   } finally {
     await registry.dispose();
     await rm(root, { recursive: true, force: true });
@@ -4443,6 +4443,83 @@ timedTest("remote snapshot and adapter expose runtime context usage", async () =
     await remote.dispose();
   }
 });
+
+timedTest(
+  "unloaded persisted snapshot keeps authoritative settings and stats metadata",
+  async () => {
+    const harness = await createTempPersistedRuntimeHarness({
+      prefix: "remote-unloaded-authoritative-metadata-",
+    });
+    const auth = testAuthSession();
+
+    let registry = new SessionRegistry({
+      streams: new InMemoryDurableStreamStore(),
+      runtimeFactory: harness.runtimeFactory,
+      catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+    });
+
+    try {
+      const created = await registry.createSession(
+        {
+          workspaceCwd: harness.workspaceDir,
+          persistence: "persistent",
+        },
+        auth,
+        "conn-a",
+      );
+
+      await registry.updateSettings(
+        created.sessionId,
+        { method: "setSteeringMode", args: ["one-at-a-time"] },
+        auth,
+        "conn-a",
+      );
+      await registry.updateSettings(
+        created.sessionId,
+        { method: "setAutoCompactionEnabled", args: [true] },
+        auth,
+        "conn-a",
+      );
+      await registry.updateModel(
+        created.sessionId,
+        { model: "pi-remote-faux/pi-remote-faux-1", thinkingLevel: "high" },
+        auth,
+        "conn-a",
+      );
+      await registry.prompt(created.sessionId, { text: "metadata test" }, auth, "conn-a");
+      await waitForSessionToBecomeIdle(registry, created.sessionId, auth);
+      await waitForPersistedSessionFile(harness.sessionDir, created.sessionId);
+      await registry.reconcileCatalogFromDisk();
+
+      const loadedSnapshot = registry.getSessionSnapshot(created.sessionId, auth, "conn-a");
+      expect(loadedSnapshot.autoCompactionEnabled).toBe(true);
+      expect(loadedSnapshot.steeringMode).toBe("one-at-a-time");
+
+      await registry.dispose();
+      registry = new SessionRegistry({
+        streams: new InMemoryDurableStreamStore(),
+        runtimeFactory: harness.runtimeFactory,
+        catalog: new SessionCatalog({ rootDir: harness.sessionDir }),
+      });
+
+      const unloadedSnapshot = await registry.loadSessionSnapshot(
+        created.sessionId,
+        auth,
+        "conn-b",
+      );
+      expect(unloadedSnapshot.autoCompactionEnabled).toBe(true);
+      expect(unloadedSnapshot.steeringMode).toBe("one-at-a-time");
+      expect(unloadedSnapshot.thinkingLevel).toBe(loadedSnapshot.thinkingLevel);
+      expect(unloadedSnapshot.sessionStats.totalMessages).toBe(
+        loadedSnapshot.sessionStats.totalMessages,
+      );
+      expect(unloadedSnapshot.usageCost).toBe(loadedSnapshot.usageCost);
+    } finally {
+      await registry.dispose();
+      await harness.cleanup();
+    }
+  },
+);
 
 timedTest("remote adapter mirrors snapshot entries into session manager", async () => {
   const { publicKeyPem, privateKeyPem } = TEST_ED25519_KEYS;

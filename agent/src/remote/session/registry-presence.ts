@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AuthSession } from "../auth.js";
 import type { ClientCapabilities } from "../schemas.js";
-import {
-  appEventsStreamId,
-  sessionEventsStreamId,
-  type InMemoryDurableStreamStore,
-} from "../streams.js";
 import type { SessionCatalog } from "../session-catalog.js";
 import { ensurePresenceSessionExists } from "./presence-session.js";
 import { detachSessionPresence, touchSessionPresence, type SessionRecord } from "./deps.js";
@@ -16,7 +11,6 @@ export function touchRegistryPresence(input: {
   client: AuthSession;
   connectionId?: string;
   catalog: SessionCatalog;
-  streams: InMemoryDurableStreamStore;
   now: number;
   pruneExpiredPresence: (record: SessionRecord, now: number) => void;
   scheduleEphemeralSessionCleanup: (sessionId: string) => void;
@@ -26,7 +20,7 @@ export function touchRegistryPresence(input: {
   ) => ClientCapabilities | undefined;
 }): void {
   if (input.loadedRecord === undefined) {
-    ensurePresenceSessionExists(input.catalog, input.streams, input.sessionId);
+    ensurePresenceSessionExists(input.catalog, input.sessionId);
     return;
   }
   touchSessionPresence({
@@ -41,9 +35,6 @@ export function touchRegistryPresence(input: {
         input.scheduleEphemeralSessionCleanup(record.sessionId);
     },
     readConnectionCapabilities: input.readConnectionCapabilities,
-    getLastAppOffset: () => input.streams.getHeadOffset(appEventsStreamId()),
-    getLastSessionOffset: (sessionId) =>
-      input.streams.getHeadOffset(sessionEventsStreamId(sessionId)),
   });
 }
 
@@ -52,11 +43,10 @@ export function detachRegistryPresence(input: {
   sessionId: string;
   connectionId: string;
   catalog: SessionCatalog;
-  streams: InMemoryDurableStreamStore;
   scheduleEphemeralSessionCleanup: (sessionId: string) => void;
 }): void {
   if (input.loadedRecord === undefined) {
-    ensurePresenceSessionExists(input.catalog, input.streams, input.sessionId);
+    ensurePresenceSessionExists(input.catalog, input.sessionId);
     return;
   }
   detachSessionPresence(input.loadedRecord, input.connectionId);

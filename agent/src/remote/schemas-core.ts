@@ -109,8 +109,6 @@ export const PresenceSchema = Type.Object({
   connectedAt: Type.Number(),
   lastSeenAt: Type.Number(),
   clientCapabilities: Type.Optional(ClientCapabilitiesSchema),
-  lastSeenSessionOffset: Type.String(),
-  lastSeenAppOffset: Type.String(),
 });
 
 export const SessionSummarySchema = Type.Object({

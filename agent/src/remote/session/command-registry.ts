@@ -6,7 +6,6 @@ import type {
   SessionSnapshot,
   SessionSummary,
 } from "../schemas.js";
-import { appEventsStreamId, sessionEventsStreamId } from "../streams.js";
 import type { AuthSession } from "../auth.js";
 import {
   createEmptyResourceBundle,
@@ -44,7 +43,6 @@ export function createSessionRecord(input: {
   createdAt: number;
   updatedAt?: number;
   runtime: AgentSessionRuntime;
-  lastAppStreamOffsetSeenByServer: string;
   readRuntimeExtensionMetadata: (runtime: AgentSessionRuntime) => SessionRecord["extensions"];
 }): SessionRecord {
   return {
@@ -91,7 +89,6 @@ export function createSessionRecord(input: {
     errorMessage: null,
     createdAt: input.createdAt,
     updatedAt: input.updatedAt ?? input.createdAt,
-    lastAppStreamOffsetSeenByServer: input.lastAppStreamOffsetSeenByServer,
     presence: new Map(),
     runtime: input.runtime,
     commandAcceptanceQueue: Promise.resolve(),
@@ -132,7 +129,6 @@ export async function createSingleSession(input: {
     persistence?: "persistent" | "ephemeral";
   }) => Promise<AgentSessionRuntime>;
   readRuntimeExtensionMetadata: (runtime: AgentSessionRuntime) => SessionRecord["extensions"];
-  getLastAppStreamOffset: () => string;
   initializeRuntimeSession: (record: SessionRecord, createdAt: number) => Promise<void>;
   registerCreatedSession: (
     record: SessionRecord,
@@ -159,7 +155,6 @@ export async function createSingleSession(input: {
       createdAt,
       updatedAt: createdAt,
       runtime,
-      lastAppStreamOffsetSeenByServer: input.getLastAppStreamOffset(),
       readRuntimeExtensionMetadata: input.readRuntimeExtensionMetadata,
     });
     await input.initializeRuntimeSession(record, createdAt);
@@ -245,30 +240,9 @@ export function registerCreatedSession(input: {
   client: AuthSession;
   connectionId?: string;
   createdAt: number;
-  ensureSessionStream: (sessionId: string) => void;
-  appendSessionCreatedEvent: (
-    sessionId: string,
-    payload: {
-      sessionId: string;
-      sessionName?: string;
-      status: SessionRecord["status"];
-    },
-    ts: number,
-  ) => { streamOffset: string };
   touchPresence: (sessionId: string, client: AuthSession, connectionId?: string) => void;
 }): void {
   input.sessions.set(input.record.sessionId, input.record);
-  input.ensureSessionStream(input.record.sessionId);
-  const event = input.appendSessionCreatedEvent(
-    input.record.sessionId,
-    {
-      sessionId: input.record.sessionId,
-      ...(input.record.sessionName === undefined ? {} : { sessionName: input.record.sessionName }),
-      status: input.record.status,
-    },
-    input.createdAt,
-  );
-  input.record.lastAppStreamOffsetSeenByServer = event.streamOffset;
   input.touchPresence(input.record.sessionId, input.client, input.connectionId);
 }
 
@@ -279,17 +253,4 @@ export async function disposeFailedSessionCreation(input: {
 }): Promise<void> {
   input.sessions.delete(input.sessionId);
   await input.runtime.dispose();
-}
-
-export function getLastAppStreamOffsetForNewSession(
-  getHeadOffset: (streamId: string) => string,
-): string {
-  return getHeadOffset(appEventsStreamId());
-}
-
-export function getLastSessionStreamOffset(
-  getHeadOffset: (streamId: string) => string,
-  sessionId: string,
-): string {
-  return getHeadOffset(sessionEventsStreamId(sessionId));
 }

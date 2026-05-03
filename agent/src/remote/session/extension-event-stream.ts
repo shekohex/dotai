@@ -8,12 +8,6 @@ import type { SessionLiveEventBus } from "../live-events.js";
 import { toJsonValue } from "../json-value.js";
 import type { SessionSyncEvent } from "../schemas.js";
 import { readRemoteExtensionSyncInfo } from "../session-sync-metadata.js";
-import {
-  appendAndPublish,
-  appendLiveOnlyAndPublish,
-  sessionEventsStreamId,
-  type InMemoryDurableStreamStore,
-} from "../streams.js";
 import { appendDurableExtensionEvent } from "./durable-runtime-state.js";
 import type { SessionRecord } from "./types.js";
 
@@ -47,19 +41,12 @@ function isMirroredRemoteExtensionEvent(
 }
 
 export function appendMirroredRemoteExtensionEvent(input: {
-  streams: InMemoryDurableStreamStore;
   liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   event: MirroredRemoteExtensionEvent;
   ts: number;
 }): void {
-  appendAndPublish(input.streams, input.liveEvents, sessionEventsStreamId(input.record.sessionId), {
-    sessionId: input.record.sessionId,
-    kind: "extension_event",
-    sessionVersion: String(input.record.lastDurableSessionVersion),
-    payload: input.event,
-    ts: input.ts,
-  });
+  void input.ts;
   publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
     type: "patch",
     sessionId: input.record.sessionId,
@@ -69,7 +56,6 @@ export function appendMirroredRemoteExtensionEvent(input: {
 }
 
 export function appendMirroredRemoteCustomExtensionEvent(input: {
-  streams: InMemoryDurableStreamStore;
   liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   channel: string;
@@ -82,21 +68,6 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
   }
   const syncInfo = readRemoteExtensionSyncInfo(input.channel, jsonData);
   if (syncInfo.sync === "ephemeral") {
-    appendLiveOnlyAndPublish(
-      input.streams,
-      input.liveEvents,
-      sessionEventsStreamId(input.record.sessionId),
-      {
-        sessionId: input.record.sessionId,
-        kind: "extension_custom_event",
-        sessionVersion: String(input.record.lastDurableSessionVersion),
-        payload: {
-          channel: input.channel,
-          data: jsonData,
-        },
-        ts: input.ts,
-      },
-    );
     publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
       type: "patch",
       sessionId: input.record.sessionId,
@@ -121,16 +92,6 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
     });
   }
 
-  appendAndPublish(input.streams, input.liveEvents, sessionEventsStreamId(input.record.sessionId), {
-    sessionId: input.record.sessionId,
-    kind: "extension_custom_event",
-    sessionVersion: String(input.record.lastDurableSessionVersion),
-    payload: {
-      channel: input.channel,
-      data: jsonData,
-    },
-    ts: input.ts,
-  });
   publishSessionSyncPatch(input.liveEvents, input.record.sessionId, {
     type: "patch",
     sessionId: input.record.sessionId,
@@ -148,7 +109,6 @@ export function appendMirroredRemoteCustomExtensionEvent(input: {
 export function installRemoteExtensionEventMirror(input: {
   runner: MirroredExtensionRunner | undefined;
   resourceLoader: ResourceLoader;
-  streams: InMemoryDurableStreamStore;
   liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   now: () => number;
@@ -160,7 +120,6 @@ export function installRemoteExtensionEventMirror(input: {
       const result = await originalEmit(...args);
       if (isMirroredRemoteExtensionEvent(event)) {
         appendMirroredRemoteExtensionEvent({
-          streams: input.streams,
           liveEvents: input.liveEvents,
           record: input.record,
           event,
@@ -180,7 +139,6 @@ export function installRemoteExtensionEventMirror(input: {
   eventBus.emit = (channel, data) => {
     originalEventBusEmit(channel, data);
     appendMirroredRemoteCustomExtensionEvent({
-      streams: input.streams,
       liveEvents: input.liveEvents,
       record: input.record,
       channel,

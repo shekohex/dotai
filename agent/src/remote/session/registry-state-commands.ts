@@ -10,7 +10,6 @@ import type {
   UiResponseRequest,
   UiResponseResponse,
 } from "../schemas.js";
-import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import { sanitizeRemoteModel } from "../schema-normalization.js";
 import {
   handleModelUpdateCommand,
@@ -56,13 +55,6 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
             activeTools: [...record.activeTools],
           },
         };
-        appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
-          sessionId: record.sessionId,
-          kind: "session_state_patch",
-          sessionVersion: String(record.lastDurableSessionVersion),
-          payload,
-          ts: updatedAt,
-        });
         publishSessionSyncPatch(this.liveEvents, record.sessionId, {
           type: "patch",
           sessionId: record.sessionId,
@@ -97,7 +89,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
       syncFromRuntime: (targetRecord, options) => {
         this.syncFromRuntime(targetRecord, options);
       },
-      appendModelPatchEvent: (targetRecord, acceptedCommand, ts) => {
+      appendModelPatchEvent: (targetRecord, acceptedCommand, _ts) => {
         const payload = {
           commandId: acceptedCommand.commandId,
           sequence: acceptedCommand.sequence,
@@ -125,18 +117,6 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
             },
           },
         };
-        appendAndPublish(
-          this.streams,
-          this.liveEvents,
-          sessionEventsStreamId(targetRecord.sessionId),
-          {
-            sessionId: targetRecord.sessionId,
-            kind: "session_state_patch",
-            sessionVersion: String(targetRecord.lastDurableSessionVersion),
-            payload,
-            ts,
-          },
-        );
         publishSessionSyncPatch(this.liveEvents, targetRecord.sessionId, {
           type: "patch",
           sessionId: targetRecord.sessionId,
@@ -167,7 +147,7 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
       session,
       acceptCommand: (targetRecord, targetClient, targetConnectionId, kind, payload, hooks) =>
         this.acceptCommand(targetRecord, targetClient, targetConnectionId, kind, payload, hooks),
-      appendSessionNamePatchedEvent: (targetRecord, command, updatedAt) => {
+      appendSessionNamePatchedEvent: (targetRecord, command, _updatedAt) => {
         const payload = {
           commandId: command.commandId,
           sequence: command.sequence,
@@ -177,18 +157,6 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
             extensions: targetRecord.extensions,
           },
         };
-        appendAndPublish(
-          this.streams,
-          this.liveEvents,
-          sessionEventsStreamId(targetRecord.sessionId),
-          {
-            sessionId: targetRecord.sessionId,
-            kind: "session_state_patch",
-            sessionVersion: String(targetRecord.lastDurableSessionVersion),
-            payload,
-            ts: updatedAt,
-          },
-        );
         publishSessionSyncPatch(this.liveEvents, targetRecord.sessionId, {
           type: "patch",
           sessionId: targetRecord.sessionId,
@@ -251,18 +219,6 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
               followUpMode: targetRecord.followUpMode,
             },
           };
-          appendAndPublish(
-            this.streams,
-            this.liveEvents,
-            sessionEventsStreamId(targetRecord.sessionId),
-            {
-              sessionId: targetRecord.sessionId,
-              kind: "session_state_patch",
-              sessionVersion: String(targetRecord.lastDurableSessionVersion),
-              payload,
-              ts: updatedAt,
-            },
-          );
           publishSessionSyncPatch(this.liveEvents, targetRecord.sessionId, {
             type: "patch",
             sessionId: targetRecord.sessionId,
@@ -291,12 +247,11 @@ export class SessionRegistryStateCommands extends SessionRegistryRuntimeOps {
       connectionId: resolvedConnectionId,
       now: this.now,
       appendUiResolvedEvent: (payload) => {
-        appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
+        publishSessionSyncPatch(this.liveEvents, record.sessionId, {
+          type: "patch",
           sessionId: record.sessionId,
-          kind: "extension_ui_resolved",
-          sessionVersion: String(record.lastDurableSessionVersion),
-          payload,
-          ts: this.now(),
+          version: String(record.lastDurableSessionVersion),
+          patch: { patchType: "extension.ui.resolved", payload },
         });
       },
     });

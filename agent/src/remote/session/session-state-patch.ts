@@ -1,9 +1,4 @@
 import type { SessionSyncEvent } from "../schemas.js";
-import {
-  appendAndPublish,
-  sessionEventsStreamId,
-  type InMemoryDurableStreamStore,
-} from "../streams.js";
 import type { SessionLiveEventBus } from "../live-events.js";
 import { sanitizeRemoteModel } from "../schema-normalization.js";
 import type { SessionRecord } from "./types.js";
@@ -14,20 +9,13 @@ export type SessionStatePatchPayload = Extract<
 >["payload"];
 
 export function publishSessionStatePatch(input: {
-  streams: InMemoryDurableStreamStore;
   liveEvents: SessionLiveEventBus | undefined;
   sessionId: string;
   version: string;
   payload: SessionStatePatchPayload;
   ts: number;
 }): void {
-  appendAndPublish(input.streams, input.liveEvents, sessionEventsStreamId(input.sessionId), {
-    sessionId: input.sessionId,
-    kind: "session_state_patch",
-    sessionVersion: input.version,
-    payload: input.payload,
-    ts: input.ts,
-  });
+  void input.ts;
   input.liveEvents?.publishSessionSyncEvent(input.sessionId, {
     type: "patch",
     sessionId: input.sessionId,

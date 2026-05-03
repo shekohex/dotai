@@ -21,11 +21,6 @@ import type {
   RemoteExtensionMetadata,
   SessionSnapshot,
 } from "../schemas.js";
-import {
-  appEventsStreamId,
-  InMemoryDurableStreamStore,
-  sessionEventsStreamId,
-} from "../streams.js";
 import type { RemoteRuntimeFactory } from "../runtime-factory.js";
 import {
   DEFAULT_SESSION_SNAPSHOT_ENTRIES_LIMIT,
@@ -77,7 +72,6 @@ export abstract class SessionRegistryBase {
       updatedAt: number;
     }
   >();
-  protected readonly streams: InMemoryDurableStreamStore;
   protected readonly liveEvents: SessionLiveEventBus;
   protected readonly runtimeFactory: RemoteRuntimeFactory;
   protected readonly catalog: SessionCatalog;
@@ -88,7 +82,6 @@ export abstract class SessionRegistryBase {
   protected sessionCreationQueue: Promise<void> = Promise.resolve();
 
   constructor(options: SessionRegistryOptions) {
-    this.streams = options.streams;
     this.liveEvents = options.liveEvents ?? new SessionLiveEventBus();
     this.runtimeFactory = options.runtimeFactory;
     this.catalog =
@@ -108,7 +101,6 @@ export abstract class SessionRegistryBase {
       sessionId,
       event,
       sessions: this.getLoadedSessions(),
-      streams: this.streams,
       liveEvents: this.liveEvents,
       now: this.now(),
       createRunId: () => randomUUID(),
@@ -132,7 +124,6 @@ export abstract class SessionRegistryBase {
       | ((accepted: AcceptedSessionCommand) => Promise<void> | void),
   ): Promise<CommandAcceptedResponse> {
     const base = {
-      streams: this.streams,
       liveEvents: this.liveEvents,
       record,
       client,
@@ -189,7 +180,6 @@ export abstract class SessionRegistryBase {
 
   protected publishUiEvent(record: SessionRecord, payload: ExtensionUiRequestEventPayload): void {
     appendExtensionUiRequestEvent({
-      streams: this.streams,
       liveEvents: this.liveEvents,
       record,
       payload,
@@ -212,7 +202,6 @@ export abstract class SessionRegistryBase {
     operation: () => Promise<void>,
   ): void {
     dispatchRuntimeCommandWithStreams({
-      streams: this.streams,
       liveEvents: this.liveEvents,
       record,
       command,
@@ -247,7 +236,6 @@ export abstract class SessionRegistryBase {
 
   protected emitSessionSummaryUpdated(record: SessionRecord, ts: number): void {
     emitSessionSummaryUpdatedEvent({
-      streams: this.streams,
       liveEvents: this.liveEvents,
       record,
       ts,
@@ -358,7 +346,6 @@ export abstract class SessionRegistryBase {
           createdAt: catalogRecord.createdAt,
           updatedAt: catalogRecord.modifiedAt,
           runtime,
-          lastAppStreamOffsetSeenByServer: this.streams.getHeadOffset(appEventsStreamId()),
           readRuntimeExtensionMetadata: (targetRuntime) =>
             this.readRuntimeExtensionMetadata(targetRuntime),
         });
@@ -368,10 +355,6 @@ export abstract class SessionRegistryBase {
           flushPersistedSessionManager: false,
         });
         restoreDurableRuntimeDomainState(record, loadedAt);
-        this.streams.seedHeadOffset(
-          sessionEventsStreamId(record.sessionId),
-          record.lastDurableSessionVersion,
-        );
         this.loadedRuntimes.set(record);
         this.emitSessionSummaryUpdated(record, loadedAt);
         return record;
@@ -433,7 +416,6 @@ export abstract class SessionRegistryBase {
     installRemoteExtensionEventMirror({
       runner: session.extensionRunner,
       resourceLoader: session.resourceLoader,
-      streams: this.streams,
       liveEvents: this.liveEvents,
       record,
       now: this.now,

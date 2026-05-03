@@ -5,15 +5,15 @@ import type {
   RemoteExtensionMetadata,
   RemoteResourceBundle,
   RemoteSettingsSnapshot,
-  StreamEventEnvelope,
+  SessionSyncEvent,
 } from "../schemas.js";
 import type { RemoteModelSettingsState } from "./contracts.js";
 import { normalizeAvailableModels } from "./session-models.js";
 import { isThinkingLevel, resolveOptionalThinkingLevel } from "./session-shared.js";
 
 type SessionStatePatchPayload = Extract<
-  StreamEventEnvelope,
-  { kind: "session_state_patch" }
+  Extract<SessionSyncEvent, { type: "patch" }>["patch"],
+  { patchType: "session.state" }
 >["payload"];
 type SessionStatePatch = SessionStatePatchPayload["patch"];
 type SessionStatsPatchPayload = Omit<SessionStats, "sessionFile"> & { sessionFile?: string };

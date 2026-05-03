@@ -22,7 +22,6 @@ import { createV1Routes, type RemoteHonoEnv } from "./routes.js";
 import { SessionCatalog } from "./session-catalog.js";
 import { SessionCatalogWatcher } from "./session-catalog-watcher.js";
 import { SessionRegistry } from "./session-registry.js";
-import { InMemoryDurableStreamStore } from "./streams.js";
 
 export interface CreateRemoteAppOptions {
   origin?: string;
@@ -82,7 +81,6 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
   const origin = options.origin ?? "http://localhost:3000";
   const app = new Hono<RemoteHonoEnv>();
   const liveEvents = new SessionLiveEventBus();
-  const streams = new InMemoryDurableStreamStore();
   const kv =
     options.kvStore ??
     new JsonFileRemoteKvStore({ filePath: options.kvFilePath ?? defaultRemoteKvFilePath() });
@@ -95,7 +93,6 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     allowedKeys: options.allowedKeys,
   });
   const sessions = new SessionRegistry({
-    streams,
     liveEvents,
     runtimeFactory,
     catalog,
@@ -118,7 +115,6 @@ export function createRemoteApp(options: CreateRemoteAppOptions): RemoteAppConte
     auth,
     sessions,
     kv,
-    streams,
     liveEvents,
   });
 

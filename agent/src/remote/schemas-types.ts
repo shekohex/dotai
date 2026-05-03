@@ -63,7 +63,6 @@ import {
   SessionSyncEventSchema,
   SessionSyncPatchEventSchema,
   SessionSyncSnapshotEventSchema,
-  StreamEventEnvelopeSchema,
 } from "./schemas-stream.js";
 
 export type AuthChallengeRequest = Static<typeof AuthChallengeRequestSchema>;
@@ -115,7 +114,6 @@ export type SessionEntriesResponse = Static<typeof SessionEntriesResponseSchema>
 export type SessionForkMessagesResponse = Static<typeof SessionForkMessagesResponseSchema>;
 export type SessionSnapshot = Static<typeof SessionSnapshotSchema>;
 export type SessionSummary = Static<typeof SessionSummarySchema>;
-export type StreamEventEnvelope = Static<typeof StreamEventEnvelopeSchema>;
 export type ExtensionUiRequestEventPayload = Static<typeof ExtensionUiRequestEventPayloadSchema>;
 export type ExtensionUiResolvedEventPayload = Static<typeof ExtensionUiResolvedEventPayloadSchema>;
 export type SessionSyncConnectedEvent = Static<typeof SessionSyncConnectedEventSchema>;

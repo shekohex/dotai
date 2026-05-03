@@ -5,14 +5,12 @@ import {
   CommandKindSchema,
   ContextUsageSchema,
   ExtensionUiRequestEventPayloadSchema,
-  PresenceSchema,
   RemoteExtensionMetadataSchema,
   RemoteResourceBundleSchema,
   RemoteSettingsSnapshotSchema,
   RemoteModelSchema,
   RemoteModelSettingsSchema,
   SessionStatsSchema,
-  SessionStatusSchema,
   SessionSnapshotSchema,
   FollowUpCommandRequestSchema,
   InterruptCommandRequestSchema,
@@ -26,44 +24,6 @@ import {
 } from "./schemas-core.js";
 import { TranscriptMessageTransportSchema } from "./schemas-session-runtime.js";
 import { RemoteCustomExtensionEventPayloadSchema } from "./event-bus-bridge.js";
-
-const StreamEventCommonProperties = {
-  eventId: Type.String(),
-  sessionId: Type.Union([Type.String(), Type.Null()]),
-  streamOffset: Type.String(),
-  sessionVersion: Type.Optional(Type.String()),
-  ts: Type.Number(),
-};
-
-const SessionCreatedEventPayloadSchema = Type.Object({
-  sessionId: Type.String(),
-  sessionName: Type.Optional(Type.String()),
-  status: SessionStatusSchema,
-});
-
-const SessionClosedEventPayloadSchema = Type.Object({
-  sessionId: Type.String(),
-});
-
-const SessionSummaryUpdatedEventPayloadSchema = Type.Object({
-  sessionId: Type.String(),
-  sessionName: Type.Optional(Type.String()),
-  status: SessionStatusSchema,
-  updatedAt: Type.Number(),
-});
-
-const ClientPresenceUpdatedEventPayloadSchema = Type.Object({
-  sessionId: Type.String(),
-  presence: Type.Array(PresenceSchema),
-});
-
-const AuthNoticeEventPayloadSchema = Type.Object({
-  message: Type.String(),
-});
-
-const ServerNoticeEventPayloadSchema = Type.Object({
-  message: Type.String(),
-});
 
 export const RuntimeAssistantMessageSchema = Type.Object({
   role: Type.Literal("assistant"),
@@ -404,21 +364,6 @@ export const AgentLifecycleEventPayloadSchema = Type.Union([
   }),
 ]);
 
-const AgentSessionEventKnownPayloadSchema = Type.Union([
-  AgentLifecycleEventPayloadSchema,
-  Type.Object({
-    type: Type.Literal("message_update"),
-    message: RuntimeAssistantMessageSchema,
-    assistantMessageEvent: AssistantMessageEventPayloadSchema,
-  }),
-  ToolExecutionSyncPatchPayloadSchema,
-  QueueUpdateSyncPatchPayloadSchema,
-  RetryStatusSyncPatchPayloadSchema,
-  CompactionStatusSyncPatchPayloadSchema,
-]);
-
-const AgentSessionEventPayloadSchema = AgentSessionEventKnownPayloadSchema;
-
 const ExtensionEventPayloadSchema = Type.Object(
   {
     type: Type.String(),
@@ -524,109 +469,6 @@ const BashEndEventPayloadSchema = Type.Object({
 const BashFlushEventPayloadSchema = Type.Object({
   messages: Type.Array(BashExecutionMessagePayloadSchema),
 });
-
-export const StreamEventEnvelopeSchema = Type.Union([
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("session_created"),
-    payload: SessionCreatedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("session_closed"),
-    payload: SessionClosedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("session_summary_updated"),
-    payload: SessionSummaryUpdatedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("client_presence_updated"),
-    payload: ClientPresenceUpdatedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("auth_notice"),
-    payload: AuthNoticeEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("server_notice"),
-    payload: ServerNoticeEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("agent_session_event"),
-    payload: AgentSessionEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("assistant_message_patch"),
-    payload: AssistantMessageSyncPatchPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("tool_execution_patch"),
-    payload: ToolExecutionSyncPatchPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("extension_event"),
-    payload: ExtensionEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("extension_custom_event"),
-    payload: RemoteCustomExtensionEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("command_accepted"),
-    payload: CommandAcceptedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("session_state_patch"),
-    payload: SessionStatePatchEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("extension_ui_request"),
-    payload: ExtensionUiRequestEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("extension_ui_resolved"),
-    payload: ExtensionUiResolvedEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("extension_error"),
-    payload: ExtensionErrorEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("bash_start"),
-    payload: BashStartEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("bash_chunk"),
-    payload: BashChunkEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("bash_end"),
-    payload: BashEndEventPayloadSchema,
-  }),
-  Type.Object({
-    ...StreamEventCommonProperties,
-    kind: Type.Literal("bash_flush"),
-    payload: BashFlushEventPayloadSchema,
-  }),
-]);
 
 export const SessionSyncConnectedEventSchema = Type.Object({
   type: Type.Literal("server.connected"),

@@ -56,7 +56,6 @@ export async function forkPersistentSessionRecord(input: {
     connectionId: string | undefined,
     createdAt: number,
   ) => void;
-  getAppStreamOffset: () => string;
   now: () => number;
 }): Promise<ForkSessionResponse> {
   const sourceManager = SessionManager.open(input.catalogRecord.sessionPath);
@@ -136,7 +135,6 @@ export async function forkPersistentSessionRecord(input: {
     createdAt: loadedAt,
     updatedAt: loadedAt,
     runtime,
-    lastAppStreamOffsetSeenByServer: input.getAppStreamOffset(),
     readRuntimeExtensionMetadata: (targetRuntime) =>
       input.readRuntimeExtensionMetadata(targetRuntime),
   });

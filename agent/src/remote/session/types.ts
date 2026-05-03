@@ -32,7 +32,6 @@ import type {
   UiResponseRequest,
 } from "../schemas.js";
 import type { JsonValue } from "../json-schema.js";
-import type { InMemoryDurableStreamStore } from "../streams.js";
 import type { AuthoritativeSessionMetadata } from "./authoritative-session-metadata.js";
 
 export type RemoteUiInputHandlers = Pick<
@@ -133,7 +132,6 @@ export interface SessionRecord {
   errorMessage: string | null;
   createdAt: number;
   updatedAt: number;
-  lastAppStreamOffsetSeenByServer: string;
   presence: Map<string, Presence>;
   runtime: AgentSessionRuntime;
   runtimeSubscription?: () => void;
@@ -192,7 +190,6 @@ export interface AcceptCommandHooks {
 }
 
 export interface SessionRegistryOptions {
-  streams: InMemoryDurableStreamStore;
   liveEvents?: SessionLiveEventBus;
   runtimeFactory: RemoteRuntimeFactory;
   catalog?: SessionCatalog;

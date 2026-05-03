@@ -1,11 +1,12 @@
 import type { JsonValue } from "./json-schema.js";
-import type { SessionSyncEvent, StreamEventEnvelope } from "./schemas.js";
+import type { SessionSyncEvent } from "./schemas.js";
+import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { JsonValueSchema } from "./json-schema.js";
 import { assertType } from "./typebox.js";
 import { asRecord } from "../utils/unknown-data.js";
 
 type AssistantMessageUpdateEvent = Extract<
-  Extract<StreamEventEnvelope, { kind: "agent_session_event" }>["payload"],
+  AgentSessionEvent,
   { type: "message_update" }
 >["assistantMessageEvent"];
 

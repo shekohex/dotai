@@ -12,8 +12,6 @@ import { assertType } from "../typebox.js";
 import { authError } from "./auth.js";
 import type { RemoteHonoEnv, RemoteRoutesDependencies } from "./types.js";
 
-export { toSessionSyncPatchEvent } from "../session-sync-patch-events.js";
-
 type HonoContext = Parameters<MiddlewareHandler<RemoteHonoEnv>>[0];
 
 const MAX_PRE_SNAPSHOT_PATCH_EVENTS = 128;

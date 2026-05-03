@@ -1,8 +1,3 @@
-import {
-  appendAndPublish,
-  sessionEventsStreamId,
-  type InMemoryDurableStreamStore,
-} from "../streams.js";
 import type { AuthSession } from "../auth.js";
 import type { SessionLiveEventBus } from "../live-events.js";
 import type { CommandAcceptedResponse, CommandKind, SessionSyncEvent } from "../schemas.js";
@@ -15,17 +10,21 @@ import type {
   SessionRecord,
 } from "./types.js";
 
+type SessionSyncPatchEvent = Extract<SessionSyncEvent, { type: "patch" }>;
+type CommandAcceptedPatchPayload = Extract<
+  SessionSyncPatchEvent["patch"],
+  { patchType: "command.accepted" }
+>["payload"];
+
 function publishSessionSyncPatch(
   liveEvents: SessionLiveEventBus | undefined,
-  sessionId: string,
-  event: Extract<SessionSyncEvent, { type: "patch" }>,
+  event: SessionSyncPatchEvent,
 ): void {
-  liveEvents?.publishSessionSyncEvent(sessionId, event);
+  liveEvents?.publishSessionSyncEvent(event.sessionId, event);
 }
 
-type AcceptSessionCommandWithStreamsInput = {
+type AcceptSessionCommandInput = {
   [TKind in CommandKind]: {
-    streams: InMemoryDurableStreamStore;
     liveEvents?: SessionLiveEventBus;
     record: SessionRecord;
     client: AuthSession;
@@ -46,7 +45,7 @@ type AcceptSessionCommandWithStreamsInput = {
 }[CommandKind];
 
 export function acceptSessionCommandWithStreams(
-  input: AcceptSessionCommandWithStreamsInput,
+  input: AcceptSessionCommandInput,
 ): Promise<CommandAcceptedResponse> {
   const base = {
     record: input.record,
@@ -61,25 +60,14 @@ export function acceptSessionCommandWithStreams(
       accepted: AcceptedSessionCommand,
       acceptedAt: number,
     ) => {
-      const payload = toCommandAcceptedEventPayload(accepted);
-      appendAndPublish(
-        input.streams,
-        input.liveEvents,
-        sessionEventsStreamId(targetRecord.sessionId),
-        {
-          sessionId: targetRecord.sessionId,
-          kind: "command_accepted",
-          sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload,
-          ts: acceptedAt,
-        },
-      );
-      publishSessionSyncPatch(input.liveEvents, targetRecord.sessionId, {
+      const payload = toCommandAcceptedPayload(accepted);
+      publishSessionSyncPatch(input.liveEvents, {
         type: "patch",
         sessionId: targetRecord.sessionId,
         version: String(targetRecord.lastDurableSessionVersion),
         patch: { patchType: "command.accepted", payload },
       });
+      void acceptedAt;
     },
     syncFromRuntime: input.syncFromRuntime,
   };
@@ -106,108 +94,20 @@ export function acceptSessionCommandWithStreams(
   throw new Error("Unsupported command kind");
 }
 
-function toCommandAcceptedEventPayload(
-  accepted: AcceptedSessionCommand,
-): Extract<
-  Parameters<InMemoryDurableStreamStore["append"]>[1],
-  { kind: "command_accepted" }
->["payload"] {
-  switch (accepted.kind) {
-    case "prompt":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "steer":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "follow-up":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "interrupt":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "active-tools":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "model":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "session-name":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-    case "settings":
-      return {
-        commandId: accepted.commandId,
-        sessionId: accepted.sessionId,
-        clientId: accepted.clientId,
-        requestId: accepted.requestId,
-        kind: accepted.kind,
-        payload: accepted.payload,
-        acceptedAt: accepted.acceptedAt,
-        sequence: accepted.sequence,
-      };
-  }
-
-  throw new Error("Unsupported command kind");
+function toCommandAcceptedPayload(accepted: AcceptedSessionCommand): CommandAcceptedPatchPayload {
+  return {
+    commandId: accepted.commandId,
+    sessionId: accepted.sessionId,
+    clientId: accepted.clientId,
+    requestId: accepted.requestId,
+    kind: accepted.kind,
+    payload: accepted.payload,
+    acceptedAt: accepted.acceptedAt,
+    sequence: accepted.sequence,
+  };
 }
 
 export function dispatchRuntimeCommandWithStreams(input: {
-  streams: InMemoryDurableStreamStore;
   liveEvents?: SessionLiveEventBus;
   record: SessionRecord;
   command: AcceptedSessionCommand;
@@ -230,19 +130,7 @@ export function dispatchRuntimeCommandWithStreams(input: {
         kind: acceptedCommand.kind,
         error: message,
       };
-      appendAndPublish(
-        input.streams,
-        input.liveEvents,
-        sessionEventsStreamId(targetRecord.sessionId),
-        {
-          sessionId: targetRecord.sessionId,
-          kind: "extension_error",
-          sessionVersion: String(targetRecord.lastDurableSessionVersion),
-          payload,
-          ts: targetRecord.updatedAt,
-        },
-      );
-      publishSessionSyncPatch(input.liveEvents, targetRecord.sessionId, {
+      publishSessionSyncPatch(input.liveEvents, {
         type: "patch",
         sessionId: targetRecord.sessionId,
         version: String(targetRecord.lastDurableSessionVersion),

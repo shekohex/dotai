@@ -15,7 +15,6 @@ import type {
   SessionSummary,
   ToolDefinitionMetadata,
 } from "../schemas.js";
-import { appEventsStreamId, appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import {
   createSingleSession,
   disposeSessionRecord,
@@ -23,7 +22,6 @@ import {
   disposeSessionRegistry,
   enqueueSessionCreation,
   getAppSnapshot,
-  getLastAppStreamOffsetForNewSession,
   loadSessionSnapshotRecord,
   getSessionSnapshot,
   buildReloadSessionStatePatchPayload,
@@ -81,8 +79,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       createSessionId: () => randomUUID(),
       createRuntime: (runtimeRequest) => this.runtimeFactory.create(runtimeRequest),
       readRuntimeExtensionMetadata: (runtime) => this.readRuntimeExtensionMetadata(runtime),
-      getLastAppStreamOffset: () =>
-        getLastAppStreamOffsetForNewSession((streamId) => this.streams.getHeadOffset(streamId)),
       initializeRuntimeSession: async (record, createdAt) => {
         await this.initializeRuntimeRecord(record, {
           initializedAt: createdAt,
@@ -115,16 +111,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       client,
       connectionId,
       createdAt,
-      ensureSessionStream: (targetSessionId) => {
-        this.streams.ensureStream(sessionEventsStreamId(targetSessionId));
-      },
-      appendSessionCreatedEvent: (targetSessionId, payload, ts): { streamOffset: string } =>
-        appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-          sessionId: targetSessionId,
-          kind: "session_created",
-          payload,
-          ts,
-        }),
       touchPresence: (targetSessionId, presenceClient, presenceConnectionId) => {
         this.touchPresence(targetSessionId, presenceClient, presenceConnectionId);
       },
@@ -200,7 +186,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     const updatedAt = (record.updatedAt = this.now());
     const payload = buildReloadSessionStatePatchPayload(record, buildReloadResourcePatch(record));
     publishSessionStatePatch({
-      streams: this.streams,
       liveEvents: this.liveEvents,
       sessionId: record.sessionId,
       version: String(record.lastDurableSessionVersion),
@@ -366,17 +351,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       await disposeSessionRecord(record);
       this.loadedRuntimes.delete(record.sessionId);
       evictedSessionIds.push(record.sessionId);
-      appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-        sessionId: record.sessionId,
-        kind: "session_summary_updated",
-        payload: {
-          sessionId: record.sessionId,
-          sessionName: record.sessionName,
-          status: "idle",
-          updatedAt: evictedAt,
-        },
-        ts: evictedAt,
-      });
     }
 
     return evictedSessionIds;
@@ -403,46 +377,19 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       const loaded = this.loadedRuntimes.get(sessionId);
       if (loaded) {
         if (this.markLoadedRuntimeConflictedIfBusy(loaded, reconciledAt)) {
-          appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-            sessionId,
-            kind: "session_summary_updated",
-            payload: {
-              sessionId,
-              sessionName: loaded.sessionName,
-              status: loaded.status,
-              updatedAt: loaded.updatedAt,
-            },
-            ts: reconciledAt,
-          });
           continue;
         }
 
         await disposeSessionRecord(loaded);
         this.loadedRuntimes.delete(sessionId);
       }
-      appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-        sessionId,
-        kind: "session_closed",
-        payload: { sessionId },
-        ts: reconciledAt,
-      });
     }
 
     for (const [sessionId, nextRecord] of nextRecords.entries()) {
       if (previousRecords.has(sessionId)) {
         continue;
       }
-      appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-        sessionId,
-        kind: "session_summary_updated",
-        payload: {
-          sessionId,
-          sessionName: nextRecord.sessionName,
-          status: "idle",
-          updatedAt: nextRecord.modifiedAt,
-        },
-        ts: reconciledAt,
-      });
+      void nextRecord;
     }
   }
 
@@ -460,18 +407,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       await disposeSessionRecord(loaded);
       this.loadedRuntimes.delete(sessionId);
     }
-    const archivedRecord = this.catalog.archive(sessionId);
-    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-      sessionId,
-      kind: "session_summary_updated",
-      payload: {
-        sessionId,
-        sessionName: archivedRecord.sessionName,
-        status: "idle",
-        updatedAt: archivedRecord.modifiedAt,
-      },
-      ts: this.now(),
-    });
+    this.catalog.archive(sessionId);
     return this.getSessionSummary(sessionId);
   }
 
@@ -479,18 +415,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     if (!this.catalog.get(sessionId)) {
       throw new RemoteError("Session not found", 404);
     }
-    const restoredRecord = this.catalog.restore(sessionId);
-    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-      sessionId,
-      kind: "session_summary_updated",
-      payload: {
-        sessionId,
-        sessionName: restoredRecord.sessionName,
-        status: "idle",
-        updatedAt: restoredRecord.modifiedAt,
-      },
-      ts: this.now(),
-    });
+    this.catalog.restore(sessionId);
     return this.getSessionSummary(sessionId);
   }
 
@@ -506,12 +431,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     if (this.catalog.get(sessionId)) {
       this.catalog.delete(sessionId);
     }
-    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-      sessionId,
-      kind: "session_closed",
-      payload: { sessionId },
-      ts: this.now(),
-    });
     return {
       sessionId,
       deleted: true,
@@ -567,7 +486,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       registerCreatedSessionRecord: (record, targetClient, targetConnectionId, createdAt) => {
         this.registerCreatedSessionRecord(record, targetClient, targetConnectionId, createdAt);
       },
-      getAppStreamOffset: () => this.streams.getHeadOffset(appEventsStreamId()),
       now: this.now,
     });
   }
@@ -611,7 +529,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       client,
       connectionId,
       catalog: this.catalog,
-      streams: this.streams,
       now: this.now(),
       pruneExpiredPresence: this.pruneExpiredPresence.bind(this),
       scheduleEphemeralSessionCleanup: this.scheduleEphemeralSessionCleanup.bind(this),
@@ -626,7 +543,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       sessionId,
       connectionId,
       catalog: this.catalog,
-      streams: this.streams,
       scheduleEphemeralSessionCleanup: this.scheduleEphemeralSessionCleanup.bind(this),
     });
   }
@@ -657,17 +573,7 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     const summary = this.loadedRuntimes.get(sessionId)
       ? this.getSessionSummary(sessionId)
       : undefined;
-    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-      sessionId,
-      kind: "session_summary_updated",
-      payload: {
-        sessionId,
-        sessionName: summary?.sessionName ?? nextRecord.sessionName,
-        status: summary?.status ?? "idle",
-        updatedAt: summary?.updatedAt ?? nextRecord.modifiedAt,
-      },
-      ts: reconciledAt,
-    });
+    void summary;
   }
 
   private async reconcileLoadedRuntimeForCatalogChange(
@@ -724,18 +630,12 @@ export class SessionRegistryManagement extends SessionRegistryBase {
     }
 
     await disposeSessionRecord(record);
-    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-      sessionId,
-      kind: "session_closed",
-      payload: { sessionId },
-      ts: this.now(),
-    });
     this.loadedRuntimes.delete(sessionId);
   }
 
   private async collectDetachedEmptySession(
     record: SessionRecord,
-    collectedAt: number,
+    _collectedAt: number,
   ): Promise<boolean> {
     const sessionFilePath = readLoadedSessionFilePath(record);
     if (!shouldCollectDetachedEmptySession(record, sessionFilePath)) {
@@ -753,12 +653,6 @@ export class SessionRegistryManagement extends SessionRegistryBase {
       }
     }
 
-    appendAndPublish(this.streams, this.liveEvents, appEventsStreamId(), {
-      sessionId: record.sessionId,
-      kind: "session_closed",
-      payload: { sessionId: record.sessionId },
-      ts: collectedAt,
-    });
     return true;
   }
 

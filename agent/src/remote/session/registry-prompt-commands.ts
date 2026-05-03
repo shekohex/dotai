@@ -1,5 +1,4 @@
 import type { AuthSession } from "../auth.js";
-import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import type {
   CommandAcceptedResponse,
   FollowUpCommandRequest,
@@ -107,18 +106,6 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
               usageCost: targetRecord.usageCost,
             },
           };
-          appendAndPublish(
-            this.streams,
-            this.liveEvents,
-            sessionEventsStreamId(targetRecord.sessionId),
-            {
-              sessionId: targetRecord.sessionId,
-              kind: "session_state_patch",
-              sessionVersion: String(targetRecord.lastDurableSessionVersion),
-              payload,
-              ts: updatedAt,
-            },
-          );
           publishSessionSyncPatch(this.liveEvents, targetRecord.sessionId, {
             type: "patch",
             sessionId: targetRecord.sessionId,
@@ -161,15 +148,6 @@ export class SessionRegistryPromptCommands extends SessionRegistryManagement {
     >[],
     sessionVersion: number,
   ): void {
-    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(sessionId), {
-      sessionId,
-      kind: "bash_flush",
-      sessionVersion: String(sessionVersion),
-      payload: {
-        messages,
-      },
-      ts: this.now(),
-    });
     publishSessionSyncPatch(this.liveEvents, sessionId, {
       type: "patch",
       sessionId,

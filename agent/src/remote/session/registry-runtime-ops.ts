@@ -3,7 +3,6 @@ import { executeBashWithOperations } from "../../../node_modules/@mariozechner/p
 import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
 import type { AuthSession } from "../auth.js";
 import { readResourceLoaderEventBus } from "../event-bus-bridge.js";
-import { appendAndPublish, sessionEventsStreamId } from "../streams.js";
 import type {
   BashExecuteRequest,
   BashExecuteResponse,
@@ -256,13 +255,6 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
       clientRequestId: request.clientRequestId,
       excludeFromContext: request.excludeFromContext,
     };
-    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
-      sessionId: record.sessionId,
-      kind: "bash_start",
-      sessionVersion: String(record.lastDurableSessionVersion),
-      payload,
-      ts: this.now(),
-    });
     publishSessionSyncPatch(this.liveEvents, record.sessionId, {
       type: "patch",
       sessionId: record.sessionId,
@@ -282,13 +274,6 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
       chunk,
       clientRequestId,
     };
-    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
-      sessionId: record.sessionId,
-      kind: "bash_chunk",
-      sessionVersion: String(record.lastDurableSessionVersion),
-      payload,
-      ts: this.now(),
-    });
     publishSessionSyncPatch(this.liveEvents, record.sessionId, {
       type: "patch",
       sessionId: record.sessionId,
@@ -311,13 +296,6 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
       deferredUntilTurnEnd: record.hasPendingBashMessages,
       ...(bashMessage ? { message: bashMessage } : {}),
     };
-    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
-      sessionId: record.sessionId,
-      kind: "bash_end",
-      sessionVersion: String(record.lastDurableSessionVersion),
-      payload,
-      ts: this.now(),
-    });
     publishSessionSyncPatch(this.liveEvents, record.sessionId, {
       type: "patch",
       sessionId: record.sessionId,
@@ -348,13 +326,6 @@ export class SessionRegistryRuntimeOps extends SessionRegistryPromptCommands {
         },
       },
     };
-    appendAndPublish(this.streams, this.liveEvents, sessionEventsStreamId(record.sessionId), {
-      sessionId: record.sessionId,
-      kind: "session_state_patch",
-      sessionVersion: String(record.lastDurableSessionVersion),
-      payload,
-      ts: this.now(),
-    });
     publishSessionSyncPatch(this.liveEvents, record.sessionId, {
       type: "patch",
       sessionId: record.sessionId,

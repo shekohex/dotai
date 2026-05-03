@@ -45,8 +45,6 @@ export {
   disposeFailedSessionCreation,
   enqueueSessionCreation,
   getAppSnapshot,
-  getLastAppStreamOffsetForNewSession,
-  getLastSessionStreamOffset,
   getSessionSnapshot,
   registerCreatedSession,
 } from "./command-registry.js";

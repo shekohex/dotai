@@ -11,7 +11,7 @@ afterEach(() => {
   configureLogger({ enabled: true, color: false, pretty: true, logSse: true });
 });
 
-test("logSseFrame logs summarized SSE payload shape", () => {
+test("logSseFrame logs summarized SSE payload values", () => {
   const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   configureLogger({ enabled: true, color: false, pretty: true, logSse: true });
 
@@ -32,11 +32,11 @@ test("logSseFrame logs summarized SSE payload shape", () => {
   expect(consoleSpy.mock.calls[0]?.[0]).toContain('"frameType": "data"');
   expect(consoleSpy.mock.calls[0]?.[0]).toContain('"eventType": "patch"');
   expect(consoleSpy.mock.calls[0]?.[0]).toContain('"patchType": "tool.execution"');
-  expect(consoleSpy.mock.calls[0]?.[0]).toContain('"payloadShape"');
-  expect(consoleSpy.mock.calls[0]?.[0]).not.toContain('"hello"');
+  expect(consoleSpy.mock.calls[0]?.[0]).toContain('"payload"');
+  expect(consoleSpy.mock.calls[0]?.[0]).toContain('"hello"');
 });
 
-test("session sync endpoint emits SSE shape logs for sent updates", async () => {
+test("session sync endpoint emits SSE value logs for sent updates", async () => {
   const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   const remote = createRemoteApp({
     origin: "http://localhost:3000",

@@ -81,54 +81,47 @@ function formatLogPayload(payload: unknown, options: RemoteLoggerOptions): strin
   return JSON.stringify(redacted, null, 2);
 }
 
-function describeValueShape(value: unknown, depth: number = 0): unknown {
-  if (value === null) {
-    return "null";
-  }
-  if (value === undefined) {
-    return "undefined";
-  }
-  if (typeof value === "string") {
-    return "string";
-  }
-  if (typeof value === "number") {
-    return "number";
-  }
-  if (typeof value === "boolean") {
-    return "boolean";
-  }
-  if (typeof value === "bigint") {
-    return "bigint";
-  }
-  if (typeof value === "symbol") {
-    return "symbol";
-  }
-  if (typeof value === "function") {
-    return "function";
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return [];
-    }
-    return [describeValueShape(value[0], depth + 1)];
-  }
-  if (!isPlainObject(value)) {
-    return Object.prototype.toString.call(value);
-  }
-  if (depth >= 4) {
-    return "object";
-  }
-  return Object.fromEntries(
-    Object.entries(value)
-      .toSorted(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-      .map(([key, item]) => [key, describeValueShape(item, depth + 1)]),
-  );
-}
-
 function summarizeSsePayload(frameType: "data" | "control", payload: unknown): unknown {
+  const maxDepth = 6;
+  const maxArrayItems = 4;
+
+  const summarizeValue = (value: unknown, depth: number = 0): unknown => {
+    if (typeof value === "string") {
+      return truncateText(value, 240);
+    }
+    if (
+      value === null ||
+      value === undefined ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      return value;
+    }
+    if (typeof value === "bigint" || typeof value === "symbol" || typeof value === "function") {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      if (depth >= maxDepth) {
+        return `[array(${value.length})]`;
+      }
+      return value.slice(0, maxArrayItems).map((item) => summarizeValue(item, depth + 1));
+    }
+    if (!isPlainObject(value)) {
+      return Object.prototype.toString.call(value);
+    }
+    if (depth >= maxDepth) {
+      return "[object]";
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .toSorted(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([key, item]) => [key, summarizeValue(item, depth + 1)]),
+    );
+  };
+
   const base = {
     frameType,
-    payloadShape: describeValueShape(payload),
+    payload: summarizeValue(payload),
   };
 
   if (!isPlainObject(payload) || typeof payload.type !== "string") {

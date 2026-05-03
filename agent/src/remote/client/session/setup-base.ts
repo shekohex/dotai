@@ -41,6 +41,7 @@ import {
   patchSettingsManagerForRemoteSettingsSync,
   readRemoteSettingsSnapshot,
   resolveModel,
+  retryRemoteLoad,
   resolveThinkingLevel,
 } from "../session-deps.js";
 import type { RemoteModelSettingsState } from "../contracts.js";
@@ -378,7 +379,7 @@ export abstract class RemoteAgentSessionSetupBase {
   }
 
   protected async refreshRemoteToolCatalog(): Promise<void> {
-    const response = await this.client.getSessionTools(this.sessionId);
+    const response = await retryRemoteLoad(() => this.client.getSessionTools(this.sessionId));
     this.remoteToolDefinitions.clear();
     this.allTools = response.tools.map((tool) => {
       if (tool.definition) {

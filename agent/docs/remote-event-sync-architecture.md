@@ -1,1139 +1,429 @@
 # Remote Event Sync Architecture
 
-## Overview
+## Status
 
-This document captures design discussion from this session about server memory pressure in remote mode, how upstream Pi RPC mode works, how `anomalyco/opencode` handles live updates and reconnection, and how to evolve current remote stream architecture toward bounded memory, fast reconnect, and eventual consistency.
+This document describes implemented remote sync architecture in this repo. It is not future-plan text.
 
-Session reference:
+Remote mode now runs stock upstream `InteractiveMode` on client against server-authoritative runtime. Client keeps only viewed-session projection plus resume/auth metadata. Reconnect path is snapshot-first, live patches are incremental, and server-side transient retention is bounded.
 
-- Session ID: `019ddb09-45e2-75f3-b40d-9bb7da96618d`
-- Session file: `/home/coder/.pi/agent/sessions/--home-coder-dotai-agent--/2026-04-29T20-58-31-267Z_019ddb09-45e2-75f3-b40d-9bb7da96618d.jsonl`
+## Goals Met
 
-Primary problem:
+- Stock upstream `InteractiveMode` remains remote UI host.
+- Server owns runtime, tools, auth, providers, sessions, persistence, extension execution, and authoritative session state.
+- Client owns local projection needed by `InteractiveMode`, local extension rendering, auth/session selection metadata, and reconnect loop.
+- SSE sync is live-only plus authoritative snapshot bootstrap.
+- Protocol is strict shared TypeBox contracts across HTTP/SSE boundaries.
+- Reconnect treats network loss, lag, detach/attach, and server restart as normal cases.
+- Server memory does not grow by retaining replay history for transient stream updates.
 
-- Server crashes under high-velocity event load.
-- Current remote transport retains too much transient data in memory.
-- Requirement is now narrower and clearer: when a client disconnects or server restarts, recover fast to current durable state.
-- Generic replay/history for all transient events is not required.
+## Upstream Alignment
 
-Relevant current local files:
+Remote architecture follows upstream Pi split:
 
-- `src/remote/streams.ts`
-- `src/remote/session/event-stream-ops.ts`
-- `src/remote/session/extension-event-stream.ts`
-- `src/remote/routes/stream-sse.ts`
-- `src/remote/routes/stream-read.ts`
-- `src/remote/client/session/local-extension-event-queue.ts`
-- `src/remote/session/registry-base.ts`
+- `InteractiveMode` is UI host only.
+- `AgentSessionRuntime` and `AgentSession` semantics stay server-side.
+- Client mirrors only surfaces `InteractiveMode` reads or mutates.
 
-Relevant upstream Pi files:
+Relevant local entrypoints:
 
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/rpc-mode.ts`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/jsonl.ts`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/agent/src/agent.ts`
+- [src/cli.ts](/home/coder/dotai/agent/src/cli.ts:1)
+- [src/remote/client-interactive.ts](/home/coder/dotai/agent/src/remote/client-interactive.ts:1)
+- [src/remote/client/runtime.ts](/home/coder/dotai/agent/src/remote/client/runtime.ts:1)
+- [src/remote/session-registry.ts](/home/coder/dotai/agent/src/remote/session-registry.ts:1)
+- [src/remote/runtime-factory.ts](/home/coder/dotai/agent/src/remote/runtime-factory.ts:1)
 
-Relevant `opencode` files:
+## Topology
 
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/server/routes/instance/event.ts`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/sync/index.ts`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/sync/README.md`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/server/routes/instance/httpapi/groups/sync.ts`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/server/routes/instance/httpapi/handlers/sync.ts`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/app/src/context/global-sync.tsx`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/app/src/context/global-sync/event-reducer.ts`
+```mermaid
+flowchart LR
+    UI[Client InteractiveMode] --> RT[RemoteAgentSessionRuntime mirror]
+    RT --> API[Hono RPC + SSE client]
+    API --> S[(Remote server)]
+    S --> REG[SessionRegistry]
+    REG --> RUNTIME[Real AgentSessionRuntime]
+    RUNTIME --> SESSION[Real AgentSession]
+    SESSION --> AGENT[Upstream Agent loop]
+    SESSION --> EXT[Server extension runtime]
+```
 
-## Goal
+## Server Model
 
-Build remote event system that restores a disconnected client to correct current state quickly, without retaining or replaying every transient progress event.
+### Session authority
 
-Success criteria:
+`SessionRegistry` owns loaded session records, unloaded snapshot reads, presence, eviction, reconnect bootstrap, and command dispatch.
 
-- server memory stays bounded under high-velocity streaming updates
-- reconnect after transient network failure is fast and correct
-- recovery after server crash/restart restores correct durable state
-- client converges to current authoritative state using minimum useful data
-- connected clients still get responsive live progress updates
-- architecture does not require generic replay of transient streaming history
-- server architecture should move closer to `opencode`: live bus + bootstrap APIs + committed history endpoints
+Primary files:
 
-Constraints:
+- [src/remote/session-registry.ts](/home/coder/dotai/agent/src/remote/session-registry.ts:1)
+- [src/remote/session/registry-base.ts](/home/coder/dotai/agent/src/remote/session/registry-base.ts:1)
+- [src/remote/session/registry-runtime-ops.ts](/home/coder/dotai/agent/src/remote/session/registry-runtime-ops.ts:1)
+- [src/remote/session/registry-state-commands.ts](/home/coder/dotai/agent/src/remote/session/registry-state-commands.ts:1)
 
-- keep live transport simple, closer to upstream Pi RPC behavior where possible
-- reuse existing session JSONL-backed committed history where it already solves the need
-- do not introduce a new durable replay subsystem unless snapshot + committed history prove insufficient
-- optimize for current-state recovery, not historical event preservation
-- single server process with local disk is deployment target
-- full SSE is target transport; long-poll and stream-offset replay are legacy
+Each loaded `SessionRecord` stores current authoritative projection:
 
-Stop rules:
-
-- if current authoritative snapshot plus committed session history can restore reconnect correctness, stop there
-- do not add replay-specific machinery only to preserve obsolete transient events
-- only keep extra in-memory buffering where it materially improves live fanout stability or reconnect latency
-
-Desired client behavior:
-
-1. Client opens per-session SSE sync endpoint.
-2. Server attaches live subscription before sending initial data.
-3. Server emits `server.connected`.
-4. Server emits `snapshot` event with authoritative state and session version.
-5. Server emits live `patch` events for connected clients.
-6. If disconnected because of transient network issue, client reconnects to same SSE sync endpoint.
-7. If server restarts, it rebuilds durable state from session JSONL, marks interrupted runtime domains explicitly, then emits fresh snapshot.
-8. Client does not need full replay of missed transient progress events.
-9. Client converges to current server state with minimum useful data.
-
-## Historical Audit
-
-This section captures pre-refactor architecture that motivated work below.
-
-## Current Local Architecture
-
-### In-memory durable stream store
-
-Before snapshot/patch sync refactor, remote mode kept all events in memory per stream:
-
-- `InMemoryDurableStreamStore` stored retained `events: StreamEventEnvelope[]` per stream in pre-refactor code.
-- `append()` assigned offsets from retained array length and pushed every event forever in pre-refactor code.
-- `read()`, `readAndSubscribe()`, and `waitForEvents()` all depended on same retained in-memory backlog in pre-refactor code.
-
-Implications:
-
-- memory grows without bound
-- high-rate transient events accumulate forever
-- reconnect path previously depended on replaying retained stream entries
-- pre-refactor `upToDate` was always `true`, so there was no strong distinction between fresh catch-up and stale retained history
-
-### Runtime events become retained stream entries
-
-Pre-refactor remote session registry subscribed to runtime session events and converted them into retained stream events:
-
-- runtime subscription was installed in `initializeRuntimeRecord()`
-- each `AgentSessionEvent` became `agent_session_event`
-- session-derived state changes also emitted `session_state_patch`
-
-Implications:
-
-- one upstream runtime event can produce more than one retained server event
-- state patch churn adds extra memory pressure on top of base runtime event volume
-
-### Extension bus mirroring also becomes retained stream entries
-
-Remote mode mirrors extension runner and custom event bus events into session stream:
-
-- mirrored extension runner events append `extension_event`. `src/remote/session/extension-event-stream.ts:31-43`
-- resource loader event bus is patched so every custom bus emit appends `extension_custom_event`. `src/remote/session/extension-event-stream.ts:87-102`
-
-Implications:
-
-- extensions can amplify memory usage significantly
-- telemetry-like custom events become indistinguishable from useful reconnect state
-
-### Live transport uses same retained stream
-
-SSE delivery is layered directly on top of retained stream:
-
-- initial backlog comes from `readAndSubscribe()`. `src/remote/routes/stream-sse.ts:148-166`
-- each live event is sent with control frames containing next offset and cursor. `src/remote/routes/stream-sse.ts:152-163`
-- long-poll and JSON reads use same underlying store. `src/remote/routes/stream-read.ts:134-177`
-
-Implications:
-
-- same structure serves both live updates and reconnect recovery
-- transport concerns and recovery concerns are currently coupled
-
-### Local client already coalesces some extension-forwarded events
-
-Client-side local extension forwarding already coalesces some hot events:
-
-- replaceable key for assistant `message_update`. `src/remote/client/session/local-extension-event-queue.ts:81-84`
-- replaceable key for `tool_execution_update`. `src/remote/client/session/local-extension-event-queue.ts:86-88`
-
-Important limit:
-
-- this helps local client-side extension dispatch only
-- server has already retained raw events before this coalescing happens
-
-## Root Problem
-
-Current architecture retains far more than reconnect actually needs.
-
-That is not true.
-
-Some events are necessary to rebuild current state. Others are only transient progress indicators useful while a client is connected.
-
-Examples of likely hot offenders in current system:
-
-- `agent_session_event` carrying upstream `message_update`
-- `agent_session_event` carrying upstream `tool_execution_update`
-- `session_state_patch` emitted repeatedly while active run mutates
-- `extension_custom_event` from chatty extensions
-
-This becomes especially expensive because upstream progress payloads often contain accumulated state, not only tiny deltas.
-
-## Upstream Pi RPC Mode
-
-### What upstream RPC mode is
-
-Upstream Pi RPC mode is live JSONL over stdio:
-
-- commands come in on stdin
-- responses and events go out on stdout
-- framing is strict JSONL
-- events are emitted as they happen
-- transport layer itself does not maintain an in-memory replay log
-
-References:
-
-- protocol overview in docs. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md:19-36`
-- `runRpcMode()` setup. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/rpc-mode.ts:48-70`
-- event output path. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/rpc-mode.ts:321-339`
-- JSONL serializer/reader. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/jsonl.ts:4-57`
-
-### Upstream event model
-
-RPC mode streams high-frequency updates directly:
-
-- `message_update` for assistant deltas. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md:809-849`
-- `tool_execution_update` for streaming tool output. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md:851-895`
-
-Important detail:
-
-- upstream docs explicitly say `tool_execution_update.partialResult` contains accumulated output so far, not only delta. `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md:894-895`
-
-### Upstream transport characteristics
-
-RPC mode is not reconnect-history oriented:
-
-- no stream offset protocol
-- no replay cursor
-- no built-in retained event log in transport layer
-- memory pressure mostly comes from current runtime state and normal IO buffering, not from infinite replay retention
-
-### Why upstream RPC matters here
-
-Upstream RPC mode proves:
-
-- live progress updates are acceptable at high rate when treated as transient transport
-- reconnect recovery should not automatically apply to every transport event
-
-This matches discussion: current crash is not evidence that live updates are always bad. It is evidence that retaining all live updates forever in memory is bad.
-
-## Opencode Architecture
-
-`opencode` is useful because it splits live updates from recovery better than current local remote design.
-
-### Live event stream
-
-Opencode has live SSE bus endpoint:
-
-- route sends `server.connected`, heartbeat, then forwards bus events live. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/server/routes/instance/event.ts:39-85`
-- no replay history served from this SSE route
-
-This is close to upstream Pi RPC spirit:
-
-- live stream for “what is happening now”
-- not same thing as authoritative reconnect recovery
-
-### What matters from opencode for us
-
-Opencode has a separate sync event system, but after session clarification we do not need to copy all of that.
-
-Useful lessons from opencode:
-
-- live SSE bus should stay live-only. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/server/routes/instance/event.ts:39-85`
-- reconnect should prefer authoritative refetch/bootstrap. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/app/src/context/global-sync/event-reducer.ts:21-29`, `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/app/src/context/global-sync.tsx:323-338`
-- client should apply small deltas to local state instead of receiving repeated whole-state payloads. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:253-343`
-
-Server-side direction to mirror more closely:
-
-- use internal live event bus for fanout
-- keep SSE route as bus subscriber, not replay reader
-- use snapshot/bootstrap endpoints for reconnect recovery
-- use committed history endpoints for transcript/history reads
-- keep client reconciliation logic on client side
-
-Potentially unnecessary for our narrower goal:
-
-- full dedicated sync replay log
-- per-aggregate replay API for all missed events
-- general-purpose event sourcing for remote reconnect
-
-### Client update application
-
-Opencode client does not rebuild state from every whole snapshot event. It applies structured updates:
-
-- `message.updated` upserts message info. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:253-290`
-- `message.part.updated` upserts part state. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:306-325`
-- `message.part.delta` appends delta to an existing part field. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:327-343`
-
-This is exactly aligned with session discussion:
-
-- send minimal diff while streaming
-- let client apply diff to current state
-- avoid sending repeated entire message state for every token if not necessary
-
-### Reconnect/bootstrap behavior
-
-Opencode refreshes on reconnect:
-
-- on `server.connected` or `global.disposed`, global refresh is triggered. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/app/src/context/global-sync/event-reducer.ts:21-29`
-- global sync context also queues resync for active directories when server reconnects. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/app/src/context/global-sync.tsx:323-338`
-- session bootstrap fetches current session, recent messages, todo, diff. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:515-537`
-
-This is important:
-
-- reconnect path does not insist on replaying every missed live transient update
-- it prefers authoritative refetch/bootstrap where appropriate
-
-### Memory trimming on client side
-
-Opencode also caps some client memory usage:
-
-- TUI store trims messages to 100 and removes oldest part cache. `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:271-289`
-
-This does not solve server memory by itself, but confirms bounded caches are normal and useful.
-
-## What We Agreed On
-
-### Updated decision
-
-Session direction changed and is now narrower:
-
-- generic replay of transient event history is not required
-- primary requirement is fast recovery when client disconnects temporarily and reconnects
-- authoritative snapshot plus committed session history are more important than replaying every missed progress event
-- current durable stream abstraction is likely not needed as long-term architecture center
-
-Working recommendation:
-
-- use session snapshot as primary reconnect primitive
-- use live channel for currently connected clients
-- use existing session JSONL-backed history for committed transcript/history access
-- treat missed transient progress updates as disposable unless they still affect current authoritative state
-- move server shape toward `opencode` bus-first model instead of evolving current stream-store-first model
-
-### Final Locked Decisions
-
-- transport is per-session SSE only
-- one sync stream emits `server.connected`, then `snapshot`, then live `patch` events
-- server subscribes client before emitting snapshot to avoid snapshot/live race
-- snapshot payload is `{ type: "snapshot", version, snapshot }`
-- client reconciliation is merge by durable identity, but server snapshot wins on conflict
-- snapshot `version` and patch `version` are durable session versions only
-- live-only patches may reuse current durable version until next committed durable transition
-- persisted version resumes from last durable version after crash/restart; lost in-memory live-only patches do not create new versions
-- session snapshot includes most recent 100 durable entries
-- older durable history comes from paginated session entries JSONL endpoint
-- long-poll, stream offsets, and replay cursors are removed from target design
-- crash/restart follows upstream Pi semantics for partials: active assistant/tool partials are not restored from durable storage
-- crash/restart recovery restores durable history plus explicit interrupted state for runtime domains
-- queue, retry, compaction, and bash state persist as typed durable transition entries
-- runtime domains rebuilt from durable reducers mark any previously running domain as `interrupted` on boot
-- interrupted state is represented in snapshot fields, not synthetic transcript entries
-- extensions declare sync class in event contract: `sync: "ephemeral" | "replaceable" | "durable"`
-- extension durable state persists through session JSONL entries and is rebuilt by extension reducers on boot
-
-### Key principle
-
-If event B fully supersedes event A for convergence, A should be replaceable or droppable.
-
-Examples:
-
-- many `message_update` events become irrelevant after `message_end`
-- many `tool_execution_update` events become irrelevant after `tool_execution_end`
-- many state patch updates become irrelevant after later patch or fresh snapshot
-
-### Event classes we discussed
-
-#### Authoritative current state
-
-Needed to restore client after reconnect.
-
-Examples:
-
-- committed transcript state
-- current active partial assistant state while server process is still alive
-- current active partial tool state while server process is still alive
-- queue state
+- transcript
+- live streaming assistant overlay
+- active tool executions
+- queue depth and queued steer/follow-up text
 - retry and compaction state
-- bash runtime state
-- pending UI state if needed
-
-Important limit after final decisions:
-
-- after crash/restart we follow upstream Pi semantics and do not restore in-flight assistant/tool partials from durable storage
-- after crash/restart authoritative snapshot restores durable state and marks previously running domains as `interrupted`
-
-#### Replaceable progress updates
-
-Useful while live, but older instances are superseded by newer ones.
-
-Examples:
-
-- `message_update`
-- `tool_execution_update`
-- repeated `session_state_patch`
-- some `extension_custom_event` channel updates
-
-#### Persisted committed history
-
-Useful from session JSONL and existing persisted session state.
-
-Examples:
-
-- committed message entries
-- compaction entries
-- queue transition entries
-- retry transition entries
-- bash transition entries
-- custom persisted entries
-- branch/session history already stored by session manager
-
-#### Extension sync classes
-
-Declared by extension event contract.
-
-Classes:
-
-- `ephemeral`: live SSE only
-- `replaceable`: live SSE only, newer event supersedes older state for same semantic slot
-- `durable`: persisted via session JSONL entries and rebuilt by server-side reducer on boot
-
-## Proposed Target Model
-
-### Target layers
-
-#### 1. Authoritative session state
-
-Per-session canonical state object built from durable session entries plus live runtime overlays when runtime exists.
-
-Should include:
-
-- committed transcript
-- current active assistant partial state only while process stays alive
-- current active tool partial state only while process stays alive
-- queue state
-- retry state
-- compaction state
 - bash state
-- pending UI requests
-- extension UI state if client needs it
-- interrupted runtime state after crash/restart
+- durable extension state
+- pending extension UI requests
+- resource/settings/model metadata
+- interrupted runtime domains
+- monotonic durable version
+- presence map
 
-This becomes source of truth for snapshots.
+See:
 
-#### 2. Live event bus and transport
+- [src/remote/session/types.ts](/home/coder/dotai/agent/src/remote/session/types.ts:1)
+- [src/remote/session/command-registry.ts](/home/coder/dotai/agent/src/remote/session/command-registry.ts:1)
 
-Live SSE channel for connected clients only.
+### No retained replay log
 
-Properties:
+Server no longer retains unbounded per-session event history for reconnect. Reconnect bootstrap comes from fresh authoritative snapshot plus currently live patches.
 
-- small progress updates
-- no requirement to serve as long-term replay store
-- may use tiny bounded coalescing queue internally for transport smoothing
-- should not retain every transient update for reconnect
-- no offset or cursor replay semantics
-- first stream events are `server.connected` then `snapshot`
+Live fanout uses in-process event bus:
 
-Preferred implementation:
+- [src/remote/live-events.ts](/home/coder/dotai/agent/src/remote/live-events.ts:1)
 
-- runtime/session changes publish to internal bus
-- SSE subscribes to bus
-- server attaches subscription before emitting initial snapshot
-- transport emits connection lifecycle and heartbeat separately
-- retained stream arrays are not primary fanout mechanism
+### Durable restart recovery
 
-#### 3. Bootstrap and committed history endpoints
+Interrupted runtime domains are persisted separately from transcript so restart recovery can mark queue/retry/compaction/bash/streaming as interrupted without replaying transient events.
 
-Use existing session JSONL and session manager state for committed history.
+Files:
 
-Properties:
+- [src/remote/session/durable-runtime-state.ts](/home/coder/dotai/agent/src/remote/session/durable-runtime-state.ts:1)
+- [src/remote/session/runtime-sync.ts](/home/coder/dotai/agent/src/remote/session/runtime-sync.ts:1)
+- [src/remote/session/runtime-sync-snapshot.ts](/home/coder/dotai/agent/src/remote/session/runtime-sync-snapshot.ts:1)
 
-- dedicated HTTP APIs
-- paginated via `entriesLimit` and `entriesOffset`
-- good for committed durable history recovery
-- not used for live catch-up replay
+## Client Model
 
-Preferred implementation:
+Client runtime is surrogate object graph shaped for upstream `InteractiveMode`:
 
-- SSE sync endpoint emits authoritative `snapshot` event inline
-- session history endpoint returns paginated durable entries when needed
-- reconnect starts with fresh inline snapshot rather than stream offset catch-up
+- `RemoteAgentSessionRuntime`
+- remote session mirror
+- remote session-manager mirror
+- remote resource loader mirror
+- local extension runner bridge
 
-## Ring Buffer Notes
+Files:
 
-After decision update, ring buffer is optional implementation detail, not required architecture.
+- [src/remote/client/runtime.ts](/home/coder/dotai/agent/src/remote/client/runtime.ts:1)
+- [src/remote/client/session.ts](/home/coder/dotai/agent/src/remote/client/session.ts:1)
+- [src/remote/client/session-manager-mirror.ts](/home/coder/dotai/agent/src/remote/client/session-manager-mirror.ts:1)
+- [src/remote/client/session-resource-loader.ts](/home/coder/dotai/agent/src/remote/client/session-resource-loader.ts:1)
+- [src/remote/client/session/local-extension-runner.ts](/home/coder/dotai/agent/src/remote/client/session/local-extension-runner.ts:1)
 
-Possible uses:
+`InteractiveMode` stays unchanged at host boundary. Client runtime replays authoritative snapshot into local mirror, then applies incremental patches.
 
-- small bounded transport queue per connection
-- in-process coalescing of hot live updates
-- smoothing bursty producer/consumer mismatch
+## Protocol
 
-Not required uses:
+### Transport split
 
-- long-term reconnect history
-- generic replay store
-- authoritative state source
+- Hono RPC for request/response commands and snapshots
+- SSE for live sync stream only
 
-## Snapshot + Reconnect Model
+Routes:
 
-Recommended reconnect flow:
+- [src/remote/routes.ts](/home/coder/dotai/agent/src/remote/routes.ts:1)
+- [src/remote/routes/session-sync.ts](/home/coder/dotai/agent/src/remote/routes/session-sync.ts:1)
+- [src/remote/runtime-api/client.ts](/home/coder/dotai/agent/src/remote/runtime-api/client.ts:1)
 
-1. Client opens per-session SSE sync endpoint.
-2. Server attaches live subscriber before emitting any sync data.
-3. Server emits `server.connected`.
-4. Server emits `snapshot` event carrying authoritative snapshot and current durable version.
-5. Client merges durable structures by identity, but snapshot wins on conflict.
-6. Server emits live `patch` events after snapshot.
-7. If client disconnects, it reconnects to same SSE sync endpoint and receives fresh snapshot again.
-8. If server crashed and restarted, it first rebuilds state from session JSONL reducers, marks previously running domains as `interrupted`, then emits fresh snapshot.
-9. No replay of missed transient `message_update` or `tool_execution_update` events is required.
+### Contracts
 
-This is intentionally closer to `opencode` than to current stream-offset replay behavior.
+All remote payloads are shared TypeBox schemas.
 
-Important conclusion from session:
+Key schema files:
 
-- reconnecting client usually does not need every historical `message_update`
-- if `message_end` already exists, replaying previous streaming token deltas is wasted work
-- after crash/restart, upstream Pi semantics are acceptable: partial assistant/tool state may be lost even if live client had seen it before crash
+- [src/remote/schemas-core.ts](/home/coder/dotai/agent/src/remote/schemas-core.ts:1)
+- [src/remote/schemas-stream.ts](/home/coder/dotai/agent/src/remote/schemas-stream.ts:1)
+- [src/remote/schemas-session-runtime.ts](/home/coder/dotai/agent/src/remote/schemas-session-runtime.ts:1)
+- [src/remote/typebox.ts](/home/coder/dotai/agent/src/remote/typebox.ts:1)
 
-## Minimum Diff Protocol Direction
+Top-level sync events:
 
-Session discussion preferred sending minimum diffs to client and letting client apply them.
+- `server.connected`
+- `snapshot`
+- `patch`
 
-Recommended distinction:
+No legacy stream offsets, backlog envelopes, or replay cursors remain on wire. Covered by [test/remote-sync-final-architecture.test.ts](/home/coder/dotai/agent/test/remote-sync-final-architecture.test.ts:253).
 
-### Progress patches
+### Snapshot
 
-- small live deltas
-- mutate only active streaming UI state
-- replaceable
-- not authoritative long-term
-- not guaranteed to survive crash/restart
+`snapshot` is authoritative current truth for one session. It contains:
 
-Examples:
+- durable transcript tail
+- live overlay state
+- pending tool calls
+- queue state
+- retry/compaction/bash/streaming status
+- active tool executions
+- pending UI requests and UI state
+- durable extension state
+- resource, settings, theme, model, session metadata
+- interrupted runtime domain markers
 
-- assistant text delta
-- tool stdout delta or latest accumulated partial
-- progress percentage or live counters
+Snapshot build path:
 
-### State patches
+- [src/remote/session/runtime-sync-snapshot.ts](/home/coder/dotai/agent/src/remote/session/runtime-sync-snapshot.ts:1)
+- [src/remote/session/unloaded-session-snapshot.ts](/home/coder/dotai/agent/src/remote/session/unloaded-session-snapshot.ts:1)
 
-- authoritative
-- enough to reconstruct state after reconnect
-- derived from authoritative runtime state and committed session history
-- durable version only advances when durable state changes are recorded
-- live progress patches keep transport order but do not allocate separate monotonic versions
+### Incremental patches
 
-Examples:
+Hot updates are normalized into smaller patch classes instead of replaying full heavyweight upstream events.
 
-- message committed to transcript
-- tool result committed
-- queue changed
-- retry started/ended
-- compaction started/ended
-- bash started/ended
+Patch classes:
 
-This separation is critical.
+- `session.state`
+- `assistant.message`
+- `tool.execution`
+- `queue.update`
+- `retry.status`
+- `compaction.status`
+- `agent.lifecycle`
+- `extension.custom`
+- `extension.event`
+- `extension.ui.request`
+- `extension.ui.resolved`
+- `command.accepted`
+- `bash.start`
+- `bash.chunk`
+- `bash.end`
+- `bash.flush`
+- `extension.error`
 
-## Why Current `message_update` Shape Is Problematic
+Patch emission path:
 
-Current local remote system mirrors upstream runtime events as opaque `agent_session_event` payloads. `src/remote/session/event-stream-ops.ts:80-94`
+- [src/remote/session/event-stream-ops.ts](/home/coder/dotai/agent/src/remote/session/event-stream-ops.ts:1)
+- [src/remote/session/extension-event-stream.ts](/home/coder/dotai/agent/src/remote/session/extension-event-stream.ts:1)
+- [src/remote/session/session-state-patch.ts](/home/coder/dotai/agent/src/remote/session/session-state-patch.ts:1)
 
-That means:
+Tool patches avoid repeated full payloads when possible:
 
-- server cannot cheaply reason about dominance between updates
-- current retention layer stores full upstream event payloads
-- `tool_execution_update` may repeatedly store accumulated output snapshots
+- text append delta
+- structured partial patch ops
+- full partial result fallback only when needed
 
-Long-term improvement likely requires more explicit local event taxonomy instead of opaque pass-through for all progress events.
+Files:
 
-## What To Borrow From Upstream Pi
+- [src/remote/tool-output-text.ts](/home/coder/dotai/agent/src/remote/tool-output-text.ts:1)
+- [src/remote/client/session/tool-sync-patches.ts](/home/coder/dotai/agent/src/remote/client/session/tool-sync-patches.ts:1)
 
-From upstream Pi RPC mode we should borrow:
+Assistant streaming patches use compact content-index deltas instead of full assistant message replay:
 
-- treat hot progress updates as transient transport events by default
-- avoid assuming every streamed update deserves durable retention
-- keep live transport simple
+- [src/remote/assistant-message-sync.ts](/home/coder/dotai/agent/src/remote/assistant-message-sync.ts:1)
 
-Relevant references:
+## Reconnect Semantics
 
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md:19-36`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/docs/rpc.md:748-895`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/rpc-mode.ts:48-55`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/rpc-mode.ts:321-339`
-- `/home/coder/.cache/checkouts/github.com/badlogic/pi-mono/packages/coding-agent/src/modes/rpc/jsonl.ts:4-57`
+### Attach sequence
 
-## What To Borrow From Opencode
+1. Subscribe live event bus first.
+2. Load authoritative snapshot.
+3. Emit `server.connected`.
+4. Emit `snapshot`.
+5. Flush only buffered pre-snapshot patches not already covered by snapshot.
+6. Continue live patch fanout.
 
-From `opencode` we should borrow:
+Implementation:
 
-- separate live SSE from recovery model
-- use delta events for hot message updates
-- refetch/bootstrap authoritative state on reconnect when that is simpler and safer than replaying everything
-- keep client reducer logic able to apply small updates to current state
+- [src/remote/routes/session-sync.ts](/home/coder/dotai/agent/src/remote/routes/session-sync.ts:47)
 
-Relevant references:
+### Why snapshot-first
 
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/server/routes/instance/event.ts:39-85`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:253-343`
-- `/home/coder/.cache/checkouts/github.com/anomalyco/opencode/packages/opencode/src/cli/cmd/tui/context/sync.tsx:515-537`
+Client convergence matters more than historical replay. Snapshot gets client usable immediately. Buffered transient patches only survive short pre-snapshot race window.
 
-## Options
+### Buffered pre-snapshot patch window
 
-### Option A: Optimize current system in place
+Before snapshot send completes, server keeps only bounded buffer of pending live patches. Replaceable updates coalesce by semantic key.
 
-Keep current stream API short-term, but stop relying on it conceptually for full recovery.
+- hard cap: `128`
+- replaceable updates overwrite prior buffered event
+- snapshot-covered patches are discarded
 
-Changes:
+Implementation:
 
-- cap or coalesce retained transient events aggressively
-- make session snapshot primary reconnect primitive
-- use existing paginated session JSONL-backed entries for committed history
-- reduce dependence on stream replay for reconnect correctness
+- [src/remote/routes/session-sync.ts](/home/coder/dotai/agent/src/remote/routes/session-sync.ts:14)
+- [src/remote/session-sync-metadata.ts](/home/coder/dotai/agent/src/remote/session-sync-metadata.ts:1)
 
-Pros:
+This is bounded reconnect smoothing, not general replay.
 
-- smallest code churn
-- fast path to memory fix
-- reuses existing session snapshot and JSONL history
+### Client reconnect loop
 
-Cons:
+Client polls SSE continuously. On disconnect:
 
-- current stream abstraction still awkward
-- opaque `agent_session_event` remains a limitation
+- retry quickly for retryable transport/auth/network failures
+- reauthenticate on `401`
+- rebootstrap from snapshot after reconnect
+- preserve only local metadata needed for reconnection
 
-### Option B: New snapshot + patch protocol
+Implementation:
 
-Introduce explicit authoritative snapshots and typed patches.
+- [src/remote/client/session/runtime-internals.ts](/home/coder/dotai/agent/src/remote/client/session/runtime-internals.ts:194)
+- [src/remote/client/session/runtime-sync-errors.ts](/home/coder/dotai/agent/src/remote/client/session/runtime-sync-errors.ts:1)
 
-Changes:
+### Server restart recovery
 
-- current snapshot endpoint becomes core recovery primitive
-- progress patches are separate from authoritative state patches
-- reconnect always prefers fresh snapshot over raw event replay for transient disconnects
+After restart, durable transcript and durable runtime-domain state rebuild session snapshot. Streaming, retry, compaction, bash, and queue domains surface as `interrupted` until next authoritative runtime state clears them.
 
-Pros:
+Covered by [test/remote-sync-final-architecture.test.ts](/home/coder/dotai/agent/test/remote-sync-final-architecture.test.ts:160).
 
-- cleanest convergence story
-- best bandwidth profile
-- easiest semantics long-term
+## Memory Bounding
 
-Cons:
+Bound strategy:
 
-- bigger client and protocol rewrite
+- no unbounded replay array
+- no per-connection catch-up backlog
+- only current session projection retained
+- only bounded pre-snapshot patch buffer per connection
+- replaceable extension custom events coalesce
+- current active tool execution state replaces prior transient partials
+- presence entries expire
+- idle runtimes evict
 
-### Option C: Opencode-like server architecture
+Files:
 
-Likely best fit for current requirement.
+- [src/remote/routes/session-sync.ts](/home/coder/dotai/agent/src/remote/routes/session-sync.ts:14)
+- [src/remote/session/registry-presence.ts](/home/coder/dotai/agent/src/remote/session/registry-presence.ts:1)
+- [src/remote/session/registry-management.ts](/home/coder/dotai/agent/src/remote/session/registry-management.ts:1)
 
-Changes:
+## Extension Support
 
-- replace stream-store-first fanout with bus-first fanout
-- authoritative snapshot for reconnect/bootstrap
-- existing session JSONL for committed history pagination
-- live channel for transient progress deltas
-- optional tiny bounded in-memory coalescing queue only for live transport
-- client reconciles snapshot state plus new live deltas
+Server remains extension runtime authority.
 
-Pros:
+- extension runner events stream as patches
+- extension custom events split durable vs ephemeral vs replaceable sync behavior
+- extension UI requests/responses bridge through explicit patch classes and command routes
+- durable extension state is snapshot-backed
+- ephemeral extension state is live-only
 
-- matches actual requirement closely
-- no need for separate generic durable replay system
-- aligns with upstream Pi and `opencode` reconnect behavior
-- simpler conceptual split between transport and recovery
+Files:
 
-Cons:
+- [src/remote/event-bus-bridge.ts](/home/coder/dotai/agent/src/remote/event-bus-bridge.ts:1)
+- [src/remote/session/extension-event-stream.ts](/home/coder/dotai/agent/src/remote/session/extension-event-stream.ts:1)
+- [src/remote/session/ui-requests.ts](/home/coder/dotai/agent/src/remote/session/ui-requests.ts:1)
+- [src/remote/session/commands-ui.ts](/home/coder/dotai/agent/src/remote/session/commands-ui.ts:1)
 
-- reconnect path becomes snapshot-centric, not incremental replay-centric
-- migration from current stream routes may be larger
+## Parity Surface
 
-## Recommended Direction
+Remote path supports same interactive host flows exercised in tests:
 
-Recommended path from session discussion:
+- prompt flow
+- assistant streaming
+- tool start/update/end
+- bash streaming lifecycle
+- steer/follow-up/clear queue
+- interrupt
+- model and thinking changes
+- remote settings and mode sync
+- rename
+- new/switch/fork flows
+- tree navigation and summaries
+- retry and compaction propagation
+- extension UI request/response
+- extension custom events
+- resource/theme/model sync
+- repeated attach/detach and multi-client convergence
 
-1. Stop treating current durable stream as long-term architectural center.
-2. Replace stream routes with per-session SSE sync endpoint that emits `server.connected`, `snapshot`, then live `patch` events.
-3. Make inline snapshot authoritative for reconnect.
-4. Use existing session JSONL-backed entries for committed history pagination.
-5. Move live fanout to bus-first architecture closer to `opencode`.
-6. Treat live progress updates as transient transport data.
-7. Persist only durable state transitions and committed messages.
-8. Remove older assumption that full transient replay history is required.
+Primary evidence:
 
-Outcome-first summary:
+- [test/remote-adapter-core.scenarios.ts](/home/coder/dotai/agent/test/remote-adapter-core.scenarios.ts:1)
+- [test/remote-adapter-runtime.scenarios.ts](/home/coder/dotai/agent/test/remote-adapter-runtime.scenarios.ts:1)
+- [test/modes-remote.test.ts](/home/coder/dotai/agent/test/modes-remote.test.ts:1)
+- [test/remote-tool-sync-patches.test.ts](/home/coder/dotai/agent/test/remote-tool-sync-patches.test.ts:1)
+- [test/remote-sync-final-architecture.test.ts](/home/coder/dotai/agent/test/remote-sync-final-architecture.test.ts:1)
 
-- reconnect should restore current truth, not historical motion
-- progress events should optimize live UX, not durable recovery
-- committed history should come from session manager persistence already present
-- additional infrastructure should only exist where it changes reconnect correctness or memory safety
-- preferred server end state is bus + snapshot/bootstrap + history APIs, not retained stream store + offset replay
+## Validation Evidence
 
-## Checklist
+### Repo gates
 
-### Design checklist
+Executed successfully:
 
-- [x] define event taxonomy: durable, replaceable, ephemeral
-- [x] define extension sync classes in event contract
-- [x] define authoritative session snapshot shape at protocol level
-- [x] define live progress patch shapes at protocol level
-- [x] define reconnect bootstrap flow
-- [x] define client reconciliation rule: merge by identity, snapshot wins on conflict
-- [x] define TypeBox schemas for snapshot and patch envelopes
-- [x] define exact interrupted status enums for each runtime domain
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run format:check`
 
-### Storage checklist
+### Remote-specific tests
 
-- [x] remove unbounded `events[]` retention from remote stream store path
-- [x] implement typed durable transition entries for queue/retry/compaction/bash
-- [x] persist session version with durable state transitions
-- [x] ensure `tool_execution_update` does not persist every accumulated partial snapshot forever
-- [x] add reducer-based rebuild from session JSONL on boot
+Executed successfully:
 
-### Server checklist
+- `npm run test:remote`
 
-- [x] separate live transport concerns from reconnect recovery concerns
-- [x] add per-session SSE sync endpoint
-- [x] emit `server.connected`, then `snapshot`, then live `patch` events on same stream
-- [x] ensure snapshot/live handoff is race-free by subscribing before snapshot emission
-- [x] add internal live event bus layer
-- [x] make SSE subscribe to live bus via explicit publish seam; retained store now allocates offsets/retention only while session/app append sites publish separately
-- [x] expose committed history through paginated session entries endpoint only
-- [x] remove long-poll and stream-offset replay endpoints from target design
-- [x] rebuild interrupted runtime state from durable reducers after restart
+This covers:
 
-### Client checklist
+- snapshot-first reconnect
+- multi-client live patch convergence
+- durable vs ephemeral extension sync
+- restart recovery for interrupted runtime domains
+- bounded pre-snapshot buffering
+- no legacy stream-offset protocol residue
 
-- [x] apply progress deltas to active local state
-- [x] merge durable state by identity and let snapshot win on conflict
-- [x] replace transient local state from fresh snapshot on reconnect
-- [x] clear transient partial state when final durable event arrives
-- [x] support multi-client eventual consistency by honoring durable order
-- [x] tolerate reconnect where some transient updates were never observed
-- [x] handle unknown `agent_session_event` residue intentionally by excluding opaque fallback payloads from typed sync patch protocol until client semantics exist
+### tmux e2e evidence
 
-### Residual bookkeeping
+Session prefix used: `pi-remote-e2e`
 
-- session and app stream offsets still exist only as monotonic live event identifiers and presence freshness markers
-- they no longer provide replay, resume, or cursor recovery semantics
-- durable session version remains authoritative for sync ordering and snapshot convergence
-- seeded session stream head on load remains required so post-reload live events keep monotonic offsets for active subscribers
-- TypeBox schemas for session entries are transport-owned, but exported TypeScript entry type still aliases upstream `SessionEntry` pending full transport-type decoupling
-- [x] treat `server.connected` as reconnect/resync signal
+Validated with real tmux panes:
 
-### Testing checklist
+- `scripts/remote-e2e-direct-tmux.sh up`
+- tmux panes launch:
+  - `npm run pi:server -- --port <port> --origin http://127.0.0.1:<port>`
+  - `npm run pi:remote -- --remote-url http://127.0.0.1:<port> --identity alice --workspace-cwd <tmp>`
+  - `npm run pi`
+- `tmux send-keys` into remote client pane
+- `tmux capture-pane` on remote client and server panes
+- clean capture post-processing for grepable assertions
 
-- [x] reproduce high-volume memory case
-- [x] verify bounded memory under sustained 100k `message_update`
-- [x] verify bounded memory under sustained 100k `tool_execution_update`
-- [x] verify reconnect during same-process streaming restores correct active partial state within 2s
-- [x] verify crash mid-assistant stream restores committed transcript plus interrupted state within 5s
-- [x] verify crash mid-tool stream restores committed tool state plus interrupted state within 5s
-- [x] verify reconnect after completion skips obsolete transient updates
-- [x] verify two clients converge to same final durable state after snapshot-based reconnect
-- [x] verify extension ephemeral/replaceable/durable contracts behave correctly across reconnect and restart
-- [x] verify durable-only snapshot/patch version semantics for live-only patches
-- [x] verify remote tool transport preserves object-shaped `parameters` and `sourceInfo` end to end
+Scenario script:
 
-## QA
+- `scripts/remote-e2e-scenarios.sh`
 
-### Q: Do we still need durable streams?
+Executed scenarios:
 
-Probably not as long-term architecture.
+- `normal`
+- `large-stream`
+- `hot-bash`
+- `reconnect-mid-stream`
+- `reconnect-after-completion`
+- `restart-recovery`
+- `queue-interrupt`
+- `fork`
+- `switch-session`
+- `extension-ui`
+- `clone`
+- `extra-attach`
+- `fanout`
+- `memory-bound`
 
-Session conclusion after clarification:
+Observed:
 
-- current durable stream abstraction is heavier than actual requirement
-- reconnect correctness can come from authoritative snapshot plus committed session history
-- small bounded live buffering may still be useful, but not as generic replay store
-- if following `opencode` closely, live SSE should sit on top of bus/events, not retained stream storage
+- remote and standalone Pi both accepted typed prompt input and rendered assistant greeting for `Say hello in one sentence.`
+- remote rendered large streamed numeric output and hot bash output updates through tmux-visible UI
+- remote reconnect with `--continue` recovered after mid-stream disconnect and after completion
+- server restart followed by remote reattach returned client to usable session UI
+- interrupt under active run worked through upstream default `Escape` binding and rendered `Operation aborted`
+- direct remote attach to explicit target session id rendered the target session header and prompt UI
+- extension UI flow rendered through remote client and completed with visible `Opened stash entry (1 lines)`
+- repeated attach and second-client fanout completed without server crash
+- hot streaming memory probe showed bounded working-set oscillation after warmup in tmux scenario `memory-bound` with `tail_spread_kb=55912`
 
-### Q: Can `message_update` and `tool_execution_update` be collapsed in memory?
+Logs captured under:
 
-Yes.
+- `.pi/remote-e2e/scenario-runs/*`
 
-That was core conclusion of session.
+## Known Limits
 
-They are prime replaceable events.
+- tmux evidence proves real client/server behavior and visible parity for covered scenarios, but does not by itself prove asymptotic memory bounds.
+- bounded reconnect buffering and replaceable pre-snapshot coalescing are proven primarily by automated tests:
+  - [test/remote-sync-final-architecture.test.ts](/home/coder/dotai/agent/test/remote-sync-final-architecture.test.ts:1)
+  - [test/remote-tool-sync-patches.test.ts](/home/coder/dotai/agent/test/remote-tool-sync-patches.test.ts:1)
+- tree navigation and tree-summary semantics are proven primarily by automated runtime tests:
+  - [test/remote-adapter-runtime.scenarios.ts](/home/coder/dotai/agent/test/remote-adapter-runtime.scenarios.ts:1030)
+  - [test/remote-adapter-runtime.scenarios.ts](/home/coder/dotai/agent/test/remote-adapter-runtime.scenarios.ts:1166)
 
-- newest update supersedes older ones for same active message/tool call
-- once final durable event arrives, prior transient chain is often unnecessary for convergence
+## Non-Goals
 
-### Q: Can client reconnect mid-run and still recover?
-
-Yes.
-
-Recommended answer now:
-
-- for transient disconnect while same process stays alive, snapshot can include current active partial assistant/tool state
-- after crash/restart, snapshot restores durable state and explicit interrupted runtime state instead of in-flight partials
-- client resumes live subscription after replacing/reconciling local state
-
-Client does not need every missed intermediate token delta if current partial or final committed state is available.
-
-### Q: Do we need separate persistent sync log?
-
-Not necessarily.
-
-Current session clarification says existing session JSONL is primary durable source for committed history and typed runtime transition entries.
-
-Separate persistent sync log becomes optional, not assumed.
-
-### Q: Can multiple clients still converge without every transient event?
-
-Yes.
-
-Eventual consistency requires:
-
-- authoritative state definition
-- ordered durable facts
-- deterministic client application rules
-- snapshot fallback when replay insufficient
-
-It does not require preserving every transient token emission forever.
-
-### Q: Why not only use snapshots and drop events entirely?
-
-Possible, but less efficient for active synchronization and multi-client incremental updates.
-
-Live events still valuable for:
-
-- low-latency UI updates
-- lower bandwidth while client stays connected
-
-Best shape is snapshot + live updates + existing committed history, not snapshot-only or replay-heavy stream retention.
-
-### Q: What survives crash/restart?
-
-Committed durable state survives.
-
-- committed transcript and custom durable entries survive through session JSONL
-- queue/retry/compaction/bash state survives through typed durable transition entries
-- interrupted status is reconstructed on boot for domains that were running before crash
-- in-flight assistant and tool partials do not survive, matching accepted upstream Pi semantics
-
-### Q: Why not only use ring buffer?
-
-Ring buffer alone gives memory bound, but not reconnect correctness.
-
-Need also authoritative snapshot.
-
-## Migration Path
-
-### Phase 1: New durable taxonomy
-
-Goal: define what survives restart.
-
-1. Add typed durable transition entries for queue/retry/compaction/bash.
-2. Add extension sync classes and durable reducers.
-3. Persist session version with durable state changes.
-
-Expected result:
-
-- durable recovery source is explicit and reducer-driven
-
-### Phase 2: New per-session SSE sync endpoint
-
-Goal: make sync atomic and replay-free.
-
-1. Add per-session SSE endpoint.
-2. Subscribe client before sending sync data.
-3. Emit `server.connected`, then `snapshot`, then live `patch` events.
-
-Expected result:
-
-- reconnect correctness without offset replay
-
-### Phase 3: Bus-first fanout
-
-Goal: decouple live transport from retained storage.
-
-1. Add internal live event bus abstraction.
-2. Publish runtime/session progress events to bus.
-3. Remove retained stream arrays from connected-client fanout.
-
-Expected result:
-
-- bounded live fanout path
-- less coupling between transport and recovery
-
-### Phase 4: Boot rebuild and interrupted state
-
-Goal: survive crash/restart using durable state only.
-
-1. Rebuild canonical session state from session JSONL reducers on boot.
-2. Mark any previously running domain as `interrupted`.
-3. Emit fresh authoritative snapshot after restart.
-
-Expected result:
-
-- restart recovery matches accepted upstream semantics
-
-### Phase 5: Remove legacy remote stream model
-
-Goal: delete obsolete replay-centric architecture.
-
-1. Remove long-poll and offset replay endpoints.
-2. Remove dependence on `InMemoryDurableStreamStore` for recovery.
-3. Keep only paginated durable entries endpoint for history.
-4. Keep residual stream offsets only where they support live event identity or presence observability.
-
-Expected result:
-
-- cleaner architecture
-- no backward-compat replay machinery
-
-## Summary
-
-Session conclusions:
-
-- current crash is most likely caused by unbounded in-memory retention of high-velocity transient events
-- upstream Pi RPC mode treats progress events as live transport, not durable replay history
-- `opencode` shows strong pattern: refetch/bootstrap on reconnect, keep live stream live-only, and apply minimal deltas on client
-- `message_update`, `tool_execution_update`, repeated `session_state_patch`, and many extension custom updates should be collapsible or droppable for reconnect purposes
-- after clarification, generic durable replay of transient transport events is not required
-- current durable stream abstraction is likely unnecessary as long-term design center
-- server architecture should move closer to `opencode`: bus-first live fanout, snapshot-first reconnect, committed-history endpoints
-
-Recommended end state:
-
-- authoritative session snapshot model
-- internal live event bus for fanout
-- existing paginated session JSONL-backed committed history
-- progress deltas for live UX
-- optional tiny bounded/coalesced live transport buffering only if needed
-- active-run snapshot for reconnect
-
-Final recommendation:
-
-- optimize for current-state restoration
-- keep prompts, transport, and architecture outcome-first
-- avoid over-specifying replay machinery that does not improve reconnect correctness
-- follow upstream Pi semantics for transient partial loss on crash/restart
-
-That architecture best satisfies goals from this session:
-
-- bounded memory
-- minimal diff
-- reconnect safety
-- eventual consistency across clients
-
-## Actionable Fix Backlog
-
-This section translates current known implementation limits into concrete work items that can be shipped independently.
-
-### 1. Resumable patch stream instead of forced snapshot-first reconnect
-
-Problem:
-
-- current client always reconnects with plain `GET /sync`
-- current server always replies `server.connected`, then full `snapshot`, then live patches
-- this is correct, but expensive on unstable or metered links
-
-Current evidence:
-
-- client read path: `src/remote/runtime-api/client.ts:614-633`
-- server sync route: `src/remote/routes/session-sync.ts:71-121`
-
-Action:
-
-1. Add uniform patch envelope `seq` field.
-2. Add `afterSeq` query parameter on session sync endpoint.
-3. Serve patch-only catch-up when server still has contiguous patch history.
-4. Fall back to full snapshot only on missing history, schema mismatch, or explicit resync.
-
-Verification:
-
-- reconnect after short network flap does not resend snapshot when `afterSeq` is still available
-- reconnect after history eviction falls back to snapshot and still converges
-
-### 2. Continuous live coalescing for replaceable updates
-
-Problem:
-
-- current replace-key buffering only applies before initial snapshot flush
-- once stream is live, every replaceable patch is sent immediately
-
-Current evidence:
-
-- pre-snapshot buffering only: `src/remote/routes/session-sync.ts:149-174`
-- replace-key metadata: `src/remote/session-sync-metadata.ts:37-88`
-
-Action:
-
-1. Add optional per-connection bounded coalescing queue for replaceable patch classes.
-2. Coalesce at least:
-   - assistant message update stream
-   - tool execution update stream per tool call id
-   - queue update
-   - retry status
-   - compaction status
-   - replaceable extension custom events
-3. Flush coalesced queue on render tick or short timer.
-4. Keep non-replaceable lifecycle/finalization patches immediate.
-
-Verification:
-
-- sustained `message_update` and `tool_execution_update` load reduces bytes written per client
-- final client state remains identical to uncoalesced stream
-
-### 3. Assistant delta apply should validate offsets
-
-Problem:
-
-- server computes `start` offsets for assistant text/thinking deltas
-- client currently ignores `start` and only appends `delta`
-- tool delta path already validates `start`; assistant path should match that safety bar
-
-Current evidence:
-
-- server assistant delta shape: `src/remote/assistant-message-sync.ts:62-103`
-- client assistant apply path: `src/remote/client/session/runtime-sync-support.ts:455-487`
-- client tool delta validation: `src/remote/client/session/tool-sync-patches.ts:38-56`, `src/remote/client/session/tool-sync-patches.ts:98-101`
-
-Action:
-
-1. Change assistant delta reconstruction to check `start` before append.
-2. If offset mismatch occurs, mark active assistant stream dirty.
-3. Trigger targeted resync for active session state or force snapshot fallback.
-
-Verification:
-
-- injected duplicate or skipped assistant delta does not silently corrupt local partial message
-- client either repairs or resyncs deterministically
-
-### 4. Apply live resource patches to full remote resource-loader view
-
-Problem:
-
-- live `session.state.resources` patches exist
-- client currently only updates remote modes snapshot from live resource patch
-- snapshot path fully rebuilds resource loader, but live patch path does not
-
-Current evidence:
-
-- resource field in patch schema: `src/remote/schemas-stream.ts:394-420`
-- server publishes reload resource patch: `src/remote/session/registry-management.ts:184-194`, `src/remote/session/session-state-patch.ts:27-63`
-- live client patch application only updates modes: `src/remote/client/session/runtime-internals.ts:383-387`
-- snapshot rebuild path: `src/remote/client/session/setup-base.ts:371-378`
-
-Action:
-
-1. Introduce mutable remote resource state on client mirror.
-2. Rebuild `resourceLoader` view when `patch.resources` arrives.
-3. Re-register remote themes and prompt/skill data without requiring full snapshot reload.
-
-Verification:
-
-- server-side prompt/theme/skill reload propagates to connected client without explicit full session reload
-
-### 5. Remove or promote dead SSE control-offset path
-
-Problem:
-
-- SSE parser still understands `control` frames with `streamNextOffset` and friends
-- sync reader ignores them
-- server sync route does not emit them
-
-Current evidence:
-
-- parser control schema: `src/remote/sse.ts:9-42`
-- sync reader ignores control: `src/remote/runtime-api/sync.ts:31-37`
-- server emits only data events and heartbeat comments: `src/remote/routes/session-sync.ts:20-31`, `src/remote/routes/session-sync.ts:90-121`
-
-Action:
-
-1. Choose one path:
-   - delete dead control-offset code
-   - or revive it as real resumable stream control plane for `afterSeq`/resync negotiation
-2. Do not keep half-active transport mechanisms.
-
-Verification:
-
-- no dead-code path remains in sync transport
-- transport docs match actual wire protocol
-
-### 6. Add uniform patch envelope sequencing
-
-Problem:
-
-- top-level patch event has `version` but no uniform per-patch `seq`
-- some payloads contain local `sequence`, but not all patch kinds do
-- this makes gap detection and precise resume harder than necessary
-
-Current evidence:
-
-- patch envelope schema: `src/remote/schemas-stream.ts:556-561`
-- `command.accepted` payload has `sequence`: `src/remote/schemas-stream.ts:374-392`
-- `session.state` payload has `sequence`: `src/remote/schemas-stream.ts:394-420`
-- command acceptance increments queue sequence: `src/remote/session/command-acceptance.ts:121-130`
-
-Action:
-
-1. Add top-level `seq` to every `patch` event.
-2. Keep `version` for durable convergence semantics.
-3. Reserve `seq` for transport ordering and resume.
-4. Make `afterSeq` resume logic depend on envelope `seq`, not payload-specific fields.
-
-Verification:
-
-- client can detect missing live patches without guessing from domain state
-- server can resume from exact next patch boundary
-
-### 7. Reduce heavy lifecycle payload duplication
-
-Problem:
-
-- `agent.lifecycle` patch still sends full message payloads for `message_start`, `message_end`, `turn_end`, and `agent_end`
-- this weakens benefits gained from compact assistant/tool incremental patches
-
-Current evidence:
-
-- lifecycle payload schema: `src/remote/schemas-stream.ts:340-365`
-- lifecycle patch encoder: `src/remote/session/event-stream-ops.ts:261-315`
-
-Action:
-
-1. Audit which lifecycle payloads must remain full for client and extension semantics.
-2. Replace heavy payloads with id/ref forms where local mirror already has authoritative object.
-3. Keep full payloads only where order-sensitive extension behavior truly needs them.
-
-Verification:
-
-- end-of-turn and end-of-agent network volume drops under long conversations with large tool results
-- local extension semantics remain intact
-
-### 8. Make reconnect semantics explicit in protocol docs and tests
-
-Problem:
-
-- current code behavior is snapshot-first reconnect, but target direction is evolving toward resumable patch stream
-- tests and docs should clearly separate:
-  - same-process reconnect
-  - reconnect after history loss
-  - reconnect after restart
-
-Action:
-
-1. Split protocol expectations into three reconnect classes.
-2. Add explicit tests for each class.
-3. Document when snapshot is mandatory vs optional fallback.
-
-Verification:
-
-- reconnect behavior is deterministic and visible in docs, not inferred from implementation
-
-### Suggested execution order
-
-1. Add uniform patch `seq`.
-2. Implement `afterSeq` resume and snapshot fallback.
-3. Fix assistant delta offset validation.
-4. Add continuous live coalescing.
-5. Fix live resource patch application.
-6. Remove or formalize SSE control-offset path.
-7. Trim heavy lifecycle payloads.
-8. Expand reconnect protocol tests and docs.
+- historical replay of every transient event
+- backward compatibility with legacy stream-offset envelopes
+- client-side execution of runtime, tools, or extensions
+- raw `fetch` command path in place of typed Hono RPC

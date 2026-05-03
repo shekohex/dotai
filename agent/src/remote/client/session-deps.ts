@@ -40,3 +40,4 @@ export {
   resolveThinkingLevel,
 } from "./session-shared.js";
 export { cancelRemoteUiRequest, handleRemoteUiRequest } from "./session-ui.js";
+export { retryRemoteLoad } from "./session/runtime-sync-errors.js";

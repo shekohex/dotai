@@ -4,7 +4,6 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   buildContextTransferPrompt,
   generateContextTransferSummary,
@@ -34,16 +33,6 @@ function hasSessionReplacementMessenger(
   ctx: ExtensionContext,
 ): ctx is ExtensionContext & SessionReplacementMessenger {
   return "sendUserMessage" in ctx && typeof ctx.sendUserMessage === "function";
-}
-
-function sendUserMessageSafely(pi: ExtensionAPI, prompt: string): void {
-  try {
-    pi.sendUserMessage(prompt);
-  } catch (error) {
-    if (!isStaleSessionReplacementContextError(error)) {
-      throw error;
-    }
-  }
 }
 
 function resolveHandoffOptions(
@@ -189,9 +178,7 @@ async function completePendingLaunch(
     return { status: "started", warning };
   }
   if (pendingCommandHandoff.autoSend) {
-    setTimeout(() => {
-      sendUserMessageSafely(input.pi, pendingCommandHandoff.prompt);
-    }, 0);
+    input.pi.sendUserMessage(pendingCommandHandoff.prompt);
   }
   return { status: "started", warning };
 }
@@ -226,6 +213,7 @@ async function launchHandoffSession(input: {
     parentSession: result.parentSession,
     withSession: async (replacementCtx) => {
       state.ctx = replacementCtx;
+      state.pendingNewSessionCtx?.resolve(replacementCtx);
       await Promise.resolve();
     },
   });

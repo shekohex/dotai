@@ -11,7 +11,7 @@ index b57b6ae..3408d50 100644
          // selfRenderContainer is used when the tool renders its own framing.
          // contentText is reserved for generic fallback rendering when no tool definition exists.
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
-index 01919db..6122ae3 100644
+index 466242c..6d8bb16 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
 @@ -4,6 +4,7 @@
@@ -20,9 +20,9 @@ index 01919db..6122ae3 100644
  import { type AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 +import type { SessionInfo, SessionListProgress } from "../../core/session-manager.js";
  export declare function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>, builtInProviderIds?: ReadonlySet<string>): boolean;
- export declare function getApiKeyProviderDisplayName(providerId: string): string;
  /**
-@@ -22,6 +23,13 @@ export interface InteractiveModeOptions {
+  * Options for InteractiveMode initialization.
+@@ -21,6 +22,13 @@ export interface InteractiveModeOptions {
      initialMessages?: string[];
      /** Force verbose startup (overrides quietStartup setting) */
      verbose?: boolean;
@@ -37,12 +37,12 @@ index 01919db..6122ae3 100644
  export declare class InteractiveMode {
      private options;
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-index 468f916..aa5f8f3 100644
+index f233135..cb2cb84 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-@@ -118,6 +118,36 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
- export function getApiKeyProviderDisplayName(providerId) {
-     return API_KEY_LOGIN_PROVIDERS[providerId] ?? providerId;
+@@ -95,6 +95,36 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
+     }
+     return !oauthProviderIds.has(providerId);
  }
 +function getVisibleChatChildKind(component, width) {
 +    if (component instanceof Spacer) {
@@ -77,7 +77,7 @@ index 468f916..aa5f8f3 100644
  export class InteractiveMode {
      options;
      runtimeHost;
-@@ -2194,7 +2224,7 @@ export class InteractiveMode {
+@@ -2187,7 +2217,7 @@ export class InteractiveMode {
                                      imageWidthCells: this.settingsManager.getImageWidthCells(),
                                  }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
                                  component.setExpanded(this.toolOutputExpanded);
@@ -86,7 +86,7 @@ index 468f916..aa5f8f3 100644
                                  this.pendingTools.set(content.id, component);
                              }
                              else {
-@@ -2255,7 +2285,7 @@ export class InteractiveMode {
+@@ -2248,7 +2278,7 @@ export class InteractiveMode {
                          imageWidthCells: this.settingsManager.getImageWidthCells(),
                      }, this.getRegisteredToolDefinition(event.toolName), this.ui, this.sessionManager.getCwd());
                      component.setExpanded(this.toolOutputExpanded);
@@ -95,7 +95,7 @@ index 468f916..aa5f8f3 100644
                      this.pendingTools.set(event.toolCallId, component);
                  }
                  component.markExecutionStarted();
-@@ -2533,7 +2563,7 @@ export class InteractiveMode {
+@@ -2526,7 +2556,7 @@ export class InteractiveMode {
                              imageWidthCells: this.settingsManager.getImageWidthCells(),
                          }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
                          component.setExpanded(this.toolOutputExpanded);
@@ -104,7 +104,7 @@ index 468f916..aa5f8f3 100644
                          if (message.stopReason === "aborted" || message.stopReason === "error") {
                              let errorMessage;
                              if (message.stopReason === "aborted") {
-@@ -3527,7 +3557,19 @@ export class InteractiveMode {
+@@ -3528,7 +3558,19 @@ export class InteractiveMode {
      }
      showSessionSelector() {
          this.showSelector((done) => {
@@ -125,7 +125,7 @@ index 468f916..aa5f8f3 100644
                  done();
                  await this.handleResumeSession(sessionPath);
              }, () => {
-@@ -3536,14 +3578,8 @@ export class InteractiveMode {
+@@ -3537,16 +3579,10 @@ export class InteractiveMode {
              }, () => {
                  void this.shutdown();
              }, () => this.ui.requestRender(), {
@@ -137,8 +137,12 @@ index 468f916..aa5f8f3 100644
 -                    mgr.appendSessionInfo(next);
 -                },
 -                showRenameHint: true,
-+                renameSession,
-+                showRenameHint: this.options.sessionSelectorLoaders?.showRenameHint ?? true,
-                 keybindings: this.keybindings,
-             }, this.sessionManager.getSessionFile());
+-                keybindings: this.keybindings,
+-            }, this.sessionManager.getSessionFile());
++                    renameSession,
++                    showRenameHint: this.options.sessionSelectorLoaders?.showRenameHint ?? true,
++                    keybindings: this.keybindings,
++                }, this.sessionManager.getSessionFile());
              return { component: selector, focus: selector };
+         });
+     }

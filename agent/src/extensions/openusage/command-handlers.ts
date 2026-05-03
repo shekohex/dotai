@@ -1,7 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
-import { isAuthoritativeRuntime } from "../runtime-authority.js";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { listCliproxyAccounts } from "./cliproxy.js";
 import { handleDebug } from "./command-debug.js";
 import { resolveSupportedProviderId } from "./model-map.js";
@@ -94,7 +92,7 @@ async function handleStatus(
       })
     : `No cached usage for ${providerId}. Run /openusage refresh`;
 
-  if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     pi.sendMessage({ customType: "openusage", content, display: true }, { triggerTurn: false });
     return;
   }
@@ -147,11 +145,6 @@ function handleRefresh(
   const providerId = resolveProviderArgument(providerArg, ctx);
   if (!providerId) {
     ctx.ui.notify("No supported provider selected", "warning");
-    return;
-  }
-
-  if (!isAuthoritativeRuntime(ctx)) {
-    ctx.ui.notify(`Requested ${providerId} usage refresh`, "info");
     return;
   }
 

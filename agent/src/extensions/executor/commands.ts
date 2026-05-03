@@ -1,10 +1,9 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import { errorMessage } from "../../utils/error-message.js";
-import { isAuthoritativeRuntime } from "../runtime-authority.js";
 import { openBrowserTarget } from "./browser.js";
 import { ExecutorUnavailableError } from "./connection.js";
-import { connectExecutor, getExecutorState } from "./status.js";
+import { connectExecutor } from "./status.js";
 import { showExecutorStatusView, showExecutorWebView } from "./ui.js";
 
 type ExecutorSubcommand = "status" | "web";
@@ -55,11 +54,6 @@ function getExecutorArgumentCompletions(argumentPrefix: string): AutocompleteIte
 }
 
 async function handleExecutorStatus(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
-  if (!isAuthoritativeRuntime(ctx)) {
-    await showExecutorStatusView(ctx);
-    return;
-  }
-
   try {
     await connectExecutor(pi, ctx);
   } catch (error) {
@@ -76,44 +70,6 @@ async function handleExecutorStatus(pi: ExtensionAPI, ctx: ExtensionCommandConte
 }
 
 const handleExecutorWeb = async (pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> => {
-  if (!isAuthoritativeRuntime(ctx)) {
-    const state = getExecutorState(ctx.cwd);
-    if (state.kind !== "ready") {
-      throw new Error("Executor not ready. Wait for server update or run /executor status.");
-    }
-
-    try {
-      await openBrowserTarget(state.webUrl);
-      await showExecutorWebView(ctx, {
-        label: state.label,
-        mcpUrl: state.mcpUrl,
-        webUrl: state.webUrl,
-        scope: {
-          id: state.scopeId,
-          name: state.scopeId,
-          dir: state.scopeDir,
-        },
-      });
-    } catch (error) {
-      const message = errorMessage(error);
-      await showExecutorWebView(
-        ctx,
-        {
-          label: state.label,
-          mcpUrl: state.mcpUrl,
-          webUrl: state.webUrl,
-          scope: {
-            id: state.scopeId,
-            name: state.scopeId,
-            dir: state.scopeDir,
-          },
-        },
-        message,
-      );
-    }
-    return;
-  }
-
   const endpoint = await connectExecutor(pi, ctx);
 
   try {

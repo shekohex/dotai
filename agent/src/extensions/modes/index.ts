@@ -49,7 +49,7 @@ const CUSTOM_MODE_LABEL = "custom";
 
 type ModeRuntime = {
   path: string;
-  source: "project" | "global" | "missing" | "remote";
+  source: "project" | "global" | "missing";
   data: ModesFile;
   activeMode: string | undefined;
   applying: boolean;

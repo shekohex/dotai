@@ -6,7 +6,6 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 import { resolveModeSpec, type ModeSpec, type ThinkingLevel } from "../mode-utils.js";
-import { getRemoteModesSnapshot } from "../remote/client/remote-modes-store.js";
 import { CONTEXT_TRANSFER_SYSTEM_PROMPT } from "./session-launch-utils.constants.js";
 import {
   buildSummaryUserMessage,
@@ -14,7 +13,6 @@ import {
   getSummaryGenerationConfig,
   streamSummaryUpdates,
 } from "./session-launch-summary-helpers.js";
-import { hasRuntimePrimitive } from "./runtime-capabilities.js";
 import { errorMessage } from "../utils/error-message.js";
 
 export type SessionModel = NonNullable<ExtensionContext["model"]>;
@@ -111,14 +109,9 @@ export async function resolveSessionLaunchOptions(
 }
 
 export function resolveContextModeSpec(
-  ctx: Pick<ExtensionContext, "cwd" | "sessionManager">,
+  ctx: Pick<ExtensionContext, "cwd">,
   mode: string,
 ): Promise<ModeSpec | undefined> | ModeSpec | undefined {
-  const remoteModes = getRemoteModesSnapshot(ctx.sessionManager);
-  if (remoteModes !== undefined) {
-    return remoteModes.modes[mode];
-  }
-
   return resolveModeSpec(ctx.cwd, mode);
 }
 
@@ -227,7 +220,7 @@ export function generateContextTransferSummaryWithLoader(
   messages: ReturnType<typeof getConversationMessages>,
   loaderTitle = "Generating handoff prompt...",
 ): Promise<SummaryGenerationResult> {
-  if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     return generateContextTransferSummary(ctx, goal, messages);
   }
 

@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 
 export type FileAction = "reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff";
 
@@ -27,7 +26,7 @@ export function showActionSelector(
 ): Promise<FileAction | null> {
   const actions = buildActionSelectorItems(options);
 
-  if (!hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     return showActionSelectorFallback(ctx, actions);
   }
 

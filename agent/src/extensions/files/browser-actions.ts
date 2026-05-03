@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Text, type TUI } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { showActionSelector, type FileAction } from "./actions.js";
 import { openDiff } from "./diff.js";
 
@@ -93,7 +92,7 @@ const editPath = async (
   target: BrowserFileEntry,
   content: string,
 ): Promise<void> => {
-  if (!hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     const updated = await ctx.ui.editor(`Edit ${target.displayPath}`, content);
     if (updated === undefined) {
       ctx.ui.notify("Edit cancelled", "info");

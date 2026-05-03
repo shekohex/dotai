@@ -1,6 +1,6 @@
 # Executor Extension
 
-Built-in remote Executor integration.
+Built-in Executor integration.
 
 ## How It Works
 

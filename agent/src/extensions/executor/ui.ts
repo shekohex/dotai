@@ -1,7 +1,6 @@
 import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, matchesKey, Text, type Component, type TUI } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import type { ExecutorConnectionAttempt, ExecutorEndpoint } from "./connection.js";
 import { getExecutorSettings } from "./settings.js";
 import { formatExecutorRuntimeState, getExecutorState } from "./status.js";
@@ -219,7 +218,7 @@ async function showExecutorView(
   ctx: ExtensionCommandContext,
   data: ExecutorViewData,
 ): Promise<void> {
-  if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     ctx.ui.notify(renderPlainText(data.title, data.lines), "info");
     return;
   }

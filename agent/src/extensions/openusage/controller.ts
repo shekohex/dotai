@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { isAuthoritativeRuntime } from "../runtime-authority.js";
 import { registerOpenUsageCommands } from "./commands.js";
 import {
   emitThresholdAlerts,
@@ -90,7 +89,7 @@ export class OpenUsageController {
   private async onRefreshRequested(data: unknown): Promise<void> {
     const event = parseRefreshRequestedEvent(data);
     const ctx = this.currentCtx;
-    if (!event || !ctx || !isAuthoritativeRuntime(ctx)) {
+    if (!event || !ctx) {
       return;
     }
 

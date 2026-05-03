@@ -9,7 +9,6 @@ import {
   Spacer,
   Text,
 } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { hasUncommittedChanges, getCurrentBranch, getDefaultBranch } from "./deps.js";
 
 type SearchableSelectNavigation = {
@@ -72,7 +71,7 @@ export function showSearchableSelect(
     items: SelectItem[];
   },
 ): Promise<string | null> {
-  if (!hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     return showSelectFallback(ctx, input);
   }
 

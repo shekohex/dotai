@@ -177,12 +177,11 @@ async function completePendingLaunch(
   state: HandoffRuntimeState,
   warning: string | undefined,
 ): Promise<HandoffLaunchResult> {
-  await waitForPendingNewSessionContext(state, input.ctx);
+  const targetCtx = await waitForPendingNewSessionContext(state, input.ctx);
   const pendingCommandHandoff = getPendingCommandHandoff();
   if (!pendingCommandHandoff) {
     return { status: "started", warning };
   }
-  const targetCtx = state.ctx ?? input.ctx;
   await applyPendingSelection(input.pi, targetCtx, pendingCommandHandoff.overrides);
   setPendingCommandHandoff(undefined);
   if (pendingCommandHandoff.autoSend && hasSessionReplacementMessenger(targetCtx)) {

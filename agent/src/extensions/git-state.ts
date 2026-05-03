@@ -4,7 +4,6 @@ import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import type { GitStatusEntry } from "./files/model.js";
 import { toCanonicalPath, toCanonicalPathMaybeMissing } from "./files/path-utils.js";
-import { isAuthoritativeRuntime } from "./runtime-authority.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 
 const GIT_TIMEOUT_MS = 900;
@@ -57,12 +56,6 @@ export type GitRuntimeState = {
 type GitStateUpdatedEvent = {
   cwd: string;
   state: SerializedGitRuntimeState;
-};
-
-const hydratedGitStateSymbol = Symbol.for("@shekohex/agent/git-runtime-state");
-
-type SessionManagerWithHydratedGitState = {
-  [hydratedGitStateSymbol]?: SerializedGitRuntimeState;
 };
 
 const stateByCwd = new Map<string, GitRuntimeState>();
@@ -224,38 +217,6 @@ export function applyGitStateUpdatedEvent(data: unknown): void {
 export function clearGitState(pi: ExtensionAPI, cwd: string): void {
   stateByCwd.delete(cwd);
   emitGitState(pi, cwd, createEmptyGitState());
-}
-
-export function seedHydratedGitState(sessionManager: object, state: GitRuntimeState): void {
-  const manager = sessionManager as SessionManagerWithHydratedGitState;
-  manager[hydratedGitStateSymbol] = Value.Parse(
-    GitRuntimeStateSchema,
-    serializeGitRuntimeState(state),
-  );
-}
-
-export function seedHydratedSerializedGitState(
-  sessionManager: object,
-  state: SerializedGitRuntimeState,
-): void {
-  const manager = sessionManager as SessionManagerWithHydratedGitState;
-  manager[hydratedGitStateSymbol] = Value.Parse(GitRuntimeStateSchema, state);
-}
-
-export function readHydratedGitState(
-  sessionManager: object | undefined,
-): GitRuntimeState | undefined {
-  if (sessionManager === undefined) {
-    return undefined;
-  }
-
-  const manager = sessionManager as SessionManagerWithHydratedGitState;
-  const state = manager[hydratedGitStateSymbol];
-  if (!Value.Check(GitRuntimeStateSchema, state)) {
-    return undefined;
-  }
-
-  return deserializeGitRuntimeState(Value.Parse(GitRuntimeStateSchema, state));
 }
 
 async function resolveGitRoot(
@@ -466,30 +427,14 @@ export default function gitStateExtension(pi: ExtensionAPI): void {
   };
 
   pi.on("session_start", (_event, ctx) => {
-    if (!isAuthoritativeRuntime(ctx)) {
-      const hydratedState = readHydratedGitState(ctx.sessionManager);
-      if (hydratedState) {
-        storeGitState(ctx.cwd, hydratedState);
-      }
-      return;
-    }
-
     queueRefresh(ctx);
   });
 
   pi.on("turn_end", async (_event, ctx) => {
-    if (!isAuthoritativeRuntime(ctx)) {
-      return;
-    }
-
     await refreshGitState(pi, ctx);
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    if (!isAuthoritativeRuntime(ctx)) {
-      return;
-    }
-
     await refreshGitState(pi, ctx);
   });
 

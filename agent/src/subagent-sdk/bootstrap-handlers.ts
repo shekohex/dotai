@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
-import { hasRuntimePrimitive } from "../extensions/runtime-capabilities.js";
 
 import {
   activateAutoExitTimeoutMode,
@@ -84,7 +83,7 @@ function registerChildSessionStartHandler(
     state.timeoutModeActive = isAutoExitTimeoutModeActive(childState.sessionId);
     applyChildToolState(pi, childState);
     pi.setSessionName(formatChildSessionDisplayName(childState.name, childState.prompt));
-    if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "onTerminalInput")) {
+    if (!ctx.hasUI) {
       return;
     }
     ctx.ui.onTerminalInput((data) => {

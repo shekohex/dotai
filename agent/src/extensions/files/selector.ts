@@ -11,7 +11,6 @@ import {
   Text,
   type TUI,
 } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { handleFileSelectorInput } from "./selector-input.js";
 
 type SelectableFileEntry = {
@@ -57,7 +56,7 @@ function showFileSelectorDialog(
   selectedPath?: string | null,
   gitRoot?: string | null,
 ): Promise<string | null> {
-  if (!hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     return showFileSelectorFallback(files, selectedPath, ctx);
   }
 

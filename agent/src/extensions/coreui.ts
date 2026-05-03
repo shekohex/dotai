@@ -4,7 +4,6 @@ import { Value } from "typebox/value";
 import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
 import { applyGitStateUpdatedEvent, GIT_STATE_UPDATED_EVENT } from "./git-state.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
-import { getRuntimeCapabilities } from "./runtime-capabilities.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import {
   bindCoreUI,
@@ -83,10 +82,9 @@ function registerSessionStartHandler(input: {
 }): void {
   input.pi.on("session_start", (_event, ctx) => {
     try {
-      const runtimeCapabilities = getRuntimeCapabilities(ctx);
       input.ensureToolOverridesRegistered(input.pi.getActiveTools());
       input.state.cwd = ctx.cwd;
-      if (runtimeCapabilities?.primitives.setEditorComponent !== false) {
+      if (ctx.hasUI) {
         const theme = ctx.ui.theme;
         ctx.ui.setEditorComponent(
           createCorePromptEditorFactory(
@@ -94,11 +92,6 @@ function registerSessionStartHandler(input: {
             () => readCoreUIIdleState(ctx),
           ),
         );
-      }
-      if (
-        runtimeCapabilities?.primitives.setHeader !== false &&
-        runtimeCapabilities?.primitives.setFooter !== false
-      ) {
         bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
           input.setRequestRender(nextRequestRender);
         });

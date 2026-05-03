@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import type {
   BreakdownData,
   BreakdownProgressState,
@@ -246,7 +245,7 @@ function formatBreakdownLoaderMessage(
 
 export function createSessionBreakdownHandler(pi: ExtensionAPI) {
   return async (_args: string, ctx: ExtensionContext): Promise<void> => {
-    if (!ctx.hasUI || !hasRuntimePrimitive(ctx, "custom")) {
+    if (!ctx.hasUI) {
       await showHeadlessBreakdown(pi);
       return;
     }

@@ -2,14 +2,13 @@ import { expect, afterEach, test } from "vitest";
 import { createServer } from "node:http";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@mariozechner/pi-coding-agent";
 import createExecutorExtension from "../src/extensions/executor/index.ts";
-import { seedHydratedExecutorState, getExecutorState } from "../src/extensions/executor/status.ts";
+import { getExecutorState } from "../src/extensions/executor/status.ts";
 import {
   getExecutorWebUrl,
   setExecutorSettingsForTests,
 } from "../src/extensions/executor/settings.ts";
 import { resolveExecutorEndpoint } from "../src/extensions/executor/connection.ts";
 import { clearExecutorInspectionCache } from "../src/extensions/executor/tools.ts";
-import { markNonAuthoritativeRuntime } from "../src/extensions/runtime-authority.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 
@@ -148,41 +147,6 @@ timedTest("executor tools re-register after session restart with same cwd", asyn
   await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
 
   expect(fakePi.registerToolCalls).toEqual(["execute", "resume", "execute", "resume"]);
-  expect(fakePi.registeredTools.has("execute")).toBeTruthy();
-  expect(fakePi.registeredTools.has("resume")).toBeTruthy();
-});
-
-timedTest("non-authoritative session hydrates executor state before commands run", async () => {
-  const fakePi = new FakePi();
-  const sessionManager = {
-    getCwd: () => "/tmp/executor-session-restart",
-  };
-  markNonAuthoritativeRuntime(sessionManager);
-  seedHydratedExecutorState(sessionManager, {
-    kind: "ready",
-    label: "remote",
-    mcpUrl: "http://127.0.0.1:4788/mcp",
-    webUrl: "http://127.0.0.1:4788/",
-    scopeId: "scope_test",
-    scopeDir: "/tmp/executor-scope",
-  });
-  const ctx = {
-    ...createFakeContext(),
-    sessionManager,
-  } as ExtensionContext;
-
-  createExecutorExtension(fakePi as ExtensionAPI);
-
-  await emitHandlers(fakePi, "session_start", { reason: "resume" }, ctx);
-
-  expect(getExecutorState(ctx.cwd)).toEqual({
-    kind: "ready",
-    label: "remote",
-    mcpUrl: "http://127.0.0.1:4788/mcp",
-    webUrl: "http://127.0.0.1:4788/",
-    scopeId: "scope_test",
-    scopeDir: "/tmp/executor-scope",
-  });
   expect(fakePi.registeredTools.has("execute")).toBeTruthy();
   expect(fakePi.registeredTools.has("resume")).toBeTruthy();
 });

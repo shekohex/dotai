@@ -4,7 +4,6 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner
 import { Key } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { PromptStashBrowser, type PromptStashBrowserAction } from "./browser.js";
 import {
   MAX_STASH_ENTRIES,
@@ -148,7 +147,7 @@ async function showStashBrowser(ctx: ExtensionContext): Promise<PromptStashBrows
   const entries = await readPersistedStashEntries(ctx);
   const draft = ctx.ui.getEditorText();
 
-  if (!hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     const fallbackAction = await showStashBrowserFallback(ctx, entries);
     if (!fallbackAction) {
       ctx.ui.setEditorText(draft);

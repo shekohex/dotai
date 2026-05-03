@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
-import { hasRuntimePrimitive } from "../runtime-capabilities.js";
 import { REVIEW_PRESETS, TOGGLE_CUSTOM_INSTRUCTIONS_VALUE, type ReviewTarget } from "./deps.js";
 
 type SmartDefaultPreset = "uncommitted" | "baseBranch" | "commit";
@@ -37,7 +36,7 @@ function showReviewPresetMenu(
   items: SelectItem[],
   smartDefaultIndex: number,
 ): Promise<string | null> {
-  if (!hasRuntimePrimitive(ctx, "custom")) {
+  if (!ctx.hasUI) {
     return showReviewPresetMenuFallback(ctx, items, smartDefaultIndex);
   }
 

@@ -104,8 +104,6 @@ import { SessionRegistry } from "../src/remote/session-registry.ts";
 export { SessionRegistry } from "../src/remote/session-registry.ts";
 import { SessionCatalog } from "../src/remote/session-catalog.ts";
 export { SessionCatalog } from "../src/remote/session-catalog.ts";
-import { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
-export { InMemoryDurableStreamStore, sessionEventsStreamId } from "../src/remote/streams.ts";
 import { assertType } from "../src/remote/typebox.ts";
 export { assertType } from "../src/remote/typebox.ts";
 import { TEST_ED25519_KEYS } from "./remote-test-keys.ts";
@@ -1340,15 +1338,6 @@ export class FailingDisposeRuntimeFactory implements RemoteRuntimeFactory {
   async dispose(): Promise<void> {}
 }
 
-export class ThrowingAppEventStreamStore extends InMemoryDurableStreamStore {
-  override append(streamId: string, input: Parameters<InMemoryDurableStreamStore["append"]>[1]) {
-    if (streamId === "app-events" && input.kind === "session_closed") {
-      throw new Error("append failed");
-    }
-    return super.append(streamId, input);
-  }
-}
-
 export function testAuthSession() {
   return {
     token: "token-dev",
@@ -1525,11 +1514,11 @@ export async function readSessionEvents(
   app: ReturnType<typeof createRemoteApp>["app"],
   token: string,
   sessionId: string,
-  offset: string,
+  version: string,
   timeoutMs = 250,
 ): Promise<{
-  events: Array<{ kind: string; payload: any; streamOffset: string }>;
-  nextOffset: string;
+  events: Array<{ kind: string; payload: unknown; version: string }>;
+  nextVersion: string;
 }> {
   const response = await app.request(`/v1/sessions/${sessionId}/sync`, {
     headers: { authorization: `Bearer ${token}` },
@@ -1539,11 +1528,11 @@ export async function readSessionEvents(
   const stream = response.body;
   expect(stream).toBeTruthy();
   if (!stream) {
-    return { events: [], nextOffset: offset };
+    return { events: [], nextVersion: version };
   }
 
-  const events: Array<{ kind: string; payload: any; streamOffset: string }> = [];
-  let nextOffset = offset;
+  const events: Array<{ kind: string; payload: unknown; version: string }> = [];
+  let nextVersion = version;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1560,12 +1549,12 @@ export async function readSessionEvents(
       if (
         payload.type !== "patch" ||
         payload.version === undefined ||
-        compareDurableVersions(payload.version, offset) <= 0
+        compareDurableVersions(payload.version, version) <= 0
       ) {
         continue;
       }
-      nextOffset = payload.version;
-      const mapped = mapSyncPatchToEnvelope(payload.version, payload.patch);
+      nextVersion = payload.version;
+      const mapped = mapSyncPatchToEvent(payload.version, payload.patch);
       if (mapped !== undefined) {
         events.push(mapped);
       }
@@ -1578,7 +1567,7 @@ export async function readSessionEvents(
     clearTimeout(timeout);
   }
 
-  return { events, nextOffset };
+  return { events, nextVersion };
 }
 
 function compareDurableVersions(left: string, right: string | undefined): number {
@@ -1600,21 +1589,21 @@ export async function waitForSessionEvent(
   app: ReturnType<typeof createRemoteApp>["app"],
   token: string,
   sessionId: string,
-  offset: string,
-  predicate: (event: { kind: string; payload: any; streamOffset: string }) => boolean,
+  version: string,
+  predicate: (event: { kind: string; payload: unknown; version: string }) => boolean,
 ): Promise<{
-  event: { kind: string; payload: any; streamOffset: string };
-  nextOffset: string;
+  event: { kind: string; payload: unknown; version: string };
+  nextVersion: string;
 }> {
-  let nextOffset = offset;
+  let nextVersion = version;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const read = await readSessionEvents(app, token, sessionId, nextOffset, 250);
-    nextOffset = read.nextOffset;
+    const read = await readSessionEvents(app, token, sessionId, nextVersion, 250);
+    nextVersion = read.nextVersion;
     const matched = read.events.find(predicate);
     if (matched) {
       return {
         event: matched,
-        nextOffset,
+        nextVersion,
       };
     }
   }
@@ -1638,10 +1627,10 @@ export async function waitForValue<T>(
   throw new Error("Timed out waiting for value");
 }
 
-function mapSyncPatchToEnvelope(
-  streamOffset: string,
+function mapSyncPatchToEvent(
+  version: string,
   patch: { patchType: string; payload: unknown } | undefined,
-): { kind: string; payload: any; streamOffset: string } | undefined {
+): { kind: string; payload: unknown; version: string } | undefined {
   if (patch === undefined) {
     return undefined;
   }
@@ -1652,29 +1641,29 @@ function mapSyncPatchToEnvelope(
     case "tool.execution":
     case "queue.update":
     case "retry.status":
-      return { kind: "agent_session_event", payload: patch.payload, streamOffset };
+      return { kind: "agent_session_event", payload: patch.payload, version };
     case "session.state":
-      return { kind: "session_state_patch", payload: patch.payload, streamOffset };
+      return { kind: "session_state_patch", payload: patch.payload, version };
     case "extension.custom":
-      return { kind: "extension_custom_event", payload: patch.payload, streamOffset };
+      return { kind: "extension_custom_event", payload: patch.payload, version };
     case "extension.event":
-      return { kind: "extension_event", payload: patch.payload, streamOffset };
+      return { kind: "extension_event", payload: patch.payload, version };
     case "extension.ui.request":
-      return { kind: "extension_ui_request", payload: patch.payload, streamOffset };
+      return { kind: "extension_ui_request", payload: patch.payload, version };
     case "extension.ui.resolved":
-      return { kind: "extension_ui_resolved", payload: patch.payload, streamOffset };
+      return { kind: "extension_ui_resolved", payload: patch.payload, version };
     case "command.accepted":
-      return { kind: "command_accepted", payload: patch.payload, streamOffset };
+      return { kind: "command_accepted", payload: patch.payload, version };
     case "bash.start":
-      return { kind: "bash_start", payload: patch.payload, streamOffset };
+      return { kind: "bash_start", payload: patch.payload, version };
     case "bash.chunk":
-      return { kind: "bash_chunk", payload: patch.payload, streamOffset };
+      return { kind: "bash_chunk", payload: patch.payload, version };
     case "bash.end":
-      return { kind: "bash_end", payload: patch.payload, streamOffset };
+      return { kind: "bash_end", payload: patch.payload, version };
     case "bash.flush":
-      return { kind: "bash_flush", payload: patch.payload, streamOffset };
+      return { kind: "bash_flush", payload: patch.payload, version };
     case "extension.error":
-      return { kind: "extension_error", payload: patch.payload, streamOffset };
+      return { kind: "extension_error", payload: patch.payload, version };
     default:
       return undefined;
   }

@@ -257,7 +257,7 @@ timedTest("remote settings manager changes sync across sessions", async () => {
     );
     expect(beforeSnapshotResponse.status).toBe(200);
     const beforeSnapshot = (await beforeSnapshotResponse.json()) as {
-      lastSessionStreamOffset: string;
+      version: string;
     };
 
     runtimeA.session.settingsManager.setTheme("light");
@@ -266,7 +266,7 @@ timedTest("remote settings manager changes sync across sessions", async () => {
       remote.app,
       token,
       createdB.sessionId,
-      beforeSnapshot.lastSessionStreamOffset,
+      beforeSnapshot.version,
       (event) =>
         event.kind === "session_state_patch" && event.payload.patch?.settings?.theme === "light",
     );
@@ -369,7 +369,7 @@ timedTest("remote settings mutations do not rebuild resource snapshots", async (
     );
     expect(snapshotResponse.status).toBe(200);
     const snapshot = (await snapshotResponse.json()) as {
-      lastSessionStreamOffset: string;
+      version: string;
     };
 
     const resourceReadsBeforeA = sessionA.snapshotExpensiveResourceReadCounts();
@@ -381,7 +381,7 @@ timedTest("remote settings mutations do not rebuild resource snapshots", async (
       remote.app,
       token,
       createdB.sessionId,
-      snapshot.lastSessionStreamOffset,
+      snapshot.version,
       (event) =>
         event.kind === "session_state_patch" && event.payload.patch?.settings?.theme === "light",
     );
@@ -474,7 +474,7 @@ timedTest("remote behavior settings sync across sessions", async () => {
     );
     expect(beforeSnapshotResponse.status).toBe(200);
     const beforeSnapshot = (await beforeSnapshotResponse.json()) as {
-      lastSessionStreamOffset: string;
+      version: string;
     };
 
     runtimeA.session.setSteeringMode("one-at-a-time");
@@ -484,7 +484,7 @@ timedTest("remote behavior settings sync across sessions", async () => {
       remote.app,
       token,
       createdB.sessionId,
-      beforeSnapshot.lastSessionStreamOffset,
+      beforeSnapshot.version,
       (event) =>
         event.kind === "session_state_patch" &&
         event.payload.patch?.steeringMode === "one-at-a-time" &&

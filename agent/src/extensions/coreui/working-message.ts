@@ -1,0 +1,62 @@
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+
+const SHIMMER_INTERVAL_MS = 100;
+const SHIMMER_BASE_STYLE = "\u001B[2m";
+const SHIMMER_TRAIL_STYLE = "\u001B[37m";
+const SHIMMER_HIGHLIGHT_STYLE = "\u001B[1;97m";
+const RESET_STYLE = "\u001B[22;39m";
+
+export function startCoreUIWorkingMessageShimmer(
+  ctx: ExtensionContext,
+  message: string,
+): ReturnType<typeof setInterval> {
+  let offset = 0;
+
+  ctx.ui.setWorkingMessage(renderShimmerFrame(message, offset));
+
+  return setInterval(() => {
+    offset = (offset + 1) % Math.max(message.length, 1);
+    ctx.ui.setWorkingMessage(renderShimmerFrame(message, offset));
+  }, SHIMMER_INTERVAL_MS);
+}
+
+export function stopCoreUIWorkingMessageShimmer(
+  shimmerInterval: ReturnType<typeof setInterval> | undefined,
+  ctx: ExtensionContext,
+): undefined {
+  if (shimmerInterval !== undefined) {
+    clearInterval(shimmerInterval);
+  }
+
+  ctx.ui.setWorkingMessage();
+  return undefined;
+}
+
+function renderShimmerFrame(message: string, highlightOffset: number): string {
+  return Array.from(message)
+    .map((character, index) => colorizeCharacter(character, index - highlightOffset))
+    .join("");
+}
+
+function colorizeCharacter(character: string, distanceFromHighlight: number): string {
+  if (character === " ") {
+    return character;
+  }
+
+  const absoluteDistance = Math.abs(distanceFromHighlight);
+  const style = resolveCharacterStyle(absoluteDistance);
+
+  return `${style}${character}${RESET_STYLE}`;
+}
+
+function resolveCharacterStyle(absoluteDistance: number): string {
+  if (absoluteDistance === 0) {
+    return SHIMMER_HIGHLIGHT_STYLE;
+  }
+
+  if (absoluteDistance === 1) {
+    return SHIMMER_TRAIL_STYLE;
+  }
+
+  return SHIMMER_BASE_STYLE;
+}

@@ -6,6 +6,7 @@ import { applyGitStateUpdatedEvent, GIT_STATE_UPDATED_EVENT } from "./git-state.
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import {
+  applyCoreUIWorkingIndicator,
   bindCoreUI,
   calculateTotalCost,
   createCorePromptEditorFactory,
@@ -14,6 +15,8 @@ import {
   pickRandomWhimsical,
   registerCoreUIToolOverrides,
   registerTPSExtension,
+  startCoreUIWorkingMessageShimmer,
+  stopCoreUIWorkingMessageShimmer,
 } from "./coreui/index.js";
 
 const ModeChangedEventSchema = Type.Object({
@@ -85,6 +88,7 @@ function registerSessionStartHandler(input: {
       input.ensureToolOverridesRegistered(input.pi.getActiveTools());
       input.state.cwd = ctx.cwd;
       if (ctx.hasUI) {
+        applyCoreUIWorkingIndicator(ctx);
         const theme = ctx.ui.theme;
         ctx.ui.setEditorComponent(
           createCorePromptEditorFactory(
@@ -112,9 +116,13 @@ function registerCoreUIHandlers(input: {
   clearSubscriptions: () => void;
   setRequestRender: (requestRender: (() => void) | undefined) => void;
 }): void {
+  let shimmerInterval: ReturnType<typeof setInterval> | undefined;
+
   input.pi.on("turn_start", (_event, ctx) => {
     try {
-      ctx.ui.setWorkingMessage(pickRandomWhimsical());
+      stopCoreUIWorkingMessageShimmer(shimmerInterval, ctx);
+      shimmerInterval = undefined;
+      shimmerInterval = startCoreUIWorkingMessageShimmer(ctx, pickRandomWhimsical());
     } catch (error) {
       ignoreStaleSessionReplacementError(error);
     }
@@ -123,7 +131,8 @@ function registerCoreUIHandlers(input: {
   input.pi.on("turn_end", (_event, ctx) => {
     try {
       input.refreshAll(ctx);
-      ctx.ui.setWorkingMessage();
+      stopCoreUIWorkingMessageShimmer(shimmerInterval, ctx);
+      shimmerInterval = undefined;
     } catch (error) {
       ignoreStaleSessionReplacementError(error);
     }
@@ -156,6 +165,10 @@ function registerCoreUIHandlers(input: {
   });
 
   input.pi.on("session_shutdown", () => {
+    if (shimmerInterval !== undefined) {
+      clearInterval(shimmerInterval);
+      shimmerInterval = undefined;
+    }
     input.clearSubscriptions();
     input.setRequestRender(undefined);
   });

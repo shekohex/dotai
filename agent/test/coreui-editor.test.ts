@@ -62,6 +62,7 @@ timedTest("coreui editor placeholder timer ignores stale replacement context", (
         },
         setHeader: () => {},
         setFooter: () => {},
+        setWorkingIndicator: () => {},
       },
       isIdle: () => {
         throw new Error(

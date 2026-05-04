@@ -72,6 +72,7 @@ type StartSubagentBaseParams = {
   handoff?: boolean;
   cwd?: string;
   autoExit?: boolean;
+  persisted?: boolean;
 };
 
 export type StartSubagentParamsText = StartSubagentBaseParams & {
@@ -234,24 +235,36 @@ export function parseChildBootstrapState(value: unknown): ChildBootstrapState | 
   if (!Value.Check(ChildBootstrapStateSchema, value)) {
     return undefined;
   }
-  return value;
+  const parsed = Value.Parse(ChildBootstrapStateSchema, value);
+  return {
+    ...parsed,
+    persisted: parsed.persisted ?? true,
+  };
 }
 
 export function parseSubagentStateEntry(value: unknown): SubagentStateEntry | undefined {
   if (!Value.Check(SubagentStateEntrySchema, value)) {
     return undefined;
   }
-  return Value.Parse(SubagentStateEntrySchema, value);
+  const parsed = Value.Parse(SubagentStateEntrySchema, value);
+  return {
+    ...parsed,
+    persisted: parsed.persisted ?? true,
+  };
 }
 
 export function serializeSubagentStateEntry(
   value: PersistableSubagentStateEntry,
 ): SubagentStateEntry {
   const { modeLabel: _modeLabel, ...entry } = value;
-  if (!Value.Check(SubagentStateEntrySchema, entry)) {
+  const normalizedEntry = {
+    ...entry,
+    persisted: entry.persisted ?? true,
+  };
+  if (!Value.Check(SubagentStateEntrySchema, normalizedEntry)) {
     throw new Error("Invalid subagent state entry");
   }
-  return entry;
+  return normalizedEntry;
 }
 
 export function serializeSubagentMessageEntry(value: SubagentMessageEntry): SubagentMessageEntry {

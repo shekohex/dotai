@@ -123,6 +123,12 @@ export const SubagentToolParamsSchema = Type.Object({
   autoExit: Type.Optional(
     Type.Boolean({ description: "Optional override for the mode autoExit behavior." }),
   ),
+  persisted: Type.Optional(
+    Type.Boolean({
+      description:
+        "Optional for start. Defaults to true. When false, launch child with --no-session and skip child session persistence. If parent session is ephemeral, child sessions automatically become ephemeral.",
+    }),
+  ),
   outputFormat: Type.Optional(
     Type.Union([
       OutputFormatTextSchema,
@@ -157,7 +163,8 @@ export const SubagentStateEntrySchema = Type.Object(
   {
     event: SubagentStateEventSchema,
     sessionId: Type.String(),
-    sessionPath: Type.String(),
+    sessionPath: Type.Optional(Type.String()),
+    persisted: Type.Optional(Type.Boolean()),
     parentSessionId: Type.String(),
     parentSessionPath: Type.Optional(Type.String()),
     name: Type.String(),
@@ -202,9 +209,11 @@ export const SubagentMessageEntrySchema = Type.Object(
 export const ChildBootstrapStateSchema = Type.Object(
   {
     sessionId: Type.String(),
-    sessionPath: Type.String(),
+    sessionPath: Type.Optional(Type.String()),
+    persisted: Type.Optional(Type.Boolean()),
     parentSessionId: Type.String(),
     parentSessionPath: Type.Optional(Type.String()),
+    outcomePath: Type.Optional(Type.String()),
     name: Type.String(),
     prompt: Type.String(),
     mode: Type.Optional(Type.String()),

@@ -6,6 +6,7 @@ import {
   type ModesFile,
   type ModeSpec,
 } from "../../mode-utils.js";
+import { isEphemeralSession } from "./session.js";
 
 type ModeRuntimeLike = {
   path: string;
@@ -91,7 +92,9 @@ export function notifyConfigError(
 }
 
 export async function saveRuntime(runtime: ModeRuntimeLike, ctx: ExtensionContext): Promise<void> {
-  void ctx;
+  if (isEphemeralSession(ctx)) {
+    return;
+  }
   await saveModesFile(runtime.path, runtime.data);
 }
 

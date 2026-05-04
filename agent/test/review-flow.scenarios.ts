@@ -81,6 +81,15 @@ class HarnessMuxAdapter implements MuxAdapter {
   }
 }
 
+function setSessionPersistence(testSession: TestSession, persisted: boolean): void {
+  const sessionManager = (
+    testSession.session as { sessionManager: { isPersisted?: () => boolean } }
+  ).sessionManager as {
+    isPersisted?: () => boolean;
+  };
+  sessionManager.isPersisted = () => persisted;
+}
+
 class FailingMuxAdapter extends HarnessMuxAdapter {
   override async createPane(_options: {
     cwd: string;
@@ -315,6 +324,7 @@ timedTest("review auto-clears state after the subagent completes", async () => {
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("/review folder src");
     await session.session.agent.waitForIdle();
@@ -380,6 +390,7 @@ timedTest("completed review offers an action picker", async () => {
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("/review folder src");
     await session.session.agent.waitForIdle();
@@ -475,6 +486,7 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("/review folder src");
     await session.session.agent.waitForIdle();
@@ -548,6 +560,7 @@ timedTest("completed review can fork into a new fix branch", async () => {
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("/review folder src");
     await session.session.agent.waitForIdle();
@@ -618,6 +631,7 @@ timedTest("completed review reports handoff runner exceptions", async () => {
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("/review folder src");
     await session.session.agent.waitForIdle();
@@ -690,6 +704,7 @@ timedTest("completed review can handoff and address findings", async () => {
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("/review folder src");
     await session.session.agent.waitForIdle();
@@ -754,6 +769,7 @@ timedTest("review restores the original branch after PR review completes", async
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     expect(await getCurrentBranchName(cwd)).toBe("main");
 
@@ -820,6 +836,7 @@ timedTest("review restores the original branch when PR handoff generation aborts
       ],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     expect(await getCurrentBranchName(cwd)).toBe("main");
     appendUserMessage(session, "Please review the PR carefully.");

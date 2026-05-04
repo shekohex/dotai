@@ -46,9 +46,10 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
       prompt: params.task,
       childState: stateBundle.childState,
       provisionalState: stateBundle.provisionalState,
-      launchTarget: prepared.existing.sessionPath
-        ? { kind: "session", sessionPath: prepared.existing.sessionPath }
-        : { kind: "continue" },
+      launchTarget:
+        prepared.existing.sessionPath !== undefined && prepared.existing.sessionPath.length > 0
+          ? { kind: "session", sessionPath: prepared.existing.sessionPath }
+          : { kind: "continue" },
       modeOverride: params.mode,
     });
     return { state: this.toPublicState(state), prompt: params.task };
@@ -81,6 +82,12 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
 
     this.activeSessionIds.delete(existing.sessionId);
     await this.requireAdapterAvailability(errorAction);
+    if (existing.persisted === false || existing.sessionPath === undefined) {
+      throw runtimeSubagentError(
+        errorAction,
+        `${existing.name} (${existing.sessionId}) is ephemeral and cannot be resumed after its tmux pane/window exits. Start a new subagent instead.`,
+      );
+    }
     const mode = await this.resolveModeValue(ctx, {
       mode: params.mode ?? existing.mode,
       cwd: params.cwd ?? existing.cwd,
@@ -180,14 +187,22 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     prompt: string,
     parentSessionId: string,
     parentSessionPath: string | undefined,
+    parentSessionPersisted: boolean,
     startedAt: number,
     sessionId: string,
   ): { childState: ChildBootstrapState; provisionalState: RuntimeSubagent } {
-    const sessionPath = createChildSessionFile({ cwd: mode.cwd, sessionId, parentSessionPath });
+    const persisted = parentSessionPersisted ? (params.persisted ?? true) : false;
+    const sessionPath = createChildSessionFile({
+      cwd: mode.cwd,
+      sessionId,
+      parentSessionPath,
+      persisted,
+    });
     return {
       childState: {
         sessionId,
         sessionPath,
+        persisted,
         parentSessionId,
         parentSessionPath,
         name: params.name,
@@ -204,6 +219,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
         event: "started",
         sessionId,
         sessionPath,
+        persisted,
         parentSessionId,
         parentSessionPath,
         name: params.name,

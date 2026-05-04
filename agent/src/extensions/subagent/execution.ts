@@ -88,6 +88,7 @@ function spawnSubagentStartResult(
     handoff: params.handoff,
     cwd: params.cwd,
     autoExit: params.autoExit,
+    persisted: params.persisted,
   };
   if (params.outputFormat?.type === "json_schema") {
     return sdk.spawn(

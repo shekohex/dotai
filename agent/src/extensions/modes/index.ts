@@ -40,6 +40,7 @@ import {
   saveRuntime as saveRuntimeState,
   syncErrorUI as syncErrorUIState,
 } from "./runtime.js";
+import { isEphemeralSession } from "./session.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
 export const MODE_ACTIVATE_EVENT = "modes:activate";
@@ -143,6 +144,7 @@ function appendModeState(
   activeMode: string | undefined,
 ): void {
   if (!hasText(activeMode)) return;
+  if (isEphemeralSession(ctx)) return;
   const latestMode = readActiveModeFromEntry(
     ctx.sessionManager
       .getBranch()

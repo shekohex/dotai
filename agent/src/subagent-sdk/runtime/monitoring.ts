@@ -4,6 +4,8 @@ import type { RuntimeSubagent } from "../types.js";
 import {
   getParentInjectedInputMarkerPath,
   isAutoExitTimeoutModeActive,
+  readEphemeralChildSessionOutcomeBySessionId,
+  readEphemeralChildSessionStatusDetails,
   readChildSessionOutcome,
   readChildSessionStatusDetails,
   SUBAGENT_PARENT_INPUT_GRACE_MS,
@@ -136,7 +138,10 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       return;
     }
 
-    const outcome = await readChildSessionOutcome(state.sessionPath);
+    const outcome =
+      state.sessionPath === undefined
+        ? await readEphemeralChildSessionOutcomeBySessionId(state.sessionId)
+        : await readChildSessionOutcome(state.sessionPath);
     if (this.disposed) {
       return;
     }
@@ -214,7 +219,10 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       return state;
     }
 
-    const liveStatus = await readChildSessionStatusDetails(state.sessionPath);
+    const liveStatus =
+      state.sessionPath === undefined
+        ? await readEphemeralChildSessionStatusDetails()
+        : await readChildSessionStatusDetails(state.sessionPath);
     if (this.disposed) {
       return state;
     }

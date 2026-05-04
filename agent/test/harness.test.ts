@@ -644,6 +644,15 @@ function setFakeParentSessionPath(testSession: TestSession, sessionPath: string)
   sessionManager.getSessionFile = () => sessionPath;
 }
 
+function setSessionPersistence(testSession: TestSession, persisted: boolean): void {
+  const sessionManager = (
+    testSession.session as { sessionManager: { isPersisted?: () => boolean } }
+  ).sessionManager as {
+    isPersisted?: () => boolean;
+  };
+  sessionManager.isPersisted = () => persisted;
+}
+
 function setMockCustomLoaderResult(
   testSession: TestSession,
   result: { summary?: string; warning?: string; error?: string; aborted?: boolean },
@@ -1229,6 +1238,7 @@ timedTest("handoff command starts the new session in the requested mode", async 
       },
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     setFakeParentSessionPath(session, "/tmp/parent-session.jsonl");
     const loader = setMockCustomLoaderResult(session, {
@@ -1305,6 +1315,7 @@ timedTest("handoff command with mode and model applies the startup selection onc
       },
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     setFakeParentSessionPath(session, "/tmp/parent-session.jsonl");
     const loader = setMockCustomLoaderResult(session, {
@@ -1503,6 +1514,7 @@ timedTest(
         extensionFactories: [modesExtension, createSubagentExtension(), providers.extensionFactory],
       });
       patchHarnessAgent(session);
+      setSessionPersistence(session, true);
 
       const initialPrompt = getCurrentSystemPrompt(session);
       expect(initialPrompt).toMatch(/<available_modes>/);
@@ -1574,6 +1586,7 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
           providers.extensionFactory,
         ],
       });
+      setSessionPersistence(session!, true);
 
       observedModeChanges.length = 0;
       (
@@ -1622,6 +1635,7 @@ timedTest("mode reload startup does not append mode-state entry when nothing cha
         cwd,
         extensionFactories: [modesExtension, providers.extensionFactory],
       });
+      setSessionPersistence(session!, true);
 
       (
         session!.session as {
@@ -1674,6 +1688,7 @@ timedTest("mode state dedupe is scoped to current branch", async () => {
       extensionFactories: [modesExtension, providers.extensionFactory],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.session.prompt("seed branch root");
     await session.session.agent.waitForIdle();
@@ -1736,6 +1751,7 @@ timedTest(
             providers.extensionFactory,
           ],
         });
+        setSessionPersistence(session!, true);
 
         (
           session!.session as {
@@ -1771,6 +1787,36 @@ timedTest(
   },
 );
 
+timedTest("modes extension skips persistence for ephemeral sessions", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-ephemeral-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, providers.extensionFactory],
+    });
+    setSessionPersistence(session, false);
+
+    const modesPath = join(cwd, ".pi", "modes.json");
+    const before = await readFile(modesPath, "utf8");
+
+    await session.session.prompt("/mode docs");
+    await session.session.agent.waitForIdle();
+
+    expect(countModeStateEntries(session)).toBe(0);
+    expect(getLatestModeState(session)).toBe(undefined);
+    expect(await readFile(modesPath, "utf8")).toBe(before);
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "mode CLI flags keep explicit startup mode after other loaders register different flags",
   async () => {
@@ -1793,6 +1839,7 @@ timedTest(
             providers.extensionFactory,
           ],
         });
+        setSessionPersistence(session!, true);
 
         (
           session!.session as {
@@ -2321,6 +2368,7 @@ timedTest(
         extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
       });
       patchHarnessAgent(session);
+      setSessionPersistence(session, true);
 
       await session.run(
         when("Start a delegated worker", [
@@ -2494,6 +2542,7 @@ timedTest("subagent extension launches into a tmux window when the mode requests
       extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
     });
     patchHarnessAgent(session);
+    setSessionPersistence(session, true);
 
     await session.run(
       when("Start a delegated reviewer in a new tmux window", [
@@ -2550,6 +2599,7 @@ timedTest(
         extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
       });
       patchHarnessAgent(session);
+      setSessionPersistence(session, true);
 
       await session.run(
         when("Start a delegated reviewer with a custom idle timeout", [
@@ -2574,6 +2624,70 @@ timedTest(
   },
 );
 
+timedTest("subagent extension launches ephemeral children with --no-session", async () => {
+  let session: TestSession | undefined;
+  const mux = new HarnessMuxAdapter();
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+    });
+    patchHarnessAgent(session);
+    setSessionPersistence(session, true);
+
+    await session.run(
+      when("Start an ephemeral delegated worker", [
+        calls("subagent", {
+          action: "start",
+          name: "worker-ephemeral",
+          task: "Inspect failing tests",
+          persisted: false,
+        }),
+        says("Started."),
+      ]),
+    );
+
+    expect(mux.created.length).toBe(1);
+    expect(mux.created[0]?.command ?? "").toMatch(/--no-session/);
+    expect(mux.created[0]?.command ?? "").not.toMatch(/--session/);
+  } finally {
+    session?.dispose();
+  }
+});
+
+timedTest(
+  "subagent extension infers ephemeral children from ephemeral parent sessions",
+  async () => {
+    let session: TestSession | undefined;
+    const mux = new HarnessMuxAdapter();
+
+    try {
+      session = await createTestSession({
+        extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+      });
+      patchHarnessAgent(session);
+      setSessionPersistence(session, false);
+
+      await session.run(
+        when("Start delegated worker from ephemeral parent", [
+          calls("subagent", {
+            action: "start",
+            name: "worker-inferred-ephemeral",
+            task: "Inspect failing tests",
+          }),
+          says("Started."),
+        ]),
+      );
+
+      expect(mux.created.length).toBe(1);
+      expect(mux.created[0]?.command ?? "").toMatch(/--no-session/);
+      expect(mux.created[0]?.command ?? "").not.toMatch(/--session/);
+    } finally {
+      session?.dispose();
+    }
+  },
+);
+
 timedTest(
   "subagent extension uses shared handoff summarization when handoff is enabled",
   async () => {
@@ -2591,6 +2705,7 @@ timedTest(
         ],
       });
       patchHarnessAgent(session);
+      setSessionPersistence(session, true);
       setFakeParentSessionPath(session, "/tmp/parent-handoff-session.jsonl");
 
       await session.run(

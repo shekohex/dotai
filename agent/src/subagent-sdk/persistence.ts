@@ -7,6 +7,7 @@ import { SessionManager, getAgentDir, type SessionEntry } from "@mariozechner/pi
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 import {
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+  StructuredOutputErrorSchema,
   SUBAGENT_STATE_ENTRY,
   parseSubagentStructuredOutputEntry,
   parseSubagentStateEntry,
@@ -24,6 +25,8 @@ import {
   type ExpiringMarker,
   type TimeoutModeMarker,
 } from "./persistence-helpers.js";
+import { asRecord, readString } from "../utils/unknown-data.js";
+import { Value } from "typebox/value";
 
 type ChildSessionOutcome = {
   summary?: string;
@@ -31,6 +34,8 @@ type ChildSessionOutcome = {
   structuredError?: StructuredOutputError;
   failed: boolean;
 };
+
+type EphemeralChildOutcome = ChildSessionOutcome;
 
 export type ChildSessionStatus = "running" | "idle";
 
@@ -56,6 +61,10 @@ export function getParentInjectedInputMarkerPath(sessionId: string): string {
 
 export function getAutoExitTimeoutModeMarkerPath(sessionId: string): string {
   return path.join(os.tmpdir(), "pi-subagent-timeout-mode", `${sessionId}.json`);
+}
+
+export function getEphemeralChildOutcomePath(sessionId: string): string {
+  return path.join(os.tmpdir(), "pi-subagent-outcome", `${sessionId}.json`);
 }
 
 export function consumeParentInjectedInputMarker(sessionId: string): boolean {
@@ -112,7 +121,12 @@ export function createChildSessionFile(options: {
   cwd: string;
   sessionId: string;
   parentSessionPath?: string;
-}): string {
+  persisted?: boolean;
+}): string | undefined {
+  if (options.persisted === false) {
+    return undefined;
+  }
+
   const sessionManager = SessionManager.create(options.cwd, getDefaultSessionDir(options.cwd));
   const sessionPath = sessionManager.newSession({
     id: options.sessionId,
@@ -165,6 +179,68 @@ export function readChildSessionOutcome(sessionPath: string): Promise<ChildSessi
   } catch {
     return Promise.resolve({ failed: true });
   }
+}
+
+export function readEphemeralChildSessionOutcome(): Promise<ChildSessionOutcome> {
+  return Promise.resolve({ failed: true });
+}
+
+export function writeEphemeralChildSessionOutcome(
+  sessionId: string,
+  outcome: EphemeralChildOutcome,
+): void {
+  const outcomePath = getEphemeralChildOutcomePath(sessionId);
+
+  try {
+    fs.mkdirSync(path.dirname(outcomePath), { recursive: true });
+    fs.writeFileSync(outcomePath, JSON.stringify(outcome), "utf8");
+  } catch {}
+}
+
+export function readEphemeralChildSessionOutcomeBySessionId(
+  sessionId: string,
+): Promise<ChildSessionOutcome> {
+  try {
+    const raw: unknown = JSON.parse(
+      fs.readFileSync(getEphemeralChildOutcomePath(sessionId), "utf8"),
+    );
+    const outcome = parseEphemeralChildOutcome(raw);
+    if (!outcome) {
+      return readEphemeralChildSessionOutcome();
+    }
+    return Promise.resolve({
+      summary: outcome.summary,
+      structured: outcome.structured,
+      structuredError: outcome.structuredError,
+      failed: outcome.failed,
+    });
+  } catch {
+    return readEphemeralChildSessionOutcome();
+  }
+}
+
+function parseEphemeralChildOutcome(value: unknown): EphemeralChildOutcome | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const failed = record.failed;
+  if (typeof failed !== "boolean") {
+    return undefined;
+  }
+
+  const summary = readString(record.summary);
+  const structuredError = Value.Check(StructuredOutputErrorSchema, record.structuredError)
+    ? Value.Parse(StructuredOutputErrorSchema, record.structuredError)
+    : undefined;
+
+  return {
+    summary,
+    structured: record.structured,
+    structuredError,
+    failed,
+  };
 }
 
 export function readLatestChildStructuredOutputState(
@@ -225,6 +301,10 @@ export function readChildSessionStatusDetails(
     return Promise.resolve({ status: "running" });
   }
 
+  return Promise.resolve({ status: "running" });
+}
+
+export function readEphemeralChildSessionStatusDetails(): Promise<ChildSessionStatusDetails> {
   return Promise.resolve({ status: "running" });
 }
 

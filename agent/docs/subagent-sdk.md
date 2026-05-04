@@ -69,7 +69,7 @@ spawn(params)
 resolveSubagentMode() -> mode config (tools, systemPrompt, autoExit)
     |
     v
-buildLaunchCommand() -> shell command with env payload
+buildLaunchCommand() -> shell command with env payload (`--session <path>` or `--no-session`)
     |
     v
 adapter.createPane() -> tmux pane with child pi process
@@ -113,6 +113,7 @@ const result = await sdk.spawn(
     mode: "worker",
     cwd: "/path/to/project",
     handoff: true, // Generate context transfer summary
+    persisted: true, // Default. Set false to launch child with `--no-session`
   },
   ctx,
   (update) => {
@@ -128,6 +129,14 @@ if (!result.ok) {
 
 const { handle, prompt } = result.value;
 ```
+
+`persisted` rules:
+
+- Default: `true`
+- `persisted: false` launches child with `--no-session`
+- If parent session is ephemeral, child sessions are automatically forced to ephemeral too
+- Ephemeral children do not have `sessionPath`
+- Ephemeral children cannot be resumed after their tmux pane/window exits, because there is no persisted session file to reopen
 
 **Returns:**
 
@@ -170,6 +179,8 @@ Structured-mode failures resolve as `ok: false` (no throw), using these error co
 - `validation_failed`
 - `retry_exhausted`
 - `aborted`
+
+Ephemeral note: structured output is supported for ephemeral children too. The child writes final outcome data through a temp-file side channel on `agent_end`, so the parent can still recover summary, structured payload, and structured error after the pane exits even though there is no persisted session transcript.
 
 ### Spawn Outcome Pattern
 
@@ -822,6 +833,10 @@ const command = buildLaunchCommand(
 // Results in:
 // env PI_SUBAGENT_CHILD_STATE='{...}' node pi.js --session /path/to/session.jsonl \
 //   --model 'openai/gpt-4o' --review 'Implement auth...'
+
+// For ephemeral children:
+// env PI_SUBAGENT_CHILD_STATE='{...}' node pi.js --no-session \
+//   --model 'openai/gpt-4o' --review 'Implement auth...'
 ```
 
 ---
@@ -832,7 +847,7 @@ The Subagent SDK provides:
 
 - **Clean abstraction** over tmux and session management - no manual pane ID tracking needed
 - **Event-driven** state synchronization with deduplication - based on state signatures, not just timestamps
-- **Automatic persistence** via session file entries - survives extension reloads
+- **Automatic persistence** via session file entries - survives extension reloads when `persisted !== false`
 - **Handoff generation** for context bridging - parent session context summarized for child consumption
 - **Mode system** for environment configuration - YAML frontmatter + markdown guidelines
 - **Handle-based** ergonomic API for individual subagent control - scoped operations without repetitive sessionId params

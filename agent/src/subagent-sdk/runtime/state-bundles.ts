@@ -14,6 +14,7 @@ export function buildResumeStateBundle(input: {
     childState: {
       sessionId: input.existing.sessionId,
       sessionPath: input.existing.sessionPath,
+      persisted: input.existing.persisted,
       parentSessionId: input.parentSessionId,
       parentSessionPath: input.parentSessionPath,
       name: input.existing.name,

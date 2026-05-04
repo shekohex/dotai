@@ -7,6 +7,7 @@ import type {
 import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "../runtime-hooks.js";
 import type { LaunchCommandBuilder } from "../launch.js";
 import type { MuxAdapter } from "../mux.js";
+import { asRecord } from "../../utils/unknown-data.js";
 import {
   cloneRuntimeSubagent,
   type CancelSubagentParams,
@@ -60,7 +61,37 @@ export type ResolvedModeValue = NonNullable<
   Awaited<ReturnType<typeof resolveSubagentMode>>["value"]
 >;
 
-export type LaunchTarget = { kind: "session"; sessionPath: string } | { kind: "continue" };
+export type LaunchTarget =
+  | { kind: "session"; sessionPath: string }
+  | { kind: "continue" }
+  | { kind: "ephemeral" };
+
+type SessionPersistenceMethod = (this: unknown) => unknown;
+
+function readSessionPersistenceMethod(ctx: ExtensionContext): SessionPersistenceMethod | undefined {
+  const record = asRecord(ctx.sessionManager);
+  if (!record) {
+    return undefined;
+  }
+
+  const isPersisted = record.isPersisted;
+  return typeof isPersisted === "function"
+    ? function (this: unknown) {
+        const result: unknown = isPersisted.call(this);
+        return result;
+      }
+    : undefined;
+}
+
+function isParentSessionPersisted(ctx: ExtensionContext): boolean {
+  const isPersisted = readSessionPersistenceMethod(ctx);
+  if (!isPersisted) {
+    return true;
+  }
+
+  const result = isPersisted.call(ctx.sessionManager);
+  return typeof result === "boolean" ? result : true;
+}
 
 export function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
   return status === "completed" || status === "cancelled" || status === "failed";
@@ -207,6 +238,7 @@ export abstract class SubagentRuntimeBase {
       prompt,
       spawnContext.parentSessionId,
       spawnContext.parentSessionPath,
+      spawnContext.parentSessionPersisted,
       spawnContext.startedAt,
       spawnContext.sessionId,
     );
@@ -216,7 +248,12 @@ export abstract class SubagentRuntimeBase {
       prompt,
       childState: stateBundle.childState,
       provisionalState: stateBundle.provisionalState,
-      launchTarget: { kind: "session", sessionPath: stateBundle.childState.sessionPath },
+      launchTarget:
+        stateBundle.childState.persisted !== false &&
+        stateBundle.childState.sessionPath !== undefined &&
+        stateBundle.childState.sessionPath.length > 0
+          ? { kind: "session", sessionPath: stateBundle.childState.sessionPath }
+          : { kind: "ephemeral" },
       modeOverride: params.mode,
     });
     return { state: this.toPublicState(state), prompt };
@@ -226,12 +263,14 @@ export abstract class SubagentRuntimeBase {
     startedAt: number;
     parentSessionId: string;
     parentSessionPath: string | undefined;
+    parentSessionPersisted: boolean;
     sessionId: string;
   } {
     return {
       startedAt: Date.now(),
       parentSessionId: ctx.sessionManager.getSessionId(),
       parentSessionPath: ctx.sessionManager.getSessionFile(),
+      parentSessionPersisted: isParentSessionPersisted(ctx),
       sessionId: randomUUID(),
     };
   }
@@ -270,6 +309,7 @@ export abstract class SubagentRuntimeBase {
     prompt: string,
     parentSessionId: string,
     parentSessionPath: string | undefined,
+    parentSessionPersisted: boolean,
     startedAt: number,
     sessionId: string,
   ): { childState: ChildBootstrapState; provisionalState: RuntimeSubagent };

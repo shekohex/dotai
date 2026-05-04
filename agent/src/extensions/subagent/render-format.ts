@@ -56,6 +56,7 @@ function formatExpandedCallText(args: SubagentToolParams, theme: Theme): string 
     lines.push(...formatField("cwd", args.cwd));
     lines.push(...formatField("handoff", Boolean(args.handoff)));
     lines.push(...formatField("autoExit", args.autoExit));
+    lines.push(...formatField("persisted", args.persisted));
     lines.push(...formatField("task", args.task, true));
     return lines.join("\n");
   }
@@ -86,6 +87,7 @@ function formatSubagentStateDetails(state: RuntimeSubagent): string {
     ...formatField("parentSessionPath", state.parentSessionPath),
     ...formatField("mode", state.modeLabel),
     ...formatField("cwd", state.cwd),
+    ...formatField("persisted", state.persisted),
     ...formatField("sessionPath", state.sessionPath),
     ...formatField("handoff", state.handoff),
     ...formatField("autoExit", state.autoExit),

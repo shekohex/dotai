@@ -7,7 +7,10 @@ import {
   type RuntimeSubagent,
 } from "./types.js";
 
-export type LaunchTarget = { kind: "session"; sessionPath: string } | { kind: "continue" };
+export type LaunchTarget =
+  | { kind: "session"; sessionPath: string }
+  | { kind: "continue" }
+  | { kind: "ephemeral" };
 
 export type LaunchCommandOptions = {
   launchTarget?: LaunchTarget;
@@ -50,13 +53,24 @@ function getPiCommandPrefix(): string[] {
 
 export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prompt, options) => {
   const commandParts = [...getPiCommandPrefix()];
-  const launchTarget: LaunchTarget = options.launchTarget ?? {
-    kind: "session",
-    sessionPath: state.sessionPath,
-  };
+  const persistedSessionPath =
+    state.persisted !== false && state.sessionPath !== undefined && state.sessionPath.length > 0
+      ? state.sessionPath
+      : undefined;
+  const hasPersistedSessionPath = persistedSessionPath !== undefined;
+  const launchTarget: LaunchTarget =
+    options.launchTarget ??
+    (hasPersistedSessionPath
+      ? {
+          kind: "session",
+          sessionPath: persistedSessionPath,
+        }
+      : { kind: "ephemeral" });
 
   if (launchTarget.kind === "continue") {
     commandParts.push("--continue");
+  } else if (launchTarget.kind === "ephemeral") {
+    commandParts.push("--no-session");
   } else {
     commandParts.push("--session", shellEscape(launchTarget.sessionPath));
   }

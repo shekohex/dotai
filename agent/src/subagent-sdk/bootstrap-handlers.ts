@@ -1,10 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
+import { extractMessageText } from "../extensions/session-launch-utils.js";
 
 import {
   activateAutoExitTimeoutMode,
   consumeParentInjectedInputMarker,
   isAutoExitTimeoutModeActive,
+  writeEphemeralChildSessionOutcome,
 } from "./persistence.js";
 import type { ChildBootstrapState } from "./types.js";
 import {
@@ -164,11 +166,17 @@ function registerChildAgentEndHandler(
   childState: ChildBootstrapState,
   state: ChildBootstrapRuntimeState,
 ): void {
-  pi.on("agent_end", (_event, ctx) => {
+  pi.on("agent_end", (event, ctx) => {
     if (!isChildSession(childState, ctx)) {
       return;
     }
     const result = handleStructuredAgentEnd(pi, state);
+    if (childState.persisted === false) {
+      writeEphemeralChildSessionOutcome(
+        childState.sessionId,
+        buildEphemeralChildOutcome(result, event.messages, state),
+      );
+    }
     if (result === "shutdown") {
       shutdownContextSafely(ctx);
       return;
@@ -181,6 +189,68 @@ function registerChildAgentEndHandler(
     }
     scheduleIdleShutdown(state, ctx, childState);
   });
+}
+
+function buildEphemeralChildOutcome(
+  result: "shutdown" | "retry" | "continue",
+  messages: Array<{ role?: string; content?: unknown }>,
+  state: ChildBootstrapRuntimeState,
+): {
+  summary?: string;
+  structured?: unknown;
+  structuredError?: {
+    code: "validation_failed";
+    message: string;
+    retryCount: number;
+    attempts: number;
+    lastValidationError: string;
+  };
+  failed: boolean;
+} {
+  const lastValidationError = state.structuredState.lastValidationError;
+  const structuredError =
+    lastValidationError !== undefined && lastValidationError.length > 0 && result !== "retry"
+      ? {
+          code: "validation_failed" as const,
+          message: lastValidationError,
+          retryCount: state.structuredState.retryCount,
+          attempts: state.structuredState.attempts,
+          lastValidationError,
+        }
+      : undefined;
+
+  return {
+    summary: getLatestAssistantSummary(messages),
+    structured: state.structuredState.captured,
+    structuredError,
+    failed: structuredError !== undefined,
+  };
+}
+
+function getLatestAssistantSummary(
+  messages: Array<{ role?: string; content?: unknown }>,
+): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") {
+      continue;
+    }
+    const content = message.content;
+    if (typeof content === "string") {
+      const text = content.trim();
+      return text.length > 0 ? text : undefined;
+    }
+    if (isTextContentArray(content)) {
+      const text = extractMessageText(content);
+      return text.length > 0 ? text : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function isTextContentArray(value: unknown): value is Array<{ type: string; text?: string }> {
+  return Array.isArray(value);
 }
 
 function registerChildSessionShutdownHandler(

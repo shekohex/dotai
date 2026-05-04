@@ -238,6 +238,7 @@ function createCommitCommandHandler(
           task: buildCommitTask(args.trim() || undefined),
           mode: "commiter",
           cwd: ctx.cwd,
+          persisted: false,
           outputFormat: { type: "json_schema", schema: CommitStructuredSummarySchema },
         },
         ctx,

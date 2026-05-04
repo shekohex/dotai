@@ -24,11 +24,14 @@ import {
   createChildSessionFile,
   getDefaultSessionDir,
   getAutoExitTimeoutModeMarkerPath,
+  getEphemeralChildOutcomePath,
   getParentInjectedInputMarkerPath,
   isAutoExitTimeoutModeActive,
   readChildSessionOutcome,
+  readEphemeralChildSessionOutcomeBySessionId,
   readChildSessionStatus,
   reduceRuntimeSubagents,
+  writeEphemeralChildSessionOutcome,
 } from "../src/subagent-sdk/persistence.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
@@ -170,6 +173,7 @@ function createFakeContext(options: {
   cwd: string;
   sessionId?: string;
   sessionFile?: string;
+  persisted?: boolean;
   entries?: Array<{ type: string; customType?: string; data?: unknown }>;
   hasUI?: boolean;
   captureTerminalInput?: (handler: (data: string) => unknown) => void;
@@ -193,6 +197,7 @@ function createFakeContext(options: {
       },
     },
     sessionManager: {
+      isPersisted: () => options.persisted ?? true,
       getSessionId: () => options.sessionId ?? "parent-session-id",
       getSessionFile: () => options.sessionFile,
       getEntries: () => options.entries ?? [],
@@ -1764,6 +1769,41 @@ timedTest("createChildSessionFile bootstraps a persisted child session header", 
   }
 });
 
+timedTest("createChildSessionFile returns undefined for ephemeral child sessions", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-ephemeral-cwd-"));
+
+  try {
+    const sessionPath = await createChildSessionFile({
+      cwd,
+      sessionId: "ephemeral-child-session-id",
+      persisted: false,
+    });
+
+    expect(sessionPath).toBe(undefined);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("ephemeral child outcome persists structured output via temp file", async () => {
+  const sessionId = "ephemeral-structured-child";
+
+  try {
+    writeEphemeralChildSessionOutcome(sessionId, {
+      summary: "Structured run finished",
+      structured: { summary: "All clear", risk: "low" },
+      failed: false,
+    });
+
+    const outcome = await readEphemeralChildSessionOutcomeBySessionId(sessionId);
+    expect(outcome.failed).toBe(false);
+    expect(outcome.summary).toBe("Structured run finished");
+    expect(outcome.structured).toEqual({ summary: "All clear", risk: "low" });
+  } finally {
+    await fs.rm(getEphemeralChildOutcomePath(sessionId), { force: true });
+  }
+});
+
 timedTest("readChildSessionOutcome extracts the last assistant summary", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-outcome-"));
   const sessionPath = path.join(dir, "child.jsonl");
@@ -2349,6 +2389,7 @@ timedTest(
       expect(fakeMux.sent.length).toBe(0);
       expect((launch.childState as { tools: string[] }).tools).toEqual(["read"]);
       expect((launch.childState as { prompt: string }).prompt).toBe("Inspect the failing tests");
+      expect((launch.childState as { persisted: boolean }).persisted).toBe(true);
       expect((launch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs).toBe(30_000);
       expect(launch.options).toEqual({
         launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
@@ -2424,6 +2465,7 @@ timedTest(
       expect((resumedLaunch.childState as { prompt: string }).prompt).toBe(
         "Address the review feedback",
       );
+      expect((resumedLaunch.childState as { persisted: boolean }).persisted).toBe(true);
       expect((resumedLaunch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs).toBe(
         30_000,
       );
@@ -2540,6 +2582,97 @@ timedTest(
     }
   },
 );
+
+timedTest("SubagentRuntime launches ephemeral children when persisted=false", async () => {
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const launched: Array<{
+    state: RuntimeSubagent;
+    childState: ChildBootstrapState;
+    prompt: string;
+    options: unknown;
+  }> = [];
+  const runtime = new SubagentRuntime(
+    fakePi as unknown as ExtensionAPI,
+    fakeMux,
+    (state, childState, prompt, options) => {
+      launched.push({ state, childState, prompt, options });
+      return "pi --no-session fake";
+    },
+  );
+
+  try {
+    const ctx = createFakeContext({ cwd: process.cwd(), sessionFile: "/tmp/parent.jsonl" });
+    const started = await runtime.spawn(
+      {
+        name: "worker-ephemeral",
+        task: "Inspect the failing tests",
+        persisted: false,
+      },
+      ctx,
+    );
+
+    expect(started.state.persisted).toBe(false);
+    expect(started.state.sessionPath).toBe(undefined);
+    expect(fakeMux.created.length).toBe(1);
+    expect(launched.length).toBe(1);
+    expect(launched[0]?.childState.persisted).toBe(false);
+    expect(launched[0]?.childState.sessionPath).toBe(undefined);
+    expect(launched[0]?.options).toEqual({
+      launchTarget: { kind: "ephemeral" },
+      tmuxTarget: "pane",
+      mode: undefined,
+      model: undefined,
+      thinkingLevel: undefined,
+      systemPrompt: undefined,
+      systemPromptMode: "append",
+    });
+
+    fakeMux.existingPanes.delete(started.state.paneId);
+    await expect(
+      runtime.resume(
+        {
+          sessionId: started.state.sessionId,
+          task: "Resume the ephemeral child",
+        },
+        ctx,
+      ),
+    ).rejects.toThrow(/ephemeral and cannot be resumed/i);
+  } finally {
+    runtime.dispose();
+  }
+});
+
+timedTest("SubagentRuntime infers ephemeral children from ephemeral parents", async () => {
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const launched: Array<{ childState: ChildBootstrapState }> = [];
+  const runtime = new SubagentRuntime(
+    fakePi as unknown as ExtensionAPI,
+    fakeMux,
+    (_state, childState) => {
+      launched.push({ childState });
+      return "pi --no-session fake";
+    },
+  );
+
+  try {
+    const ctx = createFakeContext({ cwd: process.cwd(), persisted: false });
+    const started = await runtime.spawn(
+      {
+        name: "worker-inferred-ephemeral",
+        task: "Inspect the failing tests",
+      },
+      ctx,
+    );
+
+    expect(started.state.persisted).toBe(false);
+    expect(started.state.sessionPath).toBe(undefined);
+    expect(launched[0]?.childState.persisted).toBe(false);
+  } finally {
+    runtime.dispose();
+  }
+});
 
 timedTest(
   "subagent tool execute auto-resumes dead child sessions before delivering a message",

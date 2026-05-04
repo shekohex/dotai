@@ -169,14 +169,18 @@ export function isChildSession(
   }
   return (
     ctx.sessionManager.getSessionId() === childState.sessionId ||
-    ctx.sessionManager.getSessionFile() === childState.sessionPath
+    (childState.sessionPath !== undefined &&
+      ctx.sessionManager.getSessionFile() === childState.sessionPath)
   );
 }
 
 export function createChildBootstrapRuntimeState(
   childState: ChildBootstrapState,
 ): ChildBootstrapRuntimeState {
-  const restoredStructuredState = readLatestChildStructuredOutputState(childState.sessionPath);
+  const restoredStructuredState =
+    childState.sessionPath === undefined
+      ? undefined
+      : readLatestChildStructuredOutputState(childState.sessionPath);
   const structuredRetryCount = getStructuredRetryCount(childState);
   return {
     structuredState: {

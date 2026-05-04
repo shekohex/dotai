@@ -315,10 +315,38 @@ function isTextContentArray(value: unknown): value is Array<{ type: string; text
 
 function registerChildSessionShutdownHandler(
   pi: ExtensionAPI,
+  childState: ChildBootstrapState,
   state: ChildBootstrapRuntimeState,
 ): void {
-  pi.on("session_shutdown", () => {
+  pi.on("session_shutdown", (_event, ctx) => {
     cancelIdleShutdown(state);
+    if (!isChildSession(childState, ctx) || childState.persisted !== false) {
+      return;
+    }
+
+    if (!state.structuredState.completed) {
+      handleStructuredAgentEnd(pi, state);
+    }
+
+    writeEphemeralChildSessionOutcome(childState.sessionId, {
+      summary: getLastAssistantText(ctx.sessionManager.getBranch()),
+      structured: state.structuredState.captured,
+      structuredError:
+        state.structuredState.lastValidationError !== undefined &&
+        state.structuredState.lastValidationError.length > 0
+          ? {
+              code: "validation_failed",
+              message: state.structuredState.lastValidationError,
+              retryCount: state.structuredState.retryCount,
+              attempts: state.structuredState.attempts,
+              lastValidationError: state.structuredState.lastValidationError,
+            }
+          : undefined,
+      failed:
+        state.structuredState.captured === undefined &&
+        (state.structuredState.lastValidationError === undefined ||
+          state.structuredState.lastValidationError.length === 0),
+    });
   });
 }
 
@@ -333,5 +361,5 @@ export function registerChildBootstrapHandlers(
   registerChildToolResultHandler(pi, childState, state);
   registerChildTurnHandlers(pi, childState, state);
   registerChildAgentEndHandler(pi, childState, state);
-  registerChildSessionShutdownHandler(pi, state);
+  registerChildSessionShutdownHandler(pi, childState, state);
 }

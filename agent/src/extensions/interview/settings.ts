@@ -1,9 +1,8 @@
-/* oxlint-disable */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
 function expandUserPath(value: string): string {
@@ -32,13 +31,7 @@ export const InterviewThemeSettingsSchema = Type.Object(
   { additionalProperties: true },
 );
 
-export interface InterviewThemeSettings {
-  mode?: "auto" | "light" | "dark";
-  name?: string;
-  lightPath?: string;
-  darkPath?: string;
-  toggleHotkey?: string;
-}
+export type InterviewThemeSettings = Static<typeof InterviewThemeSettingsSchema>;
 
 export const InterviewSettingsSchema = Type.Object(
   {
@@ -55,17 +48,14 @@ export const InterviewSettingsSchema = Type.Object(
   { additionalProperties: true },
 );
 
-export interface InterviewSettings {
-  timeout?: number;
-  port?: number;
-  host?: string;
-  publicBaseUrl?: string;
-  autoOpenBrowser?: boolean;
-  theme?: InterviewThemeSettings;
-  snapshotDir?: string;
-  autoSaveOnSubmit?: boolean;
-  generateModel?: string;
-}
+export type InterviewSettings = Static<typeof InterviewSettingsSchema>;
+
+const AgentSettingsSchema = Type.Object(
+  {
+    interview: Type.Optional(InterviewSettingsSchema),
+  },
+  { additionalProperties: true },
+);
 
 export const defaultInterviewSettings: Required<
   Pick<
@@ -91,19 +81,15 @@ export function loadSettings(): InterviewSettings {
     return {};
   }
 
-  const parsed = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
-  if (typeof parsed !== "object" || parsed === null) {
+  const parsed: unknown = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
+  if (!Value.Check(AgentSettingsSchema, parsed)) {
     return {};
   }
 
-  const interview = (parsed as Record<string, unknown>).interview;
-  if (typeof interview !== "object" || interview === null) {
+  const settings = Value.Parse(AgentSettingsSchema, parsed);
+  if (settings.interview === undefined) {
     return {};
   }
 
-  if (!Value.Check(InterviewSettingsSchema, interview)) {
-    return {};
-  }
-
-  return Value.Parse(InterviewSettingsSchema, interview);
+  return settings.interview;
 }

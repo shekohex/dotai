@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const __dirname = import.meta.dirname;
 const packageDir = join(__dirname, "..");
@@ -65,7 +65,7 @@ export function ensureDependencyPatches() {
     return;
   }
 
-  mkdirSync(agentDir, { recursive: true });
+  mkdirSync(dirname(dependencyPatchApplyMarker), { recursive: true });
   writeFileSync(dependencyPatchApplyMarker, `${new Date().toISOString()}\n`, "utf8");
 }
 

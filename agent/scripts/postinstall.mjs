@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -10,13 +12,8 @@ const modesTemplatePath = join(packageDir, "dist", "defaults", "modes.json");
 const agentDir = join(homedir(), ".pi", "agent");
 const targetPath = join(agentDir, "settings.json");
 const modesTargetPath = join(agentDir, "modes.json");
-const patchPackageBin = join(packageDir, "node_modules", "patch-package", "index.js");
 const patchesDir = join(packageDir, "patches");
-const dependencyPatchApplyMarker = join(
-  packageDir,
-  "node_modules",
-  ".shekohex-agent-dependency-patches-applied",
-);
+const dependencyPatchApplyMarker = getDependencyPatchApplyMarkerPath();
 
 if (isMain()) {
   runPostinstall();
@@ -63,16 +60,22 @@ export function ensureDependencyPatches() {
     return;
   }
 
-  applyDependencyPatches();
+  const applied = applyDependencyPatches();
+  if (!applied) {
+    return;
+  }
+
+  mkdirSync(agentDir, { recursive: true });
   writeFileSync(dependencyPatchApplyMarker, `${new Date().toISOString()}\n`, "utf8");
 }
 
 export function applyDependencyPatches() {
+  const patchPackageBin = resolvePatchPackageBin();
   if (!existsSync(patchPackageBin)) {
     console.log(
       `[shekohex/agent] Skipping dependency patches; patch-package not found: ${patchPackageBin}`,
     );
-    return;
+    return false;
   }
 
   const result = spawnSync(process.execPath, [patchPackageBin], {
@@ -90,6 +93,13 @@ export function applyDependencyPatches() {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+
+  return true;
+}
+
+export function getDependencyPatchApplyMarkerPath() {
+  const packageDirHash = createHash("sha256").update(packageDir).digest("hex").slice(0, 16);
+  return join(agentDir, "state", "dependency-patches", `${packageDirHash}.applied`);
 }
 
 function listDependencyPatchFiles() {
@@ -117,6 +127,16 @@ function areDependencyPatchesApplied() {
     const patchMtime = statSync(patchFile).mtimeMs;
     return patchMtime <= markerMtime;
   });
+}
+
+function resolvePatchPackageBin() {
+  const require = createRequire(import.meta.url);
+
+  try {
+    return require.resolve("patch-package", { paths: [packageDir] });
+  } catch {
+    return join(packageDir, "node_modules", "patch-package", "index.js");
+  }
 }
 
 function isMain() {

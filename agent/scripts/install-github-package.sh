@@ -13,6 +13,7 @@ package_version=''
 token_source=''
 token_value=''
 default_package_version=''
+verbose='0'
 
 fail() {
   printf 'error: %s\n' "$1" >&2
@@ -25,7 +26,7 @@ note() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: install-github-package.sh [--npm|--pnpm|--bun|--yarn] [--version VERSION]
+Usage: install-github-package.sh [--npm|--pnpm|--bun|--yarn] [--version VERSION] [--verbose]
 
 Auth lookup order:
 1. NODE_AUTH_TOKEN
@@ -35,10 +36,29 @@ Auth lookup order:
 5. gh auth token
 
 Examples:
-  curl -fSL https://raw.githubusercontent.com/shekohex/dotai/main/agent/scripts/install-github-package.sh | bash -s -- --npm
-  curl -fSL https://raw.githubusercontent.com/shekohex/dotai/main/agent/scripts/install-github-package.sh | bash -s -- --bun --version 0.72.1-dev.abcdef0
+  curl -fsSL https://raw.githubusercontent.com/shekohex/dotai/main/agent/scripts/install-github-package.sh | bash -s -- --npm
+  curl -fsSL https://raw.githubusercontent.com/shekohex/dotai/main/agent/scripts/install-github-package.sh | bash -s -- --bun --version 0.72.1-dev.abcdef0
+  curl -fsSL https://raw.githubusercontent.com/shekohex/dotai/main/agent/scripts/install-github-package.sh | bash -s -- --bun --verbose
 EOF
   exit 1
+}
+
+curl_get_flags() {
+  if [[ "$verbose" == '1' ]]; then
+    printf '%s' '-fSL'
+    return
+  fi
+
+  printf '%s' '-fsSL'
+}
+
+curl_head_flags() {
+  if [[ "$verbose" == '1' ]]; then
+    printf '%s' '-fSI'
+    return
+  fi
+
+  printf '%s' '-fsSI'
 }
 
 require_command() {
@@ -64,6 +84,9 @@ parse_args() {
         [[ $# -ge 2 ]] || fail '--version requires value'
         package_version="$2"
         shift
+        ;;
+      --verbose)
+        verbose='1'
         ;;
       --help|-h)
         usage
@@ -115,10 +138,25 @@ resolve_auth_token() {
 token_scope_header() {
   require_command curl
 
-  curl -fsSI \
+  curl "$(curl_head_flags)" \
     -H "Authorization: Bearer $token_value" \
     -H 'Accept: application/vnd.github+json' \
     "$GITHUB_API_URL" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-oauth-scopes" { print $2 }'
+}
+
+fetch_registry_metadata() {
+  require_command curl
+
+  curl "$(curl_get_flags)" \
+    -H "Authorization: Bearer $token_value" \
+    -H 'Accept: application/vnd.npm.install-v1+json' \
+    "$RAW_PACKAGE_ENDPOINT"
+}
+
+registry_preview_tag_matches_default_version() {
+  local metadata="$1"
+
+  [[ "$metadata" == *"\"preview\":\"${default_package_version}\""* ]]
 }
 
 verify_package_access() {
@@ -151,6 +189,16 @@ package_spec() {
   fi
 
   if [[ -n "$default_package_version" ]]; then
+    if [[ "$package_manager" == 'bun' ]]; then
+      local metadata
+      metadata="$(fetch_registry_metadata)"
+
+      if registry_preview_tag_matches_default_version "$metadata"; then
+        printf '%s@%s' "$PACKAGE_NAME" 'preview'
+        return
+      fi
+    fi
+
     printf '%s@%s' "$PACKAGE_NAME" "$default_package_version"
     return
   fi

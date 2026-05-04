@@ -68,8 +68,6 @@ function Check-And-Sync-File {
     }
 
     if (Test-Path -LiteralPath $target) {
-        # Compare files
-        # Try using git diff first if available (for nice output), otherwise simple file hash
         $filesDiffer = $false
         
         if (Get-Command "git" -ErrorAction SilentlyContinue) {
@@ -83,22 +81,9 @@ function Check-And-Sync-File {
         }
 
         if ($filesDiffer) {
-            Log-Warn "Files differ for $name :"
-            
-            if (Get-Command "git" -ErrorAction SilentlyContinue) {
-                git diff --no-index --color=always "$target" "$source"
-            } else {
-                Write-Host "Files are different (git diff unavailable)"
-            }
-            
-            if (Confirm-Action "Replace $name with new version?") {
-                Backup-File $target
-                Copy-Item -LiteralPath $source -Destination $target -Force
-                Log-Info "Updated $name"
-            } else {
-                Log-Info "Skipped $name"
-                return $false
-            }
+            Backup-File $target
+            Copy-Item -LiteralPath $source -Destination $target -Force
+            Log-Info "Updated $name"
         } else {
             Log-Info "$name is already up to date"
         }

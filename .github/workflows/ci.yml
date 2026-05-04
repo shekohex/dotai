@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches:
@@ -50,10 +53,10 @@ jobs:
         run: npm run format:check
 
       - name: Test
-        run: npm test
+        run: npm test -- --reporter=github-actions --reporter=json
 
       - name: Coverage
-        run: npm run test:coverage
+        run: npm run test:coverage -- --reporter=github-actions
 
       - name: Build
         run: npm run build

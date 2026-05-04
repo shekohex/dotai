@@ -1,5 +1,8 @@
 name: Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_run:
     workflows:
@@ -62,7 +65,7 @@ jobs:
         shell: bash
         working-directory: agent
         run: |
-          BASE_VERSION="$(node -p \"require('./package.json').version\")"
+          BASE_VERSION="$(npm pkg get version | tr -d '"')"
           SHORT_SHA="$(git rev-parse --short HEAD)"
           echo "value=${BASE_VERSION}-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 

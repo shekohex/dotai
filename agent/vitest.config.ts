@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+const runningInGitHubActions = process.env.GITHUB_ACTIONS === "true";
+
 export default defineConfig({
   test: {
     dir: "test",
@@ -10,7 +12,7 @@ export default defineConfig({
     },
     silent: "passed-only",
     hideSkippedTests: true,
-    maxWorkers: 6,
+    maxWorkers: runningInGitHubActions ? 1 : 6,
     pool: "forks",
     coverage: {
       provider: "v8",

@@ -835,13 +835,14 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
 
     const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
     expect(structuredOutputTool).toBeTruthy();
-    await structuredOutputTool.execute(
+    const structuredResult = await structuredOutputTool.execute(
       "structured-tool-call",
       { answer: "done" },
       undefined,
       undefined,
       ctx,
     );
+    expect(structuredResult.terminate).toBe(true);
 
     await emitHandlers(
       fakePi,
@@ -950,13 +951,14 @@ timedTest(
 
       const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
       expect(structuredOutputTool).toBeTruthy();
-      await structuredOutputTool.execute(
+      const structuredResult = await structuredOutputTool.execute(
         "structured-tool-call",
         { answer: "done" },
         undefined,
         undefined,
         ctx,
       );
+      expect(structuredResult.terminate).toBe(true);
 
       await emitHandlers(
         fakePi,

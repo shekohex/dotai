@@ -43,6 +43,7 @@ function registerStructuredOutputTool(
       return Promise.resolve({
         content: [{ type: "text", text: "Structured output captured." }],
         details: { captured: true },
+        terminate: true,
       });
     },
   });

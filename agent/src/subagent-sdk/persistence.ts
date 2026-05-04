@@ -2,11 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  SessionManager,
-  getDefaultSessionDir as getUpstreamDefaultSessionDir,
-  type SessionEntry,
-} from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
+import { SessionManager, getAgentDir, type SessionEntry } from "@mariozechner/pi-coding-agent";
 
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 import {
@@ -46,7 +42,12 @@ export type ChildSessionStatusDetails = {
 export const SUBAGENT_PARENT_INPUT_GRACE_MS = 1500;
 
 export function getDefaultSessionDir(cwd: string): string {
-  return getUpstreamDefaultSessionDir(cwd);
+  const safePath = `--${cwd.replace(/^[/\\]/, "").replaceAll(/[/\\:]/g, "-")}--`;
+  const sessionDir = path.join(getAgentDir(), "sessions", safePath);
+  if (!fs.existsSync(sessionDir)) {
+    fs.mkdirSync(sessionDir, { recursive: true });
+  }
+  return sessionDir;
 }
 
 export function getParentInjectedInputMarkerPath(sessionId: string): string {

@@ -1,7 +1,4 @@
-import type {
-  SessionEntry,
-  SessionMessageEntry,
-} from "../../node_modules/@mariozechner/pi-coding-agent/dist/core/session-manager.js";
+import type { SessionEntry, SessionMessageEntry } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 

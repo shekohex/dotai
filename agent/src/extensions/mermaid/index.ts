@@ -1,6 +1,5 @@
-import type { ExtensionAPI, MessageRenderer } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, MessageRenderer, ThemeColor } from "@mariozechner/pi-coding-agent";
 import { keyHint } from "@mariozechner/pi-coding-agent";
-import { theme as interactiveTheme } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import { truncateToWidth, type Component } from "@mariozechner/pi-tui";
 import { installAssistantMessagePatch } from "./patch.js";
 import { extractMermaidBlocks } from "./parsing.js";
@@ -16,10 +15,22 @@ import {
 
 const MESSAGE_TYPE = "pi-mermaid";
 
+type TextFormatter = {
+  fg: (_color: ThemeColor, text: string) => string;
+  bold: (text: string) => string;
+  italic: (text: string) => string;
+};
+
+const plainTextFormatter: TextFormatter = {
+  fg: (_color, text) => text,
+  bold: (text) => text,
+  italic: (text) => text,
+};
+
 function renderMermaidBodyLines(
   width: number,
   details: MermaidDetails,
-  theme: typeof interactiveTheme,
+  theme: TextFormatter,
   options: {
     collapseLong: boolean;
     expanded: boolean;
@@ -67,7 +78,7 @@ function renderMermaidBodyLines(
 
 function createMermaidBodyComponent(
   details: MermaidDetails,
-  theme: typeof interactiveTheme,
+  theme: TextFormatter,
   options: {
     collapseLong: boolean;
     expanded: boolean;
@@ -82,7 +93,7 @@ function createMermaidBodyComponent(
 }
 
 function createInlineMermaidComponent(details: MermaidDetails): Component {
-  return createMermaidBodyComponent(details, interactiveTheme, {
+  return createMermaidBodyComponent(details, plainTextFormatter, {
     collapseLong: false,
     expanded: true,
     showSource: false,

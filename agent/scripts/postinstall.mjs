@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const __dirname = import.meta.dirname;
 const packageDir = join(__dirname, "..");
@@ -60,6 +60,10 @@ export function ensureDependencyPatches() {
     return;
   }
 
+  if (!canApplyDependencyPatches()) {
+    return;
+  }
+
   const applied = applyDependencyPatches();
   if (!applied) {
     return;
@@ -112,6 +116,30 @@ function listDependencyPatchFiles() {
     .map((entry) => join(patchesDir, entry));
 }
 
+function canApplyDependencyPatches() {
+  const patchFiles = listDependencyPatchFiles();
+  if (patchFiles.length === 0) {
+    return true;
+  }
+
+  const missingPackages = [];
+  for (const patchFile of patchFiles) {
+    const packageName = getPatchedPackageName(patchFile);
+    if (!existsSync(join(packageDir, "node_modules", packageName))) {
+      missingPackages.push(packageName);
+    }
+  }
+
+  if (missingPackages.length === 0) {
+    return true;
+  }
+
+  console.log(
+    `[shekohex/agent] Skipping dependency patches; patched packages not installed in local node_modules: ${missingPackages.join(", ")}`,
+  );
+  return false;
+}
+
 function areDependencyPatchesApplied() {
   const patchFiles = listDependencyPatchFiles();
   if (patchFiles.length === 0) {
@@ -127,6 +155,16 @@ function areDependencyPatchesApplied() {
     const patchMtime = statSync(patchFile).mtimeMs;
     return patchMtime <= markerMtime;
   });
+}
+
+/**
+ * @param {string} patchFile Patch file path.
+ * @returns {string} Patched package name.
+ */
+function getPatchedPackageName(patchFile) {
+  const patchFileName = basename(patchFile);
+  const withoutSuffix = patchFileName.replace(/\+[^+]+\.patch$/, "");
+  return withoutSuffix.replaceAll("+", "/");
 }
 
 function resolvePatchPackageBin() {

@@ -1,6 +1,5 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { AssistantMessageComponent } from "@mariozechner/pi-coding-agent";
-import { theme as interactiveTheme } from "../../../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import {
   Markdown,
   Spacer,
@@ -14,6 +13,10 @@ import {
   hasRenderableMermaid,
   type MermaidDetails,
 } from "./renderable.js";
+
+const formatThinkingText = (text: string) => text;
+const formatErrorText = (text: string) => text;
+const italicize = (text: string) => text;
 
 type AssistantMessagePatchInstance = {
   contentContainer: Container;
@@ -81,16 +84,12 @@ function appendPatchedThinkingSegment(
 ): void {
   if (instance.hideThinkingBlock) {
     instance.contentContainer.addChild(
-      new Text(
-        interactiveTheme.italic(interactiveTheme.fg("thinkingText", instance.hiddenThinkingLabel)),
-        1,
-        0,
-      ),
+      new Text(italicize(formatThinkingText(instance.hiddenThinkingLabel)), 1, 0),
     );
   } else {
     instance.contentContainer.addChild(
       new Markdown(thinking, 1, 0, instance.markdownTheme, {
-        color: (text: string) => interactiveTheme.fg("thinkingText", text),
+        color: formatThinkingText,
         italic: true,
       }),
     );
@@ -116,16 +115,14 @@ function appendPatchedStopReason(
         ? message.errorMessage
         : "Operation aborted";
     instance.contentContainer.addChild(new Spacer(1));
-    instance.contentContainer.addChild(new Text(interactiveTheme.fg("error", abortMessage), 1, 0));
+    instance.contentContainer.addChild(new Text(formatErrorText(abortMessage), 1, 0));
     return;
   }
 
   if (message.stopReason === "error") {
     const errorMessage = message.errorMessage ?? "Unknown error";
     instance.contentContainer.addChild(new Spacer(1));
-    instance.contentContainer.addChild(
-      new Text(interactiveTheme.fg("error", `Error: ${errorMessage}`), 1, 0),
-    );
+    instance.contentContainer.addChild(new Text(formatErrorText(`Error: ${errorMessage}`), 1, 0));
   }
 }
 

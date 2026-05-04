@@ -843,7 +843,7 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
       ctx,
     );
     expect(structuredResult.terminate).toBe(true);
-    expect(shutdownCount).toBe(1);
+    expect(shutdownCount).toBe(0);
 
     await emitHandlers(
       fakePi,
@@ -872,6 +872,7 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
       },
       ctx,
     );
+    expect(shutdownCount).toBe(0);
 
     await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
 
@@ -960,7 +961,7 @@ timedTest(
         ctx,
       );
       expect(structuredResult.terminate).toBe(true);
-      expect(shutdownCount).toBe(1);
+      expect(shutdownCount).toBe(0);
 
       await emitHandlers(
         fakePi,
@@ -981,6 +982,7 @@ timedTest(
         },
         ctx,
       );
+      expect(shutdownCount).toBe(1);
 
       await emitHandlers(fakePi, "turn_start", { turnIndex: 2, timestamp: Date.now() }, ctx);
       await emitHandlers(
@@ -1005,6 +1007,90 @@ timedTest(
       expect((structuredEntry.data as { status: string }).status).toBe("captured");
       expect(shutdownCount).toBe(1);
       expect(fakePi.sentUserMessages.length).toBe(0);
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest(
+  "child bootstrap captures structured output even if agent ends without turn_end",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-no-turn-end-"));
+    const sessionPath = path.join(cwd, "child.jsonl");
+    let shutdownCount = 0;
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId: "child-session-id",
+      sessionPath,
+      parentSessionId: "parent-session-id",
+      parentSessionPath: path.join(cwd, "parent.jsonl"),
+      name: "worker-one",
+      prompt: "Return structured output",
+      autoExit: true,
+      autoExitTimeoutMs: 30_000,
+      handoff: false,
+      tools: ["read", "bash"],
+      outputFormat: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: { answer: { type: "string" } },
+          required: ["answer"],
+        },
+        retryCount: 3,
+      },
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "child-session-id",
+        sessionFile: sessionPath,
+        shutdown: () => {
+          shutdownCount += 1;
+        },
+      });
+
+      await emitHandlers(
+        fakePi,
+        "before_agent_start",
+        { systemPrompt: "system", prompt: "task" },
+        ctx,
+      );
+      await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+
+      const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
+      expect(structuredOutputTool).toBeTruthy();
+      const structuredResult = await structuredOutputTool.execute(
+        "structured-tool-call",
+        { answer: "done" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(structuredResult.terminate).toBe(true);
+      expect(shutdownCount).toBe(0);
+
+      await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
+
+      const structuredEntries = fakePi.appendedEntries.filter(
+        (entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+      );
+      expect(structuredEntries.length).toBe(1);
+      expect((structuredEntries[0]?.data as { status: string }).status).toBe("captured");
+      expect(shutdownCount).toBe(1);
     } finally {
       if (previousChildState === undefined) {
         delete process.env.PI_SUBAGENT_CHILD_STATE;

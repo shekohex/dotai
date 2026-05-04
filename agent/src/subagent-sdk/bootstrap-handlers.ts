@@ -20,6 +20,7 @@ import {
 } from "./bootstrap-core.js";
 import {
   handleStructuredAgentEnd,
+  persistCapturedStructuredOutput,
   updateStructuredTurnStateFromResults,
 } from "./bootstrap-structured.js";
 
@@ -165,7 +166,14 @@ function registerChildTurnHandlers(
     if (!isChildSession(childState, ctx) || !isJsonSchemaOutputFormat(childState)) {
       return;
     }
+    if (state.structuredState.completed) {
+      return;
+    }
     updateStructuredTurnStateFromResults(event.toolResults, state, STRUCTURED_OUTPUT_TOOL_NAME);
+    if (state.lastTurnStructuredCaptured && state.lastTurnStructuredPayload !== undefined) {
+      persistCapturedStructuredOutput(pi, state, state.lastTurnStructuredPayload);
+      requestShutdown(state, ctx);
+    }
   });
 }
 

@@ -10,7 +10,6 @@ import {
   isTypeboxSchema,
 } from "./bootstrap-core.js";
 import { registerChildBootstrapHandlers } from "./bootstrap-handlers.js";
-import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { createTextComponent } from "../extensions/coreui/tools-render.js";
 import { asRecord } from "../utils/unknown-data.js";
 
@@ -111,16 +110,6 @@ function renderStructuredOutputResult(
   );
 }
 
-function shutdownContextSafely(ctx: { shutdown: () => void }): void {
-  try {
-    ctx.shutdown();
-  } catch (error) {
-    if (!isStaleSessionReplacementContextError(error)) {
-      throw error;
-    }
-  }
-}
-
 function registerStructuredOutputTool(
   pi: ExtensionAPI,
   childState: ChildBootstrapState,
@@ -139,12 +128,13 @@ function registerStructuredOutputTool(
     description:
       "Submit the final structured JSON response. Use this tool exactly once as the final action.",
     parameters: childState.outputFormat.schema,
-    execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       state.turnStructuredCaptured = true;
       state.turnStructuredPayload = params;
-      state.shutdownRequested = true;
+      state.lastTurnStructuredCaptured = true;
+      state.lastTurnStructuredPayload = params;
+      state.lastTurnStructuredValidationError = undefined;
       const keys = listStructuredKeys(params);
-      shutdownContextSafely(ctx);
       return Promise.resolve({
         content: [{ type: "text", text: "Structured output captured." }],
         details: { captured: true, keys },

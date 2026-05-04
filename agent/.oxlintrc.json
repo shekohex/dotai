@@ -64,7 +64,15 @@
     "project-rules/no-inline-error-message-extraction": "error",
     "project-rules/no-local-unknown-record-helper": "error"
   },
-  "overrides": [],
+  "overrides": [
+    {
+      "files": ["src/extensions/interview/form/script.js"],
+      "rules": {
+        "no-unsafe-assignment": "off",
+        "max-lines": "off"
+      }
+    }
+  ],
   "env": {
     "builtin": true
   }

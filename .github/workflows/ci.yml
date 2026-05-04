@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        working-directory: agent
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,13 +27,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: agent/package-lock.json
 
       - name: Restore node_modules cache
         id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+          path: agent/node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
@@ -71,5 +75,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: coverage
+          path: agent/.tmp/coverage
           if-no-files-found: ignore

@@ -60,6 +60,7 @@ jobs:
       - name: Compute preview package version
         id: preview_version
         shell: bash
+        working-directory: agent
         run: |
           BASE_VERSION="$(node -p \"require('./package.json').version\")"
           SHORT_SHA="$(git rev-parse --short HEAD)"
@@ -237,27 +238,32 @@ jobs:
           node-version: 24
           registry-url: https://npm.pkg.github.com
           cache: npm
+          cache-dependency-path: agent/package-lock.json
 
       - name: Restore node_modules cache
         id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+          path: agent/node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        working-directory: agent
         run: npm ci
 
       - name: Set preview package version
+        working-directory: agent
         run: npm pkg set version='${{ needs.create_preview_release.outputs.package_version }}'
 
       - name: Refresh lockfile
+        working-directory: agent
         run: npm install
 
       - name: Publish preview package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+        working-directory: agent
         run: npm publish --tag preview --access public --no-git-checks
 
   publish_release_package:
@@ -278,30 +284,35 @@ jobs:
           node-version: 24
           registry-url: https://npm.pkg.github.com
           cache: npm
+          cache-dependency-path: agent/package-lock.json
 
       - name: Restore node_modules cache
         id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+          path: agent/node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        working-directory: agent
         run: npm ci
 
       - name: Set release package version
         shell: bash
+        working-directory: agent
         run: |
           RELEASE_TAG='${{ github.event.release.tag_name }}'
           npm pkg set version="${RELEASE_TAG#v}"
 
       - name: Refresh lockfile
+        working-directory: agent
         run: npm install
 
       - name: Publish release package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+        working-directory: agent
         run: npm publish --tag latest --access public --no-git-checks
 
   publish_manual_release_package:
@@ -321,25 +332,30 @@ jobs:
           node-version: 24
           registry-url: https://npm.pkg.github.com
           cache: npm
+          cache-dependency-path: agent/package-lock.json
 
       - name: Restore node_modules cache
         id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+          path: agent/node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        working-directory: agent
         run: npm ci
 
       - name: Set release package version
+        working-directory: agent
         run: npm pkg set version='${{ needs.create_manual_release.outputs.package_version }}'
 
       - name: Refresh lockfile
+        working-directory: agent
         run: npm install
 
       - name: Publish release package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+        working-directory: agent
         run: npm publish --tag latest --access public --no-git-checks

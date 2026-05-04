@@ -12,7 +12,8 @@ Recommended GitHub repository settings for `main`:
 
 1. Workflow file: `.github/workflows/ci.yml`
 2. Job name: `verify`
-3. Purpose: typecheck, lint, format, tests, coverage, build, smoke install
+3. Working directory: `agent`
+4. Purpose: typecheck, lint, format, tests, coverage, build, smoke install
 
 ## Release Expectations
 

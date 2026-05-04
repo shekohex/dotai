@@ -9,7 +9,7 @@ tmp="$(mktemp)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.
 ```
 
 ```bash
-tmpdir="$(mktemp -d)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.com' "//npm.pkg.github.com/:_authToken=$(gh auth token)" > "$tmpdir/.npmrc" && HOME="$tmpdir" bun add --global @shekohex/agent@{{PACKAGE_VERSION}} && rm -rf "$tmpdir"
+tmpdir="$(mktemp -d)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.com' "//npm.pkg.github.com/:_authToken=$(gh auth token)" > "$tmpdir/.npmrc" && XDG_CONFIG_HOME="$tmpdir" bun add --global @shekohex/agent@{{PACKAGE_VERSION}} && rm -rf "$tmpdir"
 ```
 
 ```bash

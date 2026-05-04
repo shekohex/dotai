@@ -132,7 +132,8 @@ function registerStructuredOutputTool(
     execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       state.turnStructuredCaptured = true;
       state.turnStructuredPayload = params;
-      state.pendingStructuredPayload = params;
+      state.capturedStructuredPayload = params;
+      state.structuredCaptureInvalidated = false;
       state.lastTurnStructuredCaptured = true;
       state.lastTurnStructuredPayload = params;
       state.lastTurnStructuredValidationError = undefined;

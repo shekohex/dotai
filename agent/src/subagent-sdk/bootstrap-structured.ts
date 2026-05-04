@@ -24,6 +24,7 @@ export function persistCapturedStructuredOutput(
   state: ChildBootstrapRuntimeState,
   captured: unknown,
 ): void {
+  state.capturedStructuredPayload = captured;
   state.structuredState.captured = captured;
   persistStructuredOutputState(pi, {
     status: "captured",
@@ -118,9 +119,8 @@ export function handleStructuredAgentEnd(
   if (!state.structuredState.enabled || state.structuredState.completed) {
     return "continue";
   }
-  if (state.pendingStructuredPayload !== undefined) {
-    persistCapturedStructuredOutput(pi, state, state.pendingStructuredPayload);
-    state.pendingStructuredPayload = undefined;
+  if (!state.structuredCaptureInvalidated && state.capturedStructuredPayload !== undefined) {
+    persistCapturedStructuredOutput(pi, state, state.capturedStructuredPayload);
     return "shutdown";
   }
   if (state.lastTurnStructuredCaptured && state.lastTurnStructuredPayload !== undefined) {

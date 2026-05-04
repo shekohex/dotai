@@ -82,6 +82,33 @@ function resetLastTurnStructuredState(state: ChildBootstrapRuntimeState): void {
   state.lastTurnStructuredValidationError = undefined;
 }
 
+function getLastAssistantText(
+  branch: Array<{ type: string; message?: { role?: string; content?: unknown } }>,
+): string | undefined {
+  for (let index = branch.length - 1; index >= 0; index -= 1) {
+    const entry = branch[index];
+    if (entry?.type !== "message" || entry.message?.role !== "assistant") {
+      continue;
+    }
+    const content = entry.message.content;
+    if (typeof content === "string") {
+      const text = content.trim();
+      if (text.length > 0) {
+        return text;
+      }
+      continue;
+    }
+    if (isTextContentArray(content)) {
+      const text = extractMessageText(content).trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function registerChildSessionStartHandler(
   pi: ExtensionAPI,
   childState: ChildBootstrapState,
@@ -146,7 +173,7 @@ function registerChildToolResultHandler(
     if (event.toolName !== STRUCTURED_OUTPUT_TOOL_NAME || !event.isError) {
       return;
     }
-    state.pendingStructuredPayload = undefined;
+    state.structuredCaptureInvalidated = true;
     state.turnStructuredValidationError =
       extractToolResultText(event.content) ?? "Structured output tool validation failed.";
   });
@@ -176,10 +203,10 @@ function registerChildTurnHandlers(
     );
     if (state.lastTurnStructuredCaptured && state.lastTurnStructuredPayload !== undefined) {
       persistCapturedStructuredOutput(pi, state, state.lastTurnStructuredPayload);
-      state.pendingStructuredPayload = undefined;
+      state.structuredCaptureInvalidated = false;
       if (childState.persisted === false) {
         writeEphemeralChildSessionOutcome(childState.sessionId, {
-          summary: undefined,
+          summary: getLastAssistantText(ctx.sessionManager.getBranch()),
           structured: state.lastTurnStructuredPayload,
           structuredError: undefined,
           failed: false,
@@ -189,7 +216,7 @@ function registerChildTurnHandlers(
       return;
     }
     if (hasStructuredToolResult) {
-      state.pendingStructuredPayload = undefined;
+      state.structuredCaptureInvalidated = true;
     }
   });
 }

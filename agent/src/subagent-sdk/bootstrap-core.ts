@@ -33,7 +33,8 @@ export type ChildBootstrapRuntimeState = {
   autoExitEnabled: boolean;
   timeoutModeActive: boolean;
   shutdownRequested: boolean;
-  pendingStructuredPayload: unknown;
+  capturedStructuredPayload: unknown;
+  structuredCaptureInvalidated: boolean;
   turnStructuredCaptured: boolean;
   turnStructuredPayload: unknown;
   turnStructuredValidationError: string | undefined;
@@ -198,7 +199,8 @@ export function createChildBootstrapRuntimeState(
     autoExitEnabled: childState.autoExit ?? false,
     timeoutModeActive: isAutoExitTimeoutModeActive(childState.sessionId),
     shutdownRequested: false,
-    pendingStructuredPayload: undefined,
+    capturedStructuredPayload: restoredStructuredState?.structured,
+    structuredCaptureInvalidated: false,
     turnStructuredCaptured: false,
     turnStructuredPayload: undefined,
     turnStructuredValidationError: undefined,

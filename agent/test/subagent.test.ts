@@ -16,6 +16,7 @@ import { Type } from "typebox";
 import stripAnsi from "strip-ansi";
 
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
+import { syncModeTools } from "../src/extensions/modes/tools.ts";
 import { formatAvailableModesXml } from "../src/extensions/available-modes.ts";
 import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes.ts";
 import { TmuxAdapter } from "../src/subagent-sdk/tmux.ts";
@@ -35,6 +36,7 @@ import {
 } from "../src/subagent-sdk/persistence.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
+import { formatSubagentFailureFallback } from "../src/subagent-sdk/runtime/base.ts";
 import {
   SUBAGENT_MESSAGE_ENTRY,
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
@@ -265,6 +267,17 @@ timedTest("resolveModeTools supports explicit allow and deny rules", () => {
     ["read", "bash", "subagent", "session_query"],
   );
   expect(resolved).toEqual(["read", "session_query"]);
+});
+
+timedTest("structured child failure fallback mentions StructuredOutput tool", () => {
+  expect(
+    formatSubagentFailureFallback({
+      outputFormat: {
+        type: "json_schema",
+        schema: Type.Object({ answer: Type.String() }),
+      },
+    }),
+  ).toMatch(/StructuredOutput tool/i);
 });
 
 timedTest("resolveSubagentMode loads mode config from the child cwd", async () => {
@@ -511,6 +524,58 @@ timedTest("child bootstrap installs when subagent extension is disabled", async 
     expect(fakePi.registeredTools.has("StructuredOutput")).toBeTruthy();
     expect(fakePi.registeredTools.has("subagent")).toBe(false);
     expect((fakePi.handlers.get("agent_end") ?? []).length > 0).toBeTruthy();
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("modes sync preserves StructuredOutput for structured child sessions", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-modes-"));
+  const sessionPath = path.join(cwd, "child.jsonl");
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "commit",
+    prompt: "Return structured output",
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    handoff: false,
+    tools: ["read", "bash"],
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      retryCount: 3,
+    },
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    fakePi.allTools = [
+      { name: "read" },
+      { name: "bash" },
+      { name: "subagent" },
+      { name: "session_query" },
+      { name: "StructuredOutput" },
+    ];
+    const ctx = createFakeContext({ cwd, sessionId: "child-session-id", sessionFile: sessionPath });
+
+    syncModeTools(fakePi as unknown as ExtensionAPI, ctx, { tools: ["read", "bash"] });
+
+    expect(fakePi.activeTools).toContain("StructuredOutput");
   } finally {
     if (previousChildState === undefined) {
       delete process.env.PI_SUBAGENT_CHILD_STATE;

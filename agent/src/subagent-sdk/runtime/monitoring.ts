@@ -10,7 +10,7 @@ import {
   readChildSessionStatusDetails,
   SUBAGENT_PARENT_INPUT_GRACE_MS,
 } from "../persistence.js";
-import { formatStructuredOutputError } from "./base.js";
+import { formatStructuredOutputError, formatSubagentFailureFallback } from "./base.js";
 import { SubagentRuntimeMessaging } from "./messaging.js";
 
 const SUBAGENT_POLL_INTERVAL_MS = 250;
@@ -170,7 +170,7 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
     const messageText =
       terminal.status === "completed"
         ? `Subagent ${terminal.name} (${terminal.sessionId}) completed.\n\n${terminal.summary ?? "No summary available."}`
-        : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? terminal.summary ?? "No summary available."}`;
+        : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? formatSubagentFailureFallback(terminal)}`;
 
     this.hooks.emitStatusMessage({ content: messageText, triggerTurn: true });
   }

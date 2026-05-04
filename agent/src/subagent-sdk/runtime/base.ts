@@ -52,6 +52,19 @@ export function formatStructuredOutputError(
   return `${error.message} (code: ${error.code}, attempts: ${error.attempts}, retryCount: ${error.retryCount})`;
 }
 
+export function formatSubagentFailureFallback(state: {
+  summary?: string;
+  outputFormat?: RuntimeSubagent["outputFormat"];
+}): string {
+  if (state.summary !== undefined && state.summary.length > 0) {
+    return state.summary;
+  }
+  if (state.outputFormat?.type === "json_schema") {
+    return "Structured output missing. Child likely could not call StructuredOutput tool before exit.";
+  }
+  return "No summary available.";
+}
+
 export type ResumeExecutionOptions = {
   progressAction?: "message" | "start";
   errorAction?: "resume" | "message";

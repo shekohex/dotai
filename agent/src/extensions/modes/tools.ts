@@ -1,6 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ModeSpec } from "../../mode-utils.js";
 import { shouldUsePatch } from "../patch.js";
+import { readChildState } from "../../subagent-sdk/launch.js";
+
+const STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput";
 
 function compareToolNames(left: string, right: string): number {
   return left.localeCompare(right);
@@ -89,6 +92,15 @@ export function syncModeTools(
   const availableToolNames = getAvailableToolNames(pi);
   const defaultToolNames = getDefaultToolNames(pi, ctx, availableToolNames);
   const nextTools = resolveModeToolNames(spec?.tools, defaultToolNames, availableToolNames);
+  const childState = readChildState();
+  if (
+    childState?.outputFormat?.type === "json_schema" &&
+    availableToolNames.includes(STRUCTURED_OUTPUT_TOOL_NAME) &&
+    !nextTools.includes(STRUCTURED_OUTPUT_TOOL_NAME)
+  ) {
+    nextTools.push(STRUCTURED_OUTPUT_TOOL_NAME);
+    nextTools.sort(compareToolNames);
+  }
   const activeTools = pi.getActiveTools().slice().toSorted(compareToolNames);
 
   if (!sameToolSet(activeTools, nextTools)) {

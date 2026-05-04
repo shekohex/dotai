@@ -36,14 +36,17 @@ function toStructuredOutputError(
   if (state.status === "failed") {
     return {
       code: "aborted",
-      message: state.summary ?? "Subagent execution failed.",
+      message:
+        state.summary ??
+        "Subagent execution failed before returning structured output. StructuredOutput tool may have been unavailable or not called.",
       retryCount,
       attempts: retryCount,
     };
   }
   return {
     code: "missing_tool_call",
-    message: "Subagent completed without structured output.",
+    message:
+      "Subagent completed without structured output. StructuredOutput tool may have been unavailable or not called.",
     retryCount,
     attempts: retryCount,
   };

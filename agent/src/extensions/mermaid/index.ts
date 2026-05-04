@@ -60,7 +60,7 @@ function renderMermaidBodyLines(
     lines.push(truncateToWidth(label, contentWidth));
   }
   for (const line of visibleLines) {
-    lines.push(clipAsciiLine(line));
+    lines.push(theme.fg("customMessageText", clipAsciiLine(line)));
   }
 
   if (hasOverflow && !isExpanded) {

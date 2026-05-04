@@ -105,6 +105,7 @@ function renderAsciiVariant(block: string, diagramHash: string, preset: AsciiPre
   }
 
   const ascii = renderMermaidASCII(block, {
+    colorMode: "none",
     paddingX: preset.paddingX,
     boxBorderPadding: preset.boxBorderPadding,
   });

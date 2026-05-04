@@ -2867,6 +2867,7 @@ timedTest("mermaid command still emits a standalone preview message", async () =
 
     expect(customMermaidMessages.length).toBe(1);
     expect(customMermaidMessages[0]?.details?.source ?? "").toMatch(/sequenceDiagram/);
+    expect(customMermaidMessages[0]?.details?.ascii ?? "").not.toMatch(/\x1b\[/);
   } finally {
     session?.dispose();
   }

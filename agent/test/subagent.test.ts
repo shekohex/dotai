@@ -843,6 +843,7 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
       ctx,
     );
     expect(structuredResult.terminate).toBe(true);
+    expect(shutdownCount).toBe(1);
 
     await emitHandlers(
       fakePi,
@@ -959,6 +960,7 @@ timedTest(
         ctx,
       );
       expect(structuredResult.terminate).toBe(true);
+      expect(shutdownCount).toBe(1);
 
       await emitHandlers(
         fakePi,

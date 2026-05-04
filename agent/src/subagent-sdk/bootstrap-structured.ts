@@ -19,7 +19,7 @@ function sendUserMessageSafely(pi: ExtensionAPI, prompt: string): void {
   }
 }
 
-function persistCapturedStructuredOutput(
+export function persistCapturedStructuredOutput(
   pi: ExtensionAPI,
   state: ChildBootstrapRuntimeState,
   captured: unknown,

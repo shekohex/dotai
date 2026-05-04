@@ -33,6 +33,14 @@ function shutdownContextSafely(ctx: ExtensionContext): void {
   }
 }
 
+function requestShutdown(state: ChildBootstrapRuntimeState, ctx: ExtensionContext): void {
+  if (state.shutdownRequested) {
+    return;
+  }
+  state.shutdownRequested = true;
+  shutdownContextSafely(ctx);
+}
+
 function cancelIdleShutdown(state: ChildBootstrapRuntimeState): void {
   if (!state.pendingIdleShutdown) {
     return;
@@ -48,7 +56,7 @@ function scheduleIdleShutdown(
 ): void {
   cancelIdleShutdown(state);
   if (!state.timeoutModeActive) {
-    shutdownContextSafely(ctx);
+    requestShutdown(state, ctx);
     return;
   }
   state.pendingIdleShutdown = setTimeout(() => {
@@ -56,7 +64,7 @@ function scheduleIdleShutdown(
     if (!state.autoExitEnabled || !isChildSession(currentChildState, ctx)) {
       return;
     }
-    shutdownContextSafely(ctx);
+    requestShutdown(state, ctx);
   }, currentChildState.autoExitTimeoutMs ?? 30_000);
   state.pendingIdleShutdown.unref?.();
 }
@@ -178,7 +186,7 @@ function registerChildAgentEndHandler(
       );
     }
     if (result === "shutdown") {
-      shutdownContextSafely(ctx);
+      requestShutdown(state, ctx);
       return;
     }
     if (result === "retry") {

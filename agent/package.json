@@ -1,11 +1,19 @@
 {
   "name": "@shekohex/agent",
   "version": "0.72.1",
-  "private": true,
+  "private": false,
+  "homepage": "https://github.com/shekohex/dotai#readme",
+  "bugs": {
+    "url": "https://github.com/shekohex/dotai/issues"
+  },
   "author": {
     "name": "Shady Khalifa",
     "email": "dev+npm@shadykhalifa.me",
     "url": "https://shadykhalifa.me"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shekohex/dotai.git"
   },
   "bin": {
     "pi": "./bin/pi.js"
@@ -17,6 +25,10 @@
     "scripts"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint -f stylish",

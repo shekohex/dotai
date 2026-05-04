@@ -1,0 +1,345 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create, for example v0.72.1
+        required: true
+        type: string
+      target:
+        description: Git ref to release from
+        required: false
+        default: main
+        type: string
+      prerelease:
+        description: Mark created release as prerelease
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.event.release.tag_name || github.event.workflow_run.head_branch || inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  create_preview_release:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.preview_version.outputs.value }}
+      release_tag: preview
+      release_ref: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Compute preview package version
+        id: preview_version
+        shell: bash
+        run: |
+          BASE_VERSION="$(node -p \"require('./package.json').version\")"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          echo "value=${BASE_VERSION}-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Render preview release notes
+        shell: bash
+        run: |
+          sed "s/{{PACKAGE_VERSION}}/${{ steps.preview_version.outputs.value }}/g" \
+            .github/release-notes/preview.md > /tmp/preview-release-notes.md
+
+      - name: Upsert preview release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view preview >/dev/null 2>&1; then
+            gh release edit preview \
+              --title "Preview" \
+              --target "$(git rev-parse HEAD)" \
+              --prerelease \
+              --notes-file /tmp/preview-release-notes.md
+          else
+            gh release create preview \
+              --title "Preview" \
+              --target "$(git rev-parse HEAD)" \
+              --prerelease \
+              --notes-file /tmp/preview-release-notes.md
+          fi
+
+  create_manual_release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.release_version.outputs.value }}
+      release_tag: ${{ inputs.tag }}
+      release_ref: ${{ inputs.target }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target }}
+
+      - name: Compute release package version
+        id: release_version
+        shell: bash
+        run: |
+          RELEASE_TAG='${{ inputs.tag }}'
+          echo "value=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Render manual release notes
+        shell: bash
+        run: |
+          sed \
+            -e "s/{{PACKAGE_VERSION}}/${{ steps.release_version.outputs.value }}/g" \
+            -e 's/{{CHANGELOG_BODY}}/Manual release./g' \
+            .github/release-notes/release.md > /tmp/release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          PRERELEASE_FLAG=''
+          if [[ '${{ inputs.prerelease }}' == 'true' ]]; then
+            PRERELEASE_FLAG='--prerelease'
+          fi
+
+          gh release create '${{ inputs.tag }}' \
+            --target '${{ inputs.target }}' \
+            --title '${{ inputs.tag }}' \
+            --notes-file /tmp/release-notes.md \
+            ${PRERELEASE_FLAG}
+
+  update_release_notes:
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Render release notes
+        shell: bash
+        env:
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          CHANGELOG_BODY="$RELEASE_BODY"
+          if [[ -z "$CHANGELOG_BODY" ]]; then
+            CHANGELOG_BODY='Release published.'
+          fi
+          export CHANGELOG_BODY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          template = Path('.github/release-notes/release.md').read_text()
+          package_version = os.environ['GITHUB_REF_NAME'].removeprefix('v')
+          changelog_body = os.environ['CHANGELOG_BODY']
+          rendered = template.replace('{{PACKAGE_VERSION}}', package_version).replace('{{CHANGELOG_BODY}}', changelog_body)
+          Path('/tmp/release-notes.md').write_text(rendered)
+          PY
+
+      - name: Update GitHub release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit '${{ github.event.release.tag_name }}' --notes-file /tmp/release-notes.md
+
+  wait_for_release_ci:
+    needs:
+      - update_release_notes
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for CI on release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          RELEASE_SHA="$(gh api "repos/${REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+          if [[ -z "$RELEASE_SHA" ]]; then
+            echo "Failed to resolve tag SHA for ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          if gh api "repos/${REPOSITORY}/git/tags/${RELEASE_SHA}" >/dev/null 2>&1; then
+            RELEASE_SHA="$(gh api "repos/${REPOSITORY}/git/tags/${RELEASE_SHA}" --jq '.object.sha')"
+          fi
+
+          echo "Waiting for CI on commit ${RELEASE_SHA}"
+
+          for attempt in $(seq 1 60); do
+            RUNS_JSON="$(gh api "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RELEASE_SHA}&event=push&per_page=10")"
+            RUN_COUNT="$(jq '.workflow_runs | length' <<<"$RUNS_JSON")"
+
+            if [[ "$RUN_COUNT" -gt 0 ]]; then
+              CONCLUSION="$(jq -r '.workflow_runs[0].conclusion' <<<"$RUNS_JSON")"
+              STATUS="$(jq -r '.workflow_runs[0].status' <<<"$RUNS_JSON")"
+
+              if [[ "$STATUS" == 'completed' ]]; then
+                if [[ "$CONCLUSION" == 'success' ]]; then
+                  echo "CI succeeded for ${RELEASE_SHA}"
+                  exit 0
+                fi
+
+                echo "CI finished with conclusion ${CONCLUSION} for ${RELEASE_SHA}" >&2
+                exit 1
+              fi
+            fi
+
+            sleep 10
+          done
+
+          echo "Timed out waiting for CI on ${RELEASE_SHA}" >&2
+          exit 1
+
+  publish_preview_package:
+    needs:
+      - create_preview_release
+    if: needs.create_preview_release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create_preview_release.outputs.release_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          cache: npm
+
+      - name: Restore node_modules cache
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Set preview package version
+        run: npm pkg set version='${{ needs.create_preview_release.outputs.package_version }}'
+
+      - name: Refresh lockfile
+        run: npm install
+
+      - name: Publish preview package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish --tag preview --access public --no-git-checks
+
+  publish_release_package:
+    needs:
+      - update_release_notes
+      - wait_for_release_ci
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          cache: npm
+
+      - name: Restore node_modules cache
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Set release package version
+        shell: bash
+        run: |
+          RELEASE_TAG='${{ github.event.release.tag_name }}'
+          npm pkg set version="${RELEASE_TAG#v}"
+
+      - name: Refresh lockfile
+        run: npm install
+
+      - name: Publish release package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish --tag latest --access public --no-git-checks
+
+  publish_manual_release_package:
+    needs:
+      - create_manual_release
+    if: needs.create_manual_release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create_manual_release.outputs.release_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          cache: npm
+
+      - name: Restore node_modules cache
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('package-lock.json', 'package.json') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Set release package version
+        run: npm pkg set version='${{ needs.create_manual_release.outputs.package_version }}'
+
+      - name: Refresh lockfile
+        run: npm install
+
+      - name: Publish release package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish --tag latest --access public --no-git-checks

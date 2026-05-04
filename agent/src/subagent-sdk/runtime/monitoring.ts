@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { isStaleSessionReplacementContextError } from "../../extensions/session-replacement.js";
 import type { RuntimeSubagent } from "../types.js";
 import {
   getParentInjectedInputMarkerPath,
@@ -24,6 +25,19 @@ function pathDirname(inputPath: string): string {
 }
 
 export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging {
+  private hasActiveUiContext(): boolean {
+    try {
+      return this.ctx?.hasUI === true;
+    } catch (error) {
+      if (isStaleSessionReplacementContextError(error)) {
+        this.ctx = undefined;
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
   protected ensurePolling(): void {
     if (this.disposed) {
       return;
@@ -48,7 +62,7 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       return;
     }
 
-    if (this.ctx?.hasUI !== true) {
+    if (!this.hasActiveUiContext()) {
       if (this.widgetTimer) {
         clearInterval(this.widgetTimer);
         this.widgetTimer = undefined;
@@ -178,7 +192,7 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       return;
     }
 
-    if (this.ctx?.hasUI !== true) {
+    if (!this.hasActiveUiContext()) {
       this.ensureWidgetTimer();
       return;
     }

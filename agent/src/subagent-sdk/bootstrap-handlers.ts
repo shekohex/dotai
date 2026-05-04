@@ -177,6 +177,14 @@ function registerChildTurnHandlers(
     if (state.lastTurnStructuredCaptured && state.lastTurnStructuredPayload !== undefined) {
       persistCapturedStructuredOutput(pi, state, state.lastTurnStructuredPayload);
       state.pendingStructuredPayload = undefined;
+      if (childState.persisted === false) {
+        writeEphemeralChildSessionOutcome(childState.sessionId, {
+          summary: undefined,
+          structured: state.lastTurnStructuredPayload,
+          structuredError: undefined,
+          failed: false,
+        });
+      }
       requestShutdown(state, ctx);
       return;
     }

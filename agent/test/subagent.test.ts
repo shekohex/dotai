@@ -1102,6 +1102,95 @@ timedTest(
   },
 );
 
+timedTest(
+  "ephemeral child writes structured outcome on successful turn_end before agent_end",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-ephemeral-success-"));
+    const sessionId = "child-session-id";
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId,
+      parentSessionId: "parent-session-id",
+      name: "worker-one",
+      prompt: "Return structured output",
+      autoExit: true,
+      autoExitTimeoutMs: 30_000,
+      handoff: false,
+      persisted: false,
+      tools: ["read", "bash"],
+      outputFormat: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: { answer: { type: "string" } },
+          required: ["answer"],
+        },
+        retryCount: 3,
+      },
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({ cwd, sessionId, persisted: false, shutdown: () => {} });
+
+      await emitHandlers(
+        fakePi,
+        "before_agent_start",
+        { systemPrompt: "system", prompt: "task" },
+        ctx,
+      );
+      await emitHandlers(fakePi, "turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+
+      const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
+      expect(structuredOutputTool).toBeTruthy();
+      await structuredOutputTool.execute(
+        "structured-tool-call",
+        { answer: "done" },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      await emitHandlers(
+        fakePi,
+        "turn_end",
+        {
+          turnIndex: 1,
+          message: { role: "assistant", content: [], timestamp: Date.now() },
+          toolResults: [
+            {
+              role: "toolResult",
+              toolCallId: "structured-tool-call",
+              toolName: "StructuredOutput",
+              content: [{ type: "text", text: "ok" }],
+              isError: false,
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        ctx,
+      );
+
+      const outcome = await readEphemeralChildSessionOutcomeBySessionId(sessionId);
+      expect(outcome.failed).toBe(false);
+      expect(outcome.structured).toEqual({ answer: "done" });
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(getEphemeralChildOutcomePath(sessionId), { force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
 timedTest("child bootstrap treats retryCount as total allowed turns", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-retry-budget-"));

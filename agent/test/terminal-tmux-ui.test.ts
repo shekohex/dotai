@@ -69,6 +69,9 @@ test("getDefaultTmuxTitle includes session name and cwd basename", () => {
 
 test("session_start handler uses current ctx session manager instead of captured pi", () => {
   process.env.TMUX = "/tmp/tmux-1000/default,123,0";
+  delete process.env.SSH_CONNECTION;
+  delete process.env.SSH_CLIENT;
+  delete process.env.SSH_TTY;
 
   let sessionStartHandler:
     | ((
@@ -104,7 +107,7 @@ test("session_start handler uses current ctx session manager instead of captured
 
   expect(writeFileSyncSpy).toHaveBeenCalledWith(
     "/dev/ttys009",
-    "\u001b]0;π - fresh-session - project-name\u0007",
+    "\u001bPtmux;\u001b\u001b\u001b]0;π - fresh-session - project-name\u0007\u001b\\",
     { encoding: "utf8" },
   );
 });

@@ -1,0 +1,11 @@
+:root {
+  --overlay-bg: rgba(24, 24, 30, 0.95);
+  --error-bg: rgba(204, 102, 102, 0.12);
+
+  --q-color-1: #8abeb7;
+  --q-color-2: #34d399;
+  --q-color-3: #fbbf24;
+  --q-color-4: #f472b6;
+  --q-color-5: #22d3ee;
+  --q-color-6: #a78bfa;
+}

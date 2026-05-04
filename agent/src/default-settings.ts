@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
+import { defaultInterviewSettings } from "./extensions/interview/settings.js";
 import { defineModesFile, ModesFileSchema } from "./mode-utils.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
@@ -17,7 +18,9 @@ const packageJson = Value.Parse(
   JSON.parse(readFileSync(packageJsonFile, { encoding: "utf8" })),
 );
 
-export const defaultSettings = {
+export type DefaultSettings = AgentSettings & { interview: typeof defaultInterviewSettings };
+
+export const defaultSettings: DefaultSettings = {
   defaultProvider: "codex-openai",
   defaultModel: "gpt-5.5",
   hideThinkingBlock: true,
@@ -38,7 +41,8 @@ export const defaultSettings = {
     clearOnShrink: false,
     showTerminalProgress: true,
   },
-} satisfies AgentSettings;
+  interview: defaultInterviewSettings,
+};
 
 export type DefaultModes = Static<typeof ModesFileSchema>;
 

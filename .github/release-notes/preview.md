@@ -1,26 +1,26 @@
 ## Install
 
 ```bash
-NODE_AUTH_TOKEN="$(gh auth token)" npm install --global @shekohex/agent@{{PACKAGE_VERSION}} --registry=https://npm.pkg.github.com
+tmp="$(mktemp)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.com' "//npm.pkg.github.com/:_authToken=$(gh auth token)" > "$tmp" && npm install --global @shekohex/agent@{{PACKAGE_VERSION}} --userconfig "$tmp" && rm "$tmp"
 ```
 
 ```bash
-NODE_AUTH_TOKEN="$(gh auth token)" pnpm add --global @shekohex/agent@{{PACKAGE_VERSION}} --registry=https://npm.pkg.github.com
+tmp="$(mktemp)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.com' "//npm.pkg.github.com/:_authToken=$(gh auth token)" > "$tmp" && NPM_CONFIG_USERCONFIG="$tmp" pnpm add --global @shekohex/agent@{{PACKAGE_VERSION}} && rm "$tmp"
 ```
 
 ```bash
-NODE_AUTH_TOKEN="$(gh auth token)" bun add --global @shekohex/agent@{{PACKAGE_VERSION}} --registry=https://npm.pkg.github.com
+tmpdir="$(mktemp -d)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.com' "//npm.pkg.github.com/:_authToken=$(gh auth token)" > "$tmpdir/.npmrc" && HOME="$tmpdir" bun add --global @shekohex/agent@{{PACKAGE_VERSION}} && rm -rf "$tmpdir"
 ```
 
 ```bash
-NODE_AUTH_TOKEN="$(gh auth token)" yarn global add @shekohex/agent@{{PACKAGE_VERSION}} --registry https://npm.pkg.github.com
+tmp="$(mktemp)" && printf '%s\n%s\n' '@shekohex:registry=https://npm.pkg.github.com' "//npm.pkg.github.com/:_authToken=$(gh auth token)" > "$tmp" && yarn global add @shekohex/agent@{{PACKAGE_VERSION}} --userconfig "$tmp" && rm "$tmp"
 ```
 
 ## Notes
 
 Rolling preview release from latest `main`.
 Version published to GitHub Packages uses commit-scoped prerelease suffix.
-Install requires GitHub auth. `gh auth token` must come from session with `read:packages` scope, or replace it with any token in `NODE_AUTH_TOKEN` that has `read:packages`.
+Install requires GitHub auth. `gh auth token` must come from session with `read:packages` scope. Refresh scopes with `gh auth refresh -s read:packages`, or replace `$(gh auth token)` with any GitHub token that has `read:packages`.
 
 ## Changelog
 

@@ -107,18 +107,14 @@ jobs:
         shell: bash
         run: |
           if gh release view preview >/dev/null 2>&1; then
-            gh release edit preview \
-              --title "Preview" \
-              --target "$(git rev-parse HEAD)" \
-              --prerelease \
-              --notes-file /tmp/preview-release-notes.md
-          else
-            gh release create preview \
-              --title "Preview" \
-              --target "$(git rev-parse HEAD)" \
-              --prerelease \
-              --notes-file /tmp/preview-release-notes.md
+            gh release delete preview --yes --cleanup-tag
           fi
+
+          gh release create preview \
+            --title "Preview" \
+            --target "$(git rev-parse HEAD)" \
+            --prerelease \
+            --notes-file /tmp/preview-release-notes.md
 
   create_manual_release:
     if: github.event_name == 'workflow_dispatch'

@@ -9,11 +9,89 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { Markdown, type MarkdownTheme } from "@mariozechner/pi-tui";
 import { isRecord } from "../utils/unknown-data.js";
 
-const notify = (title: string, body: string): void => {
-  process.stdout.write(`\u001B]777;notify;${title};${body}\u0007`);
+const ESC = "\u001B";
+const BEL = "\u0007";
+const ST = `${ESC}\\`;
+const OSC_CONTROL_CHARACTERS = /\p{Cc}/gu;
+
+export const terminalNotifyRuntime = {
+  execFileSync,
+  writeFileSync,
+};
+
+const sanitizeOscField = (value: string): string =>
+  value.replaceAll(OSC_CONTROL_CHARACTERS, " ").replaceAll(/[;]/g, ":");
+
+export const createOsc777Sequence = (title: string, body: string): string =>
+  `${ESC}]777;notify;${sanitizeOscField(title)};${sanitizeOscField(body)}${BEL}`;
+
+export const createTmuxPassthroughSequence = (sequence: string): string =>
+  `${ESC}Ptmux;${ESC}${sequence.replaceAll(ESC, `${ESC}${ESC}`)}${ST}`;
+
+export const isSshSession = (): boolean =>
+  [process.env.SSH_CONNECTION, process.env.SSH_CLIENT, process.env.SSH_TTY].some(
+    (value) => value !== undefined && value.length > 0,
+  );
+
+const getTmuxTty = (format: "#{pane_tty}" | "#{client_tty}"): string | null => {
+  if (process.env.TMUX === undefined || process.env.TMUX.length === 0) {
+    return null;
+  }
+
+  try {
+    const output = terminalNotifyRuntime.execFileSync("tmux", ["display-message", "-p", format], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const paneTty = output.trim();
+    return paneTty.length > 0 ? paneTty : null;
+  } catch {
+    return null;
+  }
+};
+
+export const getTmuxPaneTty = (): string | null => getTmuxTty("#{pane_tty}");
+
+export const getTmuxClientTty = (): string | null => getTmuxTty("#{client_tty}");
+
+const writeNotification = (targetPath: string, sequence: string): boolean => {
+  try {
+    terminalNotifyRuntime.writeFileSync(targetPath, sequence, { encoding: "utf8" });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const notify = (title: string, body: string): void => {
+  const sequence = createOsc777Sequence(title, body);
+  const paneTty = getTmuxPaneTty();
+
+  if (paneTty !== null) {
+    if (isSshSession()) {
+      const clientTty = getTmuxClientTty();
+      if (clientTty !== null) {
+        if (writeNotification(clientTty, sequence)) {
+          return;
+        }
+
+        if (writeNotification(clientTty, createTmuxPassthroughSequence(sequence))) {
+          return;
+        }
+      }
+    }
+
+    if (writeNotification(paneTty, createTmuxPassthroughSequence(sequence))) {
+      return;
+    }
+  }
+
+  process.stdout.write(sequence);
 };
 
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
@@ -70,7 +148,7 @@ const simpleMarkdown = (text: string, width = 80): string => {
   return markdown.render(width).join("\n");
 };
 
-const formatNotification = (text: string | null): { title: string; body: string } => {
+export const formatNotification = (text: string | null): { title: string; body: string } => {
   const simplified = text !== null && text.length > 0 ? simpleMarkdown(text) : "";
   const normalized = simplified.replaceAll(/\s+/g, " ").trim();
   if (!normalized) {

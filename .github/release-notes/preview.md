@@ -1,19 +1,23 @@
+## Changelog
+
+{{CHANGELOG_BODY}}
+
 ## Install
 
 ```bash
-curl -fSL {{INSTALL_SCRIPT_URL}} | bash -s -- --npm
+curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --npm
 ```
 
 ```bash
-curl -fSL {{INSTALL_SCRIPT_URL}} | bash -s -- --pnpm
+curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --pnpm
 ```
 
 ```bash
-curl -fSL {{INSTALL_SCRIPT_URL}} | bash -s -- --bun
+curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --bun
 ```
 
 ```bash
-curl -fSL {{INSTALL_SCRIPT_URL}} | bash -s -- --yarn
+curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --yarn
 ```
 
 ## Notes
@@ -21,7 +25,3 @@ curl -fSL {{INSTALL_SCRIPT_URL}} | bash -s -- --yarn
 Rolling preview release from latest `main`.
 Version published to GitHub Packages uses commit-scoped prerelease suffix.
 Install requires GitHub auth. Script checks `NODE_AUTH_TOKEN`, `NPM_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then falls back to `gh auth token`. Token must have `read:packages`. Refresh scopes with `gh auth refresh -s read:packages`.
-
-## Changelog
-
-{{CHANGELOG_BODY}}

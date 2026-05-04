@@ -1,3 +1,4 @@
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
@@ -8,6 +9,7 @@ import {
   emitTmuxTitle,
   getDefaultTmuxTitle,
   isTmuxSession,
+  default as terminalTmuxUiExtension,
   writeTmuxUiSequence,
 } from "../src/extensions/terminal-tmux-ui.js";
 import { terminalNotifyRuntime } from "../src/extensions/terminal-notify.js";
@@ -63,6 +65,48 @@ test("getDefaultTmuxTitle includes session name and cwd basename", () => {
   const title = getDefaultTmuxTitle({ getSessionName: () => "feature" }, "/tmp/project-name");
 
   expect(title).toBe("π - feature - project-name");
+});
+
+test("session_start handler uses current ctx session manager instead of captured pi", () => {
+  process.env.TMUX = "/tmp/tmux-1000/default,123,0";
+
+  let sessionStartHandler:
+    | ((
+        event: unknown,
+        ctx: { cwd: string; sessionManager: { getSessionName(): string | undefined } },
+      ) => void)
+    | undefined;
+  const extensionApi = {
+    getSessionName: () => {
+      throw new Error("stale pi");
+    },
+    on: (eventName: string, handler: typeof sessionStartHandler) => {
+      if (eventName === "session_start") {
+        sessionStartHandler = handler;
+      }
+    },
+  } as unknown as ExtensionAPI;
+  vi.spyOn(terminalNotifyRuntime, "execFileSync").mockReturnValue("/dev/ttys009\n");
+  const writeFileSyncSpy = vi
+    .spyOn(terminalNotifyRuntime, "writeFileSync")
+    .mockImplementation(() => undefined);
+
+  terminalTmuxUiExtension(extensionApi);
+
+  expect(sessionStartHandler).toBeDefined();
+  sessionStartHandler?.(
+    {},
+    {
+      cwd: "/tmp/project-name",
+      sessionManager: { getSessionName: () => "fresh-session" },
+    },
+  );
+
+  expect(writeFileSyncSpy).toHaveBeenCalledWith(
+    "/dev/ttys009",
+    "\u001b]0;π - fresh-session - project-name\u0007",
+    { encoding: "utf8" },
+  );
 });
 
 test("emitTmuxTitle writes direct OSC title to client tty over SSH", () => {

@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import {
   createTmuxPassthroughSequence,
   getTmuxClientTty,
@@ -66,11 +66,10 @@ export const emitTmuxProgress = (active: boolean): boolean =>
     active ? TERMINAL_PROGRESS_ACTIVE_SEQUENCE : TERMINAL_PROGRESS_CLEAR_SEQUENCE,
   );
 
-export const getDefaultTmuxTitle = (
-  pi: Pick<ExtensionAPI, "getSessionName">,
-  cwd: string,
-): string => {
-  const sessionName = pi.getSessionName();
+type SessionNameReader = Pick<ExtensionAPI, "getSessionName"> | ExtensionContext["sessionManager"];
+
+export const getDefaultTmuxTitle = (sessionNameReader: SessionNameReader, cwd: string): string => {
+  const sessionName = sessionNameReader.getSessionName();
   const cwdBasename = path.basename(cwd);
   return sessionName !== undefined && sessionName.length > 0
     ? `π - ${sessionName} - ${cwdBasename}`
@@ -78,20 +77,20 @@ export const getDefaultTmuxTitle = (
 };
 
 export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
-  const updateTitle = (cwd: string): void => {
+  const updateTitle = (ctx: ExtensionContext): void => {
     if (!isTmuxSession()) {
       return;
     }
 
-    emitTmuxTitle(getDefaultTmuxTitle(pi, cwd));
+    emitTmuxTitle(getDefaultTmuxTitle(ctx.sessionManager, ctx.cwd));
   };
 
   pi.on("session_start", (_event, ctx) => {
-    updateTitle(ctx.cwd);
+    updateTitle(ctx);
   });
 
   pi.on("before_agent_start", (_event, ctx) => {
-    updateTitle(ctx.cwd);
+    updateTitle(ctx);
   });
 
   pi.on("agent_start", (_event, ctx) => {
@@ -99,7 +98,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    updateTitle(ctx.cwd);
+    updateTitle(ctx);
     emitTmuxProgress(true);
   });
 
@@ -109,7 +108,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
     }
 
     emitTmuxProgress(false);
-    updateTitle(ctx.cwd);
+    updateTitle(ctx);
   });
 
   pi.on("compaction_start", (_event, ctx) => {
@@ -117,7 +116,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    updateTitle(ctx.cwd);
+    updateTitle(ctx);
     emitTmuxProgress(true);
   });
 
@@ -127,7 +126,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
     }
 
     emitTmuxProgress(false);
-    updateTitle(ctx.cwd);
+    updateTitle(ctx);
   });
 
   pi.on("session_shutdown", () => {

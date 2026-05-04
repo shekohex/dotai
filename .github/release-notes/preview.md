@@ -20,3 +20,7 @@ yarn global add @shekohex/agent@{{PACKAGE_VERSION}} --registry https://npm.pkg.g
 
 Rolling preview release from latest `main`.
 Version published to GitHub Packages uses commit-scoped prerelease suffix.
+
+## Changelog
+
+{{CHANGELOG_BODY}}

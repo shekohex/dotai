@@ -70,10 +70,35 @@ jobs:
           echo "value=${BASE_VERSION}-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Render preview release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
-          sed "s/{{PACKAGE_VERSION}}/${{ steps.preview_version.outputs.value }}/g" \
-            .github/release-notes/preview.md > /tmp/preview-release-notes.md
+          PREVIOUS_TARGET=''
+          if gh api "repos/${REPOSITORY}/releases/tags/preview" >/dev/null 2>&1; then
+            PREVIOUS_TARGET="$(gh api "repos/${REPOSITORY}/releases/tags/preview" --jq '.target_commitish')"
+          fi
+
+          CHANGELOG_BODY='- Rolling preview initialized.'
+          if [[ -n "$PREVIOUS_TARGET" ]] && git rev-parse --verify "$PREVIOUS_TARGET" >/dev/null 2>&1; then
+            CHANGELOG_BODY="$(git log --no-merges --pretty='- %s (%h)' "${PREVIOUS_TARGET}..HEAD")"
+          fi
+
+          if [[ -z "$CHANGELOG_BODY" ]]; then
+            CHANGELOG_BODY="$(git log --no-merges -20 --pretty='- %s (%h)')"
+          fi
+
+          export CHANGELOG_BODY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          template = Path('.github/release-notes/preview.md').read_text()
+          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.preview_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY'])
+          Path('/tmp/preview-release-notes.md').write_text(rendered)
+          PY
 
       - name: Upsert preview release notes
         env:
@@ -115,12 +140,30 @@ jobs:
           echo "value=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Render manual release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
-          sed \
-            -e "s/{{PACKAGE_VERSION}}/${{ steps.release_version.outputs.value }}/g" \
-            -e 's/{{CHANGELOG_BODY}}/Manual release./g' \
-            .github/release-notes/release.md > /tmp/release-notes.md
+          CHANGELOG_BODY="$(gh api "repos/${REPOSITORY}/releases/generate-notes" \
+            -f tag_name='${{ inputs.tag }}' \
+            -f target_commitish='${{ inputs.target }}' \
+            --jq '.body')"
+
+          if [[ -z "$CHANGELOG_BODY" ]]; then
+            CHANGELOG_BODY='Manual release.'
+          fi
+
+          export CHANGELOG_BODY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          template = Path('.github/release-notes/release.md').read_text()
+          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.release_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY'])
+          Path('/tmp/release-notes.md').write_text(rendered)
+          PY
 
       - name: Create GitHub release
         env:

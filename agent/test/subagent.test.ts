@@ -587,6 +587,79 @@ timedTest("modes sync preserves StructuredOutput for structured child sessions",
 });
 
 timedTest(
+  "ephemeral child sessions match child bootstrap handlers without shared sessionId",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId: "expected-child-session-id",
+      parentSessionId: "parent-session-id",
+      name: "worker-one",
+      prompt: "Return structured output",
+      autoExit: true,
+      autoExitTimeoutMs: 30_000,
+      handoff: false,
+      persisted: false,
+      tools: ["read", "bash"],
+      outputFormat: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: { answer: { type: "string" } },
+          required: ["answer"],
+        },
+        retryCount: 3,
+      },
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd: process.cwd(),
+        sessionId: "different-ephemeral-session-id",
+        persisted: false,
+        shutdown: () => {},
+      });
+
+      await emitHandlers(
+        fakePi,
+        "before_agent_start",
+        { systemPrompt: "system", prompt: "task" },
+        ctx,
+      );
+
+      const structuredOutputTool = fakePi.registeredTools.get("StructuredOutput");
+      expect(structuredOutputTool).toBeTruthy();
+      await structuredOutputTool.execute(
+        "structured-tool-call",
+        { answer: "done" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      await emitHandlers(fakePi, "session_shutdown", {}, ctx);
+
+      const outcome = await readEphemeralChildSessionOutcomeBySessionId(
+        "expected-child-session-id",
+      );
+      expect(outcome.failed).toBe(false);
+      expect(outcome.structured).toEqual({ answer: "done" });
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(getEphemeralChildOutcomePath("expected-child-session-id"), { force: true });
+    }
+  },
+);
+
+timedTest(
   "child bootstrap auto-exits immediately on idle with no manual terminal input",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;

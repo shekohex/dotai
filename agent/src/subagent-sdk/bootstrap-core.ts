@@ -170,6 +170,9 @@ export function isChildSession(
   if (!childState) {
     return false;
   }
+  if (childState.persisted === false) {
+    return true;
+  }
   return (
     ctx.sessionManager.getSessionId() === childState.sessionId ||
     (childState.sessionPath !== undefined &&

@@ -146,6 +146,7 @@ function registerChildToolResultHandler(
     if (event.toolName !== STRUCTURED_OUTPUT_TOOL_NAME || !event.isError) {
       return;
     }
+    state.pendingStructuredPayload = undefined;
     state.turnStructuredValidationError =
       extractToolResultText(event.content) ?? "Structured output tool validation failed.";
   });
@@ -170,9 +171,17 @@ function registerChildTurnHandlers(
       return;
     }
     updateStructuredTurnStateFromResults(event.toolResults, state, STRUCTURED_OUTPUT_TOOL_NAME);
+    const hasStructuredToolResult = event.toolResults.some(
+      (toolResult) => toolResult.toolName === STRUCTURED_OUTPUT_TOOL_NAME,
+    );
     if (state.lastTurnStructuredCaptured && state.lastTurnStructuredPayload !== undefined) {
       persistCapturedStructuredOutput(pi, state, state.lastTurnStructuredPayload);
+      state.pendingStructuredPayload = undefined;
       requestShutdown(state, ctx);
+      return;
+    }
+    if (hasStructuredToolResult) {
+      state.pendingStructuredPayload = undefined;
     }
   });
 }

@@ -118,6 +118,11 @@ export function handleStructuredAgentEnd(
   if (!state.structuredState.enabled || state.structuredState.completed) {
     return "continue";
   }
+  if (state.pendingStructuredPayload !== undefined) {
+    persistCapturedStructuredOutput(pi, state, state.pendingStructuredPayload);
+    state.pendingStructuredPayload = undefined;
+    return "shutdown";
+  }
   if (state.lastTurnStructuredCaptured && state.lastTurnStructuredPayload !== undefined) {
     persistCapturedStructuredOutput(pi, state, state.lastTurnStructuredPayload);
     return "shutdown";

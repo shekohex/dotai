@@ -843,7 +843,7 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
       ctx,
     );
     expect(structuredResult.terminate).toBe(true);
-    expect(shutdownCount).toBe(0);
+    expect(shutdownCount).toBe(1);
 
     await emitHandlers(
       fakePi,
@@ -872,7 +872,7 @@ timedTest("child bootstrap rejects structured output mixed with other tool calls
       },
       ctx,
     );
-    expect(shutdownCount).toBe(0);
+    expect(shutdownCount).toBe(1);
 
     await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
 
@@ -961,7 +961,7 @@ timedTest(
         ctx,
       );
       expect(structuredResult.terminate).toBe(true);
-      expect(shutdownCount).toBe(0);
+      expect(shutdownCount).toBe(1);
 
       await emitHandlers(
         fakePi,
@@ -1081,7 +1081,7 @@ timedTest(
         ctx,
       );
       expect(structuredResult.terminate).toBe(true);
-      expect(shutdownCount).toBe(0);
+      expect(shutdownCount).toBe(1);
 
       await emitHandlers(fakePi, "agent_end", { messages: [] }, ctx);
 

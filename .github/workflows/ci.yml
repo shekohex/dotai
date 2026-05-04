@@ -38,7 +38,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: npm install
 
       - name: Typecheck
         run: npm run typecheck

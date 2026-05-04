@@ -250,7 +250,7 @@ jobs:
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         working-directory: agent
-        run: npm ci
+        run: npm install
 
       - name: Set preview package version
         working-directory: agent
@@ -296,7 +296,7 @@ jobs:
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         working-directory: agent
-        run: npm ci
+        run: npm install
 
       - name: Set release package version
         shell: bash
@@ -344,7 +344,7 @@ jobs:
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         working-directory: agent
-        run: npm ci
+        run: npm install
 
       - name: Set release package version
         working-directory: agent

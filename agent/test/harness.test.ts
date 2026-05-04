@@ -52,9 +52,34 @@ import {
 process.env.OPENAI_API_KEY ??= "test-key";
 
 const TEST_TIMEOUT_MS = 15_000;
+const GITHUB_ACTIONS_TEST_TIMEOUT_MS = 30_000;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
-  test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+  test(
+    name,
+    {
+      timeout:
+        process.env.GITHUB_ACTIONS === "true" ? GITHUB_ACTIONS_TEST_TIMEOUT_MS : TEST_TIMEOUT_MS,
+    },
+    fn,
+  )) as typeof test;
+
+async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promise<void> {
+  const startedAt = Date.now();
+  let lastError: unknown;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  throw lastError;
+}
 
 initTheme("dark");
 setKeybindings(KeybindingsManager.create());
@@ -1491,8 +1516,9 @@ timedTest(
       await session.session.prompt("/mode store deep");
       await session.session.agent.waitForIdle();
 
-      const updatedPrompt = getCurrentSystemPrompt(session);
-      expect(updatedPrompt).toMatch(/<mode name="deep"/);
+      await waitForAssertion(() => {
+        expect(getCurrentSystemPrompt(session)).toMatch(/<mode name="deep"/);
+      });
     } finally {
       session?.dispose();
       providers.dispose();

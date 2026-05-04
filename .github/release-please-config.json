@@ -6,7 +6,7 @@
     "agent": {
       "release-type": "node",
       "package-name": "@shekohex/agent",
-      "changelog-path": "agent/CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }

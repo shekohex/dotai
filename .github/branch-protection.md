@@ -20,3 +20,4 @@ Recommended GitHub repository settings for `main`:
 1. Preview publish waits for successful `CI` workflow completion on `main` push.
 2. Stable publish waits for successful `verify` run on tagged commit without rerunning CI.
 3. `release-please` manages changelog and release PRs from conventional commits.
+4. If `release-please` cannot open PRs with `github.token`, set repo action permission to allow pull request creation or define `RELEASE_PLEASE_TOKEN` secret with repo-scoped PAT.

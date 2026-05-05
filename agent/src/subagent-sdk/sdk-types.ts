@@ -37,6 +37,12 @@ export type StartSubagentSpawnValue = {
   prompt: string;
 };
 
+export type StartSubagentStartValue = {
+  handle: SubagentHandle;
+  prompt: string;
+  state: RuntimeSubagent;
+};
+
 export type StartSubagentSpawnStructuredValue<TSchemaValue extends TSchemaBase> = {
   handle: SubagentHandle;
   prompt: string;
@@ -55,6 +61,18 @@ export type StartSubagentSpawnOutcomeJsonSchema<TSchemaValue extends TSchemaBase
 
 export interface SubagentSDK {
   restore(ctx: ExtensionContext): Promise<SubagentHandle[]>;
+  start(
+    params: StartSubagentParamsText,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback,
+    signal?: AbortSignal,
+  ): Promise<StartSubagentStartValue>;
+  start<TSchemaValue extends TSchemaBase>(
+    params: StartSubagentParamsJsonSchema<TSchemaValue>,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback,
+    signal?: AbortSignal,
+  ): Promise<StartSubagentStartValue>;
   spawn(
     params: StartSubagentParamsText,
     ctx: ExtensionContext,

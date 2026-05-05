@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Value } from "typebox/value";
@@ -66,23 +66,29 @@ function createValidStructuredSummary() {
   };
 }
 
-timedTest("commit command spawns commiter mode with structured output", async () => {
+function createHandleThatCompletes(structured = createValidStructuredSummary()) {
+  return {
+    sessionId: "session-id",
+    waitForCompletion: async () => ({
+      status: "completed",
+      structured,
+    }),
+  };
+}
+
+timedTest("commit command starts commiter mode with structured output", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
-  const spawnCalls: Array<{ params: any; ctx: any }> = [];
+  const startCalls: Array<{ params: any; ctx: any }> = [];
 
   createCommitExtension({
     sdkFactory: () => ({
-      async spawn(params, ctx) {
-        spawnCalls.push({ params, ctx });
+      async start(params, ctx) {
+        startCalls.push({ params, ctx });
         return {
-          ok: true as const,
-          value: {
-            handle: { sessionId: "session-id" },
-            prompt: "prompt",
-            state: {} as any,
-            structured: createValidStructuredSummary(),
-          },
+          handle: createHandleThatCompletes(),
+          prompt: "prompt",
+          state: {} as any,
         };
       },
       dispose() {},
@@ -94,13 +100,16 @@ timedTest("commit command spawns commiter mode with structured output", async ()
 
   await command.handler("include docs too", createCommandContext(notifications));
 
-  expect(spawnCalls.length).toBe(1);
-  expect(spawnCalls[0]?.params.mode).toBe("commiter");
-  expect(spawnCalls[0]?.params.persisted).toBe(false);
-  expect(spawnCalls[0]?.params.completion).toBe(false);
-  expect(spawnCalls[0]?.params.outputFormat?.type).toBe("json_schema");
-  expect(spawnCalls[0]?.params.task ?? "").toMatch(/Additional user details:\ninclude docs too/);
-  expect(fakePi.sentMessages.length).toBe(1);
+  expect(startCalls.length).toBe(1);
+  expect(startCalls[0]?.params.mode).toBe("commiter");
+  expect(startCalls[0]?.params.persisted).toBe(false);
+  expect(startCalls[0]?.params.completion).toBe(false);
+  expect(startCalls[0]?.params.outputFormat?.type).toBe("json_schema");
+  expect(startCalls[0]?.params.task ?? "").toMatch(/Additional user details:\ninclude docs too/);
+
+  await vi.waitFor(() => {
+    expect(fakePi.sentMessages.length).toBe(1);
+  });
   expect(
     (fakePi.sentMessages[0]?.options as { triggerTurn?: boolean } | undefined)?.triggerTurn,
   ).toBe(false);
@@ -113,13 +122,13 @@ timedTest("commit command stops when cwd is not a git repository", async () => {
   const fakePi = new FakePi();
   fakePi.gitAvailable = false;
   const notifications: Array<{ message: string; level: string }> = [];
-  let spawnCalled = false;
+  let startCalled = false;
 
   createCommitExtension({
     sdkFactory: () => ({
-      async spawn() {
-        spawnCalled = true;
-        throw new Error("unexpected spawn");
+      async start() {
+        startCalled = true;
+        throw new Error("unexpected start");
       },
       dispose() {},
     }),
@@ -130,31 +139,35 @@ timedTest("commit command stops when cwd is not a git repository", async () => {
 
   await command.handler("", createCommandContext(notifications));
 
-  expect(spawnCalled).toBe(false);
+  expect(startCalled).toBe(false);
   expect(notifications.at(-1)).toEqual({ message: "Not a git repository", level: "error" });
 });
 
-timedTest("commit command prevents concurrent runs", async () => {
+timedTest("commit command prevents concurrent runs while child still active", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
-  let resolveSpawn: (() => void) | undefined;
-  let spawnCalls = 0;
+  let resolveCompletion: (() => void) | undefined;
+  let startCalls = 0;
 
   createCommitExtension({
     sdkFactory: () => ({
-      async spawn() {
-        spawnCalls += 1;
-        await new Promise<void>((resolve) => {
-          resolveSpawn = resolve;
-        });
+      async start() {
+        startCalls += 1;
         return {
-          ok: true as const,
-          value: {
-            handle: { sessionId: "session-id" },
-            prompt: "prompt",
-            state: {} as any,
-            structured: createValidStructuredSummary(),
+          handle: {
+            sessionId: "session-id",
+            waitForCompletion: async () => {
+              await new Promise<void>((resolve) => {
+                resolveCompletion = resolve;
+              });
+              return {
+                status: "completed",
+                structured: createValidStructuredSummary(),
+              };
+            },
           },
+          prompt: "prompt",
+          state: {} as any,
         };
       },
       dispose() {},
@@ -164,22 +177,24 @@ timedTest("commit command prevents concurrent runs", async () => {
   const command = fakePi.commands.get("commit");
   expect(command).toBeTruthy();
 
-  const first = command.handler("", createCommandContext(notifications));
-  while (!resolveSpawn) {
+  await expect(command.handler("", createCommandContext(notifications))).resolves.toBeUndefined();
+  while (!resolveCompletion) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  const second = command.handler("", createCommandContext(notifications));
-  await second;
 
-  expect(spawnCalls).toBe(1);
+  await command.handler("", createCommandContext(notifications));
+
+  expect(startCalls).toBe(1);
   expect(
     notifications.some(
       (entry) => entry.message === "A commit job is already running." && entry.level === "warning",
     ),
-  ).toBeTruthy();
+  ).toBe(true);
 
-  resolveSpawn?.();
-  await first;
+  resolveCompletion?.();
+  await vi.waitFor(() => {
+    expect(fakePi.sentMessages.length).toBe(1);
+  });
 });
 
 timedTest("commit schema validates rich constraints and required fields", async () => {
@@ -189,17 +204,13 @@ timedTest("commit schema validates rich constraints and required fields", async 
 
   createCommitExtension({
     sdkFactory: () => ({
-      async spawn(params) {
+      async start(params) {
         capturedSchema =
           params.outputFormat?.type === "json_schema" ? params.outputFormat.schema : undefined;
         return {
-          ok: true as const,
-          value: {
-            handle: { sessionId: "session-id" },
-            prompt: "prompt",
-            state: {} as any,
-            structured: createValidStructuredSummary(),
-          },
+          handle: createHandleThatCompletes(),
+          prompt: "prompt",
+          state: {} as any,
         };
       },
       dispose() {},
@@ -245,19 +256,15 @@ timedTest("commit command renders warning and remaining-change sections", async 
 
   createCommitExtension({
     sdkFactory: () => ({
-      async spawn() {
+      async start() {
         return {
-          ok: true as const,
-          value: {
-            handle: { sessionId: "session-id" },
-            prompt: "prompt",
-            state: {} as any,
-            structured: {
-              ...createValidStructuredSummary(),
-              warnings: ["Pre-commit hook skipped markdown formatting"],
-              remainingChanges: ["README.md"],
-            },
-          },
+          handle: createHandleThatCompletes({
+            ...createValidStructuredSummary(),
+            warnings: ["Pre-commit hook skipped markdown formatting"],
+            remainingChanges: ["README.md"],
+          }),
+          prompt: "prompt",
+          state: {} as any,
         };
       },
       dispose() {},
@@ -268,6 +275,9 @@ timedTest("commit command renders warning and remaining-change sections", async 
   expect(command).toBeTruthy();
 
   await command.handler("", createCommandContext(notifications));
+  await vi.waitFor(() => {
+    expect(fakePi.sentMessages.length).toBe(1);
+  });
 
   const sentMessage = fakePi.sentMessages[0]?.message as { content?: string } | undefined;
   expect(sentMessage?.content).toBeTruthy();
@@ -277,19 +287,23 @@ timedTest("commit command renders warning and remaining-change sections", async 
   expect(sentMessage.content).toMatch(/README\.md/);
 });
 
-timedTest("commit command surfaces structured spawn errors", async () => {
+timedTest("commit command surfaces terminal summary failures", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
 
   createCommitExtension({
     sdkFactory: () => ({
-      async spawn() {
+      async start() {
         return {
-          ok: false as const,
-          error: {
-            code: "validation_failed",
-            message: "Structured output validation failed and retry budget was exhausted.",
+          handle: {
+            sessionId: "session-id",
+            waitForCompletion: async () => ({
+              status: "failed",
+              summary: "Structured output validation failed and retry budget was exhausted.",
+            }),
           },
+          prompt: "prompt",
+          state: {} as any,
         };
       },
       dispose() {},
@@ -300,14 +314,69 @@ timedTest("commit command surfaces structured spawn errors", async () => {
   expect(command).toBeTruthy();
 
   await command.handler("", createCommandContext(notifications));
-
-  expect(
-    notifications.some(
-      (entry) =>
-        entry.level === "error" &&
-        entry.message ===
-          "Commit failed (validation_failed): Structured output validation failed and retry budget was exhausted.",
-    ),
-  ).toBeTruthy();
+  await vi.waitFor(() => {
+    expect(
+      notifications.some(
+        (entry) =>
+          entry.level === "error" &&
+          entry.message ===
+            "Commit failed: Structured output validation failed and retry budget was exhausted.",
+      ),
+    ).toBe(true);
+  });
   expect(fakePi.sentMessages.length).toBe(0);
+});
+
+timedTest("commit command catches thrown background errors", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+
+  createCommitExtension({
+    sdkFactory: () => ({
+      async start() {
+        return {
+          handle: {
+            sessionId: "session-id",
+            waitForCompletion: async () => {
+              throw new Error("tmux unavailable");
+            },
+          },
+          prompt: "prompt",
+          state: {} as any,
+        };
+      },
+      dispose() {},
+    }),
+  })(fakePi as ExtensionAPI);
+
+  const command = fakePi.commands.get("commit");
+  expect(command).toBeTruthy();
+
+  await expect(command.handler("", createCommandContext(notifications))).resolves.toBeUndefined();
+  await vi.waitFor(() => {
+    expect(notifications.some((entry) => entry.message === "Commit failed: tmux unavailable")).toBe(
+      true,
+    );
+  });
+});
+
+timedTest("commit command catches start failures", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+
+  createCommitExtension({
+    sdkFactory: () => ({
+      async start() {
+        throw new Error("launch failed");
+      },
+      dispose() {},
+    }),
+  })(fakePi as ExtensionAPI);
+
+  const command = fakePi.commands.get("commit");
+  expect(command).toBeTruthy();
+
+  await command.handler("", createCommandContext(notifications));
+
+  expect(notifications.at(-1)).toEqual({ message: "Commit failed: launch failed", level: "error" });
 });

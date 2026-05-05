@@ -2,9 +2,11 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { Type, type Static } from "typebox";
 
 import { buildLaunchCommand } from "../subagent-sdk/launch.js";
-import { createSubagentSDK, type SubagentSDK } from "../subagent-sdk/sdk.js";
+import { createSubagentSDK, type SubagentHandle, type SubagentSDK } from "../subagent-sdk/sdk.js";
 import { TmuxAdapter } from "../subagent-sdk/tmux.js";
 import type { MuxAdapter } from "../subagent-sdk/mux.js";
+import { errorMessage } from "../utils/error-message.js";
+import { Value } from "typebox/value";
 
 const COMMIT_SUMMARY_MESSAGE_TYPE = "commit-summary";
 
@@ -96,9 +98,13 @@ type CreateCommitExtensionOptions = {
   sdkFactory?: (input: {
     pi: ExtensionAPI;
     adapter: MuxAdapter;
-  }) => Pick<SubagentSDK, "spawn" | "dispose">;
+  }) => Pick<SubagentSDK, "start" | "dispose">;
   enabled?: boolean;
 };
+
+function isCommitStructuredSummary(value: unknown): value is CommitStructuredSummary {
+  return Value.Check(CommitStructuredSummarySchema, value);
+}
 
 function buildCommitTask(extraDetails?: string): string {
   const trimmedExtraDetails = extraDetails?.trim();
@@ -176,7 +182,7 @@ export function createCommitExtension(options?: CreateCommitExtensionOptions) {
 function createCommitSdk(
   pi: ExtensionAPI,
   options: CreateCommitExtensionOptions,
-): Pick<SubagentSDK, "spawn" | "dispose"> {
+): Pick<SubagentSDK, "start" | "dispose"> {
   const adapter =
     options.adapterFactory?.(pi) ??
     new TmuxAdapter(
@@ -192,9 +198,50 @@ function createCommitSdk(
   );
 }
 
+async function waitForCommitCompletion(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  handle: SubagentHandle,
+): Promise<void> {
+  const terminal = await handle.waitForCompletion();
+  if (terminal.status !== "completed") {
+    ctx.ui.notify(`Commit failed: ${terminal.summary ?? "No summary available."}`, "error");
+    return;
+  }
+
+  if (!isCommitStructuredSummary(terminal.structured)) {
+    ctx.ui.notify("Commit failed: Structured output missing or invalid.", "error");
+    return;
+  }
+
+  pi.sendMessage(
+    {
+      customType: COMMIT_SUMMARY_MESSAGE_TYPE,
+      content: formatCommitSummary(terminal.structured),
+      display: true,
+    },
+    { deliverAs: "steer", triggerTurn: false },
+  );
+}
+
+function monitorDetachedCommit(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  state: { running: boolean },
+  handle: SubagentHandle,
+): void {
+  waitForCommitCompletion(pi, ctx, handle)
+    .catch((error: unknown) => {
+      ctx.ui.notify(`Commit failed: ${errorMessage(error)}`, "error");
+    })
+    .finally(() => {
+      state.running = false;
+    });
+}
+
 function createCommitCommandHandler(
   pi: ExtensionAPI,
-  sdk: Pick<SubagentSDK, "spawn" | "dispose">,
+  sdk: Pick<SubagentSDK, "start" | "dispose">,
   state: { running: boolean },
 ) {
   return async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -208,8 +255,9 @@ function createCommitCommandHandler(
 
     state.running = true;
     ctx.ui.notify("Starting commiter subagent...", "info");
+
     try {
-      const started = await sdk.spawn(
+      const started = await sdk.start(
         {
           name: "commit",
           task: buildCommitTask(args.trim() || undefined),
@@ -221,21 +269,11 @@ function createCommitCommandHandler(
         },
         ctx,
       );
-      if (!started.ok) {
-        ctx.ui.notify(`Commit failed (${started.error.code}): ${started.error.message}`, "error");
-        return;
-      }
 
-      pi.sendMessage(
-        {
-          customType: COMMIT_SUMMARY_MESSAGE_TYPE,
-          content: formatCommitSummary(started.value.structured),
-          display: true,
-        },
-        { deliverAs: "steer", triggerTurn: false },
-      );
-    } finally {
+      monitorDetachedCommit(pi, ctx, state, started.handle);
+    } catch (error) {
       state.running = false;
+      ctx.ui.notify(`Commit failed: ${errorMessage(error)}`, "error");
     }
   };
 }

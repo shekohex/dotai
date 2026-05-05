@@ -9,6 +9,13 @@ import { createSpawnFunction } from "./sdk-spawn.js";
 import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
 import type { RuntimeSubagent } from "./types.js";
 import type { SubagentHandle, SubagentSDK } from "./sdk-types.js";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+  StartSubagentParams,
+  StartSubagentParamsJsonSchema,
+  StartSubagentParamsText,
+  TSchemaBase,
+} from "./types.js";
 
 export type {
   StartSubagentSpawnOutcomeJsonSchema,
@@ -43,6 +50,7 @@ type SubagentSdkObjectInput = {
   timer: ReturnType<typeof setInterval>;
   emitChangedStates: () => void;
   toHandle: (sessionId: string) => SubagentHandle;
+  start: SubagentSDK["start"];
   spawn: SubagentSDK["spawn"];
 };
 
@@ -53,6 +61,7 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
       input.emitChangedStates();
       return input.runtime.listStates().map((state) => input.toHandle(state.sessionId));
     },
+    start: input.start,
     spawn: input.spawn,
     async resume(params, ctx, onUpdate) {
       const resumed = await input.runtime.resume(params, ctx, onUpdate);
@@ -112,6 +121,32 @@ export function createSubagentSDK(
 
   let sdkRef: SubagentSDK;
   const toHandle = (sessionId: string): SubagentHandle => new SDKSubagentHandle(sdkRef, sessionId);
+  async function start(
+    params: StartSubagentParamsText,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback,
+    signal?: AbortSignal,
+  ): Promise<ReturnType<SubagentSDK["start"]> extends Promise<infer TValue> ? TValue : never>;
+  async function start<TSchemaValue extends TSchemaBase>(
+    params: StartSubagentParamsJsonSchema<TSchemaValue>,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback,
+    signal?: AbortSignal,
+  ): Promise<ReturnType<SubagentSDK["start"]> extends Promise<infer TValue> ? TValue : never>;
+  async function start(
+    params: StartSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback,
+    signal?: AbortSignal,
+  ) {
+    const started = await runtime.spawn(params, ctx, onUpdate, signal);
+    emitChangedStates();
+    return {
+      handle: toHandle(started.state.sessionId),
+      prompt: started.prompt,
+      state: started.state,
+    };
+  }
   const spawn = createSpawnFunction({ runtime, emitChangedStates, toHandle });
   const sdk = createSubagentSdkObject({
     runtime,
@@ -120,6 +155,7 @@ export function createSubagentSDK(
     timer,
     emitChangedStates,
     toHandle,
+    start,
     spawn,
   });
   sdkRef = sdk;

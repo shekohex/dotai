@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { createDefaultSubagentRuntimeHooks } from "../src/subagent-sdk/runtime-hooks.js";
 import {
   SUBAGENT_OVERVIEW_WIDGET_KEY,
-  SUBAGENT_WIDGET_KEY,
   type SubagentActivityEntry,
   type RuntimeSubagent,
 } from "../src/subagent-sdk/types.js";
@@ -50,7 +49,7 @@ function createActivity(overrides: Partial<SubagentActivityEntry> = {}): Subagen
 }
 
 describe("subagent ui", () => {
-  it("renders active subagent overview above editor and full list below editor", () => {
+  it("renders active subagent overview above editor", () => {
     const widgets = new Map<string, { content: string[] | undefined; placement?: string }>();
     const hooks = createDefaultSubagentRuntimeHooks({
       appendEntry() {},
@@ -82,13 +81,6 @@ describe("subagent ui", () => {
       content: ["Subagents active: 3 · 1 running · 1 idle · planner, mapper, verifier"],
       placement: "aboveEditor",
     });
-    expect(widgets.get(SUBAGENT_WIDGET_KEY)?.placement).toBe("belowEditor");
-    expect(widgets.get(SUBAGENT_WIDGET_KEY)?.content?.[0]).toBe("Subagents (3)");
-    expect(
-      widgets
-        .get(SUBAGENT_WIDGET_KEY)
-        ?.content?.some((line) => line.includes("reading: PROJECT.md")),
-    ).toBe(true);
   });
 
   it("renders child session badge with subagent label", () => {
@@ -127,6 +119,5 @@ describe("subagent ui", () => {
     );
 
     expect(widgets.has(SUBAGENT_OVERVIEW_WIDGET_KEY)).toBe(true);
-    expect(widgets.has(SUBAGENT_WIDGET_KEY)).toBe(true);
   });
 });

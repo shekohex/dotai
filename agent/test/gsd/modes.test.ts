@@ -88,6 +88,7 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-codebase-mapper"]?.provider).toBe("codex-openai");
     expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.4-mini");
     expect(built.modes["gsd-codebase-mapper"]?.tools).toEqual(["read", "bash", "edit", "write"]);
+    expect(built.modes["gsd-codebase-mapper"]?.tmuxTarget).toBe("window");
 
     for (const spec of Object.values(built.modes)) {
       expect(spec.tools?.includes("glob")).toBeFalsy();

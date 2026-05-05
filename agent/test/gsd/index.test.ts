@@ -14,6 +14,7 @@ type RegisteredCommand = {
 class FakePi implements Partial<ExtensionAPI> {
   readonly commands = new Map<string, RegisteredCommand>();
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
+  readonly messageRenderers = new Map<string, unknown>();
 
   registerCommand(name: string, command: RegisteredCommand): void {
     this.commands.set(name, command);
@@ -23,6 +24,10 @@ class FakePi implements Partial<ExtensionAPI> {
     const handlers = this.handlers.get(eventName) ?? [];
     handlers.push(handler);
     this.handlers.set(eventName, handlers);
+  }
+
+  registerMessageRenderer(customType: string, renderer: unknown): void {
+    this.messageRenderers.set(customType, renderer);
   }
 }
 

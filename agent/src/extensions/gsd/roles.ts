@@ -73,6 +73,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
       tools: ["read", "bash", "edit", "write"],
       systemPromptMode: "replace",
       autoExit: true,
+      tmuxTarget: "window",
     },
   },
   "phase-researcher": {

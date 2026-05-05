@@ -81,19 +81,35 @@ describe("gsd subagents", () => {
   });
 
   it("spawnRole waits for completion", async () => {
-    const waitForCompletion = vi.fn().mockResolvedValue(undefined);
+    const waitForCompletion = vi.fn().mockResolvedValue({
+      sessionId: "session-id",
+      summary: "done",
+    });
+    const captureOutput = vi.fn().mockResolvedValue({ text: "captured output" });
     const spawn = vi.fn().mockResolvedValue({
       ok: true,
       value: {
         handle: {
           waitForCompletion,
+          captureOutput,
         },
       },
     });
     setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
-    await spawnRole({} as ExtensionAPI, createContext(createRoot()), "executor", "execute");
+    const result = await spawnRole(
+      {} as ExtensionAPI,
+      createContext(createRoot()),
+      "executor",
+      "execute",
+    );
     expect(waitForCompletion).toHaveBeenCalledTimes(1);
+    expect(captureOutput).toHaveBeenCalledWith(80);
     expect(spawn.mock.calls[0]?.[0]?.mode).toBe("gsd-executor");
     expect(spawn.mock.calls[0]?.[0]?.task).toBe("execute");
+    expect(result).toEqual({
+      sessionId: "session-id",
+      summary: "done",
+      capturedOutput: "captured output",
+    });
   });
 });

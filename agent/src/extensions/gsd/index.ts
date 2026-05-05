@@ -5,9 +5,11 @@ import { registerBuiltInGsdModes } from "./modes.js";
 import { getGsdSettings } from "./settings.js";
 import { rememberGsdCwd } from "./state/cwd.js";
 import { detectExistingPlanning } from "./state/detect.js";
+import { registerGsdMessageRenderers } from "./ui/messages.js";
 
 export default function gsdExtension(pi: ExtensionAPI): void {
   registerBuiltInGsdModes();
+  registerGsdMessageRenderers(pi);
   pi.on("session_start", (_event, ctx) => {
     rememberGsdCwd(ctx.cwd);
     const settings = getGsdSettings(ctx.cwd);

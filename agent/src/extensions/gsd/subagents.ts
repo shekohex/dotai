@@ -5,7 +5,7 @@ import { createSubagentSDK, TmuxAdapter, buildLaunchCommand } from "../../subage
 import { registerBuiltInGsdModes } from "./modes.js";
 import type { GsdRole } from "./roles.js";
 import { resolveRoleModeName } from "./roles.js";
-import type { TSchemaBase } from "../../subagent-sdk/types.js";
+import type { SubagentCompletion, TSchemaBase } from "../../subagent-sdk/types.js";
 
 const PlanOutputSchema = Type.Object(
   {
@@ -52,6 +52,12 @@ function matchesPlanOutput(value: unknown): value is PlanOutput {
 
 type SpawnSdk = ReturnType<typeof createSubagentSDK>;
 type SpawnSdkFactory = (pi: ExtensionAPI) => SpawnSdk;
+
+export type SpawnRoleResult = {
+  sessionId: string;
+  summary: string | undefined;
+  capturedOutput: string | undefined;
+};
 
 let spawnSdkFactory: SpawnSdkFactory = (pi) =>
   createSubagentSDK(pi, {
@@ -116,7 +122,8 @@ export async function spawnRole(
   ctx: ExtensionCommandContext,
   role: GsdRole,
   task: string,
-): Promise<void> {
+  options?: { completion?: SubagentCompletion },
+): Promise<SpawnRoleResult> {
   const sdk = createSdk(pi);
   registerBuiltInGsdModes();
   const outcome = await sdk.spawn(
@@ -124,13 +131,27 @@ export async function spawnRole(
       name: `gsd-${role}`,
       task,
       mode: resolveRoleModeName(role),
+      completion: options?.completion,
     },
     ctx,
   );
   if (!outcome.ok) {
     throw new Error(outcome.error.message);
   }
-  await outcome.value.handle.waitForCompletion();
+  const terminalState = await outcome.value.handle.waitForCompletion();
+  let capturedOutput: string | undefined;
+
+  try {
+    const captured = await outcome.value.handle.captureOutput(80);
+    const normalized = captured.text.trim();
+    capturedOutput = normalized.length > 0 ? normalized : undefined;
+  } catch {}
+
+  return {
+    sessionId: terminalState.sessionId,
+    summary: terminalState.summary,
+    capturedOutput,
+  };
 }
 
 export async function spawnStructuredRole(

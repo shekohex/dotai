@@ -18,6 +18,7 @@ type RegisteredCommand = {
 class FakePi implements Partial<ExtensionAPI> {
   readonly commands = new Map<string, RegisteredCommand>();
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
+  readonly messageRenderers = new Map<string, unknown>();
 
   registerCommand(name: string, command: RegisteredCommand): void {
     this.commands.set(name, command);
@@ -27,6 +28,10 @@ class FakePi implements Partial<ExtensionAPI> {
     const handlers = this.handlers.get(eventName) ?? [];
     handlers.push(handler);
     this.handlers.set(eventName, handlers);
+  }
+
+  registerMessageRenderer(customType: string, renderer: unknown): void {
+    this.messageRenderers.set(customType, renderer);
   }
 }
 
@@ -331,7 +336,11 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
       ok: true,
       value: {
         handle: {
-          waitForCompletion: vi.fn().mockResolvedValue(undefined),
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "execute-session-id",
+            summary: "execute complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "execute output" }),
         },
       },
     })

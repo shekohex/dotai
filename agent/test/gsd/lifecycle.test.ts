@@ -68,6 +68,12 @@ function createContext(cwd: string): ExtensionCommandContext {
   } as unknown as ExtensionCommandContext;
 }
 
+function createPi() {
+  return {
+    sendMessage: vi.fn(),
+  } as unknown as ExtensionAPI;
+}
+
 afterEach(() => {
   setGsdSubagentSdkFactoryForTests(undefined);
 });
@@ -95,29 +101,49 @@ describe("gsd lifecycle handlers", () => {
     expect(readRoadmapPhases(root)).toEqual([]);
   });
 
-  it("map-codebase writes research artifact and runs mapper role", async () => {
+  it("map-codebase spawns direct-write mapper roles for all focus areas", async () => {
     const root = createPlanningRoot();
     const ctx = createContext(root);
+    const pi = createPi() as ExtensionAPI & { sendMessage: ReturnType<typeof vi.fn> };
     const spawn = vi.fn().mockResolvedValue({
       ok: true,
       value: {
-        structured: {
-          summary: "Core app with tests",
-          modules: [{ name: "core", purpose: "Main logic", files: ["src/index.ts"] }],
-          tests: ["test/index.test.ts"],
-          conventions: ["Use Vitest"],
-          risks: ["No integration coverage"],
+        handle: {
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "session-id",
+            summary: "Mapping Complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
         },
       },
     });
     setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
-    await handleGsdMapCodebase({} as ExtensionAPI, ctx);
-    const outputPath = join(root, ".planning", "research", "CODEBASE_MAP.md");
-    expect(readFileSync(outputPath, "utf8")).toContain("Core app with tests");
-    expect(spawn).toHaveBeenCalledTimes(1);
-    expect(spawn.mock.calls[0]?.[0]?.task).toContain(outputPath);
+    await handleGsdMapCodebase(pi, ctx);
+    expect(spawn).toHaveBeenCalledTimes(4);
+    expect(readFileSync(join(root, ".planning", "ROADMAP.md"), "utf8")).toContain("Phase 1");
+    expect(spawn.mock.calls.map((call) => call[0]?.completion)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(spawn.mock.calls.map((call) => call[0]?.task)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Focus: tech"),
+        expect.stringContaining("Focus: arch"),
+        expect.stringContaining("Focus: quality"),
+        expect.stringContaining("Focus: concerns"),
+      ]),
+    );
     expect(spawn.mock.calls[0]?.[0]?.task).toContain("<required_reading>");
-    expect(spawn.mock.calls[0]?.[0]?.task).toContain(join(root, ".planning", "PROJECT.md"));
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain(".planning/PROJECT.md");
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain(
+      "Write these documents to .planning/codebase/",
+    );
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(pi.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: "steer", triggerTurn: false });
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("Codebase mapping complete.");
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.details?.areas).toHaveLength(4);
   });
 
   it("discuss-phase writes phase-specific context for explicit phase", async () => {

@@ -27,6 +27,14 @@ describe("gsd bundled resources", () => {
     }
   });
 
+  it("keeps codebase mapper prompt aligned with direct-write orchestrator contract", () => {
+    const prompt = loadBundledPrompt("codebase-mapper");
+
+    expect(prompt).toContain("write analysis documents directly to `.planning/codebase/`");
+    expect(prompt).toContain("WRITE DOCUMENTS DIRECTLY.");
+    expect(prompt).toContain("Return confirmation only");
+  });
+
   it("loads shipped templates", () => {
     expect(loadBundledTemplate("state.md")).toContain("STATE");
     expect(loadBundledTemplate("project.md")).toContain("Project");

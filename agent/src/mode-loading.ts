@@ -22,6 +22,8 @@ type LoadedModesSource = {
   error?: string;
 };
 
+const builtInModeSources = new Map<string, ModesFile>();
+
 const systemPromptFileReferencePattern = /^\{file:(.+)\}$/s;
 
 function hasText(value: string | undefined): value is string {
@@ -45,6 +47,20 @@ function assertModesFileConsistency(data: ModesFile): ModesFile {
 
 function createEmptyModesFile(): ModesFile {
   return { version: 1, currentMode: undefined, modes: {} };
+}
+
+function getBuiltInModesData(): ModesFile | undefined {
+  if (builtInModeSources.size === 0) {
+    return undefined;
+  }
+  const modes = Object.fromEntries(
+    Array.from(builtInModeSources.values()).flatMap((source) => Object.entries(source.modes)),
+  ) satisfies ModeMap;
+  return assertModesFileConsistency({
+    version: 1,
+    currentMode: undefined,
+    modes,
+  });
 }
 
 function expandUserPath(value: string): string {
@@ -208,6 +224,7 @@ function buildLoadedModesFile(
   projectSource: LoadedModesSource,
   globalSource: LoadedModesSource,
 ): LoadedModesFile {
+  const builtInData = getBuiltInModesData();
   let source: "project" | "global" | "missing" = "missing";
   if (projectSource.exists) {
     source = "project";
@@ -216,8 +233,10 @@ function buildLoadedModesFile(
   }
   const resolvedPath = projectSource.exists || !globalSource.exists ? projectPath : globalPath;
   const sourceError = formatMergedErrors([projectSource, globalSource]);
-  const merged = tryMergeModesFiles(globalSource.data, projectSource.data);
-  const resolved = tryMergeModesFiles(globalSource.resolvedData, projectSource.resolvedData);
+  const mergedBuiltIn = tryMergeModesFiles(builtInData, globalSource.data);
+  const merged = tryMergeModesFiles(mergedBuiltIn.data, projectSource.data);
+  const resolvedBuiltIn = tryMergeModesFiles(builtInData, globalSource.resolvedData);
+  const resolved = tryMergeModesFiles(resolvedBuiltIn.data, projectSource.resolvedData);
   const errors = Array.from(
     new Set(
       [sourceError, merged.error, resolved.error].filter((value): value is string =>
@@ -275,6 +294,21 @@ export async function saveModesFile(filePath: string, data: ModesFile): Promise<
     filePath,
     `${JSON.stringify(assertModesFileConsistency(Value.Parse(ModesFileSchema, data)), null, 2)}\n`,
   );
+}
+
+export function registerBuiltInModes(sourceName: string, data: ModesFile): void {
+  builtInModeSources.set(
+    sourceName,
+    assertModesFileConsistency(Value.Parse(ModesFileSchema, data)),
+  );
+}
+
+export function unregisterBuiltInModes(sourceName: string): void {
+  builtInModeSources.delete(sourceName);
+}
+
+export function clearBuiltInModesForTests(): void {
+  builtInModeSources.clear();
 }
 
 export async function resolveModeSpec(

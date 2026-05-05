@@ -1,0 +1,319 @@
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { computeNext, handleGsdNext } from "../../src/extensions/gsd/instant/next.js";
+import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
+import { resolveCurrentPhase } from "../../src/extensions/gsd/state/runtime.js";
+
+function createPlanningRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-"));
+  mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+  writeFileSync(
+    join(root, ".planning", "config.json"),
+    `${JSON.stringify(
+      {
+        model_profile: "balanced",
+        commit_docs: true,
+        parallelization: true,
+        search_gitignored: false,
+        brave_search: false,
+        firecrawl: false,
+        exa_search: false,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    join(root, ".planning", "ROADMAP.md"),
+    `# Roadmap: Demo
+
+## Phase Details
+
+### Phase 1: Setup
+**Goal**: Establish project baseline
+**Depends on**: Nothing
+**Requirements**: [REQ-01, REQ-02]
+**Success Criteria** (what must be TRUE):
+  1. Repo bootstraps
+  2. Tests run
+**Plans**: 2 plans
+
+Plans:
+- [ ] 01-01: Create config
+- [x] 01-02: Add tests
+
+### Phase 2: Build
+**Goal**: Ship feature
+**Depends on**: Phase 1
+**Requirements**: [REQ-03]
+**Success Criteria** (what must be TRUE):
+  1. Feature works
+**Plans**: 1 plan
+
+Plans:
+- [ ] 02-01: Implement feature
+`,
+  );
+  writeFileSync(
+    join(root, ".planning", "STATE.md"),
+    "current_phase: 1\ncurrent_phase_name: Setup\ncurrent_plan: 01-01\nstatus: Ready to execute\n",
+  );
+  return root;
+}
+
+describe("roadmap parser", () => {
+  it("parses phases and plan list", () => {
+    const root = createPlanningRoot();
+    const phases = readRoadmapPhases(root);
+    expect(phases).toHaveLength(2);
+    expect(phases[0]?.number).toBe("1");
+    expect(phases[0]?.requirements).toEqual(["REQ-01", "REQ-02"]);
+    expect(phases[0]?.plans[1]?.completed).toBe(true);
+  });
+
+  it("resolves current phase from state", () => {
+    const root = createPlanningRoot();
+    const current = resolveCurrentPhase(root);
+    expect(current?.phase.number).toBe("1");
+    expect(current?.phase.name).toBe("Setup");
+    expect(current?.phaseDir.endsWith("/.planning/phases/1-setup")).toBe(true);
+  });
+
+  it("advances next plan from phase plans", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    const result = computeNext(root);
+    expect(result.advanced).toBe(true);
+    expect(result.currentPlan).toBe("01-02");
+  });
+
+  it("advances to next phase when current phase plans are complete", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    const result = computeNext(root);
+    expect(result.reason).toBe("phase-advanced");
+    expect(result.newPhase).toBe("2");
+    expect(result.currentPlan).toBe("02-01");
+  });
+
+  it("updates state when handling next across phases", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    const notifications: Array<{ message: string; level: string }> = [];
+    handleGsdNext(
+      {} as never,
+      {
+        cwd: root,
+        ui: {
+          notify(message: string, level: string) {
+            notifications.push({ message, level });
+          },
+        },
+      } as never,
+    );
+    const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
+    expect(state).toContain("current_phase: 2");
+    expect(state).toContain("current_phase_name: Build");
+    expect(state).toContain("current_plan: 02-01");
+    expect(notifications.at(-1)?.level).toBe("info");
+  });
+
+  it("preserves brownfield state body when next updates tracked fields", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      [
+        "current_phase: 1",
+        "current_phase_name: Setup",
+        "current_plan: 01-01",
+        "status: Ready to execute",
+        "",
+        "**Project:** Brownfield Demo",
+        "",
+        "milestone: v1",
+      ].join("\n"),
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    handleGsdNext(
+      {} as never,
+      {
+        cwd: root,
+        ui: {
+          notify() {},
+        },
+      } as never,
+    );
+    const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
+    expect(state).toContain("current_phase: 2");
+    expect(state).toContain("current_phase_name: Build");
+    expect(state).toContain("current_plan: 02-01");
+    expect(state).toContain("status: Ready to execute");
+    expect(state).toContain("**Project:** Brownfield Demo");
+    expect(state).toContain("milestone: v1");
+  });
+
+  it("parses and resolves inserted decimal phases in place", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-decimal-"));
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify(
+        {
+          model_profile: "balanced",
+          commit_docs: true,
+          parallelization: true,
+          search_gitignored: false,
+          brave_search: false,
+          firecrawl: false,
+          exa_search: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [x] 02-01: Implement feature
+
+### Phase 2.1: Hotfix (INSERTED)
+**Goal**: Fix urgent regression
+
+Plans:
+- [ ] 2.1-01: Patch regression
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 2.1\ncurrent_phase_name: Hotfix\ncurrent_plan: \nstatus: Ready to execute\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2.1-hotfix"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2.1-hotfix", "2.1-01-PLAN.md"),
+      "---\nphase: 2.1\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/hotfix.ts]\nautonomous: true\nmust_haves: [fixed]\n---\n",
+    );
+
+    const phases = readRoadmapPhases(root);
+    expect(phases.map((phase) => phase.number)).toEqual(["2", "2.1"]);
+    const current = resolveCurrentPhase(root);
+    expect(current?.phase.number).toBe("2.1");
+    expect(current?.phaseDir.endsWith("/.planning/phases/2.1-hotfix")).toBe(true);
+    const next = computeNext(root);
+    expect(next.currentPlan).toBe("2.1-01");
+    expect(next.newPhase).toBe("2.1");
+  });
+
+  it("parses milestone-grouped roadmap phase headings with level four markdown headers", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-milestone-"));
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify(
+        {
+          model_profile: "balanced",
+          commit_docs: true,
+          parallelization: true,
+          search_gitignored: false,
+          brave_search: false,
+          firecrawl: false,
+          exa_search: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+## Milestones
+
+- ✅ **v1.0 MVP** - Phases 1-4 (shipped 2026-05-04)
+- 🚧 **v1.1 Security** - Phases 5-6 (in progress)
+
+## Phases
+
+<details>
+<summary>✅ v1.0 MVP (Phases 1-4) - SHIPPED 2026-05-04</summary>
+
+### Phase 1: Foundation
+**Goal**: Already shipped
+
+Plans:
+- [x] 01-01: Done
+
+</details>
+
+### 🚧 v1.1 Security (In Progress)
+
+**Milestone Goal:** Tighten auth
+
+#### Phase 5: Security
+**Goal**: Secure auth
+
+Plans:
+- [ ] 05-01: Lock auth
+`,
+    );
+
+    const phases = readRoadmapPhases(root);
+    expect(phases.map((phase) => phase.number)).toEqual(["1", "5"]);
+    expect(phases[1]?.name).toBe("Security");
+    expect(phases[1]?.plans[0]?.id).toBe("05-01");
+  });
+});

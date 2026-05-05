@@ -1,4 +1,5 @@
 import executorExtension from "./executor/index.js";
+import gsdExtension from "./gsd/index.js";
 import interviewExtension from "./interview/index.js";
 import mermaidExtension from "./mermaid.js";
 import promptStashExtension from "./prompt-stash.js";
@@ -10,6 +11,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "mermaid", factory: mermaidExtension },
   { id: "prompt-stash", factory: promptStashExtension },
   { id: "interview", factory: interviewExtension },
+  { id: "gsd", factory: gsdExtension },
   { id: "terminal-notify", factory: terminalNotifyExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
   { id: "executor", factory: executorExtension },

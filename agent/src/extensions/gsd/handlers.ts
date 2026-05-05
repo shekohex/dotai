@@ -4,6 +4,7 @@ import { handleGsdHealth } from "./instant/health.js";
 import { handleGsdNext } from "./instant/next.js";
 import { handleGsdProgress } from "./instant/progress.js";
 import { handleGsdStats } from "./instant/stats.js";
+import { handleGsdStatus } from "./instant/status.js";
 import { handleGsdDiscussPhase } from "./lifecycle/discuss-phase.js";
 import { handleGsdExecutePhase } from "./lifecycle/execute-phase.js";
 import { handleGsdMapCodebase } from "./lifecycle/map-codebase.js";
@@ -30,4 +31,5 @@ export const gsdHandlers = {
   progress: handleGsdProgress,
   stats: handleGsdStats,
   health: handleGsdHealth,
+  status: handleGsdStatus,
 } satisfies Record<string, GsdHandler>;

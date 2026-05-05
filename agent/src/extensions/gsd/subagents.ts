@@ -5,7 +5,9 @@ import { createSubagentSDK, TmuxAdapter, buildLaunchCommand } from "../../subage
 import { registerBuiltInGsdModes } from "./modes.js";
 import type { GsdRole } from "./roles.js";
 import { resolveRoleModeName } from "./roles.js";
-import type { SubagentCompletion, TSchemaBase } from "../../subagent-sdk/types.js";
+import type { RuntimeSubagent, SubagentCompletion, TSchemaBase } from "../../subagent-sdk/types.js";
+import { createGsdSubagentRuntimeHooks } from "./ui/subagent-widget.js";
+import type { SubagentHandle } from "../../subagent-sdk/sdk.js";
 
 const PlanOutputSchema = Type.Object(
   {
@@ -52,11 +54,24 @@ function matchesPlanOutput(value: unknown): value is PlanOutput {
 
 type SpawnSdk = ReturnType<typeof createSubagentSDK>;
 type SpawnSdkFactory = (pi: ExtensionAPI) => SpawnSdk;
+type SessionScopedSdkEntry = {
+  sdk: SpawnSdk;
+};
 
 export type SpawnRoleResult = {
   sessionId: string;
   summary: string | undefined;
   capturedOutput: string | undefined;
+};
+
+export type StartRoleResult = {
+  sessionId: string;
+  handle: SubagentHandle;
+};
+
+export type DetachedRoleRunResult = {
+  sessionId: string;
+  waitForResult: () => Promise<SpawnRoleResult>;
 };
 
 let spawnSdkFactory: SpawnSdkFactory = (pi) =>
@@ -66,17 +81,81 @@ let spawnSdkFactory: SpawnSdkFactory = (pi) =>
       process.cwd(),
     ),
     buildLaunchCommand,
+    hooks: createGsdSubagentRuntimeHooks(pi),
   });
 
-function createSdk(pi: ExtensionAPI) {
-  return spawnSdkFactory(pi);
+const sessionScopedSdks = new Map<string, SessionScopedSdkEntry>();
+
+function clearSessionScopedSdks(): void {
+  for (const entry of sessionScopedSdks.values()) {
+    entry.sdk.dispose?.();
+  }
+  sessionScopedSdks.clear();
+}
+
+function readParentSessionId(ctx: ExtensionCommandContext): string {
+  return ctx.sessionManager?.getSessionId?.() ?? `cwd:${ctx.cwd}`;
+}
+
+function createSdk(pi: ExtensionAPI, ctx: ExtensionCommandContext): SpawnSdk {
+  const sessionId = readParentSessionId(ctx);
+  const existing = sessionScopedSdks.get(sessionId);
+  if (existing) {
+    return existing.sdk;
+  }
+
+  const sdk = spawnSdkFactory(pi);
+  sessionScopedSdks.set(sessionId, { sdk });
+  return sdk;
+}
+
+export function listGsdSubagents(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+): RuntimeSubagent[] {
+  return createSdk(pi, ctx).list();
 }
 
 function matchesSchema<TSchema extends TSchemaBase>(schema: TSchema, value: unknown): boolean {
   return Value.Check(schema, value);
 }
 
+function assertSuccessfulRoleCompletion(role: GsdRole, terminalState: RuntimeSubagent): void {
+  if (terminalState.status === "completed") {
+    return;
+  }
+
+  throw new Error(
+    `${role} subagent ${terminalState.sessionId} ended with status ${terminalState.status}: ${terminalState.summary ?? "No summary available."}`,
+  );
+}
+
+async function captureRoleOutput(handle: SubagentHandle): Promise<string | undefined> {
+  try {
+    const captured = await handle.captureOutput(80);
+    const normalized = captured.text.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function awaitRoleResult(
+  role: GsdRole,
+  handle: SubagentHandle,
+): Promise<SpawnRoleResult> {
+  const terminalState = await handle.waitForCompletion();
+  assertSuccessfulRoleCompletion(role, terminalState);
+  const capturedOutput = await captureRoleOutput(handle);
+  return {
+    sessionId: terminalState.sessionId,
+    summary: terminalState.summary,
+    capturedOutput,
+  };
+}
+
 export function setGsdSubagentSdkFactoryForTests(factory: SpawnSdkFactory | undefined): void {
+  clearSessionScopedSdks();
   spawnSdkFactory =
     factory ??
     ((pi) =>
@@ -86,6 +165,7 @@ export function setGsdSubagentSdkFactoryForTests(factory: SpawnSdkFactory | unde
           process.cwd(),
         ),
         buildLaunchCommand,
+        hooks: createGsdSubagentRuntimeHooks(pi),
       }));
 }
 
@@ -122,13 +202,24 @@ export async function spawnRole(
   ctx: ExtensionCommandContext,
   role: GsdRole,
   task: string,
-  options?: { completion?: SubagentCompletion },
+  options?: { completion?: SubagentCompletion; name?: string },
 ): Promise<SpawnRoleResult> {
-  const sdk = createSdk(pi);
+  const started = await startRole(pi, ctx, role, task, options);
+  return awaitRoleResult(role, started.handle);
+}
+
+export async function startRole(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  role: GsdRole,
+  task: string,
+  options?: { completion?: SubagentCompletion; name?: string },
+): Promise<StartRoleResult> {
+  const sdk = createSdk(pi, ctx);
   registerBuiltInGsdModes();
   const outcome = await sdk.spawn(
     {
-      name: `gsd-${role}`,
+      name: options?.name ?? `gsd-${role}`,
       task,
       mode: resolveRoleModeName(role),
       completion: options?.completion,
@@ -138,19 +229,23 @@ export async function spawnRole(
   if (!outcome.ok) {
     throw new Error(outcome.error.message);
   }
-  const terminalState = await outcome.value.handle.waitForCompletion();
-  let capturedOutput: string | undefined;
-
-  try {
-    const captured = await outcome.value.handle.captureOutput(80);
-    const normalized = captured.text.trim();
-    capturedOutput = normalized.length > 0 ? normalized : undefined;
-  } catch {}
-
   return {
-    sessionId: terminalState.sessionId,
-    summary: terminalState.summary,
-    capturedOutput,
+    sessionId: outcome.value.handle.sessionId,
+    handle: outcome.value.handle,
+  };
+}
+
+export async function runRoleDetached(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  role: GsdRole,
+  task: string,
+  options?: { completion?: SubagentCompletion; name?: string },
+): Promise<DetachedRoleRunResult> {
+  const started = await startRole(pi, ctx, role, task, options);
+  return {
+    sessionId: started.sessionId,
+    waitForResult: () => awaitRoleResult(role, started.handle),
   };
 }
 
@@ -162,8 +257,15 @@ export async function spawnStructuredRole(
   schema: TSchemaBase,
   retryCount = 2,
 ): Promise<unknown> {
-  const sdk = createSdk(pi);
-  const structured = await spawnStructuredRoleInternal(sdk, ctx, role, task, schema, retryCount);
+  const sharedSdk = createSdk(pi, ctx);
+  const structured = await spawnStructuredRoleInternal(
+    sharedSdk,
+    ctx,
+    role,
+    task,
+    schema,
+    retryCount,
+  );
   if (!matchesSchema(schema, structured)) {
     throw new Error("Structured output does not match requested schema");
   }

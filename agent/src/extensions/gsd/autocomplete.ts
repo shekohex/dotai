@@ -15,6 +15,7 @@ const subcommands: Array<{ value: GsdSubcommand; description: string }> = [
   { value: "progress", description: "Show progress" },
   { value: "stats", description: "Show stats" },
   { value: "health", description: "Show .planning health" },
+  { value: "status", description: "Show live subagent status panel" },
   { value: "help", description: "Show help" },
   { value: "on", description: "Enable GSD" },
   { value: "off", description: "Disable GSD" },

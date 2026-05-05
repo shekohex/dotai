@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { formatDetachedGsdFailure, runDetachedGsdJob } from "../detached-job.js";
 import { resolvePlanningDir } from "../shared.js";
-import { spawnRole } from "../subagents.js";
+import { runRoleDetached } from "../subagents.js";
 import { ensurePlanningDir } from "../state/write.js";
 import {
   GSD_CODEBASE_MAP_SUMMARY_MESSAGE,
@@ -103,39 +104,60 @@ export async function handleGsdMapCodebase(
 
   const date = new Date().toISOString().slice(0, 10);
   const focusAreas: CodebaseMapFocus[] = ["tech", "arch", "quality", "concerns"];
-  const results = await Promise.all(
+  const startedRoles = await Promise.all(
     focusAreas.map((focus) =>
-      spawnRole(pi, ctx, "codebase-mapper", buildMapperTask(focus, date), { completion: false }),
+      runRoleDetached(pi, ctx, "codebase-mapper", buildMapperTask(focus, date), {
+        completion: false,
+        name: `codebase-mapper:${focus}`,
+      }),
     ),
   );
 
-  const areaSummaries: GsdCodebaseMapAreaSummary[] = focusAreas.map((focus, index) => ({
-    focus,
-    documents: documentsByFocus[focus],
-    summary: results[index]?.summary,
-    capturedOutput: results[index]?.capturedOutput,
-    sessionId: results[index]?.sessionId ?? "",
-  }));
+  runDetachedGsdJob(
+    pi,
+    ctx,
+    async () => {
+      const results = await Promise.all(
+        startedRoles.map(async (startedRole, index) => {
+          const terminalState = await startedRole.waitForResult();
+          return {
+            focus: focusAreas[index],
+            documents: documentsByFocus[focusAreas[index]],
+            summary: terminalState.summary,
+            capturedOutput: terminalState.capturedOutput,
+            sessionId: terminalState.sessionId,
+          } satisfies GsdCodebaseMapAreaSummary;
+        }),
+      );
 
-  pi.sendMessage(
+      return results;
+    },
     {
-      customType: GSD_CODEBASE_MAP_SUMMARY_MESSAGE,
-      content: [
-        "Codebase mapping complete.",
-        "",
-        "Updated `.planning/codebase/` via 4 mapper subagents:",
-        "- tech: `STACK.md`, `INTEGRATIONS.md`",
-        "- arch: `ARCHITECTURE.md`, `STRUCTURE.md`",
-        "- quality: `CONVENTIONS.md`, `TESTING.md`",
-        "- concerns: `CONCERNS.md`",
-      ].join("\n"),
-      display: true,
-      details: {
-        codebaseDir,
-        areas: areaSummaries,
+      startMessage: `Started codebase map: ${startedRoles.length} subagents`,
+      successMessage: `Codebase map updated: ${codebaseDir}`,
+      failureMessage: (error) => formatDetachedGsdFailure("Codebase map failed", error),
+      onSuccess: (results) => {
+        pi.sendMessage(
+          {
+            customType: GSD_CODEBASE_MAP_SUMMARY_MESSAGE,
+            content: [
+              "Codebase mapping complete.",
+              "",
+              "Updated `.planning/codebase/` via 4 mapper subagents:",
+              "- tech: `STACK.md`, `INTEGRATIONS.md`",
+              "- arch: `ARCHITECTURE.md`, `STRUCTURE.md`",
+              "- quality: `CONVENTIONS.md`, `TESTING.md`",
+              "- concerns: `CONCERNS.md`",
+            ].join("\n"),
+            display: true,
+            details: {
+              codebaseDir,
+              areas: results,
+            },
+          },
+          { deliverAs: "steer", triggerTurn: false },
+        );
       },
     },
-    { deliverAs: "steer", triggerTurn: false },
   );
-  ctx.ui.notify(`Codebase map updated: ${codebaseDir}`, "info");
 }

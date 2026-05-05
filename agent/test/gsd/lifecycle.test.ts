@@ -65,6 +65,9 @@ function createContext(cwd: string): ExtensionCommandContext {
     ui: {
       notify: vi.fn(),
     },
+    sessionManager: {
+      getSessionId: () => "parent-session-id",
+    },
   } as unknown as ExtensionCommandContext;
 }
 
@@ -111,14 +114,17 @@ describe("gsd lifecycle handlers", () => {
         handle: {
           waitForCompletion: vi.fn().mockResolvedValue({
             sessionId: "session-id",
+            status: "completed",
             summary: "Mapping Complete",
           }),
           captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
         },
       },
     });
-    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+    const sdkFactory = vi.fn().mockReturnValue({ spawn });
+    setGsdSubagentSdkFactoryForTests(sdkFactory as never);
     await handleGsdMapCodebase(pi, ctx);
+    expect(sdkFactory).toHaveBeenCalledTimes(1);
     expect(spawn).toHaveBeenCalledTimes(4);
     expect(readFileSync(join(root, ".planning", "ROADMAP.md"), "utf8")).toContain("Phase 1");
     expect(spawn.mock.calls.map((call) => call[0]?.completion)).toEqual([
@@ -126,6 +132,12 @@ describe("gsd lifecycle handlers", () => {
       false,
       false,
       false,
+    ]);
+    expect(spawn.mock.calls.map((call) => call[0]?.name)).toEqual([
+      "codebase-mapper:tech",
+      "codebase-mapper:arch",
+      "codebase-mapper:quality",
+      "codebase-mapper:concerns",
     ]);
     expect(spawn.mock.calls.map((call) => call[0]?.task)).toEqual(
       expect.arrayContaining([
@@ -140,7 +152,10 @@ describe("gsd lifecycle handlers", () => {
     expect(spawn.mock.calls[0]?.[0]?.task).toContain(
       "Write these documents to .planning/codebase/",
     );
-    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Started codebase map: 4 subagents", "info");
+    await vi.waitFor(() => {
+      expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    });
     expect(pi.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: "steer", triggerTurn: false });
     expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("Codebase mapping complete.");
     expect(pi.sendMessage.mock.calls[0]?.[0]?.details?.areas).toHaveLength(4);

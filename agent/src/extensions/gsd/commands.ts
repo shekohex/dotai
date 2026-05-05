@@ -19,6 +19,7 @@ export type GsdSubcommand =
   | "progress"
   | "stats"
   | "health"
+  | "status"
   | "help"
   | "on"
   | "off";
@@ -63,6 +64,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         case "progress":
         case "stats":
         case "health":
+        case "status":
           await gsdHandlers[subcommand](
             pi,
             ctx,

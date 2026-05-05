@@ -46,6 +46,7 @@ class GsdHelpComponent implements Component {
         "/gsd progress",
         "/gsd stats",
         "/gsd health",
+        "/gsd status",
         "",
         `Docs (${this.docIndex + 1}/${bundledDocs.length})`,
         ...bundledDocs.map((name, index) => `${index === this.docIndex ? ">" : " "} ${name}`),
@@ -86,7 +87,7 @@ class GsdHelpComponent implements Component {
 export async function showGsdHelp(ctx: ExtensionCommandContext): Promise<void> {
   if (!ctx.hasUI) {
     ctx.ui.notify(
-      `GSD: /gsd [on|off|new-project|map-codebase|discuss-phase|plan-phase|execute-phase|verify-work|validate-phase|next|progress|stats|health|help]\n${loadBundledDoc("command-reference.md").split("\n").slice(0, 8).join("\n")}`,
+      `GSD: /gsd [on|off|new-project|map-codebase|discuss-phase|plan-phase|execute-phase|verify-work|validate-phase|next|progress|stats|health|status|help]\n${loadBundledDoc("command-reference.md").split("\n").slice(0, 8).join("\n")}`,
       "info",
     );
     return;

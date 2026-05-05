@@ -96,6 +96,7 @@ When the user mentions upstream pi, assume it is `badlogic/pi-mono` repo, and us
 - `badlogic/pi-mono`: whenever you need to get the source code for the pi coding agent and any other package releated to pi.
 - `durable-streams/durable-streams`: when you need to learn anything about `durable-streams`
 - `anomalyco/opencode`: when the user mention opencode, or any opencode releated things.
+- `gsd-build/get-shit-done`: when the user mention upstream gsd or upstream get-shit-done.
 
 ## Task Completion
 

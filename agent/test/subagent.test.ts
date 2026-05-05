@@ -522,7 +522,7 @@ timedTest(
       await emitHandlers(fakePi, "session_start", { reason: "resume" }, ctx);
 
       expect(fakePi.sessionNames.at(-1)).toBe(
-        "[worker-one] Continue the review Inspect failing tests and summarize root cause",
+        "[subagent:worker-one] Continue the review Inspect failing tests and summarize root cause",
       );
     } finally {
       if (previousChildState === undefined) {
@@ -1980,6 +1980,37 @@ timedTest("reduceRuntimeSubagents keeps latest state for the current parent sess
   expect(states.get("child-1")?.status).toBe("completed");
 });
 
+timedTest("reduceRuntimeSubagents restores latest child activity from session file", () => {
+  const states = reduceRuntimeSubagents(
+    [
+      {
+        type: "custom",
+        customType: SUBAGENT_STATE_ENTRY,
+        data: {
+          event: "started",
+          sessionId: "child-1",
+          sessionPath: "/tmp/child-1.jsonl",
+          parentSessionId: "parent-a",
+          parentSessionPath: "/tmp/parent-a.jsonl",
+          name: "worker-a",
+          mode: "worker",
+          cwd: "/tmp/project",
+          paneId: "%1",
+          task: "task a",
+          handoff: false,
+          autoExit: true,
+          status: "running",
+          startedAt: 1,
+          updatedAt: 1,
+        },
+      },
+    ],
+    "parent-a",
+  );
+
+  expect(states.get("child-1")?.activity).toBeUndefined();
+});
+
 timedTest("reduceRuntimeSubagents ignores malformed and unexpected state entries", () => {
   const states = reduceRuntimeSubagents(
     [
@@ -2219,6 +2250,32 @@ timedTest("readChildSessionOutcome extracts the last assistant summary", async (
     const outcome = await readChildSessionOutcome(sessionPath);
     expect(outcome.failed).toBe(false);
     expect(outcome.summary).toBe("Finished successfully");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+timedTest("readChildSessionOutcome marks missing assistant outcome as failed", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-outcome-missing-"));
+  const sessionPath = path.join(dir, "child.jsonl");
+  await fs.writeFile(
+    sessionPath,
+    [
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "child",
+        timestamp: new Date().toISOString(),
+        cwd: dir,
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+
+  try {
+    const outcome = await readChildSessionOutcome(sessionPath);
+    expect(outcome.failed).toBe(true);
+    expect(outcome.summary).toBe(undefined);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -2777,7 +2834,6 @@ timedTest(
       expect(launch.options).toEqual({
         launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
         tmuxTarget: "window",
-        mode: "reviewer",
         model: "mode-provider/review-model",
         thinkingLevel: undefined,
         systemPrompt: "Review only",
@@ -2855,7 +2911,6 @@ timedTest(
       expect(resumedLaunch.options).toEqual({
         launchTarget: { kind: "session", sessionPath: started.state.sessionPath },
         tmuxTarget: "window",
-        mode: "reviewer",
         model: "mode-provider/review-model",
         thinkingLevel: undefined,
         systemPrompt: "Review only",

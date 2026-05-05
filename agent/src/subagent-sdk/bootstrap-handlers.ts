@@ -16,6 +16,7 @@ import {
   formatChildSessionDisplayName,
   isChildSession,
   isJsonSchemaOutputFormat,
+  persistSubagentActivity,
   type ChildBootstrapRuntimeState,
 } from "./bootstrap-core.js";
 import {
@@ -40,6 +41,71 @@ function requestShutdown(state: ChildBootstrapRuntimeState, ctx: ExtensionContex
   }
   state.shutdownRequested = true;
   shutdownContextSafely(ctx);
+}
+
+function persistActivity(
+  pi: ExtensionAPI,
+  childState: ChildBootstrapState,
+  state: ChildBootstrapRuntimeState,
+  activity: {
+    kind: "thinking" | "tool" | "message" | "idle" | "completed" | "failed" | "cancelled";
+    label: string;
+    detail?: string;
+    toolName?: string;
+    done: boolean;
+  },
+): void {
+  const now = Date.now();
+  const previous = state.lastActivity;
+  const startedAt =
+    previous &&
+    previous.kind === activity.kind &&
+    previous.label === activity.label &&
+    previous.toolName === activity.toolName
+      ? previous.startedAt
+      : now;
+
+  const nextActivity = {
+    sessionId: childState.sessionId,
+    kind: activity.kind,
+    label: activity.label,
+    detail: activity.detail,
+    toolName: activity.toolName,
+    startedAt,
+    updatedAt: now,
+    done: activity.done,
+  };
+
+  state.lastActivity = nextActivity;
+  persistSubagentActivity(pi, nextActivity);
+}
+
+function summarizeActivityText(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.replaceAll(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized.slice(0, 160) : undefined;
+}
+
+function readToolLabel(toolName: string): string {
+  switch (toolName) {
+    case "read":
+      return "reading";
+    case "bash":
+      return "running bash";
+    case "websearch":
+      return "web searching";
+    case "write":
+      return "writing files";
+    case "apply_patch":
+      return "applying patch";
+    case "edit":
+      return "editing files";
+    default:
+      return `using ${toolName}`;
+  }
 }
 
 function cancelIdleShutdown(state: ChildBootstrapRuntimeState): void {
@@ -150,6 +216,11 @@ function registerChildBeforeAgentStartHandler(
     }
     cancelIdleShutdown(state);
     applyChildToolState(pi, childState);
+    persistActivity(pi, childState, state, {
+      kind: "thinking",
+      label: "thinking",
+      done: false,
+    });
     resetTurnStructuredState(state);
     resetLastTurnStructuredState(state);
     if (!isJsonSchemaOutputFormat(childState) || state.structuredState.completed) {
@@ -158,6 +229,31 @@ function registerChildBeforeAgentStartHandler(
     return {
       systemPrompt: `${event.systemPrompt}\n\n${structuredOutputSystemPrompt}`,
     };
+  });
+}
+
+function registerChildToolCallHandler(
+  pi: ExtensionAPI,
+  childState: ChildBootstrapState,
+  state: ChildBootstrapRuntimeState,
+): void {
+  pi.on("tool_call", (event, ctx) => {
+    if (!isChildSession(childState, ctx)) {
+      return;
+    }
+
+    const input = event.input;
+    const detail =
+      input !== null && typeof input === "object"
+        ? summarizeActivityText(JSON.stringify(input))
+        : undefined;
+    persistActivity(pi, childState, state, {
+      kind: "tool",
+      label: readToolLabel(event.toolName),
+      detail,
+      toolName: event.toolName,
+      done: false,
+    });
   });
 }
 
@@ -185,12 +281,27 @@ function registerChildTurnHandlers(
   state: ChildBootstrapRuntimeState,
 ): void {
   pi.on("turn_start", (_event, ctx) => {
+    if (isChildSession(childState, ctx)) {
+      persistActivity(pi, childState, state, {
+        kind: "thinking",
+        label: "thinking",
+        done: false,
+      });
+    }
     if (!isChildSession(childState, ctx) || !isJsonSchemaOutputFormat(childState)) {
       return;
     }
     resetTurnStructuredState(state);
   });
   pi.on("turn_end", (event, ctx) => {
+    if (isChildSession(childState, ctx)) {
+      persistActivity(pi, childState, state, {
+        kind: "idle",
+        label: "waiting",
+        detail: getLastAssistantText(ctx.sessionManager.getBranch()),
+        done: false,
+      });
+    }
     if (!isChildSession(childState, ctx) || !isJsonSchemaOutputFormat(childState)) {
       return;
     }
@@ -230,6 +341,12 @@ function registerChildAgentEndHandler(
     if (!isChildSession(childState, ctx)) {
       return;
     }
+    persistActivity(pi, childState, state, {
+      kind: "completed",
+      label: "done",
+      detail: getLatestAssistantSummary(event.messages),
+      done: true,
+    });
     const result = handleStructuredAgentEnd(pi, state);
     if (childState.persisted === false) {
       writeEphemeralChildSessionOutcome(
@@ -288,8 +405,12 @@ function buildEphemeralChildOutcome(
 }
 
 function getLatestAssistantSummary(
-  messages: Array<{ role?: string; content?: unknown }>,
+  messages: Array<{ role?: string; content?: unknown }> | undefined,
 ): string | undefined {
+  if (!messages) {
+    return undefined;
+  }
+
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "assistant") {
@@ -358,6 +479,7 @@ export function registerChildBootstrapHandlers(
 ): void {
   registerChildSessionStartHandler(pi, childState, state);
   registerChildBeforeAgentStartHandler(pi, childState, state, structuredOutputSystemPrompt);
+  registerChildToolCallHandler(pi, childState, state);
   registerChildToolResultHandler(pi, childState, state);
   registerChildTurnHandlers(pi, childState, state);
   registerChildAgentEndHandler(pi, childState, state);

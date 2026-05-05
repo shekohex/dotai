@@ -1,6 +1,6 @@
 import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { readChildState } from "./launch.js";
-import type { ChildBootstrapState } from "./types.js";
+import { SUBAGENT_CHILD_WIDGET_KEY, type ChildBootstrapState } from "./types.js";
 import {
   STRUCTURED_OUTPUT_SYSTEM_PROMPT,
   STRUCTURED_OUTPUT_TOOL_NAME,
@@ -12,6 +12,7 @@ import {
 import { registerChildBootstrapHandlers } from "./bootstrap-handlers.js";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { createTextComponent } from "../extensions/coreui/tools-render.js";
+import { renderChildSessionWidget } from "./ui.js";
 import { asRecord } from "../utils/unknown-data.js";
 
 const bootstrapInstalledSymbol = Symbol.for("@shekohex/agent/subagent-sdk/bootstrap-installed");
@@ -169,6 +170,14 @@ export function installChildBootstrap(pi: ExtensionAPI): void {
   }
   bootstrapAwarePi[bootstrapInstalledSymbol] = true;
   const state = createChildBootstrapRuntimeState(childState);
+  pi.on("session_start", (_event, ctx) => {
+    if (!isChildSession(childState, ctx) || !ctx.hasUI) {
+      return;
+    }
+    ctx.ui.setWidget(SUBAGENT_CHILD_WIDGET_KEY, renderChildSessionWidget(childState), {
+      placement: "aboveEditor",
+    });
+  });
   registerStructuredOutputTool(pi, childState, state);
   registerChildBootstrapHandlers(pi, childState, state, STRUCTURED_OUTPUT_SYSTEM_PROMPT);
 }

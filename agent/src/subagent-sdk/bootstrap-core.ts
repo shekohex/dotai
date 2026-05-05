@@ -6,8 +6,11 @@ import {
   readLatestChildStructuredOutputState,
 } from "./persistence.js";
 import {
+  SUBAGENT_ACTIVITY_ENTRY,
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+  serializeSubagentActivityEntry,
   serializeSubagentStructuredOutputEntry,
+  type SubagentActivityEntry,
   type ChildBootstrapState,
   type StructuredOutputError,
 } from "./types.js";
@@ -33,6 +36,7 @@ export type ChildBootstrapRuntimeState = {
   autoExitEnabled: boolean;
   timeoutModeActive: boolean;
   shutdownRequested: boolean;
+  lastActivity: SubagentActivityEntry | undefined;
   capturedStructuredPayload: unknown;
   structuredCaptureInvalidated: boolean;
   turnStructuredCaptured: boolean;
@@ -90,6 +94,10 @@ export function persistStructuredOutputState(
   );
 }
 
+export function persistSubagentActivity(pi: ExtensionAPI, payload: SubagentActivityEntry): void {
+  pi.appendEntry(SUBAGENT_ACTIVITY_ENTRY, serializeSubagentActivityEntry(payload));
+}
+
 export function buildStructuredOutputRetryPrompt(state: StructuredOutputState): string {
   const retriesLeft = Math.max(0, state.retryCount - state.attempts);
   const suffix =
@@ -145,7 +153,7 @@ function normalizeSingleLine(value: string): string {
 
 export function formatChildSessionDisplayName(name: string, prompt: string): string {
   const normalizedPrompt = normalizeSingleLine(prompt);
-  return normalizedPrompt ? `[${name}] ${normalizedPrompt}` : `[${name}]`;
+  return normalizedPrompt ? `[subagent:${name}] ${normalizedPrompt}` : `[subagent:${name}]`;
 }
 
 export function applyChildToolState(
@@ -202,6 +210,7 @@ export function createChildBootstrapRuntimeState(
     autoExitEnabled: childState.autoExit ?? false,
     timeoutModeActive: isAutoExitTimeoutModeActive(childState.sessionId),
     shutdownRequested: false,
+    lastActivity: undefined,
     capturedStructuredPayload: restoredStructuredState?.structured,
     structuredCaptureInvalidated: false,
     turnStructuredCaptured: false,

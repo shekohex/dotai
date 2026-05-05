@@ -6,11 +6,14 @@ import { SessionManager, getAgentDir, type SessionEntry } from "@mariozechner/pi
 
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 import {
+  SUBAGENT_ACTIVITY_ENTRY,
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
   StructuredOutputErrorSchema,
   SUBAGENT_STATE_ENTRY,
+  parseSubagentActivityEntry,
   parseSubagentStructuredOutputEntry,
   parseSubagentStateEntry,
+  type SubagentActivityEntry,
   type SubagentStructuredOutputEntry,
   type StructuredOutputError,
   type RuntimeSubagent,
@@ -193,11 +196,14 @@ export function readChildSessionOutcome(sessionPath: string): Promise<ChildSessi
           : undefined;
     }
 
+    const missingOutcome =
+      summary === undefined && structured === undefined && structuredError === undefined;
+
     return Promise.resolve({
       summary,
       structured,
       structuredError,
-      failed: failed || structuredError !== undefined,
+      failed: failed || structuredError !== undefined || missingOutcome,
     });
   } catch {
     return Promise.resolve({ failed: true });
@@ -290,6 +296,30 @@ export function readLatestChildStructuredOutputState(
   return undefined;
 }
 
+export function readLatestChildActivityState(
+  sessionPath: string,
+): SubagentActivityEntry | undefined {
+  try {
+    const sessionManager = SessionManager.open(sessionPath);
+    let entry = sessionManager.getLeafEntry();
+
+    while (entry) {
+      if (entry.type === "custom" && entry.customType === SUBAGENT_ACTIVITY_ENTRY) {
+        return parseSubagentActivityEntry(entry.data);
+      }
+
+      entry =
+        typeof entry.parentId === "string" && entry.parentId.length > 0
+          ? sessionManager.getEntry(entry.parentId)
+          : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 export async function readChildSessionStatus(sessionPath: string): Promise<ChildSessionStatus> {
   return (await readChildSessionStatusDetails(sessionPath)).status;
 }
@@ -349,6 +379,10 @@ export function reduceRuntimeSubagents(
 
     states.set(state.sessionId, {
       ...state,
+      activity:
+        state.sessionPath === undefined
+          ? undefined
+          : readLatestChildActivityState(state.sessionPath),
       modeLabel: state.mode ?? "worker",
     });
   }

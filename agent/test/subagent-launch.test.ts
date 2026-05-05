@@ -146,4 +146,35 @@ describe("buildLaunchCommand", () => {
     expect(command).toContain("PI_DEBUG_SYSTEM_PROMPT='true'");
     expect(command).toContain("PI_DEBUG_PROVIDER_REQUESTS_LOG='/tmp/provider-debug-child.jsonl'");
   });
+
+  it("does not pass mode startup flags for child launches", () => {
+    process.env[PI_COMMAND_ENV] = "pi";
+
+    const command = buildLaunchCommand(
+      createState(),
+      {
+        sessionId: "session-1",
+        prompt: "map codebase",
+        parentSessionId: "parent-1",
+        parentSessionPath: "/tmp/parent-1.jsonl",
+        stateEntryId: `${CHILD_STATE_ENV}-1`,
+        modeName: "gsd-codebase-mapper",
+        modeLabel: "GSD codebase mapper",
+        handoff: false,
+        persisted: true,
+      },
+      "map codebase",
+      {
+        tmuxTarget: "window",
+        mode: "gsd-codebase-mapper",
+        model: "codex-openai/gpt-5.4-mini",
+        thinkingLevel: "high",
+        systemPromptMode: "replace",
+      },
+    );
+
+    expect(command).not.toContain("--mode-gsd-codebase-mapper");
+    expect(command).toContain("--model 'codex-openai/gpt-5.4-mini'");
+    expect(command).toContain("--thinking 'high'");
+  });
 });

@@ -9,6 +9,8 @@ import {
   SubagentCompletionSchema,
   StructuredOutputErrorCodeSchema,
   StructuredOutputErrorSchema,
+  SubagentActivityEntrySchema,
+  SubagentActivityKindSchema,
   SubagentActionSchema,
   SubagentDeliverySchema,
   SubagentMessageEntrySchema,
@@ -26,13 +28,18 @@ export {
   OutputFormatTextSchema,
   SubagentCompletionNotificationSchema,
   SubagentCompletionSchema,
+  SUBAGENT_ACTIVITY_ENTRY,
   StructuredOutputErrorCodeSchema,
   StructuredOutputErrorSchema,
   SUBAGENT_MESSAGE_ENTRY,
+  SUBAGENT_CHILD_WIDGET_KEY,
+  SUBAGENT_OVERVIEW_WIDGET_KEY,
   SUBAGENT_STATE_ENTRY,
   SUBAGENT_STATUS_MESSAGE,
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
   SUBAGENT_WIDGET_KEY,
+  SubagentActivityEntrySchema,
+  SubagentActivityKindSchema,
   SubagentActionSchema,
   SubagentDeliverySchema,
   SubagentMessageEntrySchema,
@@ -56,15 +63,19 @@ export type OutputFormat<TSchemaValue = unknown> =
   | { type: "json_schema"; schema: TSchemaValue; retryCount?: number };
 export type StructuredOutputErrorCode = Static<typeof StructuredOutputErrorCodeSchema>;
 export type StructuredOutputError = Static<typeof StructuredOutputErrorSchema>;
+export type SubagentActivityKind = Static<typeof SubagentActivityKindSchema>;
+export type SubagentActivityEntry = Static<typeof SubagentActivityEntrySchema>;
 export type SubagentToolParams = Static<typeof SubagentToolParamsSchema>;
 export type SubagentStateEntry = Static<typeof SubagentStateEntrySchema>;
 export type SubagentMessageEntry = Static<typeof SubagentMessageEntrySchema>;
 export type SubagentStructuredOutputEntry = Static<typeof SubagentStructuredOutputEntrySchema>;
 export type SubagentStateSessionEntry = CustomEntry<SubagentStateEntry>;
 export type SubagentMessageSessionEntry = CustomEntry<SubagentMessageEntry>;
+export type SubagentActivitySessionEntry = CustomEntry<SubagentActivityEntry>;
 
 export type RuntimeSubagent = SubagentStateEntry & {
   modeLabel: string;
+  activity?: SubagentActivityEntry;
 };
 
 type PersistableSubagentStateEntry = SubagentStateEntry & {
@@ -198,11 +209,22 @@ export type SubagentToolRenderDetails = SubagentToolResultDetails | SubagentTool
 export function cloneRuntimeSubagent(state: RuntimeSubagent): RuntimeSubagent {
   return {
     ...state,
+    activity: cloneActivity(state.activity),
     structured: cloneStructuredValue(state.structured),
     completion: cloneCompletion(state.completion),
     outputFormat: cloneOutputFormat(state.outputFormat),
     structuredError: cloneStructuredError(state.structuredError),
   };
+}
+
+function cloneActivity(
+  activity: SubagentActivityEntry | undefined,
+): SubagentActivityEntry | undefined {
+  if (!activity) {
+    return undefined;
+  }
+
+  return { ...activity };
 }
 
 function cloneStructuredValue(value: unknown): unknown {
@@ -274,7 +296,13 @@ export function parseSubagentStateEntry(value: unknown): SubagentStateEntry | un
 export function serializeSubagentStateEntry(
   value: PersistableSubagentStateEntry,
 ): SubagentStateEntry {
-  const { modeLabel: _modeLabel, ...entry } = value;
+  const {
+    modeLabel: _modeLabel,
+    activity: _activity,
+    ...entry
+  } = value as PersistableSubagentStateEntry & {
+    activity?: SubagentActivityEntry;
+  };
   const normalizedEntry = {
     ...entry,
     persisted: entry.persisted ?? true,
@@ -288,6 +316,22 @@ export function serializeSubagentStateEntry(
 export function serializeSubagentMessageEntry(value: SubagentMessageEntry): SubagentMessageEntry {
   if (!Value.Check(SubagentMessageEntrySchema, value)) {
     throw new Error("Invalid subagent message entry");
+  }
+  return value;
+}
+
+export function parseSubagentActivityEntry(value: unknown): SubagentActivityEntry | undefined {
+  if (!Value.Check(SubagentActivityEntrySchema, value)) {
+    return undefined;
+  }
+  return Value.Parse(SubagentActivityEntrySchema, value);
+}
+
+export function serializeSubagentActivityEntry(
+  value: SubagentActivityEntry,
+): SubagentActivityEntry {
+  if (!Value.Check(SubagentActivityEntrySchema, value)) {
+    throw new Error("Invalid subagent activity entry");
   }
   return value;
 }

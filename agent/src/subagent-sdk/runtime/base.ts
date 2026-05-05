@@ -223,6 +223,7 @@ export abstract class SubagentRuntimeBase {
     onUpdate?: AgentToolUpdateCallback,
     signal?: AbortSignal,
   ): Promise<StartSubagentResult> {
+    this.ctx = ctx;
     await this.requireAdapterAvailability("start");
     const mode = await this.resolveModeValue(ctx, {
       mode: params.mode,
@@ -267,7 +268,6 @@ export abstract class SubagentRuntimeBase {
         stateBundle.childState.sessionPath.length > 0
           ? { kind: "session", sessionPath: stateBundle.childState.sessionPath }
           : { kind: "ephemeral" },
-      modeOverride: params.mode,
     });
     return { state: this.toPublicState(state), prompt };
   }
@@ -333,7 +333,6 @@ export abstract class SubagentRuntimeBase {
     childState: ChildBootstrapState;
     provisionalState: RuntimeSubagent;
     launchTarget: LaunchTarget;
-    modeOverride: string | undefined;
   }): Promise<RuntimeSubagent>;
   protected abstract ensurePolling(): void;
   protected abstract refreshWidget(): void;

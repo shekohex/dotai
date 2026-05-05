@@ -1,9 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 
-import { renderSubagentWidget } from "./ui.js";
+import { renderSubagentOverviewWidget, renderSubagentWidget } from "./ui.js";
 import {
   SUBAGENT_MESSAGE_ENTRY,
+  SUBAGENT_OVERVIEW_WIDGET_KEY,
   SUBAGENT_STATE_ENTRY,
   SUBAGENT_STATUS_MESSAGE,
   SUBAGENT_WIDGET_KEY,
@@ -71,6 +72,9 @@ export function createDefaultSubagentRuntimeHooks(pi: ExtensionAPI): SubagentRun
       }
 
       try {
+        ctx.ui.setWidget(SUBAGENT_OVERVIEW_WIDGET_KEY, renderSubagentOverviewWidget(subagents), {
+          placement: "aboveEditor",
+        });
         ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, renderSubagentWidget(subagents), {
           placement: "belowEditor",
         });

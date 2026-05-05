@@ -14,6 +14,7 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback,
   ): Promise<MessageSubagentResult> {
+    this.ctx = ctx;
     const { state, autoResumed, resumePrompt } = await this.resolveMessageTarget(
       params.sessionId,
       ctx,

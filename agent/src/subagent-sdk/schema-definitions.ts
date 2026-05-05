@@ -2,9 +2,36 @@ import { Type } from "typebox";
 
 export const SUBAGENT_STATE_ENTRY = "subagent-state";
 export const SUBAGENT_MESSAGE_ENTRY = "subagent-message";
+export const SUBAGENT_ACTIVITY_ENTRY = "subagent-activity";
 export const SUBAGENT_STRUCTURED_OUTPUT_ENTRY = "subagent-structured-output";
 export const SUBAGENT_WIDGET_KEY = "subagents";
+export const SUBAGENT_OVERVIEW_WIDGET_KEY = "subagents-overview";
+export const SUBAGENT_CHILD_WIDGET_KEY = "subagent-child";
 export const SUBAGENT_STATUS_MESSAGE = "subagent-status";
+
+export const SubagentActivityKindSchema = Type.Union([
+  Type.Literal("thinking"),
+  Type.Literal("tool"),
+  Type.Literal("message"),
+  Type.Literal("idle"),
+  Type.Literal("completed"),
+  Type.Literal("failed"),
+  Type.Literal("cancelled"),
+]);
+
+export const SubagentActivityEntrySchema = Type.Object(
+  {
+    sessionId: Type.String(),
+    kind: SubagentActivityKindSchema,
+    label: Type.String(),
+    detail: Type.Optional(Type.String()),
+    toolName: Type.Optional(Type.String()),
+    startedAt: Type.Number(),
+    updatedAt: Type.Number(),
+    done: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
 
 export const SubagentActionSchema = Type.Union(
   [Type.Literal("start"), Type.Literal("message"), Type.Literal("cancel"), Type.Literal("list")],

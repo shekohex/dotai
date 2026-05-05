@@ -273,7 +273,7 @@ timedTest(
 
       expect(mux.created.length).toBe(1);
       expect(mux.created[0]?.target).toBe("window");
-      expect(mux.created[0]?.command ?? "").toMatch(/--mode-review/);
+      expect(mux.created[0]?.command ?? "").not.toMatch(/--mode-review/);
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
       ).toMatch(/Review the code in the following paths: src/);

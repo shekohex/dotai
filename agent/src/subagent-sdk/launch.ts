@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { toModeFlagName } from "../extensions/modes.js";
 import type { TmuxTarget } from "../mode-utils.js";
 
 import {
@@ -18,7 +17,6 @@ export type LaunchTarget =
 export type LaunchCommandOptions = {
   launchTarget?: LaunchTarget;
   tmuxTarget: TmuxTarget;
-  mode?: string;
   model?: string;
   thinkingLevel?: string;
   systemPrompt?: string;
@@ -137,13 +135,6 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
     envAssignments.push(taskArgument.envAssignment);
     commandParts.push(taskArgument.shellExpression);
   }
-  if (options.mode !== undefined && options.mode.length > 0) {
-    const modeFlag = toModeFlagName(options.mode);
-    if (modeFlag !== undefined && modeFlag.length > 0) {
-      commandParts.push(`--${modeFlag}`);
-    }
-  }
-
   return `export ${envAssignments.join(" ")}; ${commandParts.join(" ")}`;
 };
 

@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import { isStaleSessionReplacementContextError } from "../../extensions/session-replacement.js";
-import type { RuntimeSubagent } from "../types.js";
+import type { RuntimeSubagent, SubagentActivityEntry } from "../types.js";
 import {
   getParentInjectedInputMarkerPath,
   isAutoExitTimeoutModeActive,
+  readLatestChildActivityState,
   readEphemeralChildSessionOutcomeBySessionId,
   readEphemeralChildSessionStatusDetails,
   readChildSessionOutcome,
@@ -14,6 +15,29 @@ import { formatStructuredOutputError, formatSubagentFailureFallback } from "./ba
 import { SubagentRuntimeMessaging } from "./messaging.js";
 
 const SUBAGENT_POLL_INTERVAL_MS = 250;
+
+function buildTerminalActivity(
+  state: RuntimeSubagent,
+  status: "completed" | "failed" | "cancelled",
+  summary: string | undefined,
+): SubagentActivityEntry {
+  const latestActivity =
+    state.sessionPath === undefined
+      ? state.activity
+      : readLatestChildActivityState(state.sessionPath);
+  const updatedAt = Date.now();
+
+  return {
+    sessionId: state.sessionId,
+    kind: status,
+    label: status === "completed" ? "done" : status,
+    detail: summary,
+    toolName: latestActivity?.toolName,
+    startedAt: latestActivity?.startedAt ?? state.startedAt,
+    updatedAt,
+    done: true,
+  };
+}
 
 function resolveCompletionDelivery(state: RuntimeSubagent): {
   enabled: boolean;
@@ -168,6 +192,7 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       ...state,
       event: failed ? "failed" : "completed",
       status: failed ? "failed" : "completed",
+      activity: buildTerminalActivity(state, failed ? "failed" : "completed", outcome.summary),
       summary: outcome.summary,
       structured: outcome.structured,
       structuredError: outcome.structuredError,
@@ -256,6 +281,10 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       ...state,
       event,
       status: liveStatus.status,
+      activity:
+        state.sessionPath === undefined
+          ? state.activity
+          : readLatestChildActivityState(state.sessionPath),
       autoExitTimeoutActive,
       updatedAt: Date.now(),
       autoExitDeadlineAt:

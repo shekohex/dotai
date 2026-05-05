@@ -31,6 +31,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     onUpdate?: AgentToolUpdateCallback,
     options: ResumeExecutionOptions = {},
   ): Promise<ResumeSubagentResult> {
+    this.ctx = ctx;
     const prepared = await this.prepareResumeExecution(params, ctx, onUpdate, options);
     const stateBundle = this.buildResumeStateBundle(
       prepared.existing,
@@ -50,7 +51,6 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
         prepared.existing.sessionPath !== undefined && prepared.existing.sessionPath.length > 0
           ? { kind: "session", sessionPath: prepared.existing.sessionPath }
           : { kind: "continue" },
-      modeOverride: params.mode,
     });
     return { state: this.toPublicState(state), prompt: params.task };
   }
@@ -266,7 +266,6 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     childState: ChildBootstrapState;
     provisionalState: RuntimeSubagent;
     launchTarget: LaunchTarget;
-    modeOverride: string | undefined;
   }): Promise<RuntimeSubagent> {
     const command = this.buildLaunchCommand(
       input.provisionalState,
@@ -275,7 +274,6 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
       {
         launchTarget: input.launchTarget,
         tmuxTarget: input.mode.tmuxTarget,
-        mode: (input.modeOverride?.trim().length ?? 0) > 0 ? input.mode.modeName : undefined,
         model: input.mode.model,
         thinkingLevel: input.mode.thinkingLevel,
         systemPrompt: input.mode.systemPrompt,

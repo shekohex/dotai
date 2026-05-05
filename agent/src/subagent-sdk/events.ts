@@ -13,6 +13,7 @@ function getStateSignature(state: RuntimeSubagent): string {
     completedAt: state.completedAt,
     autoExitDeadlineAt: state.autoExitDeadlineAt,
     autoExitTimeoutActive: state.autoExitTimeoutActive,
+    activity: state.activity,
     summary: state.summary,
     structured: state.structured,
     structuredError: state.structuredError,

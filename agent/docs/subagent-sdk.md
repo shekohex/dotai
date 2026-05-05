@@ -28,7 +28,8 @@ The SDK consists of three primary layers:
 The public-facing API that extensions interact with. Key responsibilities:
 
 - **State Protection**: Returns cloned snapshots of internal state to prevent external mutation. This was a critical design decision made during SDK refactoring to prevent extensions from accidentally corrupting runtime state.
-- **Event Deduplication**: Uses `SubagentRuntimeEventBus` to emit events only when state actually changes. Signatures are computed from `{event, status, paneId, completedAt, autoExitDeadlineAt, autoExitTimeoutActive, summary, structured, structuredError, exitCode}` to filter out poll-only `updatedAt` churn.
+- **Event Deduplication**: Uses `SubagentRuntimeEventBus` to emit events only when state actually changes. Signatures are computed from `{event, status, paneId, completedAt, autoExitDeadlineAt, autoExitTimeoutActive, activity, summary, structured, structuredError, exitCode}` to filter out poll-only `updatedAt` churn.
+- **Live Activity Snapshots**: Child sessions persist precise activity updates such as `thinking`, `reading`, `running bash`, `web searching`, and `waiting`, which are restored into parent-side runtime state for widgets and orchestration UIs.
 - **Handle Abstraction**: Provides `SubagentHandle` instances for ergonomic interaction with specific subagents, eliminating the need to pass `sessionId` manually for every operation
 
 ```
@@ -246,8 +247,27 @@ Returns all subagent states (cloned snapshots).
 ```typescript
 const states = sdk.list();
 // Array of RuntimeSubagent, sorted by startedAt
-// RuntimeSubagent now includes optional structured/outputFormat/structuredError fields
+// RuntimeSubagent now includes optional activity/structured/outputFormat/structuredError fields
 ```
+
+### RuntimeSubagent.activity
+
+Each runtime state may include a latest activity snapshot.
+
+```typescript
+type SubagentActivityEntry = {
+  sessionId: string;
+  kind: "thinking" | "tool" | "message" | "idle" | "completed" | "failed" | "cancelled";
+  label: string; // e.g. "thinking", "reading", "running bash"
+  detail?: string; // short preview, input summary, or latest reply snippet
+  toolName?: string; // e.g. "read", "bash", "websearch"
+  startedAt: number;
+  updatedAt: number;
+  done: boolean;
+};
+```
+
+Activity snapshots are best-effort for parent UIs, but tool transitions are emitted from child-session events rather than tmux output scraping.
 
 #### `get(sessionId)`
 
@@ -295,6 +315,7 @@ Global event stream for all subagents:
 const unsubscribe = sdk.onEvent((event) => {
   // event.type: "started" | "resumed" | "updated" | "completed" | "failed" | "cancelled"
   // event.state: RuntimeSubagent
+  // event.state.activity?.label: latest child activity, if known
 });
 
 // Cleanup

@@ -34,6 +34,8 @@ A TypeScript-based wrapper around `@mariozechner/pi-coding-agent` that bundles t
 DO:
 
 - Use TypeScript types and narrowing first for internal application code.
+- Trust typed production boundaries. If runtime contract says a method or field exists in our code path, call it directly.
+- Keep boundary code honest: let production code reflect actual runtime guarantees rather than test-double limitations.
 - Use `typebox` schemas for payloads that cross boundaries:
   - persisted JSON/JSONL state
   - tool inputs and outputs
@@ -49,6 +51,10 @@ DON'T:
 - Don't use `any` unless there is no alternative and user explicitly accepts it.
 - Don't use dynamic typing patterns for normal internal code paths.
 - Don't add runtime type guards, `in` checks, or defensive method-existence checks for public APIs that are already fully typed in our code path. Trust TypeScript unless data crossed an untyped boundary.
+- Don't weaken or complicate production code to accommodate incomplete mocks or fake test objects.
+- Don't add production fallbacks for broken mocks. If a test double violates the real contract, fix the test double.
+- Don't add defensive runtime fallbacks for behavior guaranteed by our typed contracts just because tests failed.
+- Don't fix test-contract failures in production code when the right fix is to update the test doubles to match the real API.
 - Don't parse structured payloads manually if a TypeBox schema should exist.
 - Don't use `Value.Parse(...)` on objects that may contain functions, class instances, timers, callbacks, or other non-cloneable runtime values.
 

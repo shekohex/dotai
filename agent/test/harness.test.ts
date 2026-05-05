@@ -1742,6 +1742,7 @@ timedTest(
   "mode CLI flags preserve the explicit startup mode when modes share a selection",
   async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-agent-"));
     let session: TestSession | undefined;
     const observedModeChanges: CapturedModeChange[] = [];
     const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1749,46 +1750,49 @@ timedTest(
     await writeSharedSelectionModesFile(cwd);
 
     try {
-      await withProcessCwd(cwd, async () => {
-        session = await createTestSession({
-          cwd,
-          extensionFactories: [
-            modesExtension,
-            createModeChangeCaptureExtension(observedModeChanges),
-            providers.extensionFactory,
-          ],
+      await withTempAgentDir(agentDir, async () => {
+        await withProcessCwd(cwd, async () => {
+          session = await createTestSession({
+            cwd,
+            extensionFactories: [
+              modesExtension,
+              createModeChangeCaptureExtension(observedModeChanges),
+              providers.extensionFactory,
+            ],
+          });
+          setSessionPersistence(session!, true);
+
+          (
+            session!.session as {
+              extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void };
+            }
+          ).extensionRunner.setFlagValue("mode-review", true);
+
+          await session!.session.reload();
+
+          const model = session!.session as {
+            model: { provider: string; id: string };
+            thinkingLevel: string;
+          };
+          expect(model.model.provider).toBe("mode-provider");
+          expect(model.model.id).toBe("mode-model");
+          expect(model.thinkingLevel).toBe("high");
+          expect(getLatestModeState(session!)).toBe(undefined);
+
+          observedModeChanges.length = 0;
+
+          await session!.session.prompt("hello");
+          await session!.session.agent.waitForIdle();
+          await new Promise((resolve) => setTimeout(resolve, 5));
+
+          expect(getLatestModeState(session!)).toBe("review");
+          expect(observedModeChanges.length).toBe(0, JSON.stringify(observedModeChanges));
         });
-        setSessionPersistence(session!, true);
-
-        (
-          session!.session as {
-            extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void };
-          }
-        ).extensionRunner.setFlagValue("mode-review", true);
-
-        await session!.session.reload();
-
-        const model = session!.session as {
-          model: { provider: string; id: string };
-          thinkingLevel: string;
-        };
-        expect(model.model.provider).toBe("mode-provider");
-        expect(model.model.id).toBe("mode-model");
-        expect(model.thinkingLevel).toBe("high");
-        expect(getLatestModeState(session!)).toBe(undefined);
-
-        observedModeChanges.length = 0;
-
-        await session!.session.prompt("hello");
-        await session!.session.agent.waitForIdle();
-        await new Promise((resolve) => setTimeout(resolve, 5));
-
-        expect(getLatestModeState(session!)).toBe("review");
-        expect(observedModeChanges.length).toBe(0, JSON.stringify(observedModeChanges));
       });
     } finally {
       session?.dispose();
       providers.dispose();
+      await rm(agentDir, { recursive: true, force: true });
       await rm(cwd, { recursive: true, force: true });
     }
   },

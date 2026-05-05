@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     dir: "test",
     include: ["**/*.test.ts"],
+    setupFiles: ["./test/test-utils/setup-env.ts"],
     reporters: [["minimal", { summary: false }], "json"],
     outputFile: {
       json: "/tmp/vitest-results.json",

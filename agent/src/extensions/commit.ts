@@ -2,11 +2,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { Type, type Static } from "typebox";
 
 import { buildLaunchCommand } from "../subagent-sdk/launch.js";
-import { createDefaultSubagentRuntimeHooks } from "../subagent-sdk/runtime-hooks.js";
 import { createSubagentSDK, type SubagentSDK } from "../subagent-sdk/sdk.js";
 import { TmuxAdapter } from "../subagent-sdk/tmux.js";
 import type { MuxAdapter } from "../subagent-sdk/mux.js";
-import { SUBAGENT_STATUS_MESSAGE } from "../subagent-sdk/types.js";
 
 const COMMIT_SUMMARY_MESSAGE_TYPE = "commit-summary";
 
@@ -107,11 +105,6 @@ function buildCommitTask(extraDetails?: string): string {
   return [
     "Use the commiter mode workflow to analyze local changes and create atomic conventional commits.",
     "Execute the needed git add + git commit commands and stop immediately if git reports signing, hook, or policy failures.",
-    "When done, return structured output with:",
-    "- `summaryMarkdown`: markdown lines mirroring `git log --oneline -N` style output for created commits",
-    "- `commits`: array of `{ sha, message, files }` for each created commit",
-    "- `warnings`: list of warnings or blockers encountered (empty when none)",
-    "- `remainingChanges`: list of files still modified/untracked after committing (empty when none)",
     trimmedExtraDetails !== undefined && trimmedExtraDetails.length > 0
       ? `Additional user details:\n${trimmedExtraDetails}`
       : undefined,
@@ -184,21 +177,6 @@ function createCommitSdk(
   pi: ExtensionAPI,
   options: CreateCommitExtensionOptions,
 ): Pick<SubagentSDK, "spawn" | "dispose"> {
-  const defaultSubagentHooks = createDefaultSubagentRuntimeHooks(pi);
-  const commitSubagentHooks = {
-    ...defaultSubagentHooks,
-    emitStatusMessage({ content }: { content: string; triggerTurn?: boolean }) {
-      pi.sendMessage(
-        {
-          customType: SUBAGENT_STATUS_MESSAGE,
-          content,
-          display: true,
-        },
-        { deliverAs: "steer", triggerTurn: false },
-      );
-    },
-  };
-
   const adapter =
     options.adapterFactory?.(pi) ??
     new TmuxAdapter(
@@ -210,7 +188,6 @@ function createCommitSdk(
     createSubagentSDK(pi, {
       adapter,
       buildLaunchCommand,
-      hooks: commitSubagentHooks,
     })
   );
 }
@@ -239,6 +216,7 @@ function createCommitCommandHandler(
           mode: "commiter",
           cwd: ctx.cwd,
           persisted: false,
+          completion: false,
           outputFormat: { type: "json_schema", schema: CommitStructuredSummarySchema },
         },
         ctx,

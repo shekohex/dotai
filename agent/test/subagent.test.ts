@@ -326,6 +326,52 @@ timedTest("resolveSubagentMode loads mode config from the child cwd", async () =
   }
 });
 
+timedTest("resolveSubagentMode normalizes GPT-5 child tools to apply_patch", async () => {
+  const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-gpt5-tools-"));
+  const childCwd = path.join(parentCwd, "child");
+  await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
+  await fs.writeFile(
+    path.join(childCwd, ".pi", "modes.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        modes: {
+          mapper: {
+            provider: "codex-openai",
+            modelId: "gpt-5.4-mini",
+            tools: ["read", "bash", "edit", "write"],
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const pi = new FakePi();
+  pi.activeTools = ["read", "bash", "edit", "write", "apply_patch", "subagent"];
+  pi.allTools = pi.activeTools.map((name) => ({ name }));
+
+  try {
+    const mode = await resolveSubagentMode(
+      pi as unknown as ExtensionAPI,
+      createFakeContext({ cwd: parentCwd }),
+      {
+        mode: "mapper",
+        cwd: childCwd,
+      },
+    );
+
+    expect(mode.value).toBeTruthy();
+    expect(mode.value?.tools).toEqual(["apply_patch", "bash", "read"]);
+    expect(mode.value?.tools.includes("edit")).toBe(false);
+    expect(mode.value?.tools.includes("write")).toBe(false);
+  } finally {
+    await fs.rm(parentCwd, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "resolveSubagentMode expands file system prompts relative to the defining modes file",
   async () => {
@@ -2086,6 +2132,26 @@ timedTest("createChildSessionFile bootstraps a persisted child session header", 
   }
 });
 
+timedTest("getDefaultSessionDir ignores literal undefined agent-dir env value", async () => {
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-session-dir-"));
+
+  process.env.PI_CODING_AGENT_DIR = "undefined";
+
+  try {
+    const sessionDir = getDefaultSessionDir(cwd);
+    expect(sessionDir.includes("undefined/sessions")).toBe(false);
+    expect(path.isAbsolute(sessionDir)).toBe(true);
+  } finally {
+    if (previousAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("createChildSessionFile returns undefined for ephemeral child sessions", async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-ephemeral-cwd-"));
 
@@ -2901,6 +2967,63 @@ timedTest(
 );
 
 timedTest("SubagentRuntime launches ephemeral children when persisted=false", async () => {
+  {
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    const runtime = new SubagentRuntime(
+      fakePi as unknown as ExtensionAPI,
+      fakeMux,
+      () => "pi --no-session fake",
+    );
+
+    try {
+      const ctx = createFakeContext({ cwd: process.cwd(), sessionFile: "/tmp/parent.jsonl" });
+      const started = await runtime.spawn(
+        {
+          name: "worker-silent",
+          task: "stay quiet",
+          completion: false,
+        },
+        ctx,
+      );
+
+      await runtime.cancel({ sessionId: started.state.sessionId });
+
+      expect(fakePi.sentMessages).toHaveLength(0);
+    } finally {
+      runtime.dispose();
+    }
+  }
+
+  {
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    const runtime = new SubagentRuntime(
+      fakePi as unknown as ExtensionAPI,
+      fakeMux,
+      () => "pi --no-session fake",
+    );
+
+    try {
+      const ctx = createFakeContext({ cwd: process.cwd(), sessionFile: "/tmp/parent.jsonl" });
+      const started = await runtime.spawn(
+        {
+          name: "worker-follow-up",
+          task: "send follow up",
+          completion: { deliverAs: "followUp", triggerTurn: false },
+        },
+        ctx,
+      );
+
+      await runtime.cancel({ sessionId: started.state.sessionId });
+
+      expect(fakePi.sentMessages).toHaveLength(1);
+      expect(fakePi.sentMessages[0]?.options).toEqual({ deliverAs: "followUp" });
+    } finally {
+      runtime.dispose();
+    }
+  }
+
   const fakePi = new FakePi();
   const fakeMux = new FakeMuxAdapter();
   const launched: Array<{

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 import { resolveModeSpec, type ModeSpec } from "../mode-utils.js";
+import { normalizeToolNamesForModel } from "../extensions/patch.js";
 
 export type ResolvedSubagentMode = {
   modeName: string;
@@ -63,7 +64,11 @@ export async function resolveSubagentMode(
     return { error: `Unknown mode "${modeName}"` };
   }
 
-  const tools = resolveModeTools(spec.tools, parentActiveTools, availableToolNames);
+  const tools = normalizeToolNamesForModel(
+    resolveModeTools(spec.tools, parentActiveTools, availableToolNames),
+    spec.modelId,
+    availableToolNames,
+  );
   const model =
     spec.provider !== undefined &&
     spec.provider.length > 0 &&

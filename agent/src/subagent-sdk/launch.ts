@@ -37,6 +37,11 @@ export const PI_COMMAND_ENV = "PI_SUBAGENT_PI_COMMAND";
 export const CHILD_STATE_FILE_ENV = "PI_SUBAGENT_CHILD_STATE_FILE";
 const SYSTEM_PROMPT_FILE_ENV = "PI_SUBAGENT_SYSTEM_PROMPT_FILE";
 const TASK_FILE_ENV = "PI_SUBAGENT_TASK_FILE";
+const SUBAGENT_ENV_ALLOWLIST = [
+  "PI_DEBUG_PROVIDER_REQUESTS",
+  "PI_DEBUG_SYSTEM_PROMPT",
+  "PI_DEBUG_PROVIDER_REQUESTS_LOG",
+] as const;
 
 function shellEscape(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
@@ -82,6 +87,12 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
     CHILD_STATE_FILE_ENV,
   );
   const envAssignments = [childStateArgument.envAssignment];
+  for (const envName of SUBAGENT_ENV_ALLOWLIST) {
+    const envValue = process.env[envName]?.trim();
+    if (envValue !== undefined && envValue.length > 0) {
+      envAssignments.push(`${envName}=${shellEscape(envValue)}`);
+    }
+  }
   const persistedSessionPath =
     state.persisted !== false && state.sessionPath !== undefined && state.sessionPath.length > 0
       ? state.sessionPath
@@ -157,3 +168,5 @@ export function readChildState(): ChildBootstrapState | undefined {
     return undefined;
   }
 }
+
+export const SUBAGENT_DEBUG_ENV_ALLOWLIST = SUBAGENT_ENV_ALLOWLIST;

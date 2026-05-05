@@ -13,6 +13,26 @@ export function shouldUsePatch(modelId: string | undefined): boolean {
   );
 }
 
+export function normalizeToolNamesForModel(
+  toolNames: string[],
+  modelId: string | undefined,
+  availableToolNames?: Iterable<string>,
+): string[] {
+  const nextTools = new Set(toolNames);
+
+  if (shouldUsePatch(modelId)) {
+    nextTools.delete("edit");
+    nextTools.delete("write");
+    if (availableToolNames === undefined || new Set(availableToolNames).has("apply_patch")) {
+      nextTools.add("apply_patch");
+    }
+  } else {
+    nextTools.delete("apply_patch");
+  }
+
+  return Array.from(nextTools).toSorted((left, right) => left.localeCompare(right));
+}
+
 export function sameToolSet(left: string[], right: string[]): boolean {
   if (left.length !== right.length) {
     return false;

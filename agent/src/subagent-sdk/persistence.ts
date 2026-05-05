@@ -46,9 +46,32 @@ export type ChildSessionStatusDetails = {
 
 export const SUBAGENT_PARENT_INPUT_GRACE_MS = 1500;
 
+function resolveAgentDirForSessions(): string {
+  const configuredAgentDir = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (
+    configuredAgentDir !== undefined &&
+    configuredAgentDir.length > 0 &&
+    configuredAgentDir !== "undefined" &&
+    configuredAgentDir !== "null"
+  ) {
+    return configuredAgentDir;
+  }
+
+  const fallbackAgentDir = getAgentDir().trim();
+  if (
+    fallbackAgentDir.length > 0 &&
+    fallbackAgentDir !== "undefined" &&
+    fallbackAgentDir !== "null"
+  ) {
+    return fallbackAgentDir;
+  }
+
+  return path.join(os.homedir(), ".pi", "agent");
+}
+
 export function getDefaultSessionDir(cwd: string): string {
   const safePath = `--${cwd.replace(/^[/\\]/, "").replaceAll(/[/\\:]/g, "-")}--`;
-  const sessionDir = path.join(getAgentDir(), "sessions", safePath);
+  const sessionDir = path.join(resolveAgentDirForSessions(), "sessions", safePath);
   if (!fs.existsSync(sessionDir)) {
     fs.mkdirSync(sessionDir, { recursive: true });
   }

@@ -232,6 +232,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
         autoExit: mode.autoExit,
         autoExitTimeoutMs: mode.autoExitTimeoutMs,
         autoExitTimeoutActive: false,
+        completion: params.completion,
         status: "running",
         outputFormat: params.outputFormat,
         startedAt,

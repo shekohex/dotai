@@ -24,6 +24,7 @@ import {
 } from "./render.js";
 import {
   isApplyPatchShellCommand,
+  normalizeToolNamesForModel,
   sameToolSet,
   shouldUsePatch,
   withFileMutationQueues,
@@ -264,3 +265,4 @@ function registerApplyPatchCommandBlocker(pi: ExtensionAPI): void {
 }
 
 export { shouldUsePatch };
+export { normalizeToolNamesForModel };

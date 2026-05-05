@@ -152,9 +152,13 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
     await this.hooks.persistState(cancelled);
     this.stopPollingIfIdle();
     this.refreshWidget();
-    this.hooks.emitStatusMessage({
-      content: `Subagent ${state.name} (${state.sessionId}) was cancelled.`,
-    });
+    if (cancelled.completion !== false) {
+      this.hooks.emitStatusMessage({
+        content: `Subagent ${state.name} (${state.sessionId}) was cancelled.`,
+        deliverAs: cancelled.completion?.deliverAs ?? "steer",
+        triggerTurn: cancelled.completion?.triggerTurn ?? true,
+      });
+    }
     return this.toPublicState(cancelled);
   }
 

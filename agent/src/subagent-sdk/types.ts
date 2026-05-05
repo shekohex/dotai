@@ -5,6 +5,8 @@ import { Value } from "typebox/value";
 import {
   ChildBootstrapStateSchema,
   OutputFormatSchema,
+  SubagentCompletionNotificationSchema,
+  SubagentCompletionSchema,
   StructuredOutputErrorCodeSchema,
   StructuredOutputErrorSchema,
   SubagentActionSchema,
@@ -22,6 +24,8 @@ export {
   OutputFormatJsonSchemaSchema,
   OutputFormatSchema,
   OutputFormatTextSchema,
+  SubagentCompletionNotificationSchema,
+  SubagentCompletionSchema,
   StructuredOutputErrorCodeSchema,
   StructuredOutputErrorSchema,
   SUBAGENT_MESSAGE_ENTRY,
@@ -42,6 +46,8 @@ export {
 
 export type SubagentAction = Static<typeof SubagentActionSchema>;
 export type SubagentDelivery = Static<typeof SubagentDeliverySchema>;
+export type SubagentCompletionNotification = Static<typeof SubagentCompletionNotificationSchema>;
+export type SubagentCompletion = Static<typeof SubagentCompletionSchema>;
 export type SubagentStateEvent = Static<typeof SubagentStateEventSchema>;
 export type SubagentStatus = Static<typeof SubagentStatusSchema>;
 export type TSchemaBase = TSchema;
@@ -73,6 +79,7 @@ type StartSubagentBaseParams = {
   cwd?: string;
   autoExit?: boolean;
   persisted?: boolean;
+  completion?: SubagentCompletion;
 };
 
 export type StartSubagentParamsText = StartSubagentBaseParams & {
@@ -192,6 +199,7 @@ export function cloneRuntimeSubagent(state: RuntimeSubagent): RuntimeSubagent {
   return {
     ...state,
     structured: cloneStructuredValue(state.structured),
+    completion: cloneCompletion(state.completion),
     outputFormat: cloneOutputFormat(state.outputFormat),
     structuredError: cloneStructuredError(state.structuredError),
   };
@@ -220,6 +228,16 @@ function cloneOutputFormat(outputFormat: OutputFormat | undefined): OutputFormat
     return { type: "json_schema", schema };
   }
   return { type: "json_schema", schema, retryCount: outputFormat.retryCount };
+}
+
+function cloneCompletion(
+  completion: SubagentCompletion | undefined,
+): SubagentCompletion | undefined {
+  if (completion === undefined || completion === false) {
+    return completion;
+  }
+
+  return { ...completion };
 }
 
 function cloneStructuredError(

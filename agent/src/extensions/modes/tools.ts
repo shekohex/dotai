@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ModeSpec } from "../../mode-utils.js";
-import { shouldUsePatch } from "../patch.js";
+import { normalizeToolNamesForModel, shouldUsePatch } from "../patch.js";
 import { readChildState } from "../../subagent-sdk/launch.js";
 
 const STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput";
@@ -91,7 +91,11 @@ export function syncModeTools(
 ): void {
   const availableToolNames = getAvailableToolNames(pi);
   const defaultToolNames = getDefaultToolNames(pi, ctx, availableToolNames);
-  const nextTools = resolveModeToolNames(spec?.tools, defaultToolNames, availableToolNames);
+  const nextTools = normalizeToolNamesForModel(
+    resolveModeToolNames(spec?.tools, defaultToolNames, availableToolNames),
+    ctx.model?.id,
+    availableToolNames,
+  );
   const childState = readChildState();
   if (
     childState?.outputFormat?.type === "json_schema" &&

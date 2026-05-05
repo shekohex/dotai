@@ -43,6 +43,7 @@ export function buildResumeStateBundle(input: {
       autoExitTimeoutActive:
         input.existing.autoExitTimeoutActive ??
         isAutoExitTimeoutModeActive(input.existing.sessionId),
+      completion: input.existing.completion,
       status: "running",
       summary: undefined,
       structured: undefined,

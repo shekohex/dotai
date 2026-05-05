@@ -97,6 +97,7 @@ timedTest("commit command spawns commiter mode with structured output", async ()
   expect(spawnCalls.length).toBe(1);
   expect(spawnCalls[0]?.params.mode).toBe("commiter");
   expect(spawnCalls[0]?.params.persisted).toBe(false);
+  expect(spawnCalls[0]?.params.completion).toBe(false);
   expect(spawnCalls[0]?.params.outputFormat?.type).toBe("json_schema");
   expect(spawnCalls[0]?.params.task ?? "").toMatch(/Additional user details:\ninclude docs too/);
   expect(fakePi.sentMessages.length).toBe(1);

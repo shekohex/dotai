@@ -5,10 +5,14 @@ import {
   CHILD_STATE_FILE_ENV,
   CHILD_STATE_ENV,
   PI_COMMAND_ENV,
+  SUBAGENT_DEBUG_ENV_ALLOWLIST,
 } from "../src/subagent-sdk/launch.ts";
 import type { RuntimeSubagent } from "../src/subagent-sdk/types.ts";
 
 const previousPiCommand = process.env[PI_COMMAND_ENV];
+const previousDebugProviderRequests = process.env.PI_DEBUG_PROVIDER_REQUESTS;
+const previousDebugSystemPrompt = process.env.PI_DEBUG_SYSTEM_PROMPT;
+const previousDebugProviderRequestsLog = process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG;
 
 function createState(): RuntimeSubagent {
   return {
@@ -36,6 +40,24 @@ afterEach(() => {
     delete process.env[PI_COMMAND_ENV];
   } else {
     process.env[PI_COMMAND_ENV] = previousPiCommand;
+  }
+
+  if (previousDebugProviderRequests === undefined) {
+    delete process.env.PI_DEBUG_PROVIDER_REQUESTS;
+  } else {
+    process.env.PI_DEBUG_PROVIDER_REQUESTS = previousDebugProviderRequests;
+  }
+
+  if (previousDebugSystemPrompt === undefined) {
+    delete process.env.PI_DEBUG_SYSTEM_PROMPT;
+  } else {
+    process.env.PI_DEBUG_SYSTEM_PROMPT = previousDebugSystemPrompt;
+  }
+
+  if (previousDebugProviderRequestsLog === undefined) {
+    delete process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG;
+  } else {
+    process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG = previousDebugProviderRequestsLog;
   }
 });
 
@@ -86,5 +108,42 @@ describe("buildLaunchCommand", () => {
     expect(readFileSync(childStatePath ?? "", "utf8")).toContain(`"prompt":"${task}"`);
     expect(readFileSync(systemPromptPath ?? "", "utf8")).toBe(systemPrompt);
     expect(readFileSync(taskPath ?? "", "utf8")).toBe(task);
+  });
+
+  it("forwards allowlisted provider debug env vars to child sessions", () => {
+    process.env[PI_COMMAND_ENV] = "pi";
+    process.env.PI_DEBUG_PROVIDER_REQUESTS = "1";
+    process.env.PI_DEBUG_SYSTEM_PROMPT = "true";
+    process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG = "/tmp/provider-debug-child.jsonl";
+
+    const command = buildLaunchCommand(
+      createState(),
+      {
+        sessionId: "session-1",
+        prompt: "inspect",
+        parentSessionId: "parent-1",
+        parentSessionPath: "/tmp/parent-1.jsonl",
+        stateEntryId: `${CHILD_STATE_ENV}-1`,
+        modeName: "gsd-executor",
+        modeLabel: "GSD executor",
+        handoff: false,
+        persisted: true,
+      },
+      "inspect",
+      {
+        tmuxTarget: "window",
+        mode: "gsd-executor",
+        systemPromptMode: "replace",
+      },
+    );
+
+    expect(SUBAGENT_DEBUG_ENV_ALLOWLIST).toEqual([
+      "PI_DEBUG_PROVIDER_REQUESTS",
+      "PI_DEBUG_SYSTEM_PROMPT",
+      "PI_DEBUG_PROVIDER_REQUESTS_LOG",
+    ]);
+    expect(command).toContain("PI_DEBUG_PROVIDER_REQUESTS='1'");
+    expect(command).toContain("PI_DEBUG_SYSTEM_PROMPT='true'");
+    expect(command).toContain("PI_DEBUG_PROVIDER_REQUESTS_LOG='/tmp/provider-debug-child.jsonl'");
   });
 });

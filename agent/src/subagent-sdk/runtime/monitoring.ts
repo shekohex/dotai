@@ -15,6 +15,22 @@ import { SubagentRuntimeMessaging } from "./messaging.js";
 
 const SUBAGENT_POLL_INTERVAL_MS = 250;
 
+function resolveCompletionDelivery(state: RuntimeSubagent): {
+  enabled: boolean;
+  deliverAs: "steer" | "followUp" | "nextTurn";
+  triggerTurn: boolean;
+} {
+  if (state.completion === false) {
+    return { enabled: false, deliverAs: "steer", triggerTurn: false };
+  }
+
+  return {
+    enabled: true,
+    deliverAs: state.completion?.deliverAs ?? "steer",
+    triggerTurn: state.completion?.triggerTurn ?? true,
+  };
+}
+
 function pathDirname(inputPath: string): string {
   const slashIndex = inputPath.lastIndexOf("/");
   const backslashIndex = inputPath.lastIndexOf("\\");
@@ -172,7 +188,14 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
         ? `Subagent ${terminal.name} (${terminal.sessionId}) completed.\n\n${terminal.summary ?? "No summary available."}`
         : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? formatSubagentFailureFallback(terminal)}`;
 
-    this.hooks.emitStatusMessage({ content: messageText, triggerTurn: true });
+    const completionDelivery = resolveCompletionDelivery(terminal);
+    if (completionDelivery.enabled) {
+      this.hooks.emitStatusMessage({
+        content: messageText,
+        deliverAs: completionDelivery.deliverAs,
+        triggerTurn: completionDelivery.triggerTurn,
+      });
+    }
   }
 
   protected async markParentInjectedInput(sessionId: string): Promise<void> {

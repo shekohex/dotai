@@ -17,7 +17,11 @@ import {
 export type SubagentRuntimeHooks = {
   persistState(state: SubagentStateEntry): Promise<void>;
   persistMessage(entry: SubagentMessageEntry): Promise<void>;
-  emitStatusMessage(options: { content: string; triggerTurn?: boolean }): void;
+  emitStatusMessage(options: {
+    content: string;
+    deliverAs?: "steer" | "followUp" | "nextTurn";
+    triggerTurn?: boolean;
+  }): void;
   renderWidget(ctx: ExtensionContext | undefined, subagents: RuntimeSubagent[]): void;
 };
 
@@ -43,7 +47,7 @@ export function createDefaultSubagentRuntimeHooks(pi: ExtensionAPI): SubagentRun
       }
       return Promise.resolve();
     },
-    emitStatusMessage({ content, triggerTurn }) {
+    emitStatusMessage({ content, deliverAs, triggerTurn }) {
       try {
         pi.sendMessage(
           {
@@ -51,7 +55,9 @@ export function createDefaultSubagentRuntimeHooks(pi: ExtensionAPI): SubagentRun
             content,
             display: true,
           },
-          triggerTurn === true ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "steer" },
+          triggerTurn === true
+            ? { deliverAs: deliverAs ?? "steer", triggerTurn: true }
+            : { deliverAs: deliverAs ?? "steer" },
         );
       } catch (error) {
         if (!isStaleSessionReplacementContextError(error)) {

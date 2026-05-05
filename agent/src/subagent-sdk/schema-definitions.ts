@@ -23,6 +23,23 @@ export const SubagentDeliverySchema = Type.Union(
   ],
   { description: "Optional message delivery mode for message." },
 );
+export const SubagentCompletionNotificationSchema = Type.Object(
+  {
+    deliverAs: Type.Optional(SubagentDeliverySchema),
+    triggerTurn: Type.Optional(Type.Boolean()),
+  },
+  {
+    additionalProperties: false,
+    description:
+      "Optional completion delivery overrides. Defaults to deliverAs=steer and triggerTurn=true.",
+  },
+);
+export const SubagentCompletionSchema = Type.Union([
+  Type.Literal(false, {
+    description: "Disable automatic completion status message back to parent session entirely.",
+  }),
+  SubagentCompletionNotificationSchema,
+]);
 export const SubagentStateEventSchema = Type.Union([
   Type.Literal("started"),
   Type.Literal("resumed"),
@@ -129,6 +146,7 @@ export const SubagentToolParamsSchema = Type.Object({
         "Optional for start. Defaults to true. When false, launch child with --no-session and skip child session persistence. If parent session is ephemeral, child sessions automatically become ephemeral.",
     }),
   ),
+  completion: Type.Optional(SubagentCompletionSchema),
   outputFormat: Type.Optional(
     Type.Union([
       OutputFormatTextSchema,
@@ -177,6 +195,7 @@ export const SubagentStateEntrySchema = Type.Object(
     autoExitTimeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
     autoExitTimeoutActive: Type.Optional(Type.Boolean()),
     autoExitDeadlineAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    completion: Type.Optional(SubagentCompletionSchema),
     status: SubagentStatusSchema,
     exitCode: Type.Optional(Type.Number()),
     summary: Type.Optional(Type.String()),

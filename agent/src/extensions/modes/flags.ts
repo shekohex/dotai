@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { loadModesFileSync, type ModeSpec, type ModesFile } from "../../mode-utils.js";
+import { loadModeRegistrySync, type ModeSpec, type ModesFile } from "../../mode-utils.js";
 
 const MODE_FLAG_PREFIX = "mode-";
 
@@ -40,7 +40,7 @@ export function registerModeFlags(
 ): void {
   registeredModeFlags.clear();
 
-  const loaded = loadModesFileSync(process.cwd());
+  const loaded = loadModeRegistrySync(process.cwd());
   const collisions = new Set<string>();
 
   for (const modeName of deps.orderedModeNames(loaded.data)) {

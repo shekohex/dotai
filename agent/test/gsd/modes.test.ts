@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadModesFileSync } from "../../src/mode-utils.ts";
+import { loadModeRegistrySync, loadModesFileSync } from "../../src/mode-utils.ts";
 import {
   buildBuiltInGsdModes,
   registerBuiltInGsdModes,
@@ -26,6 +26,37 @@ describe("ensureBuiltInGsdModes", () => {
     const loaded = loadModesFileSync(root);
     expect(loaded.data.modes["gsd-planner"]).toBeDefined();
     expect(loaded.data.modes["gsd-executor"]).toBeDefined();
+  });
+
+  it("exposes built-in and file-backed modes through canonical registry", () => {
+    const root = createRoot();
+    writeFileSync(
+      join(root, ".pi", "modes.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          currentMode: "custom-mode",
+          modes: {
+            "custom-mode": {
+              description: "mine",
+              systemPrompt: "keep me",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    registerBuiltInGsdModes();
+    const loaded = loadModeRegistrySync(root);
+
+    expect(loaded.data.currentMode).toBe("custom-mode");
+    expect(loaded.data.modes["custom-mode"]?.systemPrompt).toBe("keep me");
+    expect(loaded.data.modes["gsd-codebase-mapper"]?.provider).toBe("codex-openai");
+    expect(loaded.resolvedData.modes["gsd-codebase-mapper"]?.systemPrompt).toContain(
+      "You are spawned by `/gsd map-codebase`",
+    );
   });
 
   it("preserves existing project modes without overriding them", () => {

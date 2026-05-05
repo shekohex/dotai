@@ -22,6 +22,8 @@ type LoadedModesSource = {
   error?: string;
 };
 
+export type LoadedModeRegistry = LoadedModesFile;
+
 const builtInModeSources = new Map<string, ModesFile>();
 
 const systemPromptFileReferencePattern = /^\{file:(.+)\}$/s;
@@ -218,12 +220,12 @@ function loadModesSourceSync(filePath: string): LoadedModesSource {
   }
 }
 
-function buildLoadedModesFile(
+function buildLoadedModeRegistry(
   projectPath: string,
   globalPath: string,
   projectSource: LoadedModesSource,
   globalSource: LoadedModesSource,
-): LoadedModesFile {
+): LoadedModeRegistry {
   const builtInData = getBuiltInModesData();
   let source: "project" | "global" | "missing" = "missing";
   if (projectSource.exists) {
@@ -253,25 +255,33 @@ function buildLoadedModesFile(
   };
 }
 
-export async function loadModesFile(cwd: string): Promise<LoadedModesFile> {
+export async function loadModeRegistry(cwd: string): Promise<LoadedModeRegistry> {
   const projectPath = getModesProjectPath(cwd);
   const globalPath = getModesGlobalPath();
   const [projectSource, globalSource] = await Promise.all([
     loadModesSource(projectPath),
     loadModesSource(globalPath),
   ]);
-  return buildLoadedModesFile(projectPath, globalPath, projectSource, globalSource);
+  return buildLoadedModeRegistry(projectPath, globalPath, projectSource, globalSource);
 }
 
-export function loadModesFileSync(cwd: string): LoadedModesFile {
+export function loadModeRegistrySync(cwd: string): LoadedModeRegistry {
   const projectPath = getModesProjectPath(cwd);
   const globalPath = getModesGlobalPath();
-  return buildLoadedModesFile(
+  return buildLoadedModeRegistry(
     projectPath,
     globalPath,
     loadModesSourceSync(projectPath),
     loadModesSourceSync(globalPath),
   );
+}
+
+export function loadModesFile(cwd: string): Promise<LoadedModesFile> {
+  return loadModeRegistry(cwd);
+}
+
+export function loadModesFileSync(cwd: string): LoadedModesFile {
+  return loadModeRegistrySync(cwd);
 }
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
@@ -315,6 +325,6 @@ export async function resolveModeSpec(
   cwd: string,
   modeName: string,
 ): Promise<ModeSpec | undefined> {
-  const loaded = await loadModesFile(cwd);
+  const loaded = await loadModeRegistry(cwd);
   return loaded.resolvedData.modes[modeName];
 }

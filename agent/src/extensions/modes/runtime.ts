@@ -1,7 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import {
   getModesProjectPath,
-  loadModesFile,
+  loadModeRegistry,
   saveModesFile,
   type ModesFile,
   type ModeSpec,
@@ -27,7 +27,7 @@ export async function ensureRuntime(
 ): Promise<void> {
   const previousPath = runtime.path;
   const previousActiveMode = runtime.activeMode;
-  const loaded = await loadModesFile(ctx.cwd);
+  const loaded = await loadModeRegistry(ctx.cwd);
   runtime.source = loaded.source;
   runtime.data = loaded.data;
   runtime.path = loaded.source === "missing" ? getModesProjectPath(ctx.cwd) : loaded.path;

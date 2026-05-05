@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-import { loadModesFile, type ModeSpec } from "../mode-utils.js";
+import { loadModeRegistry, type ModeSpec } from "../mode-utils.js";
 
 export type AvailableMode = {
   name: string;
@@ -23,7 +23,7 @@ function escapeXmlAttribute(value: string): string {
 }
 
 export async function loadAvailableModes(cwd: string): Promise<AvailableMode[]> {
-  const loaded = await loadModesFile(cwd);
+  const loaded = await loadModeRegistry(cwd);
   return Object.entries(loaded.data.modes)
     .toSorted(([left], [right]) => compareModeNames(left, right))
     .map(([name, spec]) => ({ name, spec }));

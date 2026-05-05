@@ -161,6 +161,36 @@ describe("gsd lifecycle handlers", () => {
     expect(pi.sendMessage.mock.calls[0]?.[0]?.details?.areas).toHaveLength(4);
   });
 
+  it("map-codebase passes validated --paths scope to each mapper role", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        handle: {
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "session-id",
+            status: "completed",
+            summary: "Mapping Complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+        },
+      },
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      paths: ["src", "packages/ui", "../bad", "apps/$oops"],
+    });
+
+    expect(spawn).toHaveBeenCalledTimes(4);
+    for (const call of spawn.mock.calls) {
+      expect(call[0]?.task).toContain("--paths src,packages/ui");
+      expect(call[0]?.task).not.toContain("../bad");
+      expect(call[0]?.task).not.toContain("apps/$oops");
+    }
+  });
+
   it("discuss-phase writes phase-specific context for explicit phase", async () => {
     const root = createPlanningRoot();
     const ctx = createContext(root);

@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { GsdCommandArgs } from "../args.js";
 import { formatDetachedGsdFailure, runDetachedGsdJob } from "../detached-job.js";
 import { resolvePlanningDir } from "../shared.js";
 import { runRoleDetached } from "../subagents.js";
@@ -19,14 +20,27 @@ const documentsByFocus: Record<CodebaseMapFocus, string[]> = {
   concerns: ["CONCERNS.md"],
 };
 
+const safeMapperPathPattern =
+  /^(?!.*\.\.)(?:[A-Za-z0-9_.][A-Za-z0-9_.-]*)(?:\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)*$/;
+
 function assertUnreachable(_value: never): never {
   throw new Error("Unsupported codebase map focus");
 }
 
-function buildMapperTask(focus: CodebaseMapFocus, date: string): string {
+function normalizeMapperPaths(paths: string[] | undefined): string[] {
+  if (paths === undefined) {
+    return [];
+  }
+  return [
+    ...new Set(paths.map((path) => path.trim()).filter((path) => safeMapperPathPattern.test(path))),
+  ];
+}
+
+function buildMapperTask(focus: CodebaseMapFocus, date: string, paths: string[]): string {
   const sharedHeader = [
     `Focus: ${focus}`,
     `Today's date: ${date}`,
+    ...(paths.length > 0 ? [`--paths ${paths.join(",")}`] : []),
     "",
     "<required_reading>",
     ".planning/PROJECT.md",
@@ -97,16 +111,18 @@ function buildMapperTask(focus: CodebaseMapFocus, date: string): string {
 export async function handleGsdMapCodebase(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
+  args: GsdCommandArgs = {},
 ): Promise<void> {
   ensurePlanningDir(ctx.cwd);
   const codebaseDir = join(resolvePlanningDir(ctx.cwd), "codebase");
   mkdirSync(codebaseDir, { recursive: true });
 
   const date = new Date().toISOString().slice(0, 10);
+  const scopedPaths = normalizeMapperPaths(args.paths);
   const focusAreas: CodebaseMapFocus[] = ["tech", "arch", "quality", "concerns"];
   const startedRoles = await Promise.all(
     focusAreas.map((focus) =>
-      runRoleDetached(pi, ctx, "codebase-mapper", buildMapperTask(focus, date), {
+      runRoleDetached(pi, ctx, "codebase-mapper", buildMapperTask(focus, date, scopedPaths), {
         completion: false,
         name: `codebase-mapper:${focus}`,
       }),

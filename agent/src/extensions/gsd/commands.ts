@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { isPhaseOverrideSubcommand, parseGsdCommandArgs } from "./args.js";
+import { parseGsdCommandArgs, usesParsedArgs } from "./args.js";
 import { getGsdArgumentCompletions, getGsdSubcommands } from "./autocomplete.js";
 import { gsdHandlers } from "./handlers.js";
 import { getGsdSettings, saveGsdSettings } from "./settings.js";
@@ -65,11 +65,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         case "stats":
         case "health":
         case "status":
-          await gsdHandlers[subcommand](
-            pi,
-            ctx,
-            isPhaseOverrideSubcommand(subcommand) ? parsedArgs : {},
-          );
+          await gsdHandlers[subcommand](pi, ctx, usesParsedArgs(subcommand) ? parsedArgs : {});
           return;
         case "help":
           await showGsdHelp(ctx);

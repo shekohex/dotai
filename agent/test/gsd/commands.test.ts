@@ -190,6 +190,14 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     phase: "3.1",
   });
   expect(parseGsdCommandArgs("next --phase=4")).toEqual({ subcommand: "next", phase: "4" });
+  expect(parseGsdCommandArgs("map-codebase --paths src,packages/ui")).toEqual({
+    subcommand: "map-codebase",
+    paths: ["src", "packages/ui"],
+  });
+  expect(parseGsdCommandArgs("map-codebase --paths=apps/web,packages/api")).toEqual({
+    subcommand: "map-codebase",
+    paths: ["apps/web", "packages/api"],
+  });
 });
 
 test("gsd autocomplete suggests phase values and flags from ctx cwd state", async () => {
@@ -233,6 +241,20 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
     expect.arrayContaining([
       expect.objectContaining({ value: "--phase=1", label: "1 Foundation" }),
       expect.objectContaining({ value: "--phase=2", label: "2 Delivery" }),
+    ]),
+  );
+
+  const mapCodebaseItems = await command?.getArgumentCompletions?.("map-codebase ");
+  expect(mapCodebaseItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        value: "--paths",
+        label: "--paths",
+      }),
+      expect.objectContaining({
+        value: "--paths=",
+        label: "--paths=",
+      }),
     ]),
   );
 });

@@ -31,6 +31,7 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
 ];
 
 const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
+  "map-codebase": ["--paths", "--paths="],
   "discuss-phase": ["--phase", "--phase="],
   "plan-phase": ["--phase", "--phase="],
   "execute-phase": ["--phase", "--phase="],
@@ -84,6 +85,12 @@ function getFlagDescription(value: string): string | undefined {
   }
   if (value === "--phase=") {
     return "Inline phase override";
+  }
+  if (value === "--paths") {
+    return "Scope mapping to repo-relative paths";
+  }
+  if (value === "--paths=") {
+    return "Inline repo-relative mapping paths";
   }
   return undefined;
 }

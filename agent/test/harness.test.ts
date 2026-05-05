@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -201,6 +202,12 @@ class HarnessMuxAdapter implements MuxAdapter {
   async capturePane(): Promise<{ text: string }> {
     return { text: "" };
   }
+}
+
+function readLaunchFileBackedValue(command: string, envName: string): string {
+  const escapedName = envName.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = command.match(new RegExp(`${escapedName}='([^']+)'`));
+  return match?.[1] ? readFileSync(match[1], "utf8") : "";
 }
 
 function createHandoffTestProviders(summaryText: string): {
@@ -2471,15 +2478,31 @@ timedTest(
       expect(mux.created[0]?.command ?? "").toMatch(/--session/);
       expect(mux.created[1]?.command ?? "").toMatch(/--session/);
       expect((mux.created[1]?.command ?? "").includes(sessionPath)).toBeTruthy();
-      expect(mux.created[0]?.command ?? "").toMatch(/Inspect failing tests/);
-      expect(mux.created[1]?.command ?? "").toMatch(/Inspect failing tests/);
-      expect(mux.created[0]?.command ?? "").toMatch(/"prompt":"Inspect failing tests"/);
-      expect(mux.created[1]?.command ?? "").toMatch(/"prompt":"Inspect failing tests"/);
-      expect(mux.created[0]?.command ?? "").toMatch(/"autoExitTimeoutMs":30000/);
-      expect(mux.created[1]?.command ?? "").toMatch(/"autoExitTimeoutMs":30000/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toBe("Inspect failing tests");
+      expect(
+        readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toBe("Inspect failing tests");
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
+      ).toMatch(/"prompt":"Inspect failing tests"/);
+      expect(
+        readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
+      ).toMatch(/"prompt":"Inspect failing tests"/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
+      ).toMatch(/"autoExitTimeoutMs":30000/);
+      expect(
+        readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
+      ).toMatch(/"autoExitTimeoutMs":30000/);
       {
+        const promptValue = readLaunchFileBackedValue(
+          mux.created[0]?.command ?? "",
+          "PI_SUBAGENT_TASK_FILE",
+        );
+        const promptIndex = promptValue.indexOf("Inspect failing tests");
         const command = mux.created[0]?.command ?? "";
-        const promptIndex = command.indexOf("Inspect failing tests");
         const modeFlagIndex = command.indexOf("--mode-worker");
         expect(modeFlagIndex === -1 || promptIndex < modeFlagIndex).toBeTruthy();
       }
@@ -2559,7 +2582,9 @@ timedTest("subagent extension launches into a tmux window when the mode requests
     expect(mux.created.length).toBe(1);
     expect(mux.created[0]?.target).toBe("window");
     expect(mux.created[0]?.title).toBe("worker-window");
-    expect(mux.created[0]?.command ?? "").toMatch(/Inspect failing tests/);
+    expect(readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE")).toBe(
+      "Inspect failing tests",
+    );
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -2615,8 +2640,12 @@ timedTest(
 
       expect(mux.created.length).toBe(1);
       expect(mux.created[0]?.title).toBe("worker-timeout");
-      expect(mux.created[0]?.command ?? "").toMatch(/"prompt":"Inspect failing tests"/);
-      expect(mux.created[0]?.command ?? "").toMatch(/"autoExitTimeoutMs":45/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
+      ).toMatch(/"prompt":"Inspect failing tests"/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
+      ).toMatch(/"autoExitTimeoutMs":45/);
     } finally {
       session?.dispose();
       await rm(cwd, { recursive: true, force: true });
@@ -2722,8 +2751,12 @@ timedTest(
       );
 
       expect(mux.created.length).toBe(1);
-      expect(mux.created[0]?.command ?? "").toMatch(/Shared summary from handoff helper/);
-      expect(mux.created[0]?.command ?? "").toMatch(/Parent session/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toMatch(/Shared summary from handoff helper/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toMatch(/Parent session/);
       expect(mux.created[0]?.command ?? "").not.toMatch(
         /--mode-worker .*Shared summary from handoff helper/,
       );

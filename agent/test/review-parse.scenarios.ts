@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { execFile as execFileCallback } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -68,6 +69,12 @@ class HarnessMuxAdapter implements MuxAdapter {
   async capturePane(): Promise<{ text: string }> {
     return { text: "" };
   }
+}
+
+function readLaunchFileBackedValue(command: string, envName: string): string {
+  const escapedName = envName.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = command.match(new RegExp(`${escapedName}='([^']+)'`));
+  return match?.[1] ? readFileSync(match[1], "utf8") : "";
 }
 
 class FailingMuxAdapter extends HarnessMuxAdapter {
@@ -267,9 +274,15 @@ timedTest(
       expect(mux.created.length).toBe(1);
       expect(mux.created[0]?.target).toBe("window");
       expect(mux.created[0]?.command ?? "").toMatch(/--mode-review/);
-      expect(mux.created[0]?.command ?? "").toMatch(/Review the code in the following paths: src/);
-      expect(mux.created[0]?.command ?? "").toMatch(/Additional user-provided review instruction/);
-      expect(mux.created[0]?.command ?? "").toMatch(/focus on performance/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toMatch(/Review the code in the following paths: src/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toMatch(/Additional user-provided review instruction/);
+      expect(
+        readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+      ).toMatch(/focus on performance/);
 
       const reviewState = getBranchEntries(session)
         .filter((entry) => entry.type === "custom" && entry.customType === "review-session")
@@ -308,9 +321,9 @@ timedTest("review command keeps quoted folder paths intact", async () => {
     await session.session.agent.waitForIdle();
 
     expect(mux.created.length).toBe(1);
-    expect(mux.created[0]?.command ?? "").toMatch(
-      /Review the code in the following paths: src\/Architecture Notes/,
-    );
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Review the code in the following paths: src\/Architecture Notes/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -338,8 +351,12 @@ timedTest("review preserves multi-word --extra values with equals syntax", async
     );
     await session.session.agent.waitForIdle();
 
-    expect(mux.created[0]?.command ?? "").toMatch(/Additional user-provided review instruction/);
-    expect(mux.created[0]?.command ?? "").toMatch(/review something something/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Additional user-provided review instruction/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/review something something/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -365,10 +382,12 @@ timedTest("review supports flag-first target parsing", async () => {
     await session.session.prompt('/review --extra "focus migrations" uncommitted');
     await session.session.agent.waitForIdle();
 
-    expect(mux.created[0]?.command ?? "").toMatch(
-      /Review the current code changes \(staged, unstaged, and untracked files\)/,
-    );
-    expect(mux.created[0]?.command ?? "").toMatch(/focus migrations/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Review the current code changes \(staged, unstaged, and untracked files\)/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/focus migrations/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -396,11 +415,15 @@ timedTest("review supports multi-flag target-first parsing", async () => {
     );
     await session.session.agent.waitForIdle();
 
-    expect(mux.created[0]?.command ?? "").toMatch(
-      /Review the current code changes \(staged, unstaged, and untracked files\)/,
-    );
-    expect(mux.created[0]?.command ?? "").toMatch(/focus auth/);
-    expect(mux.created[0]?.command ?? "").toMatch(/check migrations/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Review the current code changes \(staged, unstaged, and untracked files\)/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/focus auth/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/check migrations/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -426,10 +449,12 @@ timedTest("review supports unquoted flag-first --extra values", async () => {
     await session.session.prompt("/review --extra focus migration ordering uncommitted");
     await session.session.agent.waitForIdle();
 
-    expect(mux.created[0]?.command ?? "").toMatch(
-      /Review the current code changes \(staged, unstaged, and untracked files\)/,
-    );
-    expect(mux.created[0]?.command ?? "").toMatch(/focus migration ordering/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Review the current code changes \(staged, unstaged, and untracked files\)/);
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/focus migration ordering/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -484,9 +509,9 @@ timedTest("review preserves target keywords inside --extra text", async () => {
     );
     await session.session.agent.waitForIdle();
 
-    expect(mux.created[0]?.command ?? "").toMatch(
-      /Does the new uncommitted flow actually fix parsing/,
-    );
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Does the new uncommitted flow actually fix parsing/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -514,9 +539,9 @@ timedTest("review preserves target keywords inside --handoff text", async () => 
     );
     await session.session.agent.waitForIdle();
 
-    expect(mux.created[0]?.command ?? "").toMatch(
-      /Verify uncommitted branch behavior before pr checkout/,
-    );
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toMatch(/Verify uncommitted branch behavior before pr checkout/);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });

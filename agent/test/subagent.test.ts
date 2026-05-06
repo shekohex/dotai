@@ -1655,21 +1655,24 @@ timedTest("TmuxAdapter sendText wraps multi-line text in bracketed paste markers
 
   await adapter.sendText("%1", "line one\nline two\nline three", "steer");
 
-  expect(calls.length).toBe(1);
-  expect(calls[0]?.command).toBe("tmux");
-  expect(calls[0]?.args).toEqual([
-    "send-keys",
+  expect(calls.length).toBe(3);
+  // load-buffer with temp file
+  expect(calls[0]?.args[0]).toBe("load-buffer");
+  expect(calls[0]?.args[1]).toBe("-b");
+  expect(calls[0]?.args[2]).toMatch(/^pi-subagent-1-/);
+  expect(calls[0]?.args[3]).toMatch(/^\/tmp\//);
+  // paste-buffer with -p flag for bracketed paste
+  expect(calls[1]?.args).toEqual([
+    "paste-buffer",
+    "-p",
+    "-b",
+    calls[0]?.args[2],
+    "-d",
     "-t",
     "%1",
-    "Escape",
-    "-l",
-    "[200~",
-    "-l",
-    "line one\nline two\nline three",
-    "-l",
-    "[201~",
-    "Enter",
   ]);
+  // send-keys submit
+  expect(calls[2]?.args).toEqual(["send-keys", "-t", "%1", "Enter"]);
 });
 
 timedTest("TmuxAdapter sendText uses M-Enter for followUp delivery", async () => {
@@ -1681,19 +1684,10 @@ timedTest("TmuxAdapter sendText uses M-Enter for followUp delivery", async () =>
 
   await adapter.sendText("%1", "single line message", "followUp");
 
-  expect(calls[0]?.args).toEqual([
-    "send-keys",
-    "-t",
-    "%1",
-    "Escape",
-    "-l",
-    "[200~",
-    "-l",
-    "single line message",
-    "-l",
-    "[201~",
-    "M-Enter",
-  ]);
+  expect(calls[0]?.args[0]).toBe("load-buffer");
+  expect(calls[1]?.args.slice(0, 3)).toEqual(["paste-buffer", "-p", "-b"]);
+  expect(calls[1]?.args.slice(-3)).toEqual(["-d", "-t", "%1"]);
+  expect(calls[2]?.args).toEqual(["send-keys", "-t", "%1", "M-Enter"]);
 });
 
 timedTest("TmuxAdapter sendText preserves special characters like tabs", async () => {
@@ -1705,19 +1699,10 @@ timedTest("TmuxAdapter sendText preserves special characters like tabs", async (
 
   await adapter.sendText("%1", "column1\tcolumn2\tcolumn3", "steer");
 
-  expect(calls[0]?.args).toEqual([
-    "send-keys",
-    "-t",
-    "%1",
-    "Escape",
-    "-l",
-    "[200~",
-    "-l",
-    "column1\tcolumn2\tcolumn3",
-    "-l",
-    "[201~",
-    "Enter",
-  ]);
+  expect(calls[0]?.args[0]).toBe("load-buffer");
+  expect(calls[1]?.args.slice(0, 3)).toEqual(["paste-buffer", "-p", "-b"]);
+  expect(calls[1]?.args.slice(-3)).toEqual(["-d", "-t", "%1"]);
+  expect(calls[2]?.args).toEqual(["send-keys", "-t", "%1", "Enter"]);
 });
 
 timedTest("subagent tool metadata explains tmux inspection and wait-for-summary flow", () => {

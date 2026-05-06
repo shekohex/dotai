@@ -1,3 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import type { ExecOptions, ExecResult } from "@mariozechner/pi-coding-agent";
 
 import type { CreatePaneOptions, MuxAdapter, PaneCapture, PaneSubmitMode } from "./mux.js";
@@ -64,26 +68,36 @@ export class TmuxAdapter implements MuxAdapter {
     text: string,
     submitMode: PaneSubmitMode = "steer",
   ): Promise<void> {
-    // Use bracketed paste mode so pi's StdinBuffer recognizes the entire
-    // content as a single paste, preserving newlines and tabs.
-    // Without this, each line pasted via tmux gets split into separate
-    // data sequences, making multi-line messages arrive as individual steers.
-    // Bracketed paste: \x1b[200~<text>\x1b[201~ then submit key.
-    const submitKey = submitMode === "followUp" ? "M-Enter" : "Enter";
-    const args: string[] = [
-      "send-keys",
-      "-t",
-      paneId,
-      "Escape",
-      "-l",
-      "[200~",
-      "-l",
-      text,
-      "-l",
-      "[201~",
-      submitKey,
-    ];
-    this.assertOk(await this.exec("tmux", args, { cwd: this.cwd }), "send pasted text");
+    // Use tmux paste-buffer with -p flag to wrap content in bracketed paste
+    // markers. pi's TUI enables bracketed paste mode (\x1b[?2004h) so tmux
+    // wraps the paste in \x1b[200~...\x1b[201~ automatically.
+    // Without this, multi-line messages would arrive as separate data
+    // sequences from StdinBuffer (each newline creates a boundary).
+    const bufferName = `pi-subagent-${paneId.replaceAll(/[^a-zA-Z0-9_-]/g, "")}-${Date.now()}`;
+    const filePath = path.join(os.tmpdir(), `${bufferName}.txt`);
+
+    await fs.writeFile(filePath, text, "utf8");
+    try {
+      this.assertOk(
+        await this.exec("tmux", ["load-buffer", "-b", bufferName, filePath], { cwd: this.cwd }),
+        "load tmux buffer",
+      );
+      this.assertOk(
+        await this.exec("tmux", ["paste-buffer", "-p", "-b", bufferName, "-d", "-t", paneId], {
+          cwd: this.cwd,
+        }),
+        "paste tmux buffer",
+      );
+      const submitKey = submitMode === "followUp" ? "M-Enter" : "Enter";
+      if (submitKey) {
+        this.assertOk(
+          await this.exec("tmux", ["send-keys", "-t", paneId, submitKey], { cwd: this.cwd }),
+          "submit pasted text",
+        );
+      }
+    } finally {
+      await fs.unlink(filePath).catch(() => {});
+    }
   }
 
   async paneExists(paneId: string): Promise<boolean> {

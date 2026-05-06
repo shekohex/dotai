@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import type { GsdSubcommand } from "./commands.js";
 import { getLastKnownGsdCwd } from "./state/cwd.js";
@@ -40,7 +43,6 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
 ];
 
 const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
-  "map-codebase": ["--paths", "--paths="],
   "discuss-phase": ["--phase", "--phase="],
   "plan-phase": ["--phase", "--phase="],
   "execute-phase": ["--phase", "--phase="],
@@ -88,6 +90,188 @@ function getFlagItems(subcommand: GsdSubcommand, prefixBase = ""): AutocompleteI
   }));
 }
 
+function getMapCodebaseModeItems(prefixBase: string): AutocompleteItem[] {
+  const cwd = getLastKnownGsdCwd();
+  const skipAvailable = cwd !== undefined && hasReusableCodebaseBaseline(cwd);
+  return [
+    {
+      value: `${prefixBase}refresh`,
+      label: "refresh",
+      description: "Replace canonical codebase map",
+    },
+    {
+      value: `${prefixBase}update`,
+      label: "update",
+      description: "Refresh canonical codebase map in place",
+    },
+    {
+      value: `${prefixBase}skip`,
+      label: "skip",
+      description: skipAvailable
+        ? "Reuse current canonical codebase map"
+        : "Unavailable until canonical map baseline is valid",
+    },
+  ];
+}
+
+function getMapCodebaseFastModeItems(prefixBase: string): AutocompleteItem[] {
+  return [
+    {
+      value: `${prefixBase}refresh`,
+      label: "refresh",
+      description: "Overwrite only fast-scan target docs",
+    },
+  ];
+}
+
+function getMapCodebaseFastFlagItems(prefixBase: string): AutocompleteItem[] {
+  return [
+    {
+      value: `${prefixBase}--fast`,
+      label: "--fast",
+      description: "Run partial non-canonical fast scan",
+    },
+  ];
+}
+
+function getMapCodebaseQueryFlagItems(prefixBase: string): AutocompleteItem[] {
+  return [
+    {
+      value: `${prefixBase}--query`,
+      label: "--query",
+      description: "Run local read-only intel query",
+    },
+    {
+      value: `${prefixBase}--query=`,
+      label: "--query=",
+      description: "Inline local read-only intel query",
+    },
+  ];
+}
+
+function getMapCodebaseQueryItems(prefixBase: string): AutocompleteItem[] {
+  return [
+    {
+      value: `${prefixBase}status`,
+      label: "status",
+      description: "Show intel file status summary",
+    },
+    {
+      value: `${prefixBase}diff`,
+      label: "diff",
+      description: "Show intel changes since baseline snapshot",
+    },
+    {
+      value: `${prefixBase}refresh`,
+      label: "refresh",
+      description: "Unsupported locally in this slice",
+    },
+  ];
+}
+
+function getMapCodebaseFastFocusFlagItems(prefixBase: string): AutocompleteItem[] {
+  return [
+    {
+      value: `${prefixBase}--focus`,
+      label: "--focus",
+      description: "Set fast-map focus area",
+    },
+    {
+      value: `${prefixBase}--focus=`,
+      label: "--focus=",
+      description: "Inline fast-map focus area",
+    },
+  ];
+}
+
+function getMapCodebaseFocusItems(prefixBase: string, inline = false): AutocompleteItem[] {
+  const focusValues = [
+    {
+      value: "tech",
+      description: "Write STACK.md, INTEGRATIONS.md",
+    },
+    {
+      value: "arch",
+      description: "Write ARCHITECTURE.md, STRUCTURE.md",
+    },
+    {
+      value: "quality",
+      description: "Write CONVENTIONS.md, TESTING.md",
+    },
+    {
+      value: "concerns",
+      description: "Write CONCERNS.md",
+    },
+    {
+      value: "tech+arch",
+      description: "Write STACK.md, INTEGRATIONS.md, ARCHITECTURE.md, STRUCTURE.md",
+    },
+  ];
+
+  return focusValues.map((item) => ({
+    value: inline ? `${prefixBase}--focus=${item.value}` : `${prefixBase}${item.value}`,
+    label: item.value,
+    description: item.description,
+  }));
+}
+
+function hasReusableCodebaseBaseline(cwd: string): boolean {
+  const codebaseDir = join(cwd, ".planning", "codebase");
+  const docs = [
+    "STACK.md",
+    "INTEGRATIONS.md",
+    "ARCHITECTURE.md",
+    "STRUCTURE.md",
+    "CONVENTIONS.md",
+    "TESTING.md",
+    "CONCERNS.md",
+  ];
+  const frontmatterPattern = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/u;
+  const minimumArtifactBodyLines = 3;
+  const minimumArtifactBodyCharacters = 40;
+  const baselines = new Set<string>();
+  for (const name of docs) {
+    const path = join(codebaseDir, name);
+    if (!existsSync(path)) {
+      return false;
+    }
+    try {
+      const content = readFileSync(path, "utf8");
+      const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/u, "").trim();
+      if (body.length < minimumArtifactBodyCharacters) {
+        return false;
+      }
+      const substantiveLines = body
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      if (substantiveLines.length < minimumArtifactBodyLines) {
+        return false;
+      }
+      const match = content.match(frontmatterPattern);
+      const mappedCommit = match?.[1]
+        .split(/\r?\n/u)
+        .map((line) => line.match(/^last_mapped_commit:\s*(.+)$/u)?.[1]?.trim())
+        .find((value) => value !== undefined);
+      if (mappedCommit === undefined || mappedCommit.length === 0) {
+        return false;
+      }
+      execFileSync("git", ["cat-file", "-t", mappedCommit], {
+        cwd,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      execFileSync("git", ["merge-base", "--is-ancestor", mappedCommit, "HEAD"], {
+        cwd,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      baselines.add(mappedCommit);
+    } catch {
+      return false;
+    }
+  }
+  return baselines.size === 1;
+}
+
 function getDebugActionItems(prefixBase: string): AutocompleteItem[] {
   return [
     {
@@ -133,6 +317,21 @@ function getFlagDescription(value: string): string | undefined {
   }
   if (value === "--paths=") {
     return "Inline repo-relative mapping paths";
+  }
+  if (value === "--fast") {
+    return "Run partial non-canonical fast scan";
+  }
+  if (value === "--focus") {
+    return "Set fast-map focus area";
+  }
+  if (value === "--focus=") {
+    return "Inline fast-map focus area";
+  }
+  if (value === "--query") {
+    return "Upstream intel mode placeholder";
+  }
+  if (value === "--query=") {
+    return "Inline intel query mode";
   }
   if (value === "--diagnose") {
     return "Find root cause only";
@@ -213,6 +412,53 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
     }
     if (tokens.length === 2) {
       return filterItems(milestoneItems, token);
+    }
+  }
+
+  if (subcommand === "map-codebase") {
+    const modeItems = getMapCodebaseModeItems("map-codebase ");
+    const fastModeItems = getMapCodebaseFastModeItems("map-codebase --fast ");
+    const fastFlagItems = getMapCodebaseFastFlagItems("map-codebase ");
+    const queryFlagItems = getMapCodebaseQueryFlagItems("map-codebase ");
+    const fastFocusFlagItems = getMapCodebaseFastFocusFlagItems("map-codebase --fast ");
+    const inFastMode = tokens.includes("--fast");
+    const inQueryMode = tokens.includes("--query") || token.startsWith("--query=");
+    const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
+    if (previousToken === "--query") {
+      return filterItems(getMapCodebaseQueryItems("map-codebase --query "), token);
+    }
+    if (token.startsWith("--query=")) {
+      return filterItems(getMapCodebaseQueryItems("map-codebase --query="), token);
+    }
+    if (inQueryMode) {
+      return filterItems(getMapCodebaseQueryItems("map-codebase --query "), token);
+    }
+    if (previousToken === "--focus") {
+      if (!inFastMode) {
+        return null;
+      }
+      return filterItems(getMapCodebaseFocusItems("map-codebase --fast --focus "), token);
+    }
+    if (trailingSpace && tokens.length === 1) {
+      return [...modeItems, ...fastFlagItems, ...queryFlagItems];
+    }
+    if (token.startsWith("--focus=")) {
+      if (!inFastMode) {
+        return null;
+      }
+      return filterItems(getMapCodebaseFocusItems("map-codebase --fast ", true), token);
+    }
+    if (inFastMode && trailingSpace) {
+      return [...fastModeItems, ...fastFocusFlagItems];
+    }
+    if (tokens.length === 2) {
+      return filterItems([...modeItems, ...fastFlagItems, ...queryFlagItems], token);
+    }
+    if (inFastMode) {
+      if (token.startsWith("--")) {
+        return filterItems(fastFocusFlagItems, token);
+      }
+      return filterItems(fastModeItems, token);
     }
   }
 

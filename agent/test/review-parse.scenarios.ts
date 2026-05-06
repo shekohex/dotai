@@ -115,30 +115,6 @@ async function commitFile(
   await execFile("git", ["commit", "-m", message], { cwd });
 }
 
-async function writeReviewModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        modes: {
-          review: {
-            tools: ["read"],
-            autoExit: true,
-            tmuxTarget: "window",
-            systemPrompt: "Review only",
-            systemPromptMode: "append",
-          },
-        },
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-}
-
 async function writeFakeGh(cwd: string): Promise<string> {
   const binDir = join(cwd, ".git", "fake-bin");
   const ghPath = join(binDir, "gh");
@@ -260,7 +236,6 @@ timedTest(
     try {
       await initGitRepo(cwd);
       await mkdir(join(cwd, "src"), { recursive: true });
-      await writeReviewModesFile(cwd);
 
       session = await createTestSession({
         cwd,
@@ -304,7 +279,6 @@ timedTest("review command keeps quoted folder paths intact", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src", "Architecture Notes"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -338,7 +312,6 @@ timedTest("review preserves multi-word --extra values with equals syntax", async
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -371,7 +344,6 @@ timedTest("review supports flag-first target parsing", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -402,7 +374,6 @@ timedTest("review supports multi-flag target-first parsing", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -438,7 +409,6 @@ timedTest("review supports unquoted flag-first --extra values", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -469,7 +439,6 @@ timedTest("review rejects --extra with no value", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -496,7 +465,6 @@ timedTest("review preserves target keywords inside --extra text", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -526,7 +494,6 @@ timedTest("review preserves target keywords inside --handoff text", async () => 
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -557,7 +524,6 @@ timedTest("review generates handoff from the parent session before branching", a
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,

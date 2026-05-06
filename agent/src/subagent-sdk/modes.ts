@@ -34,14 +34,13 @@ function resolveRequestedModeName(mode: string | undefined): string {
 }
 
 async function resolveRequestedSpec(
-  cwd: string,
   modeName: string,
   mode: string | undefined,
 ): Promise<ModeSpec | undefined> {
   const trimmedModeName = mode?.trim();
   const resolved =
     trimmedModeName !== undefined && trimmedModeName.length > 0
-      ? await resolveModeSpec(cwd, modeName)
+      ? await resolveModeSpec(modeName)
       : syntheticWorkerMode;
   if (resolved === undefined && modeName === "worker") {
     return syntheticWorkerMode;
@@ -58,7 +57,7 @@ export async function resolveSubagentMode(
   const parentActiveTools = pi.getActiveTools();
   const cwd = resolveModeCwd(ctx, options.cwd);
   const modeName = resolveRequestedModeName(options.mode);
-  const spec = await resolveRequestedSpec(cwd, modeName, options.mode);
+  const spec = await resolveRequestedSpec(modeName, options.mode);
 
   if (!spec) {
     return { error: `Unknown mode "${modeName}"` };

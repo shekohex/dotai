@@ -2,8 +2,6 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { loadModeRegistry, type ModesFile, type ModeSpec } from "../../mode-utils.js";
 
 type ModeRuntimeLike = {
-  path: string;
-  source: "project" | "global" | "missing";
   data: ModesFile;
   activeMode: string | undefined;
   error?: string;
@@ -12,18 +10,15 @@ type ModeRuntimeLike = {
 
 export async function ensureRuntime(
   runtime: ModeRuntimeLike,
-  ctx: ExtensionContext,
+  _ctx: ExtensionContext,
   deps: {
     hasText: (value: string | undefined) => value is string;
     getModeSpec: (data: ModesFile, modeName: string) => ModeSpec | undefined;
   },
 ): Promise<void> {
-  const previousPath = runtime.path;
   const previousActiveMode = runtime.activeMode;
-  const loaded = await loadModeRegistry(ctx.cwd);
-  runtime.source = loaded.source;
-  runtime.data = loaded.data;
-  runtime.path = loaded.path;
+  const loaded = await loadModeRegistry();
+  runtime.data = loaded.resolvedData;
   runtime.error = loaded.error;
   if (!deps.hasText(runtime.error)) {
     runtime.lastReportedError = undefined;
@@ -34,11 +29,6 @@ export async function ensureRuntime(
     deps.getModeSpec(runtime.data, previousActiveMode) !== undefined
   ) {
     runtime.activeMode = previousActiveMode;
-    return;
-  }
-
-  if (previousActiveMode === undefined && previousPath === runtime.path) {
-    runtime.activeMode = undefined;
     return;
   }
 
@@ -60,13 +50,11 @@ export function syncErrorUI(
   hasText: (value: string | undefined) => value is string,
 ): void {
   if (!ctx.hasUI) return;
-
   if (!hasText(runtime.error)) {
     ctx.ui.setWidget(modeErrorWidgetKey, undefined);
     return;
   }
-
-  ctx.ui.setWidget(modeErrorWidgetKey, [`Modes config error: ${runtime.path}`, runtime.error]);
+  ctx.ui.setWidget(modeErrorWidgetKey, ["Modes config error (built-in)", runtime.error]);
 }
 
 export function notifyConfigError(
@@ -75,13 +63,12 @@ export function notifyConfigError(
   hasText: (value: string | undefined) => value is string,
 ): void {
   if (!ctx.hasUI || !hasText(runtime.error)) return;
-  const signature = `${runtime.path}:${runtime.error}`;
+  const signature = `built-in:${runtime.error}`;
   if (runtime.lastReportedError === signature) {
     return;
   }
-
   runtime.lastReportedError = signature;
-  ctx.ui.notify(`Modes config error in ${runtime.path}: ${runtime.error}`, "error");
+  ctx.ui.notify(`Modes config error (built-in): ${runtime.error}`, "error");
 }
 
 export function saveRuntime(runtime: ModeRuntimeLike, ctx: ExtensionContext): Promise<void> {

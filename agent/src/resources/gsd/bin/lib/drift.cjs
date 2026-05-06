@@ -61,7 +61,7 @@ const ROUTE_RES = [
 // repo-relative path components separated by /, containing only
 // alphanumerics, dash, underscore, and dot (no `..`, no `/..`).
 const SAFE_PATH_RE =
-  /^(?!.*\.\.)(?:[A-Za-z0-9_.][A-Za-z0-9_.\-]*)(?:\/[A-Za-z0-9_.][A-Za-z0-9_.\-]*)*$/;
+  /^(?!.*\.\.)(?:[@A-Za-z0-9_.][@A-Za-z0-9_.\-]*)(?:\/[@A-Za-z0-9_.][@A-Za-z0-9_.\-]*)*$/;
 
 // ─── Classification ──────────────────────────────────────────────────────────
 
@@ -177,12 +177,22 @@ function detectDrift(input) {
     let message = "";
 
     if (actionRequired) {
-      directive = action;
-      affectedPaths = chooseAffectedPaths(elements.map((e) => e.path));
-      if (action === "auto-remap") {
-        spawnMapper = true;
+      affectedPaths = sanitizePaths(chooseAffectedPaths(elements.map((e) => e.path)));
+      if (affectedPaths.length === 0) {
+        directive = "warn";
+        spawnMapper = false;
+        message = [
+          `Codebase drift detected: ${elements.length} structural element(s) since last mapping.`,
+          "",
+          "Drift paths could not be reduced to safe scoped hints. Review paths manually before remapping.",
+        ].join("\n");
+      } else {
+        directive = action;
+        if (action === "auto-remap") {
+          spawnMapper = true;
+        }
+        message = buildMessage(elements, affectedPaths, action);
       }
-      message = buildMessage(elements, affectedPaths, action);
     }
 
     return {
@@ -243,11 +253,11 @@ function buildMessage(elements, affectedPaths, action) {
   }
   lines.push("");
   if (action === "auto-remap") {
-    lines.push(`Auto-remap scheduled for paths: ${affectedPaths.join(", ")}`);
-  } else {
     lines.push(
-      `Run /gsd-map-codebase --paths ${affectedPaths.join(",")} to refresh planning context.`,
+      `Auto-remap not available in local scoped mode. Run /gsd map-codebase update to refresh full codebase map.`,
     );
+  } else {
+    lines.push(`Run /gsd map-codebase update to refresh full codebase map.`);
   }
   return lines.join("\n");
 }
@@ -256,7 +266,8 @@ function buildMessage(elements, affectedPaths, action) {
 
 /**
  * Collapse a list of drifted file paths into a sorted, deduplicated list of the top-level directory
- * prefixes (depth 2 when the repo uses an `<apps|packages>/<name>/…` layout; depth 1 otherwise).
+ * prefixes (depth 3 for scoped package/app layouts like `packages/@scope/ui/...`, depth 2 for
+ * unscoped `<apps|packages>/<name>/…`, depth 1 otherwise).
  */
 function chooseAffectedPaths(paths) {
   const out = new Set();
@@ -266,7 +277,9 @@ function chooseAffectedPaths(paths) {
     const parts = file.split("/");
     if (parts.length === 0) continue;
     const top = parts[0];
-    if ((top === "apps" || top === "packages") && parts.length >= 2) {
+    if ((top === "apps" || top === "packages") && parts.length >= 3 && parts[1].startsWith("@")) {
+      out.add(`${top}/${parts[1]}/${parts[2]}`);
+    } else if ((top === "apps" || top === "packages") && parts.length >= 2) {
       out.add(`${top}/${parts[1]}`);
     } else {
       out.add(top);

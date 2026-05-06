@@ -26,6 +26,16 @@ const INTEL_FILES = {
   stack: "stack.json",
 };
 
+const INTEL_FILE_CANDIDATES = {
+  files: ["file-roles.json", "files.json"],
+  apis: ["api-map.json", "apis.json"],
+  deps: ["dependency-graph.json", "deps.json"],
+  arch: ["arch-decisions.json", "arch.json"],
+  stack: ["stack.json"],
+};
+
+const INTEL_SNAPSHOT_CANDIDATES = [".last-refresh.json", "snapshot.json"];
+
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 /**
@@ -82,6 +92,31 @@ function disabledResponse() {
  */
 function intelFilePath(planningDir, filename) {
   return path.join(planningDir, "intel", filename);
+}
+
+function resolveIntelFilePath(planningDir, key) {
+  const filenames = INTEL_FILE_CANDIDATES[key] || [];
+  for (const filename of filenames) {
+    const filePath = intelFilePath(planningDir, filename);
+    if (fs.existsSync(filePath)) {
+      return { filePath, filename };
+    }
+  }
+  const fallback = filenames[0] || INTEL_FILES[key];
+  return { filePath: intelFilePath(planningDir, fallback), filename: fallback };
+}
+
+function resolveSnapshotPath(planningDir) {
+  for (const filename of INTEL_SNAPSHOT_CANDIDATES) {
+    const filePath = intelFilePath(planningDir, filename);
+    if (fs.existsSync(filePath)) {
+      return { filePath, filename };
+    }
+  }
+  return {
+    filePath: intelFilePath(planningDir, INTEL_SNAPSHOT_CANDIDATES[0]),
+    filename: INTEL_SNAPSHOT_CANDIDATES[0],
+  };
 }
 
 /**
@@ -208,13 +243,13 @@ function intelQuery(term, planningDir) {
 
   // Search all JSON intel files
   for (const [_key, filename] of Object.entries(INTEL_FILES)) {
-    const filePath = intelFilePath(planningDir, filename);
+    const { filePath, filename: resolvedFilename } = resolveIntelFilePath(planningDir, _key);
     const data = safeReadJson(filePath);
     if (!data) continue;
 
     const found = searchJsonEntries(data, term);
     if (found.length > 0) {
-      matches.push({ source: filename, entries: found });
+      matches.push({ source: resolvedFilename, entries: found });
       total += found.length;
     }
   }
@@ -238,11 +273,11 @@ function intelStatus(planningDir) {
   let overallStale = false;
 
   for (const [_key, filename] of Object.entries(INTEL_FILES)) {
-    const filePath = intelFilePath(planningDir, filename);
+    const { filePath, filename: resolvedFilename } = resolveIntelFilePath(planningDir, _key);
     const exists = fs.existsSync(filePath);
 
     if (!exists) {
-      files[filename] = { exists: false, updated_at: null, stale: true };
+      files[resolvedFilename] = { exists: false, updated_at: null, stale: true };
       overallStale = true;
       continue;
     }
@@ -262,7 +297,7 @@ function intelStatus(planningDir) {
     }
 
     if (stale) overallStale = true;
-    files[filename] = { exists: true, updated_at: updatedAt, stale };
+    files[resolvedFilename] = { exists: true, updated_at: updatedAt, stale };
   }
 
   return { files, overall_stale: overallStale };
@@ -279,7 +314,7 @@ function intelStatus(planningDir) {
 function intelDiff(planningDir) {
   if (!isIntelEnabled(planningDir)) return disabledResponse();
 
-  const snapshotPath = intelFilePath(planningDir, ".last-refresh.json");
+  const snapshotPath = resolveSnapshotPath(planningDir).filePath;
   const snapshot = safeReadJson(snapshotPath);
 
   if (!snapshot) {
@@ -293,15 +328,19 @@ function intelDiff(planningDir) {
 
   // Check current files against snapshot
   for (const [_key, filename] of Object.entries(INTEL_FILES)) {
-    const filePath = intelFilePath(planningDir, filename);
+    const { filePath, filename: resolvedFilename } = resolveIntelFilePath(planningDir, _key);
     const currentHash = hashFile(filePath);
 
-    if (currentHash && !prevHashes[filename]) {
-      added.push(filename);
-    } else if (currentHash && prevHashes[filename] && currentHash !== prevHashes[filename]) {
-      changed.push(filename);
-    } else if (!currentHash && prevHashes[filename]) {
-      removed.push(filename);
+    if (currentHash && !prevHashes[resolvedFilename] && !prevHashes[filename]) {
+      added.push(resolvedFilename);
+    } else if (
+      currentHash &&
+      (prevHashes[resolvedFilename] || prevHashes[filename]) &&
+      currentHash !== (prevHashes[resolvedFilename] || prevHashes[filename])
+    ) {
+      changed.push(resolvedFilename);
+    } else if (!currentHash && (prevHashes[resolvedFilename] || prevHashes[filename])) {
+      removed.push(resolvedFilename);
     }
   }
 

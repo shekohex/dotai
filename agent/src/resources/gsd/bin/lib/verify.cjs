@@ -1492,6 +1492,30 @@ function cmdVerifySchemaDrift(cwd, phaseArg, skipFlag, raw) {
  */
 function cmdVerifyCodebaseDrift(cwd, raw) {
   const drift = require("./drift.cjs");
+  const canonicalDocs = [
+    "STACK.md",
+    "INTEGRATIONS.md",
+    "ARCHITECTURE.md",
+    "STRUCTURE.md",
+    "CONVENTIONS.md",
+    "TESTING.md",
+    "CONCERNS.md",
+  ];
+  const frontmatterPattern = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+  const minimumArtifactBodyLines = 3;
+  const minimumArtifactBodyCharacters = 40;
+
+  const hasSubstantiveArtifactBody = (content) => {
+    const body = String(content || "")
+      .replace(frontmatterPattern, "")
+      .trim();
+    if (body.length < minimumArtifactBodyCharacters) return false;
+    const substantiveLines = body
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    return substantiveLines.length >= minimumArtifactBodyLines;
+  };
 
   const emit = (payload) => output(payload, raw);
 
@@ -1523,6 +1547,67 @@ function cmdVerifyCodebaseDrift(cwd, raw) {
       return;
     }
 
+    const baselineCommits = new Set();
+    for (const name of canonicalDocs) {
+      const filePath = path.join(codebaseDir, name);
+      if (!fs.existsSync(filePath)) {
+        emit({
+          skipped: true,
+          reason: "incomplete-codebase-map",
+          action_required: false,
+          directive: "none",
+          elements: [],
+        });
+        return;
+      }
+      let content;
+      try {
+        content = fs.readFileSync(filePath, "utf-8");
+      } catch (err) {
+        emit({
+          skipped: true,
+          reason: "cannot-read-codebase-map: " + err.message,
+          action_required: false,
+          directive: "none",
+          elements: [],
+        });
+        return;
+      }
+      if (!hasSubstantiveArtifactBody(content)) {
+        emit({
+          skipped: true,
+          reason: "invalid-codebase-map-body",
+          action_required: false,
+          directive: "none",
+          elements: [],
+        });
+        return;
+      }
+      const mappedCommit = drift.readMappedCommit(filePath);
+      if (!mappedCommit) {
+        emit({
+          skipped: true,
+          reason: "missing-last-mapped-commit",
+          action_required: false,
+          directive: "none",
+          elements: [],
+        });
+        return;
+      }
+      baselineCommits.add(mappedCommit);
+    }
+
+    if (baselineCommits.size !== 1) {
+      emit({
+        skipped: true,
+        reason: "mixed-last-mapped-commit",
+        action_required: false,
+        directive: "none",
+        elements: [],
+      });
+      return;
+    }
+
     const lastMapped = drift.readMappedCommit(structurePath);
 
     // Verify we're inside a git repo and resolve the diff range.
@@ -1538,16 +1623,42 @@ function cmdVerifyCodebaseDrift(cwd, raw) {
       return;
     }
 
-    // Empty-tree SHA is a stable fallback when no mapping commit is recorded.
-    const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-    let base = lastMapped;
-    if (!base) {
-      base = EMPTY_TREE;
-    } else {
-      // Verify the commit is reachable; if not, fall back to EMPTY_TREE.
-      const verify = execGit(cwd, ["cat-file", "-t", base]);
-      if (verify.exitCode !== 0) base = EMPTY_TREE;
+    if (!lastMapped) {
+      emit({
+        skipped: true,
+        reason: "missing-last-mapped-commit",
+        action_required: false,
+        directive: "none",
+        elements: [],
+      });
+      return;
     }
+
+    const verify = execGit(cwd, ["cat-file", "-t", lastMapped]);
+    if (verify.exitCode !== 0 || verify.stdout.trim() !== "commit") {
+      emit({
+        skipped: true,
+        reason: "invalid-last-mapped-commit",
+        action_required: false,
+        directive: "none",
+        elements: [],
+      });
+      return;
+    }
+
+    const ancestorProbe = execGit(cwd, ["merge-base", "--is-ancestor", lastMapped, "HEAD"]);
+    if (ancestorProbe.exitCode !== 0) {
+      emit({
+        skipped: true,
+        reason: "non-ancestor-last-mapped-commit",
+        action_required: false,
+        directive: "none",
+        elements: [],
+      });
+      return;
+    }
+
+    const base = lastMapped;
 
     const diff = execGit(cwd, ["diff", "--name-status", base, "HEAD"]);
     if (diff.exitCode !== 0) {
@@ -1593,18 +1704,25 @@ function cmdVerifyCodebaseDrift(cwd, raw) {
       action,
     });
 
+    const localDirective = result.spawnMapper ? "warn" : result.directive;
+    const localSpawnMapper = false;
+    const localMessage =
+      result.spawnMapper && result.message
+        ? `${result.message}\n\nLocal scoped auto-remap is unsupported. Run /gsd map-codebase update instead.`
+        : result.message || "";
+
     emit({
       skipped: !!result.skipped,
       reason: result.reason || null,
       action_required: !!result.actionRequired,
-      directive: result.directive,
-      spawn_mapper: !!result.spawnMapper,
+      directive: localDirective,
+      spawn_mapper: localSpawnMapper,
       affected_paths: result.affectedPaths || [],
       elements: result.elements || [],
       threshold,
       action,
       last_mapped_commit: lastMapped,
-      message: result.message || "",
+      message: localMessage,
     });
   } catch (err) {
     // Non-blocking: never bubble up an exception.

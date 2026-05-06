@@ -1662,15 +1662,7 @@ timedTest("TmuxAdapter sendText wraps multi-line text in bracketed paste markers
   expect(calls[0]?.args[2]).toMatch(/^pi-subagent-1-/);
   expect(calls[0]?.args[3]).toMatch(/^\/tmp\//);
   // paste-buffer with -p flag for bracketed paste
-  expect(calls[1]?.args).toEqual([
-    "paste-buffer",
-    "-p",
-    "-b",
-    calls[0]?.args[2],
-    "-d",
-    "-t",
-    "%1",
-  ]);
+  expect(calls[1]?.args).toEqual(["paste-buffer", "-p", "-b", calls[0]?.args[2], "-d", "-t", "%1"]);
   // send-keys submit
   expect(calls[2]?.args).toEqual(["send-keys", "-t", "%1", "Enter"]);
 });
@@ -1864,85 +1856,6 @@ timedTest("formatAvailableModesXml sorts unsorted modes deterministically", () =
     ].join("\n"),
   );
 });
-
-timedTest(
-  "subagent available modes prompt signature stays stable across input reordering",
-  async () => {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-modes-signature-"));
-    const fakePi = new FakePi();
-    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
-      fakePi as unknown as ExtensionAPI,
-    );
-
-    try {
-      await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-      await fs.writeFile(
-        path.join(cwd, ".pi", "modes.json"),
-        `${JSON.stringify(
-          {
-            version: 1,
-            modes: {
-              bravo: {
-                provider: "mode-provider",
-                modelId: "bravo-model",
-              },
-              alpha: {
-                provider: "mode-provider",
-                modelId: "alpha-model",
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      );
-
-      const ctx = createFakeContext({
-        cwd,
-        sessionId: "parent-session-id",
-        sessionFile: path.join(cwd, "parent.jsonl"),
-      });
-
-      await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
-
-      const initialTool = fakePi.registeredTools.get("subagent");
-      expect(initialTool).toBeTruthy();
-      const initialPrompt = initialTool.promptGuidelines?.join("\n\n") ?? "";
-
-      await fs.writeFile(
-        path.join(cwd, ".pi", "modes.json"),
-        `${JSON.stringify(
-          {
-            version: 1,
-            modes: {
-              alpha: {
-                provider: "mode-provider",
-                modelId: "alpha-model",
-              },
-              bravo: {
-                provider: "mode-provider",
-                modelId: "bravo-model",
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      );
-
-      await emitEventBus(fakePi, "modes:changed");
-
-      const updatedTool = fakePi.registeredTools.get("subagent");
-      expect(updatedTool).toBeTruthy();
-      const updatedPrompt = updatedTool.promptGuidelines?.join("\n\n") ?? "";
-      expect(updatedPrompt).toBe(initialPrompt);
-    } finally {
-      await fs.rm(cwd, { recursive: true, force: true });
-    }
-  },
-);
 
 timedTest("reduceRuntimeSubagents keeps latest state for the current parent session", () => {
   const states = reduceRuntimeSubagents(

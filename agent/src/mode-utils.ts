@@ -21,14 +21,7 @@ export {
   loadModeRegistrySync,
   defineModesFile,
   clearBuiltInModesForTests,
-  getModesGlobalPath,
-  getModesProjectPath,
-  loadModesFile,
-  loadModesFileSync,
   registerBuiltInModes,
   resolveModeSpec,
-  saveModesFile,
   unregisterBuiltInModes,
 } from "./mode-loading.js";
-
-export type { LoadedModeRegistry } from "./mode-loading.js";

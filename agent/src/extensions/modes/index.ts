@@ -49,8 +49,6 @@ const MODE_STATUS_KEY = "mode";
 const CUSTOM_MODE_LABEL = "custom";
 
 type ModeRuntime = {
-  path: string;
-  source: "project" | "global" | "missing";
   data: ModesFile;
   activeMode: string | undefined;
   applying: boolean;
@@ -70,8 +68,6 @@ export type ModeChangedEvent = {
 };
 
 const runtime: ModeRuntime = {
-  path: "",
-  source: "missing",
   data: { version: 1, currentMode: undefined, modes: {} },
   activeMode: undefined,
   applying: false,
@@ -261,7 +257,6 @@ export default function modesExtension(pi: ExtensionAPI): void {
   });
   registerModeLifecycleHandlers(pi, {
     resetRuntimeState: () => {
-      runtime.path = "";
       runtime.activeMode = undefined;
     },
     restoreMode,

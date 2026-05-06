@@ -108,30 +108,6 @@ async function commitFile(
   await execFile("git", ["commit", "-m", message], { cwd });
 }
 
-async function writeReviewModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        modes: {
-          review: {
-            tools: ["read"],
-            autoExit: true,
-            tmuxTarget: "window",
-            systemPrompt: "Review only",
-            systemPromptMode: "append",
-          },
-        },
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-}
-
 async function writeFakeGh(cwd: string): Promise<string> {
   const binDir = join(cwd, ".git", "fake-bin");
   const ghPath = join(binDir, "gh");
@@ -251,7 +227,6 @@ timedTest("review command autocompletes targets, flags, branches, and commits", 
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
     await commitFile(cwd, "src/index.ts", "export const value = 1;\n", "init review fixture");
     await execFile("git", ["branch", "feature/review-autocomplete"], { cwd });
 

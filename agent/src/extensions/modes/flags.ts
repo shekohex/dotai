@@ -40,10 +40,10 @@ export function registerModeFlags(
 ): void {
   registeredModeFlags.clear();
 
-  const loaded = loadModeRegistrySync(process.cwd());
+  const loaded = loadModeRegistrySync();
   const collisions = new Set<string>();
 
-  for (const modeName of deps.orderedModeNames(loaded.data)) {
+  for (const modeName of deps.orderedModeNames(loaded.resolvedData)) {
     const flagName = toModeFlagName(modeName);
     if (!deps.hasText(flagName)) {
       continue;
@@ -64,7 +64,7 @@ export function registerModeFlags(
 
   for (const [flagName, modeName] of registeredModeFlags) {
     pi.registerFlag(flagName, {
-      description: describeModeFlag(modeName, loaded.data.modes[modeName], deps),
+      description: describeModeFlag(modeName, loaded.resolvedData.modes[modeName], deps),
       type: "boolean",
     });
   }

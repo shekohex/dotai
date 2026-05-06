@@ -128,30 +128,6 @@ async function commitFile(
   await execFile("git", ["commit", "-m", message], { cwd });
 }
 
-async function writeReviewModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        modes: {
-          review: {
-            tools: ["read"],
-            autoExit: true,
-            tmuxTarget: "window",
-            systemPrompt: "Review only",
-            systemPromptMode: "append",
-          },
-        },
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-}
-
 async function writeFakeGh(cwd: string): Promise<string> {
   const binDir = join(cwd, ".git", "fake-bin");
   const ghPath = join(binDir, "gh");
@@ -282,7 +258,6 @@ timedTest("review refuses to start a second review while one is already running"
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -312,7 +287,6 @@ timedTest("review auto-clears state after the subagent completes", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -375,7 +349,6 @@ timedTest("completed review offers an action picker", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -468,7 +441,6 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -539,7 +511,6 @@ timedTest("completed review can fork into a new fix branch", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -616,7 +587,6 @@ timedTest("completed review reports handoff runner exceptions", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -685,7 +655,6 @@ timedTest("completed review can handoff and address findings", async () => {
   try {
     await initGitRepo(cwd);
     await mkdir(join(cwd, "src"), { recursive: true });
-    await writeReviewModesFile(cwd);
 
     session = await createTestSession({
       cwd,
@@ -750,9 +719,7 @@ timedTest("review restores the original branch after PR review completes", async
 
   try {
     await initGitRepo(cwd);
-    await writeReviewModesFile(cwd);
-    await execFile("git", ["add", ".pi/modes.json"], { cwd });
-    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await execFile("git", ["commit", "--allow-empty", "-m", "add review mode"], { cwd });
     await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
     await commitFile(cwd, "README.md", "base\n", "init");
 
@@ -817,9 +784,7 @@ timedTest("review restores the original branch when PR handoff generation aborts
 
   try {
     await initGitRepo(cwd);
-    await writeReviewModesFile(cwd);
-    await execFile("git", ["add", ".pi/modes.json"], { cwd });
-    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await execFile("git", ["commit", "--allow-empty", "-m", "add review mode"], { cwd });
     await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
     await commitFile(cwd, "README.md", "base\n", "init");
 
@@ -861,9 +826,7 @@ timedTest("review blocks PR checkout when untracked files are present", async ()
 
   try {
     await initGitRepo(cwd);
-    await writeReviewModesFile(cwd);
-    await execFile("git", ["add", ".pi/modes.json"], { cwd });
-    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await execFile("git", ["commit", "--allow-empty", "-m", "add review mode"], { cwd });
     await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
     await commitFile(cwd, "README.md", "base\n", "init");
     await writeFile(join(cwd, "untracked.txt"), "local draft\n", "utf8");
@@ -900,9 +863,7 @@ timedTest("failed PR review startup restores the original branch after checkout"
 
   try {
     await initGitRepo(cwd);
-    await writeReviewModesFile(cwd);
-    await execFile("git", ["add", ".pi/modes.json"], { cwd });
-    await execFile("git", ["commit", "-m", "add review mode"], { cwd });
+    await execFile("git", ["commit", "--allow-empty", "-m", "add review mode"], { cwd });
     await commitFile(cwd, ".gitignore", "auth.json\n", "ignore harness auth");
     await commitFile(cwd, "README.md", "base\n", "init");
 

@@ -47,7 +47,7 @@ Implemented locally:
 | `complete-milestone` | workflow-launch shim        | `complete-milestone`           |       90 |
 | `milestone-summary`  | workflow-launch shim        | `milestone-summary`            |       88 |
 | `debug`              | hybrid TS + workflow-launch | `debug`                        |       84 |
-| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       71 |
+| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       94 |
 | `discuss-phase`      | TS-native orchestration     | `discuss-phase`                |       42 |
 | `plan-phase`         | TS-native orchestration     | `plan-phase`                   |       55 |
 | `execute-phase`      | TS-native orchestration     | `execute-phase`                |       46 |
@@ -116,7 +116,7 @@ Legend:
 | `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta |
 | `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added       |
 | `debug`              |        Y |                             Y |                        Y |                  P |                         Y |           P | `list/status` handled in TS  |
-| `map-codebase`       |        Y |                             N |                        N |                  N |                         P |           N | full parallel map only       |
+| `map-codebase`       |        Y |                             N |                        N |                  N |                         Y |           P | full map + local fast parity |
 | `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | uses `phase-researcher` role |
 | `plan-phase`         |        Y |                             N |                        N |                  Y |                         P |           N | planner + checker only       |
 | `execute-phase`      |        Y |                             N |                        N |                  N |                         P |           N | executor + verifier only     |
@@ -234,7 +234,7 @@ Differences:
 
 ### `debug`
 
-Coverage: 84/100
+Coverage: 94/100
 
 Upstream behavior:
 
@@ -255,7 +255,7 @@ Differences:
 
 ### `map-codebase`
 
-Coverage: 68/100
+Coverage: 89/100
 
 Upstream behavior:
 
@@ -264,17 +264,31 @@ Upstream behavior:
 
 Local behavior:
 
-- always runs four detached `codebase-mapper` roles. `src/extensions/gsd/lifecycle/map-codebase.ts:111-179`
-- task text is generated in TS per focus area. `src/extensions/gsd/lifecycle/map-codebase.ts:39-109`
-- supports `--paths` filtering only through local arg parser. `src/extensions/gsd/args.ts:126-159`
-- async completion summary is emitted back into session. `src/extensions/gsd/lifecycle/map-codebase.ts:152-177`
+- full map still runs four detached `codebase-mapper` roles. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- parser recognizes upstream `--fast`, `--focus`, `--query`, and local `--paths` forms only to reject them explicitly instead of silently falling back to a full remap. `src/extensions/gsd/args.ts`, `src/extensions/gsd/lifecycle/map-codebase.ts`
+- unknown flags and empty `--paths` values are rejected explicitly instead of broadening to a full remap. `src/extensions/gsd/args.ts`
+- existing `.planning/codebase/` docs are preserved by default; user must choose local `refresh`, `update`, or `skip` flow before overwrite. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- local `update` is now explicitly described as a full in-place refresh, not selective document update. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- `update` now clears expected codebase artifacts first so a partial rerun cannot silently bless stale docs from an older map. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- successful runs verify all seven expected artifacts exist and are non-empty before reporting success. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- verification now runs before metadata stamping and rejects frontmatter-only placeholder files, so mapper failures cannot be masked by stamping. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- post-write stamping adds `last_mapped_commit` and `last_mapped_at` metadata to every codebase doc for later drift checks. `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/resources/gsd/bin/lib/drift.cjs`
+- `skip` now requires mapping metadata; unstamped docs are rejected instead of being backdated to current `HEAD`. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- `skip` is only advertised and accepted when every codebase doc shares one `last_mapped_commit` baseline that is an ancestor of current `HEAD`; no-HEAD, invalid, or unrelated-branch hashes are rejected conservatively. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- successful maps without git `HEAD` now surface explicit non-reusable-baseline warning instead of silently looking reusable later. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- local `--paths` remap is rejected outright because subtree-only output would overwrite canonical full-codebase docs in current architecture; drift guidance therefore points to full `update` refresh, not scoped remap. `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/resources/gsd/bin/lib/drift.cjs`
+- refresh/update now preserve prior canonical docs on failed replacement by restoring from backup after spawn or verification failure. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- positional area arguments like `auth` are now rejected explicitly instead of triggering full remap. `src/extensions/gsd/args.ts`, `src/extensions/gsd/lifecycle/map-codebase.ts`
+- drift guidance now points to `/gsd map-codebase update`. `src/resources/gsd/bin/lib/drift.cjs`
 
 Differences:
 
-- no upstream `--fast`
-- no upstream `--query status diff refresh`
-- no explicit verification/commit gate in TS
-- artifact set is similar: `STACK.md`, `INTEGRATIONS.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `TESTING.md`, `CONCERNS.md`. `src/extensions/gsd/lifecycle/map-codebase.ts:16-20`
+- local `--fast` now supports safe partial non-canonical scans with one mapper subagent and focus-specific artifact validation/stamping; default focus is `tech+arch`, and `refresh` overwrites only targeted docs. All fast-focus prompt variants now carry explicit partial/non-canonical/targeted-doc instructions. `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/extensions/gsd/lifecycle/map-codebase-prompts.ts`
+- autocomplete now exposes only shipped fast-mode forms: `--fast` on base command, then `refresh` and `--focus` variants after `--fast`. `src/extensions/gsd/autocomplete.ts`
+- local `--query <term>`, `--query status`, and `--query diff` now run as safe local read-only paths before any planning-dir write. `--query refresh` remains explicitly unsupported in this slice. Parser enforces query-mode exclusivity, multi-word query capture, and autocomplete now advertises shipped query forms. Intel reads tolerate legacy and newer updater filenames plus snapshot filename drift without performing migrations. `src/extensions/gsd/args.ts`, `src/extensions/gsd/autocomplete.ts`, `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/resources/gsd/bin/lib/intel.cjs`
+- no upstream interactive per-document update picker; local flow is explicit rerun choice via canonical `refresh`/`update`/`skip` or fast-only `refresh`
+- no commit step in TS
+- artifact set remains: `STACK.md`, `INTEGRATIONS.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `TESTING.md`, `CONCERNS.md`
 
 ### `discuss-phase`
 
@@ -597,7 +611,7 @@ Execution strategy:
 |    06 | `validate-phase`     |               15 | High     | retroactive quality gate still very incomplete             | Nyquist audit/reconstruction/test-gen behavior, tests                                                     |
 |    07 | `progress`           |               24 | High     | primary situational router in upstream                     | report modes, `--next`, `--do`, `--forensic`, routing tests                                               |
 |    08 | `health`             |               28 | High     | trust/safety command for `.planning` health                | repair/context modes, richer checks, tests                                                                |
-|    09 | `map-codebase`       |               68 | High     | strong base exists, missing important branches             | `--fast`, `--query`, refresh flow, verification, tests                                                    |
+|    09 | `map-codebase`       |               89 | High     | strong base exists, remaining gap mostly `--query` branch  | finish `--query`, optional upstream picker/commit parity                                                  |
 |    10 | `stats`              |               22 | Medium   | support command, easy isolated parity work                 | richer metrics, git timeline, output parity, tests                                                        |
 |    11 | `help`               |               30 | Medium   | docs UX, low risk                                          | reference parity or explicit local divergence, tests                                                      |
 |    12 | `new-milestone`      |               92 | Medium   | already strong, polish after core loop                     | close remaining deltas, tests, audit refresh                                                              |

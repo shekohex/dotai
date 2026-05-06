@@ -18,8 +18,11 @@ Flag issues that:
 8. Are clearly not just intentional behavior changes.
 9. Are especially important around untrusted input and failure handling.
 10. Treat silent local recovery, especially parsing, IO, and network fallbacks, as high-signal review candidates unless there is clear boundary-level justification.
+11. Consider following project rules and guidelines (AGENTS.md, CLAUDE.md)
 
 Output all findings that the original author would fix if they knew about them. If there are no such findings, prefer no findings.
+
+Before you stop and represent your findings, ask yourself: Are you 100% confident in this strategy? If not, find all possible loopholes, suggest proper fixes and run this loop until you are factually 100% confident in the new strategy.
 
 ## Untrusted Input Checklist
 

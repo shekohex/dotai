@@ -246,9 +246,9 @@ async function getHandoffModeCompletions(
 }
 
 function loadHandoffModes(
-  ctx: ExtensionContext,
+  _ctx: ExtensionContext,
 ): Promise<Array<{ name: string; spec: ModeSpec }>> | Array<{ name: string; spec: ModeSpec }> {
-  return loadAvailableModes(ctx.cwd);
+  return loadAvailableModes();
 }
 
 function getHandoffModelCompletions(

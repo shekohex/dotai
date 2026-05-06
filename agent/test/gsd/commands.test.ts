@@ -243,20 +243,6 @@ test("gsd status routes to subagent status handler", async () => {
   expect(notifications.at(-1)).toEqual({ message: "gsd-planner: running", level: "info" });
 });
 
-test("gsd session_start registers built-in modes without writing project modes file", async () => {
-  const fakePi = new FakePi();
-  const notifications: Array<{ message: string; level: string }> = [];
-  const cwd = createTempCwd();
-  gsdExtension(fakePi as ExtensionAPI);
-  const command = fakePi.commands.get("gsd");
-  await command?.handler("on", createCommandContext(cwd, notifications));
-  const handlers = fakePi.handlers.get("session_start") ?? [];
-  for (const handler of handlers) {
-    await handler({}, createCommandContext(cwd, notifications));
-  }
-  expect(existsSync(join(cwd, ".pi", "modes.json"))).toBe(false);
-});
-
 test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("plan-phase 2")).toEqual({ subcommand: "plan-phase", phase: "2" });
   expect(parseGsdCommandArgs("execute-phase --phase 3.1")).toEqual({
@@ -271,6 +257,77 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("map-codebase --paths=apps/web,packages/api")).toEqual({
     subcommand: "map-codebase",
     paths: ["apps/web", "packages/api"],
+  });
+  expect(parseGsdCommandArgs("map-codebase --fast --focus tech")).toEqual({
+    subcommand: "map-codebase",
+    fast: true,
+    focus: "tech",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query status")).toEqual({
+    subcommand: "map-codebase",
+    query: "status",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query auth service")).toEqual({
+    subcommand: "map-codebase",
+    query: "auth service",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query=status auth service")).toEqual({
+    subcommand: "map-codebase",
+    query: "status auth service",
+  });
+  expect(parseGsdCommandArgs("map-codebase refresh --paths src")).toEqual({
+    subcommand: "map-codebase",
+    existingMode: "refresh",
+    paths: ["src"],
+  });
+  expect(parseGsdCommandArgs("map-codebase --query status --fast")).toEqual({
+    subcommand: "map-codebase",
+    query: "status --fast",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query status --focus tech")).toEqual({
+    subcommand: "map-codebase",
+    query: "status --focus tech",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query status --paths src")).toEqual({
+    subcommand: "map-codebase",
+    query: "status --paths src",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query status refresh")).toEqual({
+    subcommand: "map-codebase",
+    query: "status refresh",
+  });
+  expect(parseGsdCommandArgs("map-codebase auth")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase argument: auth. Local command does not support positional area scoping.",
+  });
+  expect(parseGsdCommandArgs("map-codebase --focus foo")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError: "Unsupported /gsd map-codebase mode: --focus foo.",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query=")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError: "Unsupported /gsd map-codebase mode: --query requires a value.",
+  });
+  expect(parseGsdCommandArgs("map-codebase --paths")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase mode: --paths requires at least one repo-relative path.",
+  });
+  expect(parseGsdCommandArgs("map-codebase --paths=")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase mode: --paths requires at least one repo-relative path.",
+  });
+  expect(parseGsdCommandArgs("map-codebase --bogus")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError: "Unsupported /gsd map-codebase flag: --bogus.",
+  });
+  expect(parseGsdCommandArgs("map-codebase skip refresh")).toEqual({
+    subcommand: "map-codebase",
+    existingMode: "skip",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase arguments: cannot combine skip with refresh.",
   });
   expect(parseGsdCommandArgs("new-milestone v1.1 Notifications")).toEqual({
     subcommand: "new-milestone",
@@ -351,15 +408,92 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
   expect(mapCodebaseItems).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        value: "map-codebase --paths",
-        label: "--paths",
+        value: "map-codebase refresh",
+        label: "refresh",
       }),
       expect.objectContaining({
-        value: "map-codebase --paths=",
-        label: "--paths=",
+        value: "map-codebase update",
+        label: "update",
+      }),
+      expect.objectContaining({
+        value: "map-codebase skip",
+        label: "skip",
+        description: expect.stringContaining("Unavailable"),
+      }),
+      expect.objectContaining({
+        value: "map-codebase --fast",
+        label: "--fast",
+        description: expect.stringContaining("partial non-canonical"),
+      }),
+      expect.objectContaining({
+        value: "map-codebase --query",
+        label: "--query",
+        description: expect.stringContaining("read-only intel query"),
       }),
     ]),
   );
+
+  const mapCodebaseQueryItems = await command?.getArgumentCompletions?.("map-codebase --query ");
+  expect(mapCodebaseQueryItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "map-codebase --query status", label: "status" }),
+      expect.objectContaining({ value: "map-codebase --query diff", label: "diff" }),
+      expect.objectContaining({ value: "map-codebase --query refresh", label: "refresh" }),
+    ]),
+  );
+
+  const mapCodebaseFocusItems = await command?.getArgumentCompletions?.(
+    "map-codebase --fast --focus ",
+  );
+  expect(mapCodebaseFocusItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        value: "map-codebase --fast --focus tech",
+        label: "tech",
+        description: expect.stringContaining("STACK.md"),
+      }),
+      expect.objectContaining({
+        value: "map-codebase --fast --focus tech+arch",
+        label: "tech+arch",
+        description: expect.stringContaining("ARCHITECTURE.md"),
+      }),
+    ]),
+  );
+
+  const mapCodebaseInlineFocusItems = await command?.getArgumentCompletions?.(
+    "map-codebase --fast --focus=",
+  );
+  expect(mapCodebaseInlineFocusItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "map-codebase --fast --focus=quality", label: "quality" }),
+      expect.objectContaining({
+        value: "map-codebase --fast --focus=concerns",
+        label: "concerns",
+      }),
+    ]),
+  );
+
+  const mapCodebaseFastItems = await command?.getArgumentCompletions?.("map-codebase --fast ");
+  expect(mapCodebaseFastItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        value: "map-codebase --fast refresh",
+        label: "refresh",
+        description: expect.stringContaining("target docs"),
+      }),
+      expect.objectContaining({ value: "map-codebase --fast --focus", label: "--focus" }),
+    ]),
+  );
+  expect(mapCodebaseFastItems).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "map-codebase --fast update" }),
+      expect.objectContaining({ value: "map-codebase --fast skip" }),
+    ]),
+  );
+
+  const mapCodebaseNonFastFocusItems =
+    await command?.getArgumentCompletions?.("map-codebase --focus ");
+  expect(mapCodebaseNonFastFocusItems).toBeNull();
 
   const completeMilestoneItems = await command?.getArgumentCompletions?.("complete-milestone ");
   expect(completeMilestoneItems).toEqual(

@@ -8,6 +8,7 @@ export type ModeRuntimeLike = {
   applying: boolean;
   needsResyncAfterApply: boolean;
   error?: string;
+  lastReportedError?: string;
 };
 
 export type ModeApplyDeps = {

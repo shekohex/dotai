@@ -22,9 +22,9 @@ function escapeXmlAttribute(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-export async function loadAvailableModes(cwd: string): Promise<AvailableMode[]> {
-  const loaded = await loadModeRegistry(cwd);
-  return Object.entries(loaded.data.modes)
+export async function loadAvailableModes(): Promise<AvailableMode[]> {
+  const modes = await loadModeRegistry();
+  return Object.entries(modes.resolvedData.modes)
     .toSorted(([left], [right]) => compareModeNames(left, right))
     .map(([name, spec]) => ({ name, spec }));
 }
@@ -63,16 +63,13 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
   ].join("\n");
 }
 
-export async function buildAvailableModesPromptGuideline(
-  cwd: string,
-  heading: string,
-): Promise<string> {
-  return `${heading}\n${formatAvailableModesXml(await loadAvailableModes(cwd))}`;
+export async function buildAvailableModesPromptGuideline(heading: string): Promise<string> {
+  return `${heading}\n${formatAvailableModesXml(await loadAvailableModes())}`;
 }
 
 export async function buildAvailableModesPromptGuidelines(
-  ctx: Pick<ExtensionContext, "cwd">,
+  _ctx: Pick<ExtensionContext, "cwd">,
   heading: string,
 ): Promise<string[]> {
-  return [await buildAvailableModesPromptGuideline(ctx.cwd, heading)];
+  return [await buildAvailableModesPromptGuideline(heading)];
 }

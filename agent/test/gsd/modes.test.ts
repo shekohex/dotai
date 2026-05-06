@@ -1,19 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadModeRegistrySync, loadModesFileSync } from "../../src/mode-utils.ts";
+import { loadModeRegistrySync } from "../../src/mode-utils.ts";
 import {
   buildBuiltInGsdModes,
   registerBuiltInGsdModes,
   unregisterBuiltInGsdModesForTests,
 } from "../../src/extensions/gsd/modes.js";
-
-function createRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-modes-"));
-  mkdirSync(join(root, ".pi"), { recursive: true });
-  return root;
-}
 
 describe("ensureBuiltInGsdModes", () => {
   afterEach(() => {
@@ -21,30 +12,27 @@ describe("ensureBuiltInGsdModes", () => {
   });
 
   it("adds bundled gsd modes through built-in registry", () => {
-    const root = createRoot();
     registerBuiltInGsdModes();
-    const loaded = loadModesFileSync(root);
-    expect(loaded.data.modes["gsd-planner"]).toBeDefined();
-    expect(loaded.data.modes["gsd-executor"]).toBeDefined();
+    const loaded = loadModeRegistrySync();
+    expect(loaded.modes["gsd-planner"]).toBeDefined();
+    expect(loaded.modes["gsd-executor"]).toBeDefined();
   });
 
   it("exposes built-in GSD modes through canonical registry", () => {
-    const root = createRoot();
     registerBuiltInGsdModes();
-    const loaded = loadModeRegistrySync(root);
+    const loaded = loadModeRegistrySync();
 
-    expect(loaded.data.modes["gsd-codebase-mapper"]?.provider).toBe("codex-openai");
-    expect(loaded.resolvedData.modes["gsd-codebase-mapper"]?.systemPrompt).toContain(
+    expect(loaded.modes["gsd-codebase-mapper"]?.provider).toBe("codex-openai");
+    expect(loaded.modes["gsd-codebase-mapper"]?.systemPrompt).toContain(
       "You are spawned by `/gsd map-codebase`",
     );
   });
 
   it("keeps bundled gsd modes authoritative", () => {
-    const root = createRoot();
     registerBuiltInGsdModes();
-    const loaded = loadModesFileSync(root);
-    expect(loaded.data.modes["gsd-planner"]?.description).toBe("Built-in GSD planner");
-    expect(loaded.data.modes["gsd-verifier"]).toBeDefined();
+    const loaded = loadModeRegistrySync();
+    expect(loaded.modes["gsd-planner"]?.description).toBe("Built-in GSD planner");
+    expect(loaded.modes["gsd-verifier"]).toBeDefined();
   });
 
   it("uses explicit per-role tool sets without glob or grep", () => {

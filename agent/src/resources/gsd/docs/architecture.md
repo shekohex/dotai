@@ -15,7 +15,6 @@
 
 ## Worker System
 
-- bundled `gsd-*` modes injected into `.pi/modes.json`
 - worker roles map to modes
 - prompts bundled in repo
 - subagents launched through internal SDK wrappers

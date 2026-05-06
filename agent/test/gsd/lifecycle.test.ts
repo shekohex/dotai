@@ -8,6 +8,7 @@ import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { handleGsdDiscussPhase } from "../../src/extensions/gsd/lifecycle/discuss-phase.js";
 import { handleGsdDebug } from "../../src/extensions/gsd/lifecycle/debug.js";
 import { handleGsdMapCodebase } from "../../src/extensions/gsd/lifecycle/map-codebase.js";
+import { buildFastMapperTask } from "../../src/extensions/gsd/lifecycle/map-codebase-prompts.js";
 import { handleGsdCompleteMilestone } from "../../src/extensions/gsd/lifecycle/complete-milestone.js";
 import { handleGsdMilestoneSummary } from "../../src/extensions/gsd/lifecycle/milestone-summary.js";
 import { handleGsdNewMilestone } from "../../src/extensions/gsd/lifecycle/new-milestone.js";
@@ -144,6 +145,88 @@ function createPi() {
     getActiveTools: vi.fn().mockReturnValue([]),
     setActiveTools: vi.fn(),
   } as unknown as ExtensionAPI;
+}
+
+function createMapCodebaseSpawn(root: string) {
+  return vi.fn().mockImplementation(async ({ task }: { task?: string }) => {
+    const taskText = String(task ?? "");
+    const documents: string[] = [];
+    if (taskText.includes("Focus: tech")) {
+      documents.push("STACK.md", "INTEGRATIONS.md");
+    }
+    if (taskText.includes("Focus: arch")) {
+      documents.push("ARCHITECTURE.md", "STRUCTURE.md");
+    }
+    if (taskText.includes("Focus: quality")) {
+      documents.push("CONVENTIONS.md", "TESTING.md");
+    }
+    if (taskText.includes("Focus: concerns")) {
+      documents.push("CONCERNS.md");
+    }
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    for (const document of documents) {
+      writeFileSync(
+        join(root, ".planning", "codebase", document),
+        `# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    return {
+      ok: true,
+      value: {
+        handle: {
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "session-id",
+            status: "completed",
+            summary: "Mapping Complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+        },
+      },
+    };
+  });
+}
+
+function createFastMapCodebaseSpawn(root: string) {
+  return vi.fn().mockImplementation(async ({ task, name }: { task?: string; name?: string }) => {
+    const taskText = String(task ?? "");
+    const documents: string[] = [];
+    if (taskText.includes("Focus: tech")) {
+      documents.push("STACK.md", "INTEGRATIONS.md");
+    }
+    if (taskText.includes("Focus: arch")) {
+      documents.push("ARCHITECTURE.md", "STRUCTURE.md");
+    }
+    if (taskText.includes("Focus: tech+arch")) {
+      documents.push("STACK.md", "INTEGRATIONS.md", "ARCHITECTURE.md", "STRUCTURE.md");
+    }
+    if (taskText.includes("Focus: quality")) {
+      documents.push("CONVENTIONS.md", "TESTING.md");
+    }
+    if (taskText.includes("Focus: concerns")) {
+      documents.push("CONCERNS.md");
+    }
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    for (const document of documents) {
+      writeFileSync(
+        join(root, ".planning", "codebase", document),
+        `# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    return {
+      ok: true,
+      value: {
+        handle: {
+          sessionId: name ?? "session-id",
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: name ?? "session-id",
+            status: "completed",
+            summary: "Fast Mapping Complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "## Fast Mapping Complete\nReady" }),
+        },
+      },
+    };
+  });
 }
 
 afterEach(() => {
@@ -402,21 +485,17 @@ describe("gsd lifecycle handlers", () => {
 
   it("map-codebase spawns direct-write mapper roles for all focus areas", async () => {
     const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
     const ctx = createContext(root);
     const pi = createPi() as ExtensionAPI & { sendMessage: ReturnType<typeof vi.fn> };
-    const spawn = vi.fn().mockResolvedValue({
-      ok: true,
-      value: {
-        handle: {
-          waitForCompletion: vi.fn().mockResolvedValue({
-            sessionId: "session-id",
-            status: "completed",
-            summary: "Mapping Complete",
-          }),
-          captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
-        },
-      },
-    });
+    const spawn = createMapCodebaseSpawn(root);
     const sdkFactory = vi.fn().mockReturnValue({ spawn });
     setGsdSubagentSdkFactoryForTests(sdkFactory as never);
     await handleGsdMapCodebase(pi, ctx);
@@ -456,7 +535,12 @@ describe("gsd lifecycle handlers", () => {
     });
     expect(pi.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: "steer", triggerTurn: false });
     expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("Codebase mapping complete.");
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain(
+      "Verified `.planning/codebase/` artifacts:",
+    );
     expect(pi.sendMessage.mock.calls[0]?.[0]?.details?.areas).toHaveLength(4);
+    const structureDoc = readFileSync(join(root, ".planning", "codebase", "STRUCTURE.md"), "utf8");
+    expect(structureDoc).toContain("last_mapped_commit:");
   });
 
   it("map-codebase works before init files exist", async () => {
@@ -464,19 +548,7 @@ describe("gsd lifecycle handlers", () => {
     mkdirSync(join(root, "src"), { recursive: true });
     writeFileSync(join(root, "src", "index.ts"), "export const app = true;\n");
     const ctx = createContext(root);
-    const spawn = vi.fn().mockResolvedValue({
-      ok: true,
-      value: {
-        handle: {
-          waitForCompletion: vi.fn().mockResolvedValue({
-            sessionId: "session-id",
-            status: "completed",
-            summary: "Mapping Complete",
-          }),
-          captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
-        },
-      },
-    });
+    const spawn = createMapCodebaseSpawn(root);
     setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
 
     await handleGsdMapCodebase({} as ExtensionAPI, ctx);
@@ -486,6 +558,12 @@ describe("gsd lifecycle handlers", () => {
     expect(spawn.mock.calls[0]?.[0]?.task).toContain(
       "Write these documents to .planning/codebase/",
     );
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Codebase map created without last_mapped_commit baseline. Re-run inside git history before relying on `skip` or drift reuse.",
+        "warning",
+      );
+    });
   });
 
   it("new-project includes existing codebase docs in brownfield required reading", async () => {
@@ -506,7 +584,819 @@ describe("gsd lifecycle handlers", () => {
     expect(prompt).toContain("Init metadata: CODEBASE_DOCS=");
   });
 
-  it("map-codebase passes validated --paths scope to each mapper role", async () => {
+  it("map-codebase rejects scoped --paths remap to protect canonical docs", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      paths: ["src", "packages/ui", "../bad", "apps/$oops"],
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase mode: --paths local scoped remap is not yet safe for canonical codebase docs. Run full `/gsd map-codebase`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase fast mode runs one partial non-canonical mapper by default", async () => {
+    const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
+    const ctx = createContext(root);
+    const pi = createPi() as ExtensionAPI & { sendMessage: ReturnType<typeof vi.fn> };
+    const spawn = createFastMapCodebaseSpawn(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase(pi, ctx, { fast: true });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0]?.[0]?.name).toBe("codebase-mapper:tech+arch");
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain("Focus: tech+arch");
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain("Partial scan mode: local `--fast`.");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Started fast codebase map: 1 subagent (tech+arch)",
+      "info",
+    );
+    await vi.waitFor(() => {
+      expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain(
+      "Focus: tech+arch (partial, non-canonical)",
+    );
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("STACK.md");
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("STRUCTURE.md");
+    expect(existsSync(join(root, ".planning", "codebase", "CONVENTIONS.md"))).toBe(false);
+  });
+
+  it("map-codebase fast prompts mark every focus as partial non-canonical", () => {
+    for (const focus of ["tech", "arch", "quality", "concerns", "tech+arch"] as const) {
+      const prompt = buildFastMapperTask(focus, "2026-05-06", createPlanningRoot());
+      expect(prompt).toContain("Partial scan mode: local `--fast`.");
+      expect(prompt).toContain(
+        "This run is non-canonical and must only update target docs for requested focus.",
+      );
+      expect(prompt).toContain(
+        "Do not treat this as a full codebase map refresh or baseline replacement.",
+      );
+      expect(prompt).toContain("Preserve unrelated codebase docs outside this target set.");
+    }
+  });
+
+  it("map-codebase fast refresh overwrites only target docs and preserves unrelated docs", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    writeFileSync(join(codebaseDir, "STACK.md"), "stale stack\n");
+    writeFileSync(join(codebaseDir, "INTEGRATIONS.md"), "stale integrations\n");
+    writeFileSync(join(codebaseDir, "CONCERNS.md"), "keep concerns\n");
+    const ctx = createContext(root);
+    const spawn = createFastMapCodebaseSpawn(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      fast: true,
+      focus: "tech",
+      existingMode: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(readFileSync(join(codebaseDir, "STACK.md"), "utf8")).toContain("Detailed analysis");
+    });
+    expect(readFileSync(join(codebaseDir, "CONCERNS.md"), "utf8")).toContain("keep concerns");
+    expect(existsSync(join(codebaseDir, "ARCHITECTURE.md"))).toBe(false);
+  });
+
+  it("map-codebase fast mode aborts when target docs exist without explicit overwrite", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    writeFileSync(join(codebaseDir, "STACK.md"), "stale stack\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      fast: true,
+      focus: "tech",
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Fast map would overwrite existing target docs: STACK.md. Re-run with `/gsd map-codebase --fast refresh` to replace only fast-scan target docs.",
+      "warning",
+    );
+  });
+
+  it("map-codebase fast mode rejects update and skip overwrite modes", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { fast: true, existingMode: "update" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { fast: true, existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase mode: `--fast update` is not allowed locally. Use `/gsd map-codebase --fast refresh` or full `/gsd map-codebase update`.",
+      "warning",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase mode: `--fast skip` is not allowed locally. Use `/gsd map-codebase skip` only for canonical full maps.",
+      "warning",
+    );
+  });
+
+  it("map-codebase fast failure restores only target docs", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    writeFileSync(join(codebaseDir, "STACK.md"), "old stack\n");
+    writeFileSync(join(codebaseDir, "INTEGRATIONS.md"), "old integrations\n");
+    writeFileSync(join(codebaseDir, "CONCERNS.md"), "keep concerns\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => ({
+      ok: true,
+      value: {
+        handle: {
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "session-id",
+            status: "completed",
+            summary: "Fast Mapping Complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "## Fast Mapping Complete\nReady" }),
+        },
+      },
+    }));
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      fast: true,
+      focus: "tech",
+      existingMode: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Fast codebase map failed: Missing codebase map artifact: STACK.md",
+        "error",
+      );
+    });
+    expect(readFileSync(join(codebaseDir, "STACK.md"), "utf8")).toContain("old stack");
+    expect(readFileSync(join(codebaseDir, "INTEGRATIONS.md"), "utf8")).toContain(
+      "old integrations",
+    );
+    expect(readFileSync(join(codebaseDir, "CONCERNS.md"), "utf8")).toContain("keep concerns");
+  });
+
+  it("map-codebase query status runs read-only instead of remapping", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      query: "status",
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Intel system disabled. Set intel.enabled=true in config.json to activate.",
+      ),
+      "info",
+    );
+  });
+
+  it("map-codebase query status is read-only and does not create planning dir", async () => {
+    const root = createRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(root, ".planning"))).toBe(false);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Intel system disabled. Set intel.enabled=true in config.json to activate.",
+      "info",
+    );
+  });
+
+  it("map-codebase query refresh is rejected before any write path", async () => {
+    const root = createRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "refresh" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(root, ".planning"))).toBe(false);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase query mode: `--query refresh` is not implemented locally in this slice.",
+      "warning",
+    );
+  });
+
+  it("map-codebase query reads compatible newer intel filenames", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z" },
+          entries: {
+            "src/auth/service.ts": { summary: "auth service" },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "snapshot.json"),
+      `${JSON.stringify({ hashes: { "files.json": "deadbeef" } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "auth service" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Intel query term: auth service"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("- files.json: present, fresh"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Changed: files.json"),
+      "info",
+    );
+  });
+
+  it("map-codebase rejects positional area arguments instead of remapping", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      unsupportedModeError:
+        "Unsupported /gsd map-codebase argument: auth. Local command does not support positional area scoping.",
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase argument: auth. Local command does not support positional area scoping.",
+      "warning",
+    );
+  });
+
+  it("map-codebase rejects malformed unsupported flags instead of remapping", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      unsupportedModeError: "Unsupported /gsd map-codebase mode: --query requires a value.",
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase mode: --query requires a value.",
+      "warning",
+    );
+  });
+
+  it("map-codebase rejects unknown flags instead of remapping", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      unsupportedModeError: "Unsupported /gsd map-codebase flag: --bogus.",
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase flag: --bogus.",
+      "warning",
+    );
+  });
+
+  it("map-codebase stops and asks user to choose refresh update or skip when docs exist", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    writeFileSync(join(root, ".planning", "codebase", "STACK.md"), "# Stack\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx);
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      ".planning/codebase already exists: STACK.md Choose next step: `/gsd map-codebase refresh` or `/gsd map-codebase update`. `skip` unavailable until full codebase map exists.",
+      "warning",
+    );
+  });
+
+  it("map-codebase does not offer skip for incomplete existing docs", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    writeFileSync(join(root, ".planning", "codebase", "STACK.md"), "# Stack\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx);
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      ".planning/codebase already exists: STACK.md Choose next step: `/gsd map-codebase refresh` or `/gsd map-codebase update`. `skip` unavailable until full codebase map exists.",
+      "warning",
+    );
+  });
+
+  it("map-codebase skip mode preserves existing docs without remapping", async () => {
+    const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      writeFileSync(join(codebaseDir, document), `# ${document}\n\nBody\n`);
+    }
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
+    const commitSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      writeFileSync(
+        join(codebaseDir, document),
+        `---\nlast_mapped_commit: ${commitSha}\nlast_mapped_at: 2026-05-06T00:00:00.000Z\n---\n# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      `Using existing codebase map: ${join(root, ".planning", "codebase")}`,
+      "info",
+    );
+  });
+
+  it("map-codebase skip mode rejects valid unstamped docs", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      writeFileSync(
+        join(codebaseDir, document),
+        `# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Existing `.planning/codebase/` docs are missing last_mapped_commit metadata. `skip` unavailable. Use `/gsd map-codebase refresh` or `/gsd map-codebase update`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase skip mode rejects when no canonical map exists", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "No canonical `.planning/codebase/` map exists yet. `skip` unavailable. Run `/gsd map-codebase` or `/gsd map-codebase update`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase does not advertise skip for valid docs without reusable baseline", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      writeFileSync(
+        join(codebaseDir, document),
+        `# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx);
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      ".planning/codebase already exists: ARCHITECTURE.md, CONCERNS.md, CONVENTIONS.md, INTEGRATIONS.md, STACK.md, STRUCTURE.md, TESTING.md Choose next step: `/gsd map-codebase refresh` or `/gsd map-codebase update`. `skip` unavailable until full codebase map exists.",
+      "warning",
+    );
+  });
+
+  it("map-codebase skip mode rejects invalid mapped commit metadata", async () => {
+    const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      writeFileSync(
+        join(codebaseDir, document),
+        `---\nlast_mapped_commit: deadbeef\nlast_mapped_at: 2026-05-06T00:00:00.000Z\n---\n# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Existing `.planning/codebase/` docs do not share one valid reachable last_mapped_commit baseline. `skip` unavailable. Use `/gsd map-codebase refresh` or `/gsd map-codebase update`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase skip mode rejects non-ancestor mapped baseline", async () => {
+    const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "base"], { cwd: root, stdio: "ignore" });
+    const baseBranch = execFileSync("git", ["branch", "--show-current"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    execFileSync("git", ["checkout", "-b", "side"], { cwd: root, stdio: "ignore" });
+    writeFileSync(join(root, "SIDE.md"), "side\n");
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "side"], { cwd: root, stdio: "ignore" });
+    const sideCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    execFileSync("git", ["checkout", baseBranch], { cwd: root, stdio: "ignore" });
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      writeFileSync(
+        join(codebaseDir, document),
+        `---\nlast_mapped_commit: ${sideCommit}\nlast_mapped_at: 2026-05-06T00:00:00.000Z\n---\n# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Existing `.planning/codebase/` docs do not share one valid reachable last_mapped_commit baseline. `skip` unavailable. Use `/gsd map-codebase refresh` or `/gsd map-codebase update`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase skip mode rejects mixed mapped commit baselines", async () => {
+    const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
+    const commitSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    for (const document of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      const baseline = document === "STACK.md" ? commitSha : "deadbeef";
+      writeFileSync(
+        join(codebaseDir, document),
+        `---\nlast_mapped_commit: ${baseline}\nlast_mapped_at: 2026-05-06T00:00:00.000Z\n---\n# ${document}\n\nDetailed analysis for ${document}.\nConcrete file paths and patterns.\nActionable implementation guidance.\n`,
+      );
+    }
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Existing `.planning/codebase/` docs do not share one valid reachable last_mapped_commit baseline. `skip` unavailable. Use `/gsd map-codebase refresh` or `/gsd map-codebase update`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase skip mode rejects incomplete existing docs", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    writeFileSync(join(root, ".planning", "codebase", "STACK.md"), "# Stack\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "skip" });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Existing `.planning/codebase/` docs are incomplete or invalid. `skip` unavailable. Use `/gsd map-codebase refresh` or `/gsd map-codebase update`.",
+      "warning",
+    );
+  });
+
+  it("map-codebase refresh mode clears old docs before remapping", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    writeFileSync(join(codebaseDir, "STACK.md"), "stale\n");
+    writeFileSync(join(codebaseDir, "NOTES.md"), "keep\n");
+    const ctx = createContext(root);
+    const spawn = createMapCodebaseSpawn(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "refresh" });
+
+    expect(readFileSync(join(codebaseDir, "STACK.md"), "utf8")).toContain("Detailed analysis");
+    expect(readFileSync(join(codebaseDir, "NOTES.md"), "utf8")).toContain("keep");
+  });
+
+  it("map-codebase update mode clears expected artifacts before remapping", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    writeFileSync(join(codebaseDir, "STACK.md"), "stale stack\n");
+    writeFileSync(join(codebaseDir, "TESTING.md"), "stale testing\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async ({ task }: { task?: string }) => {
+      const taskText = String(task ?? "");
+      mkdirSync(codebaseDir, { recursive: true });
+      if (taskText.includes("Focus: tech")) {
+        writeFileSync(join(codebaseDir, "INTEGRATIONS.md"), "# INTEGRATIONS.md\n\nBody\nBody\n");
+      }
+      if (taskText.includes("Focus: arch")) {
+        writeFileSync(join(codebaseDir, "ARCHITECTURE.md"), "# ARCHITECTURE.md\n\nBody\nBody\n");
+        writeFileSync(join(codebaseDir, "STRUCTURE.md"), "# STRUCTURE.md\n\nBody\nBody\n");
+      }
+      if (taskText.includes("Focus: quality")) {
+        writeFileSync(join(codebaseDir, "CONVENTIONS.md"), "# CONVENTIONS.md\n\nBody\nBody\n");
+      }
+      if (taskText.includes("Focus: concerns")) {
+        writeFileSync(join(codebaseDir, "CONCERNS.md"), "# CONCERNS.md\n\nBody\nBody\n");
+      }
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "session-id",
+              status: "completed",
+              summary: "Mapping Complete",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Codebase map failed: Missing codebase map artifact: STACK.md",
+        "error",
+      );
+    });
+    expect(readFileSync(join(codebaseDir, "STACK.md"), "utf8")).toContain("stale stack");
+    expect(readFileSync(join(codebaseDir, "TESTING.md"), "utf8")).toContain("stale testing");
+  });
+
+  it("map-codebase refresh does not delete existing docs before invalid scoped paths abort", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    writeFileSync(join(codebaseDir, "OLD.md"), "stale\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      existingMode: "refresh",
+      paths: ["../bad"],
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase mode: --paths local scoped remap is not yet safe for canonical codebase docs. Run full `/gsd map-codebase`.",
+      "warning",
+    );
+    expect(existsSync(join(codebaseDir, "OLD.md"))).toBe(true);
+  });
+
+  it("map-codebase removes partial canonical docs after failed first run", async () => {
+    const root = createPlanningRoot();
+    const codebaseDir = join(root, ".planning", "codebase");
+    mkdirSync(codebaseDir, { recursive: true });
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async ({ task }: { task?: string }) => {
+      const taskText = String(task ?? "");
+      if (taskText.includes("Focus: tech")) {
+        writeFileSync(
+          join(codebaseDir, "STACK.md"),
+          "# STACK.md\n\nDetailed analysis.\nConcrete file paths.\nActionable guidance.\n",
+        );
+      }
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "session-id",
+              status: "completed",
+              summary: "Mapping Complete",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Codebase map failed: Missing codebase map artifact: INTEGRATIONS.md",
+        "error",
+      );
+    });
+    for (const name of [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md",
+    ]) {
+      expect(existsSync(join(codebaseDir, name))).toBe(false);
+    }
+  });
+
+  it("map-codebase routes mapper spawn failures through detached error handling", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockResolvedValue({
+      ok: false,
+      error: { message: "spawn exploded" },
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith("Codebase map failed: spawn exploded", "error");
+    });
+  });
+
+  it("map-codebase update mode clarifies full in-place refresh semantics", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    writeFileSync(join(root, ".planning", "codebase", "STACK.md"), "# Stack\n");
+    const ctx = createContext(root);
+    const spawn = createMapCodebaseSpawn(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Local `/gsd map-codebase update` refreshes full codebase map in place.",
+      "info",
+    );
+  });
+
+  it("map-codebase fails if expected artifacts are missing", async () => {
     const root = createPlanningRoot();
     const ctx = createContext(root);
     const spawn = vi.fn().mockResolvedValue({
@@ -524,16 +1414,118 @@ describe("gsd lifecycle handlers", () => {
     });
     setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
 
-    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
-      paths: ["src", "packages/ui", "../bad", "apps/$oops"],
-    });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
 
-    expect(spawn).toHaveBeenCalledTimes(4);
-    for (const call of spawn.mock.calls) {
-      expect(call[0]?.task).toContain("--paths src,packages/ui");
-      expect(call[0]?.task).not.toContain("../bad");
-      expect(call[0]?.task).not.toContain("apps/$oops");
-    }
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Codebase map failed: Missing codebase map artifact: STACK.md",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase fails if artifact body is frontmatter only", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async ({ task }: { task?: string }) => {
+      const taskText = String(task ?? "");
+      const documents: string[] = [];
+      if (taskText.includes("Focus: tech")) {
+        documents.push("STACK.md", "INTEGRATIONS.md");
+      }
+      if (taskText.includes("Focus: arch")) {
+        documents.push("ARCHITECTURE.md", "STRUCTURE.md");
+      }
+      if (taskText.includes("Focus: quality")) {
+        documents.push("CONVENTIONS.md", "TESTING.md");
+      }
+      if (taskText.includes("Focus: concerns")) {
+        documents.push("CONCERNS.md");
+      }
+      mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+      for (const document of documents) {
+        writeFileSync(
+          join(root, ".planning", "codebase", document),
+          document === "STACK.md"
+            ? "---\nlast_mapped_commit: abc\n---\n"
+            : `# ${document}\n\nBody\n`,
+        );
+      }
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "session-id",
+              status: "completed",
+              summary: "Mapping Complete",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Codebase map failed: Invalid codebase map artifact body: STACK.md",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase fails if artifact body is only a stub heading", async () => {
+    const root = createPlanningRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async ({ task }: { task?: string }) => {
+      const taskText = String(task ?? "");
+      const documents: string[] = [];
+      if (taskText.includes("Focus: tech")) {
+        documents.push("STACK.md", "INTEGRATIONS.md");
+      }
+      if (taskText.includes("Focus: arch")) {
+        documents.push("ARCHITECTURE.md", "STRUCTURE.md");
+      }
+      if (taskText.includes("Focus: quality")) {
+        documents.push("CONVENTIONS.md", "TESTING.md");
+      }
+      if (taskText.includes("Focus: concerns")) {
+        documents.push("CONCERNS.md");
+      }
+      mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+      for (const document of documents) {
+        writeFileSync(
+          join(root, ".planning", "codebase", document),
+          document === "STACK.md" ? "# Stack\n" : `# ${document}\n\nBody\nBody\n`,
+        );
+      }
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "session-id",
+              status: "completed",
+              summary: "Mapping Complete",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { existingMode: "update" });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Codebase map failed: Invalid codebase map artifact body: STACK.md",
+        "error",
+      );
+    });
   });
 
   it("discuss-phase writes phase-specific context for explicit phase", async () => {

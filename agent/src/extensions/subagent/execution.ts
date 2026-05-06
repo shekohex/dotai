@@ -35,10 +35,10 @@ const SUBAGENT_BASE_PROMPT_GUIDELINES = [
 const SUBAGENT_AVAILABLE_MODES_HEADING =
   "Available subagent modes. When the user asks for a mode, use one of these exact names:";
 
-async function buildSubagentPromptGuidelines(ctx: ExtensionContext): Promise<string[]> {
+async function buildSubagentPromptGuidelines(_ctx: ExtensionContext): Promise<string[]> {
   return [
     ...SUBAGENT_BASE_PROMPT_GUIDELINES,
-    await buildAvailableModesPromptGuideline(ctx.cwd, SUBAGENT_AVAILABLE_MODES_HEADING),
+    await buildAvailableModesPromptGuideline(SUBAGENT_AVAILABLE_MODES_HEADING),
   ];
 }
 

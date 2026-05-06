@@ -1,15 +1,13 @@
 import { Value } from "typebox/value";
 import { defaultModes } from "./default-modes.js";
 import type {
+  LoadedModesFile,
   ModeMap,
   ModeSpec,
   ModesFile,
   ModesFileFor,
-  LoadedModesFile,
 } from "./mode-definitions.js";
 import { ModesFileSchema } from "./mode-definitions.js";
-
-export type LoadedModeRegistry = LoadedModesFile;
 
 const builtInModeSources = new Map<string, ModesFile>([["default", defaultModes]]);
 
@@ -26,7 +24,7 @@ export function defineModesFile<const TModes extends ModeMap>(
 function assertModesFileConsistency(data: ModesFile): ModesFile {
   if (hasText(data.currentMode) && !(data.currentMode in data.modes)) {
     throw new Error(
-      `Invalid modes.json: currentMode "${data.currentMode}" is not defined in modes`,
+      `Invalid mode registry: currentMode "${data.currentMode}" is not defined in modes`,
     );
   }
   return data;
@@ -61,47 +59,31 @@ function getBuiltInModesData(): ModesFile | undefined {
   });
 }
 
-export function getModesProjectPath(cwd: string): string {
-  return `${cwd}/.pi/modes.json`;
-}
-
-export function getModesGlobalPath(): string {
-  return "~/.pi/agent/modes.json";
-}
-
-function buildLoadedModeRegistry(cwd: string): LoadedModeRegistry {
-  const builtInData = getBuiltInModesData();
-  const data = builtInData ?? createEmptyModesFile();
+function createLoadedModesFile(data: ModesFile): LoadedModesFile & ModesFile {
   return {
-    path: getModesProjectPath(cwd),
-    source: builtInData ? "project" : "missing",
+    ...data,
+    path: "built-in",
+    source: "global",
     data,
     resolvedData: data,
-    error: undefined,
   };
 }
 
-export async function loadModeRegistry(cwd: string): Promise<LoadedModeRegistry> {
+export async function loadModeRegistry(_cwd?: string): Promise<LoadedModesFile> {
   await Promise.resolve();
-  return buildLoadedModeRegistry(cwd);
+  return createLoadedModesFile(getBuiltInModesData() ?? createEmptyModesFile());
 }
 
-export function loadModeRegistrySync(cwd: string): LoadedModeRegistry {
-  return buildLoadedModeRegistry(cwd);
+export function loadModeRegistrySync(_cwd?: string): LoadedModesFile {
+  return createLoadedModesFile(getBuiltInModesData() ?? createEmptyModesFile());
 }
 
-export function loadModesFile(cwd: string): Promise<LoadedModesFile> {
+export function loadModesFile(cwd?: string): Promise<LoadedModesFile> {
   return loadModeRegistry(cwd);
 }
 
-export function loadModesFileSync(cwd: string): LoadedModesFile {
+export function loadModesFileSync(cwd?: string): LoadedModesFile {
   return loadModeRegistrySync(cwd);
-}
-
-export async function saveModesFile(filePath: string, data: ModesFile): Promise<void> {
-  void filePath;
-  void data;
-  await Promise.resolve();
 }
 
 export function registerBuiltInModes(sourceName: string, data: ModesFile): void {
@@ -119,10 +101,7 @@ export function clearBuiltInModesForTests(): void {
   builtInModeSources.clear();
 }
 
-export async function resolveModeSpec(
-  cwd: string,
-  modeName: string,
-): Promise<ModeSpec | undefined> {
-  const loaded = await loadModeRegistry(cwd);
-  return loaded.resolvedData.modes[modeName];
+export async function resolveModeSpec(modeName: string): Promise<ModeSpec | undefined> {
+  const modes = await loadModeRegistry();
+  return modes.resolvedData.modes[modeName];
 }

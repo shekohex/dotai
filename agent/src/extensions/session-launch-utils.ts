@@ -112,7 +112,8 @@ export function resolveContextModeSpec(
   ctx: Pick<ExtensionContext, "cwd">,
   mode: string,
 ): Promise<ModeSpec | undefined> | ModeSpec | undefined {
-  return resolveModeSpec(ctx.cwd, mode);
+  void ctx;
+  return resolveModeSpec(mode);
 }
 
 async function resolveModeLaunchSelection(

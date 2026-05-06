@@ -67,7 +67,7 @@ export function getGsdSubcommandHint(cwd: string, subcommand: string): string | 
     case "map-codebase":
       return snapshot.project === undefined
         ? "bootstrap docs first"
-        : "updates research/CODEBASE_MAP.md";
+        : "updates .planning/codebase/";
     case "discuss-phase":
       return next ? `target ${next.phase.number} ${next.phase.name}` : undefined;
     case "plan-phase":

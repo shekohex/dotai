@@ -156,10 +156,14 @@ function formatExpandedResult(details: SubagentToolResultDetails | undefined): s
   }
   if (details.action === "message") {
     if (details.autoResumed === true) {
-      resultLines.push(...formatField("autoResumed", details.autoResumed));
+      resultLines.push(`autoResumed: true`);
+      resultLines.push(
+        `note: Subagent was completed, restarted with message as new task. delivery parameter ignored.`,
+      );
       resultLines.push(...formatField("resumePrompt", details.resumePrompt, true));
+    } else {
+      resultLines.push(...formatField("delivery", details.delivery));
     }
-    resultLines.push(...formatField("delivery", details.delivery));
     resultLines.push(...formatField("message", details.message, true));
   }
   return resultLines.join("\n");
@@ -208,10 +212,17 @@ function formatMessageCollapsedSummary(
   details: Extract<SubagentToolResultDetails, { action: "message" }>,
   theme: Theme,
 ): string {
+  if (details.autoResumed === true) {
+    return [
+      theme.fg("success", details.state.name),
+      theme.fg("muted", details.state.status),
+      theme.fg("warning", "resumed"),
+      theme.fg("muted", summarizeWhitespace(details.message, 36)),
+    ].join(theme.fg("dim", " · "));
+  }
   return [
     theme.fg("success", details.state.name),
     theme.fg("muted", details.state.status),
-    ...(details.autoResumed === true ? [theme.fg("muted", "resumed")] : []),
     theme.fg("muted", details.delivery),
     theme.fg("muted", summarizeWhitespace(details.message, 36)),
   ].join(theme.fg("dim", " · "));

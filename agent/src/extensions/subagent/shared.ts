@@ -103,11 +103,19 @@ function getStartGuidanceText(): string {
 }
 
 function formatStartResultText(state: RuntimeSubagent): string {
-  return `Subagent ${state.name} started. sessionId: ${state.sessionId}. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.`;
+  const ephemeralHint =
+    state.persisted === false
+      ? " This subagent is ephemeral (persisted: false). You can message it while running, but once it finishes it cannot be resumed. Start a new subagent for follow-up work."
+      : "";
+  return `Subagent ${state.name} started. sessionId: ${state.sessionId}. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.${ephemeralHint}`;
 }
 
 function formatStructuredStartResultText(state: RuntimeSubagent): string {
-  return `Subagent ${state.name} completed with structured output. sessionId: ${state.sessionId}.`;
+  const ephemeralHint =
+    state.persisted === false
+      ? " This subagent was ephemeral (persisted: false). Once it exits it cannot be resumed. Start a new subagent if you need to run again."
+      : "";
+  return `Subagent ${state.name} completed with structured output. sessionId: ${state.sessionId}.${ephemeralHint}`;
 }
 
 function serializeStructuredStartContent(structured: unknown): string {
@@ -127,12 +135,16 @@ function serializeStructuredStartContent(structured: unknown): string {
   }
 }
 
-function formatAutoResumedMessageResultText(state: RuntimeSubagent, delivery: string): string {
-  return `Subagent ${state.name} resumed. sessionId: ${state.sessionId}. Previous task resumed and ${delivery} message delivered.`;
+function formatAutoResumedMessageResultText(state: RuntimeSubagent, _delivery: string): string {
+  return `Subagent ${state.name} was completed. Resumed with new task. sessionId: ${state.sessionId}.`;
 }
 
 function formatMessageResultText(state: RuntimeSubagent, delivery: string): string {
-  return `Subagent ${state.name} message delivered. sessionId: ${state.sessionId}. delivery: ${delivery}.`;
+  const ephemeralHint =
+    state.persisted === false
+      ? " This subagent is ephemeral (persisted: false) — once it finishes it cannot be messaged or resumed."
+      : "";
+  return `Subagent ${state.name} message delivered. sessionId: ${state.sessionId}. delivery: ${delivery}.${ephemeralHint}`;
 }
 
 function formatCancelResultText(state: RuntimeSubagent): string {

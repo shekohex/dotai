@@ -17,9 +17,21 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
     this.ctx = ctx;
     const { state, autoResumed, resumePrompt } = await this.resolveMessageTarget(
       params.sessionId,
+      params.message,
       ctx,
       onUpdate,
     );
+    if (autoResumed) {
+      await this.markParentInjectedInput(state.sessionId);
+      this.states.set(state.sessionId, state);
+      await this.hooks.persistState(state);
+      this.refreshWidget();
+      return {
+        state: this.toPublicState(state),
+        autoResumed,
+        resumePrompt,
+      };
+    }
     const deliveredState = await this.deliverMessage(state, params, onUpdate);
     return {
       state: this.toPublicState(deliveredState),
@@ -30,6 +42,7 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
 
   protected async resolveMessageTarget(
     sessionId: string,
+    message: string,
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback,
   ): Promise<{ state: RuntimeSubagent; autoResumed: boolean; resumePrompt?: string }> {
@@ -44,7 +57,7 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
     const resumed = await this.resume(
       {
         sessionId: existing.sessionId,
-        task: existing.task,
+        task: message,
         mode: existing.mode,
         cwd: existing.cwd,
         autoExit: existing.autoExit,

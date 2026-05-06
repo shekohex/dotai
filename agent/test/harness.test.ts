@@ -2685,12 +2685,11 @@ timedTest(
       expect(executionEnds[4]?.result?.content?.[0]?.text ?? "").toMatch(
         new RegExp(`sessionId: ${sessionId}`),
       );
-      expect(executionEnds[4]?.result?.content?.[0]?.text ?? "").toMatch(
-        /Previous task resumed and followUp message delivered/i,
-      );
+      expect(executionEnds[4]?.result?.content?.[0]?.text ?? "").toMatch(/Resumed with new task/i);
 
       expect(mux.created.length).toBe(2);
-      expect(mux.sent.length).toBe(2);
+      // sendText skipped on auto-resume (message already set as resume prompt)
+      expect(mux.sent.length).toBe(1);
       expect(mux.killed.length).toBe(1);
       expect(mux.created[0]?.title).toBe("worker-one");
       expect(mux.created[1]?.title).toBe("worker-one");
@@ -2702,13 +2701,13 @@ timedTest(
       ).toBe("Inspect failing tests");
       expect(
         readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
-      ).toBe("Inspect failing tests");
+      ).toBe("Address review feedback");
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
       ).toMatch(/"prompt":"Inspect failing tests"/);
       expect(
         readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
-      ).toMatch(/"prompt":"Inspect failing tests"/);
+      ).toMatch(/"prompt":"Address review feedback"/);
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
       ).toMatch(/"autoExitTimeoutMs":30000/);
@@ -2727,8 +2726,6 @@ timedTest(
       }
       expect(mux.sent[0]?.text).toBe("Focus on src/extensions first");
       expect(mux.sent[0]?.submitMode).toBe("steer");
-      expect(mux.sent[1]?.text).toBe("Address review feedback");
-      expect(mux.sent[1]?.submitMode).toBe("followUp");
       expect(session.events.uiCallsFor("setWidget").length > 0).toBeTruthy();
 
       const renderedText = renderSessionChatLines(session).join("\n");
@@ -2745,7 +2742,7 @@ timedTest(
       expect(renderedText).toMatch(/π cancel · [0-9a-f]{8} · worker-one · cancelled/i);
       expect(renderedText).toMatch(/π message · [0-9a-f]{8} · followUp · Address review feedback/i);
       expect(renderedText).toMatch(
-        /worker-one · running · resumed · followUp · Address[\s\S]*review\s+feedback/i,
+        /worker-one · running · resumed · Address[\s\S]*review\s+feedback/i,
       );
     } finally {
       session?.dispose();

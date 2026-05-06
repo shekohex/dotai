@@ -2902,19 +2902,20 @@ timedTest(
         ctx,
       );
       expect(deliveredAfterAutoResume.autoResumed).toBe(true);
-      expect(deliveredAfterAutoResume.resumePrompt).toBe("Address the review feedback");
+      expect(deliveredAfterAutoResume.resumePrompt).toBe(
+        "Continue with the highest priority review item",
+      );
       expect(deliveredAfterAutoResume.state.status).toBe("running");
       expect(deliveredAfterAutoResume.state.paneId).toBe("%3");
       expect(fakeMux.created.length).toBe(3);
-      expect(fakeMux.sent.length).toBe(2);
-      expect(fakeMux.sent[1]?.paneId).toBe("%3");
-      expect(fakeMux.sent[1]?.submitMode).toBe("followUp");
+      // sendText skipped when auto-resumed (message already set as resume prompt)
+      expect(fakeMux.sent.length).toBe(1);
       expect(launched.length).toBe(3);
-      expect(launched[2]?.prompt).toBe("Address the review feedback");
+      expect(launched[2]?.prompt).toBe("Continue with the highest priority review item");
       expect(
         fakePi.appendedEntries.filter((entry) => entry.customType === SUBAGENT_MESSAGE_ENTRY)
           .length,
-      ).toBe(4);
+      ).toBe(2);
 
       const restoredSessionId = "restored-child";
       const childSessionDir = getDefaultSessionDir(cwd);
@@ -3107,7 +3108,7 @@ timedTest("SubagentRuntime launches ephemeral children when persisted=false", as
         },
         ctx,
       ),
-    ).rejects.toThrow(/ephemeral and cannot be resumed/i);
+    ).rejects.toThrow(/ephemeral.*cannot be resumed/i);
   } finally {
     runtime.dispose();
   }
@@ -3188,9 +3189,7 @@ timedTest(
       );
 
       expect(messaged.content[0]?.text ?? "").toMatch(/sessionId: /);
-      expect(messaged.content[0]?.text ?? "").toMatch(
-        /Previous task resumed and followUp message delivered/i,
-      );
+      expect(messaged.content[0]?.text ?? "").toMatch(/Resumed with new task/i);
       const details = messaged.details as {
         state: RuntimeSubagent;
         autoResumed?: boolean;
@@ -3199,12 +3198,11 @@ timedTest(
         message: string;
       };
       expect(details.autoResumed).toBe(true);
-      expect(details.resumePrompt).toBe("Inspect the failing tests");
+      expect(details.resumePrompt).toBe("Focus on the root cause");
       expect(details.state.status).toBe("running");
       expect(fakeMux.created.length).toBe(2);
-      expect(fakeMux.sent.length).toBe(1);
-      expect(fakeMux.sent[0]?.paneId).toBe(details.state.paneId);
-      expect(fakeMux.sent[0]?.submitMode).toBe("followUp");
+      // sendText skipped when auto-resumed (message already set as resume prompt)
+      expect(fakeMux.sent.length).toBe(0);
 
       const collapsed = renderToolText(
         tool,
@@ -3237,12 +3235,10 @@ timedTest(
         true,
       );
 
-      expect(collapsed).toMatch(
-        /worker-one · running · resumed · followUp · Focus on the root cause/,
-      );
+      expect(collapsed).toMatch(/worker-one · running · resumed · Focus on the root cause/);
       expect(expanded).toMatch(/autoResumed: true/);
-      expect(expanded).toMatch(/resumePrompt:[\s\S]*Inspect the failing tests/);
-      expect(expanded).toMatch(/delivery: followUp/);
+      expect(expanded).toMatch(/resumePrompt:[\s\S]*Focus on the root cause/);
+      expect(expanded).toMatch(/note:.*delivery parameter ignored/);
       expect(expanded).toMatch(/message:/);
     } finally {
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;

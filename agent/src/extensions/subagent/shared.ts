@@ -107,7 +107,7 @@ function formatStartResultText(state: RuntimeSubagent): string {
     state.persisted === false
       ? " This subagent is ephemeral (persisted: false). You can message it while running, but once it finishes it cannot be resumed. Start a new subagent for follow-up work."
       : "";
-  return `Subagent ${state.name} started. sessionId: ${state.sessionId}. The subagent will return with a summary automatically when it finishes, so usually wait for completion instead of polling with list or checking for the final result. Use subagent message only to steer the work, subagent cancel to stop it, and inspect the tmux pane/window directly only when you need live output.${ephemeralHint}`;
+  return `Subagent ${state.name} started and is running in the background. sessionId: ${state.sessionId}. It will return with a summary automatically when it finishes, so continue your other work and wait for its completion summary. Do not poll with list or check repeatedly for results. Use subagent message only to steer the work while running, cancel to stop it, and inspect the tmux pane/window directly only when you need live output.${ephemeralHint}`;
 }
 
 function formatStructuredStartResultText(state: RuntimeSubagent): string {

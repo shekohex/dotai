@@ -2546,13 +2546,13 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
     expect(started.content[0]?.text ?? "").toMatch(
       /will return with a summary automatically when it finishes/i,
     );
-    expect(started.content[0]?.text ?? "").toMatch(/Use subagent message only to steer the work/i);
+    expect(started.content[0]?.text ?? "").toMatch(/steer the work while running/i);
     const startedDetails = started.details as { prompt: string; state: RuntimeSubagent };
     expect(started.content[0]?.text ?? "").toMatch(
       new RegExp(`sessionId: ${startedDetails.state.sessionId}`),
     );
     expect(startedDetails.state.task).toBe(startTask);
-    expect(started.content[0]?.text ?? "").toMatch(/subagent cancel to stop it/i);
+    expect(started.content[0]?.text ?? "").toMatch(/cancel to stop it/i);
 
     const listed = await tool.execute(
       "tool-call-list",

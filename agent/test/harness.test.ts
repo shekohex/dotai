@@ -2668,7 +2668,7 @@ timedTest(
       expect(executionEnds.length).toBe(5);
       expect(executionEnds.every((event) => event.isError === false)).toBeTruthy();
       expect(executionEnds[0]?.result?.content?.[0]?.text ?? "").toMatch(
-        /The subagent will return with a summary automatically when it finishes/i,
+        /running in the background.*return with a summary automatically/i,
       );
       expect(executionEnds[1]?.result?.content?.[0]?.text ?? "").toMatch(/count: 1/);
       expect(executionEnds[1]?.result?.content?.[0]?.text ?? "").toMatch(

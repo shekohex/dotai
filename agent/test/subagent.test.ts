@@ -1646,6 +1646,80 @@ timedTest("TmuxAdapter creates a new tmux window when requested", async () => {
   ]);
 });
 
+timedTest("TmuxAdapter sendText wraps multi-line text in bracketed paste markers", async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const adapter = new TmuxAdapter(async (command, args) => {
+    calls.push({ command, args });
+    return { code: 0, stdout: "", stderr: "" };
+  }, process.cwd());
+
+  await adapter.sendText("%1", "line one\nline two\nline three", "steer");
+
+  expect(calls.length).toBe(1);
+  expect(calls[0]?.command).toBe("tmux");
+  expect(calls[0]?.args).toEqual([
+    "send-keys",
+    "-t",
+    "%1",
+    "Escape",
+    "-l",
+    "[200~",
+    "-l",
+    "line one\nline two\nline three",
+    "-l",
+    "[201~",
+    "Enter",
+  ]);
+});
+
+timedTest("TmuxAdapter sendText uses M-Enter for followUp delivery", async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const adapter = new TmuxAdapter(async (command, args) => {
+    calls.push({ command, args });
+    return { code: 0, stdout: "", stderr: "" };
+  }, process.cwd());
+
+  await adapter.sendText("%1", "single line message", "followUp");
+
+  expect(calls[0]?.args).toEqual([
+    "send-keys",
+    "-t",
+    "%1",
+    "Escape",
+    "-l",
+    "[200~",
+    "-l",
+    "single line message",
+    "-l",
+    "[201~",
+    "M-Enter",
+  ]);
+});
+
+timedTest("TmuxAdapter sendText preserves special characters like tabs", async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const adapter = new TmuxAdapter(async (command, args) => {
+    calls.push({ command, args });
+    return { code: 0, stdout: "", stderr: "" };
+  }, process.cwd());
+
+  await adapter.sendText("%1", "column1\tcolumn2\tcolumn3", "steer");
+
+  expect(calls[0]?.args).toEqual([
+    "send-keys",
+    "-t",
+    "%1",
+    "Escape",
+    "-l",
+    "[200~",
+    "-l",
+    "column1\tcolumn2\tcolumn3",
+    "-l",
+    "[201~",
+    "Enter",
+  ]);
+});
+
 timedTest("subagent tool metadata explains tmux inspection and wait-for-summary flow", () => {
   const fakePi = new FakePi();
   createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(

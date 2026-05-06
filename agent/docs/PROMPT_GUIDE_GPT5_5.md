@@ -263,4 +263,3 @@ Role: [1-2 sentences defining the model's function, context, and job]
 # Stop rules
 [when to retry, fallback, abstain, ask, or stop]
 ```
-

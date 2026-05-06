@@ -85,7 +85,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     if (existing.persisted === false || existing.sessionPath === undefined) {
       throw runtimeSubagentError(
         errorAction,
-        `${existing.name} (${existing.sessionId}) is ephemeral and cannot be resumed after its tmux pane/window exits. Start a new subagent instead.`,
+        `${existing.name} (${existing.sessionId}) is ephemeral (persisted: false) and cannot be resumed after its tmux pane/window exits. Start a new subagent instead.`,
       );
     }
     const mode = await this.resolveModeValue(ctx, {

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { TmuxTarget } from "../mode-utils.js";
+import { errorMessage } from "../utils/error-message.js";
 
 import {
   parseChildBootstrapState,
@@ -21,6 +22,7 @@ export type LaunchCommandOptions = {
   thinkingLevel?: string;
   systemPrompt?: string;
   systemPromptMode: "append" | "replace";
+  modeName?: string;
 };
 
 export type LaunchCommandBuilder = (
@@ -58,6 +60,16 @@ function getPiCommandPrefix(): string[] {
 
   const parts = [process.execPath, ...process.execArgv, script];
   return [parts.map((part) => shellEscape(part)).join(" ")];
+}
+
+function modeFlagName(modeName: string): string {
+  return `mode-${modeName
+    .normalize("NFKD")
+    .replaceAll(/[\u0300-\u036F]/g, "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")}`;
 }
 
 function buildFileBackedArgument(
@@ -119,7 +131,9 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
   if (options.thinkingLevel !== undefined && options.thinkingLevel.length > 0) {
     commandParts.push("--thinking", shellEscape(options.thinkingLevel));
   }
-  if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
+  if (options.modeName !== undefined && options.modeName.length > 0) {
+    commandParts.push(`--${modeFlagName(options.modeName)}`);
+  } else if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     const systemPromptArgument = buildFileBackedArgument(
       options.systemPrompt,
       SYSTEM_PROMPT_FILE_ENV,
@@ -138,26 +152,38 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
   return `export ${envAssignments.join(" ")}; ${commandParts.join(" ")}`;
 };
 
-export function readChildState(): ChildBootstrapState | undefined {
-  const filePath = process.env[CHILD_STATE_FILE_ENV];
-  if (filePath !== undefined && filePath.length > 0) {
+export function readChildState(options?: {
+  strictFile?: boolean;
+}): ChildBootstrapState | undefined {
+  const raw = process.env[CHILD_STATE_ENV];
+  if (raw !== undefined && raw.length > 0) {
     try {
-      return parseChildBootstrapState(JSON.parse(fs.readFileSync(filePath, "utf8")));
+      return parseChildBootstrapState(JSON.parse(raw));
     } catch {
       return undefined;
     }
   }
 
-  const raw = process.env[CHILD_STATE_ENV];
-  if (raw === undefined || raw.length === 0) {
-    return undefined;
+  const filePath = process.env[CHILD_STATE_FILE_ENV];
+  if (filePath !== undefined && filePath.length > 0) {
+    try {
+      const parsed = parseChildBootstrapState(JSON.parse(fs.readFileSync(filePath, "utf8")));
+      if (parsed === undefined) {
+        throw new Error(`Invalid child bootstrap state in ${filePath}`);
+      }
+      return parsed;
+    } catch (error) {
+      if (options?.strictFile !== true) {
+        return undefined;
+      }
+      throw new Error(
+        `Failed to load child bootstrap state from ${filePath}: ${errorMessage(error)}`,
+        { cause: error },
+      );
+    }
   }
 
-  try {
-    return parseChildBootstrapState(JSON.parse(raw));
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 export const SUBAGENT_DEBUG_ENV_ALLOWLIST = SUBAGENT_ENV_ALLOWLIST;

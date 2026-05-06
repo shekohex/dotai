@@ -62,24 +62,6 @@ export function currentSelection(
   };
 }
 
-export function matchesMode(
-  spec: ModeSpec,
-  selection: { provider?: string; modelId?: string; thinkingLevel: string },
-): boolean {
-  if (
-    hasModelSelection(spec) &&
-    (spec.provider !== selection.provider || spec.modelId !== selection.modelId)
-  ) {
-    return false;
-  }
-
-  if (hasText(spec.thinkingLevel) && spec.thinkingLevel !== selection.thinkingLevel) {
-    return false;
-  }
-
-  return hasModelSelection(spec) || hasText(spec.thinkingLevel);
-}
-
 export function selectionSatisfiesMode(
   spec: ModeSpec,
   selection: { provider?: string; modelId?: string; thinkingLevel: string },
@@ -101,19 +83,11 @@ export function selectionSatisfiesMode(
 export function inferActiveMode(
   data: ModesFile,
   activeMode: string | undefined,
-  selection: { provider?: string; modelId?: string; thinkingLevel: string },
 ): string | undefined {
   if (hasText(activeMode)) {
     const activeSpec = getModeSpec(data, activeMode);
-    if (activeSpec && selectionSatisfiesMode(activeSpec, selection)) {
+    if (activeSpec) {
       return activeMode;
-    }
-  }
-
-  for (const modeName of orderedModeNames(data)) {
-    const spec = getModeSpec(data, modeName);
-    if (spec && matchesMode(spec, selection)) {
-      return modeName;
     }
   }
   return undefined;

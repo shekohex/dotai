@@ -2301,12 +2301,9 @@ timedTest(
       await session.session.setModel(providers.getModel("smart-model") as never);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const restoredToolNames = capturedToolSets.at(-1) ?? [];
-      expect(restoredToolNames.includes("bash")).toBeTruthy();
-      expect(restoredToolNames.includes("read")).toBeTruthy();
-      expect(restoredToolNames.includes("edit")).toBeTruthy();
-      expect(restoredToolNames.includes("write")).toBeTruthy();
-      expect(!restoredToolNames.includes("apply_patch")).toBeTruthy();
+      const modeToolNames = capturedToolSets.at(-1) ?? [];
+      expect(modeToolNames.includes("read")).toBeTruthy();
+      expect(modeToolNames.includes("bash")).toBeFalsy();
     } finally {
       session?.dispose();
       providers.dispose();

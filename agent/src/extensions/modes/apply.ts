@@ -51,11 +51,7 @@ async function syncFromSelectionWithDeps(
   }
 
   const previousMode = deps.runtime.activeMode;
-  const nextMode = deps.inferActiveMode(
-    deps.runtime.data,
-    deps.runtime.activeMode,
-    deps.currentSelection(ctx, pi),
-  );
+  const nextMode = deps.inferActiveMode(deps.runtime.data, deps.runtime.activeMode);
   const nextSpec =
     nextMode === undefined ? undefined : deps.getModeSpec(deps.runtime.data, nextMode);
   deps.runtime.activeMode = nextMode;

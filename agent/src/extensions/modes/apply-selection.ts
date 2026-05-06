@@ -36,11 +36,7 @@ export function inferModeFromSelection(
       spec: ModeSpec,
       selection: { provider?: string; modelId?: string; thinkingLevel: string },
     ) => boolean;
-    inferActiveMode: (
-      data: ModesFile,
-      activeMode: string | undefined,
-      selection: { provider?: string; modelId?: string; thinkingLevel: string },
-    ) => string | undefined;
+    inferActiveMode: (data: ModesFile, activeMode: string | undefined) => string | undefined;
     currentSelection: (
       ctx: ExtensionContext,
       pi: ExtensionAPI,
@@ -62,7 +58,7 @@ export function inferModeFromSelection(
     return event.mode;
   }
 
-  return input.inferActiveMode(input.data, input.activeMode, input.currentSelection(ctx, pi));
+  return input.inferActiveMode(input.data, input.activeMode);
 }
 
 export async function applyModeModelSelection(

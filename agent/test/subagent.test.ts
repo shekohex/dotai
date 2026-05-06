@@ -2811,6 +2811,7 @@ timedTest(
         tmuxTarget: "window",
         model: "mode-provider/review-model",
         thinkingLevel: undefined,
+        modeName: "reviewer",
         systemPrompt: "Review only",
         systemPromptMode: "append",
       });
@@ -2888,6 +2889,7 @@ timedTest(
         tmuxTarget: "window",
         model: "mode-provider/review-model",
         thinkingLevel: undefined,
+        modeName: "reviewer",
         systemPrompt: "Review only",
         systemPromptMode: "append",
       });
@@ -3092,7 +3094,7 @@ timedTest("SubagentRuntime launches ephemeral children when persisted=false", as
     expect(launched[0]?.options).toEqual({
       launchTarget: { kind: "ephemeral" },
       tmuxTarget: "pane",
-      mode: undefined,
+      modeName: "worker",
       model: undefined,
       thinkingLevel: undefined,
       systemPrompt: undefined,

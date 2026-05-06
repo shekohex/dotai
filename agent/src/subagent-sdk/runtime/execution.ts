@@ -278,6 +278,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
         thinkingLevel: input.mode.thinkingLevel,
         systemPrompt: input.mode.systemPrompt,
         systemPromptMode: input.mode.systemPromptMode,
+        modeName: input.mode.modeName,
       },
     );
     const pane = await this.adapter.createPane({

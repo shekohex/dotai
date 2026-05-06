@@ -17,11 +17,7 @@ export type ModeApplyDeps = {
   ensureModesReady: (ctx: ExtensionContext) => Promise<boolean>;
   saveRuntime: (ctx: ExtensionContext) => Promise<void>;
   getModeSpec: (data: ModesFile, modeName: string) => ModeSpec | undefined;
-  inferActiveMode: (
-    data: ModesFile,
-    activeMode: string | undefined,
-    selection: { provider?: string; modelId?: string; thinkingLevel: string },
-  ) => string | undefined;
+  inferActiveMode: (data: ModesFile, activeMode: string | undefined) => string | undefined;
   currentSelection: (
     ctx: ExtensionContext,
     pi: ExtensionAPI,

@@ -5,13 +5,19 @@ import { handleGsdNext } from "./instant/next.js";
 import { handleGsdProgress } from "./instant/progress.js";
 import { handleGsdStats } from "./instant/stats.js";
 import { handleGsdStatus } from "./instant/status.js";
-import { handleGsdDiscussPhase } from "./lifecycle/discuss-phase.js";
-import { handleGsdExecutePhase } from "./lifecycle/execute-phase.js";
-import { handleGsdMapCodebase } from "./lifecycle/map-codebase.js";
-import { handleGsdNewProject } from "./lifecycle/new-project.js";
-import { handleGsdPlanPhase } from "./lifecycle/plan-phase.js";
-import { handleGsdValidatePhase } from "./lifecycle/validate-phase.js";
-import { handleGsdVerifyWork } from "./lifecycle/verify-work.js";
+import {
+  handleGsdCompleteMilestone,
+  handleGsdDebug,
+  handleGsdDiscussPhase,
+  handleGsdExecutePhase,
+  handleGsdMapCodebase,
+  handleGsdMilestoneSummary,
+  handleGsdNewMilestone,
+  handleGsdNewProject,
+  handleGsdPlanPhase,
+  handleGsdValidatePhase,
+  handleGsdVerifyWork,
+} from "./lifecycle/index.js";
 
 export type GsdHandler = (
   pi: ExtensionAPI,
@@ -21,6 +27,10 @@ export type GsdHandler = (
 
 export const gsdHandlers = {
   "new-project": handleGsdNewProject,
+  "new-milestone": handleGsdNewMilestone,
+  "complete-milestone": handleGsdCompleteMilestone,
+  "milestone-summary": handleGsdMilestoneSummary,
+  debug: handleGsdDebug,
   "map-codebase": handleGsdMapCodebase,
   "discuss-phase": handleGsdDiscussPhase,
   "plan-phase": handleGsdPlanPhase,

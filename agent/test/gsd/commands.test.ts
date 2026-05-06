@@ -19,6 +19,8 @@ class FakePi implements Partial<ExtensionAPI> {
   readonly commands = new Map<string, RegisteredCommand>();
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
   readonly messageRenderers = new Map<string, unknown>();
+  private activeTools: string[] = [];
+  readonly sendUserMessage = vi.fn();
 
   registerCommand(name: string, command: RegisteredCommand): void {
     this.commands.set(name, command);
@@ -33,16 +35,53 @@ class FakePi implements Partial<ExtensionAPI> {
   registerMessageRenderer(customType: string, renderer: unknown): void {
     this.messageRenderers.set(customType, renderer);
   }
+
+  getActiveTools(): string[] {
+    return this.activeTools;
+  }
+
+  setActiveTools(tools: string[]): void {
+    this.activeTools = tools;
+  }
 }
 
 afterEach(() => {
   setGsdSubagentSdkFactoryForTests(undefined);
 });
 
+async function emitFakeSessionStart(
+  fakePi: FakePi,
+  reason: "new" | "fork",
+  cwd: string,
+): Promise<void> {
+  const handlers = fakePi.handlers.get("session_start") ?? [];
+  const replacementCtx = {
+    cwd,
+    hasUI: false,
+    ui: { notify() {} },
+    modelRegistry: {
+      find(provider: string, id: string) {
+        return { provider, id };
+      },
+    },
+  };
+
+  for (const handler of handlers) {
+    await handler({ reason }, replacementCtx);
+  }
+}
+
 function createCommandContext(
   cwd: string,
   notifications: Array<{ message: string; level: string }>,
+  fakePi?: FakePi,
 ) {
+  const modelRegistry = {
+    find(provider: string, id: string) {
+      return { provider, id };
+    },
+  };
+
   return {
     cwd,
     hasUI: false,
@@ -51,6 +90,40 @@ function createCommandContext(
         notifications.push({ message, level });
       },
     },
+    sessionManager: {
+      getLeafId: () => "leaf-id",
+      getSessionFile: () => join(cwd, ".pi", "session.jsonl"),
+      getSessionId: () => "session-id",
+    },
+    modelRegistry,
+    fork: vi.fn(
+      async (_entryId: string, options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
+        if (fakePi) {
+          await emitFakeSessionStart(fakePi, "fork", cwd);
+          await options?.withSession?.({
+            cwd,
+            hasUI: false,
+            ui: { notify() {} },
+            modelRegistry,
+            sendUserMessage: fakePi.sendUserMessage,
+          });
+        }
+        return { cancelled: false };
+      },
+    ),
+    newSession: vi.fn(async (options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
+      if (fakePi) {
+        await emitFakeSessionStart(fakePi, "new", cwd);
+        await options?.withSession?.({
+          cwd,
+          hasUI: false,
+          ui: { notify() {} },
+          modelRegistry,
+          sendUserMessage: fakePi.sendUserMessage,
+        });
+      }
+      return { cancelled: false };
+    }),
   };
 }
 
@@ -198,6 +271,30 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "map-codebase",
     paths: ["apps/web", "packages/api"],
   });
+  expect(parseGsdCommandArgs("new-milestone v1.1 Notifications")).toEqual({
+    subcommand: "new-milestone",
+    milestone: "v1.1 Notifications",
+  });
+  expect(parseGsdCommandArgs("complete-milestone v1.1")).toEqual({
+    subcommand: "complete-milestone",
+    version: "v1.1",
+  });
+  expect(parseGsdCommandArgs("milestone-summary v1.0")).toEqual({
+    subcommand: "milestone-summary",
+    version: "v1.0",
+  });
+  expect(parseGsdCommandArgs("debug --diagnose login fails on mobile safari")).toEqual({
+    subcommand: "debug",
+    debugAction: "start",
+    diagnose: true,
+    description: "login fails on mobile safari",
+  });
+  expect(parseGsdCommandArgs("debug status auth-token-null")).toEqual({
+    subcommand: "debug",
+    debugAction: "status",
+    slug: "auth-token-null",
+    diagnose: false,
+  });
 });
 
 test("gsd autocomplete suggests phase values and flags from ctx cwd state", async () => {
@@ -213,16 +310,16 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
   expect(executePhaseItems).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        value: "2",
+        value: "execute-phase 2",
         label: "2 Delivery",
         description: expect.stringContaining("open"),
       }),
       expect.objectContaining({
-        value: "--phase",
+        value: "execute-phase --phase",
         label: "--phase",
       }),
       expect.objectContaining({
-        value: "--phase=",
+        value: "execute-phase --phase=",
         label: "--phase=",
       }),
     ]),
@@ -231,16 +328,16 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
   const phaseFlagItems = await command?.getArgumentCompletions?.("execute-phase --phase ");
   expect(phaseFlagItems).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ value: "1", label: "1 Foundation" }),
-      expect.objectContaining({ value: "2", label: "2 Delivery" }),
+      expect.objectContaining({ value: "execute-phase --phase 1", label: "1 Foundation" }),
+      expect.objectContaining({ value: "execute-phase --phase 2", label: "2 Delivery" }),
     ]),
   );
 
   const phaseEqualsItems = await command?.getArgumentCompletions?.("execute-phase --phase=");
   expect(phaseEqualsItems).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ value: "--phase=1", label: "1 Foundation" }),
-      expect.objectContaining({ value: "--phase=2", label: "2 Delivery" }),
+      expect.objectContaining({ value: "execute-phase --phase=1", label: "1 Foundation" }),
+      expect.objectContaining({ value: "execute-phase --phase=2", label: "2 Delivery" }),
     ]),
   );
 
@@ -248,12 +345,61 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
   expect(mapCodebaseItems).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        value: "--paths",
+        value: "map-codebase --paths",
         label: "--paths",
       }),
       expect.objectContaining({
-        value: "--paths=",
+        value: "map-codebase --paths=",
         label: "--paths=",
+      }),
+    ]),
+  );
+
+  const completeMilestoneItems = await command?.getArgumentCompletions?.("complete-milestone ");
+  expect(completeMilestoneItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "complete-milestone v1.0", label: "v1.0" }),
+    ]),
+  );
+
+  const debugItems = await command?.getArgumentCompletions?.("debug ");
+  expect(debugItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "debug list", label: "list" }),
+      expect.objectContaining({ value: "debug status ", label: "status" }),
+      expect.objectContaining({ value: "debug continue ", label: "continue" }),
+      expect.objectContaining({ value: "debug --diagnose", label: "--diagnose" }),
+    ]),
+  );
+
+  mkdirSync(join(cwd, ".planning", "debug"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "debug", "auth-token-null.md"),
+    "---\nstatus: investigating\ntrigger: auth fails\ncreated: 2026-04-11\nupdated: 2026-04-12\n---\n\n## Current Focus\n\n- hypothesis: token parse broken\n- next_action: add logging\n",
+  );
+
+  const debugStatusItems = await command?.getArgumentCompletions?.("debug status ");
+  expect(debugStatusItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        value: "debug status auth-token-null",
+        label: "auth-token-null",
+      }),
+    ]),
+  );
+
+  writeFileSync(
+    join(cwd, ".planning", "debug", "parser-crash.md"),
+    "---\nslug: parser-crash\nstatus: investigating\ntrigger: parser crash\ngoal: find_and_fix\ncreated: 2026-05-06\nupdated: 2026-05-06T00:25:00Z\n---\n\n## Current Focus\n\n- hypothesis: schema too strict\n- next_action: widen frontmatter schema\n",
+  );
+
+  const debugItemsWithExtendedFrontmatter =
+    await command?.getArgumentCompletions?.("debug status ");
+  expect(debugItemsWithExtendedFrontmatter).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        value: "debug status parser-crash",
+        label: "parser-crash",
       }),
     ]),
   );
@@ -285,6 +431,19 @@ test("gsd autocomplete shows dynamic subcommand hints", async () => {
       }),
     ]),
   );
+});
+
+test("gsd autocomplete matches subcommands like upstream pi fuzzy search", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  const items = await command?.getArgumentCompletions?.("dg");
+  expect(items?.map((item) => item.value)).toEqual(["debug"]);
 });
 
 test("gsd next uses explicit phase override", async () => {
@@ -332,6 +491,67 @@ test("gsd new-project bootstraps empty roadmap through grouped command", async (
     message: `GSD initialized in ${join(cwd, ".planning")}`,
     level: "info",
   });
+});
+
+test("gsd new-milestone and milestone-summary route through grouped command surface", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("on", context);
+  await command?.handler("new-milestone v1.1 Notifications", context);
+  await command?.handler("milestone-summary v1.1", context);
+  expect(fakePi.sendUserMessage).toHaveBeenCalled();
+  const prompts = fakePi.sendUserMessage.mock.calls.map((call) => call[0]);
+  expect(
+    prompts.some((prompt) =>
+      String(prompt).includes(
+        'Launch native GSD workflow for "/gsd new-milestone v1.1 Notifications"',
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    prompts.some((prompt) =>
+      String(prompt).includes('Launch native GSD workflow for "/gsd milestone-summary v1.1"'),
+    ),
+  ).toBe(true);
+});
+
+test("gsd debug grouped command launches workflow prompt in forked session", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("on", context);
+  await command?.handler("debug login fails on mobile safari", context);
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    "Start `/gsd debug` in this visible workflow session.",
+  );
+});
+
+test("gsd debug without description launches workflow prompt instead of crashing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("on", context);
+  await command?.handler("debug", context);
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    "Start `/gsd debug` in this visible workflow session.",
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    "Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
+  );
 });
 
 test("gsd command runs lifecycle flow through grouped command surface", async () => {

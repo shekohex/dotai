@@ -1,10 +1,19 @@
 import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
 import type { GsdSubcommand } from "./commands.js";
 import { getLastKnownGsdCwd } from "./state/cwd.js";
-import { getGsdPhaseSuggestions, getGsdSubcommandHint } from "./state/suggestions.js";
+import {
+  getGsdDebugSuggestions,
+  getGsdMilestoneSuggestions,
+  getGsdPhaseSuggestions,
+  getGsdSubcommandHint,
+} from "./state/suggestions.js";
 
 const subcommands: Array<{ value: GsdSubcommand; description: string }> = [
   { value: "new-project", description: "Bootstrap .planning" },
+  { value: "new-milestone", description: "Start next milestone cycle" },
+  { value: "complete-milestone", description: "Archive active milestone" },
+  { value: "milestone-summary", description: "Write milestone report" },
+  { value: "debug", description: "Persisted debug workflow" },
   { value: "map-codebase", description: "Map existing codebase" },
   { value: "discuss-phase", description: "Create phase context" },
   { value: "plan-phase", description: "Plan current phase" },
@@ -38,6 +47,7 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
   "verify-work": ["--phase", "--phase="],
   "validate-phase": ["--phase", "--phase="],
   next: ["--phase", "--phase="],
+  debug: ["--diagnose"],
 };
 
 export function getGsdSubcommands(): Array<{ value: GsdSubcommand; description: string }> {
@@ -51,32 +61,64 @@ function filterItems(items: AutocompleteItem[], query: string): AutocompleteItem
   if (query.length === 0) {
     return items;
   }
-  const filtered = fuzzyFilter(
-    items,
-    query,
-    (item) => `${item.label} ${item.value} ${item.description ?? ""}`,
-  );
+  const filtered = fuzzyFilter(items, query, (item) => `${item.label} ${item.value}`);
   return filtered.length > 0 ? filtered : null;
 }
 
-function getPhaseItems(flagPrefix?: "--phase="): AutocompleteItem[] {
+function getPhaseItems(prefixBase = "", flagPrefix?: "--phase="): AutocompleteItem[] {
   const cwd = getLastKnownGsdCwd();
   if (cwd === undefined) {
     return [];
   }
   return getGsdPhaseSuggestions(cwd).map((item) => ({
-    value: flagPrefix === undefined ? item.value : `${flagPrefix}${item.value}`,
+    value:
+      flagPrefix === undefined
+        ? `${prefixBase}${item.value}`
+        : `${prefixBase}${flagPrefix}${item.value}`,
     label: item.label,
     description: item.description,
   }));
 }
 
-function getFlagItems(subcommand: GsdSubcommand): AutocompleteItem[] {
+function getFlagItems(subcommand: GsdSubcommand, prefixBase = ""): AutocompleteItem[] {
   return (subcommandFlags[subcommand] ?? []).map((value) => ({
-    value,
+    value: `${prefixBase}${value}`,
     label: value,
     description: getFlagDescription(value),
   }));
+}
+
+function getDebugActionItems(prefixBase: string): AutocompleteItem[] {
+  return [
+    {
+      value: `${prefixBase}list`,
+      label: "list",
+      description: "List active sessions",
+    },
+    {
+      value: `${prefixBase}status `,
+      label: "status",
+      description: "Inspect session by slug",
+    },
+    {
+      value: `${prefixBase}continue `,
+      label: "continue",
+      description: "Resume session by slug",
+    },
+  ];
+}
+
+function getDebugSessionItems(prefixBase: string, cwd: string | undefined): AutocompleteItem[] {
+  if (cwd === undefined) {
+    return [];
+  }
+  return getGsdDebugSuggestions(cwd)
+    .filter((item) => item.value !== "list" && item.value !== "status" && item.value !== "continue")
+    .map((item) => ({
+      value: `${prefixBase}${item.value}`,
+      label: item.label,
+      description: item.description,
+    }));
 }
 
 function getFlagDescription(value: string): string | undefined {
@@ -91,6 +133,9 @@ function getFlagDescription(value: string): string | undefined {
   }
   if (value === "--paths=") {
     return "Inline repo-relative mapping paths";
+  }
+  if (value === "--diagnose") {
+    return "Find root cause only";
   }
   return undefined;
 }
@@ -138,22 +183,57 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
     return filterItems(items, token);
   }
 
+  if (subcommand === "debug") {
+    const debugActionItems = getDebugActionItems("debug ");
+    const debugSessionItems = getDebugSessionItems(`debug ${tokens[1]} `, cwd);
+    if (token.startsWith("--")) {
+      return filterItems(getFlagItems(subcommand, "debug "), token);
+    }
+    if (tokens[1] === "status" || tokens[1] === "continue") {
+      return filterItems(debugSessionItems, token);
+    }
+    if (tokens.length === 1 && trailingSpace) {
+      return [...debugActionItems, ...getFlagItems(subcommand, "debug ")];
+    }
+    if (tokens.length <= 2) {
+      return filterItems([...debugActionItems, ...getFlagItems(subcommand, "debug ")], token);
+    }
+  }
+
+  if (subcommand === "complete-milestone" || subcommand === "milestone-summary") {
+    const milestoneItems = (cwd === undefined ? [] : getGsdMilestoneSuggestions(cwd)).map(
+      (item) => ({
+        value: `${subcommand} ${item.value}`,
+        label: item.label,
+        description: item.description,
+      }),
+    );
+    if (trailingSpace && tokens.length === 1) {
+      return milestoneItems;
+    }
+    if (tokens.length === 2) {
+      return filterItems(milestoneItems, token);
+    }
+  }
+
   if (token.startsWith("--phase=")) {
-    return filterItems(getPhaseItems("--phase="), token);
+    return filterItems(getPhaseItems(`${subcommand} `, "--phase="), token);
   }
 
   if (token.startsWith("--")) {
-    return filterItems(getFlagItems(subcommand), token);
+    return filterItems(getFlagItems(subcommand, `${subcommand} `), token);
   }
 
-  const phaseItems = phaseAwareSubcommands.includes(subcommand) ? getPhaseItems() : [];
+  const phaseItems = phaseAwareSubcommands.includes(subcommand)
+    ? getPhaseItems(`${subcommand} `)
+    : [];
   if (phaseItems.length > 0) {
     const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
     if (previousToken === "--phase") {
-      return filterItems(phaseItems, token);
+      return filterItems(getPhaseItems(`${subcommand} --phase `), token);
     }
     if (trailingSpace) {
-      return [...phaseItems, ...getFlagItems(subcommand)];
+      return [...phaseItems, ...getFlagItems(subcommand, `${subcommand} `)];
     }
     if (!token.startsWith("-")) {
       return filterItems(phaseItems, token);
@@ -161,8 +241,8 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
   }
 
   if (trailingSpace) {
-    return getFlagItems(subcommand);
+    return getFlagItems(subcommand, `${subcommand} `);
   }
 
-  return filterItems(getFlagItems(subcommand), token);
+  return filterItems(getFlagItems(subcommand, `${subcommand} `), token);
 }

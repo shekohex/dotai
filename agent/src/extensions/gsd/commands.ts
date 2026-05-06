@@ -9,6 +9,10 @@ import { showGsdDashboard } from "./ui.js";
 
 export type GsdSubcommand =
   | "new-project"
+  | "new-milestone"
+  | "complete-milestone"
+  | "milestone-summary"
+  | "debug"
   | "map-codebase"
   | "discuss-phase"
   | "plan-phase"
@@ -48,12 +52,21 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         ctx.ui.notify("GSD disabled", "info");
         return;
       }
-      if (!settings.enabled && subcommand !== "help" && subcommand !== "new-project") {
+      if (
+        !settings.enabled &&
+        subcommand !== "help" &&
+        subcommand !== "new-project" &&
+        subcommand !== "new-milestone"
+      ) {
         ctx.ui.notify("GSD disabled. Run /gsd on.", "warning");
         return;
       }
       switch (subcommand) {
         case "new-project":
+        case "new-milestone":
+        case "complete-milestone":
+        case "milestone-summary":
+        case "debug":
         case "map-codebase":
         case "discuss-phase":
         case "plan-phase":

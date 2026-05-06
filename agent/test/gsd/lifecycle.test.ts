@@ -5,11 +5,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { handleGsdDiscussPhase } from "../../src/extensions/gsd/lifecycle/discuss-phase.js";
+import { handleGsdDebug } from "../../src/extensions/gsd/lifecycle/debug.js";
 import { handleGsdMapCodebase } from "../../src/extensions/gsd/lifecycle/map-codebase.js";
+import { handleGsdCompleteMilestone } from "../../src/extensions/gsd/lifecycle/complete-milestone.js";
+import { handleGsdMilestoneSummary } from "../../src/extensions/gsd/lifecycle/milestone-summary.js";
+import { handleGsdNewMilestone } from "../../src/extensions/gsd/lifecycle/new-milestone.js";
 import { handleGsdNewProject } from "../../src/extensions/gsd/lifecycle/new-project.js";
 import { handleGsdValidatePhase } from "../../src/extensions/gsd/lifecycle/validate-phase.js";
 import { handleGsdVerifyWork } from "../../src/extensions/gsd/lifecycle/verify-work.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
+import { applyPendingGsdWorkflowLaunch } from "../../src/extensions/gsd/workflow-launch.js";
 
 function createRoot(): string {
   return mkdtempSync(join(tmpdir(), "agent-gsd-lifecycle-"));
@@ -58,7 +63,13 @@ Plans:
   return root;
 }
 
-function createContext(cwd: string): ExtensionCommandContext {
+function createContext(cwd: string, pi?: ExtensionAPI): ExtensionCommandContext {
+  const modelRegistry = {
+    find(provider: string, id: string) {
+      return { provider, id };
+    },
+  };
+
   return {
     cwd,
     hasUI: false,
@@ -67,13 +78,65 @@ function createContext(cwd: string): ExtensionCommandContext {
     },
     sessionManager: {
       getSessionId: () => "parent-session-id",
+      getLeafId: () => "leaf-id",
+      getSessionFile: () => join(cwd, ".pi", "session.jsonl"),
     },
+    modelRegistry,
+    fork: vi.fn(
+      async (_entryId: string, options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
+        if (pi) {
+          await applyPendingGsdWorkflowLaunch(
+            pi,
+            {
+              cwd,
+              hasUI: false,
+              ui: { notify: vi.fn() },
+              modelRegistry,
+            } as unknown as ExtensionCommandContext,
+            "fork",
+          );
+          await options?.withSession?.({
+            cwd,
+            hasUI: false,
+            ui: { notify: vi.fn() },
+            modelRegistry,
+            sendUserMessage: pi.sendUserMessage,
+          });
+        }
+        return { cancelled: false };
+      },
+    ),
+    newSession: vi.fn(async (options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
+      if (pi) {
+        await applyPendingGsdWorkflowLaunch(
+          pi,
+          {
+            cwd,
+            hasUI: false,
+            ui: { notify: vi.fn() },
+            modelRegistry,
+          } as unknown as ExtensionCommandContext,
+          "new",
+        );
+        await options?.withSession?.({
+          cwd,
+          hasUI: false,
+          ui: { notify: vi.fn() },
+          modelRegistry,
+          sendUserMessage: pi.sendUserMessage,
+        });
+      }
+      return { cancelled: false };
+    }),
   } as unknown as ExtensionCommandContext;
 }
 
 function createPi() {
   return {
     sendMessage: vi.fn(),
+    sendUserMessage: vi.fn(),
+    getActiveTools: vi.fn().mockReturnValue([]),
+    setActiveTools: vi.fn(),
   } as unknown as ExtensionAPI;
 }
 
@@ -265,6 +328,123 @@ describe("gsd lifecycle handlers", () => {
     ).toContain("Validated");
     expect(readFileSync(join(root, ".planning", "STATE.md"), "utf8")).toContain(
       "status: Phase complete",
+    );
+  });
+
+  it("new-milestone launches workflow prompt in forked session", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdNewMilestone(pi, ctx, { milestone: "v1.1 Notifications" });
+    expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd new-milestone v1.1 Notifications"',
+    );
+  });
+
+  it("complete-milestone launches workflow prompt in forked session", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdCompleteMilestone(pi, ctx, { version: "v1.0" });
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd complete-milestone v1.0"',
+    );
+  });
+
+  it("milestone-summary launches workflow prompt in forked session", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdMilestoneSummary(pi, ctx, { version: "v1.0" });
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd milestone-summary v1.0"',
+    );
+  });
+
+  it("debug launches workflow prompt in forked session", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdDebug(pi, ctx, {
+      debugAction: "start",
+      description: "login fails on mobile safari",
+      diagnose: true,
+    });
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Start `/gsd debug` in this visible workflow session.",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
+    );
+  });
+
+  it("debug avoids stale ctx access after session replacement", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    let replaced = false;
+    const modelRegistry = {
+      find(provider: string, id: string) {
+        return { provider, id };
+      },
+    };
+    const ctx = {
+      get cwd() {
+        if (replaced) {
+          throw new Error(
+            "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload().",
+          );
+        }
+        return root;
+      },
+      hasUI: false,
+      ui: {
+        notify: vi.fn(),
+      },
+      sessionManager: {
+        getSessionId: () => "parent-session-id",
+        getLeafId: () => "leaf-id",
+        getSessionFile: () => join(root, ".pi", "session.jsonl"),
+      },
+      modelRegistry,
+      fork: vi.fn(async () => {
+        return { cancelled: false };
+      }),
+      newSession: vi.fn(async (options?: { withSession?: (ctx: unknown) => Promise<void> }) => {
+        await applyPendingGsdWorkflowLaunch(
+          pi,
+          {
+            cwd: root,
+            hasUI: false,
+            ui: { notify: vi.fn() },
+            modelRegistry,
+          } as unknown as ExtensionCommandContext,
+          "new",
+        );
+        replaced = true;
+        await options?.withSession?.({
+          cwd: root,
+          hasUI: false,
+          ui: { notify: vi.fn() },
+          modelRegistry,
+          sendUserMessage: pi.sendUserMessage,
+        });
+        return { cancelled: false };
+      }),
+    } as unknown as ExtensionCommandContext;
+
+    await expect(
+      handleGsdDebug(pi, ctx, { debugAction: "start", description: "parser unstable" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("debug without description launches workflow prompt in forked session", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdDebug(pi, ctx, { debugAction: "start" });
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Start `/gsd debug` in this visible workflow session.",
     );
   });
 });

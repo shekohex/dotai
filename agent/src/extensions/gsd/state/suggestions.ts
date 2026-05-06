@@ -1,11 +1,19 @@
 import { computeHealth } from "./health.js";
 import { computeProgress } from "./progress.js";
+import { listDebugSessions } from "./debug.js";
+import { listArchivedMilestones, resolveCurrentMilestone } from "./milestones.js";
 import { readPlanningSnapshot } from "./read.js";
 import { readRoadmapPhases } from "./roadmap.js";
 import { resolveCurrentPhase, resolveNextPlan } from "./runtime.js";
 import { computeStats } from "./stats.js";
 
 export type GsdPhaseSuggestion = {
+  value: string;
+  label: string;
+  description: string;
+};
+
+export type GsdSimpleSuggestion = {
   value: string;
   label: string;
   description: string;
@@ -77,6 +85,14 @@ export function getGsdSubcommandHint(cwd: string, subcommand: string): string | 
       return next ? `advance to ${next.phase.number} ${next.planId ?? "plan"}` : undefined;
     case "progress":
       return `${progress.percent}% ${progress.status.toLowerCase()}`;
+    case "new-milestone":
+      return resolveCurrentMilestone(cwd)?.version ?? "start next cycle";
+    case "complete-milestone":
+      return resolveCurrentMilestone(cwd)?.version ?? "archive current";
+    case "milestone-summary":
+      return listArchivedMilestones(cwd).at(-1)?.version ?? "report current";
+    case "debug":
+      return `${listDebugSessions(cwd).length} active sessions`;
     case "stats":
       return `${stats.phaseCount} phases • ${stats.planCount} plans`;
     case "health":
@@ -84,4 +100,47 @@ export function getGsdSubcommandHint(cwd: string, subcommand: string): string | 
     default:
       return undefined;
   }
+}
+
+export function getGsdMilestoneSuggestions(cwd: string): GsdSimpleSuggestion[] {
+  const current = resolveCurrentMilestone(cwd);
+  const archived = listArchivedMilestones(cwd);
+  const suggestions: GsdSimpleSuggestion[] = [];
+  if (current) {
+    suggestions.push({
+      value: current.version,
+      label: current.version,
+      description: `current • ${current.name}`,
+    });
+  }
+  for (const milestone of archived) {
+    if (milestone.version === current?.version) {
+      continue;
+    }
+    suggestions.push({
+      value: milestone.version,
+      label: milestone.version,
+      description: "archived milestone",
+    });
+  }
+  return suggestions;
+}
+
+export function getGsdDebugSuggestions(cwd: string | undefined): GsdSimpleSuggestion[] {
+  const items: GsdSimpleSuggestion[] = [
+    { value: "list", label: "list", description: "List active sessions" },
+    { value: "status", label: "status", description: "Inspect session by slug" },
+    { value: "continue", label: "continue", description: "Resume session by slug" },
+  ];
+  if (cwd === undefined) {
+    return items;
+  }
+  return [
+    ...items,
+    ...listDebugSessions(cwd).map((session) => ({
+      value: session.slug,
+      label: session.slug,
+      description: `${session.frontmatter.status} • ${session.nextAction ?? "next unknown"}`,
+    })),
+  ];
 }

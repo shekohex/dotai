@@ -9,6 +9,7 @@ export type GsdRole =
   | "verifier"
   | "plan-checker"
   | "debugger"
+  | "debug-session-manager"
   | "codebase-mapper";
 
 type GsdRoleConfig = {
@@ -146,6 +147,20 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
       autoExit: true,
     },
   },
+  "debug-session-manager": {
+    modeName: "gsd-debug-session-manager",
+    bundledPromptPath: "resources/gsd/agents/gsd-debug-session-manager.md",
+    fallbackMode: "worker",
+    builtInModeSpec: {
+      description: "Built-in GSD debug session manager",
+      provider: "codex-openai",
+      modelId: "gpt-5.5",
+      thinkingLevel: "low",
+      tools: ["read", "bash", "edit", "write", "websearch", "subagent", "interview", "execute"],
+      systemPromptMode: "replace",
+      autoExit: true,
+    },
+  },
 };
 
 export function getGsdRoleConfig(role: GsdRole): GsdRoleConfig {
@@ -178,6 +193,7 @@ export function listGsdRoles(): GsdRole[] {
     "verifier",
     "plan-checker",
     "debugger",
+    "debug-session-manager",
     "codebase-mapper",
   ];
 }

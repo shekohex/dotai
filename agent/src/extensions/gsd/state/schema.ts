@@ -108,6 +108,7 @@ export const PlanningConfigSchema = Type.Object(
           ui_safety_gate: Type.Optional(Type.Boolean()),
           text_mode: Type.Optional(Type.Boolean()),
           research_before_questions: Type.Optional(Type.Boolean()),
+          tdd_mode: Type.Optional(Type.Boolean()),
           discuss_mode: Type.Optional(Type.String()),
           skip_discuss: Type.Optional(Type.Boolean()),
         },

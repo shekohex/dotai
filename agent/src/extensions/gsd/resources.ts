@@ -38,6 +38,14 @@ export function loadBundledDoc(name: string): string {
   return readFileSync(join(gsdBundleDir, "docs", name), "utf8");
 }
 
+export function resolveGsdBundlePath(...segments: string[]): string {
+  return join(gsdBundleDir, ...segments);
+}
+
+export function getGsdBundleDir(): string {
+  return gsdBundleDir;
+}
+
 export function fillTemplate(template: string, vars: Record<string, string>): string {
   return template.replaceAll(/\[([^\]]+)\]/g, (match, name: string) => vars[name] ?? match);
 }

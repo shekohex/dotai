@@ -41,7 +41,7 @@ function buildTerminalActivity(
 
 function resolveCompletionDelivery(state: RuntimeSubagent): {
   enabled: boolean;
-  deliverAs: "steer" | "followUp" | "nextTurn";
+  deliverAs: "steer" | "followUp";
   triggerTurn: boolean;
 } {
   if (state.completion === false) {
@@ -208,10 +208,14 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
     this.stopPollingIfIdle();
 
     const structuredErrorText = formatStructuredOutputError(terminal.structuredError);
+    const ephemeralSuffix =
+      terminal.persisted === false
+        ? "\n\nThis subagent was ephemeral (persisted: false) and cannot be messaged or resumed. Start a new subagent if you need to run it again."
+        : "";
     const messageText =
       terminal.status === "completed"
-        ? `Subagent ${terminal.name} (${terminal.sessionId}) completed.\n\n${terminal.summary ?? "No summary available."}`
-        : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? formatSubagentFailureFallback(terminal)}`;
+        ? `Subagent ${terminal.name} (${terminal.sessionId}) completed.\n\n${terminal.summary ?? "No summary available."}${ephemeralSuffix}`
+        : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? formatSubagentFailureFallback(terminal)}${ephemeralSuffix}`;
 
     const completionDelivery = resolveCompletionDelivery(terminal);
     if (completionDelivery.enabled) {

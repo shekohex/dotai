@@ -19,7 +19,7 @@ export type SubagentRuntimeHooks = {
   persistMessage(entry: SubagentMessageEntry): Promise<void>;
   emitStatusMessage(options: {
     content: string;
-    deliverAs?: "steer" | "followUp" | "nextTurn";
+    deliverAs?: "steer" | "followUp";
     triggerTurn?: boolean;
   }): void;
   renderWidget(ctx: ExtensionContext | undefined, subagents: RuntimeSubagent[]): void;

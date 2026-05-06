@@ -83,12 +83,7 @@ export class TmuxAdapter implements MuxAdapter {
         }),
         "paste tmux buffer",
       );
-      let submitKey: "M-Enter" | "Enter" | undefined;
-      if (submitMode === "followUp") {
-        submitKey = "M-Enter";
-      } else if (submitMode === "steer") {
-        submitKey = "Enter";
-      }
+      const submitKey = submitMode === "followUp" ? "M-Enter" : "Enter";
       if (submitKey) {
         this.assertOk(
           await this.exec("tmux", ["send-keys", "-t", paneId, submitKey], { cwd: this.cwd }),

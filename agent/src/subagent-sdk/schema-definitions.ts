@@ -46,7 +46,6 @@ export const SubagentDeliverySchema = Type.Union(
     Type.Literal("followUp", {
       description: "waits until the agent finish its turn and then sends this message (queue)",
     }),
-    Type.Literal("nextTurn"),
   ],
   { description: "Optional message delivery mode for message." },
 );
@@ -170,7 +169,7 @@ export const SubagentToolParamsSchema = Type.Object({
   persisted: Type.Optional(
     Type.Boolean({
       description:
-        "Optional for start. Defaults to true. When false, launch child with --no-session and skip child session persistence. If parent session is ephemeral, child sessions automatically become ephemeral.",
+        "Optional for start. Defaults to true (persistent). Set false for ephemeral: launches child with --no-session, no session file. Ephemeral subagents can be messaged while running but cannot be resumed after exit. Good for one-off exploration, git commits, or quick tasks where follow-up is not needed. If parent session is ephemeral, children are automatically ephemeral.",
     }),
   ),
   completion: Type.Optional(SubagentCompletionSchema),
@@ -180,7 +179,10 @@ export const SubagentToolParamsSchema = Type.Object({
       Type.Object(
         {
           type: Type.Literal("json_schema"),
-          schema: Type.Unknown({ description: "JSON Schema object for structured output." }),
+          schema: Type.Unknown({
+            description:
+              'JSON Schema object for structured output. When set, the subagent tool blocks until the child completes and returns data validated against this schema. Use for extracting structured results (e.g. {"summary", "risk", "files"}) instead of free-text. Retries on validation failure up to retryCount times.',
+          }),
           retryCount: Type.Optional(
             Type.Integer({ minimum: 0, description: "Optional retry budget. Defaults to 3." }),
           ),

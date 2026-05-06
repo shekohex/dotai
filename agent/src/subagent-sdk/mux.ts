@@ -1,6 +1,6 @@
 import type { TmuxTarget } from "../mode-utils.js";
 
-export type PaneSubmitMode = "steer" | "followUp" | "nextTurn";
+export type PaneSubmitMode = "steer" | "followUp";
 
 export type CreatePaneOptions = {
   cwd: string;

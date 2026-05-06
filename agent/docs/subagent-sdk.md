@@ -59,7 +59,7 @@ Abstraction over terminal multiplexers:
 
 - `MuxAdapter` interface allows swapping tmux for other backends
 - `TmuxAdapter` implements pane creation, text injection, capture, and destruction
-- Handles `steer`, `followUp`, and `nextTurn` delivery modes
+- Handles `steer` and `followUp` delivery modes
 
 ### Data Flow
 
@@ -214,7 +214,7 @@ const { handle, result } = await sdk.message(
   {
     sessionId: handle.sessionId,
     message: "Add password validation",
-    delivery: "steer", // "steer" | "followUp" | "nextTurn"
+    delivery: "steer", // "steer" | "followUp"
   },
   ctx,
 );

@@ -20,6 +20,10 @@ export type ModeActivateEvent = {
   spec?: ModeSpec;
   reason: ModeChangeReason;
   source: ModeChangeSource;
+  done?: {
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  };
 };
 
 export type ModeSelectionApplyEvent = {
@@ -73,6 +77,7 @@ const ModeActivateEventSchema = Type.Object(
       Type.Literal("model_select"),
       Type.Literal("before_agent_start"),
     ]),
+    done: Type.Optional(Type.Object({ resolve: Type.Unknown(), reject: Type.Unknown() })),
   },
   { additionalProperties: true },
 );
@@ -201,6 +206,7 @@ export function parseModeActivateEvent(data: unknown): ModeActivateEvent | undef
   const spec = "spec" in data ? data.spec : undefined;
   const reason = "reason" in data ? data.reason : undefined;
   const source = "source" in data ? data.source : undefined;
+  const done = "done" in data ? data.done : undefined;
   if (typeof mode !== "string" || typeof reason !== "string" || typeof source !== "string") {
     return undefined;
   }
@@ -211,6 +217,7 @@ export function parseModeActivateEvent(data: unknown): ModeActivateEvent | undef
     spec: isModeSpecLike(spec) ? spec : undefined,
     reason,
     source,
+    done: isDoneCallbacks(done) ? done : undefined,
   };
 }
 

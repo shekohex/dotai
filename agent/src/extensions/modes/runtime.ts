@@ -1,12 +1,5 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import {
-  getModesProjectPath,
-  loadModeRegistry,
-  saveModesFile,
-  type ModesFile,
-  type ModeSpec,
-} from "../../mode-utils.js";
-import { isEphemeralSession } from "./session.js";
+import { loadModeRegistry, type ModesFile, type ModeSpec } from "../../mode-utils.js";
 
 type ModeRuntimeLike = {
   path: string;
@@ -30,7 +23,7 @@ export async function ensureRuntime(
   const loaded = await loadModeRegistry(ctx.cwd);
   runtime.source = loaded.source;
   runtime.data = loaded.data;
-  runtime.path = loaded.source === "missing" ? getModesProjectPath(ctx.cwd) : loaded.path;
+  runtime.path = loaded.path;
   runtime.error = loaded.error;
   if (!deps.hasText(runtime.error)) {
     runtime.lastReportedError = undefined;
@@ -91,11 +84,10 @@ export function notifyConfigError(
   ctx.ui.notify(`Modes config error in ${runtime.path}: ${runtime.error}`, "error");
 }
 
-export async function saveRuntime(runtime: ModeRuntimeLike, ctx: ExtensionContext): Promise<void> {
-  if (isEphemeralSession(ctx)) {
-    return;
-  }
-  await saveModesFile(runtime.path, runtime.data);
+export function saveRuntime(runtime: ModeRuntimeLike, ctx: ExtensionContext): Promise<void> {
+  void runtime;
+  void ctx;
+  return Promise.resolve();
 }
 
 export async function ensureModesReady(

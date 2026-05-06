@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 
 const SHIMMER_INTERVAL_MS = 100;
 const SHIMMER_BASE_STYLE = "\u001B[2m";
@@ -12,12 +13,27 @@ export function startCoreUIWorkingMessageShimmer(
 ): ReturnType<typeof setInterval> {
   let offset = 0;
 
-  ctx.ui.setWorkingMessage(renderShimmerFrame(message, offset));
-
-  return setInterval(() => {
-    offset = (offset + 1) % Math.max(message.length, 1);
+  try {
     ctx.ui.setWorkingMessage(renderShimmerFrame(message, offset));
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
+
+  const shimmerInterval = setInterval(() => {
+    offset = (offset + 1) % Math.max(message.length, 1);
+    try {
+      ctx.ui.setWorkingMessage(renderShimmerFrame(message, offset));
+    } catch (error) {
+      if (!isStaleSessionReplacementContextError(error)) {
+        throw error;
+      }
+      clearInterval(shimmerInterval);
+    }
   }, SHIMMER_INTERVAL_MS);
+
+  return shimmerInterval;
 }
 
 export function stopCoreUIWorkingMessageShimmer(
@@ -28,7 +44,13 @@ export function stopCoreUIWorkingMessageShimmer(
     clearInterval(shimmerInterval);
   }
 
-  ctx.ui.setWorkingMessage();
+  try {
+    ctx.ui.setWorkingMessage();
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+  }
   return undefined;
 }
 

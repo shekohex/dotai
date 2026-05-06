@@ -15,7 +15,6 @@ import {
   selectionSatisfiesMode,
 } from "./core.js";
 import {
-  isThinkingLevel,
   parseModeActivateEvent,
   parseModeSelectionApplyEvent,
   readActiveModeFromEntry,
@@ -33,6 +32,7 @@ import {
   syncModeTools,
   toModeFlagName,
 } from "./orchestration.js";
+import { extractPiDynamicTail } from "../model-family-system-prompt.js";
 import {
   ensureModesReady as ensureModesReadyRuntime,
   ensureRuntime as ensureRuntimeState,
@@ -138,6 +138,22 @@ function emitModeChanged(
   pi.events.emit("modes:changed", payload);
 }
 
+function applyModeSystemPrompt(
+  systemPrompt: string,
+  spec: ModeSpec | undefined,
+): string | undefined {
+  if (spec?.systemPrompt === undefined || spec.systemPrompt.length === 0) {
+    return undefined;
+  }
+
+  if (spec.systemPromptMode === "replace") {
+    const tail = extractPiDynamicTail(systemPrompt).trimStart();
+    return tail.length > 0 ? `${spec.systemPrompt}\n\n${tail}` : spec.systemPrompt;
+  }
+
+  return `${systemPrompt}\n\n${spec.systemPrompt}`;
+}
+
 function appendModeState(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -209,24 +225,13 @@ function ensureModesReady(ctx: ExtensionContext): Promise<boolean> {
 
 export default function modesExtension(pi: ExtensionAPI): void {
   const registeredModeFlags = new Map<string, string>();
-  const {
-    storeMode,
-    reloadModes,
-    promptForModeName,
-    showModePicker,
-    cycleMode,
-    restoreMode,
-    activateMode,
-  } = createModeActionHandlers({
+  const { showModePicker, cycleMode, restoreMode, activateMode } = createModeActionHandlers({
     runtime,
     modeStateEntry: MODE_STATE_ENTRY,
     ensureRuntime,
     syncErrorUI,
     notifyConfigError,
-    saveRuntime,
     hasText,
-    isThinkingLevel,
-    currentSelection,
     describeModeSpec,
     orderedModeNames,
     getModeSpec,
@@ -245,12 +250,15 @@ export default function modesExtension(pi: ExtensionAPI): void {
   registerModeCommand(pi, {
     getModeArgumentCompletions,
     showModePicker,
-    promptForModeName,
-    storeMode,
-    reloadModes,
     applyMode,
   });
   registerModeShortcuts(pi, { showModePicker, cycleMode });
+  pi.on("before_agent_start", (event) => {
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getModeSpec(runtime.data, activeMode);
+    const systemPrompt = applyModeSystemPrompt(event.systemPrompt, spec);
+    return systemPrompt === undefined ? undefined : { systemPrompt };
+  });
   registerModeLifecycleHandlers(pi, {
     resetRuntimeState: () => {
       runtime.path = "";

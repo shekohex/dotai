@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +15,11 @@ import { setKeybindings } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import stripAnsi from "strip-ansi";
 
+import {
+  defineModesFile,
+  registerBuiltInModes,
+  unregisterBuiltInModes,
+} from "../src/mode-utils.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import { syncModeTools } from "../src/extensions/modes/tools.ts";
 import { formatAvailableModesXml } from "../src/extensions/available-modes.ts";
@@ -34,6 +39,21 @@ import {
   reduceRuntimeSubagents,
   writeEphemeralChildSessionOutcome,
 } from "../src/subagent-sdk/persistence.ts";
+
+const TEST_MODE_SOURCE_NAMES = [
+  "test-subagent-child-reviewer",
+  "test-subagent-child-mapper",
+  "test-subagent-global-reviewer",
+  "test-subagent-child-timeout",
+  "test-subagent-prompt-guidelines",
+  "test-subagent-runtime-reviewer",
+] as const;
+
+afterEach(() => {
+  for (const sourceName of TEST_MODE_SOURCE_NAMES) {
+    unregisterBuiltInModes(sourceName);
+  }
+});
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
 import { formatSubagentFailureFallback } from "../src/subagent-sdk/runtime/base.ts";
@@ -283,28 +303,22 @@ timedTest("structured child failure fallback mentions StructuredOutput tool", ()
 timedTest("resolveSubagentMode loads mode config from the child cwd", async () => {
   const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-parent-"));
   const childCwd = path.join(parentCwd, "child");
-  await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
-  await fs.writeFile(
-    path.join(childCwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        modes: {
-          reviewer: {
-            provider: "mode-provider",
-            modelId: "review-model",
-            tools: ["read"],
-            autoExit: false,
-            tmuxTarget: "window",
-            systemPrompt: "Review only",
-            systemPromptMode: "replace",
-          },
+  registerBuiltInModes(
+    "test-subagent-child-reviewer",
+    defineModesFile({
+      version: 1,
+      modes: {
+        reviewer: {
+          provider: "mode-provider",
+          modelId: "review-model",
+          tools: ["read"],
+          autoExit: false,
+          tmuxTarget: "window",
+          systemPrompt: "Review only",
+          systemPromptMode: "replace",
         },
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    }),
   );
 
   try {
@@ -329,24 +343,18 @@ timedTest("resolveSubagentMode loads mode config from the child cwd", async () =
 timedTest("resolveSubagentMode normalizes GPT-5 child tools to apply_patch", async () => {
   const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-gpt5-tools-"));
   const childCwd = path.join(parentCwd, "child");
-  await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
-  await fs.writeFile(
-    path.join(childCwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        modes: {
-          mapper: {
-            provider: "codex-openai",
-            modelId: "gpt-5.4-mini",
-            tools: ["read", "bash", "edit", "write"],
-          },
+  registerBuiltInModes(
+    "test-subagent-child-mapper",
+    defineModesFile({
+      version: 1,
+      modes: {
+        mapper: {
+          provider: "codex-openai",
+          modelId: "gpt-5.4-mini",
+          tools: ["read", "bash", "edit", "write"],
         },
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    }),
   );
 
   const pi = new FakePi();
@@ -380,29 +388,18 @@ timedTest(
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 
     process.env.PI_CODING_AGENT_DIR = agentDir;
-    await fs.mkdir(path.join(agentDir, "prompts"), { recursive: true });
-    await fs.writeFile(
-      path.join(agentDir, "prompts", "review.md"),
-      "Review only\nEscalate blockers\n",
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(agentDir, "modes.json"),
-      `${JSON.stringify(
-        {
-          version: 1,
-          modes: {
-            reviewer: {
-              provider: "mode-provider",
-              modelId: "review-model",
-              systemPrompt: "{file:./prompts/review.md}",
-            },
+    registerBuiltInModes(
+      "test-subagent-global-reviewer",
+      defineModesFile({
+        version: 1,
+        modes: {
+          reviewer: {
+            provider: "mode-provider",
+            modelId: "review-model",
+            systemPrompt: "Review only\nEscalate blockers\n",
           },
         },
-        null,
-        2,
-      )}\n`,
-      "utf8",
+      }),
     );
 
     try {
@@ -428,29 +425,23 @@ timedTest(
   async () => {
     const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-timeout-parent-"));
     const childCwd = path.join(parentCwd, "child");
-    await fs.mkdir(path.join(childCwd, ".pi"), { recursive: true });
-    await fs.writeFile(
-      path.join(childCwd, ".pi", "modes.json"),
-      `${JSON.stringify(
-        {
-          version: 1,
-          modes: {
-            reviewer: {
-              tools: ["read"],
-              autoExit: true,
-              autoExitTimeoutMs: 45_000,
-            },
-            manual: {
-              tools: ["read"],
-              autoExit: false,
-              autoExitTimeoutMs: 12_000,
-            },
+    registerBuiltInModes(
+      "test-subagent-child-timeout",
+      defineModesFile({
+        version: 1,
+        modes: {
+          reviewer: {
+            tools: ["read"],
+            autoExit: true,
+            autoExitTimeoutMs: 45_000,
+          },
+          manual: {
+            tools: ["read"],
+            autoExit: false,
+            autoExitTimeoutMs: 12_000,
           },
         },
-        null,
-        2,
-      )}\n`,
-      "utf8",
+      }),
     );
 
     try {
@@ -1703,25 +1694,19 @@ timedTest(
     );
 
     try {
-      await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-      await fs.writeFile(
-        path.join(cwd, ".pi", "modes.json"),
-        `${JSON.stringify(
-          {
-            version: 1,
-            modes: {
-              review: {
-                provider: "mode-provider",
-                modelId: "review-model",
-                thinkingLevel: "high",
-                description: "Review & verify",
-              },
+      registerBuiltInModes(
+        "test-subagent-prompt-guidelines",
+        defineModesFile({
+          version: 1,
+          modes: {
+            review: {
+              provider: "mode-provider",
+              modelId: "review-model",
+              thinkingLevel: "high",
+              description: "Review & verify",
             },
           },
-          null,
-          2,
-        )}\n`,
-        "utf8",
+        }),
       );
 
       const ctx = createFakeContext({
@@ -1748,30 +1733,25 @@ timedTest(
         ),
       ).toBe(true);
 
-      await fs.writeFile(
-        path.join(cwd, ".pi", "modes.json"),
-        `${JSON.stringify(
-          {
-            version: 1,
-            modes: {
-              review: {
-                provider: "mode-provider",
-                modelId: "review-model",
-                thinkingLevel: "high",
-                description: "Review & verify",
-              },
-              docs: {
-                provider: "mode-provider",
-                modelId: "docs-model",
-                thinkingLevel: "low",
-                description: "Fast <writing>",
-              },
+      registerBuiltInModes(
+        "test-subagent-prompt-guidelines",
+        defineModesFile({
+          version: 1,
+          modes: {
+            review: {
+              provider: "mode-provider",
+              modelId: "review-model",
+              thinkingLevel: "high",
+              description: "Review & verify",
+            },
+            docs: {
+              provider: "mode-provider",
+              modelId: "docs-model",
+              thinkingLevel: "low",
+              description: "Fast <writing>",
             },
           },
-          null,
-          2,
-        )}\n`,
-        "utf8",
+        }),
       );
 
       await emitEventBus(fakePi, "modes:changed");
@@ -2785,26 +2765,21 @@ timedTest(
 
     try {
       await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-      await fs.writeFile(
-        path.join(cwd, ".pi", "modes.json"),
-        `${JSON.stringify(
-          {
-            version: 1,
-            modes: {
-              reviewer: {
-                provider: "mode-provider",
-                modelId: "review-model",
-                tools: ["read"],
-                autoExit: true,
-                tmuxTarget: "window",
-                systemPrompt: "Review only",
-              },
+      registerBuiltInModes(
+        "test-subagent-runtime-reviewer",
+        defineModesFile({
+          version: 1,
+          modes: {
+            reviewer: {
+              provider: "mode-provider",
+              modelId: "review-model",
+              tools: ["read"],
+              autoExit: true,
+              tmuxTarget: "window",
+              systemPrompt: "Review only",
             },
           },
-          null,
-          2,
-        )}\n`,
-        "utf8",
+        }),
       );
 
       const ctx = createFakeContext({

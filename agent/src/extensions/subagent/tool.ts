@@ -52,26 +52,26 @@ function registerSubagentRuntimeEvents(
   isChildSession: (state: ChildBootstrapState | undefined, ctx: ExtensionContext) => boolean,
   readChildState: () => ChildBootstrapState | undefined,
 ): void {
-  const modesChangedEvents = (
-    pi as {
-      events?: {
-        on?: (eventName: string, handler: (...args: unknown[]) => void | Promise<void>) => unknown;
-      };
-    }
-  ).events;
-  const maybeUnsubscribeModesChanged = modesChangedEvents?.on?.("modes:changed", async () => {
-    if (runtimeState.ctx) {
-      try {
-        await syncSubagentToolRegistration(runtimeState.ctx);
-      } catch (error) {
-        if (isStaleSessionReplacementContextError(error)) {
-          runtimeState.ctx = undefined;
-          return;
+  const modesChangedEvents = pi.events;
+  const handleModesChanged = (): unknown => {
+    return (async () => {
+      if (runtimeState.ctx) {
+        try {
+          await syncSubagentToolRegistration(runtimeState.ctx);
+        } catch (error) {
+          if (isStaleSessionReplacementContextError(error)) {
+            runtimeState.ctx = undefined;
+            return;
+          }
+          throw error;
         }
-        throw error;
       }
-    }
-  });
+    })();
+  };
+  const maybeUnsubscribeModesChanged = modesChangedEvents?.on?.(
+    "modes:changed",
+    handleModesChanged,
+  );
   const unsubscribeModesChanged =
     typeof maybeUnsubscribeModesChanged === "function" ? maybeUnsubscribeModesChanged : undefined;
 

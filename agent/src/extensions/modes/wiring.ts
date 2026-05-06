@@ -5,14 +5,53 @@ import type { ModeActivateEvent, ModeSelectionApplyEvent } from "./events.js";
 
 type ModeSource = "command" | "shortcut" | "session_start" | "model_select" | "before_agent_start";
 
+function runModeActivateHandler(
+  pi: ExtensionAPI,
+  deps: {
+    activateMode: (
+      pi: ExtensionAPI,
+      ctx: ExtensionContext,
+      event: ModeActivateEvent,
+    ) => Promise<void>;
+  },
+  event: ModeActivateEvent,
+): void {
+  deps
+    .activateMode(pi, event.ctx, event)
+    .then(() => {
+      event.done?.resolve();
+    })
+    .catch((error: unknown) => {
+      event.done?.reject(error);
+    });
+}
+
+function runModeSelectionApplyHandler(
+  pi: ExtensionAPI,
+  deps: {
+    applySelection: (
+      pi: ExtensionAPI,
+      ctx: ExtensionContext,
+      event: ModeSelectionApplyEvent,
+    ) => Promise<void>;
+  },
+  event: ModeSelectionApplyEvent,
+): void {
+  deps
+    .applySelection(pi, event.ctx, event)
+    .then(() => {
+      event.done?.resolve();
+    })
+    .catch((error: unknown) => {
+      event.done?.reject(error);
+    });
+}
+
 export function registerModeCommand(
   pi: ExtensionAPI,
   deps: {
     getModeArgumentCompletions: (prefix: string) => AutocompleteItem[] | null;
     showModePicker: (pi: ExtensionAPI, ctx: ExtensionContext) => Promise<void>;
-    promptForModeName: (ctx: ExtensionContext, title: string) => Promise<string | undefined>;
-    storeMode: (pi: ExtensionAPI, ctx: ExtensionContext, modeName: string) => Promise<void>;
-    reloadModes: (pi: ExtensionAPI, ctx: ExtensionContext) => Promise<void>;
     applyMode: (
       pi: ExtensionAPI,
       ctx: ExtensionContext,
@@ -22,8 +61,7 @@ export function registerModeCommand(
   },
 ): void {
   pi.registerCommand("mode", {
-    description:
-      "Select and store prompt modes: /mode, /mode <name>, /mode store <name>, /mode reload",
+    description: "Select prompt modes: /mode, /mode <name>",
     getArgumentCompletions: (prefix) => deps.getModeArgumentCompletions(prefix),
     handler: async (args, ctx) => {
       const tokens = args
@@ -32,21 +70,6 @@ export function registerModeCommand(
         .filter(Boolean);
       if (tokens.length === 0) {
         await deps.showModePicker(pi, ctx);
-        return;
-      }
-
-      if (tokens[0] === "store") {
-        const name =
-          tokens[1] ?? (await deps.promptForModeName(ctx, "Store current setup as mode"));
-        if (!name) {
-          return;
-        }
-        await deps.storeMode(pi, ctx, name);
-        return;
-      }
-
-      if (tokens[0] === "reload") {
-        await deps.reloadModes(pi, ctx);
         return;
       }
 
@@ -149,7 +172,7 @@ export function registerModeEventHandlers(
     if (!event) {
       return;
     }
-    void deps.activateMode(pi, event.ctx, event);
+    runModeActivateHandler(pi, deps, event);
   });
 
   const unsubscribeApplySelection = pi.events.on(deps.modeSelectionApplyEvent, (data) => {
@@ -157,15 +180,7 @@ export function registerModeEventHandlers(
     if (!event) {
       return;
     }
-
-    void (async () => {
-      try {
-        await deps.applySelection(pi, event.ctx, event);
-        event.done?.resolve();
-      } catch (error) {
-        event.done?.reject(error);
-      }
-    })();
+    runModeSelectionApplyHandler(pi, deps, event);
   });
 
   return () => {

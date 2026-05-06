@@ -16,7 +16,7 @@ export interface BundledExtensionDefinition {
   factory: ExtensionFactory;
 }
 
-const subagentExtensionFactory = createSubagentExtension({ enabled: false });
+const subagentExtensionFactory = createSubagentExtension({ enabled: true });
 
 installInlineExtensionNamePatch();
 

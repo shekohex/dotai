@@ -1,8 +1,13 @@
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Type } from "typebox";
+import {
+  defineModesFile,
+  registerBuiltInModes,
+  unregisterBuiltInModes,
+} from "../src/mode-utils.ts";
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
@@ -11,9 +16,14 @@ import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SUBAGENT_STRUCTURED_OUTPUT_ENTRY } from "../src/subagent-sdk/types.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
+const TEST_MODE_SOURCE = "test-subagent-sdk-reviewer-structured";
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+
+afterEach(() => {
+  unregisterBuiltInModes(TEST_MODE_SOURCE);
+});
 
 async function waitForCondition(check: () => boolean, timeoutMs = 3000): Promise<void> {
   const startedAt = Date.now();
@@ -147,26 +157,20 @@ timedTest(
     });
 
     try {
-      await fs.mkdir(path.join(cwd, ".pi"), { recursive: true });
-      await fs.writeFile(
-        path.join(cwd, ".pi", "modes.json"),
-        `${JSON.stringify(
-          {
-            version: 1,
-            modes: {
-              reviewer: {
-                provider: "mode-provider",
-                modelId: "review-model",
-                tools: ["read"],
-                autoExit: true,
-                tmuxTarget: "window",
-              },
+      registerBuiltInModes(
+        TEST_MODE_SOURCE,
+        defineModesFile({
+          version: 1,
+          modes: {
+            reviewer: {
+              provider: "mode-provider",
+              modelId: "review-model",
+              tools: ["read"],
+              autoExit: true,
+              tmuxTarget: "window",
             },
           },
-          null,
-          2,
-        )}\n`,
-        "utf8",
+        }),
       );
 
       const ctx = createFakeContext({

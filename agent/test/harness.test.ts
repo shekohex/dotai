@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -29,9 +29,17 @@ import modelFamilySystemPromptExtension, {
   extractPiDynamicTail,
 } from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
+import interviewExtension from "../src/extensions/interview/index.ts";
+import gsdExtension from "../src/extensions/gsd/index.ts";
+import { bundledExtensionFactories } from "../src/extensions/index.ts";
 import filesExtension from "../src/extensions/files.ts";
 import executorExtension from "../src/extensions/executor/index.ts";
 import { setExecutorSettingsForTests } from "../src/extensions/executor/settings.ts";
+import {
+  defineModesFile,
+  registerBuiltInModes,
+  unregisterBuiltInModes,
+} from "../src/mode-utils.ts";
 import {
   discoverSkillPaths,
   installBundledResourcePaths,
@@ -54,6 +62,14 @@ process.env.OPENAI_API_KEY ??= "test-key";
 
 const TEST_TIMEOUT_MS = 15_000;
 const GITHUB_ACTIONS_TEST_TIMEOUT_MS = 30_000;
+const TEST_MODE_SOURCE_NAMES = [
+  "test-model-family",
+  "test-handoff",
+  "test-shared-selection",
+  "test-cli-flags",
+  "test-subagent-window-mode",
+  "test-subagent-timeout-mode",
+] as const;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(
@@ -64,6 +80,12 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
     },
     fn,
   )) as typeof test;
+
+afterEach(() => {
+  for (const sourceName of TEST_MODE_SOURCE_NAMES) {
+    unregisterBuiltInModes(sourceName);
+  }
+});
 
 async function waitForAssertion(assertion: () => void, timeoutMs = 2_000): Promise<void> {
   const startedAt = Date.now();
@@ -460,88 +482,90 @@ function createModelFamilyTestProviders(): {
 }
 
 async function writeModelFamilyModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        currentMode: "build",
-        modes: {
-          build: {
-            provider: "family-gpt",
-            modelId: "gpt-5.4",
-          },
-          quick: {
-            provider: "family-gpt-mini",
-            modelId: "gpt-5.4-mini",
-          },
-          research: {
-            provider: "family-gemini",
-            modelId: "gemini-2.5-pro",
-          },
+  void cwd;
+  registerBuiltInModes(
+    "test-model-family",
+    defineModesFile({
+      version: 1,
+      currentMode: "build",
+      modes: {
+        build: {
+          provider: "family-gpt",
+          modelId: "gpt-5.4",
+        },
+        quick: {
+          provider: "family-gpt-mini",
+          modelId: "gpt-5.4-mini",
+        },
+        research: {
+          provider: "family-gemini",
+          modelId: "gemini-2.5-pro",
         },
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    }),
   );
 }
 
 async function writeHandoffModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        currentMode: "smart",
-        modes: {
-          smart: {
-            provider: "mode-provider",
-            modelId: "smart-model",
-            thinkingLevel: "low",
-          },
-          docs: {
-            description: "Fast technical writing",
-            provider: "mode-provider",
-            modelId: "mode-model",
-            thinkingLevel: "high",
-          },
+  void cwd;
+  registerBuiltInModes(
+    "test-handoff",
+    defineModesFile({
+      version: 1,
+      currentMode: "smart",
+      modes: {
+        smart: {
+          provider: "mode-provider",
+          modelId: "smart-model",
+          thinkingLevel: "low",
+        },
+        docs: {
+          description: "Fast technical writing",
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
         },
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    }),
   );
 }
 
 async function writeSharedSelectionModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
+  void cwd;
+  registerBuiltInModes(
+    "test-shared-selection",
+    defineModesFile({
+      version: 1,
+      currentMode: "deep",
+      modes: {
+        deep: {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+          tools: ["read", "bash"],
+          systemPrompt: "Deep mode",
+        },
+        review: {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+          tools: ["read"],
+          systemPrompt: "Review mode",
+        },
+      },
+    }),
+  );
+}
+
+async function writeGsdEnabledConfig(cwd: string): Promise<void> {
+  await mkdir(join(cwd, ".planning"), { recursive: true });
   await writeFile(
-    join(cwd, ".pi", "modes.json"),
+    join(cwd, ".planning", "config.json"),
     `${JSON.stringify(
       {
-        version: 1,
-        currentMode: "deep",
-        modes: {
-          deep: {
-            provider: "mode-provider",
-            modelId: "mode-model",
-            thinkingLevel: "high",
-            tools: ["read", "bash"],
-            systemPrompt: "Deep mode",
-          },
-          review: {
-            provider: "mode-provider",
-            modelId: "mode-model",
-            thinkingLevel: "high",
-            tools: ["read"],
-            systemPrompt: "Review mode",
-          },
-        },
+        model_profile: "balanced",
+        commit_docs: true,
+        parallelization: true,
       },
       null,
       2,
@@ -561,35 +585,30 @@ async function withProcessCwd<T>(cwd: string, callback: () => Promise<T>): Promi
 }
 
 async function writeCliFlagModesFile(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        currentMode: "Deep Work",
-        modes: {
-          "Deep Work": {
-            provider: "mode-provider",
-            modelId: "smart-model",
-            thinkingLevel: "low",
-          },
-          "Mini Max": {
-            provider: "mode-provider",
-            modelId: "mode-model",
-            thinkingLevel: "high",
-          },
-          "Docs Fast": {
-            provider: "mode-provider",
-            modelId: "mode-model",
-            thinkingLevel: "high",
-          },
+  void cwd;
+  registerBuiltInModes(
+    "test-cli-flags",
+    defineModesFile({
+      version: 1,
+      currentMode: "Deep Work",
+      modes: {
+        "Deep Work": {
+          provider: "mode-provider",
+          modelId: "smart-model",
+          thinkingLevel: "low",
+        },
+        "Mini Max": {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+        },
+        "Docs Fast": {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
         },
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    }),
   );
 }
 
@@ -1798,7 +1817,7 @@ timedTest(
   },
 );
 
-timedTest("modes extension skips persistence for ephemeral sessions", async () => {
+timedTest("modes extension skips mode-state persistence for ephemeral sessions", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agent-mode-ephemeral-"));
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1812,15 +1831,11 @@ timedTest("modes extension skips persistence for ephemeral sessions", async () =
     });
     setSessionPersistence(session, false);
 
-    const modesPath = join(cwd, ".pi", "modes.json");
-    const before = await readFile(modesPath, "utf8");
-
     await session.session.prompt("/mode docs");
     await session.session.agent.waitForIdle();
 
     expect(countModeStateEntries(session)).toBe(0);
     expect(getLatestModeState(session)).toBe(undefined);
-    expect(await readFile(modesPath, "utf8")).toBe(before);
   } finally {
     session?.dispose();
     providers.dispose();
@@ -2051,6 +2066,206 @@ timedTest(
     }
   },
 );
+
+timedTest("modes extension applies mode systemPrompt to active session on next turn", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-system-prompt-state-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+
+  await writeSharedSelectionModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, providers.extensionFactory],
+    });
+
+    await session.session.prompt("/mode review");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    expect(getCurrentSystemPrompt(session)).toContain("Review mode");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("modes extension injects selected mode systemPrompt into next agent turn", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-system-prompt-turn-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+  const seenSystemPrompts: string[] = [];
+  const captureSystemPromptExtension = (pi: ExtensionAPI) => {
+    pi.on("before_agent_start", (event) => {
+      seenSystemPrompts.push(event.systemPrompt);
+      return;
+    });
+  };
+
+  await writeSharedSelectionModesFile(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        modesExtension,
+        captureSystemPromptExtension,
+        providers.extensionFactory,
+      ],
+    });
+
+    await session.session.prompt("/mode review");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    expect(seenSystemPrompts.at(-1)).toContain("Review mode");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("gsd debug manager mode activates interview and subagent tools", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-gsd-debug-mode-tools-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+  const capturedToolSets: string[][] = [];
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        modesExtension,
+        interviewExtension,
+        gsdExtension,
+        createSubagentExtension(),
+        createActiveToolsCaptureExtension(capturedToolSets),
+        providers.extensionFactory,
+      ],
+    });
+
+    await session.session.prompt("/mode gsd-debug-session-manager");
+    await session.session.agent.waitForIdle();
+    await waitForAssertion(() => {
+      expect(capturedToolSets.length).toBeGreaterThan(0);
+    });
+
+    const activeTools = capturedToolSets.at(-1) ?? [];
+    expect(activeTools.includes("interview")).toBe(true);
+    expect(activeTools.includes("subagent")).toBe(true);
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("gsd debug manager mode exposes interview and subagent in system prompt", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-gsd-debug-mode-prompt-tools-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        modelFamilySystemPromptExtension,
+        modesExtension,
+        interviewExtension,
+        gsdExtension,
+        createSubagentExtension(),
+        providers.extensionFactory,
+      ],
+    });
+
+    await session.session.prompt("/mode gsd-debug-session-manager");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    const systemPrompt = getCurrentSystemPrompt(session);
+    expect(systemPrompt).toContain("- interview:");
+    expect(systemPrompt).toContain("- subagent:");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "/gsd debug launches replacement session with interview in prompt and active tools",
+  async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-gsd-debug-launch-tools-"));
+    let session: TestSession | undefined;
+    const providers = createHandoffTestProviders("ok");
+    const capturedToolSets: string[][] = [];
+
+    await writeGsdEnabledConfig(cwd);
+
+    try {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [
+          modelFamilySystemPromptExtension,
+          modesExtension,
+          interviewExtension,
+          gsdExtension,
+          createSubagentExtension(),
+          createActiveToolsCaptureExtension(capturedToolSets),
+          providers.extensionFactory,
+        ],
+      });
+
+      await session.session.prompt("/gsd on");
+      await session.session.agent.waitForIdle();
+      await session.session.prompt("/gsd debug parser unstable");
+      await session.session.agent.waitForIdle();
+      await session.session.prompt("hello");
+      await session.session.agent.waitForIdle();
+
+      const systemPrompt = getCurrentSystemPrompt(session);
+      expect(systemPrompt).toContain("- interview:");
+      await waitForAssertion(() => {
+        const activeTools = capturedToolSets.at(-1) ?? [];
+        expect(activeTools.includes("interview")).toBe(true);
+      });
+    } finally {
+      session?.dispose();
+      providers.dispose();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest("bundled extension stack exposes interview in gsd debug manager mode", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-bundled-gsd-debug-mode-tools-"));
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [...bundledExtensionFactories, providers.extensionFactory],
+    });
+
+    await session.session.prompt("/mode gsd-debug-session-manager");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    expect(getCurrentSystemPrompt(session)).toContain("- interview:");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 timedTest(
   "modes extension scopes tools and restores the default toolset when leaving a scoped mode",
@@ -2543,24 +2758,18 @@ timedTest("subagent extension launches into a tmux window when the mode requests
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(
-    join(cwd, ".pi", "modes.json"),
-    `${JSON.stringify(
-      {
-        version: 1,
-        modes: {
-          reviewer: {
-            tools: ["read"],
-            autoExit: true,
-            tmuxTarget: "window",
-          },
+  registerBuiltInModes(
+    "test-subagent-window-mode",
+    defineModesFile({
+      version: 1,
+      modes: {
+        reviewer: {
+          tools: ["read"],
+          autoExit: true,
+          tmuxTarget: "window",
         },
       },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    }),
   );
 
   try {
@@ -2602,24 +2811,18 @@ timedTest(
     let session: TestSession | undefined;
     const mux = new HarnessMuxAdapter();
 
-    await mkdir(join(cwd, ".pi"), { recursive: true });
-    await writeFile(
-      join(cwd, ".pi", "modes.json"),
-      `${JSON.stringify(
-        {
-          version: 1,
-          modes: {
-            reviewer: {
-              tools: ["read"],
-              autoExit: true,
-              autoExitTimeoutMs: 45,
-            },
+    registerBuiltInModes(
+      "test-subagent-timeout-mode",
+      defineModesFile({
+        version: 1,
+        modes: {
+          reviewer: {
+            tools: ["read"],
+            autoExit: true,
+            autoExitTimeoutMs: 45,
           },
         },
-        null,
-        2,
-      )}\n`,
-      "utf8",
+      }),
     );
 
     try {

@@ -24,13 +24,7 @@ type ModeActionDeps = {
   ensureRuntime: (ctx: ExtensionContext) => Promise<void>;
   syncErrorUI: (ctx: ExtensionContext) => void;
   notifyConfigError: (ctx: ExtensionContext) => void;
-  saveRuntime: (ctx: ExtensionContext) => Promise<void>;
   hasText: (value: string | undefined) => value is string;
-  isThinkingLevel: (value: unknown) => value is NonNullable<ModeSpec["thinkingLevel"]>;
-  currentSelection: (
-    ctx: ExtensionContext,
-    pi: ExtensionAPI,
-  ) => { provider?: string; modelId?: string; thinkingLevel: string };
   describeModeSpec: (spec: ModeSpec | undefined) => string | undefined;
   orderedModeNames: (data: ModesFile) => string[];
   getModeSpec: (data: ModesFile, modeName: string) => ModeSpec | undefined;
@@ -67,86 +61,6 @@ type ModeActionDeps = {
   notifyStartupModeConflict: (ctx: ExtensionContext, requestedModes: string[]) => void;
 };
 
-async function storeModeWithDeps(
-  deps: ModeActionDeps,
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  modeName: string,
-): Promise<void> {
-  await deps.ensureRuntime(ctx);
-  deps.syncErrorUI(ctx);
-  const name = modeName.trim();
-  if (!name) {
-    ctx.ui.notify("Mode name cannot be empty", "warning");
-    return;
-  }
-
-  const selection = deps.currentSelection(ctx, pi);
-  const existing = deps.runtime.data.modes[name] ?? {};
-  deps.runtime.data.modes[name] = {
-    ...existing,
-    provider: selection.provider,
-    modelId: selection.modelId,
-    thinkingLevel: deps.isThinkingLevel(selection.thinkingLevel)
-      ? selection.thinkingLevel
-      : undefined,
-  };
-  deps.runtime.data.currentMode = name;
-  deps.runtime.activeMode = name;
-  await deps.saveRuntime(ctx);
-  deps.setStatus(ctx, name);
-  deps.appendModeState(pi, ctx, name);
-  deps.emitModeChanged(pi, ctx, {
-    mode: name,
-    previousMode: undefined,
-    spec: deps.runtime.data.modes[name],
-    reason: "store",
-    source: "command",
-    cwd: ctx.cwd,
-  });
-  const description = deps.describeModeSpec(deps.runtime.data.modes[name]);
-  ctx.ui.notify(
-    deps.hasText(description)
-      ? `Stored and switched to mode "${name}" (${description})`
-      : `Stored and switched to mode "${name}"`,
-    "info",
-  );
-}
-
-async function reloadModesWithDeps(
-  deps: ModeActionDeps,
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-): Promise<void> {
-  await deps.ensureRuntime(ctx);
-  deps.syncErrorUI(ctx);
-  if (deps.hasText(deps.runtime.error)) {
-    deps.notifyConfigError(ctx);
-    return;
-  }
-
-  if (
-    deps.runtime.data.currentMode !== undefined &&
-    deps.getModeSpec(deps.runtime.data, deps.runtime.data.currentMode) !== undefined
-  ) {
-    await deps.applyMode(pi, ctx, deps.runtime.data.currentMode, "command", "restore", {
-      persist: false,
-    });
-    return;
-  }
-
-  await deps.syncFromSelection(pi, ctx, "command");
-  ctx.ui.notify("Modes reloaded", "info");
-}
-
-export async function promptForModeName(
-  ctx: ExtensionContext,
-  title: string,
-): Promise<string | undefined> {
-  const value = await ctx.ui.input(title, "mode name");
-  return value?.trim() ?? undefined;
-}
-
 async function showModePickerWithDeps(
   deps: ModeActionDeps,
   pi: ExtensionAPI,
@@ -160,21 +74,9 @@ async function showModePickerWithDeps(
   }
 
   const names = deps.orderedModeNames(deps.runtime.data);
-  const options = [...names, "store current setup", "reload modes"];
+  const options = [...names];
   const choice = await ctx.ui.select(`Mode (${deps.runtime.activeMode ?? "custom"})`, options);
   if (!deps.hasText(choice)) return;
-
-  if (choice === "store current setup") {
-    const name = await promptForModeName(ctx, "Store current setup as mode");
-    if (!deps.hasText(name)) return;
-    await storeModeWithDeps(deps, pi, ctx, name);
-    return;
-  }
-
-  if (choice === "reload modes") {
-    await reloadModesWithDeps(deps, pi, ctx);
-    return;
-  }
 
   await deps.applyMode(pi, ctx, choice, "command");
 }
@@ -193,7 +95,7 @@ async function cycleModeWithDeps(
 
   const names = deps.orderedModeNames(deps.runtime.data);
   if (names.length === 0) {
-    ctx.ui.notify("No modes defined. Use /mode store <name> to create one.", "warning");
+    ctx.ui.notify("No modes defined.", "warning");
     return;
   }
 
@@ -222,10 +124,6 @@ export function createModeActionHandlers(deps: ModeActionDeps) {
   });
 
   return {
-    storeMode: (pi: ExtensionAPI, ctx: ExtensionContext, modeName: string) =>
-      storeModeWithDeps(deps, pi, ctx, modeName),
-    reloadModes: (pi: ExtensionAPI, ctx: ExtensionContext) => reloadModesWithDeps(deps, pi, ctx),
-    promptForModeName,
     showModePicker: (pi: ExtensionAPI, ctx: ExtensionContext) =>
       showModePickerWithDeps(deps, pi, ctx),
     cycleMode: (pi: ExtensionAPI, ctx: ExtensionContext) => cycleModeWithDeps(deps, pi, ctx),

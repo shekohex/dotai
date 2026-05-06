@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,65 +28,22 @@ describe("ensureBuiltInGsdModes", () => {
     expect(loaded.data.modes["gsd-executor"]).toBeDefined();
   });
 
-  it("exposes built-in and file-backed modes through canonical registry", () => {
+  it("exposes built-in GSD modes through canonical registry", () => {
     const root = createRoot();
-    writeFileSync(
-      join(root, ".pi", "modes.json"),
-      `${JSON.stringify(
-        {
-          version: 1,
-          currentMode: "custom-mode",
-          modes: {
-            "custom-mode": {
-              description: "mine",
-              systemPrompt: "keep me",
-            },
-          },
-        },
-        null,
-        2,
-      )}\n`,
-    );
-
     registerBuiltInGsdModes();
     const loaded = loadModeRegistrySync(root);
 
-    expect(loaded.data.currentMode).toBe("custom-mode");
-    expect(loaded.data.modes["custom-mode"]?.systemPrompt).toBe("keep me");
     expect(loaded.data.modes["gsd-codebase-mapper"]?.provider).toBe("codex-openai");
     expect(loaded.resolvedData.modes["gsd-codebase-mapper"]?.systemPrompt).toContain(
       "You are spawned by `/gsd map-codebase`",
     );
   });
 
-  it("preserves existing project modes without overriding them", () => {
+  it("keeps bundled gsd modes authoritative", () => {
     const root = createRoot();
-    writeFileSync(
-      join(root, ".pi", "modes.json"),
-      `${JSON.stringify(
-        {
-          version: 1,
-          currentMode: "custom-mode",
-          modes: {
-            "custom-mode": {
-              description: "mine",
-              systemPrompt: "keep me",
-            },
-            "gsd-planner": {
-              description: "user override",
-              systemPrompt: "user prompt",
-            },
-          },
-        },
-        null,
-        2,
-      )}\n`,
-    );
     registerBuiltInGsdModes();
     const loaded = loadModesFileSync(root);
-    expect(loaded.data.currentMode).toBe("custom-mode");
-    expect(loaded.data.modes["gsd-planner"]?.description).toBe("user override");
-    expect(loaded.data.modes["custom-mode"]?.systemPrompt).toBe("keep me");
+    expect(loaded.data.modes["gsd-planner"]?.description).toBe("Built-in GSD planner");
     expect(loaded.data.modes["gsd-verifier"]).toBeDefined();
   });
 
@@ -120,6 +77,19 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.4-mini");
     expect(built.modes["gsd-codebase-mapper"]?.tools).toEqual(["read", "bash", "edit", "write"]);
     expect(built.modes["gsd-codebase-mapper"]?.tmuxTarget).toBe("window");
+
+    expect(built.modes["gsd-debug-session-manager"]?.provider).toBe("codex-openai");
+    expect(built.modes["gsd-debug-session-manager"]?.modelId).toBe("gpt-5.5");
+    expect(built.modes["gsd-debug-session-manager"]?.tools).toEqual([
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "websearch",
+      "subagent",
+      "interview",
+      "execute",
+    ]);
 
     for (const spec of Object.values(built.modes)) {
       expect(spec.tools?.includes("glob")).toBeFalsy();

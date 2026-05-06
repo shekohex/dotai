@@ -132,7 +132,7 @@ export const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prom
     commandParts.push("--thinking", shellEscape(options.thinkingLevel));
   }
   if (options.modeName !== undefined && options.modeName.length > 0) {
-    commandParts.push(`--${modeFlagName(options.modeName)}`);
+    commandParts.push(`--${modeFlagName(options.modeName)}=true`);
   } else if (options.systemPrompt !== undefined && options.systemPrompt.length > 0) {
     const systemPromptArgument = buildFileBackedArgument(
       options.systemPrompt,

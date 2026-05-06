@@ -160,7 +160,7 @@ export function readChildState(options?: {
     try {
       return parseChildBootstrapState(JSON.parse(raw));
     } catch {
-      return undefined;
+      void 0;
     }
   }
 

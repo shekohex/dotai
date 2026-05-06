@@ -15,10 +15,11 @@ type GsdWorkflowLaunchConfig = {
   commandName: string;
   commandArguments?: string;
   mode?: string;
-  sessionStrategy?: "fork" | "new";
+  sessionStrategy?: "current" | "fork" | "new";
   commandResourcePath: string;
   workflowResourcePaths?: string[];
   extraResourcePaths?: string[];
+  extraRequiredReadingPaths?: string[];
   extraInstructions?: string[];
 };
 
@@ -52,12 +53,13 @@ function buildWorkflowLaunchPrompt(config: GsdWorkflowLaunchConfig, cwd: string)
     resolveGsdBundlePath(config.commandResourcePath),
     ...(config.workflowResourcePaths ?? []).map((path) => resolveGsdBundlePath(path)),
     ...(config.extraResourcePaths ?? []).map((path) => resolveGsdBundlePath(path)),
+    ...(config.extraRequiredReadingPaths ?? []),
   ];
   return [
     `Launch native GSD workflow for "/gsd ${config.commandName}${commandArguments === undefined ? "" : ` ${commandArguments}`}".`,
     "",
-    "- Read bundled source-of-truth files below before acting.",
-    "- Treat workflow docs as behavior contract, not literal shell script.",
+    "- Read bundled workflow files below before acting.",
+    "- Treat workflow docs as local adapted behavior contract, not literal shell script.",
     "- Local runtime adaptation notes are embedded in bundled command/workflow files.",
     "- Keep `.planning` outputs compatible with local readers.",
     "- Stay inside local repo runtime.",
@@ -128,6 +130,27 @@ export async function launchGsdWorkflowSession(
 ): Promise<void> {
   const prompt = buildWorkflowLaunchPrompt(config, ctx.cwd);
   const overrides = await resolveLaunchOverrides(ctx, config.mode);
+
+  if ((config.sessionStrategy ?? "fork") === "current") {
+    const pendingMode = overrides?.mode;
+    if (
+      pendingMode !== undefined &&
+      pendingMode.length > 0 &&
+      typeof pi.events?.emit === "function"
+    ) {
+      await new Promise<void>((resolve, reject) => {
+        pi.events.emit(MODE_ACTIVATE_EVENT, {
+          ctx,
+          mode: pendingMode,
+          reason: "restore",
+          source: "session_start",
+          done: { resolve, reject },
+        });
+      });
+    }
+    pi.sendUserMessage(prompt, { deliverAs: "steer" });
+    return;
+  }
 
   setPendingGsdWorkflowLaunch({ prompt, overrides });
 

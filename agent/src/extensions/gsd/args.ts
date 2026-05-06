@@ -5,10 +5,12 @@ import type { GsdSubcommand } from "./commands.js";
 export const GsdCommandArgsSchema = Type.Object(
   {
     subcommand: Type.Optional(Type.String()),
+    auto: Type.Optional(Type.Boolean()),
     phase: Type.Optional(Type.String()),
     paths: Type.Optional(Type.Array(Type.String())),
     version: Type.Optional(Type.String()),
     milestone: Type.Optional(Type.String()),
+    input: Type.Optional(Type.String()),
     debugAction: Type.Optional(
       Type.Union([
         Type.Literal("start"),
@@ -25,6 +27,26 @@ export const GsdCommandArgsSchema = Type.Object(
 );
 
 export type GsdCommandArgs = Static<typeof GsdCommandArgsSchema>;
+
+function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
+  let auto = false;
+  const parts: string[] = [];
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--auto") {
+      auto = true;
+      continue;
+    }
+    parts.push(token);
+  }
+
+  return validateParsedArgs({
+    subcommand: "new-project",
+    ...(auto ? { auto: true } : {}),
+    ...(parts.length > 0 ? { input: normalizeFreeform(parts.join(" ")) } : {}),
+  });
+}
 
 function normalizePhaseToken(token: string | undefined): string | undefined {
   if (token === undefined) {
@@ -105,6 +127,10 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
 
+  if (subcommand === "new-project") {
+    return parseNewProjectArgs(tokens);
+  }
+
   if (subcommand === "new-milestone") {
     return validateParsedArgs({
       subcommand,
@@ -182,6 +208,7 @@ export function usesParsedArgs(subcommand: GsdSubcommand | undefined): boolean {
   return (
     isPhaseOverrideSubcommand(subcommand) ||
     subcommand === "map-codebase" ||
+    subcommand === "new-project" ||
     subcommand === "new-milestone" ||
     subcommand === "complete-milestone" ||
     subcommand === "milestone-summary" ||

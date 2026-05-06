@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
@@ -36,17 +36,25 @@ function normalizeMapperPaths(paths: string[] | undefined): string[] {
   ];
 }
 
-function buildMapperTask(focus: CodebaseMapFocus, date: string, paths: string[]): string {
+function buildMapperTask(
+  focus: CodebaseMapFocus,
+  date: string,
+  paths: string[],
+  cwd: string,
+): string {
+  const optionalPlanningReads = [
+    ".planning/PROJECT.md",
+    ".planning/REQUIREMENTS.md",
+    ".planning/ROADMAP.md",
+    ".planning/STATE.md",
+  ].filter((path) => existsSync(join(cwd, path)));
   const sharedHeader = [
     `Focus: ${focus}`,
     `Today's date: ${date}`,
     ...(paths.length > 0 ? [`--paths ${paths.join(",")}`] : []),
     "",
     "<required_reading>",
-    ".planning/PROJECT.md",
-    ".planning/REQUIREMENTS.md",
-    ".planning/ROADMAP.md",
-    ".planning/STATE.md",
+    ...optionalPlanningReads,
     "</required_reading>",
     "",
   ];
@@ -122,10 +130,16 @@ export async function handleGsdMapCodebase(
   const focusAreas: CodebaseMapFocus[] = ["tech", "arch", "quality", "concerns"];
   const startedRoles = await Promise.all(
     focusAreas.map((focus) =>
-      runRoleDetached(pi, ctx, "codebase-mapper", buildMapperTask(focus, date, scopedPaths), {
-        completion: false,
-        name: `codebase-mapper:${focus}`,
-      }),
+      runRoleDetached(
+        pi,
+        ctx,
+        "codebase-mapper",
+        buildMapperTask(focus, date, scopedPaths, ctx.cwd),
+        {
+          completion: false,
+          name: `codebase-mapper:${focus}`,
+        },
+      ),
     ),
   );
 

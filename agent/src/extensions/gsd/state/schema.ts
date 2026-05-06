@@ -66,6 +66,9 @@ export const PlanningConfigSchema = Type.Object(
       Type.Literal("budget"),
       Type.Literal("inherit"),
     ]),
+    granularity: Type.Optional(
+      Type.Union([Type.Literal("coarse"), Type.Literal("standard"), Type.Literal("fine")]),
+    ),
     commit_docs: Type.Boolean(),
     parallelization: Type.Boolean(),
     search_gitignored: Type.Boolean(),

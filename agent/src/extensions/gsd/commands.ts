@@ -78,7 +78,12 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         case "stats":
         case "health":
         case "status":
-          await gsdHandlers[subcommand](pi, ctx, usesParsedArgs(subcommand) ? parsedArgs : {});
+          await gsdHandlers[subcommand](
+            pi,
+            ctx,
+            usesParsedArgs(subcommand) ? parsedArgs : {},
+            args,
+          );
           return;
         case "help":
           await showGsdHelp(ctx);

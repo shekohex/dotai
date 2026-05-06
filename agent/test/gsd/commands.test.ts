@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
 import { parseGsdCommandArgs } from "../../src/extensions/gsd/args.ts";
+import { resolveInstructionFileName } from "../../src/extensions/gsd/lifecycle/new-project.ts";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.ts";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.ts";
 
@@ -275,6 +276,11 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "new-milestone",
     milestone: "v1.1 Notifications",
   });
+  expect(parseGsdCommandArgs("new-project --auto @idea.md")).toEqual({
+    subcommand: "new-project",
+    auto: true,
+    input: "@idea.md",
+  });
   expect(parseGsdCommandArgs("complete-milestone v1.1")).toEqual({
     subcommand: "complete-milestone",
     version: "v1.1",
@@ -410,6 +416,8 @@ test("gsd autocomplete shows dynamic subcommand hints", async () => {
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
   createPlanningFixture(cwd);
+  mkdirSync(join(cwd, ".planning", "debug"), { recursive: true });
+  writeFileSync(join(cwd, ".planning", "debug", "legacy.md"), "legacy debug note\n");
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));
@@ -428,6 +436,10 @@ test("gsd autocomplete shows dynamic subcommand hints", async () => {
       expect.objectContaining({
         value: "health",
         description: expect.stringContaining("issues"),
+      }),
+      expect.objectContaining({
+        value: "debug",
+        description: expect.stringContaining("0 active sessions"),
       }),
     ]),
   );
@@ -477,20 +489,95 @@ test("gsd dashboard fallback reports pending todo count", async () => {
   });
 });
 
-test("gsd new-project bootstraps empty roadmap through grouped command", async () => {
+test("gsd new-project bootstraps and launches workflow through grouped command", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
-  await command?.handler("new-project", createCommandContext(cwd, notifications));
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("new-project", context);
   const roadmap = await readFile(join(cwd, ".planning", "ROADMAP.md"), "utf8");
   expect(roadmap).toContain("No phases yet.");
   expect(readRoadmapPhases(cwd)).toEqual([]);
   expect(notifications.at(-1)).toEqual({
-    message: `GSD initialized in ${join(cwd, ".planning")}`,
+    message: `GSD initialized bootstrap in ${join(cwd, ".planning")}`,
     level: "info",
   });
+  expect(context.fork).not.toHaveBeenCalled();
+  expect(context.newSession).not.toHaveBeenCalled();
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-project"',
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(resolveInstructionFileName());
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    "Init metadata: IS_BROWNFIELD=false",
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    "Preflight already completed by local handler before this steer prompt",
+  );
+  expect(existsSync(join(cwd, ".git"))).toBe(true);
+});
+
+test("gsd new-project grouped command includes brownfield metadata for existing repo", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, "src"), { recursive: true });
+  writeFileSync(join(cwd, "src", "index.ts"), "export const repo = true;\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("new-project", createCommandContext(cwd, notifications, fakePi));
+
+  const prompt = String(fakePi.sendUserMessage.mock.calls[0]?.[0]);
+  expect(prompt).toContain("Init metadata: IS_BROWNFIELD=true");
+  expect(prompt).toContain("Init metadata: NEEDS_CODEBASE_MAP=true");
+});
+
+test("gsd new-project preserves raw auto arguments through grouped command", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler(
+    "new-project --auto @idea.md",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-project --auto @idea.md"',
+  );
+});
+
+test("gsd new-project rejects auto mode without source material", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("new-project --auto", createCommandContext(cwd, notifications, fakePi));
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "/gsd new-project --auto requires idea text or @file input.",
+    level: "warning",
+  });
+});
+
+test("gsd new-project reruns when only placeholder bootstrap exists", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const firstContext = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("new-project", firstContext);
+  const secondContext = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("new-project", secondContext);
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(2);
+  expect(
+    notifications.some((entry) => entry.message === "GSD already initialized. Run /gsd progress."),
+  ).toBe(false);
 });
 
 test("gsd new-milestone and milestone-summary route through grouped command surface", async () => {

@@ -42,12 +42,12 @@ Implemented locally:
 
 | Command              | Local shape                 | Upstream equivalent            | Coverage |
 | -------------------- | --------------------------- | ------------------------------ | -------: |
-| `new-project`        | TS-native bootstrap         | `new-project`                  |       20 |
+| `new-project`        | hybrid bootstrap + workflow | `new-project`                  |       93 |
 | `new-milestone`      | workflow-launch shim        | `new-milestone`                |       92 |
 | `complete-milestone` | workflow-launch shim        | `complete-milestone`           |       90 |
 | `milestone-summary`  | workflow-launch shim        | `milestone-summary`            |       88 |
 | `debug`              | hybrid TS + workflow-launch | `debug`                        |       84 |
-| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       68 |
+| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       71 |
 | `discuss-phase`      | TS-native orchestration     | `discuss-phase`                |       42 |
 | `plan-phase`         | TS-native orchestration     | `plan-phase`                   |       55 |
 | `execute-phase`      | TS-native orchestration     | `execute-phase`                |       46 |
@@ -111,7 +111,7 @@ Legend:
 
 | Command              | TS entry | Bundled local prompt/workflow | Upstream workflow reused | Structured outputs | Writes planning artifacts | Flag parity | Notes                        |
 | -------------------- | -------: | ----------------------------: | -----------------------: | -----------------: | ------------------------: | ----------: | ---------------------------- |
-| `new-project`        |        Y |                             N |                        N |                  N |                         P |           N | direct bootstrap only        |
+| `new-project`        |        Y |                             Y |                        P |                  N |                         Y |           P | bootstrap + workflow launch  |
 | `new-milestone`      |        Y |                             Y |                        Y |                  N |                         Y |           P | forked workflow session      |
 | `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta |
 | `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added       |
@@ -133,7 +133,7 @@ Legend:
 
 ### `new-project`
 
-Coverage: 20/100
+Coverage: 93/100
 
 Upstream behavior:
 
@@ -142,20 +142,36 @@ Upstream behavior:
 
 Local behavior:
 
-- no command prompt or workflow asset
-- direct TS bootstrap writes `config.json`, `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, then seeds state. `src/extensions/gsd/lifecycle/new-project.ts:8-50`
+- TS now bootstraps local `.planning` layout and seed state, enables local GSD, then steers the current visible session into bundled `new-project` workflow resources. `src/extensions/gsd/lifecycle/new-project.ts`, `src/extensions/gsd/workflow-launch.ts`
+- local bundle includes explicit `commands/gsd/new-project.md` and `workflows/new-project.md` resources plus questioning, UI, template, and researcher/roadmapper references. `src/resources/gsd/commands/gsd/new-project.md`, `src/resources/gsd/workflows/new-project.md`
+- bootstrap creates recoverable placeholder artifacts up front so workflow can refine them in place, and reruns are allowed while initialization is still incomplete. `src/extensions/gsd/lifecycle/new-project.ts`
+- workflow now owns preference collection and final `config.json` rewriting guidance, including `granularity`, instead of inheriting fixed workflow defaults from TS bootstrap. `src/resources/gsd/workflows/new-project.md`, `src/extensions/gsd/state/schema.ts`
+- workflow now refreshes the runtime instruction file on successful init: `AGENTS.md` for Codex, `CLAUDE.md` otherwise. `src/extensions/gsd/lifecycle/new-project.ts`, `src/resources/gsd/workflows/new-project.md`
+- handler now initializes git repo during preflight so later commit-oriented workflow steps are not stranded. `src/extensions/gsd/lifecycle/new-project.ts`
+- handler detects enclosing git worktrees before deciding to initialize git in current directory. `src/extensions/gsd/lifecycle/new-project.ts`
+- handler rejects `--auto` without idea text or file input. `src/extensions/gsd/lifecycle/new-project.ts`
+- rerun recovery now stays open until initialization is actually finalized, not merely until phases first appear. `src/extensions/gsd/lifecycle/new-project.ts`
+- recovery reruns now preserve real `STATE.md` phase metadata instead of reseeding placeholders over partial real progress. `src/extensions/gsd/lifecycle/new-project.ts`
+- workflow now includes deterministic `.gitignore` behavior for `commit_docs: false`, explicit roadmap approval loop, and deterministic instruction-file generation command. `src/resources/gsd/workflows/new-project.md`
+- `--auto` now has explicit unattended branches for questioning, approval gates, and next-step chaining. `src/resources/gsd/workflows/new-project.md`
+- workflow launch now injects concrete runtime paths for instruction generation and delegated task resources, aligned to arbitrary project cwd instead of agent repo cwd assumptions. `src/extensions/gsd/lifecycle/new-project.ts`
+- workflow now defines explicit delegated task contracts, required-reading blocks, output maps, and fallback behavior when named agents are unavailable. `src/resources/gsd/workflows/new-project.md`
+- brownfield recovery now injects explicit init metadata into launch prompt and workflow branches to repo-aware intake before generic greenfield questioning. `src/extensions/gsd/lifecycle/new-project.ts`, `src/resources/gsd/workflows/new-project.md`
+- brownfield-first `map-codebase` no longer requires init docs to exist before spawning mapper roles. `src/extensions/gsd/lifecycle/map-codebase.ts`
+- `new-project` now explicitly reads existing `.planning/codebase/*.md` docs into required reading and uses them as brownfield context when map exists. `src/extensions/gsd/lifecycle/new-project.ts`, `src/resources/gsd/workflows/new-project.md`
 
 Differences:
 
-- no questioning
-- no research
-- no roadmap generation logic
-- no approvals
-- no workflow session fork
+- still a local adaptation, not full upstream prompt runtime
+- questioning/research/requirements/roadmap now delegated to workflow session instead of being absent
+- placeholder artifact creation remains TS-owned to preserve local architecture and state readers
+- no full upstream AskUserQuestion parity yet; local workflow instructs visible conversation plus `interview` where useful, but now has explicit brownfield-aware intake gating
+- runtime instruction-file refresh is instructed at workflow level, not enforced by TS utility code
+- delegated task prompts are now concretely specified locally, but orchestration still depends on main-session agent correctly following those contracts rather than a TS-level spawn wrapper
 
 Templates:
 
-- local uses `project.md`, `requirements.md`, `roadmap-empty.md`, `state.md`. `src/extensions/gsd/lifecycle/new-project.ts:28-43`
+- local uses `project.md`, `requirements.md`, `roadmap.md`, `roadmap-empty.md`, `state.md`, research templates, researcher/roadmapper prompts, and existing `.planning/codebase/*.md` docs through workflow launch. `src/extensions/gsd/lifecycle/new-project.ts`, `src/resources/gsd/workflows/new-project.md`
 
 ### `new-milestone`
 
@@ -524,7 +540,7 @@ Template-driven artifact writing is local TS, not upstream workflow-directed, fo
 
 1. Best-parity commands are `new-milestone`, `complete-milestone`, `milestone-summary`, and `debug` because they preserve upstream prompt/workflow assets and only patch local runtime concerns.
 2. Core phase commands are implemented, but local versions are thinner than upstream and skip many command-level flags and workflow branches.
-3. `new-project` is biggest behavior gap among implemented lifecycle commands. It is bootstrap only, not upstream project-init workflow.
+3. `new-project` moved from bootstrap-only to hybrid bootstrap + workflow launch in current session. Main remaining gaps are richer upstream config/default flow parity and stronger TS-level enforcement for delegated orchestration/finalization steps.
 4. `validate-phase`, `progress`, `stats`, and `health` are materially reduced local utilities rather than near-parity upstream implementations.
 5. Local architecture is correct for control goals. Setup/orchestration is in TS. But parity depends on how much upstream workflow logic gets preserved in prompt resources vs collapsed into compact TS helpers.
 

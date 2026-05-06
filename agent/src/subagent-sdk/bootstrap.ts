@@ -160,7 +160,7 @@ function registerStructuredOutputTool(
 }
 
 export function installChildBootstrap(pi: ExtensionAPI): void {
-  const childState = readChildState();
+  const childState = readChildState({ strictFile: true });
   if (!childState) {
     return;
   }

@@ -23,6 +23,7 @@ export type GsdHandler = (
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs,
+  rawArgs: string,
 ) => Promise<void> | void;
 
 export const gsdHandlers = {

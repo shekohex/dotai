@@ -45,7 +45,12 @@ export function readDebugSession(path: string): DebugSession | undefined {
     return undefined;
   }
   const content = readFileSync(path, "utf8");
-  const parsed = parseMarkdownFrontmatter(content, DebugSessionFrontmatterSchema);
+  let parsed: ReturnType<typeof parseMarkdownFrontmatter<typeof DebugSessionFrontmatterSchema>>;
+  try {
+    parsed = parseMarkdownFrontmatter(content, DebugSessionFrontmatterSchema);
+  } catch {
+    return undefined;
+  }
   if (!Value.Check(DebugSessionFrontmatterSchema, parsed.frontmatter)) {
     return undefined;
   }

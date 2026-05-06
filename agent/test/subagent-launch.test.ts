@@ -1,10 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildLaunchCommand,
   CHILD_STATE_FILE_ENV,
   CHILD_STATE_ENV,
   PI_COMMAND_ENV,
+  readChildState,
   SUBAGENT_DEBUG_ENV_ALLOWLIST,
 } from "../src/subagent-sdk/launch.ts";
 import type { RuntimeSubagent } from "../src/subagent-sdk/types.ts";
@@ -13,6 +17,8 @@ const previousPiCommand = process.env[PI_COMMAND_ENV];
 const previousDebugProviderRequests = process.env.PI_DEBUG_PROVIDER_REQUESTS;
 const previousDebugSystemPrompt = process.env.PI_DEBUG_SYSTEM_PROMPT;
 const previousDebugProviderRequestsLog = process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG;
+const previousChildStateFile = process.env[CHILD_STATE_FILE_ENV];
+const previousChildState = process.env[CHILD_STATE_ENV];
 
 function createState(): RuntimeSubagent {
   return {
@@ -58,6 +64,18 @@ afterEach(() => {
     delete process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG;
   } else {
     process.env.PI_DEBUG_PROVIDER_REQUESTS_LOG = previousDebugProviderRequestsLog;
+  }
+
+  if (previousChildStateFile === undefined) {
+    delete process.env[CHILD_STATE_FILE_ENV];
+  } else {
+    process.env[CHILD_STATE_FILE_ENV] = previousChildStateFile;
+  }
+
+  if (previousChildState === undefined) {
+    delete process.env[CHILD_STATE_ENV];
+  } else {
+    process.env[CHILD_STATE_ENV] = previousChildState;
   }
 });
 
@@ -176,5 +194,45 @@ describe("buildLaunchCommand", () => {
     expect(command).not.toContain("--mode-gsd-codebase-mapper");
     expect(command).toContain("--model 'codex-openai/gpt-5.4-mini'");
     expect(command).toContain("--thinking 'high'");
+  });
+
+  it("fails closed only for strict file-backed child state", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-launch-invalid-"));
+    const filePath = path.join(dir, "child-state.json");
+    await fs.writeFile(filePath, "{not-json", "utf8");
+    delete process.env[CHILD_STATE_ENV];
+    process.env[CHILD_STATE_FILE_ENV] = filePath;
+
+    expect(readChildState()).toBeUndefined();
+    expect(() => readChildState({ strictFile: true })).toThrow(
+      `Failed to load child bootstrap state from ${filePath}:`,
+    );
+
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("falls through to valid file-backed child state when env JSON is malformed", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-launch-fallback-"));
+    const filePath = path.join(dir, "child-state.json");
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        sessionId: "child-session-id",
+        parentSessionId: "parent-session-id",
+        name: "worker-one",
+        prompt: "Return structured output",
+        autoExit: true,
+        handoff: false,
+        tools: ["read"],
+        startedAt: Date.now(),
+      }),
+      "utf8",
+    );
+    process.env[CHILD_STATE_ENV] = "{bad-json";
+    process.env[CHILD_STATE_FILE_ENV] = filePath;
+
+    expect(readChildState()?.sessionId).toBe("child-session-id");
+
+    await fs.rm(dir, { recursive: true, force: true });
   });
 });

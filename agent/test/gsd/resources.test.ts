@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   loadBundledDoc,
   loadBundledPrompt,
@@ -45,5 +47,39 @@ describe("gsd bundled resources", () => {
     expect(loadBundledTemplate("research.md")).toContain("Research");
     expect(loadBundledTemplate("VALIDATION.md")).toContain("Validation");
     expect(loadBundledTemplate("UAT.md")).toContain("UAT");
+  });
+
+  it("ships workflow resources for new-project parity", () => {
+    expect(loadBundledDoc("command-reference.md")).toContain("new-project");
+  });
+
+  it("new-project workflow encodes approval gate and deterministic instruction generation", () => {
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/new-project.md"),
+      "utf8",
+    );
+
+    expect(workflow).toContain("If `commit_docs: false`, add `.planning/` to `.gitignore`");
+    expect(workflow).toContain("## 8. Roadmap Approval");
+    expect(workflow).toContain(
+      "If `--auto`, skip this approval loop and treat roadmap as auto-approved.",
+    );
+    expect(workflow).toContain("If `--auto`, skip interactive requirements approval");
+    expect(workflow).toContain('generate-claude-md --output "$INSTRUCTION_FILE_PATH"');
+    expect(workflow).toContain(
+      "This is local adapted workflow, not full upstream shell/runtime parity.",
+    );
+    expect(workflow).toContain("If `IS_BROWNFIELD=true`, do not ask generic greenfield intake");
+    expect(workflow).toContain("If `IS_BROWNFIELD=true` and `NEEDS_CODEBASE_MAP=true`");
+    expect(workflow).toContain(
+      "If `CODEBASE_DOCS` is non-empty, read those `.planning/codebase/*.md` docs",
+    );
+    expect(workflow).toContain(
+      "If brownfield codebase docs exist, infer current system capabilities/constraints",
+    );
+    expect(workflow).toContain("If steering metadata says `GIT_WORKTREE_READY=true`");
+    expect(workflow).toContain("HAS_ACCIDENTAL_NESTED_GIT_REPO=true");
+    expect(workflow).toContain("Researcher task contract:");
+    expect(workflow).toContain("Roadmapper delegation contract:");
   });
 });

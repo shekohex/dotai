@@ -1,4 +1,5 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,9 +11,13 @@ import { handleGsdMapCodebase } from "../../src/extensions/gsd/lifecycle/map-cod
 import { handleGsdCompleteMilestone } from "../../src/extensions/gsd/lifecycle/complete-milestone.js";
 import { handleGsdMilestoneSummary } from "../../src/extensions/gsd/lifecycle/milestone-summary.js";
 import { handleGsdNewMilestone } from "../../src/extensions/gsd/lifecycle/new-milestone.js";
-import { handleGsdNewProject } from "../../src/extensions/gsd/lifecycle/new-project.js";
+import {
+  handleGsdNewProject,
+  resolveInstructionFileName,
+} from "../../src/extensions/gsd/lifecycle/new-project.js";
 import { handleGsdValidatePhase } from "../../src/extensions/gsd/lifecycle/validate-phase.js";
 import { handleGsdVerifyWork } from "../../src/extensions/gsd/lifecycle/verify-work.js";
+import { resolveGsdBundlePath } from "../../src/extensions/gsd/resources.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
 import { applyPendingGsdWorkflowLaunch } from "../../src/extensions/gsd/workflow-launch.js";
 
@@ -60,6 +65,7 @@ Plans:
     join(root, ".planning", "STATE.md"),
     "current_phase: 1\ncurrent_phase_name: Setup\ncurrent_plan: \nstatus: Ready to plan\n",
   );
+  writeFileSync(join(root, resolveInstructionFileName()), "project instructions\n");
   return root;
 }
 
@@ -145,26 +151,253 @@ afterEach(() => {
 });
 
 describe("gsd lifecycle handlers", () => {
-  it("new-project writes baseline planning files", () => {
+  it("new-project bootstraps planning files and launches workflow prompt", async () => {
     const root = createRoot();
-    const ctx = createContext(root);
-    handleGsdNewProject({} as ExtensionAPI, ctx);
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdNewProject(pi, ctx, {}, "");
     expect(readFileSync(join(root, ".planning", "config.json"), "utf8")).toContain(
       '"model_profile": "balanced"',
+    );
+    expect(readFileSync(join(root, ".planning", "config.json"), "utf8")).toContain(
+      '"granularity": "standard"',
+    );
+    expect(readFileSync(join(root, ".planning", "config.json"), "utf8")).not.toContain(
+      '"workflow"',
     );
     expect(readFileSync(join(root, ".planning", "PROJECT.md"), "utf8")).toContain(
       root.split("/").at(-1) ?? "",
     );
     expect(readFileSync(join(root, ".planning", "STATE.md"), "utf8")).toContain(
-      "status: Ready to plan",
+      "status: Project initialization in progress",
+    );
+    expect(ctx.fork).not.toHaveBeenCalled();
+    expect(ctx.newSession).not.toHaveBeenCalled();
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd new-project"',
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      resolveInstructionFileName(),
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      `GSD_TOOLS_PATH=${resolveGsdBundlePath("bin", "gsd-tools.cjs")}`,
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      `INSTRUCTION_FILE_PATH=${join(root, resolveInstructionFileName())}`,
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "AVAILABLE_AGENT_TYPES=gsd-project-researcher,gsd-research-synthesizer,gsd-roadmapper",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      `Init metadata: PROJECT_NAME=${root.split("/").at(-1) ?? ""}`,
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Init metadata: IS_BROWNFIELD=false",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Init metadata: GIT_WORKTREE_READY=true",
+    );
+    expect(existsSync(join(root, ".git"))).toBe(true);
+  });
+
+  it("new-project injects brownfield init metadata for recovery in existing repo", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const live = true;\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, ctx, {}, "");
+
+    const prompt = String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]);
+    expect(prompt).toContain("Init metadata: IS_BROWNFIELD=true");
+    expect(prompt).toContain("Init metadata: HAS_CODEBASE_MAP=false");
+    expect(prompt).toContain("Init metadata: NEEDS_CODEBASE_MAP=true");
+  });
+
+  it("resolveInstructionFileName only treats explicit Codex runtime as AGENTS target", () => {
+    const previousCodexHome = process.env.CODEX_HOME;
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+    delete process.env.CODEX_HOME;
+    process.env.PI_CODING_AGENT_DIR = "/tmp/agent-dir";
+    expect(resolveInstructionFileName()).toBe("CLAUDE.md");
+
+    process.env.CODEX_HOME = "/tmp/codex-home";
+    expect(resolveInstructionFileName()).toBe("AGENTS.md");
+
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    if (previousAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+  });
+
+  it("new-project does not seed placeholder roadmap phases", async () => {
+    const root = createRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdNewProject(pi, ctx, {}, "");
+    expect(readRoadmapPhases(root)).toEqual([]);
+  });
+
+  it("new-project passes raw auto arguments into workflow launch", async () => {
+    const root = createRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, ctx, { auto: true, input: "@idea.md" }, "--auto @idea.md");
+
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd new-project --auto @idea.md"',
     );
   });
 
-  it("new-project does not seed placeholder roadmap phases", () => {
+  it("new-project rejects auto mode without source material", async () => {
     const root = createRoot();
-    const ctx = createContext(root);
-    handleGsdNewProject({} as ExtensionAPI, ctx);
-    expect(readRoadmapPhases(root)).toEqual([]);
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, ctx, { auto: true }, "--auto");
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "/gsd new-project --auto requires idea text or @file input.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("new-project blocks relaunch when planning already initialized", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, ctx, {}, "");
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "GSD already initialized. Run /gsd progress.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("new-project allows rerun when initialization is still placeholder-only", async () => {
+    const root = createRoot();
+    const pi = createPi();
+    const initialCtx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, initialCtx, {}, "");
+
+    const rerunCtx = createContext(root, pi);
+    await handleGsdNewProject(pi, rerunCtx, {}, "");
+
+    expect(rerunCtx.ui.notify).not.toHaveBeenCalledWith(
+      "GSD already initialized. Run /gsd progress.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("new-project allows rerun after phases exist if initialization still marked in progress", async () => {
+    const root = createRoot();
+    const pi = createPi();
+    const firstCtx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, firstCtx, {}, "");
+
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo\n\n### Phase 1: Setup\n**Goal**: Start\n\nPlans:\n- [ ] 01-01: Init\n`,
+    );
+
+    const secondCtx = createContext(root, pi);
+    await handleGsdNewProject(pi, secondCtx, {}, "");
+
+    expect(secondCtx.ui.notify).not.toHaveBeenCalledWith(
+      "GSD already initialized. Run /gsd progress.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("new-project preserves real state metadata during recovery rerun", async () => {
+    const root = createRoot();
+    const pi = createPi();
+    const firstCtx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, firstCtx, {}, "");
+
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo\n\n### Phase 1: Setup\n**Goal**: Start\n\nPlans:\n- [ ] 01-01: Init\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 1\ncurrent_phase_name: Setup\ncurrent_plan: 01-01\nstatus: Project initialization in progress\n",
+    );
+
+    const secondCtx = createContext(root, pi);
+    await handleGsdNewProject(pi, secondCtx, {}, "");
+
+    const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
+    expect(state).toContain("current_phase_name: Setup");
+    expect(state).toContain("current_plan: 01-01");
+    expect(state).toContain("status: Project initialization in progress");
+  });
+
+  it("new-project does not git-init inside existing parent repo subdir", async () => {
+    const repoRoot = createRoot();
+    const nested = join(repoRoot, "packages", "demo");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(repoRoot, "README.md"), "root\n");
+    const pi = createPi();
+    const initCtx = createContext(repoRoot, pi);
+    await handleGsdNewProject(pi, initCtx, {}, "");
+    expect(existsSync(join(repoRoot, ".git"))).toBe(true);
+
+    const nestedPi = createPi();
+    const nestedCtx = createContext(nested, nestedPi);
+    await handleGsdNewProject(nestedPi, nestedCtx, {}, "");
+
+    expect(existsSync(join(nested, ".git"))).toBe(false);
+    expect(existsSync(join(nested, ".planning"))).toBe(true);
+    const prompt = String(
+      (nestedPi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0],
+    );
+    expect(prompt).toContain("Init metadata: GIT_WORKTREE_READY=true");
+    expect(prompt).toContain(`Init metadata: ENCLOSING_GIT_ROOT_PATH=${repoRoot}`);
+  });
+
+  it("new-project warns when accidental nested git repo shadows parent worktree", async () => {
+    const repoRoot = createRoot();
+    const nested = join(repoRoot, "packages", "demo");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(repoRoot, "README.md"), "root\n");
+    const rootPi = createPi();
+    const rootCtx = createContext(repoRoot, rootPi);
+    await handleGsdNewProject(rootPi, rootCtx, {}, "");
+
+    execFileSync("git", ["init"], { cwd: nested, stdio: "ignore" });
+
+    const nestedPi = createPi();
+    const nestedCtx = createContext(nested, nestedPi);
+    await handleGsdNewProject(nestedPi, nestedCtx, {}, "");
+
+    expect(nestedCtx.ui.notify).toHaveBeenCalledWith(
+      "Detected nested git repo inside parent worktree. Current directory may have accidental `.git/`.",
+      "warning",
+    );
+    const prompt = String(
+      (nestedPi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0],
+    );
+    expect(prompt).toContain("Init metadata: HAS_ACCIDENTAL_NESTED_GIT_REPO=true");
+    expect(prompt).toContain(`Init metadata: GIT_ROOT_PATH=${nested}`);
+    expect(prompt).toContain(`Init metadata: ENCLOSING_GIT_ROOT_PATH=${repoRoot}`);
   });
 
   it("map-codebase spawns direct-write mapper roles for all focus areas", async () => {
@@ -211,7 +444,9 @@ describe("gsd lifecycle handlers", () => {
       ]),
     );
     expect(spawn.mock.calls[0]?.[0]?.task).toContain("<required_reading>");
-    expect(spawn.mock.calls[0]?.[0]?.task).toContain(".planning/PROJECT.md");
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain(".planning/ROADMAP.md");
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain(".planning/STATE.md");
+    expect(spawn.mock.calls[0]?.[0]?.task).not.toContain(".planning/PROJECT.md");
     expect(spawn.mock.calls[0]?.[0]?.task).toContain(
       "Write these documents to .planning/codebase/",
     );
@@ -222,6 +457,53 @@ describe("gsd lifecycle handlers", () => {
     expect(pi.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: "steer", triggerTurn: false });
     expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("Codebase mapping complete.");
     expect(pi.sendMessage.mock.calls[0]?.[0]?.details?.areas).toHaveLength(4);
+  });
+
+  it("map-codebase works before init files exist", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const app = true;\n");
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        handle: {
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "session-id",
+            status: "completed",
+            summary: "Mapping Complete",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "## Mapping Complete\nReady" }),
+        },
+      },
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx);
+
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain("<required_reading>");
+    expect(spawn.mock.calls[0]?.[0]?.task).not.toContain(".planning/PROJECT.md");
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain(
+      "Write these documents to .planning/codebase/",
+    );
+  });
+
+  it("new-project includes existing codebase docs in brownfield required reading", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "codebase"), { recursive: true });
+    writeFileSync(join(root, ".planning", "codebase", "STACK.md"), "# Stack\n");
+    writeFileSync(join(root, ".planning", "codebase", "ARCHITECTURE.md"), "# Architecture\n");
+    writeFileSync(join(root, "package.json"), '{"name":"demo"}\n');
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdNewProject(pi, ctx, {}, "");
+
+    const prompt = String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]);
+    expect(prompt).toContain(join(root, ".planning", "codebase", "STACK.md"));
+    expect(prompt).toContain(join(root, ".planning", "codebase", "ARCHITECTURE.md"));
+    expect(prompt).toContain("Init metadata: HAS_CODEBASE_MAP=true");
+    expect(prompt).toContain("Init metadata: CODEBASE_DOCS=");
   });
 
   it("map-codebase passes validated --paths scope to each mapper role", async () => {

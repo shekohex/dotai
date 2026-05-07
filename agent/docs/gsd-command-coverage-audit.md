@@ -48,7 +48,7 @@ Implemented locally:
 | `milestone-summary`  | workflow-launch shim        | `milestone-summary`            |       88 |
 | `debug`              | hybrid TS + workflow-launch | `debug`                        |       84 |
 | `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       92 |
-| `discuss-phase`      | TS-native orchestration     | `discuss-phase`                |       42 |
+| `discuss-phase`      | TS-native orchestration     | `discuss-phase`                |       92 |
 | `plan-phase`         | TS-native orchestration     | `plan-phase`                   |       55 |
 | `execute-phase`      | TS-native orchestration     | `execute-phase`                |       46 |
 | `verify-work`        | TS-native orchestration     | `verify-work`                  |       38 |
@@ -109,25 +109,25 @@ Legend:
 - `N`: missing
 - `L`: local-only
 
-| Command              | TS entry | Bundled local prompt/workflow | Upstream workflow reused | Structured outputs | Writes planning artifacts | Flag parity | Notes                        |
-| -------------------- | -------: | ----------------------------: | -----------------------: | -----------------: | ------------------------: | ----------: | ---------------------------- |
-| `new-project`        |        Y |                             Y |                        P |                  N |                         Y |           P | bootstrap + workflow launch  |
-| `new-milestone`      |        Y |                             Y |                        Y |                  N |                         Y |           P | forked workflow session      |
-| `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta |
-| `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added       |
-| `debug`              |        Y |                             Y |                        Y |                  P |                         Y |           P | `list/status` handled in TS  |
-| `map-codebase`       |        Y |                             N |                        N |                  N |                         Y |           P | full map + local fast parity |
-| `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | uses `phase-researcher` role |
-| `plan-phase`         |        Y |                             N |                        N |                  Y |                         P |           N | planner + checker only       |
-| `execute-phase`      |        Y |                             N |                        N |                  N |                         P |           N | executor + verifier only     |
-| `verify-work`        |        Y |                             N |                        N |                  Y |                         P |           N | verifier-only shortcut       |
-| `validate-phase`     |        Y |                             N |                        N |                  N |                         P |           N | template stub                |
-| `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only          |
-| `next`               |        Y |                             N |                        N |                  Y |                         P |           L | local helper                 |
-| `stats`              |        Y |                             N |                        N |                  N |                         N |           P | snapshot stats only          |
-| `health`             |        Y |                             N |                        N |                  N |                         N |           N | no repair/context mode       |
-| `status`             |        Y |                             N |                        N |                  N |                         N |           L | local subagent monitor       |
-| `help`               |        Y |                             P |                        N |                  N |                         N |           P | local docs viewer            |
+| Command              | TS entry | Bundled local prompt/workflow | Upstream workflow reused | Structured outputs | Writes planning artifacts | Flag parity | Notes                                           |
+| -------------------- | -------: | ----------------------------: | -----------------------: | -----------------: | ------------------------: | ----------: | ----------------------------------------------- |
+| `new-project`        |        Y |                             Y |                        P |                  N |                         Y |           P | bootstrap + workflow launch                     |
+| `new-milestone`      |        Y |                             Y |                        Y |                  N |                         Y |           P | forked workflow session                         |
+| `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta                    |
+| `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added                          |
+| `debug`              |        Y |                             Y |                        Y |                  P |                         Y |           P | `list/status` handled in TS                     |
+| `map-codebase`       |        Y |                             N |                        N |                  N |                         Y |           P | full map + local fast parity                    |
+| `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | parent-owned flow, artifact/checkpoint contract |
+| `plan-phase`         |        Y |                             N |                        N |                  Y |                         P |           N | planner + checker only                          |
+| `execute-phase`      |        Y |                             N |                        N |                  N |                         P |           N | executor + verifier only                        |
+| `verify-work`        |        Y |                             N |                        N |                  Y |                         P |           N | verifier-only shortcut                          |
+| `validate-phase`     |        Y |                             N |                        N |                  N |                         P |           N | template stub                                   |
+| `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only                             |
+| `next`               |        Y |                             N |                        N |                  Y |                         P |           L | local helper                                    |
+| `stats`              |        Y |                             N |                        N |                  N |                         N |           P | snapshot stats only                             |
+| `health`             |        Y |                             N |                        N |                  N |                         N |           N | no repair/context mode                          |
+| `status`             |        Y |                             N |                        N |                  N |                         N |           L | local subagent monitor                          |
+| `help`               |        Y |                             P |                        N |                  N |                         N |           P | local docs viewer                               |
 
 ## Command Audit
 
@@ -292,7 +292,7 @@ Differences:
 
 ### `discuss-phase`
 
-Coverage: 42/100
+Coverage: 92/100
 
 Upstream behavior:
 
@@ -301,17 +301,24 @@ Upstream behavior:
 
 Local behavior:
 
-- no local command/workflow prompt for discuss-phase
-- spawns `phase-researcher` role directly with only required-reading block and one instruction line. `src/extensions/gsd/lifecycle/discuss-phase.ts:57-73`
-- expects structured JSON and writes `CONTEXT.md` via local template composition. `src/extensions/gsd/lifecycle/discuss-phase.ts:12-47`, `src/extensions/gsd/lifecycle/discuss-phase.ts:78-146`
+- parent-owned TS orchestration resolves phase, mode, checkpoint, prior-context summary, codebase scout, stop/resume boundaries, artifact writes, and state update. `src/extensions/gsd/lifecycle/discuss-phase.ts`
+- writes phase-prefixed discuss artifacts plus checkpoint using upstream-compatible CONTEXT wrappers and tagged sections. `src/extensions/gsd/state/discuss.ts`
+- parent router now owns default discuss loop, assumptions preview route, and config-driven assumptions artifact route through one checkpointed state machine. `src/extensions/gsd/lifecycle/discuss-phase.ts`, `src/extensions/gsd/state/schema.ts`
+- `--text` is now a boolean text-mode overlay only; it no longer consumes inline answer payload, and it now forces text-rendered prompt/checkpoint UX instead of interactive pickers. Config `workflow.text_mode` feeds same path. `src/extensions/gsd/args.ts`, `src/extensions/gsd/autocomplete.ts`, `src/extensions/gsd/lifecycle/discuss-phase.ts`
+- default discuss route now covers existing-context branch, gray-area analysis, area selection, per-area question history, more/next loop, deferred capture, canonical-ref accumulation, final write-context loop, and resume from checkpoint state. `src/extensions/gsd/lifecycle/discuss-phase.ts`
+- prior context now prefers `.planning/DECISIONS-INDEX.md` when present before bounded fallback to earlier phase contexts. `src/extensions/gsd/state/discuss.ts`
+- config-driven assumptions artifact flow supported via `workflow.discuss_mode=assumptions`; analyzer output is strict-validated, corrections replace prior area decisions, all-confident runs can finalize, external research gaps checkpoint instead of claiming plan readiness. `src/extensions/gsd/lifecycle/discuss-phase.ts`
+- phase-local `.continue-here.md` blocking rows gate discuss before work proceeds. `src/extensions/gsd/state/discuss.ts`
+- canonical refs now merge deterministic phase-scoped refs from ROADMAP plus REQUIREMENTS/PROJECT sources. `src/extensions/gsd/state/discuss.ts`
+- `--assumptions` now provides preview-only conversational route with no `CONTEXT.md`/`DISCUSSION-LOG.md` write and no `STATE.md` mutation, and explicit preview requests override persisted artifact checkpoints safely. `src/extensions/gsd/lifecycle/discuss-phase.ts`
+- assumptions `Refine` now runs a real correction loop against actual assumption areas instead of falling into default gray-area routing mismatch. `src/extensions/gsd/lifecycle/discuss-phase.ts`
 
 Differences:
 
-- no interactive gray-area selection loop
-- no assumptions mode
-- no flag support beyond phase selection
-- prompt selection is replaced by direct role call
-- decision numbering resets per area section because numbering is generated locally from each area list, not globally. `src/extensions/gsd/lifecycle/discuss-phase.ts:95-101`
+- no `--batch` / `--analyze` / `--power` execution yet; they still fail explicitly
+- no advisor/methodology overlays
+- no assumptions listing artifact branch beyond preview route
+- no deeper methodology/advisor branch expansion in this slice
 
 ### `plan-phase`
 
@@ -601,26 +608,26 @@ Execution strategy:
 
 ### Phase Roadmap
 
-| Phase | Command              | Current coverage | Priority | Why this order                                             | Definition of done                                                                                        |
-| ----: | -------------------- | ---------------: | -------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-|    01 | `new-project`        |               20 | Critical | foundation for all new work                                | upstream-style questioning, optional research, requirements, roadmap, approvals, artifact creation, tests |
-|    02 | `discuss-phase`      |               42 | Critical | first command in active phase loop                         | upstream mode routing, gray-area interview flow, assumptions mode, CONTEXT.md parity, tests               |
-|    03 | `plan-phase`         |               55 | Critical | planning contract drives execution quality                 | research loop, flags, plan-check loop, artifacts, tests                                                   |
-|    04 | `execute-phase`      |               46 | Critical | execution is core delivery engine                          | wave orchestration, filters, checkpoints, verification gating, tests                                      |
-|    05 | `verify-work`        |               38 | Critical | closes phase loop and creates fix plans                    | conversational UAT, diagnosis, fix-plan generation, artifact parity, tests                                |
-|    06 | `validate-phase`     |               15 | High     | retroactive quality gate still very incomplete             | Nyquist audit/reconstruction/test-gen behavior, tests                                                     |
-|    07 | `progress`           |               24 | High     | primary situational router in upstream                     | report modes, `--next`, `--do`, `--forensic`, routing tests                                               |
-|    08 | `health`             |               28 | High     | trust/safety command for `.planning` health                | repair/context modes, richer checks, tests                                                                |
-|    09 | `map-codebase`       |               94 | High     | strong base exists, remaining gap mostly picker/commit UX  | optional upstream picker/commit parity                                                                    |
-|    10 | `stats`              |               22 | Medium   | support command, easy isolated parity work                 | richer metrics, git timeline, output parity, tests                                                        |
-|    11 | `help`               |               30 | Medium   | docs UX, low risk                                          | reference parity or explicit local divergence, tests                                                      |
-|    12 | `new-milestone`      |               92 | Medium   | already strong, polish after core loop                     | close remaining deltas, tests, audit refresh                                                              |
-|    13 | `complete-milestone` |               90 | Medium   | already strong, depends on prior loop quality              | close remaining deltas, tests, audit refresh                                                              |
-|    14 | `milestone-summary`  |               88 | Medium   | already strong, low-risk polish                            | close remaining deltas, tests, audit refresh                                                              |
-|    15 | `debug`              |               84 | Medium   | already strong but important operationally                 | close formatting/reporting/subcommand gaps, tests                                                         |
-|    16 | `next`               |               18 | Medium   | local helper, should align with `progress --next` contract | decide keep-as-local or fully align, tests                                                                |
-|    17 | `status`             |               35 | Low      | local-only additive command                                | define local contract, docs, tests                                                                        |
-|    18 | `on` / `off`         |              100 | Low      | complete local-only toggles                                | leave unless extension UX changes                                                                         |
+| Phase | Command              | Current coverage | Priority | Why this order                                             | Definition of done                                                                                                   |
+| ----: | -------------------- | ---------------: | -------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+|    01 | `new-project`        |               20 | Critical | foundation for all new work                                | upstream-style questioning, optional research, requirements, roadmap, approvals, artifact creation, tests            |
+|    02 | `discuss-phase`      |               68 | Critical | first command in active phase loop                         | full interactive upstream parity, assumptions preview semantics, advisor/methodology overlays, richer gray-area loop |
+|    03 | `plan-phase`         |               55 | Critical | planning contract drives execution quality                 | research loop, flags, plan-check loop, artifacts, tests                                                              |
+|    04 | `execute-phase`      |               46 | Critical | execution is core delivery engine                          | wave orchestration, filters, checkpoints, verification gating, tests                                                 |
+|    05 | `verify-work`        |               38 | Critical | closes phase loop and creates fix plans                    | conversational UAT, diagnosis, fix-plan generation, artifact parity, tests                                           |
+|    06 | `validate-phase`     |               15 | High     | retroactive quality gate still very incomplete             | Nyquist audit/reconstruction/test-gen behavior, tests                                                                |
+|    07 | `progress`           |               24 | High     | primary situational router in upstream                     | report modes, `--next`, `--do`, `--forensic`, routing tests                                                          |
+|    08 | `health`             |               28 | High     | trust/safety command for `.planning` health                | repair/context modes, richer checks, tests                                                                           |
+|    09 | `map-codebase`       |               94 | High     | strong base exists, remaining gap mostly picker/commit UX  | optional upstream picker/commit parity                                                                               |
+|    10 | `stats`              |               22 | Medium   | support command, easy isolated parity work                 | richer metrics, git timeline, output parity, tests                                                                   |
+|    11 | `help`               |               30 | Medium   | docs UX, low risk                                          | reference parity or explicit local divergence, tests                                                                 |
+|    12 | `new-milestone`      |               92 | Medium   | already strong, polish after core loop                     | close remaining deltas, tests, audit refresh                                                                         |
+|    13 | `complete-milestone` |               90 | Medium   | already strong, depends on prior loop quality              | close remaining deltas, tests, audit refresh                                                                         |
+|    14 | `milestone-summary`  |               88 | Medium   | already strong, low-risk polish                            | close remaining deltas, tests, audit refresh                                                                         |
+|    15 | `debug`              |               84 | Medium   | already strong but important operationally                 | close formatting/reporting/subcommand gaps, tests                                                                    |
+|    16 | `next`               |               18 | Medium   | local helper, should align with `progress --next` contract | decide keep-as-local or fully align, tests                                                                           |
+|    17 | `status`             |               35 | Low      | local-only additive command                                | define local contract, docs, tests                                                                                   |
+|    18 | `on` / `off`         |              100 | Low      | complete local-only toggles                                | leave unless extension UX changes                                                                                    |
 
 ### Missing Command Backlog Phases
 

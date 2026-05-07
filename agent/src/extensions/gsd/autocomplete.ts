@@ -43,7 +43,7 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
 ];
 
 const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
-  "discuss-phase": ["--phase", "--phase="],
+  "discuss-phase": ["--phase", "--phase=", "--assumptions", "--auto", "--all", "--chain", "--text"],
   "plan-phase": ["--phase", "--phase="],
   "execute-phase": ["--phase", "--phase="],
   "verify-work": ["--phase", "--phase="],
@@ -371,6 +371,21 @@ function getFlagDescription(value: string): string | undefined {
   }
   if (value === "--diagnose") {
     return "Find root cause only";
+  }
+  if (value === "--assumptions") {
+    return "Route to assumptions discuss mode";
+  }
+  if (value === "--auto") {
+    return "Allow automated completion when safe";
+  }
+  if (value === "--all") {
+    return "Cover all detected gray areas";
+  }
+  if (value === "--chain") {
+    return "Record plan-phase handoff after completion";
+  }
+  if (value === "--text") {
+    return "Use text-only discuss transport";
   }
   return undefined;
 }

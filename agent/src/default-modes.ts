@@ -107,8 +107,7 @@ export const defaultModes: DefaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch", "execute"],
       autoExit: true,
-      description:
-        "Use me when you want to do QA and chat with your codebase, explore options",
+      description: "Use me when you want to do QA and chat with your codebase, explore options",
     },
     worker: {
       tools: ["*", "!subagent"],

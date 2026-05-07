@@ -390,6 +390,44 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     slug: "auth-token-null",
     diagnose: false,
   });
+  expect(parseGsdCommandArgs("discuss-phase --phase 2 --assumptions --all --chain --text")).toEqual(
+    {
+      subcommand: "discuss-phase",
+      phase: "2",
+      assumptions: true,
+      all: true,
+      chain: true,
+      text: true,
+    },
+  );
+  expect(parseGsdCommandArgs("discuss-phase --phase 2 --all")).toEqual({
+    subcommand: "discuss-phase",
+    phase: "2",
+    all: true,
+  });
+  expect(parseGsdCommandArgs("discuss-phase --phase 2 --auto")).toEqual({
+    subcommand: "discuss-phase",
+    phase: "2",
+    auto: true,
+  });
+  expect(parseGsdCommandArgs("discuss-phase --batch --phase 2")).toEqual({
+    subcommand: "discuss-phase",
+    phase: "2",
+    batch: true,
+    unsupportedModeError:
+      "Unsupported /gsd discuss-phase mode: --batch overlay is parsed but not implemented in Slice 1.",
+  });
+  expect(parseGsdCommandArgs("discuss-phase --text --auto")).toEqual({
+    subcommand: "discuss-phase",
+    text: true,
+    auto: true,
+  });
+  expect(parseGsdCommandArgs("discuss-phase --phase 2 --text Skip prior context")).toEqual({
+    subcommand: "discuss-phase",
+    phase: "2",
+    text: true,
+    input: "Skip prior context",
+  });
 });
 
 test("gsd autocomplete suggests phase values and flags from ctx cwd state", async () => {
@@ -433,6 +471,23 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
     expect.arrayContaining([
       expect.objectContaining({ value: "execute-phase --phase=1", label: "1 Foundation" }),
       expect.objectContaining({ value: "execute-phase --phase=2", label: "2 Delivery" }),
+    ]),
+  );
+
+  const discussItems = await command?.getArgumentCompletions?.("discuss-phase ");
+  expect(discussItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "discuss-phase --all", label: "--all" }),
+      expect.objectContaining({ value: "discuss-phase --auto", label: "--auto" }),
+      expect.objectContaining({ value: "discuss-phase --assumptions", label: "--assumptions" }),
+      expect.objectContaining({ value: "discuss-phase --text", label: "--text" }),
+    ]),
+  );
+
+  const discussTextItems = await command?.getArgumentCompletions?.("discuss-phase --t");
+  expect(discussTextItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "discuss-phase --text", label: "--text" }),
     ]),
   );
 

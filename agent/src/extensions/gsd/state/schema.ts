@@ -112,7 +112,9 @@ export const PlanningConfigSchema = Type.Object(
           text_mode: Type.Optional(Type.Boolean()),
           research_before_questions: Type.Optional(Type.Boolean()),
           tdd_mode: Type.Optional(Type.Boolean()),
-          discuss_mode: Type.Optional(Type.String()),
+          discuss_mode: Type.Optional(
+            Type.Union([Type.Literal("discuss"), Type.Literal("assumptions")]),
+          ),
           skip_discuss: Type.Optional(Type.Boolean()),
         },
         { additionalProperties: true },
@@ -133,6 +135,86 @@ export const PlanningConfigSchema = Type.Object(
 );
 
 export type PlanningConfig = Static<typeof PlanningConfigSchema>;
+
+export const DiscussDecisionSchema = Type.Object(
+  {
+    id: Type.String(),
+    area: Type.String(),
+    decision: Type.String(),
+    source: Type.Union([Type.Literal("user"), Type.Literal("auto"), Type.Literal("assumption")]),
+  },
+  { additionalProperties: false },
+);
+
+export const DiscussReferenceSchema = Type.Object(
+  {
+    path: Type.String(),
+    reason: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+export const DiscussDraftSchema = Type.Object(
+  {
+    phaseBoundary: Type.String(),
+    implementationDecisions: Type.Array(DiscussDecisionSchema),
+    discretionAreas: Type.Array(Type.String()),
+    canonicalReferences: Type.Array(DiscussReferenceSchema),
+    existingCodeInsights: Type.Array(Type.String()),
+    specificIdeas: Type.Array(Type.String()),
+    deferredIdeas: Type.Array(Type.String()),
+    discussionLog: Type.Array(Type.String()),
+    chainNextStep: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export type DiscussDraft = Static<typeof DiscussDraftSchema>;
+
+export const DiscussCheckpointSchema = Type.Object(
+  {
+    phase: Type.String(),
+    mode: Type.Union([Type.Literal("discuss"), Type.Literal("assumptions")]),
+    route: Type.Union([
+      Type.Literal("default-discuss"),
+      Type.Literal("assumptions-preview"),
+      Type.Literal("assumptions-artifact"),
+    ]),
+    all: Type.Boolean(),
+    auto: Type.Boolean(),
+    chain: Type.Boolean(),
+    text: Type.Boolean(),
+    stage: Type.Union([
+      Type.Literal("init"),
+      Type.Literal("existing-context"),
+      Type.Literal("gray-area-analysis"),
+      Type.Literal("gray-area-selection"),
+      Type.Literal("area-question"),
+      Type.Literal("area-more"),
+      Type.Literal("final-loop"),
+      Type.Literal("done"),
+    ]),
+    pendingPrompt: Type.String(),
+    promptOptions: Type.Array(Type.String()),
+    priorContextSummary: Type.String(),
+    scoutSummary: Type.String(),
+    existingContextSummary: Type.Optional(Type.String()),
+    grayAreaAnalysis: Type.Optional(Type.String()),
+    areaQuestions: Type.Record(Type.String(), Type.Array(Type.String())),
+    areaSelections: Type.Record(Type.String(), Type.Array(Type.String())),
+    areasCompleted: Type.Array(Type.String()),
+    areasRemaining: Type.Array(Type.String()),
+    activeArea: Type.Optional(Type.String()),
+    assumptionsAutoReady: Type.Boolean(),
+    assumptionsResearchGaps: Type.Array(Type.String()),
+    deferredIdeas: Type.Array(Type.String()),
+    canonicalReferences: Type.Array(Type.String()),
+    draft: DiscussDraftSchema,
+  },
+  { additionalProperties: false },
+);
+
+export type DiscussCheckpoint = Static<typeof DiscussCheckpointSchema>;
 
 export const GsdSettingsSchema = Type.Object(
   {

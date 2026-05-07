@@ -3,6 +3,7 @@ import type { ModeSpec } from "../../mode-utils.js";
 export type GsdRole =
   | "planner"
   | "phase-researcher"
+  | "assumptions-analyzer"
   | "project-researcher"
   | "roadmapper"
   | "executor"
@@ -107,6 +108,20 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
       autoExit: true,
     },
   },
+  "assumptions-analyzer": {
+    modeName: "gsd-assumptions-analyzer",
+    bundledPromptPath: "resources/gsd/agents/gsd-assumptions-analyzer.md",
+    fallbackMode: "search",
+    builtInModeSpec: {
+      description: "Built-in GSD assumptions analyzer",
+      provider: "codex-openai",
+      modelId: "gpt-5.4-mini",
+      thinkingLevel: "high",
+      tools: ["read", "bash"],
+      systemPromptMode: "replace",
+      autoExit: true,
+    },
+  },
   "project-researcher": {
     modeName: "gsd-project-researcher",
     bundledPromptPath: "resources/gsd/agents/gsd-project-researcher.md",
@@ -203,6 +218,7 @@ export function listGsdRoles(): GsdRole[] {
   return [
     "planner",
     "phase-researcher",
+    "assumptions-analyzer",
     "project-researcher",
     "roadmapper",
     "executor",

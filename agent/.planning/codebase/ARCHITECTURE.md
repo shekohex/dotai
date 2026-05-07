@@ -24,16 +24,16 @@
 
 ## Component Responsibilities
 
-| Component | Responsibility | File |
-| --------- | -------------- | ---- |
-| CLI entrypoint | Starts upstream host, installs bundled resources, passes bundled extension factories | `src/cli.ts` |
-| Extension registry | Groups bundled extension factories and names them for loader output | `src/extensions/index.ts` |
-| Core UI layer | Owns footer/header/status/tool rendering hooks for the host UI | `src/extensions/coreui/index.ts` |
-| Mode system | Loads and validates mode registry, exposes flags, applies mode-dependent prompts | `src/mode-utils.ts`, `src/extensions/modes/index.ts` |
-| GSD workflow layer | Drives planning, execution, verification, and `.planning` file updates | `src/extensions/gsd/index.ts` |
-| Review layer | Tracks review sessions, restores state, and coordinates review subagents | `src/extensions/review/index.ts` |
-| Subagent runtime | Spawns child sessions, monitors tmux panes, persists state, exposes SDK | `src/subagent-sdk/index.ts` |
-| Bundled assets | Copies markdown/json assets into runtime resource search paths | `src/extensions/bundled-resources.ts`, `scripts/copy-bundled-resources.mjs` |
+| Component          | Responsibility                                                                       | File                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| CLI entrypoint     | Starts upstream host, installs bundled resources, passes bundled extension factories | `src/cli.ts`                                                                |
+| Extension registry | Groups bundled extension factories and names them for loader output                  | `src/extensions/index.ts`                                                   |
+| Core UI layer      | Owns footer/header/status/tool rendering hooks for the host UI                       | `src/extensions/coreui/index.ts`                                            |
+| Mode system        | Loads and validates mode registry, exposes flags, applies mode-dependent prompts     | `src/mode-utils.ts`, `src/extensions/modes/index.ts`                        |
+| GSD workflow layer | Drives planning, execution, verification, and `.planning` file updates               | `src/extensions/gsd/index.ts`                                               |
+| Review layer       | Tracks review sessions, restores state, and coordinates review subagents             | `src/extensions/review/index.ts`                                            |
+| Subagent runtime   | Spawns child sessions, monitors tmux panes, persists state, exposes SDK              | `src/subagent-sdk/index.ts`                                                 |
+| Bundled assets     | Copies markdown/json assets into runtime resource search paths                       | `src/extensions/bundled-resources.ts`, `scripts/copy-bundled-resources.mjs` |
 
 ## Pattern Overview
 

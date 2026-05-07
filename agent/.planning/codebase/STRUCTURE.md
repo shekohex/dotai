@@ -29,51 +29,61 @@
 ## Directory Purposes
 
 **`bin/`:**
+
 - Purpose: Executable wrappers for the published `pi` command.
 - Contains: `pi.js`, `pi.cmd`.
 - Key files: `bin/pi.js`, `bin/pi.cmd`.
 
 **`dist/`:**
+
 - Purpose: Build output from `tsc` plus copied bundled resources and generated defaults.
 - Contains: compiled JS, `dist/resources/`, `dist/defaults/`, extension output.
 - Key files: `dist/cli.js`, `dist/defaults/settings.json`, `dist/defaults/modes.json`.
 
 **`docs/`:**
+
 - Purpose: Manual documentation for the wrapper, GSD, and subagent systems.
 - Contains: markdown guides and audit notes.
 - Key files: `docs/gsd-sdk.md`, `docs/subagent-sdk.md`, `docs/subagent-structured-output-spec.md`.
 
 **`patches/`:**
+
 - Purpose: `patch-package` diffs against `@mariozechner/pi-coding-agent` and related dependencies.
 - Contains: `.patch` files.
 - Key files: any file under `patches/` with dependency-specific naming.
 
 **`scripts/`:**
+
 - Purpose: Build-time and install-time automation.
 - Contains: resource copy, default settings generation, bin wrapper creation, postinstall, preview tooling.
 - Key files: `scripts/copy-bundled-resources.mjs`, `scripts/generate-default-settings.mjs`, `scripts/prepare-bin.mjs`, `scripts/postinstall.mjs`.
 
 **`src/`:**
+
 - Purpose: All application source code.
 - Contains: entrypoints, feature extensions, subagent runtime, bundled resources, shared utilities.
 - Key files: `src/cli.ts`, `src/extensions/index.ts`, `src/subagent-sdk/index.ts`, `src/default-settings.ts`, `src/default-modes.ts`.
 
 **`support/`:**
+
 - Purpose: Repo-local tooling that supplements built-in linting.
 - Contains: Oxlint JS plugin and rule implementations.
 - Key files: `support/oxlint-plugin-project-rules/index.mjs`, `support/oxlint-plugin-project-rules/rules/*.mjs`.
 
 **`test/`:**
+
 - Purpose: Vitest coverage for commands, runtimes, renderers, and integration flows.
 - Contains: unit tests, scenario tests, harness tests, shared setup.
 - Key files: `test/*.test.ts`, `test/*.scenarios.ts`, `test/test-utils/setup-env.ts`.
 
 **`.pi/`:**
+
 - Purpose: Local runtime config and state for the agent wrapper.
 - Contains: agent settings, modes, sessions, and other user runtime data.
 - Key files: generated/user-managed files under `.pi/`.
 
 **`.planning/`:**
+
 - Purpose: Project planning workspace and generated mapping docs.
 - Contains: planning state, phases, milestones, debug artifacts, and this codebase map.
 - Key files: `.planning/PROJECT.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/phases/`, `.planning/codebase/`.
@@ -167,30 +177,35 @@
 ## Special Directories
 
 **`dist/`:**
+
 - Purpose: compiled and packaged runtime output.
 - Generated: Yes.
 - Committed: Usually yes in this repository; treat as build artifact, not source of truth.
 
 **`bin/`:**
+
 - Purpose: package executables that point at `dist/cli.js`.
 - Generated: Yes, by `scripts/prepare-bin.mjs`.
 - Committed: Yes.
 
 **`support/oxlint-plugin-project-rules/`:**
+
 - Purpose: repo-specific lint rules that enforce local conventions.
 - Generated: No.
 - Committed: Yes.
 
 **`.pi/`:**
+
 - Purpose: runtime configuration and session data for local agent use.
 - Generated: Mostly yes; seeded and mutated by install/runtime code.
 - Committed: No.
 
 **`.planning/`:**
+
 - Purpose: project planning workspace and mapping outputs.
 - Generated: Yes.
 - Committed: Depends on workflow, but treat as generated project state.
 
 ---
 
-*Structure analysis: 2026-05-07*
+_Structure analysis: 2026-05-07_

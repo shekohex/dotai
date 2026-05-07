@@ -7,6 +7,13 @@ export const GsdCommandArgsSchema = Type.Object(
     subcommand: Type.Optional(Type.String()),
     auto: Type.Optional(Type.Boolean()),
     phase: Type.Optional(Type.String()),
+    assumptions: Type.Optional(Type.Boolean()),
+    all: Type.Optional(Type.Boolean()),
+    chain: Type.Optional(Type.Boolean()),
+    text: Type.Optional(Type.Boolean()),
+    analyze: Type.Optional(Type.Boolean()),
+    batch: Type.Optional(Type.Boolean()),
+    power: Type.Optional(Type.Boolean()),
     paths: Type.Optional(Type.Array(Type.String())),
     fast: Type.Optional(Type.Boolean()),
     focus: Type.Optional(
@@ -365,6 +372,99 @@ function parseMapCodebaseArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 
+function parseDiscussPhaseArgs(tokens: string[]): GsdCommandArgs {
+  let phase: string | undefined;
+  let assumptions = false;
+  let auto = false;
+  let all = false;
+  let chain = false;
+  let text = false;
+  let analyze = false;
+  let batch = false;
+  let power = false;
+  const inputParts: string[] = [];
+  let unsupportedModeError: string | undefined;
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--phase") {
+      phase = normalizePhaseToken(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--phase=")) {
+      phase = normalizePhaseToken(token.slice("--phase=".length));
+      continue;
+    }
+    if (token === "--text") {
+      text = true;
+      continue;
+    }
+    if (token === "--assumptions") {
+      assumptions = true;
+      continue;
+    }
+    if (token === "--auto") {
+      auto = true;
+      continue;
+    }
+    if (token === "--all") {
+      all = true;
+      continue;
+    }
+    if (token === "--chain") {
+      chain = true;
+      continue;
+    }
+    if (token === "--analyze") {
+      analyze = true;
+      unsupportedModeError ??=
+        "Unsupported /gsd discuss-phase mode: --analyze overlay is parsed but not implemented in Slice 1.";
+      continue;
+    }
+    if (token === "--batch") {
+      batch = true;
+      unsupportedModeError ??=
+        "Unsupported /gsd discuss-phase mode: --batch overlay is parsed but not implemented in Slice 1.";
+      continue;
+    }
+    if (token === "--power") {
+      power = true;
+      unsupportedModeError ??=
+        "Unsupported /gsd discuss-phase mode: --power overlay is parsed but not implemented in Slice 1.";
+      continue;
+    }
+    if (!token.startsWith("-") && phase === undefined) {
+      phase = normalizePhaseToken(token);
+      continue;
+    }
+    if (!token.startsWith("-")) {
+      inputParts.push(token);
+      continue;
+    }
+    if (token.startsWith("-")) {
+      unsupportedModeError ??= `Unsupported /gsd discuss-phase flag: ${token}.`;
+    }
+  }
+
+  const input = normalizeFreeform(inputParts.join(" "));
+
+  return validateParsedArgs({
+    subcommand: "discuss-phase",
+    ...(phase === undefined ? {} : { phase }),
+    ...(assumptions ? { assumptions: true } : {}),
+    ...(auto ? { auto: true } : {}),
+    ...(all ? { all: true } : {}),
+    ...(chain ? { chain: true } : {}),
+    ...(text ? { text: true } : {}),
+    ...(input === undefined ? {} : { input }),
+    ...(analyze ? { analyze: true } : {}),
+    ...(batch ? { batch: true } : {}),
+    ...(power ? { power: true } : {}),
+    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
+  });
+}
+
 export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
@@ -393,6 +493,10 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
 
   if (subcommand === "map-codebase") {
     return parseMapCodebaseArgs(tokens);
+  }
+
+  if (subcommand === "discuss-phase") {
+    return parseDiscussPhaseArgs(tokens);
   }
 
   let phase: string | undefined;

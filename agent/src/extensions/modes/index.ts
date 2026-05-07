@@ -29,6 +29,7 @@ import {
   registerModeFlags,
   registerModeLifecycleHandlers,
   registerModeShortcuts,
+  subscribeModeFlagRefresh,
   syncModeTools,
   toModeFlagName,
 } from "./orchestration.js";
@@ -243,6 +244,9 @@ export default function modesExtension(pi: ExtensionAPI): void {
   });
 
   registerModeFlags(pi, registeredModeFlags, { orderedModeNames, describeModeSpec, hasText });
+  const unregisterModeFlagRefresh = subscribeModeFlagRefresh(() => {
+    registerModeFlags(pi, registeredModeFlags, { orderedModeNames, describeModeSpec, hasText });
+  });
   registerModeCommand(pi, {
     getModeArgumentCompletions,
     showModePicker,
@@ -279,6 +283,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
+    unregisterModeFlagRefresh();
     unregisterModeEventHandlers();
   });
 }

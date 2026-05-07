@@ -1,344 +1,196 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-05-05
+**Analysis Date:** 2026-05-07
 
 ## Directory Layout
 
 ```text
-[project-root]/
-├── bin/ # package bin wrappers
-├── dist/ # compiled output, generated defaults, copied resources
-├── docs/ # package reference docs
-├── patches/ # patch-package overlays
-├── scripts/ # build, prepare, and postinstall helpers
+.
+├── bin/ # runtime CLI wrappers prepared during build
+├── dist/ # compiled output and copied resources
+├── docs/ # repo-facing documentation and audits
+├── patches/ # patch-package diffs for upstream dependencies
+├── scripts/ # build, postinstall, and packaging scripts
 ├── src/ # TypeScript source
-├── support/ # repo-local tooling and lint rules
-├── test/ # Vitest suites and fixtures
-└── .planning/ # planning workspace used by GSD commands
-```
-
-### `src/` layout
-
-```text
-src/
-├── cli.ts
-├── default-settings.ts
-├── mode-definitions.ts
-├── mode-loading.ts
-├── mode-utils.ts
-├── extensions/
-├── resources/
-├── subagent-sdk/
-└── utils/
-```
-
-### `src/extensions/` layout
-
-```text
-src/extensions/
-├── coreui.ts
-├── executor/
-├── files/
-├── gsd/
-├── interview/
-├── mermaid/
-├── modes/
-├── openusage/
-├── review/
-├── subagent/
-├── websearch/
-└── ...
-```
-
-### `src/resources/` layout
-
-```text
-src/resources/
-├── gsd/
-│   ├── agents/
-│   ├── bin/
-│   ├── docs/
-│   ├── references/
-│   ├── templates/
-│   └── workflows/
-├── modes/
-├── prompts/
-├── skills/
-├── system/
-└── themes/
-```
-
-### `test/` layout
-
-```text
-test/
-├── gsd/
-│   └── fixtures/
-├── test-utils/
-└── *.test.ts / *.scenarios.ts
+│   ├── cli.ts
+│   ├── default-modes.ts
+│   ├── default-settings.ts
+│   ├── extensions/
+│   ├── mode-*.ts
+│   ├── resources/
+│   ├── subagent-sdk/
+│   └── utils/
+├── support/ # repo-local lint plugin and related tooling
+├── test/ # Vitest suite and scenario tests
+├── .pi/ # local agent runtime data and project settings
+└── .planning/ # generated planning workspace and mapped docs
 ```
 
 ## Directory Purposes
 
-**`src/`:**
-
-- Purpose: application source.
-- Contains: CLI bootstrap, extension modules, subagent runtime, bundled resources, shared utilities, and mode loading.
-- Key files: `src/cli.ts`, `src/extensions/index.ts`, `src/subagent-sdk/index.ts`, `src/mode-loading.ts`, `src/default-settings.ts`.
-
-**`src/extensions/`:**
-
-- Purpose: feature modules and runtime integrations.
-- Contains: command registrations, tool definitions, session hooks, UI renderers, provider wiring, feature-specific helpers, and browser assets.
-- Key files: `src/extensions/coreui.ts`, `src/extensions/modes/index.ts`, `src/extensions/gsd/index.ts`, `src/extensions/files/index.ts`, `src/extensions/interview/index.ts`, `src/extensions/websearch/index.ts`, `src/extensions/fetch/index.ts`.
-
-**`src/extensions/gsd/`:**
-
-- Purpose: full GSD workflow implementation.
-- Contains: command router, lifecycle handlers, planning state readers and writers, bundled role prompts, dashboard UI, and instant status commands.
-- Key files: `src/extensions/gsd/commands.ts`, `src/extensions/gsd/index.ts`, `src/extensions/gsd/orchestration.ts`, `src/extensions/gsd/subagents.ts`, `src/extensions/gsd/state/read.ts`, `src/extensions/gsd/state/write.ts`, `src/extensions/gsd/state/runtime.ts`, `src/extensions/gsd/state/schema.ts`.
-
-**`src/extensions/interview/`:**
-
-- Purpose: interview tool implementation and browser UI.
-- Contains: tool registration, request execution, response rendering, structured schemas, and static form assets.
-- Key files: `src/extensions/interview/index.ts`, `src/extensions/interview/execute.ts`, `src/extensions/interview/render.ts`, `src/extensions/interview/server.ts`, `src/extensions/interview/form/index.html`, `src/extensions/interview/form/script.js`, `src/extensions/interview/form/styles.css`.
-
-**`src/extensions/review/`:**
-
-- Purpose: review workflow and review-specific child-session orchestration.
-- Contains: command flow, runtime state, git integration, prompts, execution bridge, and handoff helpers.
-- Key files: `src/extensions/review/index.ts`, `src/extensions/review/command-flow.ts`, `src/extensions/review/command-handler.ts`, `src/extensions/review/deps.ts`, `src/extensions/review/runtime-state.ts`, `src/extensions/review/run-execution.ts`, `src/extensions/review/handoff.ts`.
-
-**`src/extensions/subagent/`:**
-
-- Purpose: `subagent` tool facade and runtime wiring.
-- Contains: tool definition, renderers, execution helpers, and shared runtime state.
-- Key files: `src/extensions/subagent/index.ts`, `src/extensions/subagent/extension.ts`, `src/extensions/subagent/tool.ts`, `src/extensions/subagent/render-details.ts`, `src/extensions/subagent/render-state.ts`.
-
-**`src/extensions/modes/`:**
-
-- Purpose: active-mode selection and persistence in the live session.
-- Contains: command handling, orchestration, lifecycle hooks, flags, tool synchronization, and mode state entries.
-- Key files: `src/extensions/modes/index.ts`, `src/extensions/modes/orchestration.ts`, `src/extensions/modes/runtime.ts`, `src/extensions/modes/actions.ts`, `src/extensions/modes/state.ts`.
-
-**`src/extensions/coreui.ts` and `src/extensions/coreui/`:**
-
-- Purpose: UI state, prompt editor binding, tool override rendering, and status widgets.
-- Contains: core UI lifecycle, tool renderers, TPS metrics, working indicators, and status display helpers.
-- Key files: `src/extensions/coreui.ts`, `src/extensions/coreui/index.ts`, `src/extensions/coreui/tools.ts`, `src/extensions/coreui/tps.ts`, `src/extensions/coreui/working-indicator.ts`.
-
-**`src/extensions/openusage/`:**
-
-- Purpose: provider usage tracking and alerting.
-- Contains: controller, state cache, provider model mapping, event parsing, and view models.
-- Key files: `src/extensions/openusage/controller.ts`, `src/extensions/openusage/state.ts`, `src/extensions/openusage/model-map.ts`, `src/extensions/openusage/types.ts`.
-
-**`src/extensions/files/`:**
-
-- Purpose: file browser over git tree plus session-referenced files.
-- Contains: entry building, selection UI, diff rendering, path helpers, and browser actions.
-- Key files: `src/extensions/files/index.ts`, `src/extensions/files/entry-builder.ts`, `src/extensions/files/selector.ts`, `src/extensions/files/browser-actions.ts`.
-
-**`src/extensions/websearch/`:**
-
-- Purpose: web search and fetch integration built on Firecrawl-compatible APIs.
-- Contains: request execution, parsing, structured result rendering, and schema validation.
-- Key files: `src/extensions/websearch/index.ts`, `src/extensions/websearch/execution.ts`, `src/extensions/websearch/render.ts`, `src/extensions/websearch/types.ts`.
-
-**`src/extensions/fetch/`:**
-
-- Purpose: standalone URL fetch tool.
-- Contains: execution details, renderers, and result shaping.
-- Key files: `src/extensions/fetch/index.ts`, `src/extensions/fetch/execution.ts`, `src/extensions/fetch/render.ts`, `src/extensions/fetch/types.ts`.
-
-**`src/extensions/mermaid/`:**
-
-- Purpose: render mermaid blocks as ASCII and patch assistant message output.
-- Contains: parsing, renderable variants, patching helpers, and tool registration.
-- Key files: `src/extensions/mermaid/index.ts`, `src/extensions/mermaid/parsing.ts`, `src/extensions/mermaid/renderable.ts`, `src/extensions/mermaid/patch.ts`.
-
-**`src/subagent-sdk/`:**
-
-- Purpose: child-session runtime and SDK.
-- Contains: session launch, tmux adapter, persistence, runtime monitoring, event bus, structured output bootstrap, UI helpers, and schema definitions.
-- Key files: `src/subagent-sdk/sdk.ts`, `src/subagent-sdk/runtime.ts`, `src/subagent-sdk/launch.ts`, `src/subagent-sdk/persistence.ts`, `src/subagent-sdk/types.ts`, `src/subagent-sdk/bootstrap.ts`.
-
-**`src/resources/`:**
-
-- Purpose: bundled markdown, JSON, and CJS assets copied into `dist/resources` at build time.
-- Contains: GSD agent prompts, docs, templates, workflows, references, themes, prompt snippets, bundled skill definitions, mode prompts, system prompts, and upstream helper scripts.
-- Key files: `src/resources/gsd/agents/*.md`, `src/resources/gsd/templates/*.md`, `src/resources/gsd/docs/*.md`, `src/resources/gsd/references/*.md`, `src/resources/gsd/workflows/*.md`, `src/resources/gsd/bin/*.cjs`, `src/resources/skills/executor/SKILL.md`, `src/resources/themes/*.json`, `src/resources/modes/*.md`, `src/resources/prompts/*.md`, `src/resources/system/*.md`.
-
-**`scripts/`:**
-
-- Purpose: build-time and install-time automation.
-- Contains: resource copy, default-settings generation, bin wrapper preparation, postinstall hooks, and preview tooling.
-- Key files: `scripts/copy-bundled-resources.mjs`, `scripts/generate-default-settings.mjs`, `scripts/prepare-bin.mjs`, `scripts/postinstall.mjs`.
-
-**`test/`:**
-
-- Purpose: Vitest coverage for features, runtime integration, and regression scenarios.
-- Contains: unit tests, scenario tests, GSD fixtures, test utilities, and harness-driven integration checks.
-- Key files: `test/harness.test.ts`, `test/subagent-sdk.test.ts`, `test/gsd/commands.test.ts`, `test/tool-preview.test.ts`, `test/test-utils/setup-env.ts`, `test/gsd/fixtures/*`.
-
-**`support/`:**
-
-- Purpose: repo-local tooling that is not shipped in the package.
-- Contains: the custom Oxlint plugin and rule implementations used to enforce project-specific constraints.
-- Key files: `support/oxlint-plugin-project-rules/index.mjs`, `support/oxlint-plugin-project-rules/rules/*.mjs`.
-
-**`dist/`:**
-
-- Purpose: build output.
-- Contains: compiled JS, copied resources, generated defaults, and wrapper outputs.
-- Key files: `dist/cli.js`, `dist/default-settings.js`, `dist/defaults/settings.json`, `dist/defaults/modes.json`.
-
 **`bin/`:**
-
-- Purpose: package bin wrappers.
-- Contains: executable shims for Unix and Windows.
+- Purpose: Executable wrappers for the published `pi` command.
+- Contains: `pi.js`, `pi.cmd`.
 - Key files: `bin/pi.js`, `bin/pi.cmd`.
 
-**`docs/`:**
+**`dist/`:**
+- Purpose: Build output from `tsc` plus copied bundled resources and generated defaults.
+- Contains: compiled JS, `dist/resources/`, `dist/defaults/`, extension output.
+- Key files: `dist/cli.js`, `dist/defaults/settings.json`, `dist/defaults/modes.json`.
 
-- Purpose: human-readable package documentation.
-- Contains: reference docs for the subagent SDK and related behavior.
-- Key files: `docs/subagent-sdk.md`, `docs/gsd-sdk.md`, `docs/subagent-structured-output-spec.md`.
+**`docs/`:**
+- Purpose: Manual documentation for the wrapper, GSD, and subagent systems.
+- Contains: markdown guides and audit notes.
+- Key files: `docs/gsd-sdk.md`, `docs/subagent-sdk.md`, `docs/subagent-structured-output-spec.md`.
 
 **`patches/`:**
+- Purpose: `patch-package` diffs against `@mariozechner/pi-coding-agent` and related dependencies.
+- Contains: `.patch` files.
+- Key files: any file under `patches/` with dependency-specific naming.
 
-- Purpose: patch-package overlays for upstream dependency changes.
-- Contains: generated patch files applied during install or build workflows.
-- Key files: files under `patches/`.
+**`scripts/`:**
+- Purpose: Build-time and install-time automation.
+- Contains: resource copy, default settings generation, bin wrapper creation, postinstall, preview tooling.
+- Key files: `scripts/copy-bundled-resources.mjs`, `scripts/generate-default-settings.mjs`, `scripts/prepare-bin.mjs`, `scripts/postinstall.mjs`.
+
+**`src/`:**
+- Purpose: All application source code.
+- Contains: entrypoints, feature extensions, subagent runtime, bundled resources, shared utilities.
+- Key files: `src/cli.ts`, `src/extensions/index.ts`, `src/subagent-sdk/index.ts`, `src/default-settings.ts`, `src/default-modes.ts`.
+
+**`support/`:**
+- Purpose: Repo-local tooling that supplements built-in linting.
+- Contains: Oxlint JS plugin and rule implementations.
+- Key files: `support/oxlint-plugin-project-rules/index.mjs`, `support/oxlint-plugin-project-rules/rules/*.mjs`.
+
+**`test/`:**
+- Purpose: Vitest coverage for commands, runtimes, renderers, and integration flows.
+- Contains: unit tests, scenario tests, harness tests, shared setup.
+- Key files: `test/*.test.ts`, `test/*.scenarios.ts`, `test/test-utils/setup-env.ts`.
+
+**`.pi/`:**
+- Purpose: Local runtime config and state for the agent wrapper.
+- Contains: agent settings, modes, sessions, and other user runtime data.
+- Key files: generated/user-managed files under `.pi/`.
 
 **`.planning/`:**
-
-- Purpose: project planning workspace consumed by GSD commands.
-- Contains: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, phase artifacts, and codebase-map docs.
-- Key files: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`.
+- Purpose: Project planning workspace and generated mapping docs.
+- Contains: planning state, phases, milestones, debug artifacts, and this codebase map.
+- Key files: `.planning/PROJECT.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/phases/`, `.planning/codebase/`.
 
 ## Key File Locations
 
 **Entry Points:**
 
-- `src/cli.ts`: runtime bootstrap into upstream agent.
-- `bin/pi.js`: package bin wrapper that loads compiled CLI.
-- `src/extensions/gsd/index.ts`: `/gsd` command registration and session hooks.
-- `src/extensions/interview/index.ts`: interview tool registration.
-- `src/extensions/websearch/index.ts`: web search tool registration.
-- `src/extensions/subagent/index.ts`: subagent tool registration.
+- `src/cli.ts`: package runtime entry that installs bundled resources and launches upstream `main(...)`.
+- `bin/pi.js`: installed Unix launcher that forwards to `dist/cli.js`.
+- `bin/pi.cmd`: Windows launcher for the same CLI.
+- `src/extensions/index.ts`: bundled extension factory list consumed by the upstream host.
+- `src/subagent-sdk/index.ts`: public SDK barrel for child-session orchestration.
 
 **Configuration:**
 
-- `package.json`: package metadata, scripts, dependency graph, bin definition.
-- `tsconfig.json`: NodeNext TypeScript build config.
-- `vitest.config.ts`: test runner config.
-- `.oxlintrc.json`: lint configuration and project-rules plugin wiring.
+- `package.json`: package metadata, scripts, published bin, and dependency list.
+- `tsconfig.json`: TypeScript compiler configuration.
+- `vitest.config.ts`: Vitest test runner configuration.
+- `.oxlintrc.json`: Oxlint config plus repo-local JS plugin.
 - `.oxfmtrc.json`: formatter configuration.
+- `scripts/postinstall.mjs`: seeds defaults and applies dependency patches.
 
 **Core Logic:**
 
-- `src/extensions/index.ts`: bundled extension composition.
-- `src/extensions/coreui.ts`: UI state and tool override wiring.
-- `src/extensions/modes/index.ts`: runtime mode selection.
-- `src/extensions/gsd/`: planning workflow.
-- `src/subagent-sdk/`: child-session runtime.
-- `src/mode-loading.ts` and `src/mode-utils.ts`: shared mode registry and loader.
+- `src/extensions/coreui/index.ts`: host UI chrome, tool overrides, footer and editor wiring.
+- `src/extensions/modes/index.ts`: mode flags, mode state restoration, and mode switching events.
+- `src/extensions/gsd/index.ts`: GSD command entrypoint and planning-session lifecycle.
+- `src/extensions/review/index.ts`: review command and review-state coordination.
+- `src/extensions/executor/index.ts`: executor integration command and tool registration.
+- `src/extensions/interview/index.ts`: interview tool registration.
+- `src/subagent-sdk/runtime/*`: child-session spawn, resume, message, and monitoring logic.
 
 **Testing:**
 
-- `test/*.test.ts`: focused unit and integration tests.
-- `test/*.scenarios.ts`: end-to-end style scenario tests.
-- `test/gsd/fixtures/`: sample planning workspaces used by GSD tests.
-- `test/test-utils/setup-env.ts`: shared test environment setup.
+- `test/*.test.ts`: standard Vitest tests.
+- `test/*.scenarios.ts`: multi-step scenario coverage.
+- `test/gsd/*.test.ts`: GSD-specific command and workflow tests.
+- `test/test-utils/setup-env.ts`: global test environment bootstrap.
 
 ## Naming Conventions
 
 **Files:**
 
-- Feature entry modules use `index.ts` when a directory exposes a public surface, for example `src/extensions/gsd/index.ts`, `src/extensions/subagent/index.ts`, and `src/subagent-sdk/index.ts`.
-- Concern-specific helpers use suffixes like `-state.ts`, `-schema.ts`, `-types.ts`, `-utils.ts`, `-render.ts`, `-loading.ts`, `-runtime.ts`, and `-settings.ts`.
-- GSD lifecycle and orchestration modules use descriptive verbs, for example `src/extensions/gsd/commands.ts`, `src/extensions/gsd/orchestration.ts`, and `src/extensions/gsd/state/read.ts`.
+- Feature modules use lower kebab-case filenames: `src/extensions/coreui/working-indicator.ts`, `src/extensions/gsd/workflow-launch.ts`.
+- Public barrels use `index.ts`: `src/extensions/review/index.ts`, `src/subagent-sdk/index.ts`.
+- Tests use `*.test.ts`; scenario suites use `*.scenarios.ts`.
+- Resource files mirror runtime labels: `review.md`, `commiter.md`, `catppuccin-mocha.json`, `SKILL.md`.
 
 **Directories:**
 
-- Feature areas use semantic names under `src/extensions/`, such as `coreui`, `executor`, `review`, `websearch`, and `gsd`.
-- Bundled assets use content-shaped directories under `src/resources/`, such as `agents`, `templates`, `docs`, `themes`, `prompts`, `skills`, and `system`.
-- Test fixtures mirror workflow shape under `test/gsd/fixtures/`.
+- Feature directories match the command or subsystem name: `src/extensions/review/`, `src/extensions/gsd/`, `src/extensions/executor/`.
+- Resource directories group by asset type: `src/resources/modes/`, `src/resources/themes/`, `src/resources/gsd/`.
+- Support tooling stays under `support/` instead of `src/`.
 
 ## Where to Add New Code
 
-**New feature:**
+**New Feature:**
 
-- Primary code: `src/extensions/<feature>.ts` or `src/extensions/<feature>/index.ts`.
-- Tests: `test/<feature>.test.ts` and, if workflow-heavy, `test/<feature>.scenarios.ts`.
+- Primary code: `src/extensions/<feature>/index.ts` plus supporting modules in the same folder.
+- Tests: `test/<feature>.test.ts` or `test/<feature>/*.test.ts`.
 
-**New GSD command or lifecycle step:**
+**New Command / Tool Bundle:**
 
-- Implementation: `src/extensions/gsd/commands.ts`, `src/extensions/gsd/orchestration.ts`, or `src/extensions/gsd/state/*` depending on scope.
-- Router hookup: `src/extensions/gsd/handlers.ts` and `src/extensions/gsd/index.ts`.
-- Bundled prompts and docs: `src/resources/gsd/agents/`, `src/resources/gsd/templates/`, `src/resources/gsd/docs/`, `src/resources/gsd/references/`.
+- Implementation: `src/extensions/<feature>/index.ts`.
+- Bundle registration: `src/extensions/definitions-group-a.ts`, `src/extensions/definitions-group-b.ts`, or `src/extensions/definitions-group-c.ts`.
 
-**New subagent behavior:**
+**New Subagent Capability:**
 
-- Implementation: `src/subagent-sdk/<area>.ts`.
-- Public export: `src/subagent-sdk/index.ts`.
-- Runtime tests: `test/subagent-sdk*.ts` and the review/GSD tests that consume subagents.
+- Runtime: `src/subagent-sdk/runtime/`.
+- Public API: `src/subagent-sdk/index.ts` and `src/subagent-sdk/sdk.ts`.
+- Bootstrap/state schema: `src/subagent-sdk/bootstrap*.ts`, `src/subagent-sdk/schema-definitions.ts`, `src/subagent-sdk/types.ts`.
 
-**New bundled prompt, template, or theme:**
+**New GSD workflow logic:**
 
-- Assets: `src/resources/<category>/...`.
-- Copy path: `scripts/copy-bundled-resources.mjs` mirrors `src/resources/` into `dist/resources/`.
+- Planning state and file I/O: `src/extensions/gsd/state/`.
+- Command wiring: `src/extensions/gsd/commands.ts`, `src/extensions/gsd/handlers.ts`.
+- Workflow launch behavior: `src/extensions/gsd/workflow-launch.ts`.
+- Built-in roles and modes: `src/extensions/gsd/roles.ts`, `src/extensions/gsd/modes.ts`.
 
-**New shared helper:**
+**New bundled docs/prompts/themes/skills:**
 
-- Shared helpers: `src/utils/` for low-level primitives, or `src/mode-*.ts` for mode configuration and loading.
+- Assets: `src/resources/gsd/`, `src/resources/modes/`, `src/resources/prompts/`, `src/resources/themes/`, `src/resources/skills/`, `src/resources/system/`.
+- Copy path into build output: `scripts/copy-bundled-resources.mjs`.
+
+**Shared utilities:**
+
+- Small helpers: `src/utils/`.
+- Shared extension-level helpers: `src/extensions/session-launch-utils.ts`, `src/extensions/session-replacement.ts`, `src/extensions/inline-extension-names.ts`.
 
 ## Special Directories
 
-**`support/oxlint-plugin-project-rules/`:**
-
-- Purpose: repo-local lint plugin for project-specific static rules.
-- Generated: No.
-- Committed: Yes.
-
-**`src/resources/gsd/bin/`:**
-
-- Purpose: bundled upstream GSD CLI assets and helper scripts.
-- Generated: No in-source; copied into `dist/resources` during build.
-- Committed: Yes.
-
-**`src/extensions/interview/form/`:**
-
-- Purpose: static browser assets for the interview tool UI.
-- Generated: No.
-- Committed: Yes.
-
-**`test/gsd/fixtures/`:**
-
-- Purpose: on-disk planning workspaces for GSD tests.
-- Generated: Test-only fixtures.
-- Committed: Yes.
-
 **`dist/`:**
-
-- Purpose: compiled package output and copied resources.
+- Purpose: compiled and packaged runtime output.
 - Generated: Yes.
-- Committed: Yes in this repo layout.
+- Committed: Usually yes in this repository; treat as build artifact, not source of truth.
 
 **`bin/`:**
+- Purpose: package executables that point at `dist/cli.js`.
+- Generated: Yes, by `scripts/prepare-bin.mjs`.
+- Committed: Yes.
 
-- Purpose: executable wrappers for package binary entry.
-- Generated: Yes.
-- Committed: Yes in this repo layout.
+**`support/oxlint-plugin-project-rules/`:**
+- Purpose: repo-specific lint rules that enforce local conventions.
+- Generated: No.
+- Committed: Yes.
+
+**`.pi/`:**
+- Purpose: runtime configuration and session data for local agent use.
+- Generated: Mostly yes; seeded and mutated by install/runtime code.
+- Committed: No.
 
 **`.planning/`:**
-
-- Purpose: mutable planning workspace for GSD and codebase mapping.
-- Generated: Runtime and command output.
-- Committed: Workspace state only when intentionally checked in.
+- Purpose: project planning workspace and mapping outputs.
+- Generated: Yes.
+- Committed: Depends on workflow, but treat as generated project state.
 
 ---
 
-_Structure analysis: 2026-05-05_
+*Structure analysis: 2026-05-07*

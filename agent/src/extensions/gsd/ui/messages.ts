@@ -3,6 +3,7 @@ import { Box, Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI, MessageRenderer } from "@mariozechner/pi-coding-agent";
 
 export const GSD_CODEBASE_MAP_SUMMARY_MESSAGE = "gsd-codebase-map-summary";
+export const GSD_INTEL_REFRESH_SUMMARY_MESSAGE = "gsd-intel-refresh-summary";
 
 export type GsdCodebaseMapAreaSummary = {
   focus: "tech" | "arch" | "quality" | "concerns";
@@ -15,6 +16,11 @@ export type GsdCodebaseMapAreaSummary = {
 export type GsdCodebaseMapSummaryDetails = {
   codebaseDir: string;
   areas: GsdCodebaseMapAreaSummary[];
+};
+
+export type GsdIntelRefreshSummaryDetails = {
+  intelDir: string;
+  sessionId: string;
 };
 
 function createMessageBox(lines: string[], theme: Parameters<MessageRenderer>[2]): Component {
@@ -62,6 +68,26 @@ function createCodebaseMapSummaryRenderer(): MessageRenderer<GsdCodebaseMapSumma
   };
 }
 
+function createIntelRefreshSummaryRenderer(): MessageRenderer<GsdIntelRefreshSummaryDetails> {
+  return (message, _state, theme) => {
+    const details = message.details;
+    const content = typeof message.content === "string" ? message.content : "";
+    const lines = [theme.fg("accent", theme.bold("GSD Intel Refresh")), content];
+
+    if (details) {
+      lines.push("");
+      lines.push(theme.fg("dim", `dir: ${details.intelDir}`));
+      lines.push(theme.fg("dim", `session: ${details.sessionId}`));
+    }
+
+    return createMessageBox(lines, theme);
+  };
+}
+
 export function registerGsdMessageRenderers(pi: ExtensionAPI): void {
   pi.registerMessageRenderer(GSD_CODEBASE_MAP_SUMMARY_MESSAGE, createCodebaseMapSummaryRenderer());
+  pi.registerMessageRenderer(
+    GSD_INTEL_REFRESH_SUMMARY_MESSAGE,
+    createIntelRefreshSummaryRenderer(),
+  );
 }

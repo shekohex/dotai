@@ -19,22 +19,31 @@ const crypto = require("crypto");
 const INTEL_DIR = ".planning/intel";
 
 const INTEL_FILES = {
-  files: "file-roles.json",
-  apis: "api-map.json",
-  deps: "dependency-graph.json",
-  arch: "arch-decisions.json",
+  files: "files.json",
+  apis: "apis.json",
+  deps: "deps.json",
+  arch: "arch.md",
   stack: "stack.json",
 };
 
 const INTEL_FILE_CANDIDATES = {
-  files: ["file-roles.json", "files.json"],
-  apis: ["api-map.json", "apis.json"],
-  deps: ["dependency-graph.json", "deps.json"],
-  arch: ["arch-decisions.json", "arch.json"],
+  files: ["files.json", "file-roles.json"],
+  apis: ["apis.json", "api-map.json"],
+  deps: ["deps.json", "dependency-graph.json"],
+  arch: ["arch.md", "arch.json", "arch-decisions.json"],
   stack: ["stack.json"],
 };
 
 const INTEL_SNAPSHOT_CANDIDATES = [".last-refresh.json", "snapshot.json"];
+const ARCH_FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/u;
+
+function invalidIntelFile(file, error, preferredOver = []) {
+  return {
+    file,
+    error,
+    ...(preferredOver.length === 0 ? {} : { preferredOver }),
+  };
+}
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
@@ -96,42 +105,107 @@ function intelFilePath(planningDir, filename) {
 
 function resolveIntelFilePath(planningDir, key) {
   const filenames = INTEL_FILE_CANDIDATES[key] || [];
+  const existing = [];
   for (const filename of filenames) {
     const filePath = intelFilePath(planningDir, filename);
     if (fs.existsSync(filePath)) {
-      return { filePath, filename };
+      existing.push({ filePath, filename });
     }
   }
+  if (existing.length > 1) {
+    return {
+      ...existing[0],
+      ambiguous: true,
+      ignoredFilenames: existing.slice(1).map((entry) => entry.filename),
+    };
+  }
+  if (existing.length === 1) {
+    return { ...existing[0], ambiguous: false, ignoredFilenames: [] };
+  }
   const fallback = filenames[0] || INTEL_FILES[key];
-  return { filePath: intelFilePath(planningDir, fallback), filename: fallback };
+  return {
+    filePath: intelFilePath(planningDir, fallback),
+    filename: fallback,
+    ambiguous: false,
+    ignoredFilenames: [],
+  };
 }
 
 function resolveSnapshotPath(planningDir) {
+  const existing = [];
   for (const filename of INTEL_SNAPSHOT_CANDIDATES) {
     const filePath = intelFilePath(planningDir, filename);
     if (fs.existsSync(filePath)) {
-      return { filePath, filename };
+      existing.push({ filePath, filename });
     }
+  }
+  if (existing.length > 1) {
+    return {
+      ...existing[0],
+      ambiguous: true,
+      ignoredFilenames: existing.slice(1).map((entry) => entry.filename),
+    };
+  }
+  if (existing.length === 1) {
+    return { ...existing[0], ambiguous: false, ignoredFilenames: [] };
   }
   return {
     filePath: intelFilePath(planningDir, INTEL_SNAPSHOT_CANDIDATES[0]),
     filename: INTEL_SNAPSHOT_CANDIDATES[0],
+    ambiguous: false,
+    ignoredFilenames: [],
   };
 }
 
-/**
- * Safely read and parse a JSON intel file. Returns null if file doesn't exist or can't be parsed.
- *
- * @param {string} filePath
- * @returns {object | null}
- */
-function safeReadJson(filePath) {
+function readIntelUpdatedAt(filePath, isJson) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  if (isJson) {
+    const data = safeReadJson(filePath);
+    if (data.ok && data.value._meta && data.value._meta.updated_at) {
+      return data.value._meta.updated_at;
+    }
+    return null;
+  }
+
   try {
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const content = fs.readFileSync(filePath, "utf8");
+    const parsedArch = parseArchMarkdownMeta(content);
+    return parsedArch.ok ? parsedArch.updatedAt : null;
   } catch (_e) {
     return null;
   }
+}
+
+/**
+ * Safely read and parse a JSON intel file.
+ *
+ * @param {string} filePath
+ * @returns {{ ok: true; value: object }
+ *   | { ok: false; missing: true }
+ *   | { ok: false; invalid: true; error: string }}
+ */
+function safeReadJson(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return { ok: false, missing: true };
+    return { ok: true, value: JSON.parse(fs.readFileSync(filePath, "utf8")) };
+  } catch (error) {
+    return {
+      ok: false,
+      invalid: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function searchJsonFile(filePath, term) {
+  const parsed = safeReadJson(filePath);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return { ok: true, value: searchJsonEntries(parsed.value, term) };
 }
 
 /**
@@ -147,6 +221,245 @@ function hashFile(filePath) {
     return crypto.createHash("sha256").update(content).digest("hex");
   } catch (_e) {
     return null;
+  }
+}
+
+function parseArchMarkdownMeta(content) {
+  const frontmatterMatch = content.match(ARCH_FRONTMATTER_PATTERN);
+  if (!frontmatterMatch) {
+    return { ok: false, error: "missing YAML frontmatter" };
+  }
+
+  const frontmatter = frontmatterMatch[1];
+  const updatedAtMatch = frontmatter.match(/^updated_at:\s*"([^"]+)"\s*$/mu);
+  if (!updatedAtMatch) {
+    return { ok: false, error: "missing frontmatter updated_at" };
+  }
+
+  const updatedAt = updatedAtMatch[1];
+  if (Number.isNaN(new Date(updatedAt).getTime())) {
+    return { ok: false, error: "invalid frontmatter updated_at" };
+  }
+
+  return { ok: true, updatedAt, body: content.slice(frontmatterMatch[0].length).trim() };
+}
+
+function isValidSnapshotData(data) {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "hashes" in data &&
+    typeof data.hashes === "object" &&
+    data.hashes !== null &&
+    !Array.isArray(data.hashes) &&
+    "timestamp" in data &&
+    typeof data.timestamp === "string"
+  );
+}
+
+function getPreviousHashForIntelFile(prevHashes, key, resolvedFilename) {
+  const candidates = INTEL_FILE_CANDIDATES[key] || [resolvedFilename];
+  for (const candidate of candidates) {
+    const previousHash = prevHashes[candidate];
+    if (typeof previousHash === "string" && previousHash.length > 0) {
+      return previousHash;
+    }
+  }
+  return null;
+}
+
+function isCanonicalIntelFilename(key, filename) {
+  return INTEL_FILES[key] === filename;
+}
+
+function validateCanonicalIntelData(key, data) {
+  if (!data || typeof data !== "object") {
+    return "invalid root object";
+  }
+  if (!data._meta || typeof data._meta !== "object") {
+    return "missing _meta";
+  }
+  if (typeof data._meta.updated_at !== "string") {
+    return "missing _meta.updated_at";
+  }
+  if (Number.isNaN(new Date(data._meta.updated_at).getTime())) {
+    return "invalid _meta.updated_at";
+  }
+  if (typeof data._meta.version !== "number") {
+    return "missing _meta.version";
+  }
+  if (!data.entries || typeof data.entries !== "object") {
+    return "missing entries";
+  }
+
+  if (key === "files") {
+    const validFileTypes = new Set([
+      "entry-point",
+      "module",
+      "config",
+      "test",
+      "script",
+      "type-def",
+      "style",
+      "template",
+      "data",
+    ]);
+    for (const entry of Object.values(data.entries)) {
+      if (!entry || typeof entry !== "object") return "invalid file entry";
+      if (!Array.isArray(entry.exports)) return "invalid files.json exports";
+      if (!Array.isArray(entry.imports)) return "invalid files.json imports";
+      if (typeof entry.type !== "string" || !validFileTypes.has(entry.type)) {
+        return "invalid files.json type";
+      }
+    }
+  }
+
+  if (key === "apis") {
+    for (const entry of Object.values(data.entries)) {
+      if (!entry || typeof entry !== "object") return "invalid api entry";
+      if (typeof entry.method !== "string") return "invalid apis.json method";
+      if (typeof entry.path !== "string") return "invalid apis.json path";
+      if (!Array.isArray(entry.params)) return "invalid apis.json params";
+      if (typeof entry.file !== "string") return "invalid apis.json file";
+      if (typeof entry.description !== "string") return "invalid apis.json description";
+    }
+  }
+
+  if (key === "deps") {
+    const validDependencyTypes = new Set(["production", "development", "peer", "optional"]);
+    for (const entry of Object.values(data.entries)) {
+      if (!entry || typeof entry !== "object") return "invalid dependency entry";
+      if (typeof entry.version !== "string") return "invalid deps.json version";
+      if (typeof entry.type !== "string" || !validDependencyTypes.has(entry.type)) {
+        return "invalid deps.json type";
+      }
+      if (!Array.isArray(entry.used_by)) return "invalid deps.json used_by";
+      if (typeof entry.invocation !== "string") return "invalid deps.json invocation";
+    }
+  }
+
+  if (key === "stack") {
+    if (!Array.isArray(data.languages)) return "invalid stack.json languages";
+    if (!Array.isArray(data.frameworks)) return "invalid stack.json frameworks";
+    if (!Array.isArray(data.tools)) return "invalid stack.json tools";
+    if (typeof data.build_system !== "string") return "invalid stack.json build_system";
+    if (typeof data.test_framework !== "string") return "invalid stack.json test_framework";
+    if (typeof data.package_manager !== "string") return "invalid stack.json package_manager";
+    if (!Array.isArray(data.content_formats)) return "invalid stack.json content_formats";
+  }
+
+  return null;
+}
+
+function resolveFileCandidates(basePath) {
+  return [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    `${basePath}.mts`,
+    `${basePath}.cts`,
+    `${basePath}.mjs`,
+    `${basePath}.cjs`,
+    `${basePath}.json`,
+  ];
+}
+
+function isPathInsideWorkspace(workspaceDir, candidatePath) {
+  const relativePath = path.relative(workspaceDir, candidatePath);
+  return relativePath !== "" && !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
+}
+
+function isExactInRepoFile(workspaceDir, targetPath) {
+  if (!isPathInsideWorkspace(workspaceDir, targetPath)) {
+    return false;
+  }
+  try {
+    return fs.existsSync(targetPath) && fs.statSync(targetPath).isFile();
+  } catch (_error) {
+    return false;
+  }
+}
+
+function resolvesToInRepoFileWithExtensionProbing(workspaceDir, targetPath) {
+  for (const candidate of resolveFileCandidates(targetPath)) {
+    if (isExactInRepoFile(workspaceDir, candidate)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function validateCanonicalIntelReferences(planningDir, key, data) {
+  const workspaceDir = path.dirname(planningDir);
+
+  if (key === "files") {
+    for (const [entryPath, entry] of Object.entries(data.entries)) {
+      const absoluteEntryPath = path.resolve(workspaceDir, entryPath);
+      if (!isExactInRepoFile(workspaceDir, absoluteEntryPath)) {
+        return `missing files.json entry path: ${entryPath}`;
+      }
+      for (const importedPath of entry.imports) {
+        if (typeof importedPath !== "string") {
+          return `invalid import path for ${entryPath}`;
+        }
+        if (!(importedPath.startsWith("./") || importedPath.startsWith("../"))) {
+          continue;
+        }
+        const absoluteImportPath = path.resolve(path.dirname(absoluteEntryPath), importedPath);
+        if (!resolvesToInRepoFileWithExtensionProbing(workspaceDir, absoluteImportPath)) {
+          return `missing files.json import path: ${entryPath} -> ${importedPath}`;
+        }
+      }
+    }
+  }
+
+  if (key === "apis") {
+    for (const entry of Object.values(data.entries)) {
+      const absoluteFilePath = path.resolve(workspaceDir, entry.file);
+      if (!isExactInRepoFile(workspaceDir, absoluteFilePath)) {
+        return `missing apis.json file path: ${entry.file}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function readValidatedIntelJson(planningDir, key, resolved) {
+  const parsed = safeReadJson(resolved.filePath);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (isCanonicalIntelFilename(key, resolved.filename)) {
+    const schemaError = validateCanonicalIntelData(key, parsed.value);
+    if (schemaError !== null) {
+      return { ok: false, invalid: true, error: schemaError };
+    }
+    const referenceError = validateCanonicalIntelReferences(planningDir, key, parsed.value);
+    if (referenceError !== null) {
+      return { ok: false, invalid: true, error: referenceError };
+    }
+  }
+  return parsed;
+}
+
+function readValidatedArchMarkdown(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return { ok: false, missing: true };
+    const content = fs.readFileSync(filePath, "utf8");
+    const parsedArch = parseArchMarkdownMeta(content);
+    if (!parsedArch.ok) {
+      return { ok: false, invalid: true, error: parsedArch.error };
+    }
+    return { ok: true, value: { content, meta: parsedArch } };
+  } catch (error) {
+    return {
+      ok: false,
+      invalid: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -239,22 +552,58 @@ function intelQuery(term, planningDir) {
   if (!isIntelEnabled(planningDir)) return disabledResponse();
 
   const matches = [];
+  const invalid_files = [];
   let total = 0;
 
   // Search all JSON intel files
-  for (const [_key, filename] of Object.entries(INTEL_FILES)) {
-    const { filePath, filename: resolvedFilename } = resolveIntelFilePath(planningDir, _key);
-    const data = safeReadJson(filePath);
-    if (!data) continue;
+  for (const [key] of Object.entries(INTEL_FILES)) {
+    const resolved = resolveIntelFilePath(planningDir, key);
+    const isArchMarkdown = resolved.filename === "arch.md";
+    if (isArchMarkdown) {
+      const validatedArch = readValidatedArchMarkdown(resolved.filePath);
+      if (!validatedArch.ok) {
+        if (validatedArch.invalid) {
+          invalid_files.push(
+            invalidIntelFile(resolved.filename, validatedArch.error, resolved.ignoredFilenames),
+          );
+        }
+        continue;
+      }
+      const entries = searchArchMd(resolved.filePath, term).map((line) => ({
+        key: line,
+        value: line,
+      }));
+      if (entries.length > 0) {
+        const source = resolved.ambiguous
+          ? `${resolved.filename} (preferred over ${resolved.ignoredFilenames.join(", ")})`
+          : resolved.filename;
+        matches.push({ source, entries });
+        total += entries.length;
+      }
+      continue;
+    }
 
-    const found = searchJsonEntries(data, term);
-    if (found.length > 0) {
-      matches.push({ source: resolvedFilename, entries: found });
-      total += found.length;
+    const found = readValidatedIntelJson(planningDir, key, resolved);
+    if (!found.ok) {
+      if (found.invalid) {
+        invalid_files.push(
+          invalidIntelFile(resolved.filename, found.error, resolved.ignoredFilenames),
+        );
+      }
+      continue;
+    }
+
+    const entries = searchJsonEntries(found.value, term);
+    if (entries.length > 0) {
+      const source = resolved.ambiguous
+        ? `${resolved.filename} (preferred over ${resolved.ignoredFilenames.join(", ")})`
+        : resolved.filename;
+      matches.push({ source, entries });
+      total += entries.length;
     }
   }
 
-  return { matches, term, total };
+  return { matches, term, total, ...(invalid_files.length === 0 ? {} : { invalid_files }) };
 }
 
 /**
@@ -270,25 +619,61 @@ function intelStatus(planningDir) {
   const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
   const now = Date.now();
   const files = {};
+  const invalid_files = [];
   let overallStale = false;
 
-  for (const [_key, filename] of Object.entries(INTEL_FILES)) {
-    const { filePath, filename: resolvedFilename } = resolveIntelFilePath(planningDir, _key);
-    const exists = fs.existsSync(filePath);
+  for (const [key] of Object.entries(INTEL_FILES)) {
+    const resolved = resolveIntelFilePath(planningDir, key);
+    const exists = fs.existsSync(resolved.filePath);
+    const label = resolved.ambiguous
+      ? `${resolved.filename} (preferred over ${resolved.ignoredFilenames.join(", ")})`
+      : resolved.filename;
 
     if (!exists) {
-      files[resolvedFilename] = { exists: false, updated_at: null, stale: true };
+      files[label] = { exists: false, updated_at: null, stale: true };
       overallStale = true;
       continue;
     }
 
-    let updatedAt = null;
-
-    // All intel files are JSON — read _meta.updated_at
-    const data = safeReadJson(filePath);
-    if (data && data._meta && data._meta.updated_at) {
-      updatedAt = data._meta.updated_at;
+    if (resolved.filename !== "arch.md") {
+      const parsed = readValidatedIntelJson(planningDir, key, resolved);
+      if (!parsed.ok) {
+        if (parsed.invalid) {
+          invalid_files.push(
+            invalidIntelFile(resolved.filename, parsed.error, resolved.ignoredFilenames),
+          );
+          files[label] = { exists: true, updated_at: null, stale: true };
+          overallStale = true;
+        }
+        continue;
+      }
+    } else {
+      try {
+        const content = fs.readFileSync(resolved.filePath, "utf8");
+        const parsedArch = parseArchMarkdownMeta(content);
+        if (!parsedArch.ok) {
+          invalid_files.push(
+            invalidIntelFile(resolved.filename, parsedArch.error, resolved.ignoredFilenames),
+          );
+          files[label] = { exists: true, updated_at: null, stale: true };
+          overallStale = true;
+          continue;
+        }
+      } catch (error) {
+        invalid_files.push(
+          invalidIntelFile(
+            resolved.filename,
+            error instanceof Error ? error.message : String(error),
+            resolved.ignoredFilenames,
+          ),
+        );
+        files[label] = { exists: true, updated_at: null, stale: true };
+        overallStale = true;
+        continue;
+      }
     }
+
+    const updatedAt = readIntelUpdatedAt(resolved.filePath, resolved.filename !== "arch.md");
 
     let stale = true;
     if (updatedAt) {
@@ -297,10 +682,14 @@ function intelStatus(planningDir) {
     }
 
     if (stale) overallStale = true;
-    files[resolvedFilename] = { exists: true, updated_at: updatedAt, stale };
+    files[label] = { exists: true, updated_at: updatedAt, stale };
   }
 
-  return { files, overall_stale: overallStale };
+  return {
+    files,
+    overall_stale: overallStale,
+    ...(invalid_files.length === 0 ? {} : { invalid_files }),
+  };
 }
 
 /**
@@ -308,43 +697,113 @@ function intelStatus(planningDir) {
  *
  * @param {string} planningDir - Path to .planning directory
  * @returns {{ changed: string[]; added: string[]; removed: string[] }
+ *   | {
+ *       invalid_baseline: true;
+ *       message: string;
+ *       invalid_files?: Array<{ file: string; error: string; preferredOver?: string[] }>;
+ *     }
  *   | { no_baseline: true }
  *   | { disabled: true; message: string }}
  */
 function intelDiff(planningDir) {
   if (!isIntelEnabled(planningDir)) return disabledResponse();
 
-  const snapshotPath = resolveSnapshotPath(planningDir).filePath;
-  const snapshot = safeReadJson(snapshotPath);
+  const snapshotResolution = resolveSnapshotPath(planningDir);
+  const snapshot = safeReadJson(snapshotResolution.filePath);
+  const invalid_files = [];
 
-  if (!snapshot) {
+  if (!snapshot.ok) {
+    if (snapshot.invalid) {
+      invalid_files.push(
+        invalidIntelFile(
+          snapshotResolution.filename,
+          snapshot.error,
+          snapshotResolution.ignoredFilenames,
+        ),
+      );
+      return {
+        invalid_baseline: true,
+        message: "Intel diff unavailable: baseline snapshot is invalid.",
+        invalid_files,
+      };
+    }
     return { no_baseline: true };
   }
 
-  const prevHashes = snapshot.hashes || {};
+  if (!isValidSnapshotData(snapshot.value)) {
+    invalid_files.push(
+      invalidIntelFile(
+        snapshotResolution.filename,
+        "invalid snapshot schema",
+        snapshotResolution.ignoredFilenames,
+      ),
+    );
+    return {
+      invalid_baseline: true,
+      message: "Intel diff unavailable: baseline snapshot is invalid.",
+      invalid_files,
+    };
+  }
+
+  const prevHashes = snapshot.value.hashes || {};
   const changed = [];
   const added = [];
   const removed = [];
 
   // Check current files against snapshot
-  for (const [_key, filename] of Object.entries(INTEL_FILES)) {
-    const { filePath, filename: resolvedFilename } = resolveIntelFilePath(planningDir, _key);
-    const currentHash = hashFile(filePath);
+  for (const [key] of Object.entries(INTEL_FILES)) {
+    const resolved = resolveIntelFilePath(planningDir, key);
+    const label = resolved.ambiguous
+      ? `${resolved.filename} (preferred over ${resolved.ignoredFilenames.join(", ")})`
+      : resolved.filename;
+    const previousHash = getPreviousHashForIntelFile(prevHashes, key, resolved.filename);
 
-    if (currentHash && !prevHashes[resolvedFilename] && !prevHashes[filename]) {
-      added.push(resolvedFilename);
-    } else if (
-      currentHash &&
-      (prevHashes[resolvedFilename] || prevHashes[filename]) &&
-      currentHash !== (prevHashes[resolvedFilename] || prevHashes[filename])
-    ) {
-      changed.push(resolvedFilename);
-    } else if (!currentHash && (prevHashes[resolvedFilename] || prevHashes[filename])) {
-      removed.push(resolvedFilename);
+    if (!fs.existsSync(resolved.filePath)) {
+      if (previousHash) {
+        removed.push(label);
+      }
+      continue;
+    }
+
+    if (resolved.filename !== "arch.md") {
+      const parsed = readValidatedIntelJson(planningDir, key, resolved);
+      if (!parsed.ok) {
+        if (parsed.invalid) {
+          invalid_files.push(
+            invalidIntelFile(resolved.filename, parsed.error, resolved.ignoredFilenames),
+          );
+        }
+        continue;
+      }
+    } else {
+      const parsedArch = readValidatedArchMarkdown(resolved.filePath);
+      if (!parsedArch.ok) {
+        if (parsedArch.invalid) {
+          invalid_files.push(
+            invalidIntelFile(resolved.filename, parsedArch.error, resolved.ignoredFilenames),
+          );
+        }
+        continue;
+      }
+    }
+    const currentHash = hashFile(resolved.filePath);
+
+    if (currentHash && !previousHash) {
+      added.push(label);
+    } else if (currentHash && previousHash && currentHash !== previousHash) {
+      changed.push(label);
+    } else if (!currentHash && previousHash) {
+      removed.push(label);
     }
   }
 
-  return { changed, added, removed };
+  if (snapshotResolution.ambiguous) {
+    changed.push(
+      `${snapshotResolution.filename} (preferred over ${snapshotResolution.ignoredFilenames.join(", ")})`,
+    );
+  }
+
+  return { changed, added, removed, ...(invalid_files.length === 0 ? {} : { invalid_files }) };
 }
 
 /**
@@ -442,7 +901,33 @@ function intelValidate(planningDir) {
       continue;
     }
 
-    // All intel files are JSON — validate _meta and entries structure
+    if (filename === "arch.md") {
+      try {
+        const content = fs.readFileSync(filePath, "utf8");
+        if (content.trim().length === 0) {
+          errors.push(`${filename}: file is empty`);
+          continue;
+        }
+        const parsedArch = parseArchMarkdownMeta(content);
+        if (!parsedArch.ok) {
+          errors.push(`${filename}: ${parsedArch.error}`);
+          continue;
+        }
+        if (parsedArch.body.length === 0) {
+          errors.push(`${filename}: empty body`);
+          continue;
+        }
+        const age = now - new Date(parsedArch.updatedAt).getTime();
+        if (age > STALE_MS) {
+          warnings.push(
+            `${filename}: updated_at is ${Math.round(age / 3600000)} hours old (>24 hr)`,
+          );
+        }
+      } catch (e) {
+        errors.push(`${filename}: unreadable markdown — ${e.message}`);
+      }
+      continue;
+    }
 
     // Parse JSON
     let data;
@@ -455,7 +940,12 @@ function intelValidate(planningDir) {
 
     // Check _meta.updated_at recency
     if (data._meta && data._meta.updated_at) {
-      const age = now - new Date(data._meta.updated_at).getTime();
+      const updatedAtMs = new Date(data._meta.updated_at).getTime();
+      if (Number.isNaN(updatedAtMs)) {
+        errors.push(`${filename}: invalid _meta.updated_at`);
+        continue;
+      }
+      const age = now - updatedAtMs;
       if (age > STALE_MS) {
         warnings.push(
           `${filename}: _meta.updated_at is ${Math.round(age / 3600000)} hours old (>24 hr)`,
@@ -480,13 +970,6 @@ function intelValidate(planningDir) {
             }
           }
         }
-        // Spot-check first 5 file paths exist on disk
-        const entryPaths = Object.keys(data.entries).slice(0, 5);
-        for (const ep of entryPaths) {
-          if (!fs.existsSync(ep)) {
-            warnings.push(`${filename}: entry path "${ep}" does not exist on disk`);
-          }
-        }
       }
 
       // deps.json: check entries have version, type, used_by
@@ -496,11 +979,17 @@ function intelValidate(planningDir) {
           if (!entry.version) missing.push("version");
           if (!entry.type) missing.push("type");
           if (!entry.used_by) missing.push("used_by");
+          if (!entry.invocation) missing.push("invocation");
           if (missing.length > 0) {
-            warnings.push(`${filename}: "${depName}" missing fields: ${missing.join(", ")}`);
+            errors.push(`${filename}: "${depName}" missing fields: ${missing.join(", ")}`);
           }
         }
       }
+    }
+
+    const referenceError = validateCanonicalIntelReferences(planningDir, key, data);
+    if (referenceError) {
+      errors.push(`${filename}: ${referenceError}`);
     }
   }
 

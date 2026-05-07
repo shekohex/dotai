@@ -26,6 +26,9 @@ describe("ensureBuiltInGsdModes", () => {
     expect(loaded.modes["gsd-codebase-mapper"]?.systemPrompt).toContain(
       "You are spawned by `/gsd map-codebase`",
     );
+    expect(loaded.modes["gsd-intel-updater"]?.systemPrompt).toContain(
+      "You are **gsd-intel-updater**",
+    );
   });
 
   it("keeps bundled gsd modes authoritative", () => {
@@ -65,6 +68,11 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.4-mini");
     expect(built.modes["gsd-codebase-mapper"]?.tools).toEqual(["read", "bash", "edit", "write"]);
     expect(built.modes["gsd-codebase-mapper"]?.tmuxTarget).toBe("window");
+
+    expect(built.modes["gsd-intel-updater"]?.provider).toBe("codex-openai");
+    expect(built.modes["gsd-intel-updater"]?.modelId).toBe("gpt-5.4-mini");
+    expect(built.modes["gsd-intel-updater"]?.tools).toEqual(["read", "bash", "edit", "write"]);
+    expect(built.modes["gsd-intel-updater"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-debug-session-manager"]?.provider).toBe("codex-openai");
     expect(built.modes["gsd-debug-session-manager"]?.modelId).toBe("gpt-5.5");

@@ -37,6 +37,22 @@ describe("gsd bundled resources", () => {
     expect(prompt).toContain("Return confirmation only");
   });
 
+  it("keeps intel updater prompt aligned with local refresh contract", () => {
+    const prompt = loadBundledPrompt("intel-updater");
+
+    expect(prompt).toContain("`files.json`");
+    expect(prompt).toContain("`apis.json`");
+    expect(prompt).toContain("`deps.json`");
+    expect(prompt).toContain("`arch.md`");
+    expect(prompt).toContain("`stack.json`");
+    expect(prompt).toContain("intel validate");
+    expect(prompt).toContain("intel snapshot");
+    expect(prompt).toContain("## INTEL UPDATE COMPLETE");
+    expect(prompt).not.toContain("Glob");
+    expect(prompt).not.toContain("Grep");
+    expect(prompt).not.toContain("gsd-sdk query intel.extract-exports");
+  });
+
   it("loads shipped templates", () => {
     expect(loadBundledTemplate("state.md")).toContain("STATE");
     expect(loadBundledTemplate("project.md")).toContain("Project");

@@ -1,49 +1,69 @@
 # External Integrations
 
-**Analysis Date:** 2026-05-05
+**Analysis Date:** 2026-05-07
 
 ## APIs & External Services
 
-**Model routing:**
+**Web fetch / document scraping:**
 
-- LiteLLM gateway - runtime provider router in `src/extensions/litellm.ts` that registers `codex-openai`, `zai-coding-plan`, and `gemini` against candidate gateways `http://192.168.1.116:4000`, `http://100.100.1.116:4000`, and `https://ai-gateway.0iq.xyz`; readiness path `/health/readiness`; auth comes from upstream `AuthStorage` provider `litellm`.
+- Firecrawl - used by `webfetch` in `src/extensions/fetch/index.ts`, `src/extensions/fetch/execution.ts`, and `src/extensions/fetch/types.ts`.
+  - SDK/Client: `@mendable/firecrawl-js`
+  - Auth: `FIRECRAWL_API_KEY` via `AuthStorage` provider `firecrawl`; fallback `process.env.FIRECRAWL_API_KEY`
+  - Base URL: `WEBFETCH_FIRECRAWL_API_URL` or `FIRECRAWL_API_URL`; default fallback in `src/extensions/fetch/types.ts`
+  - Notes: HTTP URLs are upgraded to HTTPS before scraping.
 
-**Web fetching:**
+**Model usage / quota telemetry:**
 
-- Firecrawl - used by `webfetch` in `src/extensions/fetch/`; client `@mendable/firecrawl-js`; auth provider `firecrawl`; API URL `WEBFETCH_FIRECRAWL_API_URL` or `FIRECRAWL_API_URL`; default `http://192.168.1.121:3000/`.
+- OpenAI / Codex usage endpoints - queried in `src/extensions/openusage/providers/codex.ts`.
+  - Service URLs: `https://chatgpt.com/backend-api/wham/usage`, `https://auth.openai.com/oauth/token`
+  - Auth: `openai-codex` auth storage key or cliproxy-auth file
+  - Notes: refresh-token flow is implemented for cliproxy-backed accounts.
 
-**Google / Gemini:**
+- Google / Gemini usage endpoints - queried in `src/extensions/openusage/providers/google-api.ts`, `src/extensions/openusage/providers/google-auth.ts`, and `src/extensions/openusage/providers/google-constants.ts`.
+  - Service URLs: `https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`, `https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`, `https://cloudresourcemanager.googleapis.com/v1/projects`, `https://oauth2.googleapis.com/token`
+  - Auth: `.gemini/oauth_creds.json`, `.gemini/settings.json`, optional client creds from local Gemini CLI installation, or cliproxy-auth files
 
-- Google Gemini / Code Assist - auth refresh and quota lookup in `src/extensions/openusage/providers/google-auth.ts`, `src/extensions/openusage/providers/google-api.ts`, and `src/extensions/openusage/providers/google.ts`; direct `fetch` to `cloudcode-pa.googleapis.com`, `cloudresourcemanager.googleapis.com`, and `oauth2.googleapis.com`; auth sources are `~/.gemini/oauth_creds.json`, `~/.gemini/settings.json`, or cliproxy auth-files; `src/extensions/websearch/execution.ts` uses Gemini grounded search via `googleSearch` tool configuration.
+- Z.ai usage endpoints - queried in `src/extensions/openusage/providers/zai.ts`.
+  - Service URLs: `https://api.z.ai/api/biz/subscription/list`, `https://api.z.ai/api/monitor/usage/quota/limit`
+  - Auth: provider API key via model registry or cliproxy-auth file
 
-**OpenAI Codex:**
+- LiteLLM gateway - detected in `src/extensions/litellm.ts`.
+  - Candidate origins: `http://192.168.1.116:4000`, `http://100.100.1.116:4000`, `https://ai-gateway.0iq.xyz`
+  - Health check: `/health/readiness`
+  - Auth: `LITELLM_API_KEY` or stored `litellm` auth key
+  - Notes: registers provider aliases `codex-openai`, `zai-coding-plan`, and `gemini` against the gateway.
 
-- OpenAI Codex - usage snapshot and token refresh in `src/extensions/openusage/providers/codex.ts`; direct `fetch` to `chatgpt.com/backend-api/wham/usage` and `auth.openai.com/oauth/token`; auth provider `openai-codex` or cliproxy auth-files.
+- Cliproxy auth mirror - used by `src/extensions/openusage/cliproxy.ts` and `src/extensions/openusage/cliproxy-helpers.ts`.
+  - Base URL envs: `CLIPROXYAPI_BASE_URL`, `CLIPROXY_BASE_URL`, `CLIPROXYAPI_URL`
+  - API key envs: `CLIPROXYAPI_API_KEY`, `CLIPROXY_API_KEY`, `CLIPROXYAPI_MANAGEMENT_KEY`
+  - Endpoints: `/v0/management/auth-files`, `/v0/management/auth-files/download`
 
-**Z.ai:**
+- Google Search grounding - used by `src/extensions/websearch/execution.ts` and `src/extensions/websearch/types.ts`.
+  - Client: `@mariozechner/pi-ai` model streaming
+  - Auth: model-provider credentials from `ctx.modelRegistry.getApiKeyAndHeaders(model)`
+  - Notes: model config injects `googleSearch` into request payload.
 
-- Z.ai - usage snapshot in `src/extensions/openusage/providers/zai.ts`; direct `fetch` to `api.z.ai/api/biz/subscription/list` and `api.z.ai/api/monitor/usage/quota/limit`; auth provider `zai` or `zai-coding-plan`, or cliproxy auth-files.
+- GitHub CLI / GitHub PRs - used by `src/extensions/review/git.ts`, `src/extensions/review/pr-target.ts`, and `src/extensions/review/constants.ts`.
+  - Commands: `gh --version`, `gh auth status`, `gh pr view`, `gh pr checkout`
+  - Auth: `gh auth login`
 
-**Cliproxy broker:**
+- GitHub Packages registry - used by `scripts/install-github-package.sh` and `package.json` `publishConfig.registry`.
+  - Registry: `https://npm.pkg.github.com`
+  - Auth: `NODE_AUTH_TOKEN`, `NPM_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`
 
-- Cliproxy auth broker - `src/extensions/openusage/cliproxy.ts` and `src/extensions/openusage/cliproxy-helpers.ts` discover and download provider auth-files; env `CLIPROXYAPI_BASE_URL` / `CLIPROXY_BASE_URL` / `CLIPROXYAPI_URL` and `CLIPROXYAPI_API_KEY` / `CLIPROXY_API_KEY` / `CLIPROXYAPI_MANAGEMENT_KEY`; readiness `/v0/management/auth-files`; download `/v0/management/auth-files/download?name=...`.
+- Brave Search API - used by bundled GSD tooling in `src/resources/gsd/bin/lib/commands.cjs`.
+  - Service URL: `https://api.search.brave.com/res/v1/web/search`
+  - Auth: `BRAVE_API_KEY` or `~/.gsd/brave_api_key`
+  - Notes: bundled GSD config in `src/resources/gsd/bin/lib/config.cjs` detects availability and falls back to built-in web search when absent.
 
-**Remote tool execution:**
+- Coder workspace routing - used by `src/extensions/interview/public-url.ts` and `src/extensions/interview/server-runtime.ts`.
+  - Env inputs: `CODER`, `CODER_URL`, `CODER_AGENT_URL`, `CODER_WILDCARD_ACCESS_URL`, `CODER_WORKSPACE_NAME`, `CODER_WORKSPACE_OWNER_NAME`, `CODER_WORKSPACE_AGENT_NAME`
+  - Notes: builds shareable public URLs for interview sessions when running inside Coder.
 
-- MCP servers - executor connects over Streamable HTTP in `src/extensions/executor/mcp-client.ts`; client `@modelcontextprotocol/sdk`; default candidates `http://192.168.1.116:4788/mcp` and `http://100.100.1.116:4788/mcp`.
+**Static third-party assets:**
 
-**GitHub PR flow:**
-
-- GitHub CLI - PR checkout and auth verification in `src/extensions/review/pr-target.ts`; `gh auth login` and `gh auth status`; PR references are parsed from `https://github.com/<owner>/<repo>/pull/<n>` in `src/extensions/review/pr-reference.ts`.
-
-**Browser CDN assets:**
-
-- jsDelivr - interview assets load Chart.js and Mermaid from `https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js` and `https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js` in `src/extensions/interview/server-assets.ts` and `src/extensions/interview/server-runtime-support.ts`.
-
-**Coder workspace:**
-
-- Coder - interview server publishes a public URL from workspace env in `src/extensions/interview/public-url.ts` and `src/extensions/interview/server-runtime.ts`.
-  - Env: `CODER`, `CODER_URL`, `CODER_AGENT_URL`, `CODER_WILDCARD_ACCESS_URL`, `CODER_WORKSPACE_NAME`, `CODER_WORKSPACE_OWNER_NAME`, `CODER_WORKSPACE_AGENT_NAME`
+- Google Fonts - loaded by `src/extensions/interview/form/index.html`.
+- jsDelivr CDN - used by `src/extensions/interview/server-assets.ts` and `src/extensions/interview/server-runtime-support.ts` to inject `chart.js` and `mermaid` assets when those media types are requested.
 
 ## Data Storage
 
@@ -53,80 +73,94 @@
 
 **File Storage:**
 
-- Local filesystem only. Key paths: `~/.pi/agent/settings.json`, `~/.pi/agent/modes.json`, `~/.pi/agent/interview-sessions.json`, `~/.pi/agent/interview-recovery/`, `~/.pi/agent/interview-snapshots/`, `~/.pi/agent/prompt-stash.jsonl`, `.pi/debug/provider-requests.jsonl`, `~/.gemini/oauth_creds.json`, and `~/.gemini/settings.json`.
-- Dependency patch marker: `~/.pi/agent/state/dependency-patches/<hash>.applied` from `scripts/postinstall.mjs`.
-- Temporary artifacts are written under `os.tmpdir()` in `src/extensions/fetch/execution.ts`, `src/subagent-sdk/launch.ts`, and related helpers.
+- Local filesystem only.
+- `~/.pi/agent/settings.json` and `~/.pi/agent/modes.json` - seeded by `scripts/postinstall.mjs`.
+- `~/.pi/agent/prompt-stash.jsonl` - managed by `src/extensions/prompt-stash/storage.ts`.
+- `~/.pi/agent/sessions/**` and tmp marker files - managed by `src/subagent-sdk/persistence.ts`.
+- `~/.pi/interview-snapshots/**` and `~/.pi/interview-recovery/**` - managed by `src/extensions/interview/server-runtime.ts` and `src/extensions/interview/settings.ts`.
+- `.pi/gsd.json` and `.planning/**` - managed by `src/extensions/gsd/shared.ts` and the GSD extension.
+- `~/.gemini/oauth_creds.json` and `~/.gemini/settings.json` - consumed by `src/extensions/openusage/providers/google-auth.ts`.
+- `~/.gsd/*.json` / `~/.gsd/*_api_key` - used by bundled GSD tooling in `src/resources/gsd/bin/lib/config.cjs` and `src/resources/gsd/bin/lib/init.cjs`.
 
 **Caching:**
 
-- In-memory only. Examples: LiteLLM state in `src/extensions/litellm.ts`, cliproxy state in `src/extensions/openusage/cliproxy.ts`, and usage snapshot caches in `src/extensions/openusage/controller.ts`.
+- No external cache service detected.
+- In-memory caches only: `litellmStatePromise` in `src/extensions/litellm.ts`, `cliproxyStatePromise` in `src/extensions/openusage/cliproxy.ts`, `settingsCache` in `src/extensions/gsd/settings.ts`, and snapshot caches in `src/extensions/openusage/controller.ts`.
 
 ## Authentication & Identity
 
 **Auth Provider:**
 
-- Upstream `AuthStorage` in `@mariozechner/pi-coding-agent` stores secrets for `litellm`, `firecrawl`, `openai-codex`, `zai`, `zai-coding-plan`, and `cliproxyapi`.
-- Google auth uses `~/.gemini/oauth_creds.json` and `~/.gemini/settings.json`; `src/extensions/openusage/providers/google-auth.ts` also loads OAuth client data from installed `@google/gemini-cli-core` paths under common global package locations.
-- GitHub auth is delegated to `gh auth login` in `src/extensions/review/pr-target.ts`.
-- Z.ai and Codex use provider keys or cliproxy auth-files.
+- Mixed provider model.
+- `AuthStorage` from `@mariozechner/pi-coding-agent` stores credentials for `openai-codex`, `litellm`, `firecrawl`, and `cliproxyapi`.
+- Google auth uses local Gemini CLI credential files plus token refresh in `src/extensions/openusage/providers/google-auth.ts`.
+- GitHub PR review flows rely on `gh auth login` and `gh auth status`.
 
 ## Monitoring & Observability
 
 **Error Tracking:**
 
-- Not detected.
+- None detected.
 
 **Logs:**
 
-- UI notifications and stderr output are the main feedback channels.
-- Debug provider-request tracing writes `.pi/debug/provider-requests.jsonl` when `PI_DEBUG_PROVIDER_REQUESTS`, `PI_DEBUG_PROVIDER_REQUESTS_LOG`, or `PI_DEBUG_SYSTEM_PROMPT` is enabled in `src/extensions/debug-provider-request.ts`.
+- `ctx.ui.notify(...)` is the primary user-facing status channel across extensions.
+- `src/extensions/interview/server-assets.ts` and `src/extensions/interview/server-runtime.ts` write verbose messages to stderr when `verbose` is enabled.
+- `src/extensions/debug-provider-request.ts` can write request traces to the path from `PI_DEBUG_PROVIDER_REQUESTS_LOG`.
 
 ## CI/CD & Deployment
 
 **Hosting:**
 
-- npm package published through `publishConfig.registry = https://npm.pkg.github.com`.
-- Runtime ships CLI wrappers in `bin/pi.js` and `bin/pi.cmd`.
+- Local CLI package; no web app hosting target detected.
+- `src/extensions/interview/server-runtime.ts` starts a local HTTP server for interview sessions and can expose a Coder public URL when the environment is available.
 
 **CI Pipeline:**
 
-- Not detected.
+- Not detected in repository files.
+- Validation happens through npm scripts in `package.json` (`typecheck`, `lint`, `format:check`, `test`, `build`).
 
 ## Environment Configuration
 
 **Required env vars:**
 
-- `PI_CODING_AGENT_DIR`
-- `PI_SKIP_VERSION_CHECK`
-- `SHEKOHEX_AGENT_SKIP_SETTINGS_INSTALL`
-- `PI_DEBUG_PROVIDER_REQUESTS`
-- `PI_DEBUG_SYSTEM_PROMPT`
-- `PI_DEBUG_PROVIDER_REQUESTS_LOG`
-- `LITELLM_API_KEY`
 - `FIRECRAWL_API_KEY`
-- `WEBFETCH_FIRECRAWL_API_URL` or `FIRECRAWL_API_URL`
+- `FIRECRAWL_API_URL` / `WEBFETCH_FIRECRAWL_API_URL`
+- `LITELLM_API_KEY`
+- `BRAVE_API_KEY`
+- `EXA_API_KEY`
 - `CLIPROXYAPI_BASE_URL` / `CLIPROXY_BASE_URL` / `CLIPROXYAPI_URL`
 - `CLIPROXYAPI_API_KEY` / `CLIPROXY_API_KEY` / `CLIPROXYAPI_MANAGEMENT_KEY`
-- `CODER`
-- `CODER_URL`
-- `CODER_AGENT_URL`
-- `CODER_WILDCARD_ACCESS_URL`
+- `PI_CODING_AGENT_DIR`
+- `CODER`, `CODER_URL`, `CODER_AGENT_URL`, `CODER_WILDCARD_ACCESS_URL`
+- `PI_DEBUG_PROVIDER_REQUESTS`, `PI_DEBUG_SYSTEM_PROMPT`, `PI_DEBUG_PROVIDER_REQUESTS_LOG`
 
 **Secrets location:**
 
-- Secrets stay in upstream auth storage, cliproxy auth-files, and local user files, not in repo.
+- `AuthStorage` in `@mariozechner/pi-coding-agent` for provider tokens.
+- `~/.gemini/oauth_creds.json` for Gemini credentials.
+- `~/.gsd/` for bundled GSD API key files and defaults.
+- `gh` credential store or GitHub token env vars for GitHub Packages and PR flows.
+- No repo `.env` files detected.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
 
-- No remote webhooks detected.
-- Local interview callbacks are handled by `src/extensions/interview/server-runtime.ts` over HTTP routes such as `/heartbeat`, `/cancel`, `/progress`, `/submit`, `/save`, `/generate`, and `/option-insight`.
+- No third-party webhooks detected.
+- Local interview form callbacks are handled in `src/extensions/interview/server-runtime.ts`:
+  - `POST /submit`
+  - `POST /save`
+  - `POST /cancel`
+  - `POST /progress`
+  - `POST /generate`
+  - `POST /option-insight`
+  - plus local status endpoints `GET /health`, `/sessions`, `/media`, `/styles.css`, `/theme-light.css`, `/theme-dark.css`, `/script.js`
 
 **Outgoing:**
 
-- None beyond the API calls listed above.
+- External API calls listed above; no webhook sender integration detected.
 
 ---
 
-_Integration audit: 2026-05-05_
+_Integration audit: 2026-05-07_

@@ -161,6 +161,14 @@ type MapCodebaseParseState = {
   unsupportedModeError: string | undefined;
 };
 
+function isReservedMapCodebaseQueryMode(value: string): value is "status" | "diff" | "refresh" {
+  return value === "status" || value === "diff" || value === "refresh";
+}
+
+function isMapCodebaseFreeformQueryEscape(value: string): boolean {
+  return value === "query";
+}
+
 function buildMapCodebaseQueryConflictMessage(
   state: MapCodebaseParseState,
   conflict: "--fast" | "--focus" | "--paths" | GsdCommandArgs["existingMode"],
@@ -177,13 +185,39 @@ function parseMapCodebaseQueryToken(
   state: MapCodebaseParseState,
 ): number {
   const token = tokens[index];
-  const queryValue =
+  const rawQueryTokens =
     token === "--query"
-      ? normalizeFreeform(tokens.slice(index + 1).join(" "))
-      : normalizeFreeform([token.slice("--query=".length), ...tokens.slice(index + 1)].join(" "));
+      ? tokens.slice(index + 1)
+      : [token.slice("--query=".length), ...tokens.slice(index + 1)];
+  const queryValue = normalizeFreeform(rawQueryTokens.join(" "));
   state.query = queryValue;
   if (state.query === undefined) {
     state.unsupportedModeError = "Unsupported /gsd map-codebase mode: --query requires a value.";
+    return tokens.length;
+  }
+
+  const firstToken = normalizeFreeform(rawQueryTokens[0])?.toLowerCase();
+  if (firstToken !== undefined && isMapCodebaseFreeformQueryEscape(firstToken)) {
+    const freeformQuery = normalizeFreeform(rawQueryTokens.slice(1).join(" "));
+    if (freeformQuery === undefined) {
+      state.query = undefined;
+      state.unsupportedModeError =
+        "Unsupported /gsd map-codebase query mode: `--query query` requires a search term.";
+    } else {
+      state.query = freeformQuery;
+    }
+    return tokens.length;
+  }
+
+  if (firstToken !== undefined && isReservedMapCodebaseQueryMode(firstToken)) {
+    const trailingTokens = rawQueryTokens.slice(1).filter((value) => value.trim().length > 0);
+    if (trailingTokens.length > 0) {
+      state.query = undefined;
+      state.unsupportedModeError = `Unsupported /gsd map-codebase query mode: \
+reserved query \`${firstToken}\` does not accept trailing arguments (${trailingTokens.join(" ")}).`;
+    } else {
+      state.query = firstToken;
+    }
   }
   return tokens.length;
 }

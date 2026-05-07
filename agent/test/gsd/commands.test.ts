@@ -271,9 +271,23 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "map-codebase",
     query: "auth service",
   });
+  expect(parseGsdCommandArgs("map-codebase --query query status page")).toEqual({
+    subcommand: "map-codebase",
+    query: "status page",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query=query refresh token")).toEqual({
+    subcommand: "map-codebase",
+    query: "refresh token",
+  });
   expect(parseGsdCommandArgs("map-codebase --query=status auth service")).toEqual({
     subcommand: "map-codebase",
-    query: "status auth service",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (auth service).",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query query")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: `--query query` requires a search term.",
   });
   expect(parseGsdCommandArgs("map-codebase refresh --paths src")).toEqual({
     subcommand: "map-codebase",
@@ -282,19 +296,37 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   });
   expect(parseGsdCommandArgs("map-codebase --query status --fast")).toEqual({
     subcommand: "map-codebase",
-    query: "status --fast",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (--fast).",
   });
   expect(parseGsdCommandArgs("map-codebase --query status --focus tech")).toEqual({
     subcommand: "map-codebase",
-    query: "status --focus tech",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (--focus tech).",
   });
   expect(parseGsdCommandArgs("map-codebase --query status --paths src")).toEqual({
     subcommand: "map-codebase",
-    query: "status --paths src",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (--paths src).",
   });
   expect(parseGsdCommandArgs("map-codebase --query status refresh")).toEqual({
     subcommand: "map-codebase",
-    query: "status refresh",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (refresh).",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query diff --paths src")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `diff` does not accept trailing arguments (--paths src).",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query refresh now")).toEqual({
+    subcommand: "map-codebase",
+    unsupportedModeError:
+      "Unsupported /gsd map-codebase query mode: reserved query `refresh` does not accept trailing arguments (now).",
+  });
+  expect(parseGsdCommandArgs("map-codebase --query refresh")).toEqual({
+    subcommand: "map-codebase",
+    query: "refresh",
   });
   expect(parseGsdCommandArgs("map-codebase auth")).toEqual({
     subcommand: "map-codebase",
@@ -428,7 +460,7 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
       expect.objectContaining({
         value: "map-codebase --query",
         label: "--query",
-        description: expect.stringContaining("read-only intel query"),
+        description: expect.stringContaining("intel query or refresh mode"),
       }),
     ]),
   );
@@ -436,11 +468,22 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
   const mapCodebaseQueryItems = await command?.getArgumentCompletions?.("map-codebase --query ");
   expect(mapCodebaseQueryItems).toEqual(
     expect.arrayContaining([
+      expect.objectContaining({ value: "map-codebase --query query ", label: "query" }),
       expect.objectContaining({ value: "map-codebase --query status", label: "status" }),
       expect.objectContaining({ value: "map-codebase --query diff", label: "diff" }),
       expect.objectContaining({ value: "map-codebase --query refresh", label: "refresh" }),
     ]),
   );
+
+  const mapCodebaseQueryAfterFreeformItems = await command?.getArgumentCompletions?.(
+    "map-codebase --query auth ",
+  );
+  expect(mapCodebaseQueryAfterFreeformItems).toBeNull();
+
+  const mapCodebaseQueryAfterEscapeItems = await command?.getArgumentCompletions?.(
+    "map-codebase --query query status ",
+  );
+  expect(mapCodebaseQueryAfterEscapeItems).toBeNull();
 
   const mapCodebaseFocusItems = await command?.getArgumentCompletions?.(
     "map-codebase --fast --focus ",

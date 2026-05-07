@@ -19,6 +19,7 @@ import { resolvePlanningDir } from "../shared.js";
 import { runRoleDetached } from "../subagents.js";
 import { ensurePlanningDir } from "../state/write.js";
 import { handleReadOnlyQueryMode } from "./map-codebase-query.js";
+import { handleIntelRefreshQuery } from "./map-codebase-intel-refresh.js";
 import {
   buildFastMapperTask,
   buildMapperTask,
@@ -380,6 +381,27 @@ function resolveHeadCommit(cwd: string): string | null {
   }
 }
 
+function isWorktreeClean(cwd: string): boolean {
+  try {
+    const status = execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return status.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+function captureReusableMappedCommitBaseline(cwd: string): string | null {
+  if (!isWorktreeClean(cwd)) {
+    return null;
+  }
+
+  return resolveHeadCommit(cwd);
+}
+
 function verifyCodebaseArtifacts(codebaseDir: string): Array<{ name: string; lines: number }> {
   return verifyExpectedCodebaseArtifacts(codebaseDir, codebaseDocumentNames);
 }
@@ -497,6 +519,8 @@ function handleFastCodebaseMap(
     return;
   }
 
+  const reusableBaselineCommitSha = captureReusableMappedCommitBaseline(ctx.cwd);
+
   runDetachedGsdJob(
     pi,
     ctx,
@@ -542,7 +566,7 @@ function handleFastCodebaseMap(
             ];
 
       const artifacts = verifyExpectedCodebaseArtifacts(codebaseDir, targetDocuments);
-      const commitSha = resolveHeadCommit(ctx.cwd);
+      const commitSha = reusableBaselineCommitSha;
       stampExpectedCodebaseArtifacts(
         codebaseDir,
         targetDocuments,
@@ -611,6 +635,7 @@ function handleFullCodebaseMap(
     removeCanonicalBackup(backupDir);
     return;
   }
+  const reusableBaselineCommitSha = captureReusableMappedCommitBaseline(ctx.cwd);
   const focusAreas: CodebaseMapFocus[] = ["tech", "arch", "quality", "concerns"];
 
   runDetachedGsdJob(
@@ -646,7 +671,7 @@ function handleFullCodebaseMap(
       );
 
       const artifacts = verifyCodebaseArtifacts(codebaseDir);
-      const commitSha = resolveHeadCommit(ctx.cwd);
+      const commitSha = reusableBaselineCommitSha;
       stampCodebaseArtifacts(codebaseDir, commitSha, new Date().toISOString());
 
       return { areas: results, artifacts, commitSha };
@@ -666,7 +691,7 @@ function handleFullCodebaseMap(
         removeCanonicalBackup(backupDir);
         if (commitSha === null) {
           ctx.ui.notify(
-            "Codebase map created without last_mapped_commit baseline. Re-run inside git history before relying on `skip` or drift reuse.",
+            "Codebase map created without reusable `last_mapped_commit` baseline. Repo had no committed `HEAD` or worktree was dirty before mapping. Commit or clean the worktree, then re-run before relying on `skip` or drift reuse.",
             "warning",
           );
         }
@@ -700,6 +725,14 @@ export function handleGsdMapCodebase(
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs = {},
 ): void {
+  if (args.query?.trim().toLowerCase() === "refresh") {
+    if (rejectUnsupportedModes(ctx, args)) {
+      return;
+    }
+    handleIntelRefreshQuery(pi, ctx);
+    return;
+  }
+
   if (handleReadOnlyQueryMode(ctx, args)) {
     return;
   }

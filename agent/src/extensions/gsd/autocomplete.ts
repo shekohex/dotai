@@ -139,18 +139,23 @@ function getMapCodebaseQueryFlagItems(prefixBase: string): AutocompleteItem[] {
     {
       value: `${prefixBase}--query`,
       label: "--query",
-      description: "Run local read-only intel query",
+      description: "Run local intel query or refresh mode",
     },
     {
       value: `${prefixBase}--query=`,
       label: "--query=",
-      description: "Inline local read-only intel query",
+      description: "Inline local intel query or refresh mode",
     },
   ];
 }
 
 function getMapCodebaseQueryItems(prefixBase: string): AutocompleteItem[] {
   return [
+    {
+      value: `${prefixBase}query `,
+      label: "query",
+      description: "Escape hatch for freeform search terms like `status page`",
+    },
     {
       value: `${prefixBase}status`,
       label: "status",
@@ -164,9 +169,40 @@ function getMapCodebaseQueryItems(prefixBase: string): AutocompleteItem[] {
     {
       value: `${prefixBase}refresh`,
       label: "refresh",
-      description: "Unsupported locally in this slice",
+      description: "Run detached full intel refresh",
     },
   ];
+}
+
+function getMapCodebaseQueryModeCompletions(
+  tokens: string[],
+  token: string,
+): AutocompleteItem[] | null {
+  const queryIndex = tokens.findIndex(
+    (value) => value === "--query" || value.startsWith("--query="),
+  );
+  if (queryIndex === -1) {
+    return null;
+  }
+
+  const queryFlag = tokens[queryIndex];
+  let queryTokens: string[];
+  if (queryFlag.startsWith("--query=")) {
+    queryTokens = [queryFlag.slice("--query=".length), ...tokens.slice(queryIndex + 1)];
+  } else {
+    queryTokens = tokens.slice(queryIndex + 1);
+  }
+
+  const firstQueryToken = queryTokens[0];
+  if (firstQueryToken === undefined) {
+    return filterItems(getMapCodebaseQueryItems("map-codebase --query "), token);
+  }
+
+  if (firstQueryToken === "query") {
+    return null;
+  }
+
+  return null;
 }
 
 function getMapCodebaseFastFocusFlagItems(prefixBase: string): AutocompleteItem[] {
@@ -328,10 +364,10 @@ function getFlagDescription(value: string): string | undefined {
     return "Inline fast-map focus area";
   }
   if (value === "--query") {
-    return "Upstream intel mode placeholder";
+    return "Intel query or refresh mode";
   }
   if (value === "--query=") {
-    return "Inline intel query mode";
+    return "Inline intel query or refresh mode";
   }
   if (value === "--diagnose") {
     return "Find root cause only";
@@ -431,7 +467,7 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
       return filterItems(getMapCodebaseQueryItems("map-codebase --query="), token);
     }
     if (inQueryMode) {
-      return filterItems(getMapCodebaseQueryItems("map-codebase --query "), token);
+      return getMapCodebaseQueryModeCompletions(tokens, token);
     }
     if (previousToken === "--focus") {
       if (!inFastMode) {

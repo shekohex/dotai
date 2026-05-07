@@ -150,3 +150,30 @@ export function buildFastMapperTask(
 
   return [...promptLines, ...buildMapperBody(focus, date)].join("\n");
 }
+
+export function buildIntelRefreshTask(cwd: string): string {
+  const requiredReading = buildRequiredReading(cwd);
+  return [
+    "Focus: full-refresh",
+    "",
+    "<required_reading>",
+    ...requiredReading,
+    "</required_reading>",
+    "",
+    "Run full local intel refresh for current project root.",
+    "",
+    "Required outcome:",
+    "- write canonical intel files directly to `.planning/intel/`:",
+    "  - `files.json`",
+    "  - `apis.json`",
+    "  - `deps.json`",
+    "  - `arch.md`",
+    "  - `stack.json`",
+    "- do not write legacy filenames",
+    '- run validation via `node "{{GSD_BUNDLE_DIR}}/bin/gsd-tools.cjs" intel validate --cwd "<project_root>"`',
+    '- run snapshot via `node "{{GSD_BUNDLE_DIR}}/bin/gsd-tools.cjs" intel snapshot --cwd "<project_root>"`',
+    "- final response must include exact marker `## INTEL UPDATE COMPLETE` on success",
+    "",
+    "No partial update semantics in this run. Full refresh only.",
+  ].join("\n");
+}

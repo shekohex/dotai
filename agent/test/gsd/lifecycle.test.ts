@@ -1,5 +1,6 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -223,6 +224,182 @@ function createFastMapCodebaseSpawn(root: string) {
             summary: "Fast Mapping Complete",
           }),
           captureOutput: vi.fn().mockResolvedValue({ text: "## Fast Mapping Complete\nReady" }),
+        },
+      },
+    };
+  });
+}
+
+function createIntelRefreshSpawn(
+  root: string,
+  options?: {
+    marker?: boolean;
+    snapshot?: boolean;
+    changed?: boolean;
+    validArch?: boolean;
+    mismatchedSnapshotHashes?: boolean;
+    staleSnapshotTimestamp?: boolean;
+    writeLegacyFallback?: boolean;
+    staleArtifactTimestamps?: boolean;
+  },
+) {
+  return vi.fn().mockImplementation(async () => {
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const main = true;\n");
+    writeFileSync(join(root, "src", "config.ts"), "export const config = {};\n");
+    writeFileSync(join(root, "src", "server.ts"), "export const health = true;\n");
+    const artifactUpdatedAt =
+      options?.staleArtifactTimestamps === true
+        ? "2020-01-01T00:00:00.000Z"
+        : new Date().toISOString();
+    if (options?.changed !== false || !existsSync(join(root, ".planning", "intel", "files.json"))) {
+      writeFileSync(
+        join(root, ".planning", "intel", "files.json"),
+        `${JSON.stringify(
+          {
+            _meta: { updated_at: artifactUpdatedAt, version: 1 },
+            entries: {
+              "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      writeFileSync(
+        join(root, ".planning", "intel", "apis.json"),
+        `${JSON.stringify(
+          {
+            _meta: { updated_at: artifactUpdatedAt, version: 1 },
+            entries: {
+              "GET /health": {
+                method: "GET",
+                path: "/health",
+                params: [],
+                file: "src/server.ts",
+                description: "health",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      writeFileSync(
+        join(root, ".planning", "intel", "deps.json"),
+        `${JSON.stringify(
+          {
+            _meta: { updated_at: artifactUpdatedAt, version: 1 },
+            entries: {
+              vitest: {
+                version: "^1.0.0",
+                type: "development",
+                used_by: ["npm test"],
+                invocation: "npm test",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      writeFileSync(
+        join(root, ".planning", "intel", "stack.json"),
+        `${JSON.stringify(
+          {
+            _meta: { updated_at: artifactUpdatedAt, version: 1 },
+            languages: ["TypeScript"],
+            frameworks: [],
+            tools: ["Vitest"],
+            build_system: "npm scripts",
+            test_framework: "Vitest",
+            package_manager: "npm",
+            content_formats: ["Markdown", "JSON"],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      writeFileSync(
+        join(root, ".planning", "intel", "arch.md"),
+        options?.validArch === false
+          ? "# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n"
+          : `---\nupdated_at: \"${artifactUpdatedAt}\"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`,
+      );
+      if (options?.writeLegacyFallback === true) {
+        writeFileSync(
+          join(root, ".planning", "intel", "file-roles.json"),
+          `${JSON.stringify(
+            {
+              _meta: { updated_at: new Date().toISOString(), version: 1 },
+              entries: {
+                "src/legacy-written.ts": { exports: ["legacy"], imports: [], type: "module" },
+              },
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      }
+    }
+    if (options?.snapshot !== false) {
+      const filesHash = createHash("sha256")
+        .update(readFileSync(join(root, ".planning", "intel", "files.json"), "utf8"))
+        .digest("hex");
+      const apisHash = createHash("sha256")
+        .update(readFileSync(join(root, ".planning", "intel", "apis.json"), "utf8"))
+        .digest("hex");
+      const depsHash = createHash("sha256")
+        .update(readFileSync(join(root, ".planning", "intel", "deps.json"), "utf8"))
+        .digest("hex");
+      const archHash = createHash("sha256")
+        .update(readFileSync(join(root, ".planning", "intel", "arch.md"), "utf8"))
+        .digest("hex");
+      const stackHash = createHash("sha256")
+        .update(readFileSync(join(root, ".planning", "intel", "stack.json"), "utf8"))
+        .digest("hex");
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp:
+              options?.staleSnapshotTimestamp === true
+                ? "2020-01-01T00:00:00.000Z"
+                : new Date().toISOString(),
+            hashes: {
+              "files.json":
+                options?.mismatchedSnapshotHashes === true
+                  ? "wrong-files-hash"
+                  : options?.changed === false
+                    ? filesHash
+                    : filesHash,
+              "apis.json":
+                options?.mismatchedSnapshotHashes === true ? "wrong-apis-hash" : apisHash,
+              "deps.json":
+                options?.mismatchedSnapshotHashes === true ? "wrong-deps-hash" : depsHash,
+              "arch.md": options?.mismatchedSnapshotHashes === true ? "wrong-arch-hash" : archHash,
+              "stack.json":
+                options?.mismatchedSnapshotHashes === true ? "wrong-stack-hash" : stackHash,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    }
+    return {
+      ok: true,
+      value: {
+        handle: {
+          waitForCompletion: vi.fn().mockResolvedValue({
+            sessionId: "intel-session-id",
+            status: "completed",
+            summary: options?.marker === false ? "done" : "## INTEL UPDATE COMPLETE",
+          }),
+          captureOutput: vi.fn().mockResolvedValue({
+            text: options?.marker === false ? "done" : "## INTEL UPDATE COMPLETE",
+          }),
         },
       },
     };
@@ -560,7 +737,7 @@ describe("gsd lifecycle handlers", () => {
     );
     await vi.waitFor(() => {
       expect(ctx.ui.notify).toHaveBeenCalledWith(
-        "Codebase map created without last_mapped_commit baseline. Re-run inside git history before relying on `skip` or drift reuse.",
+        "Codebase map created without reusable `last_mapped_commit` baseline. Repo had no committed `HEAD` or worktree was dirty before mapping. Commit or clean the worktree, then re-run before relying on `skip` or drift reuse.",
         "warning",
       );
     });
@@ -793,7 +970,7 @@ describe("gsd lifecycle handlers", () => {
     );
   });
 
-  it("map-codebase query refresh is rejected before any write path", async () => {
+  it("map-codebase query refresh stays read-only when intel disabled", async () => {
     const root = createRoot();
     const ctx = createContext(root);
     const spawn = vi.fn();
@@ -804,12 +981,134 @@ describe("gsd lifecycle handlers", () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(existsSync(join(root, ".planning"))).toBe(false);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "Unsupported /gsd map-codebase query mode: `--query refresh` is not implemented locally in this slice.",
+      "Intel system disabled. Set intel.enabled=true in config.json to activate.",
+      "info",
+    );
+  });
+
+  it("map-codebase does not stamp reusable last_mapped_commit baseline from dirty worktree", async () => {
+    const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
+    writeFileSync(join(root, "untracked.txt"), "dirty\n");
+
+    const codebaseDir = join(root, ".planning", "codebase");
+    const spawn = createMapCodebaseSpawn(root);
+    const pi = createPi();
+    const ctx = createContext(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase(pi as unknown as ExtensionAPI, ctx, {});
+
+    await vi.waitFor(() => {
+      expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    const structureDoc = readFileSync(join(codebaseDir, "STRUCTURE.md"), "utf8");
+    expect(structureDoc).not.toContain("last_mapped_commit:");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Codebase map created without reusable `last_mapped_commit` baseline. Repo had no committed `HEAD` or worktree was dirty before mapping. Commit or clean the worktree, then re-run before relying on `skip` or drift reuse.",
       "warning",
     );
   });
 
-  it("map-codebase query reads compatible newer intel filenames", async () => {
+  it("map-codebase query refresh spawns intel updater and verifies canonical outputs", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const pi = createPi();
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase(pi as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith("Intel refresh updated: .planning/intel", "info");
+    });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0]?.[0]?.mode).toBe("gsd-intel-updater");
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ customType: "gsd-intel-refresh-summary" }),
+      { deliverAs: "steer", triggerTurn: false },
+    );
+  });
+
+  it("map-codebase query refresh removes legacy fallback intel files after success", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "file-roles.json"),
+      `${JSON.stringify({ _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 }, entries: {} }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "snapshot.json"),
+      `${JSON.stringify({ timestamp: "2026-05-06T00:00:00.000Z", hashes: {} }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root);
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith("Intel refresh updated: .planning/intel", "info");
+    });
+    expect(existsSync(join(root, ".planning", "intel", "file-roles.json"))).toBe(false);
+    expect(existsSync(join(root, ".planning", "intel", "snapshot.json"))).toBe(false);
+  });
+
+  it("map-codebase query refresh fails when completion marker missing", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, { marker: false });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "refresh" });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel updater finished without required completion marker",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when arch.md frontmatter is invalid", async () => {
     const root = createRoot();
     mkdirSync(join(root, ".planning", "intel"), { recursive: true });
     writeFileSync(
@@ -820,9 +1119,1588 @@ describe("gsd lifecycle handlers", () => {
       join(root, ".planning", "intel", "files.json"),
       `${JSON.stringify(
         {
-          _meta: { updated_at: "2026-05-06T00:00:00.000Z" },
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, { validArch: false });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Intel refresh failed: Intel validation failed: arch.md: missing YAML frontmatter",
+        ),
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh succeeds when canonical intel is already current", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
           entries: {
-            "src/auth/service.ts": { summary: "auth service" },
+            "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "apis.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "GET /health": {
+              method: "GET",
+              path: "/health",
+              params: [],
+              file: "src/server.ts",
+              description: "health",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "deps.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "stack.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "arch.md"),
+      `---\nupdated_at: \"${new Date().toISOString()}\"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, { changed: false });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith("Intel refresh updated: .planning/intel", "info");
+    });
+  });
+
+  it("map-codebase query refresh fails when snapshot hashes do not match current intel files", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, { mismatchedSnapshotHashes: true });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel snapshot hash mismatch for: files.json",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when deps.json entries omit invocation", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: { vitest: { version: "^1.0.0", type: "development", used_by: ["npm test"] } },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: \"${new Date().toISOString()}\"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Invalid canonical intel schema: deps.json",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when files.json violates canonical schema", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: { "src/index.ts": { imports: ["./config"], type: "entry-point" } },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: \"${new Date().toISOString()}\"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Invalid canonical intel schema: files.json",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when files.json has invalid _meta.updated_at", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const main = true;\n");
+    writeFileSync(join(root, "src", "config.ts"), "export const config = {};\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: "not-a-date", version: 1 },
+          entries: {
+            "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: "${new Date().toISOString()}"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: files.json: invalid _meta.updated_at",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when apis.json violates canonical schema", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "GET /health": {
+              path: "/health",
+              params: [],
+              file: "src/server.ts",
+              description: "health",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: \"${new Date().toISOString()}\"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Invalid canonical intel schema: apis.json",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when files.json references nonexistent paths", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root);
+    writeFileSync(join(root, "src-placeholder.ts"), "export const placeholder = true;\n");
+    setGsdSubagentSdkFactoryForTests(
+      () =>
+        ({
+          spawn: vi.fn().mockImplementation(async () => {
+            await spawn();
+            const filesPath = join(root, ".planning", "intel", "files.json");
+            const filesJson = JSON.parse(readFileSync(filesPath, "utf8")) as {
+              _meta: { updated_at: string; version: number };
+              entries: Record<string, { exports: string[]; imports: string[]; type: string }>;
+            };
+            filesJson.entries = {
+              "src/missing.ts": {
+                exports: ["missing"],
+                imports: ["./also-missing"],
+                type: "module",
+              },
+            };
+            const filesContent = `${JSON.stringify(filesJson, null, 2)}\n`;
+            writeFileSync(filesPath, filesContent);
+            const snapshotPath = join(root, ".planning", "intel", ".last-refresh.json");
+            const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
+              timestamp: string;
+              hashes: Record<string, string>;
+            };
+            snapshot.hashes["files.json"] = createHash("sha256").update(filesContent).digest("hex");
+            writeFileSync(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
+            return {
+              ok: true,
+              value: {
+                handle: {
+                  waitForCompletion: vi.fn().mockResolvedValue({
+                    sessionId: "intel-session-id",
+                    status: "completed",
+                    summary: "## INTEL UPDATE COMPLETE",
+                  }),
+                  captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+                },
+              },
+            };
+          }),
+        }) as never,
+    );
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: files.json: missing files.json entry path: src/missing.ts",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when files.json imports nonexistent in-repo relative path", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const main = true;\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "src/index.ts": { exports: ["main"], imports: ["./missing"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: "${new Date().toISOString()}"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: files.json: missing files.json import path: src/index.ts -> ./missing",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when apis.json references nonexistent files", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const main = true;\n");
+    writeFileSync(join(root, "src", "config.ts"), "export const config = {};\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "GET /health": {
+              method: "GET",
+              path: "/health",
+              params: [],
+              file: "src/server.ts",
+              description: "health",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: "${new Date().toISOString()}"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: apis.json: missing apis.json file path: src/server.ts",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when canonical intel references out-of-repo files", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const main = true;\n");
+    writeFileSync(join(root, "src", "config.ts"), "export const config = {};\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "../outside.ts": { exports: ["outside"], imports: [], type: "module" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: "${new Date().toISOString()}"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: files.json: missing files.json entry path: ../outside.ts",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when canonical intel relies on directory fallback", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src", "feature"), { recursive: true });
+    writeFileSync(join(root, "src", "feature", "index.ts"), "export const feature = true;\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "src/feature": { exports: ["feature"], imports: [], type: "module" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: "${new Date().toISOString()}"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: files.json: missing files.json entry path: src/feature",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when apis.json.file relies on extension probing", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "server.ts"), "export const health = true;\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "GET /health": {
+              method: "GET",
+              path: "/health",
+              params: [],
+              file: "src/server",
+              description: "health",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: "${new Date().toISOString()}"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel validation failed: apis.json: missing apis.json file path: src/server",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when stack.json violates canonical schema", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = vi.fn().mockImplementation(async () => {
+      mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+      const filesContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            "src/index.ts": { exports: ["main"], imports: ["./config"], type: "entry-point" },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const apisContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`;
+      const depsContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          entries: {
+            vitest: {
+              version: "^1.0.0",
+              type: "development",
+              used_by: ["npm test"],
+              invocation: "npm test",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`;
+      const stackContent = `${JSON.stringify(
+        {
+          _meta: { updated_at: new Date().toISOString(), version: 1 },
+          frameworks: [],
+          tools: ["Vitest"],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`;
+      const archContent = `---\nupdated_at: \"${new Date().toISOString()}\"\n---\n\n# Architecture\n\nMain flow.\nKey modules.\nBoundaries and conventions.\n`;
+      writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+      writeFileSync(join(root, ".planning", "intel", "apis.json"), apisContent);
+      writeFileSync(join(root, ".planning", "intel", "deps.json"), depsContent);
+      writeFileSync(join(root, ".planning", "intel", "stack.json"), stackContent);
+      writeFileSync(join(root, ".planning", "intel", "arch.md"), archContent);
+      writeFileSync(
+        join(root, ".planning", "intel", ".last-refresh.json"),
+        `${JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            hashes: {
+              "files.json": createHash("sha256").update(filesContent).digest("hex"),
+              "apis.json": createHash("sha256").update(apisContent).digest("hex"),
+              "deps.json": createHash("sha256").update(depsContent).digest("hex"),
+              "arch.md": createHash("sha256").update(archContent).digest("hex"),
+              "stack.json": createHash("sha256").update(stackContent).digest("hex"),
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return {
+        ok: true,
+        value: {
+          handle: {
+            waitForCompletion: vi.fn().mockResolvedValue({
+              sessionId: "intel-session-id",
+              status: "completed",
+              summary: "## INTEL UPDATE COMPLETE",
+            }),
+            captureOutput: vi.fn().mockResolvedValue({ text: "## INTEL UPDATE COMPLETE" }),
+          },
+        },
+      };
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Invalid canonical intel schema: stack.json",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh restores previous intel files after verification failure", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const originalFilesContent = `${JSON.stringify(
+      {
+        _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+        entries: { "src/original.ts": { exports: ["original"], imports: [], type: "module" } },
+      },
+      null,
+      2,
+    )}\n`;
+    const originalSnapshotContent = `${JSON.stringify(
+      {
+        timestamp: "2026-05-06T00:00:00.000Z",
+        hashes: {
+          "files.json": createHash("sha256").update(originalFilesContent).digest("hex"),
+          "apis.json": "orig-apis",
+          "deps.json": "orig-deps",
+          "arch.md": "orig-arch",
+          "stack.json": "orig-stack",
+        },
+      },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(join(root, ".planning", "intel", "files.json"), originalFilesContent);
+    writeFileSync(
+      join(root, ".planning", "intel", "apis.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "deps.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {},
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "stack.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          languages: ["TypeScript"],
+          frameworks: [],
+          tools: [],
+          build_system: "npm scripts",
+          test_framework: "Vitest",
+          package_manager: "npm",
+          content_formats: ["Markdown", "JSON"],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "arch.md"),
+      `---\nupdated_at: \"2026-05-06T00:00:00.000Z\"\n---\n\n# Architecture\n\nOriginal architecture.\nOriginal components.\nOriginal boundaries.\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "file-roles.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "src/original-legacy.ts": { exports: ["originalLegacy"], imports: [], type: "module" },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(join(root, ".planning", "intel", ".last-refresh.json"), originalSnapshotContent);
+
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, {
+      mismatchedSnapshotHashes: true,
+      writeLegacyFallback: true,
+    });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel snapshot hash mismatch for: files.json",
+        "error",
+      );
+    });
+
+    expect(readFileSync(join(root, ".planning", "intel", "files.json"), "utf8")).toBe(
+      originalFilesContent,
+    );
+    expect(readFileSync(join(root, ".planning", "intel", "file-roles.json"), "utf8")).toBe(
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "src/original-legacy.ts": { exports: ["originalLegacy"], imports: [], type: "module" },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    expect(readFileSync(join(root, ".planning", "intel", ".last-refresh.json"), "utf8")).toBe(
+      originalSnapshotContent,
+    );
+  });
+
+  it("map-codebase query refresh fails when snapshot timestamp predates invocation", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, { staleSnapshotTimestamp: true });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        "Intel refresh failed: Intel snapshot timestamp predates this refresh invocation",
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query refresh fails when regenerated intel is already stale", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/old.ts": { exports: ["old"], imports: [], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+    const spawn = createIntelRefreshSpawn(root, { staleArtifactTimestamps: true });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({ sendMessage: vi.fn() } as unknown as ExtensionAPI, ctx, {
+      query: "refresh",
+    });
+
+    await vi.waitFor(() => {
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Intel refresh failed: Intel validation failed: stale outputs detected",
+        ),
+        "error",
+      );
+    });
+  });
+
+  it("map-codebase query reads compatible newer intel filenames", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src", "auth"), { recursive: true });
+    writeFileSync(join(root, "src", "auth", "service.ts"), "export const authService = true;\n");
+    writeFileSync(join(root, "src", "auth", "deps.ts"), "export const deps = true;\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "src/auth/service.ts": {
+              exports: ["authService"],
+              imports: ["./deps"],
+              type: "module",
+            },
           },
         },
         null,
@@ -831,7 +2709,11 @@ describe("gsd lifecycle handlers", () => {
     );
     writeFileSync(
       join(root, ".planning", "intel", "snapshot.json"),
-      `${JSON.stringify({ hashes: { "files.json": "deadbeef" } }, null, 2)}\n`,
+      `${JSON.stringify(
+        { timestamp: "2026-05-06T00:00:00.000Z", hashes: { "files.json": "deadbeef" } },
+        null,
+        2,
+      )}\n`,
     );
     const ctx = createContext(root);
 
@@ -844,12 +2726,599 @@ describe("gsd lifecycle handlers", () => {
       "info",
     );
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("- files.json: present, fresh"),
+      expect.stringContaining("- files.json: present, stale"),
       "info",
     );
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("Changed: files.json"),
       "info",
+    );
+  });
+
+  it("map-codebase query treats reference-broken canonical intel as invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "src/missing.ts": {
+              exports: ["missing"],
+              imports: ["./also-missing"],
+              type: "module",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify(
+        { timestamp: "2026-05-06T00:00:00.000Z", hashes: { "files.json": "deadbeef" } },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "missing" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid intel file: files.json (missing files.json entry path: src/missing.ts)",
+      ),
+      "info",
+    );
+  });
+
+  it("map-codebase query status treats reference-broken canonical intel as invalid and stale", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "apis.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "GET /health": {
+              method: "GET",
+              path: "/health",
+              params: [],
+              file: "src/server.ts",
+              description: "health",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid intel file: apis.json (missing apis.json file path: src/server.ts)",
+      ),
+      "info",
+    );
+  });
+
+  it("map-codebase query diff treats reference-broken canonical intel as invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const filesContent = `${JSON.stringify(
+      {
+        _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+        entries: {
+          "src/missing.ts": {
+            exports: ["missing"],
+            imports: ["./also-missing"],
+            type: "module",
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify(
+        {
+          timestamp: "2026-05-06T00:00:00.000Z",
+          hashes: { "files.json": createHash("sha256").update(filesContent).digest("hex") },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid intel file: files.json (missing files.json entry path: src/missing.ts)",
+      ),
+      "info",
+    );
+  });
+
+  it("map-codebase query status treats out-of-repo canonical API refs as invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "apis.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "GET /escape": {
+              method: "GET",
+              path: "/escape",
+              params: [],
+              file: "../outside.ts",
+              description: "escape",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid intel file: apis.json (missing apis.json file path: ../outside.ts)",
+      ),
+      "info",
+    );
+  });
+
+  it("map-codebase query treats files.json entry path relying on extension probing as invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "entry.ts"), "export const entry = true;\n");
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: {
+            "src/entry": {
+              exports: ["entry"],
+              imports: [],
+              type: "module",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "entry" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid intel file: files.json (missing files.json entry path: src/entry)",
+      ),
+      "info",
+    );
+  });
+
+  it("map-codebase query prefers current intel filenames over stale legacy files", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z" },
+          entries: { "src/current.ts": { summary: "current auth service" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "file-roles.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-01-01T00:00:00.000Z" },
+          entries: { "src/legacy.ts": { summary: "legacy auth service" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "arch.md"),
+      `---\nupdated_at: \"2026-05-06T00:00:00.000Z\"\n---\n\n# Architecture\n\nauth service in markdown\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "current auth" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("files.json (preferred over file-roles.json)"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("arch.md: present"), "info");
+  });
+
+  it("map-codebase query status marks malformed arch.md invalid and stale", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(join(root, ".planning", "intel", "arch.md"), "# Architecture\n\nbad arch\n");
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("arch.md: present, stale"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: arch.md (missing YAML frontmatter)"),
+      "info",
+    );
+  });
+
+  it("map-codebase query searches arch.md and diffs it", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "arch.md"),
+      `---\nupdated_at: \"2026-05-06T00:00:00.000Z\"\n---\n\n# Architecture\n\npayment flow\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify(
+        { timestamp: "2026-05-06T00:00:00.000Z", hashes: { "arch.md": "deadbeef" } },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "payment" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Source: arch.md"), "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Changed: arch.md"), "info");
+  });
+
+  it("map-codebase query does not search malformed arch.md and surfaces it invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(join(root, ".planning", "intel", "arch.md"), "# Architecture\n\npayment flow\n");
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "payment" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: arch.md (missing YAML frontmatter)"),
+      "info",
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("Source: arch.md"),
+      "info",
+    );
+  });
+
+  it("map-codebase query diff does not diff malformed arch.md and surfaces it invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(join(root, ".planning", "intel", "arch.md"), "# Architecture\n\npayment flow\n");
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify(
+        { timestamp: "2026-05-06T00:00:00.000Z", hashes: { "arch.md": "deadbeef" } },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: arch.md (missing YAML frontmatter)"),
+      "info",
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("Changed: arch.md"),
+      "info",
+    );
+  });
+
+  it("map-codebase query treats schema-invalid current canonical files.json as invalid", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+          entries: { "src/auth/service.ts": { imports: ["./x"], type: "module" } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify({ hashes: { "files.json": "deadbeef" } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "auth" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: files.json (invalid files.json exports)"),
+      "info",
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("Source: files.json"),
+      "info",
+    );
+  });
+
+  it("map-codebase query status treats invalid canonical updated_at as invalid and stale", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", "files.json"),
+      `${JSON.stringify(
+        {
+          _meta: { updated_at: "not-a-date", version: 1 },
+          entries: {
+            "src/auth/service.ts": {
+              exports: ["authService"],
+              imports: ["./deps"],
+              type: "module",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("files.json: present, stale"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: files.json (invalid _meta.updated_at)"),
+      "info",
+    );
+  });
+
+  it("map-codebase query diff reports malformed baseline as unavailable", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(join(root, ".planning", "intel", ".last-refresh.json"), "{not valid json\n");
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Intel diff unavailable: baseline snapshot is invalid."),
+      "info",
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("Changed: none"),
+      "info",
+    );
+  });
+
+  it("map-codebase query diff reports schema-invalid baseline as unavailable", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify({ timestamp: "2026-05-06T00:00:00.000Z" }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Intel diff unavailable: baseline snapshot is invalid."),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: .last-refresh.json (invalid snapshot schema)"),
+      "info",
+    );
+  });
+
+  it("map-codebase query diff matches legacy snapshot keys for canonical intel files", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    const filesContent = `${JSON.stringify(
+      {
+        _meta: { updated_at: "2026-05-06T00:00:00.000Z", version: 1 },
+        entries: {
+          "src/auth/service.ts": {
+            exports: ["authService"],
+            imports: ["./deps"],
+            type: "module",
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(join(root, ".planning", "intel", "files.json"), filesContent);
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify(
+        {
+          timestamp: "2026-05-06T00:00:00.000Z",
+          hashes: {
+            "file-roles.json": createHash("sha256").update(filesContent).digest("hex"),
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Added: none"), "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Changed: none"), "info");
+  });
+
+  it("map-codebase query diff reports removed canonical intel artifacts", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify(
+        {
+          timestamp: "2026-05-06T00:00:00.000Z",
+          hashes: { "files.json": "deadbeef" },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Removed: files.json"),
+      "info",
+    );
+  });
+
+  it("map-codebase query surfaces malformed intel JSON explicitly", async () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "intel"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      `${JSON.stringify({ intel: { enabled: true } }, null, 2)}\n`,
+    );
+    writeFileSync(join(root, ".planning", "intel", "files.json"), "{not valid json\n");
+    writeFileSync(
+      join(root, ".planning", "intel", ".last-refresh.json"),
+      `${JSON.stringify({ hashes: { "files.json": "deadbeef" } }, null, 2)}\n`,
+    );
+    const ctx = createContext(root);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "auth" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "status" });
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, { query: "diff" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid intel file: files.json"),
+      "info",
+    );
+  });
+
+  it("map-codebase query rejects malformed reserved query invocations before write path", async () => {
+    const root = createRoot();
+    const ctx = createContext(root);
+    const spawn = vi.fn();
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+
+    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
+      unsupportedModeError:
+        "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (--fast).",
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(root, ".planning"))).toBe(false);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Unsupported /gsd map-codebase query mode: reserved query `status` does not accept trailing arguments (--fast).",
+      "warning",
     );
   });
 

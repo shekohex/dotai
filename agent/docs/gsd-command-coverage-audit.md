@@ -47,7 +47,7 @@ Implemented locally:
 | `complete-milestone` | workflow-launch shim        | `complete-milestone`           |       90 |
 | `milestone-summary`  | workflow-launch shim        | `milestone-summary`            |       88 |
 | `debug`              | hybrid TS + workflow-launch | `debug`                        |       84 |
-| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       94 |
+| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       92 |
 | `discuss-phase`      | TS-native orchestration     | `discuss-phase`                |       42 |
 | `plan-phase`         | TS-native orchestration     | `plan-phase`                   |       55 |
 | `execute-phase`      | TS-native orchestration     | `execute-phase`                |       46 |
@@ -175,7 +175,7 @@ Templates:
 
 ### `new-milestone`
 
-Coverage: 92/100
+Coverage: 96/100
 
 Upstream behavior:
 
@@ -255,7 +255,7 @@ Differences:
 
 ### `map-codebase`
 
-Coverage: 89/100
+Coverage: 94/100
 
 Upstream behavior:
 
@@ -285,7 +285,7 @@ Differences:
 
 - local `--fast` now supports safe partial non-canonical scans with one mapper subagent and focus-specific artifact validation/stamping; default focus is `tech+arch`, and `refresh` overwrites only targeted docs. All fast-focus prompt variants now carry explicit partial/non-canonical/targeted-doc instructions. `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/extensions/gsd/lifecycle/map-codebase-prompts.ts`
 - autocomplete now exposes only shipped fast-mode forms: `--fast` on base command, then `refresh` and `--focus` variants after `--fast`. `src/extensions/gsd/autocomplete.ts`
-- local `--query <term>`, `--query status`, and `--query diff` now run as safe local read-only paths before any planning-dir write. `--query refresh` remains explicitly unsupported in this slice. Parser enforces query-mode exclusivity, multi-word query capture, and autocomplete now advertises shipped query forms. Intel reads tolerate legacy and newer updater filenames plus snapshot filename drift without performing migrations. `src/extensions/gsd/args.ts`, `src/extensions/gsd/autocomplete.ts`, `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/resources/gsd/bin/lib/intel.cjs`
+- local `--query <term>`, `--query status`, and `--query diff` stay read-only and run before any planning-dir write. `--query refresh` is explicit write path routed in `handleGsdMapCodebase()` into detached full intel refresh with strict post-run verification: canonical file presence, strict `arch.md` frontmatter validation, `intel validate`, snapshot presence, snapshot hashes matching current canonical files, and a fresh snapshot artifact timestamp after refresh start. This is a local consistency guard, not cryptographic proof that a trusted snapshot subcommand executed. Idempotent refreshes are allowed when rebuilt outputs remain unchanged. On verification failure, local runtime restores previous readable intel artifacts, including legacy fallback filenames and snapshot files, so failed refreshes do not leak broken intel into later read/query paths. On verified success, local runtime deletes legacy fallback intel and snapshot files to eliminate steady-state ambiguity in later read/query results. Freeform searches that begin with reserved words remain available through explicit escape hatch `--query query <term>`, while malformed reserved-mode trailing args still reject. Intel reads prefer current upstream filenames first, writes/validation/snapshots now target canonical upstream filenames only, legacy filenames remain read-only fallback only until a successful canonical refresh cleans them up, and diff compares both legacy and canonical snapshot keys during migration. `src/extensions/gsd/args.ts`, `src/extensions/gsd/autocomplete.ts`, `src/extensions/gsd/lifecycle/map-codebase.ts`, `src/extensions/gsd/lifecycle/map-codebase-intel-refresh.ts`, `src/extensions/gsd/ui/messages.ts`, `src/resources/gsd/bin/lib/intel.cjs`, `src/resources/gsd/agents/gsd-intel-updater.md`
 - no upstream interactive per-document update picker; local flow is explicit rerun choice via canonical `refresh`/`update`/`skip` or fast-only `refresh`
 - no commit step in TS
 - artifact set remains: `STACK.md`, `INTEGRATIONS.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `TESTING.md`, `CONCERNS.md`
@@ -611,7 +611,7 @@ Execution strategy:
 |    06 | `validate-phase`     |               15 | High     | retroactive quality gate still very incomplete             | Nyquist audit/reconstruction/test-gen behavior, tests                                                     |
 |    07 | `progress`           |               24 | High     | primary situational router in upstream                     | report modes, `--next`, `--do`, `--forensic`, routing tests                                               |
 |    08 | `health`             |               28 | High     | trust/safety command for `.planning` health                | repair/context modes, richer checks, tests                                                                |
-|    09 | `map-codebase`       |               89 | High     | strong base exists, remaining gap mostly `--query` branch  | finish `--query`, optional upstream picker/commit parity                                                  |
+|    09 | `map-codebase`       |               94 | High     | strong base exists, remaining gap mostly picker/commit UX  | optional upstream picker/commit parity                                                                    |
 |    10 | `stats`              |               22 | Medium   | support command, easy isolated parity work                 | richer metrics, git timeline, output parity, tests                                                        |
 |    11 | `help`               |               30 | Medium   | docs UX, low risk                                          | reference parity or explicit local divergence, tests                                                      |
 |    12 | `new-milestone`      |               92 | Medium   | already strong, polish after core loop                     | close remaining deltas, tests, audit refresh                                                              |

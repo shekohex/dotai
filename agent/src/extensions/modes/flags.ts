@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { loadModeRegistrySync, type ModeSpec, type ModesFile } from "../../mode-utils.js";
 
 const MODE_FLAG_PREFIX = "mode-";
+const modeFlagRefreshListeners = new Set<() => void>();
 
 export function toModeFlagName(modeName: string): string | undefined {
   const normalized = modeName
@@ -67,6 +68,23 @@ export function registerModeFlags(
       description: describeModeFlag(modeName, loaded.resolvedData.modes[modeName], deps),
       type: "boolean",
     });
+  }
+}
+
+export function subscribeModeFlagRefresh(listener: () => void): () => void {
+  modeFlagRefreshListeners.add(listener);
+  return () => {
+    modeFlagRefreshListeners.delete(listener);
+  };
+}
+
+export function notifyModeFlagRefresh(): void {
+  for (const listener of modeFlagRefreshListeners) {
+    try {
+      listener();
+    } catch {
+      modeFlagRefreshListeners.delete(listener);
+    }
   }
 }
 

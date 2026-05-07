@@ -12,21 +12,41 @@ type IntelQueryResult =
       matches: Array<{ source: string; entries: Array<{ key: string; value: unknown }> }>;
       term: string;
       total: number;
+      invalid_files?: Array<{ file: string; error: string; preferredOver?: string[] }>;
     }
   | IntelDisabledResponse;
 type IntelStatusResult =
   | {
       files: Record<string, { exists: boolean; updated_at: string | null; stale: boolean }>;
       overall_stale: boolean;
+      invalid_files?: Array<{ file: string; error: string; preferredOver?: string[] }>;
     }
   | IntelDisabledResponse;
 type IntelDiffResult =
-  | { changed: string[]; added: string[]; removed: string[] }
+  | {
+      changed: string[];
+      added: string[];
+      removed: string[];
+      invalid_files?: Array<{ file: string; error: string; preferredOver?: string[] }>;
+    }
+  | {
+      invalid_baseline: true;
+      message: string;
+      invalid_files?: Array<{ file: string; error: string; preferredOver?: string[] }>;
+    }
   | { no_baseline: true }
   | IntelDisabledResponse;
 type IntelQueryData = Exclude<IntelQueryResult, IntelDisabledResponse>;
 type IntelStatusData = Exclude<IntelStatusResult, IntelDisabledResponse>;
 type IntelDiffData = Exclude<IntelDiffResult, IntelDisabledResponse | { no_baseline: true }>;
+type IntelDiffChangeData = Extract<
+  IntelDiffData,
+  { changed: string[]; added: string[]; removed: string[] }
+>;
+
+function isIntelDiffChangeData(value: IntelDiffData): value is IntelDiffChangeData {
+  return "changed" in value && "added" in value && "removed" in value;
+}
 
 function hasIntelHelpers(value: unknown): value is {
   intelQuery: (term: string, planningDir: string) => IntelQueryResult;
@@ -85,6 +105,11 @@ function formatIntelQueryResult(result: IntelQueryData): string {
       lines.push(`- ... ${match.entries.length - 5} more`);
     }
   }
+  if (result.invalid_files !== undefined) {
+    for (const invalidFile of result.invalid_files) {
+      lines.push(`Invalid intel file: ${invalidFile.file} (${invalidFile.error})`);
+    }
+  }
   return lines.join("\n");
 }
 
@@ -98,14 +123,41 @@ function formatIntelStatusResult(result: IntelStatusData): string {
       `- ${filename}: ${status.exists ? "present" : "missing"}, ${status.stale ? "stale" : "fresh"}${updatedAt}`,
     );
   }
+  if (result.invalid_files !== undefined) {
+    for (const invalidFile of result.invalid_files) {
+      lines.push(`Invalid intel file: ${invalidFile.file} (${invalidFile.error})`);
+    }
+  }
   return lines.join("\n");
 }
 
 function formatIntelDiffResult(result: IntelDiffData): string {
-  const changed = result.changed.length === 0 ? "none" : result.changed.join(", ");
-  const added = result.added.length === 0 ? "none" : result.added.join(", ");
-  const removed = result.removed.length === 0 ? "none" : result.removed.join(", ");
-  return [`Intel diff`, `Changed: ${changed}`, `Added: ${added}`, `Removed: ${removed}`].join("\n");
+  if ("invalid_baseline" in result && result.invalid_baseline) {
+    const lines = [result.message];
+    if (result.invalid_files !== undefined) {
+      for (const invalidFile of result.invalid_files) {
+        lines.push(`Invalid intel file: ${invalidFile.file} (${invalidFile.error})`);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  if (!isIntelDiffChangeData(result)) {
+    throw new Error("Unexpected intel diff result shape");
+  }
+
+  const diffResult = result;
+
+  const changed = diffResult.changed.length === 0 ? "none" : diffResult.changed.join(", ");
+  const added = diffResult.added.length === 0 ? "none" : diffResult.added.join(", ");
+  const removed = diffResult.removed.length === 0 ? "none" : diffResult.removed.join(", ");
+  const lines = [`Intel diff`, `Changed: ${changed}`, `Added: ${added}`, `Removed: ${removed}`];
+  if (diffResult.invalid_files !== undefined) {
+    for (const invalidFile of diffResult.invalid_files) {
+      lines.push(`Invalid intel file: ${invalidFile.file} (${invalidFile.error})`);
+    }
+  }
+  return lines.join("\n");
 }
 
 export function handleReadOnlyQueryMode(
@@ -118,11 +170,7 @@ export function handleReadOnlyQueryMode(
 
   const normalizedQuery = normalizeQueryValue(args.query);
   if (normalizedQuery === "refresh") {
-    ctx.ui.notify(
-      "Unsupported /gsd map-codebase query mode: `--query refresh` is not implemented locally in this slice.",
-      "warning",
-    );
-    return true;
+    return false;
   }
 
   const planningDir = resolvePlanningDir(ctx.cwd);
@@ -150,7 +198,7 @@ export function handleReadOnlyQueryMode(
       ctx.ui.notify("Intel diff: no baseline snapshot available.", "info");
       return true;
     }
-    if ("changed" in result) {
+    if ("changed" in result || ("invalid_baseline" in result && result.invalid_baseline)) {
       ctx.ui.notify(formatIntelDiffResult(result), "info");
       return true;
     }

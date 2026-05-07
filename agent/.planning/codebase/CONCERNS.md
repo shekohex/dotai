@@ -1,203 +1,160 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-05-05
+**Analysis Date:** 2026-05-07
 
 ## Tech Debt
 
-**Upstream runtime monkey patches:**
+**Monolithic codebase mapping orchestration:**
+- Issue: `src/extensions/gsd/lifecycle/map-codebase.ts` keeps backup/restore, git reachability checks, artifact validation, detached-job orchestration, and UI messaging in one 700+ line module.
+- Files: `src/extensions/gsd/lifecycle/map-codebase.ts`, `test/gsd/lifecycle.test.ts`
+- Impact: changes to one path can break backup logic or overwrite canonical docs; the file is hard to reason about and expensive to modify safely.
+- Fix approach: split backup/validation/stamping/reporting into separate modules and keep command wiring in `map-codebase.ts` only.
 
-- Issue: `src/extensions/bundled-resources.ts`, `src/extensions/model-family-system-prompt.ts`, `src/extensions/inline-extension-names.ts`, and `src/extensions/mermaid/patch.ts` patch upstream prototypes and private fields at load time.
-- Files: `src/extensions/bundled-resources.ts`, `src/extensions/model-family-system-prompt.ts`, `src/extensions/inline-extension-names.ts`, `src/extensions/mermaid/patch.ts`
-- Impact: Any upstream rename or shape change in `@mariozechner/pi-coding-agent` can break bundled resource discovery, system-prompt rewriting, inline extension naming, or Mermaid rendering for every session.
-- Fix approach: Keep all upstream touch points in one adapter layer, add upgrade smoke tests against the exact dependency version, and revalidate patches on every upstream bump.
-
-**Hardcoded runtime endpoints:**
-
-- Issue: `src/extensions/litellm.ts` and `src/extensions/executor/settings.ts` ship with baked-in LAN, tailnet, and public candidate URLs.
-- Files: `src/extensions/litellm.ts`, `src/extensions/executor/settings.ts`
-- Impact: Infra rotation or a new machine layout breaks auto-discovery until the code or test override changes.
-- Fix approach: Move candidates into config or environment-driven settings and keep a refresh path so runtime recovery does not require restart.
-
-**Session registry file churn:**
-
-- Issue: `touchSession()` in `src/extensions/interview/server-session-store.ts` reads and rewrites the full session registry file, and `listSessions()` rewrites again after pruning.
-- Files: `src/extensions/interview/server-session-store.ts`, `src/extensions/interview/server-runtime-support.ts`
-- Impact: Frequent heartbeats create synchronous disk churn and race windows. Concurrent processes can overwrite each other’s session updates.
-- Fix approach: Use file locking, append-only persistence, or a small embedded database for session state.
-
-**Silent recovery paths:**
-
-- Issue: `src/subagent-sdk/persistence.ts`, `src/extensions/openusage/controller.ts`, and `src/extensions/gsd/lifecycle/map-codebase.ts` often swallow IO or refresh failures and fall back to empty/default state.
-- Files: `src/subagent-sdk/persistence.ts`, `src/extensions/openusage/controller.ts`, `src/extensions/gsd/lifecycle/map-codebase.ts`
-- Impact: Corruption, partial writes, and background refresh failures become invisible. Users see stale or empty state instead of a diagnosable error.
-- Fix approach: Keep resilient fallbacks only at UI boundaries, and surface repairable failures with enough context to trace the source file or provider.
+**Synchronous session metadata writes on heartbeat:**
+- Issue: `src/extensions/interview/server-session-store.ts` rewrites the full sessions JSON file synchronously, and `src/extensions/interview/server-runtime.ts` touches that store on a repeating heartbeat.
+- Files: `src/extensions/interview/server-session-store.ts`, `src/extensions/interview/server-runtime.ts`
+- Impact: every live interview adds sync disk I/O and whole-file rewrite contention; more sessions mean more event-loop blocking.
+- Fix approach: batch touches, use unique temp files, and move the store to an atomic async write path or append-only log.
 
 ## Known Bugs
 
-**Snapshot media filename collisions:**
+**Malformed Coder public-url env can abort interview startup:**
+- Issue: `src/extensions/interview/public-url.ts` constructs `new URL(...)` from `CODER_WILDCARD_ACCESS_URL`, `CODER_URL`, and `CODER_AGENT_URL` without a guard.
+- Files: `src/extensions/interview/public-url.ts`, `src/extensions/interview/server-runtime.ts`
+- Impact: bad environment values can crash interview server startup instead of falling back to a local URL.
+- Fix approach: catch URL parse failures and fall back to the loopback base URL.
 
-- Symptoms: Upload and export paths derive filenames from `basename()` in `handleImageUpload()` and `copyMediaImages()`. Two different source files with the same basename overwrite each other in the session temp dir and the exported `images/` directory.
-- Files: `src/extensions/interview/server-request.ts`, `src/extensions/interview/server-saved-html.ts`
-- Trigger: Multiple uploaded images or source media files sharing a name like `image.png`.
-- Workaround: Not detected.
-- Fix approach: Generate unique names from session id, question id, and a content hash, then rewrite references to those names.
-
-**Corrupt saved answers disappear on load:**
-
-- Symptoms: `normalizeResponseItems()` in `src/extensions/interview/questions.ts` drops any saved response entry without a string `id` or valid `value`, and `loadSavedInterview()` loads the snapshot without reporting which entries were lost.
-- Files: `src/extensions/interview/questions.ts`
-- Trigger: Corrupted or hand-edited saved interview HTML with malformed `savedAnswers` entries.
-- Workaround: None.
-- Fix approach: Surface validation errors or retain invalid entries in a repair report instead of silently discarding them.
-
-**LiteLLM discovery can stay pinned offline:**
-
-- Symptoms: `resolveLiteLLMState()` stores the first probe result in `litellmStatePromise` and never invalidates it.
+**LiteLLM probe result is cached forever:**
+- Issue: `src/extensions/litellm.ts` memoizes the first LiteLLM health probe in `litellmStatePromise` and never refreshes it.
 - Files: `src/extensions/litellm.ts`
-- Trigger: Transient gateway outage or network blip during startup.
-- Workaround: Restart process.
-- Fix approach: Add a TTL, explicit refresh, or retry path before provider registration.
+- Impact: a transient startup outage leaves bundled providers offline until the process restarts; recovered gateways are never re-probed.
+- Fix approach: invalidate the cache on provider failure or re-probe on a timer.
+
+**Uploaded images and copied media overwrite by basename:**
+- Issue: `src/extensions/interview/server-request.ts` and `src/extensions/interview/server-saved-html.ts` derive saved filenames from `basename(...)` only.
+- Files: `src/extensions/interview/server-request.ts`, `src/extensions/interview/server-saved-html.ts`
+- Impact: two inputs with the same name clobber each other, and saved snapshots can point at the wrong image or lose earlier uploads.
+- Fix approach: prefix filenames with question id or a unique upload id and keep the original name only for display.
+
+**Missing/corrupt child-session state can stay “running”:**
+- Issue: `src/subagent-sdk/persistence.ts` and `src/subagent-sdk/runtime/monitoring.ts` fall back to a running status when child-session state reads fail.
+- Files: `src/subagent-sdk/persistence.ts`, `src/subagent-sdk/runtime/monitoring.ts`
+- Impact: dead or corrupted child sessions can remain shown as live, which keeps polling active and hides failures.
+- Fix approach: distinguish “missing”, “corrupt”, and “running” and finalize inactive sessions explicitly.
 
 ## Security Considerations
 
-**Unescaped HTML in saved snapshots:**
+**Interview session token can leak to third-party asset hosts:**
+- Issue: the live interview page embeds the session token in the URL and also loads Google Fonts plus JSDelivr assets.
+- Files: `src/extensions/interview/server-runtime.ts`, `src/extensions/interview/form/index.html`, `src/extensions/interview/server-assets.ts`
+- Impact: Referer headers can expose the session token to external hosts; the session can be hijacked if that token is logged or replayed.
+- Fix approach: self-host fonts and chart/mermaid assets, and move auth off query-string URLs.
 
-- Risk: `renderMediaBlockHtml()` inserts `media.html` directly into exported snapshot HTML when `media.type === "html"`.
-- Files: `src/extensions/interview/server-saved-html.ts`
-- Current mitigation: Other fields are escaped, and `safeInlineJSON()` protects embedded JSON payloads.
-- Recommendations: Sanitize HTML before writing snapshots or render HTML media inside a sandboxed iframe or separate origin.
+**Saved interview HTML renders raw HTML blocks:**
+- Issue: `src/extensions/interview/server-saved-html.ts` inserts `media.type === "html"` content directly into the saved snapshot HTML.
+- Files: `src/extensions/interview/server-saved-html.ts`, `src/extensions/interview/schema.ts`
+- Impact: opening a saved interview can execute attacker-controlled script from question content or saved media.
+- Fix approach: escape HTML by default and require an explicit trusted/sandboxed render mode for raw HTML blocks.
 
-**Media path trust boundary is broad:**
-
-- Risk: `handleMediaRequest()` accepts any path under `cwd`, `homedir()`, or `tmpdir()`, and uses `resolve()` instead of canonical path checks.
-- Files: `src/extensions/interview/server-runtime-support.ts`, `src/extensions/interview/server-saved-html.ts`
-- Current mitigation: Prefix allowlist only.
-- Recommendations: Canonicalize with `realpathSync()`, narrow allowed roots to per-session assets, and reject symlink escapes. The same trust model appears in `copyMediaImages()`.
-
-**Remote CDN scripts execute in live interview origin:**
-
-- Risk: `buildCdnScripts()` injects Chart.js and Mermaid from jsDelivr into the live interview page when those media types are present.
-- Files: `src/extensions/interview/server-assets.ts`, `src/extensions/interview/server-runtime-support.ts`
-- Current mitigation: None beyond HTTPS transport.
-- Recommendations: Bundle assets locally or gate remote loading behind an explicit trusted-CDN toggle. Those scripts run with access to same-origin session state and form data.
+**Media request path allowlist is prefix-based, not canonical-path based:**
+- Issue: `src/extensions/interview/server-runtime-support.ts` trusts resolved path prefixes instead of checking canonical `realpath()` roots.
+- Files: `src/extensions/interview/server-runtime-support.ts`
+- Impact: symlinked files under an allowed root can escape to other local files and be served by the interview server.
+- Fix approach: resolve canonical paths before allowlist checks and deny symlink escapes.
 
 ## Performance Bottlenecks
 
-**Whole-file session persistence:**
+**Interview sessions rewrite whole JSON file on every heartbeat:**
+- Files: `src/extensions/interview/server-session-store.ts`, `src/extensions/interview/server-runtime.ts`
+- Problem: each active session touches the shared sessions file on a timer, and every touch rewrites the entire file synchronously.
+- Cause: session bookkeeping uses `readFileSync`, `writeFileSync`, and `renameSync` in the hot path.
+- Improvement path: debounce heartbeat persistence, move to async I/O, and keep writes atomic with unique temp files.
 
-- Problem: Every heartbeat calls `touchSession()`, which reloads and rewrites the full session registry. Prune logic also rewrites the file.
-- Files: `src/extensions/interview/server-session-store.ts`, `src/extensions/interview/server-runtime-support.ts`
-- Cause: Synchronous read-modify-write on a single JSON file.
-- Improvement path: Move to append-only storage, sqlite, or locked atomic updates.
+**LiteLLM startup probe is serial and blocking:**
+- Files: `src/extensions/litellm.ts`
+- Problem: gateway detection probes candidates one at a time with a 1s timeout each before provider registration finishes.
+- Cause: the extension waits for the first healthy gateway during startup instead of probing in parallel or in the background.
+- Improvement path: probe candidates concurrently and refresh health lazily after the extension is already loaded.
 
-**Snapshot generation copies everything on save:**
-
-- Problem: Save flow rebuilds the full saved HTML, rewrites media references, and copies media assets on every save request.
-- Files: `src/extensions/interview/server-runtime.ts`, `src/extensions/interview/server-saved-html.ts`
-- Cause: Per-save traversal of the whole question tree and attachment set.
-- Improvement path: Reuse stable asset paths or dedupe copied files by content hash.
+**GSD map command is a large synchronous orchestration path:**
+- Files: `src/extensions/gsd/lifecycle/map-codebase.ts`
+- Problem: long-running map operations mix sync file work and `execFileSync` checks in one command handler.
+- Cause: one module owns both control flow and filesystem/git verification.
+- Improvement path: move validation, backup management, and report writing into smaller helpers with narrower responsibilities.
 
 ## Fragile Areas
 
-**Prototype patching of upstream classes:**
+**Private upstream `SessionManager` API dependency:**
+- Issue: `persistSessionBootstrap()` reaches into `SessionManager` with `_rewriteFile` via a local property accessor.
+- Files: `src/subagent-sdk/persistence.ts`
+- Impact: upstream `@mariozechner/pi-coding-agent` changes can break child-session bootstrap at runtime.
+- Safe modification: keep the private API call isolated in one helper and revalidate it on every upstream bump.
 
-- Files: `src/extensions/bundled-resources.ts`, `src/extensions/model-family-system-prompt.ts`, `src/extensions/inline-extension-names.ts`, `src/extensions/mermaid/patch.ts`
-- Why fragile: Behavior depends on upstream method names, private fields, and render semantics. A dependency upgrade can turn a load-time patch into a startup failure or a silent UI regression.
-- Safe modification: Keep compatibility code isolated, pin the upstream package version, and gate upgrades with smoke tests that exercise the patched paths.
+**Editor command parsing assumes one-space splitting:**
+- Issue: `openExternalEditor()` in `src/extensions/files/browser-actions.ts` splits `$VISUAL`/`$EDITOR` on literal spaces.
+- Files: `src/extensions/files/browser-actions.ts`
+- Impact: editors with quoted args or paths containing spaces launch incorrectly or lose arguments.
+- Safe modification: store editor binary and args separately or parse shell-style quoting explicitly.
 
-**Module-scoped executor state and inspection cache:**
-
-- Files: `src/extensions/executor/status.ts`, `src/extensions/executor/tools-descriptions.ts`
-- Why fragile: Executor status and inspection data are cached by cwd and MCP URL, so stale state persists until explicit cleanup. Tool descriptions can also remain stale after a server restart with the same URL.
-- Safe modification: Clear caches on shutdown and settings changes, and test crash/restart flows.
-- Test coverage: Restart-after-shutdown is covered in `test/executor.test.ts`; crash cleanup, stale cache invalidation, and post-restart description refresh are not.
-
-**Hardcoded gateway discovery:**
-
-- Files: `src/extensions/litellm.ts`, `src/extensions/executor/settings.ts`
-- Why fragile: The discovery order is tied to concrete LAN, tailnet, and public endpoints. Environment changes require code changes or explicit test overrides.
-- Safe modification: Move candidate discovery into config or env-driven settings and test startup against missing or rotated endpoints.
+**Saved media filenames are not unique:**
+- Issue: image copies in the interview save path are based on basename only.
+- Files: `src/extensions/interview/server-request.ts`, `src/extensions/interview/server-saved-html.ts`
+- Impact: duplicate names overwrite earlier files and make snapshots nondeterministic.
+- Safe modification: include a question id, upload id, or content hash in the final filename.
 
 ## Scaling Limits
 
-**Single-process local server assumptions:**
+**Interview snapshot storage can grow without pruning:**
+- Files: `src/extensions/interview/server-runtime.ts`, `src/extensions/interview/server-request.ts`
+- Current capacity: every save can create a new snapshot directory plus copied images in tmp storage.
+- Limit: repeated autosaves or large image payloads consume disk space quickly.
+- Scaling path: add retention rules, a cleanup command, and image-size/image-count caps on save.
 
-- Current capacity: Designed around one local user/session per runtime directory.
-- Files: `src/extensions/interview/server-runtime.ts`, `src/extensions/interview/server-session-store.ts`
-- Limit: Concurrent interviews from multiple processes contend on the same session, recovery, and snapshot directories.
-- Scaling path: Isolate runtime directories per session or move registry state into a process-safe store.
+**Subagent temp-file contract depends on tmpdir cleanup:**
+- Files: `src/subagent-sdk/persistence.ts`, `src/subagent-sdk/runtime/monitoring.ts`
+- Current capacity: one marker/outcome file per session id lives under OS temp directories.
+- Limit: stale markers accumulate if the process exits early or cleanup never runs.
+- Scaling path: add periodic temp cleanup and a startup sweep for old session artifacts.
 
 ## Dependencies at Risk
 
-**Patched upstream package:**
+**Remote asset providers:**
+- Files: `src/extensions/interview/form/index.html`, `src/extensions/interview/server-assets.ts`
+- Risk: Google Fonts and JSDelivr availability or CSP changes can break the interview UI.
+- Impact: offline or locked-down environments lose fonts, charts, and mermaid rendering.
+- Migration plan: vendor assets locally or make remote assets optional.
 
-- Risk: `patches/@mariozechner+pi-coding-agent+0.72.1.patch` changes vendored behavior and types in `@mariozechner/pi-coding-agent`.
-- Files: `patches/@mariozechner+pi-coding-agent+0.72.1.patch`
-- Impact: Dependency upgrades can invalidate the patch or reintroduce renderer and spacing regressions.
-- Migration plan: Rebase the patch on every upstream bump and keep a smoke test around the touched render and session-selector paths.
-
-**External CDN assets:**
-
-- Risk: `src/extensions/interview/server-assets.ts` and `src/extensions/interview/server-runtime-support.ts` inject Chart.js and Mermaid from jsDelivr when those media types are present.
-- Files: `src/extensions/interview/server-assets.ts`, `src/extensions/interview/server-runtime-support.ts`
-- Impact: Offline or filtered-network environments lose those rendered assets, and CDN compromise becomes a same-origin script execution risk.
-- Migration plan: Bundle assets locally or add an offline fallback.
-
-**LiteLLM gateway endpoints:**
-
-- Risk: `src/extensions/litellm.ts` hardcodes LAN, tailnet, and public gateway URLs.
+**Hardcoded LiteLLM candidates:**
 - Files: `src/extensions/litellm.ts`
-- Impact: Gateway rotation, private network changes, or provider relocation break auto-discovery without a code update.
-- Migration plan: Source gateway candidates from config or environment and add retry/refresh behavior.
+- Risk: the LAN/Tailscale/public gateway list is environment-specific and can drift.
+- Impact: provider registration may stay offline even though a usable gateway exists elsewhere.
+- Migration plan: move candidate URLs into config and surface health in settings.
 
-**Executor MCP endpoints:**
-
-- Risk: `src/extensions/executor/settings.ts` hardcodes executor probe URLs for a specific LAN and tailnet topology.
-- Files: `src/extensions/executor/settings.ts`, `src/extensions/executor/connection.ts`
-- Impact: Any network readdressing breaks executor startup and tool registration until settings are overridden.
-- Migration plan: Move probe URLs into configuration and surface a clearer fallback path when no candidate resolves.
+**Hardcoded executor probe endpoints:**
+- Files: `src/extensions/executor/settings.ts`
+- Risk: default MCP URLs point at a specific local network.
+- Impact: auto-start probing wastes time or misses the active endpoint outside that network.
+- Migration plan: keep defaults but make every candidate overridable from runtime config.
 
 ## Missing Critical Features
 
-- Not detected.
+**No trusted/sandboxed mode for raw HTML media blocks:**
+- Files: `src/extensions/interview/server-saved-html.ts`, `src/extensions/interview/schema.ts`
+- Problem: HTML media blocks can execute directly in saved snapshots.
+- Blocks: safe offline viewing of externally sourced or user-authored content.
+
+**No canonical-path guard for media symlink traversal:**
+- Files: `src/extensions/interview/server-runtime-support.ts`
+- Problem: the media endpoint trusts path prefixes instead of canonical roots.
+- Blocks: secure serving of local media when symlinks exist under allowed directories.
 
 ## Test Coverage Gaps
 
-**Session-store behavior under contention:**
-
-- What’s not tested: Concurrent `registerSession()`, `touchSession()`, and `unregisterSession()` behavior, plus recovery after a partial write.
-- Files: `src/extensions/interview/server-session-store.ts`
-- Risk: Lost sessions or stale `/sessions` results.
-- Priority: High
-
-**Saved HTML security and asset collisions:**
-
-- What’s not tested: Raw HTML rendering in `media.type === "html"`, duplicate basenames in uploaded or exported media, and symlink escapes through `/media` or export copying.
-- Files: `src/extensions/interview/server-saved-html.ts`, `src/extensions/interview/server-runtime-support.ts`, `src/extensions/interview/server-request.ts`
-- Risk: XSS in exported snapshots and incorrect or leaked assets.
-- Priority: High
-
-**LiteLLM cache invalidation:**
-
-- What’s not tested: Retry after a transient startup outage, refresh after gateway recovery, or endpoint rotation after `resolveLiteLLMState()` caches a failure.
-- Files: `src/extensions/litellm.ts`
-- Risk: Providers stay offline until restart.
-- Priority: Medium
-
-**Patch compatibility with upstream internals:**
-
-- What’s not tested: Behavior after upstream method or field shape changes in patched runtime classes.
-- Files: `src/extensions/bundled-resources.ts`, `src/extensions/model-family-system-prompt.ts`, `src/extensions/mermaid/patch.ts`
-- Risk: Startup failure or silent prompt/render regressions after dependency upgrades.
-- Priority: Medium
-
-**Executor endpoint drift:**
-
-- What’s not tested: Default LAN/tailnet candidate failure, settings override behavior, or stale tool-description refresh after the MCP server restarts on the same URL.
-- Files: `src/extensions/executor/settings.ts`, `src/extensions/executor/tools-descriptions.ts`, `src/extensions/executor/status.ts`
-- Risk: Executor appears broken or stale despite a healthy backend.
-- Priority: Medium
+- `src/extensions/interview/public-url.ts`: malformed `CODER_*` URLs are not covered; the startup crash path stays untested.
+- `src/extensions/interview/server-request.ts` and `src/extensions/interview/server-saved-html.ts`: duplicate-basename upload collisions are not covered.
+- `src/subagent-sdk/persistence.ts`: missing or corrupt child-session state falling back to `running` is not covered.
+- `src/extensions/files/browser-actions.ts`: `$EDITOR` / `$VISUAL` commands with spaces or quoted args are not covered.
 
 ---
 
-_Concerns audit: 2026-05-05_
+*Concerns audit: 2026-05-07*

@@ -10,7 +10,8 @@ export type GsdRole =
   | "plan-checker"
   | "debugger"
   | "debug-session-manager"
-  | "codebase-mapper";
+  | "codebase-mapper"
+  | "intel-updater";
 
 type GsdRoleConfig = {
   modeName: string;
@@ -68,6 +69,21 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD codebase mapper",
+      provider: "codex-openai",
+      modelId: "gpt-5.4-mini",
+      thinkingLevel: "high",
+      tools: ["read", "bash", "edit", "write"],
+      systemPromptMode: "replace",
+      autoExit: true,
+      tmuxTarget: "window",
+    },
+  },
+  "intel-updater": {
+    modeName: "gsd-intel-updater",
+    bundledPromptPath: "resources/gsd/agents/gsd-intel-updater.md",
+    fallbackMode: "search",
+    builtInModeSpec: {
+      description: "Built-in GSD intel updater",
       provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
@@ -195,5 +211,6 @@ export function listGsdRoles(): GsdRole[] {
     "debugger",
     "debug-session-manager",
     "codebase-mapper",
+    "intel-updater",
   ];
 }

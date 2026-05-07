@@ -1,262 +1,225 @@
-<!-- refreshed: 2026-05-05 -->
+<!-- refreshed: 2026-05-07 -->
 
 # Architecture
 
-**Analysis Date:** 2026-05-05
+**Analysis Date:** 2026-05-07
 
 ## System Overview
 
-```mermaid
-flowchart TD
-  BIN[bin/pi.js]
-  CLI[src/cli.ts]
-  MAIN[@mariozechner/pi-coding-agent main]
-  REG[src/extensions/index.ts]
-  PATCH[src/extensions/bundled-resources.ts / src/extensions/inline-extension-names.ts]
-  FEAT[src/extensions/*]
-  GSD[src/extensions/gsd/*]
-  SUB[src/subagent-sdk/*]
-  MODE[src/mode-loading.ts / src/mode-utils.ts / src/default-settings.ts]
-  RES[src/resources/*]
-  BUILD[scripts/*.mjs]
-
-  BIN --> CLI --> MAIN --> REG
-  CLI --> PATCH
-  REG --> FEAT
-  FEAT --> GSD
-  FEAT --> SUB
-  FEAT --> MODE
-  FEAT --> RES
-  BUILD --> RES
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                  CLI bootstrap / host runtime               │
+│  `src/cli.ts` → upstream `@mariozechner/pi-coding-agent`    │
+├──────────────────┬──────────────────┬───────────────────────┤
+│ Extension assembly│  Feature modules │   Shared runtime      │
+│ `src/extensions/` │ `src/extensions/*`│ `src/subagent-sdk/`   │
+└────────┬─────────┴────────┬─────────┴──────────┬────────────┘
+         │                  │                     │
+         ▼                  ▼                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│       Bundled resources / local project state / externals   │
+│ `src/resources/` · `.pi/` · `.planning/` · tmux · MCP       │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Component Responsibilities
 
-| Component             | Responsibility                                                                                                    | File                                                                                                                                                                                                                                                                                    |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI bootstrap         | Installs bundled resource-path patches, sets process title, and delegates startup to upstream `main`.             | `src/cli.ts`, `bin/pi.js`                                                                                                                                                                                                                                                               |
-| Extension composition | Groups bundled extension factories, assigns stable inline names, and exposes the factory list passed to upstream. | `src/extensions/index.ts`, `src/extensions/definitions-group-a.ts`, `src/extensions/definitions-group-b.ts`, `src/extensions/definitions-group-c.ts`, `src/extensions/inline-extension-names.ts`                                                                                        |
-| Bundled resources     | Injects `src/resources` into upstream discovery and keeps packaged prompts, skills, and themes visible.           | `src/extensions/bundled-resources.ts`                                                                                                                                                                                                                                                   |
-| Core runtime state    | Binds editor/UI state, git status, usage metrics, and mode changes into session-scoped UI state.                  | `src/extensions/coreui.ts`, `src/extensions/coreui/*`, `src/extensions/git-state.ts`, `src/extensions/openusage/controller.ts`                                                                                                                                                          |
-| Mode system           | Loads and merges mode definitions from bundled, global, and project sources.                                      | `src/default-settings.ts`, `src/mode-definitions.ts`, `src/mode-loading.ts`, `src/mode-utils.ts`, `src/extensions/modes/index.ts`                                                                                                                                                       |
-| GSD workflow          | Owns `/gsd` command dispatch, planning workspace parsing, phase orchestration, and GSD role prompts.              | `src/extensions/gsd/*`, `src/resources/gsd/*`                                                                                                                                                                                                                                           |
-| Subagent runtime      | Spawns, resumes, restores, and captures child sessions through tmux-backed typed runtime state.                   | `src/subagent-sdk/*`                                                                                                                                                                                                                                                                    |
-| Feature slices        | Implements user-facing commands, tools, renderers, and external integrations.                                     | `src/extensions/review/index.ts`, `src/extensions/subagent/index.ts`, `src/extensions/interview/index.ts`, `src/extensions/files/index.ts`, `src/extensions/websearch/index.ts`, `src/extensions/fetch/index.ts`, `src/extensions/mermaid/index.ts`, `src/extensions/executor/index.ts` |
+| Component | Responsibility | File |
+| --------- | -------------- | ---- |
+| CLI entrypoint | Starts upstream host, installs bundled resources, passes bundled extension factories | `src/cli.ts` |
+| Extension registry | Groups bundled extension factories and names them for loader output | `src/extensions/index.ts` |
+| Core UI layer | Owns footer/header/status/tool rendering hooks for the host UI | `src/extensions/coreui/index.ts` |
+| Mode system | Loads and validates mode registry, exposes flags, applies mode-dependent prompts | `src/mode-utils.ts`, `src/extensions/modes/index.ts` |
+| GSD workflow layer | Drives planning, execution, verification, and `.planning` file updates | `src/extensions/gsd/index.ts` |
+| Review layer | Tracks review sessions, restores state, and coordinates review subagents | `src/extensions/review/index.ts` |
+| Subagent runtime | Spawns child sessions, monitors tmux panes, persists state, exposes SDK | `src/subagent-sdk/index.ts` |
+| Bundled assets | Copies markdown/json assets into runtime resource search paths | `src/extensions/bundled-resources.ts`, `scripts/copy-bundled-resources.mjs` |
 
 ## Pattern Overview
 
-**Overall:** extension-driven wrapper around upstream `@mariozechner/pi-coding-agent`
+**Overall:** Event-driven extension composition over an upstream session host.
 
 **Key Characteristics:**
 
-- `src/cli.ts:3-10` stays thin. It patches bundled resources, then delegates runtime startup to upstream `main` with `bundledExtensionFactories`.
-- `src/extensions/index.ts:19-49` is the composition root. It assembles all bundled `ExtensionFactory` values and names inline extensions so upstream loader output stays stable.
-- Most feature code is registration code. `src/extensions/*` modules bind commands, tools, renderers, widgets, and event listeners onto `ExtensionAPI`.
-- GSD is a vertical slice inside the extension layer. `src/extensions/gsd/index.ts`, `src/extensions/gsd/commands.ts`, `src/extensions/gsd/orchestration.ts`, and `src/extensions/gsd/state/*` split command routing, planning state, and phase execution.
-- TypeBox validates every boundary where data crosses between files, session entries, JSON payloads, and child-session output. See `src/mode-definitions.ts`, `src/extensions/gsd/state/schema.ts`, and `src/subagent-sdk/types.ts`.
+- `src/cli.ts` calls upstream `main(...)` once and injects `bundledExtensionFactories` from `src/extensions/index.ts`.
+- Most behavior lives in extension factories that register commands, tools, renderers, and session/event listeners.
+- Shared state is kept inside small runtime singletons or session-entry state, not in a database.
+- Boundary data is validated with TypeBox in modules such as `src/mode-utils.ts`, `src/extensions/gsd/state/schema.ts`, `src/subagent-sdk/schema-definitions.ts`, and `src/extensions/interview/schema.ts`.
 
 ## Layers
 
-**Bootstrap and packaging:**
+**Bootstrap layer:**
 
-- Purpose: start the packaged CLI and prepare generated assets.
-- Location: `src/cli.ts`, `bin/pi.js`, `scripts/copy-bundled-resources.mjs`, `scripts/generate-default-settings.mjs`, `scripts/prepare-bin.mjs`, `scripts/postinstall.mjs`
-- Contains: startup shim, resource copy, defaults generation, bin wrapper generation, install-time seeding.
-- Depends on: `@mariozechner/pi-coding-agent`, `src/extensions/bundled-resources.ts`, `src/extensions/index.ts`.
-- Used by: package bin `pi`, build output under `dist/`.
+- Purpose: Start the agent, prepare runtime resources, and hand control to upstream host.
+- Location: `src/cli.ts`, `bin/pi.js`, `bin/pi.cmd`, `scripts/prepare-bin.mjs`
+- Contains: CLI shim, post-build executable wrappers, host handoff.
+- Depends on: `@mariozechner/pi-coding-agent`, bundled extension factories.
+- Used by: package entrypoint and local `npm run pi` workflow.
 
-**Extension composition:**
+**Extension composition layer:**
 
-- Purpose: define which feature modules are active in the runtime.
-- Location: `src/extensions/index.ts`, `src/extensions/definitions.ts`, `src/extensions/definitions-group-a.ts`, `src/extensions/definitions-group-b.ts`, `src/extensions/definitions-group-c.ts`
-- Contains: grouped factory lists, subagent factory wrapper, inline-name patch installation.
-- Depends on: feature modules in `src/extensions/*`.
-- Used by: `src/cli.ts` and upstream extension loading.
+- Purpose: Collect bundled extensions and attach stable names.
+- Location: `src/extensions/index.ts`, `src/extensions/definitions*.ts`, `src/extensions/inline-extension-names.ts`
+- Contains: extension factory lists, naming patch, inline extension loader patch.
+- Depends on: upstream `ExtensionFactory`, resource-loader patching.
+- Used by: `src/cli.ts` and the upstream extension loader.
 
-**Feature slices:**
+**Feature extension layer:**
 
-- Purpose: implement user-facing commands, tools, session hooks, renderers, and integrations.
-- Location: `src/extensions/*`, especially `src/extensions/coreui.ts`, `src/extensions/modes/index.ts`, `src/extensions/review/index.ts`, `src/extensions/subagent/index.ts`, `src/extensions/interview/index.ts`, `src/extensions/files/index.ts`, `src/extensions/websearch/index.ts`, `src/extensions/fetch/index.ts`, `src/extensions/mermaid/index.ts`
-- Contains: command handlers, tool definitions, UI state, provider wiring, and session persistence.
-- Depends on: upstream extension APIs, mode helpers, GSD runtime, `src/utils/*`.
-- Used by: command dispatch, session lifecycle events, tool execution, and message rendering.
+- Purpose: Implement commands, tools, message renderers, and event reactions.
+- Location: `src/extensions/*`
+- Contains: command handlers, tool definitions, UI widgets, session listeners, helper state.
+- Depends on: upstream extension API, `src/subagent-sdk/`, `src/mode-utils.ts`, `src/utils/`.
+- Used by: host runtime after extension registration.
 
-**GSD workflow:**
+**Shared runtime layer:**
 
-- Purpose: model planning work as `.planning` files, subcommands, and role-specific child sessions.
-- Location: `src/extensions/gsd/*`, `src/resources/gsd/*`
-- Contains: command routing, lifecycle handlers, planning readers/writers, roadmap parsing, dashboards, built-in GSD modes, role prompts, phase reports.
-- Depends on: `src/subagent-sdk/*`, `src/extensions/session-launch-utils.ts`, `src/mode-loading.ts`, bundled markdown assets.
-- Used by: `/gsd` command, startup hooks, planning-phase automation, and codebase mapping.
+- Purpose: Provide reusable subagent spawning, tmux integration, persistence, and structured-output capture.
+- Location: `src/subagent-sdk/`
+- Contains: runtime classes, tmux adapter, bootstrapping hooks, persistent state schema, SDK facade.
+- Depends on: upstream session API, tmux, `typebox`, local helpers.
+- Used by: GSD, review, subagent features, and any module that launches child sessions.
 
-**Subagent runtime:**
+**Resource/data layer:**
 
-- Purpose: manage child sessions and expose a typed SDK for spawning and observing them.
-- Location: `src/subagent-sdk/*`
-- Contains: runtime orchestration, tmux adapter, launch command builder, persistence helpers, event bus, structured-output bootstrap, and session widgets.
-- Depends on: `@mariozechner/pi-coding-agent`, `typebox`, standard file-system APIs.
-- Used by: GSD roles, review flows, and any feature that launches nested sessions.
-
-**Modes and shared schemas:**
-
-- Purpose: hold reusable schemas, mode definitions, and low-level parsing helpers.
-- Location: `src/mode-definitions.ts`, `src/mode-loading.ts`, `src/mode-utils.ts`, `src/default-settings.ts`, `src/utils/*`
-- Contains: TypeBox schema definitions, merged mode registries, default settings, unknown-data helpers, error formatting.
-- Depends on: standard library, TypeBox, upstream agent settings contracts.
-- Used by: almost every higher-level feature module.
+- Purpose: Store bundled prompts, themes, docs, skill files, and planning templates.
+- Location: `src/resources/`
+- Contains: markdown prompts, JSON themes, GSD docs/templates/workflows, skill packs.
+- Depends on: local filesystem and build scripts.
+- Used by: bundled resource discovery, GSD workflows, mode defaults, and prompt loading.
 
 ## Data Flow
 
-### Primary Startup Path
+### Primary Request Path
 
-1. `bin/pi.js` imports `dist/cli.js`.
-2. `src/cli.ts:3-10` installs bundled resource paths and calls upstream `main(process.argv.slice(2), { extensionFactories: bundledExtensionFactories })`.
-3. `src/extensions/index.ts:19-49` installs the inline-extension-name patch, assembles bundled factories, and passes the final list into upstream loading.
-4. Each extension module registers commands, tools, renderers, or listeners on `ExtensionAPI`. Examples: `src/extensions/coreui.ts`, `src/extensions/modes/index.ts`, `src/extensions/files/index.ts`, `src/extensions/gsd/index.ts`.
+1. CLI starts host runtime (`src/cli.ts`) and installs bundled resource search paths before handing over to upstream `main(...)`.
+2. Upstream loads extensions from `bundledExtensionFactories` (`src/extensions/index.ts`) and each extension registers commands/tools/event listeners.
+3. A user command or tool call enters a feature module, which may read session state, emit UI updates, spawn subagents, or write project files.
+4. Feature modules persist results through session entries or local files, then let upstream render the next agent turn or UI refresh.
 
-### GSD Planning Path
+### Subagent Spawn / Resume Flow
 
-1. `/gsd ...` is registered in `src/extensions/gsd/commands.ts:32-82` and enabled by `src/extensions/gsd/index.ts:10-41`.
-2. `src/extensions/gsd/orchestration.ts:262-335` resolves the current phase, builds planner/checker/verifier prompts, and spawns roles through `src/extensions/gsd/subagents.ts`.
-3. `src/extensions/gsd/state/read.ts`, `src/extensions/gsd/state/runtime.ts`, `src/extensions/gsd/state/write.ts`, and `src/extensions/gsd/state/reports.ts` parse and mutate `.planning/STATE.md`, `.planning/ROADMAP.md`, and phase artifacts.
-4. `src/extensions/gsd/modes.ts` registers role-specific bundled modes from `src/resources/gsd/agents/*.md` so child sessions get the right persona and tool contract.
-5. `src/subagent-sdk/bootstrap.ts:115-183` injects child-session bootstrap behavior, including the synthetic structured-output tool used for schema-backed roles.
+1. A feature requests a child session through `src/subagent-sdk/sdk.ts` or the higher-level GSD helpers in `src/extensions/gsd/subagents.ts`.
+2. `src/subagent-sdk/runtime/execution.ts` resolves mode, prompt, session persistence, and child bootstrap state.
+3. `src/subagent-sdk/launch.ts` builds a shell command, writes temporary file-backed env payloads, and targets tmux.
+4. Child bootstrap logic in `src/subagent-sdk/bootstrap.ts`, `src/subagent-sdk/bootstrap-core.ts`, `src/subagent-sdk/bootstrap-handlers.ts`, and `src/subagent-sdk/bootstrap-structured.ts` installs child-specific tools, status entries, and structured-output behavior.
+5. Parent runtime polls tmux / session state and updates session entries through the runtime hooks in `src/subagent-sdk/runtime/*`.
 
-### Session State And UI Path
+### Bundled Resource Flow
 
-1. `src/extensions/coreui.ts:1-282` wires session start, turn events, mode changes, git state updates, and usage updates into UI state.
-2. `src/extensions/git-state.ts` serializes git state into session events and keeps a per-cwd cache.
-3. `src/extensions/openusage/controller.ts` watches provider usage snapshots and republishes them to the core UI and session state.
-4. `src/extensions/modes/index.ts:210-282` keeps active mode state in sync with the session log and emits `modes:changed` events.
-
-### Subagent Runtime Path
-
-1. `src/extensions/subagent/extension.ts:16-73` builds a `TmuxAdapter`, creates `createSubagentSDK(...)`, and registers the `subagent` tool.
-2. `src/subagent-sdk/sdk.ts:94-127` owns the typed SDK facade, periodic polling, event bus emission, and handle abstraction.
-3. `src/subagent-sdk/launch.ts:81-139` serializes child state into temp files and assembles the shell command used to launch child `pi` processes.
-4. `src/subagent-sdk/bootstrap.ts:162-183` reads child bootstrap state, mounts the child widget, and registers the synthetic `StructuredOutput` tool when JSON schema output is requested.
+1. `src/extensions/bundled-resources.ts` patches `DefaultResourceLoader.reload()` so bundled skills, prompts, and themes become visible to the upstream loader.
+2. `scripts/copy-bundled-resources.mjs` copies `src/resources/` into `dist/resources/` during build.
+3. Install-time code in `scripts/postinstall.mjs` seeds default settings and modes into `~/.pi/agent/` if missing.
 
 **State Management:**
 
-- Session-scoped mutable caches live in `src/extensions/git-state.ts`, `src/extensions/modes/index.ts`, `src/extensions/coreui.ts`, `src/extensions/review/index.ts`, and `src/extensions/openusage/controller.ts`.
-- Planning state is file-backed. `src/extensions/gsd/state/*` reads and writes `.planning/STATE.md`, `.planning/ROADMAP.md`, phase plan files, and generated reports.
-- Subagent state is session-backed. `src/subagent-sdk/types.ts`, `src/subagent-sdk/sdk.ts`, and `src/subagent-sdk/persistence.ts` serialize child-session state into session entries and temp files.
+- Session-scoped state lives in upstream session entries and per-extension runtime caches.
+- Project-scoped planning state lives in `.planning/` and is parsed/written by `src/extensions/gsd/state/*`.
+- User-scoped settings live under `~/.pi/agent/` or the upstream agent runtime directory.
+- Subagent state is persisted both in session entries and in child-session bootstrap files written by `src/subagent-sdk/persistence.ts` and `src/subagent-sdk/launch.ts`.
 
 ## Key Abstractions
 
-**ExtensionFactory / ExtensionAPI:**
+**Extension factory:**
 
-- Purpose: registration surface for commands, tools, events, shortcuts, providers, and renderers.
-- Examples: `src/extensions/coreui.ts`, `src/extensions/gsd/index.ts`, `src/extensions/interview/index.ts`, `src/extensions/websearch/index.ts`, `src/extensions/subagent/index.ts`.
-- Pattern: default-exported registration functions with small composition wrappers.
+- Purpose: Register one feature bundle with the host.
+- Examples: `src/extensions/coreui/index.ts`, `src/extensions/gsd/index.ts`, `src/extensions/review/index.ts`, `src/extensions/executor/index.ts`
+- Pattern: Factory receives `ExtensionAPI`, registers commands/tools/events, then closes over local runtime state.
 
-**ModeSpec / ModesFile:**
+**Mode registry:**
 
-- Purpose: describe provider, model, thinking level, tools, and prompts for a named mode.
-- Examples: `src/mode-definitions.ts`, `src/mode-loading.ts`, `src/default-settings.ts`, `src/extensions/gsd/modes.ts`.
-- Pattern: TypeBox-validated JSON merged from bundled, global, and project sources.
+- Purpose: Define model/provider/tool combinations and their default prompts.
+- Examples: `src/default-modes.ts`, `src/mode-utils.ts`, `src/extensions/modes/index.ts`, `src/extensions/gsd/modes.ts`
+- Pattern: Built-in defaults are merged into a validated `ModesFile`, then exposed through flags and command completions.
 
-**SubagentSDK / RuntimeSubagent / MuxAdapter:**
+**Subagent runtime:**
 
-- Purpose: abstract child-session launch, persistence, capture, and transport.
-- Examples: `src/subagent-sdk/sdk.ts`, `src/subagent-sdk/runtime.ts`, `src/subagent-sdk/tmux.ts`, `src/subagent-sdk/types.ts`.
-- Pattern: typed runtime wrapper around tmux-backed panes and session-manager entries.
+- Purpose: Create, monitor, restore, message, and cancel child sessions.
+- Examples: `src/subagent-sdk/runtime/base.ts`, `src/subagent-sdk/runtime/execution.ts`, `src/subagent-sdk/runtime/messaging.ts`, `src/subagent-sdk/runtime/monitoring.ts`
+- Pattern: A runtime class hierarchy owns child state maps, polling timers, and tmux interactions.
 
-**PlanningSnapshot / RoadmapPhase / PlanFile:**
+**Planning snapshot:**
 
-- Purpose: represent `.planning` state as parsed data instead of raw markdown.
-- Examples: `src/extensions/gsd/state/read.ts`, `src/extensions/gsd/state/roadmap.ts`, `src/extensions/gsd/state/runtime.ts`, `src/extensions/gsd/state/schema.ts`.
-- Pattern: read markdown frontmatter or loose key-value state, derive progress, then write artifacts through dedicated helpers.
+- Purpose: Read `.planning` project state into typed views for orchestration and UI.
+- Examples: `src/extensions/gsd/state/read.ts`, `src/extensions/gsd/state/runtime.ts`, `src/extensions/gsd/state/progress.ts`, `src/extensions/gsd/state/stats.ts`
+- Pattern: File-based reads and writes, with TypeBox schemas at every boundary.
 
-**GsdRole:**
+**Tool definition:**
 
-- Purpose: name the built-in subagent roles used by GSD orchestration.
-- Examples: `src/extensions/gsd/roles.ts`, `src/extensions/gsd/subagents.ts`, `src/resources/gsd/agents/*.md`.
-- Pattern: role name resolves to a built-in mode spec and bundled prompt file.
+- Purpose: Provide executable tools with custom rendering and progress updates.
+- Examples: `src/extensions/patch/index.ts`, `src/extensions/interview/index.ts`, `src/extensions/websearch.ts`, `src/extensions/executor/tools.ts`
+- Pattern: `defineTool(...)` or `pi.registerTool(...)` with custom `renderCall`, `renderResult`, and `execute` handlers.
 
 ## Entry Points
 
-**CLI startup:**
+**CLI / package entry:**
 
-- Location: `src/cli.ts`
-- Triggers: `bin/pi.js`, `npm run pi`, package bin resolution.
-- Responsibilities: install bundled resources, set process title, start upstream runtime.
+- Location: `src/cli.ts`, `bin/pi.js`, `bin/pi.cmd`
+- Triggers: `npm run pi`, installed `pi` command, package manager bin resolution.
+- Responsibilities: install bundled resource paths, pass extension factories to upstream main.
 
-**Bundled extension registry:**
+**Extension assembly:**
 
-- Location: `src/extensions/index.ts`
-- Triggers: upstream extension loader during startup.
-- Responsibilities: provide ordered factory list and stable inline extension names.
+- Location: `src/extensions/index.ts`, `src/extensions/definitions-group-a.ts`, `src/extensions/definitions-group-b.ts`, `src/extensions/definitions-group-c.ts`
+- Triggers: upstream extension loading.
+- Responsibilities: define bundled extension order and stable display names.
 
-**GSD command surface:**
-
-- Location: `src/extensions/gsd/index.ts`, `src/extensions/gsd/commands.ts`
-- Triggers: `/gsd ...` command invocation and session lifecycle events.
-- Responsibilities: enable or disable GSD, route subcommands, inject planning context into prompts, refresh `.planning` state.
-
-**Subagent SDK public API:**
+**Subagent SDK:**
 
 - Location: `src/subagent-sdk/index.ts`
-- Triggers: GSD role orchestration, review automation, any feature that needs child sessions.
-- Responsibilities: expose runtime creation, launch command building, restoration, and capture.
+- Triggers: GSD, review, and subagent features that spawn or restore child sessions.
+- Responsibilities: expose runtime, tmux adapter, launch helpers, and child-session bootstrap utilities.
 
-**Interactive feature entry points:**
+**High-value feature entrypoints:**
 
-- Location: `src/extensions/files/index.ts`, `src/extensions/interview/index.ts`, `src/extensions/websearch/index.ts`, `src/extensions/mermaid/index.ts`, `src/extensions/session-query/index.ts`
-- Triggers: command or tool invocations from the agent runtime.
-- Responsibilities: file browsing, structured interview collection, web search, diagram rendering, session lookup.
+- `src/extensions/gsd/index.ts` — `/gsd` command, planning lifecycle, and workflow launch handling.
+- `src/extensions/review/index.ts` — review command/session orchestration.
+- `src/extensions/interview/index.ts` — interview tool registration and browser-backed form flow.
+- `src/extensions/executor/index.ts` — executor connection and `execute`/`resume` tool registration.
 
 ## Architectural Constraints
 
-- **Module format:** NodeNext ESM across `tsconfig.json` and source modules.
-- **Global state:** mutable registries exist in `src/mode-loading.ts`, `src/extensions/git-state.ts`, `src/extensions/modes/index.ts`, `src/extensions/review/index.ts`, and `src/extensions/openusage/controller.ts`.
-- **Boundary validation:** untrusted input stays `unknown` until TypeBox schemas validate it in files such as `src/mode-definitions.ts`, `src/extensions/gsd/state/schema.ts`, and `src/subagent-sdk/types.ts`.
-- **Resource patching:** bundled resources and inline extension names depend on upstream `DefaultResourceLoader` patching in `src/extensions/bundled-resources.ts` and `src/extensions/inline-extension-names.ts`.
-- **Session coupling:** GSD and subagent flows depend on upstream session-manager persistence and session-entry shapes in `@mariozechner/pi-coding-agent`.
-- **Process model:** Node event loop handles orchestration; child `pi` sessions run in tmux panes or windows through `src/subagent-sdk/tmux.ts`.
+- **Threading:** Single Node.js event loop; concurrency comes from async calls, timers, and tmux/process I/O rather than worker threads.
+- **Global state:** Present in several controlled caches: `src/mode-loading.ts`, `src/extensions/gsd/settings.ts`, `src/extensions/openusage/state.ts`, `src/extensions/review/runtime-state.ts`, `src/subagent-sdk/runtime/base.ts`, and `src/subagent-sdk/events.ts`.
+- **Circular imports:** Not detected in the inspected architecture.
+- **Boundary patching:** Upstream-private internals are patched only in boundary modules such as `src/extensions/bundled-resources.ts` and `src/extensions/inline-extension-names.ts`.
+- **Persistence model:** No central database; everything persists through session entries, local project files, or user runtime files.
 
 ## Anti-Patterns
 
-### Direct Planning Writes
+### Registering features ad hoc from CLI code
 
-**What happens:** code writes `.planning/*.md` files inline from feature code instead of using `src/extensions/gsd/state/write.ts` and `src/extensions/gsd/state/reports.ts`.
-**Why it's wrong:** it duplicates file naming, frontmatter shape, and state-field rules.
-**Do this instead:** route planning persistence through `src/extensions/gsd/state/runtime.ts`, `src/extensions/gsd/state/write.ts`, and `src/extensions/gsd/state/reports.ts`.
+**What happens:** A new command or tool is wired directly from `src/cli.ts` or an unrelated file.
 
-### Bypassing Bootstrap Wiring
+**Why it's wrong:** Extension loading depends on grouped factory lists and stable naming in `src/extensions/index.ts`; bypassing that makes ordering, naming, and bundled behavior inconsistent.
 
-**What happens:** code starts the upstream runtime without `installBundledResourcePaths()` or without the bundled extension registry from `src/extensions/index.ts`.
-**Why it's wrong:** bundled themes, prompts, skills, and extension names stop resolving consistently.
-**Do this instead:** keep startup through `src/cli.ts` and reuse `src/extensions/bundled-resources.ts` plus `src/extensions/index.ts`.
+**Do this instead:** Add a new feature factory under `src/extensions/<feature>/index.ts` and include it in `src/extensions/definitions-group-*.ts`.
+
+### Re-implementing file/schema parsing at call sites
+
+**What happens:** A feature reads JSON/markdown and hand-parses its own contract instead of using existing state helpers or schemas.
+
+**Why it's wrong:** This repo relies on TypeBox boundaries and shared readers to keep runtime state consistent.
+
+**Do this instead:** Reuse `src/extensions/gsd/state/*`, `src/subagent-sdk/schema-definitions.ts`, `src/mode-utils.ts`, or other existing validators.
 
 ## Error Handling
 
-**Strategy:** validate at boundaries, fail fast on schema mismatch, and isolate stale-session errors where the runtime can legitimately be replaced.
+**Strategy:** Validate at boundaries, throw on fatal command failures, and downgrade recoverable issues to UI notifications or non-blocking state.
 
 **Patterns:**
 
-- Use `Value.Check(...)` and `Value.Parse(...)` before reading structured payloads.
-- Convert child-session failures into explicit terminal statuses in `src/subagent-sdk/sdk.ts`, `src/subagent-sdk/persistence.ts`, and `src/extensions/gsd/subagents.ts`.
-- Swallow only stale-session replacement errors in UI refresh paths, such as `src/extensions/coreui.ts` and `src/extensions/git-state.ts`.
-- Surface command-level failures through `ctx.ui.notify(...)` or thrown errors in orchestration paths like `src/extensions/gsd/orchestration.ts`.
+- `Value.Check(...)` / `Value.Parse(...)` around JSON, session entries, and tool payloads.
+- `ctx.ui.notify(...)` for recoverable warnings in commands and widgets.
+- `isStaleSessionReplacementContextError(...)` guards around UI/session callbacks that can race with replacement.
+- Fatal command errors are surfaced through thrown `Error` objects from orchestration modules such as `src/extensions/gsd/orchestration.ts` and `src/subagent-sdk/runtime/*`.
 
 ## Cross-Cutting Concerns
 
-**Logging:**
-
-- Primary user-facing diagnostics go through `ctx.ui.notify(...)`, widgets, and custom steer messages, not a separate logging subsystem.
-- Runtime events flow through `pi.events.emit(...)` for mode changes, git state updates, usage refreshes, and core UI redraws.
-
-**Validation:**
-
-- TypeBox schemas guard JSON, session entries, planning files, and structured tool responses.
-- Parsing helpers in `src/utils/unknown-data.ts` stay narrow and are reused by boundary modules.
-
-**Authentication:**
-
-- No local auth layer detected in this repo.
-- External service auth is handled by upstream providers, environment variables, and the runtime configured in feature modules such as `src/extensions/websearch/index.ts` and `src/extensions/executor/*`.
+**Logging:** Mostly UI-driven. The codebase prefers status widgets, notifications, and command output over a centralized logger.
+**Validation:** TypeBox and `Value.Check`/`Value.Parse` at all untrusted boundaries, especially in `src/mode-utils.ts`, `src/extensions/gsd/state/schema.ts`, `src/subagent-sdk/schema-definitions.ts`, and `src/extensions/interview/schema.ts`.
+**Authentication:** Delegated to upstream model registry credentials and external-service configuration. Representative touchpoints: `src/extensions/session-query/execution.ts` for model API access, `src/extensions/websearch/*` for Firecrawl, and `src/extensions/executor/*` for MCP endpoint access.
 
 ---
 
-_Architecture analysis: 2026-05-05_
+_Architecture analysis: 2026-05-07_

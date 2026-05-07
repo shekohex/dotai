@@ -1,19 +1,20 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-05-05
+**Analysis Date:** 2026-05-07
 
 ## Test Framework
 
 **Runner:**
 
-- Vitest 4.1.5 from `vitest`.
-- Config: `vitest.config.ts`.
-- Test pool: `forks`, with `maxWorkers` reduced to `1` on GitHub Actions.
-- Test files discovered by Vitest are `test/**/*.test.ts` only; `*.scenarios.ts` files are support modules imported by those specs.
+- Vitest `^4.1.5`
+- Config: `vitest.config.ts`
+- `vitest.config.ts` sets `dir: "test"`, `include: ["**/*.test.ts"]`, and `setupFiles: ["./test/test-utils/setup-env.ts"]`.
+- The config uses `forks` pool execution, caps workers at 6 locally and 1 in GitHub Actions, and raises the timeout to 30s on GitHub Actions.
+- Reporters are `minimal` and `json`, and coverage writes to `.tmp/coverage`.
 
 **Assertion Library:**
 
-- Vitest `expect` assertions.
+- Vitest `expect`
 
 **Run Commands:**
 
@@ -27,27 +28,23 @@ npm run test:coverage
 
 **Location:**
 
-- Primary tests live in `test/` and use domain-based filenames like `test/gsd/commands.test.ts`, `test/coreui-editor.test.ts`, and `test/subagent.test.ts`.
-- Nested folders mirror feature structure, for example `test/gsd/`, `test/test-utils/`, and `test/gsd/fixtures/`.
-- Shared test helpers live in `test/test-utils/`, especially `test/test-utils/setup-env.ts` and `test/test-utils/timed-test.ts`.
-- Scenario data and reusable scripted flows live beside tests as `*.scenarios.ts`, for example `test/review-flow.scenarios.ts`, `test/review-helpers.scenarios.ts`, and `test/tool-preview-scenarios.ts`.
-- Fixtures for planning-tree state live under `test/gsd/fixtures/...` and are copied into temp workspaces during brownfield tests.
+- Tests are centralized under `test/`, not co-located with source.
+- Main suites use `*.test.ts`, for example `test/harness.test.ts`, `test/gsd/lifecycle.test.ts`, and `test/subagent.test.ts`.
+- Scenario helpers and data modules use `*.scenarios.ts` or supporting `*.ts` files, for example `test/review-helpers.scenarios.ts`, `test/subagent-sdk-spawn.scenarios.ts`, and `test/tool-preview-scenarios.ts`.
+- Some suites are split into thin loader files and scenario modules, such as `test/review.test.ts` importing `review-parse.scenarios.ts`, `review-flow.scenarios.ts`, and `review-helpers.scenarios.ts`.
+- Shared setup helpers live in `test/test-utils/`, especially `test/test-utils/setup-env.ts` and `test/test-utils/timed-test.ts`.
 
 **Naming:**
 
-- Use `*.test.ts` for Vitest-discovered specs.
-- Use descriptive sentence-style test names, for example `"review command keeps quoted folder paths intact"` in `test/review.test.ts` and `"executor tools re-register after session restart with same cwd"` in `test/executor.test.ts`.
+- Test names describe behavior in sentence form: `"returns null when required env missing"`, `"notify falls back to stdout when tmux write fails"`, `"spawnRole waits for completion"`.
+- Longer integration suites use a domain label in `describe(...)`, such as `"interview public url"`, `"gsd subagents"`, or `"review command autocompletes targets, flags, branches, and commits"`.
 
 **Structure:**
 
 ```text
 test/
-├── coreui-editor.test.ts
-├── gsd/
-│   ├── commands.test.ts
-│   ├── lifecycle.test.ts
-│   └── fixtures/
-├── review.test.ts
+├── *.test.ts
+├── *.scenarios.ts
 └── test-utils/
     ├── setup-env.ts
     └── timed-test.ts
@@ -57,85 +54,108 @@ test/
 
 **Suite Organization:**
 
-```ts
+```typescript
+import { afterEach, expect, test, vi } from "vitest";
+
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
-timedTest("notify writes passthrough sequence to tmux pane tty", () => {
-  process.env.TMUX = "/tmp/tmux-1000/default,123,0";
-  vi.spyOn(terminalNotifyRuntime, "execFileSync").mockReturnValue("/dev/ttys009\n");
-  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
-  notify("π", "done");
-
-  expect(stdoutSpy).not.toHaveBeenCalled();
+timedTest("notify falls back to stdout when tmux write fails", () => {
+  expect(true).toBe(true);
 });
 ```
 
 **Patterns:**
 
-- Use `describe` / `it` for small pure-unit suites, especially schema and parser tests like `test/gsd/schema.test.ts`, `test/openusage-pace.test.ts`, and `test/coreui-tps.test.ts`.
-- Use `test` or the shared `timedTest` wrapper for longer integration cases, especially harness, subagent, and session-level tests.
-- Build focused helper factories inside the test file when setup is non-trivial, for example `createHandoffTestProviders`, `HarnessMuxAdapter`, `FakePi`, and `createExecutorProbeServer` in `test/harness.test.ts`, `test/subagent.test.ts`, and `test/executor.test.ts`.
-- Use polling helpers such as `waitForAssertion` when behavior completes asynchronously after file or session events in `test/harness.test.ts` and `test/review.test.ts`.
-- Keep setup and cleanup local to the test body, usually with `try/finally` around temp dirs, sessions, and fake servers.
+- Group by module or feature with `describe(...)` when the file has multiple related behaviors, as in `test/interview-public-url.test.ts`, `test/gsd/schema.test.ts`, and `test/terminal-notify.test.ts`.
+- Use bare `test(...)` for small files and a local `timedTest` wrapper for slower suites.
+- Keep test bodies direct; avoid unnecessary helper layers inside simple assertion files.
+- Favor explicit assertions over snapshots. No snapshot framework is detected in `test/`.
 
 ## Mocking
 
 **Framework:**
 
-- Vitest `vi.fn`, `vi.spyOn`, `vi.restoreAllMocks`, and manual fake implementations.
+- Vitest mocks: `vi.fn`, `vi.spyOn`, `vi.useFakeTimers`, `vi.restoreAllMocks`.
 
 **Patterns:**
 
-```ts
-const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+```typescript
 vi.spyOn(terminalNotifyRuntime, "execFileSync").mockReturnValue("/dev/ttys009\n");
+vi.spyOn(terminalNotifyRuntime, "writeFileSync").mockImplementation(() => undefined);
+const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+notify("π", "done");
+
+expect(stdoutSpy).not.toHaveBeenCalled();
 ```
 
-```ts
+```typescript
 const spawn = vi.fn().mockResolvedValue({
   ok: true,
-  value: { handle: { waitForCompletion: vi.fn(), captureOutput: vi.fn() } },
+  value: {
+    handle: {
+      waitForCompletion: vi.fn().mockResolvedValue({
+        sessionId: "session-id",
+        status: "completed",
+        summary: "done",
+      }),
+      captureOutput: vi.fn().mockResolvedValue({ text: "captured output" }),
+    },
+  },
 });
 ```
 
 **What to Mock:**
 
-- Mock external process boundaries, for example `tmux`, `git`, `gh`, and `process.stdout.write` in `test/terminal-notify.test.ts` and `test/review.test.ts`.
-- Mock network boundaries with local HTTP servers or `globalThis.fetch` replacements, for example `test/harness.test.ts`, `test/executor.test.ts`, and `test/tool-preview.test.ts`.
-- Mock `ExtensionAPI`, `ExtensionContext`, and `MuxAdapter` with small in-file fakes when exercising extension logic.
-- Use `createTestSession` from `@marcfargas/pi-test-harness` when the real tool and event pipeline matter, for example `test/harness.test.ts`, `test/subagent.test.ts`, and `test/review.test.ts`.
+- External process boundaries and shell commands: `execFileSync`, `execFile`, tmux adapters, and child-session launch paths in `test/terminal-notify.test.ts`, `test/subagent-launch.test.ts`, and `test/review.test.ts`.
+- Filesystem and temporary directories when the behavior under test depends on layout or cleanup, as in `test/gsd/lifecycle.test.ts` and `test/interview-regressions.test.ts`.
+- Harness adapters and extension APIs when testing orchestration, for example `FakeMuxAdapter`, `FakePi`, and `createTestSession(...)` in `test/harness.test.ts` and `test/subagent.test.ts`.
+- Timers for UI shimmer or polling behavior, as in `test/coreui-working-message.test.ts`.
 
 **What NOT to Mock:**
 
-- Do not mock the behavior under test when the real integration is the point, for example `apply_patch`, `webfetch`, `websearch`, `executor`, and subagent runtime paths.
-- Prefer real temp files, real session events, and real command registration over synthetic shortcuts when validating behavior across boundaries.
+- The parser or helper under test when the behavior is pure and cheap, e.g. `Value.Check(...)` tests in `test/gsd/schema.test.ts`.
+- Real behavior that the test depends on, such as config writes, state persistence, or emitted events. Mock the narrow boundary only.
+- Avoid mocking so high up that you erase the side effect the assertion needs to observe.
 
 ## Fixtures and Factories
 
 **Test Data:**
 
-```ts
-const root = await mkdtemp(join(tmpdir(), "agent-review-command-"));
-await mkdir(join(root, ".pi"), { recursive: true });
-await writeFile(join(root, ".pi", "modes.json"), `${JSON.stringify(data, null, 2)}\n`, "utf8");
+```typescript
+function createRoot(): string {
+  return mkdtempSync(join(tmpdir(), "agent-gsd-lifecycle-"));
+}
+
+function createContext(cwd: string): ExtensionCommandContext {
+  return {
+    cwd,
+    hasUI: false,
+    ui: { notify: vi.fn() },
+    sessionManager: { getSessionId: () => "parent-session-id" },
+  } as unknown as ExtensionCommandContext;
+}
 ```
 
 **Location:**
 
-- Shared fixture trees live in `test/gsd/fixtures/`.
-- Per-test scratch data is created with `mkdtemp`, `mkdtempSync`, `mkdir`, `mkdirSync`, `writeFile`, and `writeFileSync` in the test body.
-- Small helper builders live near the test that uses them, not in a global fixture library.
-- `test/test-utils/setup-env.ts` sets `PI_CODING_AGENT_DIR` and `TEST_PI_CODING_AGENT_DIR` to isolate session state for the whole run.
+- Test factories are usually local to each file when they are specific to one suite, e.g. `createMapCodebaseSpawn(...)` in `test/gsd/lifecycle.test.ts` and `createFakeContext(...)` in `test/subagent-sdk-spawn.scenarios.ts`.
+- Shared setup lives in `test/test-utils/setup-env.ts`, which creates a temp `PI_CODING_AGENT_DIR` for test isolation.
+- Longer suites often define fake adapters inline: `FakeMuxAdapter`, `HarnessMuxAdapter`, and `FakePi` appear repeatedly in `test/subagent*.ts`, `test/review.test.ts`, and `test/harness.test.ts`.
 
 ## Coverage
 
 **Requirements:**
 
-- No explicit threshold detected in `vitest.config.ts` or `package.json`.
-- Coverage output is configured to `.tmp/coverage` via Vitest with the V8 provider.
-- Coverage includes `src/**/*.ts` and excludes `test/**/*.ts`.
+- No explicit coverage threshold is detected.
+- Coverage is available through `npm run test:coverage`.
+- Coverage output is written to `.tmp/coverage` and includes `src/**/*.ts` while excluding `test/**/*.ts`, as configured in `vitest.config.ts`.
 
 **View Coverage:**
 
@@ -147,47 +167,51 @@ npm run test:coverage
 
 **Unit Tests:**
 
-- Fast pure tests cover schemas, parsers, formatters, and state reducers, for example `test/gsd/schema.test.ts`, `test/openusage-pace.test.ts`, `test/coreui-tps.test.ts`, and `test/terminal-notify.test.ts`.
+- Pure helpers, schema validation, formatting, and small adapters.
+- Examples: `test/gsd/schema.test.ts`, `test/interview-public-url.test.ts`, `test/terminal-notify.test.ts`, `test/pi-tui-keys.test.ts`.
 
 **Integration Tests:**
 
-- Session-level and file-system tests use the real extension pipeline via `createTestSession`, temp dirs, fake binaries, and local HTTP servers.
-- These tests dominate `test/harness.test.ts`, `test/review.test.ts`, `test/subagent.test.ts`, and `test/interview-regressions.test.ts`.
+- Orchestration, filesystem, process, and session flows.
+- Examples: `test/harness.test.ts`, `test/gsd/lifecycle.test.ts`, `test/subagent.test.ts`, `test/review.test.ts`.
 
 **E2E Tests:**
 
-- Not used as a separate framework tier. The closest equivalent is the harness-driven integration suite in `test/harness.test.ts`.
+- Not detected as a separate runner.
+- The broad harness and lifecycle suites serve as end-to-end coverage for the extension system.
 
 ## Common Patterns
 
 **Async Testing:**
 
-```ts
-await waitForAssertion(() => {
-  expect(pickedSummaries.length).toBe(1);
-});
-await session.session.agent.waitForIdle();
-await expect(access(join(serverDir, "note.txt"))).rejects.toThrow();
+```typescript
+await waitForCondition(() => sdk.list().length === 1);
+await vi.advanceTimersByTimeAsync(2_500);
+await expect(result.waitForResult()).resolves.toEqual({ ... });
 ```
 
 **Error Testing:**
 
-```ts
-expect(() => {
-  intervalCallback?.();
-}).not.toThrow();
-
-await expect(
-  spawnRole({} as ExtensionAPI, createContext(createRoot()), "executor", "execute"),
-).rejects.toThrow(/ended with status failed/);
+```typescript
+await expect(spawnRole(...)).rejects.toThrow(/ended with status failed: child crashed/);
+expect(Value.Check(PlanningConfigSchema, invalidValue)).toBe(false);
 ```
 
-**Assertions:**
+**Lifecycle Cleanup:**
 
-- Use `toEqual`, `toContain`, `toMatch`, and `toBeTruthy` for most checks.
-- Use `expect.arrayContaining(...)` and `expect.objectContaining(...)` for command completion, spawned process arguments, and structured outputs.
-- Use exact error text or regex on failure cases when message wording is part of the contract.
+```typescript
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  unregisterBuiltInModes(TEST_MODE_SOURCE);
+});
+```
+
+**Environment Isolation:**
+
+- Tests set or restore env vars explicitly, especially `PI_CODING_AGENT_DIR`, `TMUX`, and SSH-related markers.
+- Temporary directories are created with `mkdtemp(...)` / `mkdtempSync(...)` and removed in `finally` blocks or `afterEach` hooks.
 
 ---
 
-_Testing analysis: 2026-05-05_
+_Testing analysis: 2026-05-07_

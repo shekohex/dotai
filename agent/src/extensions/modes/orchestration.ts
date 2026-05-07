@@ -3,6 +3,7 @@ export { createModeApplyActions } from "./apply.js";
 export {
   getStartupModeSelection,
   notifyStartupModeConflict,
+  subscribeModeFlagRefresh,
   registerModeFlags,
   toModeFlagName,
 } from "./flags.js";

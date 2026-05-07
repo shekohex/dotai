@@ -165,7 +165,7 @@ describe("buildLaunchCommand", () => {
     expect(command).toContain("PI_DEBUG_PROVIDER_REQUESTS_LOG='/tmp/provider-debug-child.jsonl'");
   });
 
-  it("does not pass mode startup flags for child launches", () => {
+  it("passes mode startup flags for child launches", () => {
     process.env[PI_COMMAND_ENV] = "pi";
 
     const command = buildLaunchCommand(
@@ -184,14 +184,14 @@ describe("buildLaunchCommand", () => {
       "map codebase",
       {
         tmuxTarget: "window",
-        mode: "gsd-codebase-mapper",
+        modeName: "gsd-codebase-mapper",
         model: "codex-openai/gpt-5.4-mini",
         thinkingLevel: "high",
         systemPromptMode: "replace",
       },
     );
 
-    expect(command).not.toContain("--mode-gsd-codebase-mapper");
+    expect(command).toContain("--mode-gsd-codebase-mapper=true");
     expect(command).toContain("--model 'codex-openai/gpt-5.4-mini'");
     expect(command).toContain("--thinking 'high'");
   });

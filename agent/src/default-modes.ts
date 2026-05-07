@@ -60,7 +60,7 @@ export const defaultModes: DefaultModes = {
       thinkingLevel: "medium",
       color: "muted",
       tmuxTarget: "window",
-      tools: ["read", "bash", "websearch"],
+      tools: ["read", "bash", "websearch", "execute"],
       autoExit: true,
       description:
         "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
@@ -81,10 +81,10 @@ export const defaultModes: DefaultModes = {
       systemPromptMode: "append",
     },
     search: {
-      provider: "openai",
-      modelId: "gpt-5.4-mini",
-      thinkingLevel: "high",
+      provider: "opencode-go",
+      modelId: "deepseek-v4-flash",
       color: "borderMuted",
+      thinkingLevel: "high",
       tmuxTarget: "window",
       tools: ["read", "bash"],
       autoExit: true,
@@ -97,9 +97,18 @@ export const defaultModes: DefaultModes = {
       thinkingLevel: "high",
       color: "bashMode",
       tmuxTarget: "window",
-      tools: ["read", "bash", "edit", "write", "websearch"],
+      tools: ["read", "bash", "edit", "write", "websearch", "execute"],
       description:
         "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use.",
+    },
+    ask: {
+      provider: "opencode-go",
+      modelId: "deepseek-v4-flash",
+      tmuxTarget: "window",
+      tools: ["read", "bash", "websearch", "execute"],
+      autoExit: true,
+      description:
+        "Use me when you want to do QA and chat with your codebase, explore options",
     },
     worker: {
       tools: ["*", "!subagent"],

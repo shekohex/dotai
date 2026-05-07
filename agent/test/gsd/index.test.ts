@@ -132,3 +132,11 @@ test("before_agent_start leaves prompt untouched when planning tree missing", as
   );
   expect(results.every((result) => result === undefined)).toBe(true);
 });
+
+test("registers both codebase-map and intel-refresh message renderers", () => {
+  const fakePi = new FakePi();
+  gsdExtension(fakePi as ExtensionAPI);
+
+  expect(fakePi.messageRenderers.has("gsd-codebase-map-summary")).toBe(true);
+  expect(fakePi.messageRenderers.has("gsd-intel-refresh-summary")).toBe(true);
+});

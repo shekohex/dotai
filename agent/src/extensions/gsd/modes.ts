@@ -5,6 +5,7 @@ import {
   unregisterBuiltInModes,
   type ModesFile,
 } from "../../mode-utils.js";
+import { notifyModeFlagRefresh } from "../modes/flags.js";
 import { loadBundledPrompt } from "./resources.js";
 import type { GsdRole } from "./roles.js";
 import { listGsdRoles, resolveRoleBuiltInModeSpec, resolveRoleModeName } from "./roles.js";
@@ -28,6 +29,7 @@ export function buildBuiltInGsdModes(): ModesFile {
 
 export function registerBuiltInGsdModes(): void {
   registerBuiltInModes("gsd", buildBuiltInGsdModes());
+  notifyModeFlagRefresh();
 }
 
 export function unregisterBuiltInGsdModesForTests(): void {

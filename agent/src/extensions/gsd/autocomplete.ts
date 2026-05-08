@@ -82,6 +82,10 @@ export function getGsdSubcommands(): Array<{ value: GsdSubcommand; description: 
   return subcommands;
 }
 
+export function getGsdAutocompleteFlags(): Partial<Record<GsdSubcommand, string[]>> {
+  return subcommandFlags;
+}
+
 function filterItems(items: AutocompleteItem[], query: string): AutocompleteItem[] | null {
   if (items.length === 0) {
     return null;

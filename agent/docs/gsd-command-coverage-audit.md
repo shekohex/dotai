@@ -58,7 +58,7 @@ Implemented locally:
 | `stats`              | TS-native instant command          | `stats`                        |       22 |
 | `health`             | TS-native instant command          | `health`                       |       28 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
-| `help`               | local docs viewer                  | `help`                         |       30 |
+| `help`               | local docs viewer                  | `help`                         |       44 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
 
@@ -520,7 +520,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 30/100
+Coverage: 44/100
 
 Upstream behavior:
 
@@ -528,13 +528,15 @@ Upstream behavior:
 
 Local behavior:
 
-- UI help component cycles bundled local docs and shows local command list. `src/extensions/gsd/help.ts:17-59`
-- non-UI mode prints compact local reference header. `src/extensions/gsd/help.ts:91-105`
+- now renders canonical bundled `command-reference.md` in both UI and no-UI paths instead of truncating to preview snippets or hard-coded banners. `src/extensions/gsd/help.ts`
+- command reference now documents shipped local subcommands and meaningful local flags, including `new-milestone`, `complete-milestone`, `milestone-summary`, `debug`, `secure-phase`, `status`, and current execute/progress flag semantics. `src/resources/gsd/docs/command-reference.md`
+- TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
+- focused tests now cover canonical help rendering and resource wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`
 
 Differences:
 
-- local help is a doc viewer, not strict upstream reference emission
-- command list reflects local grouped surface, not upstream full surface
+- reference content still local-only and documents only local command surface, not upstream full 65-command universe
+- no generated manifest yet; command reference is still hand-maintained, though now much closer to shipped local surface
 
 ### `on` and `off`
 

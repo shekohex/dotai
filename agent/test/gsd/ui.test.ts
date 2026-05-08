@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import type { Component, TUI } from "@mariozechner/pi-tui";
-import { showGsdHelp } from "../../src/extensions/gsd/help.js";
+import {
+  createGsdHelpComponent,
+  getGsdHelpReference,
+  showGsdHelp,
+} from "../../src/extensions/gsd/help.js";
 import { showGsdDashboard } from "../../src/extensions/gsd/ui.js";
 
 initTheme("dark");
@@ -92,7 +96,7 @@ describe("gsd ui custom components", () => {
     expect(rendered).toContain("Docs (1/8)");
   });
 
-  it("help custom ui renders grouped commands and bundled docs preview", async () => {
+  it("help custom ui renders canonical command reference", async () => {
     let rendered = "";
     await showGsdHelp({
       cwd: createRoot(),
@@ -104,9 +108,69 @@ describe("gsd ui custom components", () => {
         },
       },
     } as never);
-    expect(rendered).toContain("/gsd new-project");
-    expect(rendered).toContain("/gsd stats");
-    expect(rendered).toContain("Docs (1/8)");
-    expect(rendered).toContain("overview.md");
+    const reference = getGsdHelpReference();
+    expect(rendered).toContain("# GSD Command Reference");
+    expect(rendered).toContain("## Milestones");
+    expect(rendered).toContain("## Planning");
+    expect(rendered).toContain("/gsd new-milestone");
+    expect(rendered).toContain("/gsd complete-milestone");
+    expect(rendered).toContain("PgUp/PgDn page");
+    expect(reference).toContain("/gsd new-milestone");
+    expect(reference).toContain("/gsd complete-milestone");
+    expect(reference).toContain("/gsd milestone-summary");
+    expect(reference).toContain("/gsd debug status <slug>");
+    expect(reference).toContain("/gsd secure-phase [phase]");
+    expect(reference).toContain("/gsd status");
+    expect(rendered).not.toContain("Docs (");
+    expect(rendered).not.toContain("overview.md");
+  });
+
+  it("help component pages through canonical reference", () => {
+    const component = createGsdHelpComponent(() => {});
+
+    const firstPage = component.render(100).join("\n");
+    expect(firstPage).toContain("# GSD Command Reference");
+    expect(firstPage).toContain("## Planning");
+    expect(firstPage).not.toContain("## Execution");
+    expect(firstPage).not.toContain("## Debug");
+    expect(firstPage).not.toContain("## Instant");
+
+    component.handleInput?.("\u001b[6~");
+
+    const secondPage = component.render(100).join("\n");
+    expect(secondPage).toContain("## Execution");
+    expect(secondPage).not.toContain("## Debug");
+
+    component.handleInput?.("\u001b[6~");
+
+    const thirdPage = component.render(100).join("\n");
+    expect(thirdPage).toContain("## Debug");
+    expect(thirdPage).toContain("## Instant");
+    expect(thirdPage).toContain("/gsd debug status <slug>");
+    expect(thirdPage).not.toContain("/gsd status");
+
+    component.handleInput?.("\u001b[5~");
+    component.handleInput?.("\u001b[5~");
+
+    const backToFirstPage = component.render(100).join("\n");
+    expect(backToFirstPage).toContain("# GSD Command Reference");
+    expect(backToFirstPage).not.toContain("## Debug");
+  });
+
+  it("help component reaches end in narrow viewport", () => {
+    const component = createGsdHelpComponent(() => {});
+    const width = 40;
+    let previous = "";
+    let current = component.render(width).join("\n");
+
+    while (current !== previous) {
+      previous = current;
+      component.handleInput?.("\u001b[6~");
+      current = component.render(width).join("\n");
+    }
+
+    expect(current).toContain("## Phase Override");
+    expect(current).toContain("- equals flag: `/gsd next");
+    expect(current).toContain("[71-90/90]");
   });
 });

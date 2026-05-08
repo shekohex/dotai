@@ -167,6 +167,11 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("--mvp");
     expect(command).toContain("--tdd");
     expect(command).toContain("workflow/runtime handling");
+    expect(loadBundledDoc("command-reference.md")).toContain("--cross-ai");
+    expect(loadBundledDoc("command-reference.md")).toContain("forward to bundled workflow/runtime");
+    expect(loadBundledDoc("command-reference.md")).not.toContain(
+      "unsupported-local error: `--cross-ai`, `--no-cross-ai`",
+    );
     expect(workflow).toContain("active flags are only flags present");
     expect(workflow).toContain("`--wave` filter is active for either `--wave <N>` or `--wave=<N>`");
     expect(workflow).toContain(

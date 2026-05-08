@@ -14,6 +14,9 @@ export const GsdCommandArgsSchema = Type.Object(
     tdd: Type.Optional(Type.Boolean()),
     mvp: Type.Optional(Type.Boolean()),
     phase: Type.Optional(Type.String()),
+    next: Type.Optional(Type.Boolean()),
+    doMode: Type.Optional(Type.Boolean()),
+    forensic: Type.Optional(Type.Boolean()),
     wave: Type.Optional(Type.String()),
     researchPhase: Type.Optional(Type.String()),
     assumptions: Type.Optional(Type.Boolean()),
@@ -589,6 +592,82 @@ function parsePlanPhaseArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 
+function parseProgressArgs(tokens: string[]): GsdCommandArgs {
+  let phase: string | undefined;
+  let next = false;
+  let doMode = false;
+  let forensic = false;
+  let unsupportedModeError: string | undefined;
+  const missingPhaseValueError = "Unsupported /gsd progress flag: --phase requires a value.";
+  const normalizeProgressPhaseValue = (token: string | undefined): string | undefined => {
+    const value = normalizePhaseToken(token);
+    if (value === undefined || value.startsWith("-")) {
+      return undefined;
+    }
+    return value;
+  };
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--phase") {
+      const nextToken = tokens[index + 1];
+      phase = normalizeProgressPhaseValue(nextToken);
+      if (phase === undefined) {
+        unsupportedModeError ??= missingPhaseValueError;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--phase=")) {
+      phase = normalizeProgressPhaseValue(token.slice("--phase=".length));
+      if (phase === undefined) {
+        unsupportedModeError ??= missingPhaseValueError;
+      }
+      continue;
+    }
+    if (token === "--next") {
+      next = true;
+      continue;
+    }
+    if (token === "--do") {
+      doMode = true;
+      unsupportedModeError ??=
+        "Unsupported /gsd progress mode: --do. Local command does not implement routed execution from progress yet.";
+      continue;
+    }
+    if (token === "--forensic") {
+      forensic = true;
+      unsupportedModeError ??=
+        "Unsupported /gsd progress mode: --forensic. Local command does not implement forensic workflow routing yet.";
+      continue;
+    }
+    if (!token.startsWith("-") && phase === undefined) {
+      phase = normalizePhaseToken(token);
+      continue;
+    }
+    if (token.startsWith("-")) {
+      unsupportedModeError ??= `Unsupported /gsd progress flag: ${token}.`;
+      continue;
+    }
+    unsupportedModeError ??= `Unsupported /gsd progress argument: ${token}.`;
+  }
+
+  if (phase !== undefined && !next) {
+    unsupportedModeError ??=
+      "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.";
+  }
+
+  return validateParsedArgs({
+    subcommand: "progress",
+    ...(phase === undefined ? {} : { phase }),
+    ...(next ? { next: true } : {}),
+    ...(doMode ? { doMode: true } : {}),
+    ...(forensic ? { forensic: true } : {}),
+    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
+  });
+}
+
 export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
@@ -625,6 +704,10 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
 
   if (subcommand === "plan-phase") {
     return parsePlanPhaseArgs(tokens);
+  }
+
+  if (subcommand === "progress") {
+    return parseProgressArgs(tokens);
   }
 
   if (subcommand === "execute-phase") {
@@ -703,6 +786,7 @@ export function isPhaseOverrideSubcommand(
 export function usesParsedArgs(subcommand: GsdSubcommand | undefined): boolean {
   return (
     isPhaseOverrideSubcommand(subcommand) ||
+    subcommand === "progress" ||
     subcommand === "map-codebase" ||
     subcommand === "new-project" ||
     subcommand === "new-milestone" ||

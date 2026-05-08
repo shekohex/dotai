@@ -3,6 +3,7 @@ import { Type, type Static } from "typebox";
 import type { GsdCommandArgs } from "../args.js";
 import { resolveNextPlan, writeStateFields } from "../state/runtime.js";
 import { readPlanningSnapshot } from "../state/read.js";
+import { readRoadmapPhases } from "../state/roadmap.js";
 
 export const NextOutputSchema = Type.Object(
   {
@@ -42,6 +43,13 @@ export function handleGsdNext(
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs = {},
 ): void {
+  if (
+    args.phase !== undefined &&
+    !readRoadmapPhases(ctx.cwd).some((phase) => phase.number === args.phase)
+  ) {
+    ctx.ui.notify(`Unknown /gsd next phase override: ${args.phase}.`, "warning");
+    return;
+  }
   const result = computeNext(ctx.cwd, args.phase);
   if (!result.advanced) {
     ctx.ui.notify(`Next ${result.reason}`, "warning");

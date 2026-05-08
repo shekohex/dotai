@@ -121,6 +121,34 @@ describe("roadmap parser", () => {
     expect(result.currentPlan).toBe("02-01");
   });
 
+  it("prefers earliest incomplete phase when state drifted ahead", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 2\ncurrent_phase_name: Build\ncurrent_plan: 02-01\nstatus: Ready to execute\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+
+    const result = computeNext(root);
+    expect(result.reason).toBe("phase-ready");
+    expect(result.newPhase).toBe("1");
+    expect(result.currentPlan).toBe("01-01");
+  });
+
   it("updates state when handling next across phases", () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });

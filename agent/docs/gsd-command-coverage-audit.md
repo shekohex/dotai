@@ -53,7 +53,7 @@ Implemented locally:
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
 | `validate-phase`     | template stub                      | `validate-phase`               |       15 |
-| `progress`           | TS-native instant command          | `progress`                     |       24 |
+| `progress`           | TS-native instant command          | `progress`                     |       36 |
 | `next`               | local-only instant command         | derived from `progress --next` |       18 |
 | `stats`              | TS-native instant command          | `stats`                        |       22 |
 | `health`             | TS-native instant command          | `health`                       |       28 |
@@ -428,7 +428,7 @@ Differences:
 
 ### `progress`
 
-Coverage: 24/100
+Coverage: 36/100
 
 Upstream behavior:
 
@@ -436,14 +436,16 @@ Upstream behavior:
 
 Local behavior:
 
-- computes percent/bar/current phase/current plan and prints one-line summary. `src/extensions/gsd/instant/progress.ts:4-10`, `src/extensions/gsd/state/progress.ts:23-56`
+- computes percent/bar/current phase/current plan and prints one-line summary by default. `src/extensions/gsd/instant/progress.ts:4-10`, `src/extensions/gsd/state/progress.ts:23-56`
+- parses routed flags explicitly, supports local `progress --next`, and rejects unsupported `--do`, `--forensic`, malformed `--phase`, and unsupported standalone phase overrides instead of silently degrading. `src/extensions/gsd/args.ts`, `src/extensions/gsd/instant/progress.ts`
+- `progress --next` now uses backlog-safe next-pointer semantics that prefer earliest incomplete work when `STATE.md` drifted ahead and reject unknown explicit phase overrides before mutating state. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/runtime.ts`
+- focused tests now cover supported `progress --next`, rejected `--do` / `--forensic`, malformed phase overrides, flag-like phase values, and unknown phase overrides that must not mutate state. `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/instant.test.ts`
 
 Differences:
 
-- no dispatch to next workflow
-- no `--do`
-- no `--forensic`
-- no workflow prompts
+- still no workflow-backed rich report, route selection, `--do`, or `--forensic`
+- default output remains compact local status rather than upstream situational router
+- parity improved by making claimed local surface honest and backlog-safe, not by matching upstream workflow breadth
 
 ### `next`
 
@@ -638,7 +640,7 @@ Execution strategy:
 |    04 | `execute-phase`      |               91 | Critical | execution is core delivery engine                          | standalone verify/validate rewrites, deeper runtime automation parity                                                |
 |    05 | `verify-work`        |               90 | Critical | closes phase loop and creates fix plans                    | richer closure automation parity, MVP/Playwright branches, artifact/security/transition automation                   |
 |    06 | `validate-phase`     |               15 | High     | retroactive quality gate still very incomplete             | Nyquist audit/reconstruction/test-gen behavior, tests                                                                |
-|    07 | `progress`           |               24 | High     | primary situational router in upstream                     | report modes, `--next`, `--do`, `--forensic`, routing tests                                                          |
+|    07 | `progress`           |               36 | High     | primary situational router in upstream                     | workflow-backed report modes, `--do`, `--forensic`, richer routing tests                                             |
 |    08 | `health`             |               28 | High     | trust/safety command for `.planning` health                | repair/context modes, richer checks, tests                                                                           |
 |    09 | `map-codebase`       |               94 | High     | strong base exists, remaining gap mostly picker/commit UX  | optional upstream picker/commit parity                                                                               |
 |    10 | `stats`              |               22 | Medium   | support command, easy isolated parity work                 | richer metrics, git timeline, output parity, tests                                                                   |

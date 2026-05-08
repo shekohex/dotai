@@ -370,6 +370,63 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
       "Unsupported /gsd execute-phase flag: --wave requires positive integer value.",
   });
   expect(parseGsdCommandArgs("next --phase=4")).toEqual({ subcommand: "next", phase: "4" });
+  expect(parseGsdCommandArgs("progress --next")).toEqual({
+    subcommand: "progress",
+    next: true,
+  });
+  expect(parseGsdCommandArgs("progress --phase 2 --next")).toEqual({
+    subcommand: "progress",
+    phase: "2",
+    next: true,
+  });
+  expect(parseGsdCommandArgs("progress --next --phase")).toEqual({
+    subcommand: "progress",
+    next: true,
+    unsupportedModeError: "Unsupported /gsd progress flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("progress --next --phase=")).toEqual({
+    subcommand: "progress",
+    next: true,
+    unsupportedModeError: "Unsupported /gsd progress flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("progress --phase --next")).toEqual({
+    subcommand: "progress",
+    next: true,
+    unsupportedModeError: "Unsupported /gsd progress flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("progress --next --phase=--forensic")).toEqual({
+    subcommand: "progress",
+    next: true,
+    unsupportedModeError: "Unsupported /gsd progress flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("progress 2")).toEqual({
+    subcommand: "progress",
+    phase: "2",
+    unsupportedModeError:
+      "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.",
+  });
+  expect(parseGsdCommandArgs("progress --phase 2")).toEqual({
+    subcommand: "progress",
+    phase: "2",
+    unsupportedModeError:
+      "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.",
+  });
+  expect(parseGsdCommandArgs("progress --do")).toEqual({
+    subcommand: "progress",
+    doMode: true,
+    unsupportedModeError:
+      "Unsupported /gsd progress mode: --do. Local command does not implement routed execution from progress yet.",
+  });
+  expect(parseGsdCommandArgs("progress --forensic")).toEqual({
+    subcommand: "progress",
+    forensic: true,
+    unsupportedModeError:
+      "Unsupported /gsd progress mode: --forensic. Local command does not implement forensic workflow routing yet.",
+  });
+  expect(parseGsdCommandArgs("progress --bogus")).toEqual({
+    subcommand: "progress",
+    unsupportedModeError: "Unsupported /gsd progress flag: --bogus.",
+  });
   expect(parseGsdCommandArgs("map-codebase --paths src,packages/ui")).toEqual({
     subcommand: "map-codebase",
     paths: ["src", "packages/ui"],
@@ -815,7 +872,7 @@ test("gsd autocomplete shows dynamic subcommand hints", async () => {
     expect.arrayContaining([
       expect.objectContaining({
         value: "execute-phase",
-        description: expect.stringContaining("exec 1 phase"),
+        description: expect.stringContaining("exec 2 2-01"),
       }),
       expect.objectContaining({
         value: "progress",
@@ -860,6 +917,111 @@ test("gsd next uses explicit phase override", async () => {
   expect(state).toContain("current_phase_name: Delivery");
   expect(state).toContain("current_plan: 2-01");
   expect(notifications.at(-1)).toEqual({ message: "Next phase=2 plan=2-01", level: "info" });
+});
+
+test("gsd progress --next routes through next behavior", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress --next", createCommandContext(cwd, notifications));
+  const state = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
+  expect(state).toContain("current_phase: 2");
+  expect(state).toContain("current_phase_name: Delivery");
+  expect(state).toContain("current_plan: 2-01");
+  expect(notifications.at(-1)).toEqual({ message: "Next phase=2 plan=2-01", level: "info" });
+});
+
+test("gsd progress rejects unsupported routed modes explicitly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress --forensic", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Unsupported /gsd progress mode: --forensic. Local command does not implement forensic workflow routing yet.",
+    level: "warning",
+  });
+});
+
+test("gsd progress rejects phase override without --next", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress 2", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.",
+    level: "warning",
+  });
+  await command?.handler("progress --phase 2", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.",
+    level: "warning",
+  });
+});
+
+test("gsd progress rejects malformed phase override explicitly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress --next --phase", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd progress flag: --phase requires a value.",
+    level: "warning",
+  });
+  await command?.handler("progress --next --phase=", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd progress flag: --phase requires a value.",
+    level: "warning",
+  });
+  await command?.handler("progress --phase --next", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd progress flag: --phase requires a value.",
+    level: "warning",
+  });
+  await command?.handler(
+    "progress --next --phase=--forensic",
+    createCommandContext(cwd, notifications),
+  );
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd progress flag: --phase requires a value.",
+    level: "warning",
+  });
+});
+
+test("gsd progress --next rejects unknown phase override without mutating state", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  const before = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
+  await command?.handler("progress --next --phase 99", createCommandContext(cwd, notifications));
+  const after = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
+  expect(after).toBe(before);
+  expect(notifications.at(-1)).toEqual({
+    message: "Unknown /gsd next phase override: 99.",
+    level: "warning",
+  });
 });
 
 test("gsd dashboard fallback reports pending todo count", async () => {

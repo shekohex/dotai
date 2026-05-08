@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { PlanFile } from "./read.js";
 import { resolvePhasesDir, resolvePlanningDir } from "../shared.js";
 import { readPlanningSnapshot } from "./read.js";
 import { readRoadmapPhases, type RoadmapPhase } from "./roadmap.js";
+
+type ResolvedPhasePlan = {
+  id: string;
+  completed: boolean;
+};
 
 export type CurrentPhaseSelection = {
   phase: RoadmapPhase;
@@ -72,7 +76,7 @@ function normalizePlanId(fileName: string): string {
   return fileName.replace("-PLAN.md", "");
 }
 
-function findIncompletePlan(plans: PlanFile[]): PlanFile | undefined {
+function findIncompletePlan(plans: ResolvedPhasePlan[]): ResolvedPhasePlan | undefined {
   return plans.find((plan) => !plan.completed);
 }
 
@@ -81,6 +85,23 @@ function phaseSnapshotByNumber(
   phase: RoadmapPhase,
 ) {
   return snapshot.phases.find((entry) => entry.id === toPhaseDirName(phase));
+}
+
+function resolvePhasePlans(
+  snapshot: ReturnType<typeof readPlanningSnapshot>,
+  phase: RoadmapPhase,
+): ResolvedPhasePlan[] {
+  const phaseSnapshot = phaseSnapshotByNumber(snapshot, phase);
+  if (phaseSnapshot !== undefined && phaseSnapshot.plans.length > 0) {
+    return phaseSnapshot.plans.map((plan) => ({
+      id: normalizePlanId(plan.fileName),
+      completed: plan.completed,
+    }));
+  }
+  return phase.plans.map((plan) => ({
+    id: plan.id,
+    completed: plan.completed,
+  }));
 }
 
 export function resolveNextPlan(
@@ -95,10 +116,28 @@ export function resolveNextPlan(
 
   const currentPhaseNumber = requestedPhase ?? snapshot.state?.current_phase;
   const currentPlanId = snapshot.state?.current_plan;
-  const currentPhaseIndex = Math.max(
-    0,
-    phases.findIndex((phase) => phase.number === currentPhaseNumber),
-  );
+  const requestedPhaseIndex =
+    requestedPhase !== undefined && requestedPhase.length > 0
+      ? phases.findIndex((phase) => phase.number === requestedPhase)
+      : -1;
+  const statePhaseIndex = phases.findIndex((phase) => phase.number === currentPhaseNumber);
+  const earliestIncompletePhaseIndex = phases.findIndex((phase) => {
+    const plans = resolvePhasePlans(snapshot, phase);
+    if (plans.length === 0) {
+      return true;
+    }
+    return plans.some((plan) => !plan.completed);
+  });
+  let startPhaseIndex = statePhaseIndex;
+  if (requestedPhaseIndex >= 0) {
+    startPhaseIndex = requestedPhaseIndex;
+  } else if (
+    earliestIncompletePhaseIndex >= 0 &&
+    (statePhaseIndex < 0 || earliestIncompletePhaseIndex < statePhaseIndex)
+  ) {
+    startPhaseIndex = earliestIncompletePhaseIndex;
+  }
+  const currentPhaseIndex = Math.max(0, startPhaseIndex);
 
   for (let index = currentPhaseIndex; index < phases.length; index += 1) {
     const phase = phases[index];
@@ -107,8 +146,7 @@ export function resolveNextPlan(
     }
     const phaseDir = join(resolvePhasesDir(cwd), toPhaseDirName(phase));
     const phaseFilePrefix = planFilePrefix(phase.number);
-    const phaseSnapshot = phaseSnapshotByNumber(snapshot, phase);
-    const plans = phaseSnapshot?.plans ?? [];
+    const plans = resolvePhasePlans(snapshot, phase);
     const totalPlans = plans.length;
 
     if (totalPlans === 0) {
@@ -124,7 +162,7 @@ export function resolveNextPlan(
     if (index === currentPhaseIndex) {
       const currentIndex =
         currentPlanId !== undefined && currentPlanId.length > 0
-          ? plans.findIndex((plan) => normalizePlanId(plan.fileName) === currentPlanId)
+          ? plans.findIndex((plan) => plan.id === currentPlanId)
           : -1;
       const afterCurrent = currentIndex >= 0 ? plans.slice(currentIndex + 1) : plans;
       const nextInPhase = findIncompletePlan(afterCurrent);
@@ -133,7 +171,7 @@ export function resolveNextPlan(
           phase,
           phaseDir,
           phaseFilePrefix,
-          planId: normalizePlanId(nextInPhase.fileName),
+          planId: nextInPhase.id,
           totalPlans,
           reason: currentIndex >= 0 ? "plan-advanced" : "phase-ready",
         };
@@ -146,7 +184,7 @@ export function resolveNextPlan(
         phase,
         phaseDir,
         phaseFilePrefix,
-        planId: normalizePlanId(firstIncomplete.fileName),
+        planId: firstIncomplete.id,
         totalPlans,
         reason: index === currentPhaseIndex ? "phase-ready" : "phase-advanced",
       };
@@ -161,7 +199,7 @@ export function resolveNextPlan(
     phase: lastPhase,
     phaseDir: join(resolvePhasesDir(cwd), toPhaseDirName(lastPhase)),
     phaseFilePrefix: planFilePrefix(lastPhase.number),
-    totalPlans: phaseSnapshotByNumber(snapshot, lastPhase)?.plans.length ?? 0,
+    totalPlans: resolvePhasePlans(snapshot, lastPhase).length,
     reason: "complete",
   };
 }

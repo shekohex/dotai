@@ -230,8 +230,8 @@ Plans:
   it("health reports non-error brownfield drift without failure", () => {
     const { notifications, ctx } = createNotifications();
     handleGsdHealth({} as never, ctx as never);
-    expect(notifications.at(-1)?.level).toBe("info");
-    expect(notifications.at(-1)?.message).toContain("Health ok");
+    expect(notifications.at(-1)?.level).toBe("warning");
+    expect(notifications.at(-1)?.message).toContain("Health degraded");
   });
 
   it("health reports missing PROJECT.md as non-green", () => {
@@ -260,9 +260,42 @@ Plans:
     );
 
     expect(notifications.at(-1)).toEqual({
-      message: "Health bad error:PROJECT.md",
+      message: "Health broken errors=1 warnings=1 info=0",
       level: "warning",
     });
+  });
+
+  it("health reports malformed config as structured output instead of crashing", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-health-malformed-config-"));
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{bad json\n");
+    writeFileSync(
+      join(root, ".planning", "PROJECT.md"),
+      "## What This Is\n\nDemo\n\n## Core Value\n\nValue\n\n## Requirements\n\n- One\n",
+    );
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to plan\n");
+
+    const notifications: Array<{ message: string; level: string }> = [];
+    expect(() =>
+      handleGsdHealth(
+        {} as never,
+        {
+          cwd: root,
+          hasUI: false,
+          ui: {
+            notify(message: string, level: string) {
+              notifications.push({ message, level });
+            },
+          },
+        } as never,
+      ),
+    ).not.toThrow();
+
+    expect(notifications.at(-1)?.level).toBe("warning");
+    expect(notifications.at(-1)?.message).toContain("Health broken");
+    expect(notifications.at(-1)?.message).toContain("errors=1");
   });
 
   it("fixture state remains unchanged after instant commands", () => {

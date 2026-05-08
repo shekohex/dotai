@@ -217,6 +217,75 @@ test("gsd command blocks disabled lifecycle commands", async () => {
   });
 });
 
+test("gsd health routes --repair to bundled validator", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases"), { recursive: true });
+  writeFileSync(join(cwd, ".planning", "config.json"), "{bad json\n");
+  writeFileSync(
+    join(cwd, ".planning", "PROJECT.md"),
+    "## What This Is\n\nDemo\n\n## Core Value\n\nValue\n\n## Requirements\n\n- One\n",
+  );
+  writeFileSync(join(cwd, ".planning", "ROADMAP.md"), "# Roadmap\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  writeFileSync(join(cwd, ".planning", "STATE.md"), "status: Ready to plan\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("health --repair", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)?.level).toBe("warning");
+  expect(notifications.at(-1)?.message).toContain("Health ");
+  expect(notifications.at(-1)?.message).toContain("repairs=1");
+  expect(JSON.parse(await readFile(join(cwd, ".planning", "config.json"), "utf8"))).toMatchObject({
+    model_profile: "balanced",
+  });
+});
+
+test("gsd health routes --context to bundled context backend", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler(
+    "health --context --tokens-used 650 --context-window 1000",
+    createCommandContext(cwd, notifications),
+  );
+
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Health context 65% warning Context is approaching the fracture zone — consider /gsd-thread to continue in a fresh window.",
+    level: "warning",
+  });
+});
+
+test("gsd health surfaces bundled context validation failures as warning output", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler(
+    "health --context --tokens-used nope --context-window 1000",
+    createCommandContext(cwd, notifications),
+  );
+
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Health context 0% critical --tokens-used must be a non-negative integer (window > 0), got the values supplied",
+    level: "warning",
+  });
+});
+
 test("gsd status routes to subagent status handler", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -885,6 +954,31 @@ test("gsd autocomplete shows dynamic subcommand hints", async () => {
       expect.objectContaining({
         value: "debug",
         description: expect.stringContaining("0 active sessions"),
+      }),
+    ]),
+  );
+});
+
+test("gsd autocomplete health hint preserves degraded state", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "PROJECT.md"),
+    "## What This Is\n\nDemo\n\n## Core Value\n\nValue\n\n## Requirements\n\n- One\n",
+  );
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  const rootItems = await command?.getArgumentCompletions?.("");
+  expect(rootItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        value: "health",
+        description: expect.stringContaining("degraded"),
       }),
     ]),
   );

@@ -12,7 +12,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { loadBundledDoc } from "./resources.js";
 import { getGsdSettings, saveGsdSettings } from "./settings.js";
-import { computeHealth } from "./state/health.js";
+import { computeLocalHealthSummary } from "./state/health.js";
 import { computeProgress } from "./state/progress.js";
 import { readPlanningSnapshot } from "./state/read.js";
 import { readRoadmapPhases } from "./state/roadmap.js";
@@ -83,7 +83,7 @@ class GsdDashboard implements Component {
     const settings = getGsdSettings(this.ctx.cwd);
     const progress = computeProgress(this.ctx.cwd);
     const stats = computeStats(this.ctx.cwd);
-    const health = computeHealth(this.ctx.cwd);
+    const health = computeLocalHealthSummary(this.ctx.cwd);
     const phases = readRoadmapPhases(this.ctx.cwd);
     const snapshot = readPlanningSnapshot(this.ctx.cwd);
     const activePhase =
@@ -117,7 +117,7 @@ class GsdDashboard implements Component {
         `Plans: ${stats.planCount}`,
         `Summaries: ${stats.summaryCount}`,
         `Pending Todos: ${snapshot.pendingTodos.length}`,
-        `Health: ${health.healthy ? "ok" : `${health.issues.length} issues`}`,
+        `Health: ${health.status === "healthy" ? "ok" : `${health.status} • ${health.issues.length} issues`}`,
       ].join("\n"),
     );
     this.details.setText(
@@ -130,7 +130,9 @@ class GsdDashboard implements Component {
         "Health Issues",
         ...(health.issues.length === 0
           ? ["None"]
-          : health.issues.slice(0, 5).map((issue) => `${issue.severity}: ${issue.file}`)),
+          : health.issues
+              .slice(0, 5)
+              .map((issue) => `${issue.severity}: ${issue.code} ${issue.message}`)),
         "",
         "Recent Artifacts",
         ...(recentArtifacts.length === 0 ? ["None"] : recentArtifacts),

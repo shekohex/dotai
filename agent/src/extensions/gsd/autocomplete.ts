@@ -75,6 +75,7 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
   "verify-work": ["--phase", "--phase="],
   "validate-phase": ["--phase", "--phase="],
   next: ["--phase", "--phase="],
+  health: ["--repair", "--context", "--tokens-used", "--context-window"],
   debug: ["--diagnose"],
 };
 
@@ -401,6 +402,18 @@ function getFlagDescription(value: string): string | undefined {
   }
   if (value === "--diagnose") {
     return "Find root cause only";
+  }
+  if (value === "--repair") {
+    return "Run bundled planning repair actions";
+  }
+  if (value === "--context") {
+    return "Check context utilization";
+  }
+  if (value === "--tokens-used") {
+    return "Set consumed context tokens";
+  }
+  if (value === "--context-window") {
+    return "Set total context window size";
   }
   if (value === "--wave") {
     return "Execute only one wave";

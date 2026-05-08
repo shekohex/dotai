@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { computeHealth } from "../../src/extensions/gsd/state/health.js";
+import { computeHealth, computeLocalHealthSummary } from "../../src/extensions/gsd/state/health.js";
 import { computeProgress } from "../../src/extensions/gsd/state/progress.js";
 import { readPlanningSnapshot } from "../../src/extensions/gsd/state/read.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
@@ -52,7 +52,8 @@ describe("brownfield continuation", () => {
     const result = computeHealth(brownfieldRoot);
     expect(result.healthy).toBe(true);
     expect(result.issues.some((issue) => issue.severity === "error")).toBe(false);
-    expect(result.issues.some((issue) => issue.message === "Plan missing summary")).toBe(true);
+    expect(result.status).toBe("degraded");
+    expect(result.issues.some((issue) => issue.severity === "warning")).toBe(true);
   });
 
   it("reads existing plan files in place", () => {
@@ -326,10 +327,54 @@ Plans:
 
     const result = computeHealth(root);
     expect(result.healthy).toBe(false);
-    expect(result.issues).toContainEqual({
-      severity: "error",
-      file: "PROJECT.md",
-      message: "Missing PROJECT.md",
+    expect(result.status).toBe("broken");
+    expect(
+      result.issues.some(
+        (issue) => issue.severity === "error" && issue.message === "PROJECT.md not found",
+      ),
+    ).toBe(true);
+  });
+
+  it("local summary survives malformed config without throwing", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-local-health-malformed-config-"));
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{bad json\n");
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Project\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to plan\n");
+
+    expect(() => computeLocalHealthSummary(root)).not.toThrow();
+    expect(computeLocalHealthSummary(root)).toMatchObject({
+      status: "degraded",
+      healthy: true,
     });
+    expect(computeLocalHealthSummary(root).issues).toContainEqual({
+      severity: "warning",
+      code: "WLOCAL_CONFIG",
+      message: "config.json malformed",
+    });
+  });
+
+  it("local summary keeps empty valid planning degraded instead of broken", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-local-health-empty-phases-"));
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Project\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to plan\n");
+
+    const result = computeLocalHealthSummary(root);
+    expect(result).toMatchObject({ status: "degraded", healthy: true });
+    expect(result.issues).toContainEqual({
+      severity: "warning",
+      code: "WLOCAL_PHASES",
+      message: "No phases found",
+    });
+    expect(result.issues.some((issue) => issue.severity === "error")).toBe(false);
   });
 });

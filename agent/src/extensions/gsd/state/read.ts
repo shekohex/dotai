@@ -53,7 +53,12 @@ export function readPlanningConfig(cwd: string): PlanningConfig | undefined {
   if (!existsSync(configPath)) {
     return undefined;
   }
-  const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
   if (!Value.Check(PlanningConfigSchema, parsed)) {
     return undefined;
   }

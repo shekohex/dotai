@@ -1,4 +1,4 @@
-import { computeHealth } from "./health.js";
+import { computeLocalHealthSummary } from "./health.js";
 import { computeProgress } from "./progress.js";
 import { listDebugSessions } from "./debug.js";
 import { listArchivedMilestones, resolveCurrentMilestone } from "./milestones.js";
@@ -57,34 +57,44 @@ export function getGsdPhaseSuggestions(cwd: string): GsdPhaseSuggestion[] {
 }
 
 export function getGsdSubcommandHint(cwd: string, subcommand: string): string | undefined {
-  const progress = computeProgress(cwd);
-  const stats = computeStats(cwd);
-  const health = computeHealth(cwd);
-  const snapshot = readPlanningSnapshot(cwd);
-  const next = resolveNextPlan(cwd);
-
   switch (subcommand) {
-    case "map-codebase":
+    case "map-codebase": {
+      const snapshot = readPlanningSnapshot(cwd);
       return snapshot.project === undefined
         ? "bootstrap docs first"
         : "updates .planning/codebase/";
-    case "discuss-phase":
+    }
+    case "discuss-phase": {
+      const next = resolveNextPlan(cwd);
       return next ? `target ${next.phase.number} ${next.phase.name}` : undefined;
-    case "plan-phase":
+    }
+    case "plan-phase": {
+      const next = resolveNextPlan(cwd);
       return next ? `next ${next.phase.number} ${next.planId ?? "plan"}` : undefined;
-    case "execute-phase":
+    }
+    case "execute-phase": {
+      const next = resolveNextPlan(cwd);
       return next ? `exec ${next.phase.number} ${next.planId ?? "phase"}` : undefined;
-    case "verify-work":
+    }
+    case "verify-work": {
+      const next = resolveNextPlan(cwd);
       return next ? `verify ${next.phase.number} ${next.planId ?? "phase"}` : undefined;
-    case "validate-phase":
+    }
+    case "validate-phase": {
+      const progress = computeProgress(cwd);
       if (progress.currentPhase === undefined) {
         return undefined;
       }
       return `phase ${progress.currentPhase}`;
-    case "next":
+    }
+    case "next": {
+      const next = resolveNextPlan(cwd);
       return next ? `advance to ${next.phase.number} ${next.planId ?? "plan"}` : undefined;
-    case "progress":
+    }
+    case "progress": {
+      const progress = computeProgress(cwd);
       return `${progress.percent}% ${progress.status.toLowerCase()}`;
+    }
     case "new-milestone":
       return resolveCurrentMilestone(cwd)?.version ?? "start next cycle";
     case "complete-milestone":
@@ -93,10 +103,17 @@ export function getGsdSubcommandHint(cwd: string, subcommand: string): string | 
       return listArchivedMilestones(cwd).at(-1)?.version ?? "report current";
     case "debug":
       return `${listDebugSessions(cwd).length} active sessions`;
-    case "stats":
+    case "stats": {
+      const stats = computeStats(cwd);
       return `${stats.phaseCount} phases • ${stats.planCount} plans`;
-    case "health":
-      return health.healthy ? "healthy" : `${health.issues.length} issues`;
+    }
+    case "health": {
+      const health = computeLocalHealthSummary(cwd);
+      if (health.status === "healthy") {
+        return "healthy";
+      }
+      return `${health.status} • ${health.issues.length} issues`;
+    }
     default:
       return undefined;
   }

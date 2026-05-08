@@ -68,6 +68,10 @@ export const GsdCommandArgsSchema = Type.Object(
     diagnose: Type.Optional(Type.Boolean()),
     description: Type.Optional(Type.String()),
     outputMode: Type.Optional(Type.Union([Type.Literal("json"), Type.Literal("table")])),
+    repair: Type.Optional(Type.Boolean()),
+    context: Type.Optional(Type.Boolean()),
+    tokensUsed: Type.Optional(Type.String()),
+    contextWindow: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -588,6 +592,71 @@ function parsePlanPhaseArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 
+function parseHealthArgs(tokens: string[]): GsdCommandArgs {
+  let repair = false;
+  let context = false;
+  let tokensUsed: string | undefined;
+  let contextWindow: string | undefined;
+  let unsupportedModeError: string | undefined;
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--repair") {
+      repair = true;
+      continue;
+    }
+    if (token === "--context") {
+      context = true;
+      continue;
+    }
+    if (token === "--tokens-used") {
+      tokensUsed = normalizeFreeform(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--tokens-used=")) {
+      tokensUsed = normalizeFreeform(token.slice("--tokens-used=".length));
+      continue;
+    }
+    if (token === "--context-window") {
+      contextWindow = normalizeFreeform(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--context-window=")) {
+      contextWindow = normalizeFreeform(token.slice("--context-window=".length));
+      continue;
+    }
+    unsupportedModeError ??= `Unsupported /gsd health flag: ${token}.`;
+  }
+
+  if (context && tokensUsed === undefined) {
+    unsupportedModeError ??=
+      "Unsupported /gsd health context mode: --tokens-used <integer> is required.";
+  }
+  if (context && contextWindow === undefined) {
+    unsupportedModeError ??=
+      "Unsupported /gsd health context mode: --context-window <integer> is required.";
+  }
+  if (!context && (tokensUsed !== undefined || contextWindow !== undefined)) {
+    unsupportedModeError ??=
+      "Unsupported /gsd health context mode: add --context when passing context utilization flags.";
+  }
+  if (repair && context) {
+    unsupportedModeError ??=
+      "Unsupported /gsd health mode: choose either --repair or --context per run.";
+  }
+
+  return validateParsedArgs({
+    subcommand: "health",
+    ...(repair ? { repair: true } : {}),
+    ...(context ? { context: true } : {}),
+    ...(tokensUsed === undefined ? {} : { tokensUsed }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
+  });
+}
+
 export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
@@ -635,6 +704,10 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
       normalizeFreeform,
       validateParsedArgs,
     });
+  }
+
+  if (subcommand === "health") {
+    return parseHealthArgs(tokens);
   }
 
   if (subcommand === "execute-phase") {
@@ -715,6 +788,7 @@ export function usesParsedArgs(subcommand: GsdSubcommand | undefined): boolean {
     isPhaseOverrideSubcommand(subcommand) ||
     subcommand === "progress" ||
     subcommand === "stats" ||
+    subcommand === "health" ||
     subcommand === "map-codebase" ||
     subcommand === "new-project" ||
     subcommand === "new-milestone" ||

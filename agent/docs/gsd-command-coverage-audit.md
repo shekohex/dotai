@@ -56,7 +56,7 @@ Implemented locally:
 | `progress`           | TS-native instant command          | `progress`                     |       36 |
 | `next`               | local-only instant command         | derived from `progress --next` |       18 |
 | `stats`              | TS-native instant command          | `stats`                        |       38 |
-| `health`             | TS-native instant command          | `health`                       |       28 |
+| `health`             | TS-native instant command          | `health`                       |       45 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
 | `help`               | local docs viewer                  | `help`                         |       44 |
 | `on`                 | local enable toggle                | none                           |      100 |
@@ -487,7 +487,7 @@ Differences:
 
 ### `health`
 
-Coverage: 28/100
+Coverage: 45/100
 
 Upstream behavior:
 
@@ -495,13 +495,16 @@ Upstream behavior:
 
 Local behavior:
 
-- checks core files plus missing summaries for plans and reports summary inline. `src/extensions/gsd/instant/health.ts:4-13`, `src/extensions/gsd/state/health.ts:18-54`
+- slash command now routes explicit `--repair` and `--context` requests through shipped bundled validator/context backends instead of silently ignoring flags. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/args.ts`
+- normal `/gsd health` output now preserves `healthy`, `degraded`, and `broken` states and converts malformed planning/config failures into structured command output instead of crashing. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/read.ts`
+- autocomplete and dashboard now use cheap local summary heuristics instead of synchronously invoking bundled validator on every hot-path refresh. `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/suggestions.ts`, `src/extensions/gsd/ui.ts`
+- focused tests now cover routed flags, malformed config survival, degraded output, and hot-path isolation. `test/gsd/commands.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/ui.test.ts`, `test/gsd/health-summary-paths.test.ts`
 
 Differences:
 
-- no repair mode
-- no context-utilization mode
-- much smaller rule set
+- local backend still does not expose full upstream health workflow/report experience or complete warning code inventory
+- autocomplete/dashboard summaries are intentionally cheaper local approximations, not full bundled health evaluation
+- no full workflow prompt handoff for repair confirmation loops
 
 ### `status`
 

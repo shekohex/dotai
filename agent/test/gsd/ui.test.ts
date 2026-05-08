@@ -47,6 +47,14 @@ Plans:
   return root;
 }
 
+function writeProjectFiles(root: string): void {
+  writeFileSync(
+    join(root, ".planning", "PROJECT.md"),
+    "## What This Is\n\nDemo\n\n## Core Value\n\nValue\n\n## Requirements\n\n- One\n",
+  );
+  writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+}
+
 function createTheme(): Theme {
   return {
     fg(_color, text) {
@@ -94,6 +102,23 @@ describe("gsd ui custom components", () => {
     expect(rendered).toContain("Pending Todos");
     expect(rendered).toContain("20260504-base.md");
     expect(rendered).toContain("Docs (1/8)");
+  });
+
+  it("dashboard custom ui preserves degraded health state in summary", async () => {
+    const cwd = createRoot();
+    writeProjectFiles(cwd);
+    let rendered = "";
+    await showGsdDashboard({
+      cwd,
+      hasUI: true,
+      ui: {
+        notify() {},
+        async custom(custom) {
+          rendered = await renderCustomComponent(custom);
+        },
+      },
+    } as never);
+    expect(rendered).toContain("Health: degraded");
   });
 
   it("help custom ui renders canonical command reference", async () => {

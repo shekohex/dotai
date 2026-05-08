@@ -18,6 +18,12 @@
 7. `/gsd validate-phase`
 8. `/gsd next`
 
+Notes:
+
+- `/gsd validate-phase` now runs delegated validation review for executed local phases
+- omitted `/gsd validate-phase` target prefers last completed local phase with SUMMARY evidence
+- unsupported flags or non-executed phases stop with explicit warning instead of writing placeholder template
+
 ## Brownfield Flow
 
 - open repo with valid `.planning`

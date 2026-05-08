@@ -6,6 +6,7 @@ import { parseNextArgs } from "./next-args.js";
 import { parseProgressArgs } from "./progress-args.js";
 import { parseSecurePhaseArgs } from "./secure-phase-args.js";
 import { parseStatsArgs } from "./stats-args.js";
+import { parseValidatePhaseArgs } from "./validate-phase-args.js";
 import { parseVerifyWorkArgs } from "./verify-work-args.js";
 
 export const GsdCommandArgsSchema = Type.Object(
@@ -719,14 +720,15 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
     return parseSecurePhaseArgs(tokens, { normalizePhaseToken, validateParsedArgs });
   }
 
-  if (subcommand === "verify-work") {
-    return parseVerifyWorkArgs(tokens, { normalizePhaseToken, validateParsedArgs });
+  if (subcommand === "verify-work" || subcommand === "validate-phase") {
+    return subcommand === "verify-work"
+      ? parseVerifyWorkArgs(tokens, { normalizePhaseToken, validateParsedArgs })
+      : parseValidatePhaseArgs(tokens, { normalizePhaseToken, validateParsedArgs });
   }
 
   if (subcommand === "next") {
     return parseNextArgs(tokens, { normalizePhaseToken, validateParsedArgs });
   }
-
   let phase: string | undefined;
   let paths: string[] | undefined;
 
@@ -762,17 +764,7 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   };
   return validateParsedArgs(parsed);
 }
-
-export function isPhaseOverrideSubcommand(
-  subcommand: GsdSubcommand | undefined,
-): subcommand is
-  | "discuss-phase"
-  | "plan-phase"
-  | "execute-phase"
-  | "secure-phase"
-  | "verify-work"
-  | "validate-phase"
-  | "next" {
+export function usesParsedArgs(subcommand: GsdSubcommand | undefined): boolean {
   return (
     subcommand === "discuss-phase" ||
     subcommand === "plan-phase" ||
@@ -780,13 +772,7 @@ export function isPhaseOverrideSubcommand(
     subcommand === "secure-phase" ||
     subcommand === "verify-work" ||
     subcommand === "validate-phase" ||
-    subcommand === "next"
-  );
-}
-
-export function usesParsedArgs(subcommand: GsdSubcommand | undefined): boolean {
-  return (
-    isPhaseOverrideSubcommand(subcommand) ||
+    subcommand === "next" ||
     subcommand === "progress" ||
     subcommand === "stats" ||
     subcommand === "health" ||

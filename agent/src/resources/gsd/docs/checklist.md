@@ -42,6 +42,10 @@
 - `verify-work`
 - `validate-phase`
 
+Current shipped note:
+
+- `validate-phase` is workflow-launch validation review, not stub template writer
+
 ## Instant Commands
 
 - `next`

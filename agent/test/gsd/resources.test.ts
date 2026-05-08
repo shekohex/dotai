@@ -120,6 +120,29 @@ describe("gsd bundled resources", () => {
     expect(uatTemplate).toContain("does not auto-run diagnosis, security gating, or transition");
   });
 
+  it("ships validate-phase foundation resources and wording", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/validate-phase.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/validate-phase.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("workflow-launch foundation");
+    expect(command).toContain("last completed local phase with SUMMARY evidence");
+    expect(command).toContain("Rejected now:");
+    expect(command).toContain("unknown flags");
+    expect(command).toContain("do not use native template-writer shortcut");
+    expect(workflow).toContain(
+      "Do not recreate old native template-writer behavior as success path",
+    );
+    expect(workflow).toContain("fail closed");
+    expect(workflow).toContain("selected phase has no `*-SUMMARY.md`");
+    expect(workflow).toContain("existing `*-VALIDATION.md` already exists");
+  });
+
   it("ships execute-phase foundation resources and wording", () => {
     const command = readFileSync(
       join(process.cwd(), "src/resources/gsd/commands/gsd/execute-phase.md"),

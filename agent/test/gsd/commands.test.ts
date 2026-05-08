@@ -416,6 +416,31 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "secure-phase",
     phase: "2",
   });
+  expect(parseGsdCommandArgs("validate-phase 2")).toEqual({
+    subcommand: "validate-phase",
+    phase: "2",
+  });
+  expect(parseGsdCommandArgs("validate-phase --phase 2")).toEqual({
+    subcommand: "validate-phase",
+    phase: "2",
+  });
+  expect(parseGsdCommandArgs("validate-phase 1 junk")).toEqual({
+    subcommand: "validate-phase",
+    phase: "1",
+    unsupportedModeError: "Unsupported /gsd validate-phase extra positional argument: junk.",
+  });
+  expect(parseGsdCommandArgs("validate-phase --bogus")).toEqual({
+    subcommand: "validate-phase",
+    unsupportedModeError: "Unsupported /gsd validate-phase flag: --bogus.",
+  });
+  expect(parseGsdCommandArgs("validate-phase --phase")).toEqual({
+    subcommand: "validate-phase",
+    unsupportedModeError: "Unsupported /gsd validate-phase flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("validate-phase --phase=")).toEqual({
+    subcommand: "validate-phase",
+    unsupportedModeError: "Unsupported /gsd validate-phase flag: --phase requires a value.",
+  });
   expect(parseGsdCommandArgs("execute-phase 2 junk")).toEqual({
     subcommand: "execute-phase",
     phase: "2",
@@ -1593,6 +1618,32 @@ test("gsd execute-phase requires explicit phase before workflow launch", async (
   expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
   expect(notifications.at(-1)).toEqual({
     message: "/gsd execute-phase requires explicit phase in Slice 1 foundation.",
+    level: "warning",
+  });
+});
+
+test("gsd validate-phase rejects malformed phase flag explicitly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("validate-phase --phase", createCommandContext(cwd, notifications));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd validate-phase flag: --phase requires a value.",
+    level: "warning",
+  });
+
+  await command?.handler("validate-phase --phase=", createCommandContext(cwd, notifications));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd validate-phase flag: --phase requires a value.",
     level: "warning",
   });
 });

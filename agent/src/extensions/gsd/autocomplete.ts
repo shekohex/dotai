@@ -23,7 +23,7 @@ const subcommands: Array<{ value: GsdSubcommand; description: string }> = [
   { value: "execute-phase", description: "Run delegated execution" },
   { value: "secure-phase", description: "Run delegated security review" },
   { value: "verify-work", description: "Run delegated verification" },
-  { value: "validate-phase", description: "Write validation artifact" },
+  { value: "validate-phase", description: "Run delegated validation review" },
   { value: "next", description: "Route next local GSD action" },
   { value: "progress", description: "Show progress" },
   { value: "stats", description: "Show stats" },

@@ -52,7 +52,7 @@ Implemented locally:
 | `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
-| `validate-phase`     | template stub                      | `validate-phase`               |       15 |
+| `validate-phase`     | workflow-launch foundation         | `validate-phase`               |       34 |
 | `progress`           | TS-native instant command          | `progress`                     |       36 |
 | `next`               | local-only instant command         | derived from `progress --next` |       42 |
 | `stats`              | TS-native instant command          | `stats`                        |       38 |
@@ -409,7 +409,7 @@ Differences:
 
 ### `validate-phase`
 
-Coverage: 15/100
+Coverage: 34/100
 
 Upstream behavior:
 
@@ -417,11 +417,14 @@ Upstream behavior:
 
 Local behavior:
 
-- writes bundled `VALIDATION.md` template and updates state only. `src/extensions/gsd/lifecycle/validate-phase.ts:8-23`
+- now routes through workflow-launch foundation with bundled local command/workflow resources instead of writing a template stub directly. `src/extensions/gsd/lifecycle/validate-phase.ts`, `src/resources/gsd/commands/gsd/validate-phase.md`, `src/resources/gsd/workflows/validate-phase.md`
+- dedicated parser rejects malformed flags and extra positional args explicitly instead of silently ignoring them. `src/extensions/gsd/validate-phase-args.ts`, `src/extensions/gsd/args.ts`
+- omitted phase resolution now prefers the last completed local roadmap phase with real execution evidence, and fails closed when no completed phase exists. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 
 Differences:
 
-- no audit logic
+- still no full upstream audit/reconstruction/test-generation parity
+- many advanced Nyquist branches remain deferred or fail closed in this slice rather than being partially emulated
 - no reconstruction
 - no test generation
 - no workflow branching

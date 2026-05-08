@@ -5639,16 +5639,94 @@ Plans:
     expect(checkpoint.pendingPrompt).toContain("Reply in plain text");
   });
 
-  it("validate-phase writes validation file for explicit phase", () => {
+  it("validate-phase launches workflow foundation for explicit phase", async () => {
     const root = createPlanningRoot();
-    const ctx = createContext(root);
-    handleGsdValidatePhase({} as ExtensionAPI, ctx, { phase: "2" });
-    const validationPath = join(root, ".planning", "phases", "2-build", "02-VALIDATION.md");
-    expect(readFileSync(validationPath, "utf8")).toContain("Validation");
-    expect(readFileSync(join(root, ".planning", "STATE.md"), "utf8")).toContain("current_phase: 2");
-    expect(readFileSync(join(root, ".planning", "STATE.md"), "utf8")).toContain(
-      "status: Ready to validate",
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 2"',
     );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "commands/gsd/validate-phase.md",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "workflows/validate-phase.md",
+    );
+  });
+
+  it("validate-phase omitted phase prefers last completed local phase", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 2"',
+    );
+  });
+
+  it("validate-phase omitted phase skips partially executed higher phase", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Establish project baseline
+
+Plans:
+- [ ] 01-01: Create config
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+- [ ] 02-02: Finish feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 1"',
+    );
+  });
+
+  it("validate-phase omitted phase ignores stale completed phase dirs outside roadmap", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "9-stale"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "9-stale", "09-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 2"',
+    );
+  });
+
+  it("validate-phase fails closed when no executed local phase exists", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: no completed local phase found. Need phase with at least one SUMMARY.md artifact.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("verify-work launches workflow foundation instead of native artifact path", async () => {

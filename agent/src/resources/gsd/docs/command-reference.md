@@ -36,6 +36,7 @@
   flags: `--phase <phase>`
 - `/gsd validate-phase [phase]`
   flags: `--phase <phase>`
+  unsupported args fail explicitly; omitted phase prefers last completed local SUMMARY-backed phase; non-executed phases fail closed
 
 ## Debug
 

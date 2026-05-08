@@ -1,23 +1,43 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
-import { loadBundledTemplate } from "../resources.js";
-import { ensureCurrentPhaseDir, writeStateFields } from "../state/runtime.js";
+import { resolveValidatePhaseSelection } from "../state/validate-phase.js";
+import { launchGsdWorkflowSession } from "../workflow-launch.js";
 
-export function handleGsdValidatePhase(
-  _pi: ExtensionAPI,
+function stripValidatePhaseSubcommand(rawArgs: string): string | undefined {
+  const normalizedRawArgs = rawArgs
+    .trim()
+    .replace(/^validate-phase(?:\s+|$)/u, "")
+    .trim();
+  return normalizedRawArgs.length > 0 ? normalizedRawArgs : undefined;
+}
+
+export async function handleGsdValidatePhase(
+  pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs,
-): void {
-  const current = ensureCurrentPhaseDir(ctx.cwd, args.phase);
-  mkdirSync(current.phaseDir, { recursive: true });
-  const validationPath = join(current.phaseDir, `${current.phaseFilePrefix}-VALIDATION.md`);
-  writeFileSync(validationPath, loadBundledTemplate("VALIDATION.md"), "utf8");
-  writeStateFields(ctx.cwd, {
-    current_phase: current.phase.number,
-    current_phase_name: current.phase.name,
-    status: "Ready to validate",
+  rawArgs: string,
+): Promise<void> {
+  if (args.unsupportedModeError !== undefined) {
+    ctx.ui.notify(args.unsupportedModeError, "warning");
+    return;
+  }
+
+  const resolved = resolveValidatePhaseSelection(ctx.cwd, args.phase);
+  if (resolved.error !== undefined || resolved.selection === undefined) {
+    ctx.ui.notify(resolved.error ?? "Cannot run /gsd validate-phase.", "warning");
+    return;
+  }
+
+  const commandArguments = stripValidatePhaseSubcommand(rawArgs) ?? resolved.selection.phase.number;
+  await launchGsdWorkflowSession(pi, ctx, {
+    commandName: "validate-phase",
+    commandArguments,
+    commandResourcePath: "commands/gsd/validate-phase.md",
+    workflowResourcePaths: ["workflows/validate-phase.md"],
+    extraInstructions: [
+      "Use workflow-launch architecture for local `/gsd validate-phase` parity.",
+      `Default omitted-phase target already resolved locally to phase ${resolved.selection.phase.number} using last-completed local SUMMARY evidence.`,
+      "Fail closed if bundled workflow discovers missing validation prerequisites or non-executed phase state.",
+    ],
   });
-  ctx.ui.notify(`Validation template written: ${validationPath}`, "info");
 }

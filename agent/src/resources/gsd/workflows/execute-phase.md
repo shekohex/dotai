@@ -30,8 +30,8 @@ Core rules:
 1. Parse command arguments from `/gsd execute-phase ...` exactly as passed through by local handler.
 2. Active flags are only flags present in command arguments.
 3. active flags are only flags present in command arguments.
-4. Supported flags in this slice: `--wave`, `--gaps-only`, `--interactive`, `--validate`.
-5. Deferred flags stay rejected before launch and must not gain workflow behavior here: `--cross-ai`, `--no-cross-ai`, `--auto`, `--mvp`, `--tdd`.
+4. Supported flags in this slice: `--wave`, `--gaps-only`, `--interactive`, `--validate`, `--cross-ai`, `--no-cross-ai`, `--auto`, `--mvp`, `--tdd`.
+5. `--cross-ai`, `--no-cross-ai`, `--auto`, `--mvp`, and `--tdd` are workflow-native flags in this slice: parser/lifecycle preserve them, bundled workflow/runtime own semantics.
 6. Use existing local runtime helpers in `$GSD_TOOLS_PATH` for init, plan indexing, roadmap/state updates, verification, and completion.
 7. Honor `branching_strategy` and `branch_name` from init before validation or dispatch.
 8. Do not reimplement helper business logic in TypeScript. Handler stays registration-only.
@@ -50,6 +50,11 @@ Core rules:
    - `--gaps-only`: `gap closure only`
    - `--interactive`: `interactive sequential mode`
    - `--validate`: `validation requested`
+   - `--cross-ai`: `force cross-AI delegation`
+   - `--no-cross-ai`: `cross-AI delegation disabled`
+   - `--auto`: `auto-chain semantics requested`
+   - `--mvp`: `MVP mode requested`
+   - `--tdd`: `TDD mode requested`
 
 ## 2. Initialize
 

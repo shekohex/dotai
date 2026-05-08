@@ -44,6 +44,7 @@ class GsdHelpComponent implements Component {
         "/gsd discuss-phase",
         "/gsd plan-phase",
         "/gsd execute-phase",
+        "/gsd secure-phase",
         "/gsd verify-work",
         "/gsd validate-phase",
         "/gsd next",
@@ -91,7 +92,7 @@ class GsdHelpComponent implements Component {
 export async function showGsdHelp(ctx: ExtensionCommandContext): Promise<void> {
   if (!ctx.hasUI) {
     ctx.ui.notify(
-      `GSD: /gsd [on|off|new-project|new-milestone|complete-milestone|milestone-summary|debug|map-codebase|discuss-phase|plan-phase|execute-phase|verify-work|validate-phase|next|progress|stats|health|status|help]\n${loadBundledDoc("command-reference.md").split("\n").slice(0, 8).join("\n")}`,
+      `GSD: /gsd [on|off|new-project|new-milestone|complete-milestone|milestone-summary|debug|map-codebase|discuss-phase|plan-phase|execute-phase|secure-phase|verify-work|validate-phase|next|progress|stats|health|status|help]\n${loadBundledDoc("command-reference.md").split("\n").slice(0, 8).join("\n")}`,
       "info",
     );
     return;

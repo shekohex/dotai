@@ -1,6 +1,6 @@
 # UAT Template
 
-Template for `.planning/phases/XX-name/{phase_num}-UAT.md` — persistent UAT session tracking.
+Template for `.planning/phases/XX-name/{phase_num}-UAT.md` — persistent authoritative verify-work session tracking.
 
 ---
 
@@ -89,7 +89,8 @@ blocked: [N]
 
 **Frontmatter:**
 
-- `status`: OVERWRITE - "testing", "partial", or "complete"
+- `status`: OVERWRITE - `testing`, `partial`, or `complete` during local `/gsd verify-work`
+- `status`: `diagnosed` may be persisted later by manual/helper diagnosis updates
 - `phase`: IMMUTABLE - set on creation
 - `source`: IMMUTABLE - SUMMARY files being tested
 - `started`: IMMUTABLE - set on creation
@@ -126,12 +127,14 @@ blocked: [N]
 
 **After testing complete (status: complete), if gaps exist:**
 
+Deferred in this slice. Diagnose fields remain in template shape, but local `/gsd verify-work` does not auto-run diagnosis, security gating, or transition.
+
 1. User runs diagnosis (from verify-work offer or manually)
 2. diagnose-issues workflow spawns parallel debug agents
 3. Each agent investigates one gap, returns root cause
 4. UAT.md Gaps section updated with diagnosis:
    - Each gap gets `root_cause`, `artifacts`, `missing`, `debug_session` filled
-5. status → "diagnosed"
+5. status may be updated to `diagnosed` by helper-backed manual diagnosis persistence
 6. Ready for /gsd plan-phase --gaps with root causes
 
 **After diagnosis:**
@@ -190,6 +193,7 @@ blocked: [N]
 **Resuming partial session:**
 
 - `/gsd verify-work {phase}` picks up from first pending/blocked test
+- artifact survives `/clear` and remains single source of truth for verify progress
 - When all items resolved, status advances to "complete"
 
 **Resume after /clear:**

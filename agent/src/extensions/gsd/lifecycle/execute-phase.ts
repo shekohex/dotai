@@ -48,7 +48,7 @@ export async function handleGsdExecutePhase(
     extraInstructions: [
       "Use existing local bundled runtime helpers for init context, plan indexing, execute-plan flow, roadmap/state writes, and verification.",
       "Do not call local native `orchestrateExecutePhase()` path for this command; workflow-launch wrapper is source of truth for Slice 2 supported execute path.",
-      "Preserve active-flag semantics exactly: `--wave` filter activates for both `--wave <N>` and `--wave=<N>` raw-arg forms; other supported flags activate only when their literal tokens appear in routed raw args.",
+      "Preserve active-flag semantics exactly: `--wave` filter activates for both `--wave <N>` and `--wave=<N>` raw-arg forms; all other supported execute-phase flags activate only when their literal tokens appear in routed raw args.",
     ],
   });
 }

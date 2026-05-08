@@ -15,6 +15,7 @@ import {
   handleGsdNewMilestone,
   handleGsdNewProject,
   handleGsdPlanPhase,
+  handleGsdSecurePhase,
   handleGsdValidatePhase,
   handleGsdVerifyWork,
 } from "./lifecycle/index.js";
@@ -36,6 +37,7 @@ export const gsdHandlers = {
   "discuss-phase": handleGsdDiscussPhase,
   "plan-phase": handleGsdPlanPhase,
   "execute-phase": handleGsdExecutePhase,
+  "secure-phase": handleGsdSecurePhase,
   "verify-work": handleGsdVerifyWork,
   "validate-phase": handleGsdValidatePhase,
   next: handleGsdNext,

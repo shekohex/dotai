@@ -17,6 +17,7 @@ export type GsdSubcommand =
   | "discuss-phase"
   | "plan-phase"
   | "execute-phase"
+  | "secure-phase"
   | "verify-work"
   | "validate-phase"
   | "next"
@@ -71,6 +72,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         case "discuss-phase":
         case "plan-phase":
         case "execute-phase":
+        case "secure-phase":
         case "verify-work":
         case "validate-phase":
         case "next":

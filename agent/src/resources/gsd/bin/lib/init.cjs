@@ -86,6 +86,57 @@ function withProjectRoot(cwd, result) {
   return result;
 }
 
+function normalizeVerifyWorkPhaseSlug(phaseName) {
+  return String(phaseName || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function shouldAllowVerifyWorkPhaseDirFallback(cwd, phaseNumber, phaseName) {
+  if (!phaseNumber) {
+    return true;
+  }
+  const phasesDir = path.join(planningDir(cwd), "phases");
+  if (!fs.existsSync(phasesDir)) {
+    return true;
+  }
+  const normalizedPhase = normalizePhaseName(phaseNumber);
+  const matchingDirs = fs
+    .readdirSync(phasesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && phaseTokenMatches(entry.name, normalizedPhase))
+    .map((entry) => entry.name);
+  if (matchingDirs.length === 0) {
+    return true;
+  }
+  const expectedSlug = normalizeVerifyWorkPhaseSlug(phaseName);
+  if (!expectedSlug) {
+    return false;
+  }
+  return matchingDirs.some(
+    (dirName) =>
+      normalizeVerifyWorkPhaseSlug(
+        dirName.replace(/^(?:[A-Z]{1,6}-)?(?:\d+[A-Z]?(?:\.\d+)*)-?/i, ""),
+      ) === expectedSlug,
+  );
+}
+
+function verifyWorkPhaseDirMatchesRoadmap(phaseDirectory, phaseName) {
+  if (!phaseDirectory) {
+    return false;
+  }
+  const expectedSlug = normalizeVerifyWorkPhaseSlug(phaseName);
+  if (!expectedSlug) {
+    return false;
+  }
+  const dirName = path.basename(String(phaseDirectory));
+  return (
+    normalizeVerifyWorkPhaseSlug(
+      dirName.replace(/^(?:[A-Z]{1,6}-)?(?:\d+[A-Z]?(?:\.\d+)*)-?/i, ""),
+    ) === expectedSlug
+  );
+}
+
 function cmdInitExecutePhase(cwd, phase, raw, options = {}) {
   if (!phase) {
     error("phase required for init execute-phase");
@@ -721,21 +772,37 @@ function cmdInitVerifyWork(cwd, phase, raw) {
 
   const config = loadConfig(cwd);
   let phaseInfo = findPhaseInternal(cwd, phase);
+  let phaseDirFallbackAllowed = true;
+  const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
 
-  // If findPhaseInternal matched an archived phase from a prior milestone, but
-  // the phase exists in the current milestone's ROADMAP.md, ignore the archive
-  // match — same pattern as cmdInitPhaseOp.
-  if (phaseInfo?.archived) {
-    const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
-    if (roadmapPhase?.found) {
-      phaseInfo = null;
-    }
+  if (phaseInfo?.archived && roadmapPhase?.found) {
+    phaseDirFallbackAllowed = false;
+    phaseInfo = null;
+  }
+
+  if (
+    phaseInfo?.directory &&
+    roadmapPhase?.found &&
+    !verifyWorkPhaseDirMatchesRoadmap(phaseInfo.directory, roadmapPhase.phase_name)
+  ) {
+    phaseInfo = null;
+    phaseDirFallbackAllowed = shouldAllowVerifyWorkPhaseDirFallback(
+      cwd,
+      roadmapPhase.phase_number,
+      roadmapPhase.phase_name,
+    );
   }
 
   // Fallback to ROADMAP.md if no phase directory exists yet
   if (!phaseInfo) {
-    const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
     if (roadmapPhase?.found) {
+      phaseDirFallbackAllowed =
+        phaseDirFallbackAllowed &&
+        shouldAllowVerifyWorkPhaseDirFallback(
+          cwd,
+          roadmapPhase.phase_number,
+          roadmapPhase.phase_name,
+        );
       const phaseName = roadmapPhase.phase_name;
       phaseInfo = {
         found: true,
@@ -769,6 +836,7 @@ function cmdInitVerifyWork(cwd, phase, raw) {
     // Phase info
     phase_found: !!phaseInfo,
     phase_dir: phaseInfo?.directory || null,
+    phase_dir_fallback_allowed: phaseDirFallbackAllowed,
     phase_number: phaseInfo?.phase_number || null,
     phase_name: phaseInfo?.phase_name || null,
 

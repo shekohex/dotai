@@ -69,6 +69,57 @@ describe("gsd bundled resources", () => {
     expect(loadBundledDoc("command-reference.md")).toContain("new-project");
   });
 
+  it("ships verify-work foundation resources and wording", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/verify-work.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/verify-work.md"),
+      "utf8",
+    );
+    const uatTemplate = readFileSync(
+      join(process.cwd(), "src/resources/gsd/templates/UAT.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("workflow-launch foundation");
+    expect(command).toContain(".planning/phases/<phase-dir>/<phase>-UAT.md");
+    expect(command).toContain("/gsd verify-work");
+    expect(command).toContain("/gsd plan-phase");
+    expect(command).toContain("/gsd execute-phase");
+    expect(command).toContain("Rejected now:");
+    expect(command).toContain("unknown flags");
+    expect(workflow).toContain('node "$GSD_TOOLS_PATH" init verify-work "<phase>"');
+    expect(workflow).toContain("ROADMAP fallback when phase dir missing");
+    expect(workflow).toContain("archived milestone guard with reused phase number");
+    expect(workflow).toContain("Do not call local native `orchestrateVerifyWork()` path");
+    expect(workflow).toContain("writeVerificationReport()");
+    expect(workflow).toContain("writeValidationArtifact()");
+    expect(workflow).toContain("writeUatArtifact()");
+    expect(workflow).toContain("phase selection from verifiable phases");
+    expect(workflow).toContain(
+      "Status helper must preserve `diagnosed` when stored in frontmatter",
+    );
+    expect(workflow).toContain("Not yet supported in this slice");
+    expect(workflow).toContain("Playwright/Puppeteer auto-verification branch");
+    expect(workflow).toContain("MVP-mode branch via `phase.mvp-mode`");
+    expect(workflow).toContain("auto diagnosis via `diagnose-issues.md`");
+    expect(workflow).toContain("artifact acknowledgment gate via `audit-open --json`");
+    expect(workflow).toContain("transition workflow handoff and phase completion mutation");
+    expect(uatTemplate).toContain("status: testing | partial | complete | diagnosed");
+    expect(uatTemplate).toContain("Current Test");
+    expect(uatTemplate).toContain("Summary");
+    expect(uatTemplate).toContain("Gaps");
+    expect(uatTemplate).toContain("blocked_by");
+    expect(uatTemplate).toContain("root_cause");
+    expect(uatTemplate).toContain("artifacts");
+    expect(uatTemplate).toContain("missing");
+    expect(uatTemplate).toContain("debug_session");
+    expect(uatTemplate).toContain("single source of truth for verify progress");
+    expect(uatTemplate).toContain("does not auto-run diagnosis, security gating, or transition");
+  });
+
   it("ships execute-phase foundation resources and wording", () => {
     const command = readFileSync(
       join(process.cwd(), "src/resources/gsd/commands/gsd/execute-phase.md"),
@@ -110,11 +161,20 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("--gaps-only");
     expect(command).toContain("--interactive");
     expect(command).toContain("--validate");
-    expect(command).toContain("Deferred with explicit error:");
     expect(command).toContain("--cross-ai");
     expect(command).toContain("--no-cross-ai");
+    expect(command).toContain("--auto");
+    expect(command).toContain("--mvp");
+    expect(command).toContain("--tdd");
+    expect(command).toContain("workflow/runtime handling");
     expect(workflow).toContain("active flags are only flags present");
     expect(workflow).toContain("`--wave` filter is active for either `--wave <N>` or `--wave=<N>`");
+    expect(workflow).toContain(
+      "Supported flags in this slice: `--wave`, `--gaps-only`, `--interactive`, `--validate`, `--cross-ai`, `--no-cross-ai`, `--auto`, `--mvp`, `--tdd`",
+    );
+    expect(workflow).toContain(
+      "`--cross-ai`, `--no-cross-ai`, `--auto`, `--mvp`, and `--tdd` are workflow-native flags in this slice",
+    );
     expect(workflow).toContain("inspect `branching_strategy` and `branch_name` from init payload");
     expect(workflow).toContain(
       "create `branch_name` from `origin/<default-branch>`, not current HEAD",

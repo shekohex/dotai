@@ -304,19 +304,48 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("execute-phase 3.1 --cross-ai")).toEqual({
     subcommand: "execute-phase",
     phase: "3.1",
-    unsupportedModeError:
-      "Unsupported /gsd execute-phase flag: --cross-ai. Deferred beyond execute-phase Slice 1 foundation.",
+    crossAi: true,
   });
   expect(parseGsdCommandArgs("execute-phase 3.1 --no-cross-ai")).toEqual({
     subcommand: "execute-phase",
     phase: "3.1",
-    unsupportedModeError:
-      "Unsupported /gsd execute-phase flag: --no-cross-ai. Deferred beyond execute-phase Slice 1 foundation.",
+    noCrossAi: true,
+  });
+  expect(parseGsdCommandArgs("execute-phase 3.1 --auto --mvp --tdd")).toEqual({
+    subcommand: "execute-phase",
+    phase: "3.1",
+    auto: true,
+    mvp: true,
+    tdd: true,
   });
   expect(parseGsdCommandArgs("execute-phase --wave=3 4")).toEqual({
     subcommand: "execute-phase",
     phase: "4",
     wave: "3",
+  });
+  expect(parseGsdCommandArgs("verify-work 2")).toEqual({ subcommand: "verify-work", phase: "2" });
+  expect(parseGsdCommandArgs("verify-work --phase 2")).toEqual({
+    subcommand: "verify-work",
+    phase: "2",
+  });
+  expect(parseGsdCommandArgs("verify-work 1 junk")).toEqual({
+    subcommand: "verify-work",
+    phase: "1",
+    unsupportedModeError: "Unsupported /gsd verify-work extra positional argument: junk.",
+  });
+  expect(parseGsdCommandArgs("verify-work --bogus")).toEqual({
+    subcommand: "verify-work",
+    unsupportedModeError: "Unsupported /gsd verify-work flag: --bogus.",
+  });
+  expect(parseGsdCommandArgs("verify-work --interactive 1")).toEqual({
+    subcommand: "verify-work",
+    phase: "1",
+    unsupportedModeError: "Unsupported /gsd verify-work flag: --interactive.",
+  });
+  expect(parseGsdCommandArgs("secure-phase 2")).toEqual({ subcommand: "secure-phase", phase: "2" });
+  expect(parseGsdCommandArgs("secure-phase --phase 2")).toEqual({
+    subcommand: "secure-phase",
+    phase: "2",
   });
   expect(parseGsdCommandArgs("execute-phase 2 junk")).toEqual({
     subcommand: "execute-phase",
@@ -558,8 +587,13 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
         value: "execute-phase --interactive",
         label: "--interactive",
       }),
-      expect.not.objectContaining({
+      expect.objectContaining({
         value: "execute-phase --cross-ai",
+        label: "--cross-ai",
+      }),
+      expect.objectContaining({
+        value: "execute-phase --no-cross-ai",
+        label: "--no-cross-ai",
       }),
     ]),
   );
@@ -970,7 +1004,7 @@ test("gsd execute-phase preserves --wave=<N> semantics through workflow launch",
   );
 });
 
-test("gsd execute-phase rejects deferred flags before workflow launch", async () => {
+test("gsd execute-phase preserves workflow-native passthrough flags before workflow launch", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -980,16 +1014,53 @@ test("gsd execute-phase rejects deferred flags before workflow launch", async ()
   await command?.handler("on", createCommandContext(cwd, notifications));
 
   await command?.handler(
-    "execute-phase 2 --cross-ai",
+    "execute-phase 2 --cross-ai --no-cross-ai --auto --mvp --tdd",
     createCommandContext(cwd, notifications, fakePi),
   );
 
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
+  const prompt = String(fakePi.sendUserMessage.mock.calls[0]?.[0]);
+  expect(prompt).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2 --cross-ai --no-cross-ai --auto --mvp --tdd"',
+  );
+  expect(prompt).toContain("Command arguments: 2 --cross-ai --no-cross-ai --auto --mvp --tdd");
+});
+
+test("gsd verify-work rejects unsupported args before workflow launch", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("verify-work 1 junk", createCommandContext(cwd, notifications, fakePi));
+
   expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
   expect(notifications.at(-1)).toEqual({
-    message:
-      "Unsupported /gsd execute-phase flag: --cross-ai. Deferred beyond execute-phase Slice 1 foundation.",
+    message: "Unsupported /gsd verify-work extra positional argument: junk.",
     level: "warning",
   });
+});
+
+test("gsd secure-phase launches workflow resources", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "agent-gsd-secure-"));
+  const notifications: Array<{ message: string; level: string }> = [];
+  const fakePi = new FakePi();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("secure-phase 1", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd secure-phase 1"',
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    resolveGsdBundlePath("commands/gsd/secure-phase.md"),
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    resolveGsdBundlePath("workflows/secure-phase.md"),
+  );
 });
 
 test("gsd execute-phase requires explicit phase before workflow launch", async () => {
@@ -1220,19 +1291,6 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
           uat_items: [{ name: "smoke", result: "pass" }],
         },
       },
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      value: {
-        structured: {
-          verified: true,
-          summary: "phase verified",
-          truths: [{ truth: "ship", status: "verified", evidence: "tests pass" }],
-          blockers: [],
-          warnings: [],
-          uat_items: [{ name: "smoke", result: "pass" }],
-        },
-      },
     });
   setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
   gsdExtension(fakePi as ExtensionAPI);
@@ -1245,7 +1303,7 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
   );
   await command?.handler("plan-phase 1", createCommandContext(cwd, notifications));
   await command?.handler("execute-phase 1", createCommandContext(cwd, notifications, fakePi));
-  await command?.handler("verify-work 1", createCommandContext(cwd, notifications));
+  await command?.handler("verify-work 1", createCommandContext(cwd, notifications, fakePi));
   expect(
     await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-01-PLAN.md"), "utf8"),
   ).toContain("Implement feature");
@@ -1253,17 +1311,21 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
     await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-PLAN-CHECK.md"), "utf8"),
   ).toContain("approved: true");
   expect(
-    await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-VERIFICATION.md"), "utf8"),
-  ).toContain("phase verified");
-  expect(
     notifications.some((entry) => entry.message.includes("Planned 1 plan(s); check approved")),
   ).toBe(true);
-  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-2)?.[0])).toContain(
     'Launch native GSD workflow for "/gsd execute-phase 1"',
   );
-  expect(
-    notifications.some((entry) =>
-      entry.message.includes("GSD verify-work finished: phase verified"),
-    ),
-  ).toBe(true);
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd verify-work 1"',
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    resolveGsdBundlePath("commands/gsd/verify-work.md"),
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    resolveGsdBundlePath("workflows/verify-work.md"),
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    "Do not call local native `orchestrateVerifyWork()` path",
+  );
 });

@@ -22,6 +22,7 @@ import {
   resolveInstructionFileName,
 } from "../../src/extensions/gsd/lifecycle/new-project.js";
 import { handleGsdValidatePhase } from "../../src/extensions/gsd/lifecycle/validate-phase.js";
+import { handleGsdSecurePhase } from "../../src/extensions/gsd/lifecycle/secure-phase.js";
 import { handleGsdVerifyWork } from "../../src/extensions/gsd/lifecycle/verify-work.js";
 import { resolveGsdBundlePath } from "../../src/extensions/gsd/resources.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
@@ -5650,37 +5651,38 @@ Plans:
     );
   });
 
-  it("verify-work writes verification artifacts and updates state", async () => {
+  it("verify-work launches workflow foundation instead of native artifact path", async () => {
     const root = createPlanningRoot();
-    const ctx = createContext(root);
-    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
-    writeFileSync(
-      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
-      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/config.ts]\nautonomous: true\nmust_haves: [works]\n---\n",
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdVerifyWork(pi, ctx, {}, "verify-work 1");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd verify-work 1"',
     );
-    const spawn = vi.fn().mockResolvedValue({
-      ok: true,
-      value: {
-        structured: {
-          verified: true,
-          summary: "verified",
-          truths: [{ truth: "works", status: "verified", evidence: "manual check" }],
-          blockers: [],
-          warnings: [],
-          uat_items: [{ name: "smoke", result: "pass" }],
-        },
-      },
-    });
-    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
-    await handleGsdVerifyWork({} as ExtensionAPI, ctx, {});
-    expect(
-      readFileSync(join(root, ".planning", "phases", "1-setup", "01-VERIFICATION.md"), "utf8"),
-    ).toContain("verified");
-    expect(
-      readFileSync(join(root, ".planning", "phases", "1-setup", "01-VALIDATION.md"), "utf8"),
-    ).toContain("Validated");
-    expect(readFileSync(join(root, ".planning", "STATE.md"), "utf8")).toContain(
-      "status: Phase complete",
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "commands/gsd/verify-work.md",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "workflows/verify-work.md",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Do not call local native `orchestrateVerifyWork()` path",
+    );
+  });
+
+  it("secure-phase launches workflow foundation", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdSecurePhase(pi, ctx, {}, "secure-phase 1");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd secure-phase 1"',
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "commands/gsd/secure-phase.md",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "workflows/secure-phase.md",
     );
   });
 

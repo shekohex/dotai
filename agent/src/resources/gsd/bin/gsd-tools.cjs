@@ -74,6 +74,12 @@
  * UAT Audit:
  *   audit-uat                           Scan all phases for unresolved UAT/verification items
  *   uat render-checkpoint --file <path> Render the current UAT checkpoint block
+ *   verify-work session [--phase <N>]   Discover/resume/restart verify-work sessions
+ *   verify-work create --phase <N>      Bootstrap UAT artifact from summaries
+ *   verify-work classify --response T   Classify UAT response
+ *   verify-work status --file <path>    Compute completion status from UAT tests
+ *   verify-work apply-response --file <uat> --response T  Persist one UAT response
+ *   verify-work apply-diagnosis --file <uat> --diagnosis J Persist diagnosis fields
  *
  * Open Artifact Audit:
  *   audit-open [--json]                 Scan all .planning/ artifact types for unresolved items
@@ -800,6 +806,33 @@ async function runCommand(command, args, cwd, raw, defaultValue) {
         uat.cmdRenderCheckpoint(cwd, options, raw);
       } else {
         error("Unknown uat subcommand. Available: render-checkpoint");
+      }
+      break;
+    }
+
+    case "verify-work": {
+      const subcommand = args[1];
+      const verifyWork = require("./lib/verify-work.cjs");
+      if (subcommand === "session") {
+        verifyWork.cmdVerifyWorkSession(cwd, parseNamedArgs(args, ["phase"]), raw);
+      } else if (subcommand === "create") {
+        verifyWork.cmdVerifyWorkCreate(cwd, parseNamedArgs(args, ["phase"]), raw);
+      } else if (subcommand === "classify") {
+        verifyWork.cmdVerifyWorkClassify(cwd, parseNamedArgs(args, ["response"]), raw);
+      } else if (subcommand === "status") {
+        verifyWork.cmdVerifyWorkStatus(cwd, parseNamedArgs(args, ["file"]), raw);
+      } else if (subcommand === "apply-response") {
+        verifyWork.cmdVerifyWorkApplyResponse(cwd, parseNamedArgs(args, ["file", "response"]), raw);
+      } else if (subcommand === "apply-diagnosis") {
+        verifyWork.cmdVerifyWorkApplyDiagnosis(
+          cwd,
+          parseNamedArgs(args, ["file", "diagnosis"]),
+          raw,
+        );
+      } else {
+        error(
+          "Unknown verify-work subcommand. Available: session, create, classify, status, apply-response, apply-diagnosis",
+        );
       }
       break;
     }

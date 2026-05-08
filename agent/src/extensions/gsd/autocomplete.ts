@@ -21,6 +21,7 @@ const subcommands: Array<{ value: GsdSubcommand; description: string }> = [
   { value: "discuss-phase", description: "Create phase context" },
   { value: "plan-phase", description: "Plan current phase" },
   { value: "execute-phase", description: "Run delegated execution" },
+  { value: "secure-phase", description: "Run delegated security review" },
   { value: "verify-work", description: "Run delegated verification" },
   { value: "validate-phase", description: "Write validation artifact" },
   { value: "next", description: "Advance current plan pointer" },
@@ -37,6 +38,7 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
   "discuss-phase",
   "plan-phase",
   "execute-phase",
+  "secure-phase",
   "verify-work",
   "validate-phase",
   "next",
@@ -63,7 +65,13 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
     "--gaps-only",
     "--interactive",
     "--validate",
+    "--cross-ai",
+    "--no-cross-ai",
+    "--tdd",
+    "--mvp",
+    "--auto",
   ],
+  "secure-phase": ["--phase", "--phase="],
   "verify-work": ["--phase", "--phase="],
   "validate-phase": ["--phase", "--phase="],
   next: ["--phase", "--phase="],
@@ -404,6 +412,18 @@ function getFlagDescription(value: string): string | undefined {
   }
   if (value === "--validate") {
     return "Request validation-aware workflow context";
+  }
+  if (value === "--cross-ai") {
+    return "Force cross-AI execution for all plans";
+  }
+  if (value === "--no-cross-ai") {
+    return "Disable cross-AI execution for this run";
+  }
+  if (value === "--tdd") {
+    return "Enable TDD execution mode";
+  }
+  if (value === "--mvp") {
+    return "Enable MVP execution mode";
   }
   if (value === "--assumptions") {
     return "Route to assumptions discuss mode";

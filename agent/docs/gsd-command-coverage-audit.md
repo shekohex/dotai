@@ -45,7 +45,7 @@ Implemented locally:
 | `new-project`        | hybrid bootstrap + workflow        | `new-project`                  |       93 |
 | `new-milestone`      | workflow-launch shim               | `new-milestone`                |       92 |
 | `complete-milestone` | workflow-launch shim               | `complete-milestone`           |       90 |
-| `milestone-summary`  | workflow-launch shim               | `milestone-summary`            |       88 |
+| `milestone-summary`  | workflow-launch shim               | `milestone-summary`            |       91 |
 | `debug`              | hybrid TS + workflow-launch        | `debug`                        |       84 |
 | `map-codebase`       | TS-native orchestration            | `map-codebase`                 |       92 |
 | `discuss-phase`      | TS-native orchestration            | `discuss-phase`                |       92 |
@@ -114,7 +114,7 @@ Legend:
 | `new-project`        |        Y |                             Y |                        P |                  N |                         Y |           P | bootstrap + workflow launch                                                                        |
 | `new-milestone`      |        Y |                             Y |                        Y |                  N |                         Y |           P | forked workflow session                                                                            |
 | `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta                                                                       |
-| `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added                                                                             |
+| `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added; archived/stat/state contract now review-backed                             |
 | `debug`              |        Y |                             Y |                        Y |                  P |                         Y |           P | `list/status` handled in TS                                                                        |
 | `map-codebase`       |        Y |                             N |                        N |                  N |                         Y |           P | full map + local fast parity                                                                       |
 | `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | parent-owned flow, artifact/checkpoint contract                                                    |
@@ -216,7 +216,7 @@ Differences:
 
 ### `milestone-summary`
 
-Coverage: 88/100
+Coverage: 91/100
 
 Upstream behavior:
 
@@ -225,12 +225,16 @@ Upstream behavior:
 Local behavior:
 
 - workflow-launch shim with local command/workflow prompt bundle. `src/extensions/gsd/lifecycle/milestone-summary.ts:10-20`
-- local instructions narrow reads to requested milestone and remind workflow to update `STATE.md` if applicable. `src/extensions/gsd/lifecycle/milestone-summary.ts:16-19`
+- local instructions narrow reads to requested milestone and explicitly forbid stray `STATE.md` dirtiness unless included in coherent final output. `src/extensions/gsd/lifecycle/milestone-summary.ts`
+- workflow contract now reads archived phase artifacts from `.planning/milestones/v{version}-phases/` when milestone phases were archived, instead of assuming current `.planning/phases/` only. `src/resources/gsd/commands/gsd/milestone-summary.md`, `src/resources/gsd/workflows/milestone-summary.md`
+- workflow stats contract is now milestone-bound across tagged and untagged paths: no repo-wide `--since`, no archive-move boundary, and tagged path only when a previous tag provides an actual milestone range. `src/resources/gsd/workflows/milestone-summary.md`
+- focused resource and lifecycle tests now pin archived artifact discovery wording, milestone-bound stats wording, and absence of trailing `state.record-session` side effects. `test/gsd/resources.test.ts`, `test/gsd/lifecycle.test.ts`
 
 Differences:
 
 - close parity
 - local wrapper adds scope control for large repos
+- implementation remains prompt/workflow driven rather than native report generator, so output correctness still depends on workflow following bundled contract
 
 ### `debug`
 
@@ -638,7 +642,7 @@ Execution strategy:
 |    11 | `help`               |               30 | Medium   | docs UX, low risk                                          | reference parity or explicit local divergence, tests                                                                 |
 |    12 | `new-milestone`      |               92 | Medium   | already strong, polish after core loop                     | close remaining deltas, tests, audit refresh                                                                         |
 |    13 | `complete-milestone` |               90 | Medium   | already strong, depends on prior loop quality              | close remaining deltas, tests, audit refresh                                                                         |
-|    14 | `milestone-summary`  |               88 | Medium   | already strong, low-risk polish                            | close remaining deltas, tests, audit refresh                                                                         |
+|    14 | `milestone-summary`  |               91 | Medium   | already strong, now above parity threshold                 | optional further proofing only                                                                                       |
 |    15 | `debug`              |               84 | Medium   | already strong but important operationally                 | close formatting/reporting/subcommand gaps, tests                                                                    |
 |    16 | `next`               |               18 | Medium   | local helper, should align with `progress --next` contract | decide keep-as-local or fully align, tests                                                                           |
 |    17 | `status`             |               35 | Low      | local-only additive command                                | define local contract, docs, tests                                                                                   |

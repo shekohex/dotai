@@ -38,6 +38,7 @@ Determine whether the milestone is **archived** or **current**:
 ROADMAP_PATH=".planning/milestones/v${VERSION}-ROADMAP.md"
 REQUIREMENTS_PATH=".planning/milestones/v${VERSION}-REQUIREMENTS.md"
 AUDIT_PATH=".planning/milestones/v${VERSION}-MILESTONE-AUDIT.md"
+PHASES_PATH=".planning/milestones/v${VERSION}-phases/"
 ```
 
 **Current/in-progress milestone** (no archive yet):
@@ -46,6 +47,7 @@ AUDIT_PATH=".planning/milestones/v${VERSION}-MILESTONE-AUDIT.md"
 ROADMAP_PATH=".planning/ROADMAP.md"
 REQUIREMENTS_PATH=".planning/REQUIREMENTS.md"
 AUDIT_PATH=".planning/v${VERSION}-MILESTONE-AUDIT.md"
+PHASES_PATH=".planning/phases/"
 ```
 
 Note: The audit file moves to `.planning/milestones/` on archive (per `complete-milestone` workflow). Check both locations as a fallback.
@@ -62,13 +64,13 @@ Read all files that exist. Missing files are fine — the summary adapts to what
 
 ## Step 3: Discover Phase Artifacts
 
-Find all phase directories:
+Determine milestone phase scope from the milestone roadmap first, then locate only those phase directories.
 
-```bash
-gsd-sdk query init.progress
-```
+For current milestones, `gsd-sdk query init.progress` can help enumerate current roadmap phases and current `.planning/phases/` state.
 
-This returns phase metadata. For each phase in the milestone scope:
+For archived milestones, do not assume `gsd-sdk query init.progress` can discover archived phase directories. Read `.planning/milestones/v${VERSION}-ROADMAP.md` to identify milestone phases, then inspect `.planning/milestones/v${VERSION}-phases/` directly when `complete-milestone` moved them there. If that archive directory does not exist, use the archived roadmap phase list and match only those phase numbers/names against `.planning/phases/`.
+
+For each phase in the milestone scope:
 
 - Read `{phase_dir}/{padded}-SUMMARY.md` if it exists — extract `one_liner`, `accomplishments`, `decisions`
 - Read `{phase_dir}/{padded}-VERIFICATION.md` if it exists — extract status, gaps, deferred items
@@ -81,7 +83,7 @@ Track which phases have which artifacts.
 
 ## Step 4: Gather Git Statistics
 
-Try each method in order until one succeeds:
+Try each method in order until one yields a milestone-bound commit range:
 
 **Method 1 — Tagged milestone** (check first):
 
@@ -92,27 +94,40 @@ git tag -l "v${VERSION}" | head -1
 If the tag exists:
 
 ```bash
-git log v${VERSION} --oneline | wc -l
-git diff --stat $(git log --format=%H --reverse v${VERSION} | head -1)..v${VERSION}
+PREV_TAG=$(git describe --tags --abbrev=0 "v${VERSION}^" 2>/dev/null || true)
+if [ -n "${PREV_TAG}" ]; then
+  git log "${PREV_TAG}..v${VERSION}" --oneline | wc -l
+  git diff --stat "${PREV_TAG}..v${VERSION}"
+fi
 ```
 
-**Method 2 — STATE.md date range** (if no tag):
-Read STATE.md and extract the `started_at` or earliest session date. Use it as the `--since` boundary:
+Use Method 1 only when both `v${VERSION}` and its previous tag exist, with `PREV_TAG..v${VERSION}` as tagged milestone range. If no previous tag exists, do not silently fall back to full history reachable from `v${VERSION}`. Prove a milestone start boundary with Method 2 or Method 3 instead.
+
+All git stats in this section must be milestone-scoped, not whole-repo scoped. Derive boundaries from the requested milestone's tag or from commits tied to artifacts that belong to that milestone. Never count unrelated commits from older or newer milestones.
+
+**Method 2 — Milestone artifact commit range** (if no tag):
+Determine start and end commits from milestone-owned artifacts only.
 
 ```bash
-git log --oneline --since="<started_at_date>" | wc -l
+git log --oneline --diff-filter=A -- "$ROADMAP_PATH" "$REQUIREMENTS_PATH"
 ```
 
-**Method 3 — Earliest phase commit** (if STATE.md has no date):
-Find the earliest `.planning/phases/` commit:
+For current milestones, current roadmap/requirements history may provide both bounds.
+
+For archived milestones, archive snapshot files usually provide an upper bound, not a trustworthy start boundary. Do not derive the start boundary from the commit that created `.planning/milestones/v${VERSION}-phases/` during archive move. That commit is too late and can collapse the real milestone timeline. Instead, pair the archive snapshot upper bound with a lower bound from pre-archive milestone artifacts or rename-aware phase file history.
+
+For current milestones, if `STATE.md` has `started_at` or earliest session dates, use those dates only to narrow milestone artifact history searches. Do not use a repo-wide `git log --since=...` fallback.
+
+**Method 3 — Earliest milestone phase artifact commit** (if roadmap/requirements history is insufficient):
+Find the earliest commit that introduced a phase artifact for this milestone. For archived milestones, inspect the archived phase directory with rename-aware history when files were moved there; otherwise scope to the archived roadmap phase numbers/names matched against pre-archive phase paths. For current milestones, scope to `.planning/phases/` entries for the milestone's phase numbers:
 
 ```bash
-git log --oneline --diff-filter=A -- ".planning/phases/" | tail -1
+git log --follow --oneline --diff-filter=A -- "<milestone phase artifact file>" | tail -1
 ```
 
-Use that commit's date as the start boundary.
+Use that commit as start boundary and latest milestone-owned commit as end boundary.
 
-**Method 4 — Skip stats** (if none of the above work):
+**Method 4 — Skip stats** (if no milestone-bound range can be proven):
 Report "Git statistics unavailable — no tag or date range could be determined." This is not an error — the summary continues without the Stats section.
 
 Extract (when available):
@@ -242,10 +257,4 @@ If the user is done:
 
 - Suggest next steps: `/gsd new-milestone`, `/gsd progress`, or sharing the summary with the team
 
-## Step 9: Update STATE.md
-
-```bash
-gsd-sdk query state.record-session "" \
-  "Milestone v${VERSION} summary generated" \
-  ".planning/reports/MILESTONE_SUMMARY-v${VERSION}.md"
-```
+Do not leave `.planning/STATE.md` dirty as a side effect of summary generation. If a future slice wants to record the summary in state, that state mutation must be written and presented as part of one coherent final output, not as an unannounced trailing side effect.

@@ -251,4 +251,39 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain("Researcher task contract:");
     expect(workflow).toContain("Roadmapper delegation contract:");
   });
+
+  it("milestone-summary workflow encodes archived phase lookup, scoped stats, and state cleanliness", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/milestone-summary.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/milestone-summary.md"),
+      "utf8",
+    );
+
+    expect(command).toContain(".planning/milestones/v{version}-phases/");
+    expect(command).toContain(
+      "`STATE.md` left unchanged unless user-visible final output explicitly includes a coordinated state update",
+    );
+    expect(workflow).toContain('PHASES_PATH=".planning/milestones/v${VERSION}-phases/"');
+    expect(workflow).toContain(
+      "do not assume `gsd-sdk query init.progress` can discover archived phase directories",
+    );
+    expect(workflow).toContain(
+      "All git stats in this section must be milestone-scoped, not whole-repo scoped.",
+    );
+    expect(workflow).toContain(
+      "If no previous tag exists, do not silently fall back to full history reachable from `v${VERSION}`.",
+    );
+    expect(workflow).toContain("Milestone artifact commit range");
+    expect(workflow).toContain(
+      "Do not derive the start boundary from the commit that created `.planning/milestones/v${VERSION}-phases/`",
+    );
+    expect(workflow).not.toContain('git log --oneline --since="<started_at_date>" | wc -l');
+    expect(workflow).toContain(
+      "Do not leave `.planning/STATE.md` dirty as a side effect of summary generation.",
+    );
+    expect(workflow).not.toContain("gsd-sdk query state.record-session");
+  });
 });

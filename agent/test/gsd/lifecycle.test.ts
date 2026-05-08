@@ -5712,8 +5712,16 @@ Plans:
     const pi = createPi();
     const ctx = createContext(root, pi);
     await handleGsdMilestoneSummary(pi, ctx, { version: "v1.0" });
-    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
-      'Launch native GSD workflow for "/gsd milestone-summary v1.0"',
+    const prompt = String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]);
+    expect(prompt).toContain('Launch native GSD workflow for "/gsd milestone-summary v1.0"');
+    expect(prompt).toContain(
+      "Scope artifact reads and git stats to requested milestone only instead of concatenating every phase artifact or commit in repo.",
+    );
+    expect(prompt).toContain(
+      "For archived milestones, read phase artifacts from `.planning/milestones/vX.Y-phases/` when `complete-milestone` moved them there.",
+    );
+    expect(prompt).toContain(
+      "Do not leave `STATE.md` dirty after report generation unless final user-visible output explicitly includes coordinated state mutation.",
     );
   });
 

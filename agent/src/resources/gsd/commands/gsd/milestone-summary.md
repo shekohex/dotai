@@ -40,6 +40,7 @@ Output: MILESTONE_SUMMARY written to `.planning/reports/`, presented inline, opt
 - `.planning/RETROSPECTIVE.md`
 - `.planning/milestones/v{version}-ROADMAP.md` (if archived)
 - `.planning/milestones/v{version}-REQUIREMENTS.md` (if archived)
+- `.planning/milestones/v{version}-phases/` (if archived by `complete-milestone`)
 - `.planning/phases/*-*/` (SUMMARY.md, VERIFICATION.md, CONTEXT.md, RESEARCH.md)
 
 **User input:**
@@ -59,5 +60,5 @@ Read and execute the milestone-summary workflow from @{{GSD_BUNDLE_DIR}}/workflo
 - All 7 sections generated (Overview, Architecture, Phases, Decisions, Requirements, Tech Debt, Getting Started)
 - Summary presented inline to user
 - Interactive Q&A offered
-- STATE.md updated
+- `STATE.md` left unchanged unless user-visible final output explicitly includes a coordinated state update
   </success_criteria>

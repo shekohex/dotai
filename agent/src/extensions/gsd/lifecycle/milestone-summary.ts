@@ -14,8 +14,9 @@ export async function handleGsdMilestoneSummary(
     workflowResourcePaths: ["workflows/milestone-summary.md"],
     extraResourcePaths: [],
     extraInstructions: [
-      "Scope artifact reads to the requested milestone when possible instead of concatenating every phase artifact in the repo.",
-      "Write final report under `.planning/reports/` and update `STATE.md` if workflow confirms it.",
+      "Scope artifact reads and git stats to requested milestone only instead of concatenating every phase artifact or commit in repo.",
+      "For archived milestones, read phase artifacts from `.planning/milestones/vX.Y-phases/` when `complete-milestone` moved them there.",
+      "Do not leave `STATE.md` dirty after report generation unless final user-visible output explicitly includes coordinated state mutation.",
     ],
   });
 }

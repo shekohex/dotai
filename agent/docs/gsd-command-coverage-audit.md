@@ -52,7 +52,7 @@ Implemented locally:
 | `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
-| `validate-phase`     | workflow-launch foundation         | `validate-phase`               |       34 |
+| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       48 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       56 |
 | `stats`              | TS-native instant command          | `stats`                        |       57 |
@@ -409,7 +409,7 @@ Differences:
 
 ### `validate-phase`
 
-Coverage: 34/100
+Coverage: 48/100
 
 Upstream behavior:
 
@@ -417,14 +417,15 @@ Upstream behavior:
 
 Local behavior:
 
-- now routes through workflow-launch foundation with bundled local command/workflow resources instead of writing a template stub directly. `src/extensions/gsd/lifecycle/validate-phase.ts`, `src/resources/gsd/commands/gsd/validate-phase.md`, `src/resources/gsd/workflows/validate-phase.md`
+- routes through workflow-launch foundation with bundled local command/workflow resources instead of writing a template stub directly. `src/extensions/gsd/lifecycle/validate-phase.ts`, `src/resources/gsd/commands/gsd/validate-phase.md`, `src/resources/gsd/workflows/validate-phase.md`
 - dedicated parser rejects malformed flags and extra positional args explicitly instead of silently ignoring them. `src/extensions/gsd/validate-phase-args.ts`, `src/extensions/gsd/args.ts`
-- omitted phase resolution now prefers the last completed local roadmap phase with real execution evidence, and fails closed when no completed phase exists. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
+- omitted phase resolution prefers the last completed local roadmap phase with real execution evidence, and explicit phase selection now also fails closed unless roadmap plan coverage is complete enough for current contract. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
+- helper-backed `init validate-phase <phase>` now provides deterministic readiness/artifact preflight, including create-vs-update target, artifact bundle, incomplete plan count, and rejection of malformed/non-roadmap SUMMARY sets by matching summary ids to roadmap plan ids. `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/validate-phase-workflow.test.ts`
 
 Differences:
 
 - still no full upstream audit/reconstruction/test-generation parity
-- many advanced Nyquist branches remain deferred or fail closed in this slice rather than being partially emulated
+- many advanced Nyquist branches remain deferred or workflow-driven in this slice rather than being natively emulated
 - no reconstruction
 - no test generation
 - no workflow branching

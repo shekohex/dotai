@@ -33,6 +33,9 @@ function routeInitCommand({ init, args, cwd, raw, parseNamedArgs, error }) {
     case "verify-work":
       init.cmdInitVerifyWork(cwd, args[2], raw);
       break;
+    case "validate-phase":
+      init.cmdInitValidatePhase(cwd, args[2], raw);
+      break;
     case "phase-op":
       init.cmdInitPhaseOp(cwd, args[2], raw);
       break;

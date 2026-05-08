@@ -5657,6 +5657,32 @@ Plans:
     );
   });
 
+  it("validate-phase fails closed for explicit incomplete phase", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+- [ ] 02-02: Finish feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: phase 2 is not locally complete enough yet. Need SUMMARY evidence for every roadmap plan before validation.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("validate-phase omitted phase prefers last completed local phase", async () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });

@@ -19,8 +19,9 @@ Rejected now:
 Execution model in this slice:
 
 - handler resolves explicit phase or last completed local phase before launch
-- handler fails closed when local phase has no SUMMARY evidence
+- handler fails closed when selected local phase is not complete enough for validation contract
 - bundled workflow owns validation review and artifact-writing contract
+- bundled workflow should use `node "$GSD_TOOLS_PATH" init validate-phase "<phase>"` as deterministic preflight
 - do not use native template-writer shortcut as authoritative path
 
 Contract notes:

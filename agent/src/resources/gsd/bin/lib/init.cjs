@@ -137,6 +137,124 @@ function verifyWorkPhaseDirMatchesRoadmap(phaseDirectory, phaseName) {
   );
 }
 
+function extractRoadmapRequirementsFromSection(section) {
+  const match = section.match(REQUIREMENTS_HEADER_RE);
+  if (!match || match[1] === undefined) {
+    return [];
+  }
+  return match[1]
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function extractRoadmapPlanIdsFromSection(section) {
+  return String(section || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^- \[[ x]\]\s+[^:]+:\s+.+$/i.test(line))
+    .map((line) => line.match(/^- \[[ x]\]\s+([^:]+):\s+.+$/i)?.[1]?.trim())
+    .filter((planId) => typeof planId === "string" && planId.length > 0);
+}
+
+function normalizeSummaryPlanId(fileName) {
+  return String(fileName).replace(/-SUMMARY\.md$/i, "");
+}
+
+function buildValidatePhaseReadiness(phaseInfo, roadmapPhase) {
+  if (!roadmapPhase?.found) {
+    return {
+      ready: false,
+      reason: "phase not found in ROADMAP.md",
+    };
+  }
+
+  if (!phaseInfo?.directory) {
+    return {
+      ready: false,
+      reason: `phase ${roadmapPhase.phase_number} could not be resolved locally`,
+    };
+  }
+
+  if (!Array.isArray(phaseInfo.summaries) || phaseInfo.summaries.length === 0) {
+    return {
+      ready: false,
+      reason: `phase ${roadmapPhase.phase_number} has no SUMMARY.md artifacts`,
+    };
+  }
+
+  if (Array.isArray(phaseInfo.unexpected_summaries) && phaseInfo.unexpected_summaries.length > 0) {
+    return {
+      ready: false,
+      reason: `phase ${roadmapPhase.phase_number} has malformed or non-roadmap SUMMARY.md artifacts`,
+    };
+  }
+
+  if (Array.isArray(phaseInfo.incomplete_plans) && phaseInfo.incomplete_plans.length > 0) {
+    return {
+      ready: false,
+      reason: `phase ${roadmapPhase.phase_number} is not locally complete enough yet`,
+    };
+  }
+
+  return {
+    ready: true,
+    reason: null,
+  };
+}
+
+function findValidatePhaseDirectoryFallback(cwd, phaseNumber, phaseName) {
+  const phasesDir = path.join(planningDir(cwd), "phases");
+  if (!phaseNumber || !phaseName || !fs.existsSync(phasesDir)) {
+    return null;
+  }
+  const normalizedPhase = normalizePhaseName(phaseNumber);
+  const expectedSlug = normalizeVerifyWorkPhaseSlug(phaseName);
+  const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
+  const match = entries.find((entry) => {
+    if (!entry.isDirectory()) {
+      return false;
+    }
+    const tokenMatch = entry.name.match(/^(?:[A-Z]{1,6}-)?(\d+[A-Z]?(?:\.\d+)*)(?:-|$)/i);
+    const entryPhase = tokenMatch?.[1];
+    if (!entryPhase || normalizePhaseName(entryPhase) !== normalizedPhase) {
+      return false;
+    }
+    return verifyWorkPhaseDirMatchesRoadmap(entry.name, phaseName) || expectedSlug.length === 0;
+  });
+  return match ? path.join(".planning", "phases", match.name) : null;
+}
+
+function createValidatePhaseInfoFromDirectory(
+  relativeDirectory,
+  phaseNumber,
+  phaseName,
+  roadmapPlanIds,
+) {
+  if (!relativeDirectory) {
+    return null;
+  }
+  const absoluteDirectory = path.resolve(relativeDirectory);
+  if (!fs.existsSync(absoluteDirectory)) {
+    return null;
+  }
+  const files = fs.readdirSync(absoluteDirectory).sort();
+  const summaries = files.filter((file) => file.endsWith("-SUMMARY.md"));
+  const summaryIds = summaries.map(normalizeSummaryPlanId);
+  const expectedPlanIds = Array.isArray(roadmapPlanIds) ? roadmapPlanIds : [];
+  const expectedSet = new Set(expectedPlanIds);
+  return {
+    directory: relativeDirectory,
+    phase_number: phaseNumber,
+    phase_name: phaseName,
+    summaries,
+    incomplete_plans: expectedPlanIds.filter((planId) => !summaryIds.includes(planId)),
+    unexpected_summaries: summaryIds.filter((summaryId) => !expectedSet.has(summaryId)),
+  };
+}
+
 function cmdInitExecutePhase(cwd, phase, raw, options = {}) {
   if (!phase) {
     error("phase required for init execute-phase");
@@ -842,6 +960,99 @@ function cmdInitVerifyWork(cwd, phase, raw) {
 
     // Existing artifacts
     has_verification: phaseInfo?.has_verification || false,
+  };
+
+  output(withProjectRoot(cwd, result), raw);
+}
+
+function cmdInitValidatePhase(cwd, phase, raw) {
+  if (!phase) {
+    error("phase required for init validate-phase");
+  }
+
+  const config = loadConfig(cwd);
+  const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+  let phaseInfo = findPhaseInternal(cwd, phase);
+
+  if (phaseInfo?.archived && roadmapPhase?.found) {
+    phaseInfo = null;
+  }
+
+  if (!phaseInfo?.directory && roadmapPhase?.found) {
+    const roadmapPlanIds = extractRoadmapPlanIdsFromSection(roadmapPhase.section);
+    const fallbackDirectory = findValidatePhaseDirectoryFallback(
+      cwd,
+      roadmapPhase.phase_number,
+      roadmapPhase.phase_name,
+    );
+    const fallbackInfo = createValidatePhaseInfoFromDirectory(
+      fallbackDirectory,
+      roadmapPhase.phase_number,
+      roadmapPhase.phase_name,
+      roadmapPlanIds,
+    );
+    if (fallbackInfo) {
+      phaseInfo = fallbackInfo;
+    }
+  }
+
+  const requirements = roadmapPhase?.section
+    ? extractRoadmapRequirementsFromSection(roadmapPhase.section)
+    : [];
+  const readiness = buildValidatePhaseReadiness(phaseInfo, roadmapPhase);
+  const phaseFiles = phaseInfo?.directory ? fs.readdirSync(phaseInfo.directory).sort() : [];
+  const summaryPaths = (phaseInfo?.summaries || []).map((file) =>
+    toPosixPath(path.join(phaseInfo.directory, file)),
+  );
+  const roadmapPlanCount = extractRoadmapPlanIdsFromSection(roadmapPhase?.section).length;
+  const incompletePlanCount = Array.isArray(phaseInfo?.incomplete_plans)
+    ? phaseInfo.incomplete_plans.length
+    : Math.max(0, roadmapPlanCount - summaryPaths.length);
+  const verificationPaths = phaseFiles
+    .filter((file) => file.endsWith("-VERIFICATION.md"))
+    .map((file) => toPosixPath(path.join(phaseInfo.directory, file)));
+  const uatPaths = phaseFiles
+    .filter((file) => file.endsWith("-UAT.md"))
+    .map((file) => toPosixPath(path.join(phaseInfo.directory, file)));
+  const validationPaths = phaseFiles
+    .filter((file) => file.endsWith("-VALIDATION.md"))
+    .map((file) => toPosixPath(path.join(phaseInfo.directory, file)));
+  const phasePrefix = roadmapPhase?.phase_number
+    ? String(roadmapPhase.phase_number).includes(".")
+      ? String(roadmapPhase.phase_number)
+      : String(roadmapPhase.phase_number).padStart(2, "0")
+    : null;
+  const validationPath =
+    phaseInfo?.directory && phasePrefix
+      ? toPosixPath(path.join(phaseInfo.directory, `${phasePrefix}-VALIDATION.md`))
+      : null;
+
+  const result = {
+    planner_model: resolveModelInternal(cwd, "gsd-planner"),
+    checker_model: resolveModelInternal(cwd, "gsd-plan-checker"),
+    commit_docs: config.commit_docs,
+    phase_found: !!roadmapPhase?.found,
+    phase_dir: phaseInfo?.directory ? toPosixPath(phaseInfo.directory) : null,
+    phase_number: roadmapPhase?.phase_number || null,
+    phase_name: roadmapPhase?.phase_name || null,
+    phase_goal: roadmapPhase?.goal || null,
+    phase_requirements: requirements,
+    summary_count: summaryPaths.length,
+    verification_count: verificationPaths.length,
+    uat_count: uatPaths.length,
+    validation_count: validationPaths.length,
+    summary_paths: summaryPaths,
+    verification_paths: verificationPaths,
+    uat_paths: uatPaths,
+    validation_paths: validationPaths,
+    validation_path: validationPath,
+    validation_exists: validationPaths.length > 0,
+    incomplete_plan_count: incompletePlanCount,
+    unexpected_summary_ids: Array.isArray(phaseInfo?.unexpected_summaries)
+      ? phaseInfo.unexpected_summaries
+      : [],
+    ready: readiness.ready,
+    failure_reason: readiness.reason,
   };
 
   output(withProjectRoot(cwd, result), raw);
@@ -2275,6 +2486,7 @@ module.exports = {
   cmdInitIngestDocs,
   cmdInitResume,
   cmdInitVerifyWork,
+  cmdInitValidatePhase,
   cmdInitPhaseOp,
   cmdInitTodos,
   cmdInitMilestoneOp,

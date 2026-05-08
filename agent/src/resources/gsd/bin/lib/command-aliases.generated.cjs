@@ -191,6 +191,12 @@ const INIT_COMMAND_ALIASES = [
     mutation: false,
   },
   {
+    canonical: "init.validate-phase",
+    aliases: ["init validate-phase"],
+    subcommand: "validate-phase",
+    mutation: false,
+  },
+  {
     canonical: "init.phase-op",
     aliases: ["init phase-op"],
     subcommand: "phase-op",

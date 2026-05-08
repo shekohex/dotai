@@ -108,6 +108,12 @@ export function resolveValidatePhaseSelection(
   }
 
   const phaseSnapshot = byNumber.get(roadmapPhase.number);
+  if (!isPhaseCompletedLocally(roadmapPhase, phaseSnapshot)) {
+    return {
+      error: `Cannot run /gsd validate-phase: phase ${roadmapPhase.number} is not locally complete enough yet. Need SUMMARY evidence for every roadmap plan before validation.`,
+    };
+  }
+
   const summaryCount = phaseSnapshot?.summaries.length ?? 0;
   const validationExists = (phaseSnapshot?.validations.length ?? 0) > 0;
   if (summaryCount === 0) {

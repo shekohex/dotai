@@ -167,6 +167,7 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain(
       "Do not recreate old native template-writer behavior as success path",
     );
+    expect(workflow).toContain('node "$GSD_TOOLS_PATH" init validate-phase "<phase>"');
     expect(workflow).toContain("fail closed");
     expect(workflow).toContain("selected phase has no `*-SUMMARY.md`");
     expect(workflow).toContain("existing `*-VALIDATION.md` already exists");

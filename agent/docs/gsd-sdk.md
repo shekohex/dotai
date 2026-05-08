@@ -380,7 +380,7 @@ const GSD_SUBCOMMANDS: Array<{ value: GsdSubcommand; description: string }> = [
   { value: "plan-phase", description: "Generate plans for the current phase" },
   { value: "execute-phase", description: "Execute the current phase with delegated workers" },
   { value: "verify-work", description: "Verify completed work against acceptance criteria" },
-  { value: "validate-phase", description: "Validate phase completion and update state" },
+  { value: "validate-phase", description: "Run delegated validation review" },
   { value: "next", description: "Advance to the next plan or phase" },
   { value: "progress", description: "Show current milestone and phase progress" },
   { value: "stats", description: "Show project statistics" },

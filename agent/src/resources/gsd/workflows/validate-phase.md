@@ -11,6 +11,11 @@ Required local reading before execution:
 - `$GSD_BUNDLE_DIR/commands/gsd/validate-phase.md`
 - `$GSD_BUNDLE_DIR/templates/VALIDATION.md`
 - `$GSD_BUNDLE_DIR/references/gates.md`
+- `$GSD_TOOLS_PATH` runtime helper contract for `init validate-phase`
+
+Required helper entrypoint in this slice:
+
+- `node "$GSD_TOOLS_PATH" init validate-phase "<phase>"`
 
 Core rules:
 
@@ -29,12 +34,13 @@ Core rules:
 
 Recommended execution shape:
 
-1. Resolve selected phase artifact directory.
-2. Read ROADMAP phase goal and requirements for that phase.
-3. Read all `*-SUMMARY.md` in phase directory.
-4. Read `*-UAT.md` and `*-VERIFICATION.md` when present.
-5. If evidence is too weak to validate truthfully, stop with explicit gap summary instead of creating optimistic template output.
-6. Otherwise write or update `*-VALIDATION.md` with concrete validation findings and clear pass/gap status.
+1. Resolve selected phase via `node "$GSD_TOOLS_PATH" init validate-phase "<phase>"`.
+2. Treat helper output as authoritative for readiness, artifact paths, roadmap goal, and requirements in this slice.
+3. If helper returns `ready: false`, stop with its `failure_reason`. Do not write placeholder validation output.
+4. Read all helper-reported `summary_paths`.
+5. Read helper-reported `verification_paths` and `uat_paths` when present.
+6. If evidence is too weak to validate truthfully, stop with explicit gap summary instead of creating optimistic template output.
+7. Otherwise write or update helper-reported `validation_path` with concrete validation findings and clear pass/gap status.
 
 Explicit deferrals in this slice:
 

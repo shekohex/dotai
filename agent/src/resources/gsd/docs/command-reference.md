@@ -36,7 +36,7 @@
   flags: `--phase <phase>`
 - `/gsd validate-phase [phase]`
   flags: `--phase <phase>`
-  unsupported args fail explicitly; omitted phase prefers last completed local SUMMARY-backed phase; non-executed phases fail closed
+  unsupported args fail explicitly; omitted phase prefers last completed local SUMMARY-backed phase; explicit incomplete or non-executed phases fail closed; workflow uses helper-backed readiness preflight and does not auto-mutate phase state
 
 ## Debug
 

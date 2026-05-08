@@ -26,7 +26,22 @@ import {
   styleToolOutput,
   summarizeLineCount,
 } from "./tools-output.js";
+import { Text } from "@mariozechner/pi-tui";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { createTextComponent, renderStreamingPreview, renderToolError } from "./tools-render.js";
+import { formatToolRail, formatToolStatus } from "./tools-status.js";
+
+type EditRenderState = {
+  callComponent?: unknown;
+  callText?: string;
+};
+
+const EditRenderStateSchema = Type.Object({}, { additionalProperties: true });
+
+function isEditRenderState(value: unknown): value is EditRenderState {
+  return Value.Check(EditRenderStateSchema, value);
+}
 
 type ToolTheme = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[1];
 type BaseRenderContext = {
@@ -48,12 +63,16 @@ export function createEditToolOverrideDefinition() {
     ...editToolDefinition,
     renderShell: "self" as const,
     renderCall(args: EditCallArgs, theme: ToolTheme, context: EditCallContext) {
-      return renderStatusPathToolCall(
-        { pending: "editing", success: "edited", error: "edit" },
-        readPathArg(args),
-        theme,
-        context,
-      );
+      const state: EditRenderState = isEditRenderState(context.state) ? context.state : {};
+      const rawPath = readPathArg(args);
+      const pathDisplay = getToolPathDisplay(rawPath, context.cwd);
+      const verbs = { pending: "editing", success: "edited", error: "edit" };
+      const status = formatToolStatus(theme, context, verbs);
+      const text = `${formatToolRail(theme, context)}${status} ${theme.fg("text", pathDisplay.basename)}${formatMutedDirSuffix(theme, pathDisplay.dirSuffix)}`;
+      const component = createTextComponent(context.lastComponent, text);
+      state.callComponent = component;
+      state.callText = text;
+      return component;
     },
     renderResult: renderEditToolResult,
   };
@@ -106,8 +125,15 @@ function renderCollapsedEditResult(
   theme: ToolTheme,
   context: EditResultContext,
 ) {
+  const state: EditRenderState = isEditRenderState(context.state) ? context.state : {};
   const diff = getDiffText(result.details);
   const stats = getDiffStats(diff);
+  const callComponent = state.callComponent;
+  if (state.callText !== undefined && callComponent instanceof Text) {
+    const summary = formatOptionalDiffStats(theme, stats);
+    callComponent.setText(`${state.callText}${summary}`);
+    return createTextComponent(context.lastComponent, "");
+  }
   return createTextComponent(
     context.lastComponent,
     formatCollapsedEditSummary(theme, context, readPathArg(context.args), stats),

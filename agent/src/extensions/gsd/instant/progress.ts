@@ -7,14 +7,13 @@ export function handleGsdProgress(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs = {},
-): void {
+): Promise<void> | void {
   if (args.unsupportedModeError !== undefined) {
     ctx.ui.notify(args.unsupportedModeError, "warning");
     return;
   }
   if (args.next === true) {
-    handleGsdNext(pi, ctx, args);
-    return;
+    return handleGsdNext(pi, ctx, args);
   }
   const result = computeProgress(ctx.cwd);
   const milestone = result.milestone === undefined ? "" : ` milestone=${result.milestone}`;

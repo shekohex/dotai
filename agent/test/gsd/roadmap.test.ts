@@ -149,6 +149,51 @@ describe("roadmap parser", () => {
     expect(result.currentPlan).toBe("01-01");
   });
 
+  it("fallback next handling prefers earliest incomplete phase when state drifted ahead", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 2\ncurrent_phase_name: Build\ncurrent_plan: 02-01\nstatus: Ready to execute\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    const notifications: Array<{ message: string; level: string }> = [];
+
+    handleGsdNext(
+      {} as never,
+      {
+        cwd: root,
+        ui: {
+          notify(message: string, level: string) {
+            notifications.push({ message, level });
+          },
+        },
+      } as never,
+    );
+
+    const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
+    expect(state).toContain("current_phase: 1");
+    expect(state).toContain("current_phase_name: Setup");
+    expect(state).toContain("current_plan: 01-01");
+    expect(notifications.at(-1)).toEqual({
+      message: "Next phase=1 plan=01-01",
+      level: "info",
+    });
+  });
+
   it("updates state when handling next across phases", () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });

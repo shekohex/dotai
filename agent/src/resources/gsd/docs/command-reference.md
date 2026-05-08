@@ -51,9 +51,10 @@
 ## Instant
 
 - `/gsd next [phase]`
-  flags: `--phase <phase>`
-- `/gsd progress [phase]`
-  flags: `--phase <phase>`, `--next`
+  flags: `--phase <phase>`, `--force`
+- `/gsd progress`
+  flags: `--next`
+  `--phase <phase>`, `--force` only with `/gsd progress --next`
   parsed with explicit unsupported-local error: `--do`, `--forensic`
 - `/gsd stats`
   variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
@@ -68,3 +69,6 @@ Supported forms:
 - positional: `/gsd plan-phase 2`
 - flag: `/gsd execute-phase --phase 3.1`
 - equals flag: `/gsd next --phase=4`
+- progress next positional: `/gsd progress --next 2`
+- progress next flag: `/gsd progress --next --phase 2`
+- progress next force: `/gsd progress --next --force`

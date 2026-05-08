@@ -24,6 +24,7 @@
 - run `/gsd on`
 - continue existing phases in place
 - use `/gsd progress`, `/gsd next`, `/gsd health`, `/gsd stats`
+- `/gsd next` routes to supported local next action; use `--force` only to bypass local blocked/error status gate
 
 ## Artifacts
 

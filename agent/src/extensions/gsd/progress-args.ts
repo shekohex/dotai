@@ -8,6 +8,7 @@ type ProgressArgHelpers = {
 export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers): GsdCommandArgs {
   let phase: string | undefined;
   let next = false;
+  let force = false;
   let doMode = false;
   let forensic = false;
   let unsupportedModeError: string | undefined;
@@ -43,6 +44,10 @@ export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers)
       next = true;
       continue;
     }
+    if (token === "--force") {
+      force = true;
+      continue;
+    }
     if (token === "--do") {
       doMode = true;
       unsupportedModeError ??=
@@ -71,10 +76,15 @@ export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers)
       "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.";
   }
 
+  if (force && !next) {
+    unsupportedModeError ??= "Unsupported /gsd progress flag: --force requires --next.";
+  }
+
   return helpers.validateParsedArgs({
     subcommand: "progress",
     ...(phase === undefined ? {} : { phase }),
     ...(next ? { next: true } : {}),
+    ...(force ? { force: true } : {}),
     ...(doMode ? { doMode: true } : {}),
     ...(forensic ? { forensic: true } : {}),
     ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),

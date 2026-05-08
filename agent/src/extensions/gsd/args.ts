@@ -2,6 +2,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { GsdSubcommand } from "./commands.js";
 import { parseExecutePhaseArgs } from "./execute-phase-args.js";
+import { parseNextArgs } from "./next-args.js";
 import { parseProgressArgs } from "./progress-args.js";
 import { parseSecurePhaseArgs } from "./secure-phase-args.js";
 import { parseStatsArgs } from "./stats-args.js";
@@ -17,6 +18,7 @@ export const GsdCommandArgsSchema = Type.Object(
     mvp: Type.Optional(Type.Boolean()),
     phase: Type.Optional(Type.String()),
     next: Type.Optional(Type.Boolean()),
+    force: Type.Optional(Type.Boolean()),
     doMode: Type.Optional(Type.Boolean()),
     forensic: Type.Optional(Type.Boolean()),
     wave: Type.Optional(Type.String()),
@@ -77,6 +79,7 @@ export const GsdCommandArgsSchema = Type.Object(
 );
 
 export type GsdCommandArgs = Static<typeof GsdCommandArgsSchema>;
+
 function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
   let auto = false;
   const parts: string[] = [];
@@ -95,19 +98,13 @@ function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 function normalizePhaseToken(token: string | undefined): string | undefined {
-  if (token === undefined) {
-    return undefined;
-  }
-  const value = token.trim();
-  return value.length > 0 ? value : undefined;
+  const value = token?.trim();
+  return value !== undefined && value.length > 0 ? value : undefined;
 }
 
 function normalizePositiveIntegerToken(token: string | undefined): string | undefined {
   const value = normalizePhaseToken(token);
-  if (value === undefined) {
-    return undefined;
-  }
-  return /^[1-9]\d*$/u.test(value) ? value : undefined;
+  return value !== undefined && /^[1-9]\d*$/u.test(value) ? value : undefined;
 }
 function normalizePathToken(token: string | undefined): string[] | undefined {
   if (token === undefined) {
@@ -724,6 +721,10 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
 
   if (subcommand === "verify-work") {
     return parseVerifyWorkArgs(tokens, { normalizePhaseToken, validateParsedArgs });
+  }
+
+  if (subcommand === "next") {
+    return parseNextArgs(tokens, { normalizePhaseToken, validateParsedArgs });
   }
 
   let phase: string | undefined;

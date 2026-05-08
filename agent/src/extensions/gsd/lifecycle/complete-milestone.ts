@@ -2,14 +2,26 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import type { GsdCommandArgs } from "../args.js";
 import { launchGsdWorkflowSession } from "../workflow-launch.js";
 
+function stripCompleteMilestoneSubcommand(rawArgs: string | undefined): string | undefined {
+  if (rawArgs === undefined) {
+    return undefined;
+  }
+  const normalizedRawArgs = rawArgs
+    .trim()
+    .replace(/^complete-milestone(?:\s+|$)/u, "")
+    .trim();
+  return normalizedRawArgs.length > 0 ? normalizedRawArgs : undefined;
+}
+
 export async function handleGsdCompleteMilestone(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs,
+  rawArgs?: string,
 ): Promise<void> {
   await launchGsdWorkflowSession(pi, ctx, {
     commandName: "complete-milestone",
-    commandArguments: args.version,
+    commandArguments: stripCompleteMilestoneSubcommand(rawArgs) ?? args.version,
     commandResourcePath: "commands/gsd/complete-milestone.md",
     workflowResourcePaths: ["workflows/complete-milestone.md"],
     extraResourcePaths: [

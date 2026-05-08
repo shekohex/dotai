@@ -439,9 +439,41 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
       "Unsupported /gsd execute-phase flag: --wave requires positive integer value.",
   });
   expect(parseGsdCommandArgs("next --phase=4")).toEqual({ subcommand: "next", phase: "4" });
+  expect(parseGsdCommandArgs("next --force --phase=4")).toEqual({
+    subcommand: "next",
+    phase: "4",
+    force: true,
+  });
+  expect(parseGsdCommandArgs("next --phase")).toEqual({
+    subcommand: "next",
+    unsupportedModeError: "Unsupported /gsd next flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("next --phase=")).toEqual({
+    subcommand: "next",
+    unsupportedModeError: "Unsupported /gsd next flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("next --phase --force")).toEqual({
+    subcommand: "next",
+    force: true,
+    unsupportedModeError: "Unsupported /gsd next flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("next --phase=--force")).toEqual({
+    subcommand: "next",
+    unsupportedModeError: "Unsupported /gsd next flag: --phase requires a value.",
+  });
   expect(parseGsdCommandArgs("progress --next")).toEqual({
     subcommand: "progress",
     next: true,
+  });
+  expect(parseGsdCommandArgs("progress --next --force")).toEqual({
+    subcommand: "progress",
+    next: true,
+    force: true,
+  });
+  expect(parseGsdCommandArgs("progress --force")).toEqual({
+    subcommand: "progress",
+    force: true,
+    unsupportedModeError: "Unsupported /gsd progress flag: --force requires --next.",
   });
   expect(parseGsdCommandArgs("progress --phase 2 --next")).toEqual({
     subcommand: "progress",
@@ -923,6 +955,44 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
       }),
     ]),
   );
+
+  const progressItems = await command?.getArgumentCompletions?.("progress ");
+  expect(progressItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "progress --next", label: "--next" }),
+    ]),
+  );
+  expect(progressItems).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "progress --phase" }),
+      expect.objectContaining({ value: "progress --phase=" }),
+      expect.objectContaining({ value: "progress --force" }),
+    ]),
+  );
+
+  const progressNextItems = await command?.getArgumentCompletions?.("progress --next ");
+  expect(progressNextItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "progress --next 1", label: "1 Foundation" }),
+      expect.objectContaining({ value: "progress --next 2", label: "2 Delivery" }),
+      expect.objectContaining({ value: "progress --next --phase", label: "--phase" }),
+      expect.objectContaining({ value: "progress --next --phase=", label: "--phase=" }),
+      expect.objectContaining({ value: "progress --next --force", label: "--force" }),
+    ]),
+  );
+
+  const progressTopLevelPhaseItems = await command?.getArgumentCompletions?.("progress --phase=");
+  expect(progressTopLevelPhaseItems).toBeNull();
+
+  const progressNextPhaseItems = await command?.getArgumentCompletions?.(
+    "progress --next --phase=",
+  );
+  expect(progressNextPhaseItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "progress --next --phase=1", label: "1 Foundation" }),
+      expect.objectContaining({ value: "progress --next --phase=2", label: "2 Delivery" }),
+    ]),
+  );
 });
 
 test("gsd autocomplete shows dynamic subcommand hints", async () => {
@@ -997,7 +1067,7 @@ test("gsd autocomplete matches subcommands like upstream pi fuzzy search", async
   expect(items?.map((item) => item.value)).toEqual(["debug"]);
 });
 
-test("gsd next uses explicit phase override", async () => {
+test("gsd next routes explicit phase override to execute-phase workflow", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -1005,15 +1075,13 @@ test("gsd next uses explicit phase override", async () => {
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));
-  await command?.handler("next --phase 2", createCommandContext(cwd, notifications));
-  const state = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
-  expect(state).toContain("current_phase: 2");
-  expect(state).toContain("current_phase_name: Delivery");
-  expect(state).toContain("current_plan: 2-01");
-  expect(notifications.at(-1)).toEqual({ message: "Next phase=2 plan=2-01", level: "info" });
+  await command?.handler("next --phase 2", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2"',
+  );
 });
 
-test("gsd progress --next routes through next behavior", async () => {
+test("gsd progress --next routes through next behavior to execute-phase workflow", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -1021,12 +1089,38 @@ test("gsd progress --next routes through next behavior", async () => {
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));
-  await command?.handler("progress --next", createCommandContext(cwd, notifications));
-  const state = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
-  expect(state).toContain("current_phase: 2");
-  expect(state).toContain("current_phase_name: Delivery");
-  expect(state).toContain("current_plan: 2-01");
-  expect(notifications.at(-1)).toEqual({ message: "Next phase=2 plan=2-01", level: "info" });
+  await command?.handler("progress --next", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2"',
+  );
+});
+
+test("gsd progress --next prefers earliest incomplete phase when state drifted ahead", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "STATE.md"),
+    "milestone: v1.0\ncurrent_phase: 2\ncurrent_phase_name: Delivery\ncurrent_plan: 2-01\nstatus: Ready to execute\n",
+  );
+  mkdirSync(join(cwd, ".planning", "phases", "1-foundation"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-01-PLAN.md"),
+    "---\nphase: 1\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+  );
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-02-PLAN.md"),
+    "---\nphase: 1\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+  );
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-02-SUMMARY.md"), "summary\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress --next", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 1"',
+  );
 });
 
 test("gsd progress rejects unsupported routed modes explicitly", async () => {
@@ -1041,6 +1135,21 @@ test("gsd progress rejects unsupported routed modes explicitly", async () => {
   expect(notifications.at(-1)).toEqual({
     message:
       "Unsupported /gsd progress mode: --forensic. Local command does not implement forensic workflow routing yet.",
+    level: "warning",
+  });
+});
+
+test("gsd progress rejects force without next explicitly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress --force", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd progress flag: --force requires --next.",
     level: "warning",
   });
 });
@@ -1116,6 +1225,118 @@ test("gsd progress --next rejects unknown phase override without mutating state"
     message: "Unknown /gsd next phase override: 99.",
     level: "warning",
   });
+});
+
+test("gsd next routes completed phase to verify-work workflow", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "phases", "2-delivery", "2-01-SUMMARY.md"), "summary\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd verify-work 2"',
+  );
+});
+
+test("gsd next keeps incomplete UAT routing on verify-work workflow", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "phases", "2-delivery", "2-01-SUMMARY.md"), "summary\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "2-delivery", "2-UAT.md"),
+    [
+      "---",
+      "status: partial",
+      "phase: 2-delivery",
+      "source: 2-01-SUMMARY.md",
+      "started: 2026-05-08T00:00:00Z",
+      "updated: 2026-05-08T00:00:00Z",
+      "---",
+      "",
+      "## Current Test",
+      "",
+      "number: 1",
+      "name: Demo",
+      "expected: |",
+      "ok",
+      "awaiting: user response",
+      "",
+      "## Tests",
+      "",
+      "### 1. Demo",
+      "",
+      "expected: ok",
+      "result: [pending]",
+      "",
+      "## Summary",
+      "",
+      "total: 1",
+      "passed: 0",
+      "issues: 0",
+      "pending: 1",
+      "skipped: 0",
+      "blocked: 0",
+      "",
+      "## Gaps",
+      "",
+    ].join("\n"),
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd verify-work 2"',
+  );
+});
+
+test("gsd next routes finished roadmap to complete-milestone workflow", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "phases", "2-delivery", "2-01-SUMMARY.md"), "summary\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "2-delivery", "2-01-VERIFICATION.md"),
+    "verification\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("next --force", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd complete-milestone"',
+  );
+});
+
+test("gsd next blocks error state unless forced", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "STATE.md"),
+    "milestone: v1.0\ncurrent_phase: 1\ncurrent_phase_name: Foundation\ncurrent_plan: \nstatus: Blocked by review\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by status: Blocked by review. Re-run with /gsd next --force to bypass.",
+    level: "warning",
+  });
+  await command?.handler("next --force", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2"',
+  );
 });
 
 test("gsd dashboard fallback reports pending todo count", async () => {

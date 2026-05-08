@@ -24,7 +24,7 @@ const subcommands: Array<{ value: GsdSubcommand; description: string }> = [
   { value: "secure-phase", description: "Run delegated security review" },
   { value: "verify-work", description: "Run delegated verification" },
   { value: "validate-phase", description: "Write validation artifact" },
-  { value: "next", description: "Advance current plan pointer" },
+  { value: "next", description: "Route next local GSD action" },
   { value: "progress", description: "Show progress" },
   { value: "stats", description: "Show stats" },
   { value: "health", description: "Show .planning health" },
@@ -74,7 +74,8 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
   "secure-phase": ["--phase", "--phase="],
   "verify-work": ["--phase", "--phase="],
   "validate-phase": ["--phase", "--phase="],
-  next: ["--phase", "--phase="],
+  next: ["--phase", "--phase=", "--force"],
+  progress: ["--next"],
   health: ["--repair", "--context", "--tokens-used", "--context-window"],
   debug: ["--diagnose"],
 };
@@ -490,6 +491,7 @@ function getPhaseAwareCompletions(args: {
   trailingSpace: boolean;
 }): AutocompleteItem[] | null {
   const { subcommand, tokens, token, trailingSpace } = args;
+
   const phaseItems = phaseAwareSubcommands.includes(subcommand)
     ? getPhaseItems(`${subcommand} `)
     : [];
@@ -509,6 +511,123 @@ function getPhaseAwareCompletions(args: {
   }
   if (!token.startsWith("-")) {
     return filterItems(phaseItems, token);
+  }
+  return null;
+}
+
+function getProgressNextCompletions(
+  tokens: string[],
+  token: string,
+  trailingSpace: boolean,
+): AutocompleteItem[] | null {
+  if (!tokens.includes("--next")) {
+    return null;
+  }
+  const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
+  if (previousToken === "--phase") {
+    return filterItems(getPhaseItems("progress --next --phase "), token);
+  }
+  const progressPrefix = "progress --next ";
+  if (trailingSpace) {
+    return [...getPhaseItems(progressPrefix), ...getFlagItems("next", progressPrefix)];
+  }
+  if (!token.startsWith("-")) {
+    return filterItems(getPhaseItems(progressPrefix), token);
+  }
+  return null;
+}
+
+function getDebugCompletions(
+  tokens: string[],
+  token: string,
+  cwd: string | undefined,
+): AutocompleteItem[] | null {
+  const debugActionItems = getDebugActionItems("debug ");
+  const debugSessionItems = getDebugSessionItems(`debug ${tokens[1]} `, cwd);
+  if (token.startsWith("--")) {
+    return filterItems(getFlagItems("debug", "debug "), token);
+  }
+  if (tokens[1] === "status" || tokens[1] === "continue") {
+    return filterItems(debugSessionItems, token);
+  }
+  if (tokens.length === 1) {
+    return [...debugActionItems, ...getFlagItems("debug", "debug ")];
+  }
+  if (tokens.length <= 2) {
+    return filterItems([...debugActionItems, ...getFlagItems("debug", "debug ")], token);
+  }
+  return null;
+}
+
+function getMilestoneCompletions(
+  subcommand: "complete-milestone" | "milestone-summary",
+  token: string,
+  trailingSpace: boolean,
+  tokens: string[],
+  cwd: string | undefined,
+): AutocompleteItem[] | null {
+  const milestoneItems = (cwd === undefined ? [] : getGsdMilestoneSuggestions(cwd)).map((item) => ({
+    value: `${subcommand} ${item.value}`,
+    label: item.label,
+    description: item.description,
+  }));
+  if (trailingSpace && tokens.length === 1) {
+    return milestoneItems;
+  }
+  if (tokens.length === 2) {
+    return filterItems(milestoneItems, token);
+  }
+  return null;
+}
+
+function getMapCodebaseCompletions(
+  tokens: string[],
+  token: string,
+  trailingSpace: boolean,
+): AutocompleteItem[] | null {
+  const modeItems = getMapCodebaseModeItems("map-codebase ");
+  const fastModeItems = getMapCodebaseFastModeItems("map-codebase --fast ");
+  const fastFlagItems = getMapCodebaseFastFlagItems("map-codebase ");
+  const queryFlagItems = getMapCodebaseQueryFlagItems("map-codebase ");
+  const fastFocusFlagItems = getMapCodebaseFastFocusFlagItems("map-codebase --fast ");
+  const inFastMode = tokens.includes("--fast");
+  const inQueryMode = tokens.includes("--query") || token.startsWith("--query=");
+  const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
+  if (previousToken === "--query") {
+    return filterItems(getMapCodebaseQueryItems("map-codebase --query "), token);
+  }
+  if (token.startsWith("--query=")) {
+    return filterItems(getMapCodebaseQueryItems("map-codebase --query="), token);
+  }
+  if (inQueryMode) {
+    return getMapCodebaseQueryModeCompletions(tokens, token);
+  }
+  if (previousToken === "--focus") {
+    if (!inFastMode) {
+      return null;
+    }
+    return filterItems(getMapCodebaseFocusItems("map-codebase --fast --focus "), token);
+  }
+  if (trailingSpace && tokens.length === 1) {
+    return [...modeItems, ...fastFlagItems, ...queryFlagItems];
+  }
+  if (token.startsWith("--focus=")) {
+    if (!inFastMode) {
+      return null;
+    }
+    return filterItems(getMapCodebaseFocusItems("map-codebase --fast ", true), token);
+  }
+  if (inFastMode && trailingSpace) {
+    return [...fastModeItems, ...fastFocusFlagItems];
+  }
+  if (tokens.length === 2) {
+    return filterItems([...modeItems, ...fastFlagItems, ...queryFlagItems], token);
+  }
+  if (inFastMode) {
+    if (token.startsWith("--")) {
+      return filterItems(fastFocusFlagItems, token);
+    }
+    return filterItems(fastModeItems, token);
   }
   return null;
 }
@@ -543,86 +662,37 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
   }
 
   if (subcommand === "debug") {
-    const debugActionItems = getDebugActionItems("debug ");
-    const debugSessionItems = getDebugSessionItems(`debug ${tokens[1]} `, cwd);
-    if (token.startsWith("--")) {
-      return filterItems(getFlagItems(subcommand, "debug "), token);
-    }
-    if (tokens[1] === "status" || tokens[1] === "continue") {
-      return filterItems(debugSessionItems, token);
-    }
-    if (tokens.length === 1 && trailingSpace) {
-      return [...debugActionItems, ...getFlagItems(subcommand, "debug ")];
-    }
-    if (tokens.length <= 2) {
-      return filterItems([...debugActionItems, ...getFlagItems(subcommand, "debug ")], token);
+    const completions = getDebugCompletions(tokens, token, cwd);
+    if (completions !== null) {
+      return completions;
     }
   }
 
   if (subcommand === "complete-milestone" || subcommand === "milestone-summary") {
-    const milestoneItems = (cwd === undefined ? [] : getGsdMilestoneSuggestions(cwd)).map(
-      (item) => ({
-        value: `${subcommand} ${item.value}`,
-        label: item.label,
-        description: item.description,
-      }),
-    );
-    if (trailingSpace && tokens.length === 1) {
-      return milestoneItems;
-    }
-    if (tokens.length === 2) {
-      return filterItems(milestoneItems, token);
+    const completions = getMilestoneCompletions(subcommand, token, trailingSpace, tokens, cwd);
+    if (completions !== null) {
+      return completions;
     }
   }
 
   if (subcommand === "map-codebase") {
-    const modeItems = getMapCodebaseModeItems("map-codebase ");
-    const fastModeItems = getMapCodebaseFastModeItems("map-codebase --fast ");
-    const fastFlagItems = getMapCodebaseFastFlagItems("map-codebase ");
-    const queryFlagItems = getMapCodebaseQueryFlagItems("map-codebase ");
-    const fastFocusFlagItems = getMapCodebaseFastFocusFlagItems("map-codebase --fast ");
-    const inFastMode = tokens.includes("--fast");
-    const inQueryMode = tokens.includes("--query") || token.startsWith("--query=");
-    const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
-    if (previousToken === "--query") {
-      return filterItems(getMapCodebaseQueryItems("map-codebase --query "), token);
-    }
-    if (token.startsWith("--query=")) {
-      return filterItems(getMapCodebaseQueryItems("map-codebase --query="), token);
-    }
-    if (inQueryMode) {
-      return getMapCodebaseQueryModeCompletions(tokens, token);
-    }
-    if (previousToken === "--focus") {
-      if (!inFastMode) {
-        return null;
-      }
-      return filterItems(getMapCodebaseFocusItems("map-codebase --fast --focus "), token);
-    }
-    if (trailingSpace && tokens.length === 1) {
-      return [...modeItems, ...fastFlagItems, ...queryFlagItems];
-    }
-    if (token.startsWith("--focus=")) {
-      if (!inFastMode) {
-        return null;
-      }
-      return filterItems(getMapCodebaseFocusItems("map-codebase --fast ", true), token);
-    }
-    if (inFastMode && trailingSpace) {
-      return [...fastModeItems, ...fastFocusFlagItems];
-    }
-    if (tokens.length === 2) {
-      return filterItems([...modeItems, ...fastFlagItems, ...queryFlagItems], token);
-    }
-    if (inFastMode) {
-      if (token.startsWith("--")) {
-        return filterItems(fastFocusFlagItems, token);
-      }
-      return filterItems(fastModeItems, token);
+    return getMapCodebaseCompletions(tokens, token, trailingSpace);
+  }
+
+  if (subcommand === "progress") {
+    const progressNextCompletions = getProgressNextCompletions(tokens, token, trailingSpace);
+    if (progressNextCompletions !== null) {
+      return progressNextCompletions;
     }
   }
 
   if (token.startsWith("--phase=")) {
+    if (subcommand === "progress" && !tokens.includes("--next")) {
+      return null;
+    }
+    if (subcommand === "progress" && tokens.includes("--next")) {
+      return filterItems(getPhaseItems("progress --next ", "--phase="), token);
+    }
     return filterItems(getPhaseItems(`${subcommand} `, "--phase="), token);
   }
 
@@ -631,6 +701,9 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
   }
 
   if (token.startsWith("--")) {
+    if (subcommand === "progress" && tokens.includes("--next")) {
+      return filterItems(getFlagItems("next", "progress --next "), token);
+    }
     return filterItems(getFlagItems(subcommand, `${subcommand} `), token);
   }
 

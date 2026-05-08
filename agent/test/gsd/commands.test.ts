@@ -22,6 +22,7 @@ class FakePi implements Partial<ExtensionAPI> {
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
   readonly messageRenderers = new Map<string, unknown>();
   private activeTools: string[] = [];
+  readonly sendMessage = vi.fn();
   readonly sendUserMessage = vi.fn();
 
   registerCommand(name: string, command: RegisteredCommand): void {
@@ -1524,6 +1525,49 @@ test("gsd dashboard fallback reports pending todo count", async () => {
     message: "GSD enabled=true progress=50% phase=1 goals=2 milestones=1 todos=1",
     level: "info",
   });
+});
+
+test("gsd help in non-ui mode emits durable command output instead of notification", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("help", createCommandContext(cwd, notifications));
+
+  expect(notifications).toEqual([]);
+  expect(fakePi.sendMessage).toHaveBeenCalledTimes(1);
+  expect(fakePi.sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      customType: "gsd-help",
+      display: true,
+      content: expect.stringContaining("# GSD Command Reference"),
+    }),
+    { triggerTurn: false },
+  );
+});
+
+test("gsd help content mentions enablement gate and local-only guardrails", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("help", createCommandContext(cwd, notifications));
+
+  const content = String(fakePi.sendMessage.mock.calls[0]?.[0]?.content ?? "");
+  expect(content).toContain(
+    "Start new local planning tree with `/gsd new-project [brief]`, or run `/gsd on` if planning already exists.",
+  );
+  expect(content).toContain("Local-only command surface. Only commands below supported here.");
+  expect(content).toContain(
+    "Some commands reject unsupported local flags explicitly; others still accept extra tokens or freeform input.",
+  );
+  expect(content).toContain("Not claim upstream parity.");
+  expect(content).toContain("/gsd new-project --auto @idea.md");
+  expect(content).not.toContain("/gsd retro");
 });
 
 test("gsd stats json and table route to structured local outputs", async () => {

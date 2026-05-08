@@ -1,16 +1,39 @@
 # GSD Command Reference
 
+Local help for commands implemented in this repo. Not claim upstream parity.
+
+## Quick Start
+
+1. Start new local planning tree with `/gsd new-project [brief]`, or run `/gsd on` if planning already exists.
+2. If you used `/gsd on`, bootstrap planning with `/gsd new-project [brief]` when repo has no `.planning` tree yet.
+3. Check what to do next with `/gsd progress` or `/gsd next`.
+
+## Use GSD When
+
+- You want local `.planning` workflow in this repo.
+- You need project state, roadmap, stats, or health from local artifacts.
+- You want workflow launchers wired here, not upstream/global GSD surface.
+
+## Guardrails
+
+- Local-only command surface. Only commands below supported here.
+- Some commands reject unsupported local flags explicitly; others still accept extra tokens or freeform input.
+- Help keeps deferred or workflow-forwarded behavior labeled as such.
+
 ## Control
 
 - `/gsd`
 - `/gsd on`
 - `/gsd off`
 - `/gsd help`
+  shows this local command guide
 
 ## Milestones
 
 - `/gsd new-project [brief]`
   flags: `--auto`
+  use when starting GSD in repo with no planning tree yet
+  examples: `/gsd new-project`, `/gsd new-project --auto @idea.md`
 - `/gsd new-milestone [milestone]`
 - `/gsd complete-milestone [version]`
 - `/gsd milestone-summary [version]`
@@ -26,6 +49,8 @@
   flags: `--phase <phase>`, `--assumptions`, `--auto`, `--all`, `--chain`, `--text`
 - `/gsd plan-phase [phase]`
   flags: `--phase <phase>`, `--research-phase <phase>`, `--research`, `--skip-research`, `--skip-verify`, `--gaps`, `--reviews`, `--view`, `--text`
+  use when phase needs local planning artifacts before execution
+  examples: `/gsd plan-phase 2`, `/gsd plan-phase --phase 3.1 --research`
 
 ## Execution
 
@@ -59,16 +84,21 @@
   `--force` only bypasses blocked/error `STATE.md` status gate; checkpoint and pause safety gates still stop routing
   missing next-phase discuss prep may route to `/gsd discuss-phase <phase>` before planning
   without workflow session support, `/gsd next` fails closed with warning instead of mutating `STATE.md`
+  use when you want safest local next-step routing from current planning state
+  examples: `/gsd next`, `/gsd next --phase 2`
 - `/gsd stats`
   variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
   unsupported variants fail explicitly instead of falling back to one-line notify output
   phase status is local-artifact driven: `Not Started`, `In Progress`, `Executed`, `Human Needed`, `Complete`
   `Complete` requires authoritative local verification completion, currently `*-UAT.md` with `status: complete`; summarized work without that remains `Executed`
   requirements counts support checklist items, plain local requirement bullets, and traceability status rows; deferred `v2+` sections stay excluded
+  use when you need local artifact summary without opening docs
+  examples: `/gsd stats table`, `/gsd stats json`
 - `/gsd health`
   flags: `--repair`, `--context`, `--tokens-used <int>`, `--context-window <int>`
   bare `--context` derives current session token usage when available and can derive window from session or `.planning/config.json`; if token usage is unavailable it reports unknown instead of guessing
 - `/gsd status`
+  use when you want detached local service status only
 
 ## Workflow Review
 

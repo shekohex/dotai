@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
 import { loadBundledDoc } from "./resources.js";
 
@@ -72,11 +72,21 @@ class GsdHelpComponent implements Component {
   dispose(): void {}
 }
 
-export async function showGsdHelp(ctx: ExtensionCommandContext): Promise<void> {
+export async function showGsdHelp(
+  pi: Pick<ExtensionAPI, "sendMessage">,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
   const reference = getGsdHelpReference();
 
   if (!ctx.hasUI) {
-    ctx.ui.notify(reference, "info");
+    pi.sendMessage(
+      {
+        customType: "gsd-help",
+        content: reference,
+        display: true,
+      },
+      { triggerTurn: false },
+    );
     return;
   }
 

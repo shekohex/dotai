@@ -59,7 +59,7 @@ Implemented locally:
 | `stats`              | TS-native instant command          | `stats`                        |       57 |
 | `health`             | TS-native instant command          | `health`                       |       74 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
-| `help`               | local docs viewer                  | `help`                         |       44 |
+| `help`               | local docs viewer                  | `help`                         |       52 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
 
@@ -562,7 +562,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 44/100
+Coverage: 52/100
 
 Upstream behavior:
 
@@ -571,14 +571,17 @@ Upstream behavior:
 Local behavior:
 
 - now renders canonical bundled `command-reference.md` in both UI and no-UI paths instead of truncating to preview snippets or hard-coded banners. `src/extensions/gsd/help.ts`
+- no-UI `/gsd help` now emits durable command output instead of transient notify-only text, making headless/RPC consumption more reliable. `src/extensions/gsd/help.ts`, `test/gsd/commands.test.ts`
 - command reference now documents shipped local subcommands and meaningful local flags, including `new-milestone`, `complete-milestone`, `milestone-summary`, `debug`, `secure-phase`, `status`, and current execute/progress flag semantics. `src/resources/gsd/docs/command-reference.md`
+- command reference now adds concise first-run guidance, quick start, when-to-use notes, and examples for implemented local commands without widening support claims. `src/resources/gsd/docs/command-reference.md`, `test/gsd/ui.test.ts`
 - TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
-- focused tests now cover canonical help rendering and resource wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`
+- focused tests now cover canonical help rendering, durable headless output, runtime/audit guardrails, and key local wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`
 
 Differences:
 
 - reference content still local-only and documents only local command surface, not upstream full 65-command universe
 - no generated manifest yet; command reference is still hand-maintained, though now much closer to shipped local surface
+- help content breadth still trails upstream workflow help significantly, especially around richer workflow narratives and absent upstream-only commands
 
 ### `on` and `off`
 

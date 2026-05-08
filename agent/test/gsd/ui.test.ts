@@ -11,6 +11,10 @@ import {
 } from "../../src/extensions/gsd/help.js";
 import { showGsdDashboard } from "../../src/extensions/gsd/ui.js";
 
+const fakeHelpPi = {
+  sendMessage() {},
+};
+
 initTheme("dark");
 
 function createRoot(): string {
@@ -123,23 +127,27 @@ describe("gsd ui custom components", () => {
 
   it("help custom ui renders canonical command reference", async () => {
     let rendered = "";
-    await showGsdHelp({
-      cwd: createRoot(),
-      hasUI: true,
-      ui: {
-        notify() {},
-        async custom(custom) {
-          rendered = await renderCustomComponent(custom);
+    await showGsdHelp(
+      fakeHelpPi as never,
+      {
+        cwd: createRoot(),
+        hasUI: true,
+        ui: {
+          notify() {},
+          async custom(custom) {
+            rendered = await renderCustomComponent(custom);
+          },
         },
-      },
-    } as never);
+      } as never,
+    );
     const reference = getGsdHelpReference();
     expect(rendered).toContain("# GSD Command Reference");
-    expect(rendered).toContain("## Milestones");
-    expect(rendered).toContain("## Planning");
-    expect(rendered).toContain("/gsd new-milestone");
-    expect(rendered).toContain("/gsd complete-milestone");
+    expect(rendered).toContain("## Quick Start");
+    expect(rendered).toContain("/gsd new-project [brief]`");
+    expect(rendered).toContain("/gsd on`");
     expect(rendered).toContain("PgUp/PgDn page");
+    expect(reference).toContain("## Milestones");
+    expect(reference).toContain("## Planning");
     expect(reference).toContain("/gsd new-milestone");
     expect(reference).toContain("/gsd complete-milestone");
     expect(reference).toContain("/gsd milestone-summary");
@@ -155,7 +163,7 @@ describe("gsd ui custom components", () => {
 
     const firstPage = component.render(100).join("\n");
     expect(firstPage).toContain("# GSD Command Reference");
-    expect(firstPage).toContain("## Planning");
+    expect(firstPage).toContain("## Quick Start");
     expect(firstPage).not.toContain("## Execution");
     expect(firstPage).not.toContain("## Debug");
     expect(firstPage).not.toContain("## Instant");
@@ -163,17 +171,17 @@ describe("gsd ui custom components", () => {
     component.handleInput?.("\u001b[6~");
 
     const secondPage = component.render(100).join("\n");
-    expect(secondPage).toContain("## Execution");
+    expect(secondPage).toContain("## Milestones");
     expect(secondPage).not.toContain("## Debug");
 
     component.handleInput?.("\u001b[6~");
+    component.handleInput?.("\u001b[6~");
 
     const thirdPage = component.render(100).join("\n");
+    expect(thirdPage).toContain("/gsd secure-phase [phase]");
     expect(thirdPage).toContain("## Debug");
-    expect(thirdPage).toContain("## Instant");
-    expect(thirdPage).toContain("/gsd debug status <slug>");
-    expect(thirdPage).not.toContain("/gsd status");
 
+    component.handleInput?.("\u001b[5~");
     component.handleInput?.("\u001b[5~");
     component.handleInput?.("\u001b[5~");
 

@@ -88,7 +88,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
           );
           return;
         case "help":
-          await showGsdHelp(ctx);
+          await showGsdHelp(pi, ctx);
           return;
         case undefined:
           await showGsdDashboard(ctx);

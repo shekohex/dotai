@@ -44,8 +44,26 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
 
 const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
   "discuss-phase": ["--phase", "--phase=", "--assumptions", "--auto", "--all", "--chain", "--text"],
-  "plan-phase": ["--phase", "--phase="],
-  "execute-phase": ["--phase", "--phase="],
+  "plan-phase": [
+    "--phase",
+    "--phase=",
+    "--research-phase",
+    "--research-phase=",
+    "--research",
+    "--skip-research",
+    "--skip-verify",
+    "--view",
+    "--text",
+  ],
+  "execute-phase": [
+    "--phase",
+    "--phase=",
+    "--wave",
+    "--wave=",
+    "--gaps-only",
+    "--interactive",
+    "--validate",
+  ],
   "verify-work": ["--phase", "--phase="],
   "validate-phase": ["--phase", "--phase="],
   next: ["--phase", "--phase="],
@@ -372,6 +390,21 @@ function getFlagDescription(value: string): string | undefined {
   if (value === "--diagnose") {
     return "Find root cause only";
   }
+  if (value === "--wave") {
+    return "Execute only one wave";
+  }
+  if (value === "--wave=") {
+    return "Inline wave filter";
+  }
+  if (value === "--gaps-only") {
+    return "Execute only gap-closure plans";
+  }
+  if (value === "--interactive") {
+    return "Run sequential inline execution";
+  }
+  if (value === "--validate") {
+    return "Request validation-aware workflow context";
+  }
   if (value === "--assumptions") {
     return "Route to assumptions discuss mode";
   }
@@ -402,6 +435,45 @@ function getTrailingToken(prefix: string): {
   }
   const tokens = trimmed.split(/\s+/).filter(Boolean);
   return { trimmed, token: tokens.at(-1) ?? "", trailingSpace };
+}
+
+function getWaveItems(prefixBase: string, inline = false): AutocompleteItem[] {
+  const waveValues = ["1", "2", "3", "4"];
+  return waveValues.map((value) => ({
+    value: inline ? `${prefixBase}--wave=${value}` : `${prefixBase}${value}`,
+    label: `Wave ${value}`,
+    description: `Execute only wave ${value}`,
+  }));
+}
+
+function getPhaseAwareCompletions(args: {
+  subcommand: GsdSubcommand;
+  tokens: string[];
+  token: string;
+  trailingSpace: boolean;
+}): AutocompleteItem[] | null {
+  const { subcommand, tokens, token, trailingSpace } = args;
+  const phaseItems = phaseAwareSubcommands.includes(subcommand)
+    ? getPhaseItems(`${subcommand} `)
+    : [];
+  if (phaseItems.length === 0) {
+    return null;
+  }
+
+  const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
+  if (previousToken === "--phase") {
+    return filterItems(getPhaseItems(`${subcommand} --phase `), token);
+  }
+  if (subcommand === "execute-phase" && previousToken === "--wave") {
+    return filterItems(getWaveItems(`${subcommand} --wave `), token);
+  }
+  if (trailingSpace) {
+    return [...phaseItems, ...getFlagItems(subcommand, `${subcommand} `)];
+  }
+  if (!token.startsWith("-")) {
+    return filterItems(phaseItems, token);
+  }
+  return null;
 }
 
 export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | null {
@@ -517,24 +589,22 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
     return filterItems(getPhaseItems(`${subcommand} `, "--phase="), token);
   }
 
+  if (token.startsWith("--wave=")) {
+    return filterItems(getWaveItems(`${subcommand} `, true), token);
+  }
+
   if (token.startsWith("--")) {
     return filterItems(getFlagItems(subcommand, `${subcommand} `), token);
   }
 
-  const phaseItems = phaseAwareSubcommands.includes(subcommand)
-    ? getPhaseItems(`${subcommand} `)
-    : [];
-  if (phaseItems.length > 0) {
-    const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
-    if (previousToken === "--phase") {
-      return filterItems(getPhaseItems(`${subcommand} --phase `), token);
-    }
-    if (trailingSpace) {
-      return [...phaseItems, ...getFlagItems(subcommand, `${subcommand} `)];
-    }
-    if (!token.startsWith("-")) {
-      return filterItems(phaseItems, token);
-    }
+  const phaseAwareCompletions = getPhaseAwareCompletions({
+    subcommand,
+    tokens,
+    token,
+    trailingSpace,
+  });
+  if (phaseAwareCompletions !== null) {
+    return phaseAwareCompletions;
   }
 
   if (trailingSpace) {

@@ -3,6 +3,7 @@ import type { ModeSpec } from "../../mode-utils.js";
 export type GsdRole =
   | "planner"
   | "phase-researcher"
+  | "pattern-mapper"
   | "assumptions-analyzer"
   | "project-researcher"
   | "roadmapper"
@@ -104,6 +105,20 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "bash", "websearch"],
+      systemPromptMode: "replace",
+      autoExit: true,
+    },
+  },
+  "pattern-mapper": {
+    modeName: "gsd-pattern-mapper",
+    bundledPromptPath: "resources/gsd/agents/gsd-pattern-mapper.md",
+    fallbackMode: "search",
+    builtInModeSpec: {
+      description: "Built-in GSD pattern mapper",
+      provider: "codex-openai",
+      modelId: "gpt-5.4-mini",
+      thinkingLevel: "high",
+      tools: ["read", "bash"],
       systemPromptMode: "replace",
       autoExit: true,
     },
@@ -218,6 +233,7 @@ export function listGsdRoles(): GsdRole[] {
   return [
     "planner",
     "phase-researcher",
+    "pattern-mapper",
     "assumptions-analyzer",
     "project-researcher",
     "roadmapper",

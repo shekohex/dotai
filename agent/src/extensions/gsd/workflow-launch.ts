@@ -8,7 +8,7 @@ import {
   resolveSessionLaunchOptions,
   type ResolvedSessionLaunchOptions,
 } from "../session-launch-utils.js";
-import { resolveGsdBundlePath } from "./resources.js";
+import { getGsdBundleDir, resolveGsdBundlePath } from "./resources.js";
 
 type GsdWorkflowLaunchConfig = {
   promptOverride?: string;
@@ -55,6 +55,8 @@ function buildWorkflowLaunchPrompt(config: GsdWorkflowLaunchConfig, cwd: string)
     ...(config.extraResourcePaths ?? []).map((path) => resolveGsdBundlePath(path)),
     ...(config.extraRequiredReadingPaths ?? []),
   ];
+  const gsdBundleDir = getGsdBundleDir();
+  const gsdToolsPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
   return [
     `Launch native GSD workflow for "/gsd ${config.commandName}${commandArguments === undefined ? "" : ` ${commandArguments}`}".`,
     "",
@@ -67,6 +69,8 @@ function buildWorkflowLaunchPrompt(config: GsdWorkflowLaunchConfig, cwd: string)
     "",
     `Working directory: ${cwd}`,
     `Command arguments: ${commandArguments ?? "(none)"}`,
+    `Runtime contract: GSD_BUNDLE_DIR=${gsdBundleDir}`,
+    `Runtime contract: GSD_TOOLS_PATH=${gsdToolsPath}`,
     "",
     "Required reading:",
     ...resources.map((path) => `- ${path}`),

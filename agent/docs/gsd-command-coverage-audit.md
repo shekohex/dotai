@@ -1,6 +1,6 @@
 # GSD Command Coverage Audit
 
-Date: 2026-05-06
+Date: 2026-05-07
 
 ## Scope
 
@@ -40,27 +40,27 @@ Local GSD uses grouped `/gsd <subcommand>` command style instead of many top-lev
 
 Implemented locally:
 
-| Command              | Local shape                 | Upstream equivalent            | Coverage |
-| -------------------- | --------------------------- | ------------------------------ | -------: |
-| `new-project`        | hybrid bootstrap + workflow | `new-project`                  |       93 |
-| `new-milestone`      | workflow-launch shim        | `new-milestone`                |       92 |
-| `complete-milestone` | workflow-launch shim        | `complete-milestone`           |       90 |
-| `milestone-summary`  | workflow-launch shim        | `milestone-summary`            |       88 |
-| `debug`              | hybrid TS + workflow-launch | `debug`                        |       84 |
-| `map-codebase`       | TS-native orchestration     | `map-codebase`                 |       92 |
-| `discuss-phase`      | TS-native orchestration     | `discuss-phase`                |       92 |
-| `plan-phase`         | TS-native orchestration     | `plan-phase`                   |       55 |
-| `execute-phase`      | TS-native orchestration     | `execute-phase`                |       46 |
-| `verify-work`        | TS-native orchestration     | `verify-work`                  |       38 |
-| `validate-phase`     | template stub               | `validate-phase`               |       15 |
-| `progress`           | TS-native instant command   | `progress`                     |       24 |
-| `next`               | local-only instant command  | derived from `progress --next` |       18 |
-| `stats`              | TS-native instant command   | `stats`                        |       22 |
-| `health`             | TS-native instant command   | `health`                       |       28 |
-| `status`             | local-only runtime monitor  | none                           |       35 |
-| `help`               | local docs viewer           | `help`                         |       30 |
-| `on`                 | local enable toggle         | none                           |      100 |
-| `off`                | local enable toggle         | none                           |      100 |
+| Command              | Local shape                        | Upstream equivalent            | Coverage |
+| -------------------- | ---------------------------------- | ------------------------------ | -------: |
+| `new-project`        | hybrid bootstrap + workflow        | `new-project`                  |       93 |
+| `new-milestone`      | workflow-launch shim               | `new-milestone`                |       92 |
+| `complete-milestone` | workflow-launch shim               | `complete-milestone`           |       90 |
+| `milestone-summary`  | workflow-launch shim               | `milestone-summary`            |       88 |
+| `debug`              | hybrid TS + workflow-launch        | `debug`                        |       84 |
+| `map-codebase`       | TS-native orchestration            | `map-codebase`                 |       92 |
+| `discuss-phase`      | TS-native orchestration            | `discuss-phase`                |       92 |
+| `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
+| `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       88 |
+| `verify-work`        | TS-native orchestration            | `verify-work`                  |       38 |
+| `validate-phase`     | template stub                      | `validate-phase`               |       15 |
+| `progress`           | TS-native instant command          | `progress`                     |       24 |
+| `next`               | local-only instant command         | derived from `progress --next` |       18 |
+| `stats`              | TS-native instant command          | `stats`                        |       22 |
+| `health`             | TS-native instant command          | `health`                       |       28 |
+| `status`             | local-only runtime monitor         | none                           |       35 |
+| `help`               | local docs viewer                  | `help`                         |       30 |
+| `on`                 | local enable toggle                | none                           |      100 |
+| `off`                | local enable toggle                | none                           |      100 |
 
 ## Missing Commands
 
@@ -109,25 +109,25 @@ Legend:
 - `N`: missing
 - `L`: local-only
 
-| Command              | TS entry | Bundled local prompt/workflow | Upstream workflow reused | Structured outputs | Writes planning artifacts | Flag parity | Notes                                           |
-| -------------------- | -------: | ----------------------------: | -----------------------: | -----------------: | ------------------------: | ----------: | ----------------------------------------------- |
-| `new-project`        |        Y |                             Y |                        P |                  N |                         Y |           P | bootstrap + workflow launch                     |
-| `new-milestone`      |        Y |                             Y |                        Y |                  N |                         Y |           P | forked workflow session                         |
-| `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta                    |
-| `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added                          |
-| `debug`              |        Y |                             Y |                        Y |                  P |                         Y |           P | `list/status` handled in TS                     |
-| `map-codebase`       |        Y |                             N |                        N |                  N |                         Y |           P | full map + local fast parity                    |
-| `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | parent-owned flow, artifact/checkpoint contract |
-| `plan-phase`         |        Y |                             N |                        N |                  Y |                         P |           N | planner + checker only                          |
-| `execute-phase`      |        Y |                             N |                        N |                  N |                         P |           N | executor + verifier only                        |
-| `verify-work`        |        Y |                             N |                        N |                  Y |                         P |           N | verifier-only shortcut                          |
-| `validate-phase`     |        Y |                             N |                        N |                  N |                         P |           N | template stub                                   |
-| `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only                             |
-| `next`               |        Y |                             N |                        N |                  Y |                         P |           L | local helper                                    |
-| `stats`              |        Y |                             N |                        N |                  N |                         N |           P | snapshot stats only                             |
-| `health`             |        Y |                             N |                        N |                  N |                         N |           N | no repair/context mode                          |
-| `status`             |        Y |                             N |                        N |                  N |                         N |           L | local subagent monitor                          |
-| `help`               |        Y |                             P |                        N |                  N |                         N |           P | local docs viewer                               |
+| Command              | TS entry | Bundled local prompt/workflow | Upstream workflow reused | Structured outputs | Writes planning artifacts | Flag parity | Notes                                                 |
+| -------------------- | -------: | ----------------------------: | -----------------------: | -----------------: | ------------------------: | ----------: | ----------------------------------------------------- |
+| `new-project`        |        Y |                             Y |                        P |                  N |                         Y |           P | bootstrap + workflow launch                           |
+| `new-milestone`      |        Y |                             Y |                        Y |                  N |                         Y |           P | forked workflow session                               |
+| `complete-milestone` |        Y |                             Y |                        Y |                  N |                         Y |           P | local tag-confirmation delta                          |
+| `milestone-summary`  |        Y |                             Y |                        Y |                  N |                         Y |           P | local scope hint added                                |
+| `debug`              |        Y |                             Y |                        Y |                  P |                         Y |           P | `list/status` handled in TS                           |
+| `map-codebase`       |        Y |                             N |                        N |                  N |                         Y |           P | full map + local fast parity                          |
+| `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | parent-owned flow, artifact/checkpoint contract       |
+| `plan-phase`         |        Y |                             N |                        N |                  Y |                         P |           N | planner + checker only                                |
+| `execute-phase`      |        Y |                             Y |                        P |                  N |                         P |           P | workflow-launch foundation, downstream runtime reused |
+| `verify-work`        |        Y |                             N |                        N |                  Y |                         P |           N | verifier-only shortcut                                |
+| `validate-phase`     |        Y |                             N |                        N |                  N |                         P |           N | template stub                                         |
+| `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only                                   |
+| `next`               |        Y |                             N |                        N |                  Y |                         P |           L | local helper                                          |
+| `stats`              |        Y |                             N |                        N |                  N |                         N |           P | snapshot stats only                                   |
+| `health`             |        Y |                             N |                        N |                  N |                         N |           N | no repair/context mode                                |
+| `status`             |        Y |                             N |                        N |                  N |                         N |           L | local subagent monitor                                |
+| `help`               |        Y |                             P |                        N |                  N |                         N |           P | local docs viewer                                     |
 
 ## Command Audit
 
@@ -322,7 +322,7 @@ Differences:
 
 ### `plan-phase`
 
-Coverage: 55/100
+Coverage: 93/100
 
 Upstream behavior:
 
@@ -331,22 +331,26 @@ Upstream behavior:
 
 Local behavior:
 
-- thin handler calls `orchestratePlanPhase`. `src/extensions/gsd/lifecycle/plan-phase.ts:5-11`
-- planner task built from `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, phase goal, requirements, success criteria. `src/extensions/gsd/orchestration.ts:129-152`
-- plan-checker runs as separate structured role and writes local `PLAN-CHECK.md`. `src/extensions/gsd/orchestration.ts:154-180`, `src/extensions/gsd/orchestration.ts:260-298`, `src/extensions/gsd/state/reports.ts:65-109`
-- plan files are generated locally from planner JSON. `src/extensions/gsd/state/reports.ts:6-63`
+- parent-owned local handler now resolves supported routes, spawns researcher/pattern-mapper/planner/checker directly, validates canonical disk artifacts before checker, runs checker-driven revision loop with max 3 attempts, and finalizes `STATE.md` plus `ROADMAP.md` only on success. `src/extensions/gsd/lifecycle/plan-phase.ts`, `src/extensions/gsd/state/plan-phase.ts`
+- canonical source of truth is planner-authored disk files under `.planning/phases/<phase-dir>/<padded-phase>-<NN>-PLAN.md`; no JSON-to-markdown synthesis on parity path. `src/extensions/gsd/lifecycle/plan-phase.ts`, `src/extensions/gsd/state/plan-phase.ts`
+- research-only route supports `--research-phase`, optional `--view`, and exits before planner/checker. `src/extensions/gsd/lifecycle/plan-phase.ts`
+- route-aware artifact resolution now feeds present `CONTEXT.md`, `RESEARCH.md`, `PATTERNS.md`, `VALIDATION.md`, `VERIFICATION.md`, `UAT.md`, `REVIEWS.md`, and `UI-SPEC.md` plus phase goal / requirement IDs into researcher, pattern-mapper, planner, and checker required-reading. `src/extensions/gsd/state/plan-phase.ts`, `src/extensions/gsd/lifecycle/plan-phase.ts`
+- omitted phase now selects next unplanned roadmap phase first, then falls back only when no unplanned phases remain. `src/extensions/gsd/state/plan-phase.ts`
+- `--gaps` and `--reviews` routes now exist. Both skip research. `--gaps` requires verification evidence (`VERIFICATION.md` or `UAT.md`) and `--reviews` requires `REVIEWS.md`, failing clearly if missing. Both feed route context into planner/checker prompts. `src/extensions/gsd/state/plan-phase.ts`, `src/extensions/gsd/lifecycle/plan-phase.ts`
+- mutually exclusive route flags now reject explicitly instead of being silently reinterpreted. `src/extensions/gsd/state/plan-phase.ts`, `src/extensions/gsd/lifecycle/plan-phase.ts`
+- research-only mode now restores existing-artifact decision semantics through explicit view / regenerate / skip handling, while preserving `--view` missing-artifact failure. `src/extensions/gsd/lifecycle/plan-phase.ts`
+- after checker approval or `--skip-verify`, local flow now runs roadmap dependency annotation and bundled post-planning gap analysis helper before finalizing state. `src/extensions/gsd/state/plan-phase.ts`, `src/extensions/gsd/lifecycle/plan-phase.ts`
+- local bundled command and workflow specs now exist for future parity work. `src/resources/gsd/commands/gsd/plan-phase.md`, `src/resources/gsd/workflows/plan-phase.md`
 
 Differences:
 
-- no explicit phase research loop in local command path
-- no flag parity except phase selection
-- no `--research-phase`, `--reviews`, `--bounce`, `--prd`, `--skip-*`
-- no upstream workflow prompt selection
-- local planner output is schema-constrained JSON, stronger than upstream freeform markdown prompt contract. `src/extensions/gsd/subagents.ts:12-53`, `src/extensions/gsd/subagents.ts:275-280`
+- still no `--prd`, `--bounce`, `--skip-bounce`, `--chunked`, `--mvp`, `--skip-ui`, `--auto`, `--chain`, or `--tdd`; these fail explicitly
+- `--text` is accepted as slice foundation flag, but no extra branching UI exists yet because supported route decisions are deterministic
+- planner still returns lightweight structured status rather than fully prompt-driven workflow state
 
 ### `execute-phase`
 
-Coverage: 46/100
+Coverage: 88/100
 
 Upstream behavior:
 
@@ -354,16 +358,21 @@ Upstream behavior:
 
 Local behavior:
 
-- thin handler calls `orchestrateExecutePhase`. `src/extensions/gsd/lifecycle/execute-phase.ts:5-11`
-- executor receives one short task string for whole phase. `src/extensions/gsd/orchestration.ts:300-317`
-- verification is run immediately afterward by local verifier helper. `src/extensions/gsd/orchestration.ts:227-259`, `src/extensions/gsd/orchestration.ts:300-317`
+- handler now routes through thin workflow-launch entry with raw-args passthrough and bundled orchestrator resources. `src/extensions/gsd/lifecycle/execute-phase.ts`
+- local bundled command/workflow/reference resources now encode supported orchestrator stages: parse/init/validate/discover/group/interactive/waves/checkpoints/aggregate/partial-wave/regression/schema/codebase-drift/verifier/phase-complete. `src/resources/gsd/workflows/execute-phase.md`
+- execute-phase step resources now include algorithmic per-plan worktree gate, post-merge regression gate, and non-blocking codebase drift gate. `src/resources/gsd/workflows/execute-phase/steps/per-plan-worktree-gate.md`, `src/resources/gsd/workflows/execute-phase/steps/post-merge-gate.md`, `src/resources/gsd/workflows/execute-phase/steps/codebase-drift-gate.md`
+- Slice 2 score jump reason: workflow contract now covers supported orchestrator stages, wave/order invariants, step resources, helper smoke coverage, and launch-wrapper enforcement for supported flags.
+- workflow contract now also honors init-driven branch selection before execution and persists `state.begin-phase` before discovery so resume/progress tooling matches active execution.
+- score bump from 86 -> 88: added branch-strategy handling before execution and early `state.begin-phase` persistence for resume/progress parity.
 
 Differences:
 
-- no wave discovery/grouping in TS
-- no `--wave`, `--gaps-only`, `--interactive`
-- no orchestrator checkpoint protocol
-- local flow is essentially `executor role` then `verifier role`
+- still no local TS reimplementation of downstream execute/verify internals by design
+- wrapper contract now exposes `--wave`, `--gaps-only`, `--interactive`, `--validate`
+- explicit phase is required in Slice 1; no implicit current-phase resolution route
+- partial `--wave` runs now stop before phase verification/completion when unmatched incomplete work remains
+- `--cross-ai` and `--no-cross-ai` are deferred explicitly instead of being advertised as no-op support
+- verification, checkpoint, and worktree behavior live in workflow resources plus bundled runtime, not native TS slice
 
 ### `verify-work`
 
@@ -613,7 +622,7 @@ Execution strategy:
 |    01 | `new-project`        |               20 | Critical | foundation for all new work                                | upstream-style questioning, optional research, requirements, roadmap, approvals, artifact creation, tests            |
 |    02 | `discuss-phase`      |               68 | Critical | first command in active phase loop                         | full interactive upstream parity, assumptions preview semantics, advisor/methodology overlays, richer gray-area loop |
 |    03 | `plan-phase`         |               55 | Critical | planning contract drives execution quality                 | research loop, flags, plan-check loop, artifacts, tests                                                              |
-|    04 | `execute-phase`      |               46 | Critical | execution is core delivery engine                          | wave orchestration, filters, checkpoints, verification gating, tests                                                 |
+|    04 | `execute-phase`      |               88 | Critical | execution is core delivery engine                          | standalone verify/validate rewrites, deferred flags, deeper runtime automation parity                                |
 |    05 | `verify-work`        |               38 | Critical | closes phase loop and creates fix plans                    | conversational UAT, diagnosis, fix-plan generation, artifact parity, tests                                           |
 |    06 | `validate-phase`     |               15 | High     | retroactive quality gate still very incomplete             | Nyquist audit/reconstruction/test-gen behavior, tests                                                                |
 |    07 | `progress`           |               24 | High     | primary situational router in upstream                     | report modes, `--next`, `--do`, `--forensic`, routing tests                                                          |

@@ -9,6 +9,7 @@ import { parseGsdCommandArgs } from "../../src/extensions/gsd/args.ts";
 import { resolveInstructionFileName } from "../../src/extensions/gsd/lifecycle/new-project.ts";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.ts";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.ts";
+import { resolveGsdBundlePath } from "../../src/extensions/gsd/resources.ts";
 
 type RegisteredCommand = {
   description: string;
@@ -245,9 +246,99 @@ test("gsd status routes to subagent status handler", async () => {
 
 test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("plan-phase 2")).toEqual({ subcommand: "plan-phase", phase: "2" });
+  expect(parseGsdCommandArgs("plan-phase")).toEqual({ subcommand: "plan-phase" });
+  expect(parseGsdCommandArgs("plan-phase --phase 2 --research --skip-verify")).toEqual({
+    subcommand: "plan-phase",
+    phase: "2",
+    research: true,
+    skipVerify: true,
+  });
+  expect(parseGsdCommandArgs("plan-phase --gaps")).toEqual({
+    subcommand: "plan-phase",
+    gaps: true,
+  });
+  expect(parseGsdCommandArgs("plan-phase --reviews")).toEqual({
+    subcommand: "plan-phase",
+    reviews: true,
+  });
+  expect(parseGsdCommandArgs("plan-phase --research-phase 2 --view")).toEqual({
+    subcommand: "plan-phase",
+    researchPhase: "2",
+    view: true,
+  });
+  expect(parseGsdCommandArgs("plan-phase --skip-research --text 2")).toEqual({
+    subcommand: "plan-phase",
+    phase: "2",
+    skipResearch: true,
+    text: true,
+  });
+  expect(parseGsdCommandArgs("plan-phase --auto 2")).toEqual({
+    subcommand: "plan-phase",
+    phase: "2",
+    unsupportedModeError: "Unsupported /gsd plan-phase flag: --auto. Deferred in Slice 1.",
+  });
+  expect(parseGsdCommandArgs("plan-phase --chain 2")).toEqual({
+    subcommand: "plan-phase",
+    phase: "2",
+    unsupportedModeError: "Unsupported /gsd plan-phase flag: --chain. Deferred in Slice 1.",
+  });
+  expect(parseGsdCommandArgs("plan-phase --tdd 2")).toEqual({
+    subcommand: "plan-phase",
+    phase: "2",
+    unsupportedModeError: "Unsupported /gsd plan-phase flag: --tdd. Deferred in Slice 1.",
+  });
   expect(parseGsdCommandArgs("execute-phase --phase 3.1")).toEqual({
     subcommand: "execute-phase",
     phase: "3.1",
+  });
+  expect(
+    parseGsdCommandArgs("execute-phase 3.1 --wave 2 --gaps-only --interactive --validate"),
+  ).toEqual({
+    subcommand: "execute-phase",
+    phase: "3.1",
+    wave: "2",
+    gapsOnly: true,
+    interactive: true,
+    validate: true,
+  });
+  expect(parseGsdCommandArgs("execute-phase 3.1 --cross-ai")).toEqual({
+    subcommand: "execute-phase",
+    phase: "3.1",
+    unsupportedModeError:
+      "Unsupported /gsd execute-phase flag: --cross-ai. Deferred beyond execute-phase Slice 1 foundation.",
+  });
+  expect(parseGsdCommandArgs("execute-phase 3.1 --no-cross-ai")).toEqual({
+    subcommand: "execute-phase",
+    phase: "3.1",
+    unsupportedModeError:
+      "Unsupported /gsd execute-phase flag: --no-cross-ai. Deferred beyond execute-phase Slice 1 foundation.",
+  });
+  expect(parseGsdCommandArgs("execute-phase --wave=3 4")).toEqual({
+    subcommand: "execute-phase",
+    phase: "4",
+    wave: "3",
+  });
+  expect(parseGsdCommandArgs("execute-phase 2 junk")).toEqual({
+    subcommand: "execute-phase",
+    phase: "2",
+    unsupportedModeError: "Unsupported /gsd execute-phase extra positional argument: junk.",
+  });
+  expect(parseGsdCommandArgs("execute-phase --phase 2 3")).toEqual({
+    subcommand: "execute-phase",
+    phase: "2",
+    unsupportedModeError: "Unsupported /gsd execute-phase extra positional argument: 3.",
+  });
+  expect(parseGsdCommandArgs("execute-phase 2 --wave 0")).toEqual({
+    subcommand: "execute-phase",
+    phase: "2",
+    unsupportedModeError:
+      "Unsupported /gsd execute-phase flag: --wave requires positive integer value.",
+  });
+  expect(parseGsdCommandArgs("execute-phase 2 --wave=abc")).toEqual({
+    subcommand: "execute-phase",
+    phase: "2",
+    unsupportedModeError:
+      "Unsupported /gsd execute-phase flag: --wave requires positive integer value.",
   });
   expect(parseGsdCommandArgs("next --phase=4")).toEqual({ subcommand: "next", phase: "4" });
   expect(parseGsdCommandArgs("map-codebase --paths src,packages/ui")).toEqual({
@@ -455,6 +546,21 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
         value: "execute-phase --phase=",
         label: "--phase=",
       }),
+      expect.objectContaining({
+        value: "execute-phase --wave",
+        label: "--wave",
+      }),
+      expect.objectContaining({
+        value: "execute-phase --gaps-only",
+        label: "--gaps-only",
+      }),
+      expect.objectContaining({
+        value: "execute-phase --interactive",
+        label: "--interactive",
+      }),
+      expect.not.objectContaining({
+        value: "execute-phase --cross-ai",
+      }),
     ]),
   );
 
@@ -471,6 +577,22 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
     expect.arrayContaining([
       expect.objectContaining({ value: "execute-phase --phase=1", label: "1 Foundation" }),
       expect.objectContaining({ value: "execute-phase --phase=2", label: "2 Delivery" }),
+    ]),
+  );
+
+  const waveFlagItems = await command?.getArgumentCompletions?.("execute-phase --wave ");
+  expect(waveFlagItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "execute-phase --wave 1", label: "Wave 1" }),
+      expect.objectContaining({ value: "execute-phase --wave 2", label: "Wave 2" }),
+    ]),
+  );
+
+  const waveEqualsItems = await command?.getArgumentCompletions?.("execute-phase --wave=");
+  expect(waveEqualsItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "execute-phase --wave=1", label: "Wave 1" }),
+      expect.objectContaining({ value: "execute-phase --wave=2", label: "Wave 2" }),
     ]),
   );
 
@@ -782,6 +904,154 @@ test("gsd new-project preserves raw auto arguments through grouped command", asy
   );
 });
 
+test("gsd execute-phase launches workflow foundation with raw args and bundled resources", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler(
+    "execute-phase 2 --wave 1 --gaps-only --interactive --validate",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
+  const prompt = String(fakePi.sendUserMessage.mock.calls[0]?.[0]);
+  expect(prompt).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2 --wave 1 --gaps-only --interactive --validate"',
+  );
+  expect(prompt).toContain("Command arguments: 2 --wave 1 --gaps-only --interactive --validate");
+  expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/execute-phase.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("workflows/execute-phase.md"));
+  expect(prompt).toContain(
+    resolveGsdBundlePath("workflows/execute-phase/steps/per-plan-worktree-gate.md"),
+  );
+  expect(prompt).toContain(
+    resolveGsdBundlePath("workflows/execute-phase/steps/post-merge-gate.md"),
+  );
+  expect(prompt).toContain(
+    resolveGsdBundlePath("workflows/execute-phase/steps/codebase-drift-gate.md"),
+  );
+  expect(prompt).toContain(resolveGsdBundlePath("references/agent-contracts.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("references/context-budget.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("references/worktree-path-safety.md"));
+  expect(prompt).toContain(`Runtime contract: GSD_BUNDLE_DIR=${resolveGsdBundlePath()}`);
+  expect(prompt).toContain(
+    `Runtime contract: GSD_TOOLS_PATH=${resolveGsdBundlePath("bin", "gsd-tools.cjs")}`,
+  );
+  expect(prompt).toContain(
+    "`--wave` filter activates for both `--wave <N>` and `--wave=<N>` raw-arg forms",
+  );
+  expect(prompt).not.toContain("cross-AI");
+  expect(prompt).toContain("Do not call local native `orchestrateExecutePhase()` path");
+});
+
+test("gsd execute-phase preserves --wave=<N> semantics through workflow launch", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler(
+    "execute-phase --wave=3 4",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
+  const prompt = String(fakePi.sendUserMessage.mock.calls[0]?.[0]);
+  expect(prompt).toContain('Launch native GSD workflow for "/gsd execute-phase --wave=3 4"');
+  expect(prompt).toContain("Command arguments: --wave=3 4");
+  expect(prompt).toContain(
+    "`--wave` filter activates for both `--wave <N>` and `--wave=<N>` raw-arg forms",
+  );
+});
+
+test("gsd execute-phase rejects deferred flags before workflow launch", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "execute-phase 2 --cross-ai",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Unsupported /gsd execute-phase flag: --cross-ai. Deferred beyond execute-phase Slice 1 foundation.",
+    level: "warning",
+  });
+});
+
+test("gsd execute-phase requires explicit phase before workflow launch", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("execute-phase", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "/gsd execute-phase requires explicit phase in Slice 1 foundation.",
+    level: "warning",
+  });
+});
+
+test("gsd execute-phase rejects extra positional tokens before workflow launch", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "execute-phase --phase 2 3",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd execute-phase extra positional argument: 3.",
+    level: "warning",
+  });
+});
+
+test("gsd execute-phase rejects non-numeric wave before workflow launch", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "execute-phase 2 --wave nope",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd execute-phase flag: --wave requires positive integer value.",
+    level: "warning",
+  });
+});
+
 test("gsd new-project rejects auto mode without source material", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -883,29 +1153,48 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
     .mockResolvedValueOnce({
       ok: true,
       value: {
+        handle: {
+          waitForCompletion: vi.fn().mockImplementation(async () => {
+            mkdirSync(join(cwd, ".planning", "phases", "1-foundation"), { recursive: true });
+            writeFileSync(
+              join(cwd, ".planning", "phases", "1-foundation", "01-RESEARCH.md"),
+              "# Research\n",
+            );
+            return {
+              sessionId: "research-session-id",
+              status: "completed",
+              summary: "research complete",
+            };
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "research output" }),
+        },
+      },
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      value: {
+        handle: {
+          waitForCompletion: vi.fn().mockImplementation(async () => {
+            writeFileSync(
+              join(cwd, ".planning", "phases", "1-foundation", "01-PATTERNS.md"),
+              "# Patterns\n",
+            );
+            return {
+              sessionId: "pattern-session-id",
+              status: "completed",
+              summary: "pattern complete",
+            };
+          }),
+          captureOutput: vi.fn().mockResolvedValue({ text: "pattern output" }),
+        },
+      },
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      value: {
         structured: {
-          plans: [
-            {
-              phase: "1",
-              plan: "02",
-              type: "implementation",
-              wave: 1,
-              depends_on: ["1-01"],
-              files_modified: ["src/feature.ts"],
-              autonomous: true,
-              must_haves: ["feature works"],
-              objective: "Ship feature",
-              tasks: [
-                {
-                  title: "Implement feature",
-                  files: ["src/feature.ts"],
-                  action: "Build feature",
-                  verify: "Run tests",
-                  done: "Feature behaves correctly",
-                },
-              ],
-            },
-          ],
+          status: "created",
+          summary: "plan created",
         },
       },
     })
@@ -915,21 +1204,7 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
         structured: {
           approved: true,
           summary: "approved",
-          coverage: [{ requirement: "REQ-01", status: "covered", notes: "mapped" }],
           issues: [],
-        },
-      },
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      value: {
-        handle: {
-          waitForCompletion: vi.fn().mockResolvedValue({
-            sessionId: "execute-session-id",
-            status: "completed",
-            summary: "execute complete",
-          }),
-          captureOutput: vi.fn().mockResolvedValue({ text: "execute output" }),
         },
       },
     })
@@ -963,12 +1238,17 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));
+  mkdirSync(join(cwd, ".planning", "phases", "1-foundation"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "01-01-PLAN.md"),
+    "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/feature.ts]\nautonomous: true\nmust_haves: [feature works]\n---\n\n## Tasks\n\n### Task 1: Implement feature\n\nBuild feature\n",
+  );
   await command?.handler("plan-phase 1", createCommandContext(cwd, notifications));
-  await command?.handler("execute-phase 1", createCommandContext(cwd, notifications));
+  await command?.handler("execute-phase 1", createCommandContext(cwd, notifications, fakePi));
   await command?.handler("verify-work 1", createCommandContext(cwd, notifications));
   expect(
-    await readFile(join(cwd, ".planning", "phases", "1-foundation", "1-02-PLAN.md"), "utf8"),
-  ).toContain("Ship feature");
+    await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-01-PLAN.md"), "utf8"),
+  ).toContain("Implement feature");
   expect(
     await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-PLAN-CHECK.md"), "utf8"),
   ).toContain("approved: true");
@@ -978,11 +1258,9 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
   expect(
     notifications.some((entry) => entry.message.includes("Planned 1 plan(s); check approved")),
   ).toBe(true);
-  expect(
-    notifications.some((entry) =>
-      entry.message.includes("GSD execute-phase finished: phase verified"),
-    ),
-  ).toBe(true);
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 1"',
+  );
   expect(
     notifications.some((entry) =>
       entry.message.includes("GSD verify-work finished: phase verified"),

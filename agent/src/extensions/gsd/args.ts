@@ -7,10 +7,21 @@ export const GsdCommandArgsSchema = Type.Object(
     subcommand: Type.Optional(Type.String()),
     auto: Type.Optional(Type.Boolean()),
     phase: Type.Optional(Type.String()),
+    wave: Type.Optional(Type.String()),
+    researchPhase: Type.Optional(Type.String()),
     assumptions: Type.Optional(Type.Boolean()),
     all: Type.Optional(Type.Boolean()),
     chain: Type.Optional(Type.Boolean()),
     text: Type.Optional(Type.Boolean()),
+    view: Type.Optional(Type.Boolean()),
+    research: Type.Optional(Type.Boolean()),
+    skipResearch: Type.Optional(Type.Boolean()),
+    skipVerify: Type.Optional(Type.Boolean()),
+    gaps: Type.Optional(Type.Boolean()),
+    reviews: Type.Optional(Type.Boolean()),
+    gapsOnly: Type.Optional(Type.Boolean()),
+    interactive: Type.Optional(Type.Boolean()),
+    validate: Type.Optional(Type.Boolean()),
     analyze: Type.Optional(Type.Boolean()),
     batch: Type.Optional(Type.Boolean()),
     power: Type.Optional(Type.Boolean()),
@@ -76,6 +87,14 @@ function normalizePhaseToken(token: string | undefined): string | undefined {
   }
   const value = token.trim();
   return value.length > 0 ? value : undefined;
+}
+
+function normalizePositiveIntegerToken(token: string | undefined): string | undefined {
+  const value = normalizePhaseToken(token);
+  if (value === undefined) {
+    return undefined;
+  }
+  return /^[1-9]\d*$/u.test(value) ? value : undefined;
 }
 
 function normalizePathToken(token: string | undefined): string[] | undefined {
@@ -465,6 +484,184 @@ function parseDiscussPhaseArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 
+function parsePlanPhaseArgs(tokens: string[]): GsdCommandArgs {
+  let phase: string | undefined;
+  let researchPhase: string | undefined;
+  let text = false;
+  let view = false;
+  let research = false;
+  let skipResearch = false;
+  let skipVerify = false;
+  let gaps = false;
+  let reviews = false;
+  let unsupportedModeError: string | undefined;
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--phase") {
+      phase = normalizePhaseToken(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--phase=")) {
+      phase = normalizePhaseToken(token.slice("--phase=".length));
+      continue;
+    }
+    if (token === "--research-phase") {
+      researchPhase = normalizePhaseToken(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--research-phase=")) {
+      researchPhase = normalizePhaseToken(token.slice("--research-phase=".length));
+      continue;
+    }
+    if (token === "--view") {
+      view = true;
+      continue;
+    }
+    if (token === "--research") {
+      research = true;
+      continue;
+    }
+    if (token === "--skip-research") {
+      skipResearch = true;
+      continue;
+    }
+    if (token === "--skip-verify") {
+      skipVerify = true;
+      continue;
+    }
+    if (token === "--gaps") {
+      gaps = true;
+      continue;
+    }
+    if (token === "--reviews") {
+      reviews = true;
+      continue;
+    }
+    if (token === "--text") {
+      text = true;
+      continue;
+    }
+    if (
+      token === "--prd" ||
+      token === "--auto" ||
+      token === "--chain" ||
+      token === "--bounce" ||
+      token === "--skip-bounce" ||
+      token === "--chunked" ||
+      token === "--mvp" ||
+      token === "--skip-ui" ||
+      token === "--tdd"
+    ) {
+      unsupportedModeError ??= `Unsupported /gsd plan-phase flag: ${token}. Deferred in Slice 1.`;
+      continue;
+    }
+    if (!token.startsWith("-") && phase === undefined && researchPhase === undefined) {
+      phase = normalizePhaseToken(token);
+      continue;
+    }
+    if (token.startsWith("-")) {
+      unsupportedModeError ??= `Unsupported /gsd plan-phase flag: ${token}.`;
+    }
+  }
+
+  return validateParsedArgs({
+    subcommand: "plan-phase",
+    ...(phase === undefined ? {} : { phase }),
+    ...(researchPhase === undefined ? {} : { researchPhase }),
+    ...(text ? { text: true } : {}),
+    ...(view ? { view: true } : {}),
+    ...(research ? { research: true } : {}),
+    ...(skipResearch ? { skipResearch: true } : {}),
+    ...(skipVerify ? { skipVerify: true } : {}),
+    ...(gaps ? { gaps: true } : {}),
+    ...(reviews ? { reviews: true } : {}),
+    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
+  });
+}
+
+function parseExecutePhaseArgs(tokens: string[]): GsdCommandArgs {
+  let phase: string | undefined;
+  let wave: string | undefined;
+  let gapsOnly = false;
+  let interactive = false;
+  let validate = false;
+  let unsupportedModeError: string | undefined;
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--phase") {
+      phase = normalizePhaseToken(tokens[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--phase=")) {
+      phase = normalizePhaseToken(token.slice("--phase=".length));
+      continue;
+    }
+    if (token === "--wave") {
+      wave = normalizePositiveIntegerToken(tokens[index + 1]);
+      if (wave === undefined) {
+        unsupportedModeError ??=
+          "Unsupported /gsd execute-phase flag: --wave requires positive integer value.";
+      }
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--wave=")) {
+      wave = normalizePositiveIntegerToken(token.slice("--wave=".length));
+      if (wave === undefined) {
+        unsupportedModeError ??=
+          "Unsupported /gsd execute-phase flag: --wave requires positive integer value.";
+      }
+      continue;
+    }
+    if (token === "--gaps-only") {
+      gapsOnly = true;
+      continue;
+    }
+    if (token === "--interactive") {
+      interactive = true;
+      continue;
+    }
+    if (token === "--validate") {
+      validate = true;
+      continue;
+    }
+    if (token === "--cross-ai" || token === "--no-cross-ai") {
+      unsupportedModeError ??= `Unsupported /gsd execute-phase flag: ${token}. Deferred beyond execute-phase Slice 1 foundation.`;
+      continue;
+    }
+    if (token === "--tdd" || token === "--auto" || token === "--mvp") {
+      unsupportedModeError ??= `Unsupported /gsd execute-phase flag: ${token}. Deferred beyond execute-phase Slice 1 foundation.`;
+      continue;
+    }
+    if (!token.startsWith("-") && phase === undefined) {
+      phase = normalizePhaseToken(token);
+      continue;
+    }
+    if (!token.startsWith("-") && phase !== undefined) {
+      unsupportedModeError ??= `Unsupported /gsd execute-phase extra positional argument: ${token}.`;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      unsupportedModeError ??= `Unsupported /gsd execute-phase flag: ${token}.`;
+    }
+  }
+
+  return validateParsedArgs({
+    subcommand: "execute-phase",
+    ...(phase === undefined ? {} : { phase }),
+    ...(wave === undefined ? {} : { wave }),
+    ...(gapsOnly ? { gapsOnly: true } : {}),
+    ...(interactive ? { interactive: true } : {}),
+    ...(validate ? { validate: true } : {}),
+    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
+  });
+}
+
 export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
@@ -497,6 +694,14 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
 
   if (subcommand === "discuss-phase") {
     return parseDiscussPhaseArgs(tokens);
+  }
+
+  if (subcommand === "plan-phase") {
+    return parsePlanPhaseArgs(tokens);
+  }
+
+  if (subcommand === "execute-phase") {
+    return parseExecutePhaseArgs(tokens);
   }
 
   let phase: string | undefined;

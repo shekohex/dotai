@@ -13,7 +13,7 @@
 - `/gsd map-codebase`
 - `/gsd discuss-phase [phase]`
 - `/gsd plan-phase [phase]`
-- `/gsd execute-phase [phase]`
+- `/gsd execute-phase <phase>`
 - `/gsd verify-work [phase]`
 - `/gsd validate-phase [phase]`
 
@@ -31,3 +31,18 @@ Supported forms:
 - positional: `/gsd plan-phase 2`
 - flag: `/gsd execute-phase --phase 3.1`
 - equals flag: `/gsd next --phase=4`
+
+## Execute-Phase Foundation
+
+Supported in Slice 1 foundation:
+
+- `/gsd execute-phase 2`
+- `/gsd execute-phase --phase 2 --wave 1`
+- `/gsd execute-phase 2 --gaps-only`
+- `/gsd execute-phase 2 --interactive`
+- `/gsd execute-phase 2 --validate`
+
+Deferred with explicit error:
+
+- `/gsd execute-phase 2 --cross-ai`
+- `/gsd execute-phase 2 --no-cross-ai`

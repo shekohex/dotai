@@ -69,6 +69,99 @@ describe("gsd bundled resources", () => {
     expect(loadBundledDoc("command-reference.md")).toContain("new-project");
   });
 
+  it("ships execute-phase foundation resources and wording", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/execute-phase.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/execute-phase.md"),
+      "utf8",
+    );
+    const worktreeGate = readFileSync(
+      join(
+        process.cwd(),
+        "src/resources/gsd/workflows/execute-phase/steps/per-plan-worktree-gate.md",
+      ),
+      "utf8",
+    );
+    const postMergeGate = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/execute-phase/steps/post-merge-gate.md"),
+      "utf8",
+    );
+    const codebaseDriftGate = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/execute-phase/steps/codebase-drift-gate.md"),
+      "utf8",
+    );
+    const worktreeSafety = readFileSync(
+      join(process.cwd(), "src/resources/gsd/references/worktree-path-safety.md"),
+      "utf8",
+    );
+    const agentContracts = readFileSync(
+      join(process.cwd(), "src/resources/gsd/references/agent-contracts.md"),
+      "utf8",
+    );
+    const contextBudget = readFileSync(
+      join(process.cwd(), "src/resources/gsd/references/context-budget.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("--wave");
+    expect(command).toContain("--gaps-only");
+    expect(command).toContain("--interactive");
+    expect(command).toContain("--validate");
+    expect(command).toContain("Deferred with explicit error:");
+    expect(command).toContain("--cross-ai");
+    expect(command).toContain("--no-cross-ai");
+    expect(workflow).toContain("active flags are only flags present");
+    expect(workflow).toContain("`--wave` filter is active for either `--wave <N>` or `--wave=<N>`");
+    expect(workflow).toContain("inspect `branching_strategy` and `branch_name` from init payload");
+    expect(workflow).toContain(
+      "create `branch_name` from `origin/<default-branch>`, not current HEAD",
+    );
+    expect(workflow).toContain(
+      'node "$GSD_TOOLS_PATH" state begin-phase --phase "<phase>" --name "<phase-name>" --plans "<plan-count>"',
+    );
+    expect(workflow).toContain("`state.begin-phase` must run before plan grouping");
+    expect(workflow).toContain("wave discovery/filtering");
+    expect(workflow).toContain("lower-wave safety");
+    expect(workflow).toContain("intra-wave overlap downgrade");
+    expect(workflow).toContain("sequential `run_in_background` dispatch wording");
+    expect(workflow).toContain("completion-signal spot-check fallback");
+    expect(workflow).toContain("worktree cleanup with pre-merge `--diff-filter=D`");
+    expect(workflow).toContain("post-merge gate");
+    expect(workflow).toContain("partial-wave stop-before-verify/complete");
+    expect(workflow).toContain("verifier spawn");
+    expect(workflow).toContain("human-UAT persistence");
+    expect(workflow).toContain("phase.complete");
+    expect(workflow).toContain("Only after successful post-merge gate, update roadmap progress");
+    expect(workflow).toContain(
+      "Scope regression gate to full-wave merged state, not per completed plan",
+    );
+    expect(workflow).toContain("selected wave complete; phase still in progress");
+    expect(workflow).toContain('node "$GSD_TOOLS_PATH" init execute-phase "<phase>" --validate');
+    expect(workflow).toContain('node "$GSD_TOOLS_PATH" phase-plan-index "<phase>"');
+    expect(workflow).toContain("Use existing local runtime helpers");
+    expect(workflow).toContain("GSD_BUNDLE_DIR");
+    expect(workflow).not.toContain("{{GSD_BUNDLE_DIR}}/commands/gsd/execute-phase.md");
+    expect(worktreeGate).toContain("currentPaths ∩ siblingPaths != ∅");
+    expect(worktreeGate).toContain("parent-child overlap");
+    expect(worktreeGate).toContain(
+      "worktree isolation disabled for plan due to submodule/path safety gate",
+    );
+    expect(postMergeGate).toContain("build/test gate");
+    expect(postMergeGate).toContain("full-wave merged tree");
+    expect(postMergeGate).toContain("tracking guard on failed tests");
+    expect(postMergeGate).toContain(
+      "do not run `roadmap update-plan-progress` for that failed merged wave",
+    );
+    expect(codebaseDriftGate).toContain("non-blocking drift contract");
+    expect(codebaseDriftGate).toContain('node "$GSD_TOOLS_PATH" verify codebase-drift');
+    expect(agentContracts).toContain("workers return structured status");
+    expect(contextBudget).toContain("orchestrator: keep near 15% budget");
+    expect(worktreeSafety).toContain("Absolute-path contract");
+  });
+
   it("new-project workflow encodes approval gate and deterministic instruction generation", () => {
     const workflow = readFileSync(
       join(process.cwd(), "src/resources/gsd/workflows/new-project.md"),

@@ -239,6 +239,7 @@ test("gsd health routes --repair to bundled validator", async () => {
   expect(notifications.at(-1)?.level).toBe("warning");
   expect(notifications.at(-1)?.message).toContain("Health ");
   expect(notifications.at(-1)?.message).toContain("repairs=1");
+  expect(notifications.at(-1)?.message).toContain("OK resetConfig path=config.json");
   expect(JSON.parse(await readFile(join(cwd, ".planning", "config.json"), "utf8"))).toMatchObject({
     model_profile: "balanced",
   });
@@ -259,8 +260,58 @@ test("gsd health routes --context to bundled context backend", async () => {
   );
 
   expect(notifications.at(-1)).toEqual({
-    message:
-      "Health context 65% warning Context is approaching the fracture zone — consider /gsd-thread to continue in a fresh window.",
+    message: [
+      "Health context 65% warning",
+      "Window: 650/1000 tokens",
+      "Recommendation: Context is approaching the fracture zone — consider /gsd-thread to continue in a fresh window.",
+    ].join("\n"),
+    level: "warning",
+  });
+});
+
+test("gsd health routes bare --context using local session usage", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications, fakePi));
+  await command?.handler("health --context", {
+    ...createCommandContext(cwd, notifications, fakePi),
+    getContextUsage() {
+      return { tokens: 450, contextWindow: 1000 };
+    },
+  });
+
+  expect(notifications.at(-1)).toEqual({
+    message: ["Health context 45% healthy", "Window: 450/1000 tokens"].join("\n"),
+    level: "info",
+  });
+});
+
+test("gsd health routes bare --context using config window fallback", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "config.json"),
+    '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false,"context_window":1000}\n',
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications, fakePi));
+  await command?.handler("health --context", createCommandContext(cwd, notifications, fakePi));
+
+  expect(notifications.at(-1)).toEqual({
+    message: [
+      "Health context unknown",
+      "Window: ?/1000 tokens",
+      "Recommendation: token usage unavailable in current session. Re-run with --tokens-used <int> or from active session with context metrics.",
+    ].join("\n"),
     level: "warning",
   });
 });
@@ -280,9 +331,19 @@ test("gsd health surfaces bundled context validation failures as warning output"
   );
 
   expect(notifications.at(-1)).toEqual({
-    message:
-      "Health context 0% critical --tokens-used must be a non-negative integer (window > 0), got the values supplied",
+    message: [
+      "Health context 0% critical",
+      "Window: 0/1000 tokens",
+      "Recommendation: --tokens-used must be a non-negative integer (window > 0), got the values supplied",
+    ].join("\n"),
     level: "warning",
+  });
+});
+
+test("gsd health parser accepts bare context mode", () => {
+  expect(parseGsdCommandArgs("health --context")).toEqual({
+    subcommand: "health",
+    context: true,
   });
 });
 

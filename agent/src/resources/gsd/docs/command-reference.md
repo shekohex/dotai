@@ -57,6 +57,8 @@
   variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
   unsupported variants fail explicitly instead of falling back to one-line notify output
 - `/gsd health`
+  flags: `--repair`, `--context`, `--tokens-used <int>`, `--context-window <int>`
+  bare `--context` derives current session token usage when available and can derive window from session or `.planning/config.json`; if token usage is unavailable it reports unknown instead of guessing
 - `/gsd status`
 
 ## Workflow Review

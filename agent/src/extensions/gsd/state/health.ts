@@ -40,6 +40,20 @@ export type HealthOutput = Static<typeof HealthOutputSchema>;
 
 export type HealthSummary = Pick<HealthOutput, "status" | "healthy" | "issues">;
 
+export const ContextHealthOutputSchema = Type.Object(
+  {
+    percent: Type.Number(),
+    state: Type.Union([Type.Literal("healthy"), Type.Literal("warning"), Type.Literal("critical")]),
+    recommendation: Type.Union([Type.String(), Type.Null()]),
+    tokensUsed: Type.Integer({ minimum: 0 }),
+    contextWindow: Type.Integer({ minimum: 1 }),
+    source: Type.Array(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export type ContextHealthOutput = Static<typeof ContextHealthOutputSchema>;
+
 const BundledHealthResultSchema = Type.Object(
   {
     status: Type.String(),
@@ -214,5 +228,23 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
     status,
     healthy: status !== "broken",
     issues,
+  };
+}
+
+export function deriveHealthContextWindow(cwd: string): {
+  contextWindow: number;
+  source: string;
+} {
+  const snapshot = readPlanningSnapshot(cwd);
+  if (snapshot.config?.context_window !== undefined) {
+    return {
+      contextWindow: snapshot.config.context_window,
+      source: ".planning/config.json context_window",
+    };
+  }
+
+  return {
+    contextWindow: 200000,
+    source: "bundled default context window",
   };
 }

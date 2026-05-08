@@ -9,6 +9,7 @@
 - blank scalar fields such as `current_plan:` remain valid and load as blank strings
 - `PLAN.md` frontmatter accepts upstream nested `must_haves`, `requirements`, and `user_setup`
 - missing core planning files such as `PROJECT.md` make `/gsd health` unhealthy
+- `/gsd health --context` works with explicit numeric flags or bare `--context` when local session/config can supply enough context; missing token usage remains explicit instead of guessed
 
 ## Not Guaranteed
 

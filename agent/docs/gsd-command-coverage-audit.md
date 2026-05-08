@@ -56,7 +56,7 @@ Implemented locally:
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       42 |
 | `stats`              | TS-native instant command          | `stats`                        |       38 |
-| `health`             | TS-native instant command          | `health`                       |       62 |
+| `health`             | TS-native instant command          | `health`                       |       74 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
 | `help`               | local docs viewer                  | `help`                         |       44 |
 | `on`                 | local enable toggle                | none                           |      100 |
@@ -494,7 +494,7 @@ Differences:
 
 ### `health`
 
-Coverage: 45/100
+Coverage: 74/100
 
 Upstream behavior:
 
@@ -503,15 +503,18 @@ Upstream behavior:
 Local behavior:
 
 - slash command now routes explicit `--repair` and `--context` requests through shipped bundled validator/context backends instead of silently ignoring flags. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/args.ts`
-- normal `/gsd health` output now preserves `healthy`, `degraded`, and `broken` states and converts malformed planning/config failures into structured command output instead of crashing. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/read.ts`
+- bare `/gsd health --context` now works without hidden numeric flags by deriving values in honest order from explicit args, live session metrics, `.planning/config.json` `context_window`, then bundled default window; when token usage is unavailable it reports unknown state instead of fabricating `0`. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/schema.ts`
+- normal `/gsd health` output now preserves `healthy`, `degraded`, and `broken` states, shows detailed issue and repair lines, preserves bundled repair detail fields, and converts malformed planning/config failures into structured command output instead of crashing. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/read.ts`
 - autocomplete and dashboard now use cheap local summary heuristics instead of synchronously invoking bundled validator on every hot-path refresh. `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/suggestions.ts`, `src/extensions/gsd/ui.ts`
-- focused tests now cover routed flags, malformed config survival, degraded output, and hot-path isolation. `test/gsd/commands.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/ui.test.ts`, `test/gsd/health-summary-paths.test.ts`
+- hot-path local summary now classifies malformed config as broken, aligning severity better with real command behavior while remaining intentionally cheaper than full validator runs. `src/extensions/gsd/state/health.ts`, `test/gsd/health-state.test.ts`, `test/gsd/brownfield.test.ts`
+- focused tests now cover bare `--context`, malformed config survival, degraded/detailed output, unknown-usage honesty, repair detail rendering, and hot-path isolation. `test/gsd/commands.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/ui.test.ts`, `test/gsd/health-summary-paths.test.ts`, `test/gsd/health-state.test.ts`
 
 Differences:
 
 - local backend still does not expose full upstream health workflow/report experience or complete warning code inventory
 - autocomplete/dashboard summaries are intentionally cheaper local approximations, not full bundled health evaluation
 - no full workflow prompt handoff for repair confirmation loops
+- bare `--context` still depends on live session metrics for exact token usage; config fallback can only provide window size and now says so explicitly
 
 ### `status`
 

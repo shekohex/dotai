@@ -628,14 +628,6 @@ function parseHealthArgs(tokens: string[]): GsdCommandArgs {
     unsupportedModeError ??= `Unsupported /gsd health flag: ${token}.`;
   }
 
-  if (context && tokensUsed === undefined) {
-    unsupportedModeError ??=
-      "Unsupported /gsd health context mode: --tokens-used <integer> is required.";
-  }
-  if (context && contextWindow === undefined) {
-    unsupportedModeError ??=
-      "Unsupported /gsd health context mode: --context-window <integer> is required.";
-  }
   if (!context && (tokensUsed !== undefined || contextWindow !== undefined)) {
     unsupportedModeError ??=
       "Unsupported /gsd health context mode: add --context when passing context utilization flags.";

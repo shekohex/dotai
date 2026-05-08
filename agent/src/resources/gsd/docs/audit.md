@@ -83,6 +83,7 @@
 - `test/gsd/brownfield.test.ts` proves blank `current_plan:` stays valid
 - `test/gsd/brownfield.test.ts` proves nested upstream `PLAN.md` frontmatter loads during snapshot reads
 - `test/gsd/brownfield.test.ts` and `test/gsd/instant.test.ts` prove missing `PROJECT.md` is unhealthy and `/gsd health` reports non-green
+- `test/gsd/commands.test.ts` proves `/gsd health --context` works with explicit values, session-derived values, and honest unknown output when only window fallback is available
 
 ## Section Checklist
 

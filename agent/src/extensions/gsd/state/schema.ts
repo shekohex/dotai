@@ -75,6 +75,7 @@ export const PlanningConfigSchema = Type.Object(
     brave_search: Type.Boolean(),
     firecrawl: Type.Boolean(),
     exa_search: Type.Boolean(),
+    context_window: Type.Optional(Type.Integer({ minimum: 1 })),
     git: Type.Optional(
       Type.Object(
         {

@@ -1,10 +1,15 @@
 import { execFileSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { asRecord, readString } from "../../../utils/unknown-data.js";
 import type { GsdCommandArgs } from "../args.js";
 import { resolveGsdBundlePath } from "../resources.js";
-import { computeHealth } from "../state/health.js";
+import {
+  computeHealth,
+  deriveHealthContextWindow,
+  type ContextHealthOutput,
+} from "../state/health.js";
 
 const ContextHealthResultSchema = Type.Object(
   {
@@ -14,8 +19,6 @@ const ContextHealthResultSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-type ContextHealthResult = Static<typeof ContextHealthResultSchema>;
 
 const ContextHealthErrorSchema = Type.Object(
   {
@@ -36,32 +39,70 @@ export function handleGsdHealth(
   }
 
   if (args.context === true) {
+    const derivedUsage = deriveContextUsage(ctx, args);
+    if (derivedUsage.tokensUsed === undefined) {
+      ctx.ui.notify(formatUnknownContextHealthMessage(derivedUsage.contextWindow), "warning");
+      return;
+    }
     const result = runBundledContextHealth(
       ctx.cwd,
-      args.tokensUsed ?? "",
-      args.contextWindow ?? "",
+      derivedUsage.tokensUsed,
+      derivedUsage.contextWindow,
     );
     const level = result.state === "healthy" ? "info" : "warning";
-    const suffix = result.recommendation === null ? "" : ` ${result.recommendation}`;
-    ctx.ui.notify(`Health context ${result.percent}% ${result.state}${suffix}`, level);
+    ctx.ui.notify(formatContextHealthMessage(result), level);
     return;
   }
 
   const result = computeHealth(ctx.cwd, { repair: args.repair === true });
   const level = result.status === "healthy" ? "info" : "warning";
-  const repairs = result.repairsPerformed?.length ?? 0;
-  const suffix = repairs > 0 ? ` repairs=${repairs}` : "";
-  ctx.ui.notify(
-    `Health ${result.status} errors=${countIssues(result.issues, "error")} warnings=${countIssues(result.issues, "warning")} info=${countIssues(result.issues, "info")}${suffix}`,
-    level,
-  );
+  ctx.ui.notify(formatHealthMessage(result), level);
+}
+
+function deriveContextUsage(
+  ctx: ExtensionCommandContext,
+  args: GsdCommandArgs,
+): { tokensUsed?: string; contextWindow: string } {
+  const usage = ctx.getContextUsage?.();
+  let contextWindow = args.contextWindow;
+  if (contextWindow === undefined) {
+    if (usage !== undefined && Number.isInteger(usage.contextWindow) && usage.contextWindow > 0) {
+      contextWindow = String(usage.contextWindow);
+    } else {
+      contextWindow = String(deriveHealthContextWindow(ctx.cwd).contextWindow);
+    }
+  }
+
+  let tokensUsed = args.tokensUsed;
+  if (
+    tokensUsed === undefined &&
+    usage !== undefined &&
+    typeof usage.tokens === "number" &&
+    Number.isInteger(usage.tokens) &&
+    usage.tokens >= 0
+  ) {
+    tokensUsed = String(usage.tokens);
+  }
+
+  return {
+    tokensUsed,
+    contextWindow,
+  };
+}
+
+function formatUnknownContextHealthMessage(contextWindow: string): string {
+  return [
+    "Health context unknown",
+    `Window: ?/${contextWindow} tokens`,
+    "Recommendation: token usage unavailable in current session. Re-run with --tokens-used <int> or from active session with context metrics.",
+  ].join("\n");
 }
 
 function runBundledContextHealth(
   cwd: string,
   tokensUsed: string,
   contextWindow: string,
-): ContextHealthResult {
+): ContextHealthOutput {
   const toolPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
   try {
     const stdout = execFileSync(
@@ -88,15 +129,74 @@ function runBundledContextHealth(
     if (!Value.Check(ContextHealthResultSchema, parsed)) {
       throw new Error("Bundled context backend returned invalid JSON shape");
     }
-    return parsed;
+    return {
+      ...parsed,
+      tokensUsed: Number(tokensUsed),
+      contextWindow: Number(contextWindow),
+      source: [],
+    };
   } catch (error) {
     const message = extractContextHealthErrorMessage(error);
     return {
       percent: 0,
       state: "critical",
       recommendation: message,
+      tokensUsed: Number(tokensUsed) || 0,
+      contextWindow: Number(contextWindow) || 1,
+      source: [],
     };
   }
+}
+
+function formatContextHealthMessage(result: ContextHealthOutput): string {
+  const recommendation =
+    result.recommendation === null ? "" : `\nRecommendation: ${result.recommendation}`;
+  return (
+    [
+      `Health context ${result.percent}% ${result.state}`,
+      `Window: ${result.tokensUsed}/${result.contextWindow} tokens`,
+    ].join("\n") + recommendation
+  );
+}
+
+function formatHealthMessage(result: ReturnType<typeof computeHealth>): string {
+  const repairs = result.repairsPerformed?.length ?? 0;
+  const counts = `errors=${countIssues(result.issues, "error")} warnings=${countIssues(result.issues, "warning")} info=${countIssues(result.issues, "info")}${repairs > 0 ? ` repairs=${repairs}` : ""}`;
+  const detailLines = result.issues
+    .slice(0, 8)
+    .map((issue) => `${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}`);
+  const remainingCount = Math.max(result.issues.length - detailLines.length, 0);
+  const remainingLine = remainingCount > 0 ? [`... ${remainingCount} more issues`] : [];
+  const repairLines =
+    result.repairsPerformed === undefined || result.repairsPerformed.length === 0
+      ? []
+      : ["Repairs:", ...result.repairsPerformed.map((repair) => formatRepairLine(repair))];
+  return [
+    `Health ${result.status} ${counts}`,
+    ...detailLines,
+    ...remainingLine,
+    ...repairLines,
+  ].join("\n");
+}
+
+function formatRepairLine(
+  repair: NonNullable<ReturnType<typeof computeHealth>["repairsPerformed"]>[number],
+): string {
+  const record = asRecord(repair) ?? {};
+  const parts = [`${repair.success ? "OK" : "FAIL"} ${repair.action}`];
+  const path = readString(record.path);
+  if (path !== undefined) {
+    parts.push(`path=${path}`);
+  }
+  const detail = readString(record.detail);
+  if (detail !== undefined) {
+    parts.push(`detail=${detail}`);
+  }
+  const error = readString(record.error);
+  if (error !== undefined) {
+    parts.push(`error=${error}`);
+  }
+  return parts.join(" ");
 }
 
 function extractContextHealthErrorMessage(error: unknown): string {

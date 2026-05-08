@@ -200,7 +200,11 @@ Plans:
     );
 
     expect(notifications.at(-1)).toEqual({
-      message: "Health broken errors=1 warnings=1 info=0",
+      message: [
+        "Health broken errors=1 warnings=1 info=0",
+        "ERROR E002: PROJECT.md not found",
+        'WARNING W010: No GSD agents found in /home/coder/dotai/agent/src/resources/agents — Task(subagent_type="gsd-*") will fall back to general-purpose',
+      ].join("\n"),
       level: "warning",
     });
   });
@@ -236,6 +240,7 @@ Plans:
     expect(notifications.at(-1)?.level).toBe("warning");
     expect(notifications.at(-1)?.message).toContain("Health broken");
     expect(notifications.at(-1)?.message).toContain("errors=1");
+    expect(notifications.at(-1)?.message).toContain("ERROR E005");
   });
 
   it("fixture state remains unchanged after instant commands", () => {

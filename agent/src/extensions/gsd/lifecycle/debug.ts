@@ -2,7 +2,11 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { isStaleSessionReplacementContextError } from "../../session-replacement.js";
 import { errorMessage } from "../../../utils/error-message.js";
 import type { GsdCommandArgs } from "../args.js";
-import { listDebugSessions, resolveDebugSession } from "../state/debug.js";
+import {
+  listDebugSessions,
+  resolveActiveDebugSession,
+  resolveDebugSession,
+} from "../state/debug.js";
 import { launchGsdWorkflowSession } from "../workflow-launch.js";
 
 function buildDebugSessionPrompt(
@@ -54,6 +58,87 @@ function formatSessions(sessions: ReturnType<typeof listDebugSessions>): string 
   return sessions.map((session) => formatSession(session)).join("\n");
 }
 
+function formatStatus(session: NonNullable<ReturnType<typeof resolveDebugSession>>): string {
+  const frontmatterLines = [
+    `slug=${session.slug}`,
+    `status=${session.frontmatter.status}`,
+    `trigger=${session.frontmatter.trigger}`,
+    ...(session.frontmatter.goal === undefined ? [] : [`goal=${session.frontmatter.goal}`]),
+    `created=${session.frontmatter.created}`,
+    `updated=${session.frontmatter.updated}`,
+  ];
+  const focusLines = Object.entries(session.currentFocus).map(([key, value]) => `${key}=${value}`);
+  const resolutionLines = [
+    ...(session.resolution.root_cause === undefined
+      ? []
+      : [`root_cause=${session.resolution.root_cause}`]),
+    ...(session.resolution.fix === undefined ? [] : [`fix=${session.resolution.fix}`]),
+    ...(session.resolution.verification === undefined
+      ? []
+      : [`verification=${session.resolution.verification}`]),
+    ...(session.filesChanged.length === 0
+      ? []
+      : [`files_changed=${session.filesChanged.join(",")}`]),
+  ];
+  return [
+    "Debug session",
+    ...frontmatterLines,
+    ...(focusLines.length === 0 ? [] : ["current_focus", ...focusLines]),
+    `evidence=${session.evidenceCount}`,
+    `eliminated=${session.eliminatedCount}`,
+    ...(resolutionLines.length === 0 ? [] : ["resolution", ...resolutionLines]),
+  ].join("\n");
+}
+
+async function handleActiveSessionGate(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  args: GsdCommandArgs,
+): Promise<boolean> {
+  const sessions = listDebugSessions(ctx.cwd);
+  if (args.description !== undefined || sessions.length === 0) {
+    return false;
+  }
+
+  if (typeof ctx.ui.select !== "function") {
+    ctx.ui.notify(
+      `Active debug sessions\n${formatSessions(sessions)}\nRun /gsd debug continue <slug> to resume or /gsd debug <issue description> to start new.`,
+      "info",
+    );
+    return true;
+  }
+
+  const selection = await ctx.ui.select("Active debug sessions", [
+    ...sessions.map((session) => formatSession(session)),
+    "Start new debug session",
+  ]);
+  if (selection === undefined) {
+    return true;
+  }
+  if (selection === "Start new debug session") {
+    if (typeof ctx.ui.input !== "function") {
+      ctx.ui.notify("Describe issue with /gsd debug <issue description>", "info");
+      return true;
+    }
+    const description = await ctx.ui.input("Describe issue");
+    const nextDescription = typeof description === "string" ? description.trim() : "";
+    if (nextDescription.length === 0) {
+      ctx.ui.notify("Missing issue description", "warning");
+      return true;
+    }
+    args.description = nextDescription;
+    return false;
+  }
+
+  const slug = selection.split(" ")[0]?.trim();
+  if (slug === undefined || slug.length === 0) {
+    ctx.ui.notify("Missing debug session slug", "warning");
+    return true;
+  }
+  await handleGsdDebug(pi, ctx, { ...args, debugAction: "continue", slug });
+  return true;
+}
+
 export async function handleGsdDebug(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
@@ -79,9 +164,29 @@ export async function handleGsdDebug(
     ctx.ui.notify(
       session === undefined
         ? `No debug session found with slug: ${args.slug}`
-        : `Debug session ${session.slug}\nstatus=${session.frontmatter.status}\nhypothesis=${session.hypothesis ?? "unknown"}\nnext=${session.nextAction ?? "unknown"}\nevidence=${session.evidenceCount}\neliminated=${session.eliminatedCount}`,
+        : formatStatus(session),
       session === undefined ? "warning" : "info",
     );
+    return;
+  }
+
+  if (args.debugAction === "continue") {
+    const slug = args.slug?.trim();
+    if (slug === undefined || slug.length === 0) {
+      ctx.ui.notify("Missing debug session slug", "warning");
+      return;
+    }
+    if (resolveActiveDebugSession(ctx.cwd, slug) === undefined) {
+      ctx.ui.notify(
+        `No active debug session found with slug: ${slug}. Check /gsd debug list for active sessions.`,
+        "warning",
+      );
+      return;
+    }
+    args.slug = slug;
+  }
+
+  if (args.debugAction === "start" && (await handleActiveSessionGate(pi, ctx, args))) {
     return;
   }
 

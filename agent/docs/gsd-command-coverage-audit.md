@@ -46,7 +46,7 @@ Implemented locally:
 | `new-milestone`      | workflow-launch shim               | `new-milestone`                |       92 |
 | `complete-milestone` | workflow-launch shim               | `complete-milestone`           |       90 |
 | `milestone-summary`  | workflow-launch shim               | `milestone-summary`            |       91 |
-| `debug`              | hybrid TS + workflow-launch        | `debug`                        |       84 |
+| `debug`              | hybrid TS + workflow-launch        | `debug`                        |       91 |
 | `map-codebase`       | TS-native orchestration            | `map-codebase`                 |       92 |
 | `discuss-phase`      | TS-native orchestration            | `discuss-phase`                |       92 |
 | `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
@@ -238,7 +238,7 @@ Differences:
 
 ### `debug`
 
-Coverage: 94/100
+Coverage: 91/100
 
 Upstream behavior:
 
@@ -250,12 +250,15 @@ Local behavior:
 - `continue` and new debug sessions launch a dedicated workflow session in mode `gsd-debug-session-manager`. `src/extensions/gsd/lifecycle/debug.ts:90-118`
 - prompt override injects structured XML-ish control block, forces visible-session intake, and bounds user report in `DATA_START` / `DATA_END`. `src/extensions/gsd/lifecycle/debug.ts:8-46`
 - local parser handles subcommands and `--diagnose`. `src/extensions/gsd/args.ts:63-123`
+- bare `/gsd debug` now gates on active sessions instead of always launching a new workflow, `continue` now validates active session slugs only, and `status` now surfaces richer resolved-session details including resolution fields and changed files. `src/extensions/gsd/lifecycle/debug.ts`, `src/extensions/gsd/state/debug.ts`
+- local debug state parsing now supports both bullet and plain key/value `Current Focus` lines, scopes eliminated counts to the `## Eliminated` section, and parses inline or multiline `files_changed` in `## Resolution`. `src/extensions/gsd/state/debug.ts`
+- focused lifecycle tests now cover active-session gate, continue validation, current-focus parsing, eliminated-count scoping, and richer resolved-session status output. `test/gsd/lifecycle.test.ts`
 
 Differences:
 
 - stronger TS pre-routing than upstream prompt-first design
 - local prompt hardens intake behavior and security framing
-- local `list/status` output is compact, not full upstream formatted report
+- local `list/status` output remains TS-rendered and more compact than upstream formatted table/report, but now preserves core session semantics and resolution context
 
 ### `map-codebase`
 
@@ -643,7 +646,7 @@ Execution strategy:
 |    12 | `new-milestone`      |               92 | Medium   | already strong, polish after core loop                     | close remaining deltas, tests, audit refresh                                                                         |
 |    13 | `complete-milestone` |               90 | Medium   | already strong, depends on prior loop quality              | close remaining deltas, tests, audit refresh                                                                         |
 |    14 | `milestone-summary`  |               91 | Medium   | already strong, now above parity threshold                 | optional further proofing only                                                                                       |
-|    15 | `debug`              |               84 | Medium   | already strong but important operationally                 | close formatting/reporting/subcommand gaps, tests                                                                    |
+|    15 | `debug`              |               91 | Medium   | operational command now above parity threshold             | optional output-format proofing only                                                                                 |
 |    16 | `next`               |               18 | Medium   | local helper, should align with `progress --next` contract | decide keep-as-local or fully align, tests                                                                           |
 |    17 | `status`             |               35 | Low      | local-only additive command                                | define local contract, docs, tests                                                                                   |
 |    18 | `on` / `off`         |              100 | Low      | complete local-only toggles                                | leave unless extension UX changes                                                                                    |

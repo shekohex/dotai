@@ -5810,4 +5810,342 @@ Plans:
       "Start `/gsd debug` in this visible workflow session.",
     );
   });
+
+  it("debug continue rejects missing slug before launch", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "continue" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Missing debug session slug", "warning");
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("debug continue rejects unknown slug before launch", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "continue", slug: "missing-slug" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "No active debug session found with slug: missing-slug. Check /gsd debug list for active sessions.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("bare debug gates on active sessions instead of launching new workflow", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "auth-token-null.md"),
+      [
+        "---",
+        "status: investigating",
+        "trigger: auth fails",
+        "created: 2026-04-11",
+        "updated: 2026-04-12",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: token parse broken",
+        "- next_action: add logging",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "start" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Active debug sessions"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Run /gsd debug continue <slug> to resume or /gsd debug <issue description> to start new.",
+      ),
+      "info",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("debug continue preserves resume workflow launch when slug exists", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "auth-token-null.md"),
+      [
+        "---",
+        "status: investigating",
+        "trigger: auth fails",
+        "created: 2026-04-11",
+        "updated: 2026-04-12",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: token parse broken",
+        "- next_action: add logging",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "continue", slug: "auth-token-null" });
+
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      "Continue `/gsd debug` in this visible workflow session.",
+    );
+  });
+
+  it("debug continue rejects resolved-only slug before launch", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug", "resolved"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "resolved", "auth-token-null.md"),
+      [
+        "---",
+        "slug: auth-token-null",
+        "status: resolved",
+        "trigger: auth fails",
+        "created: 2026-04-11",
+        "updated: 2026-04-12",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: token parse broken",
+        "- next_action: add logging",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "continue", slug: "auth-token-null" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "No active debug session found with slug: auth-token-null. Check /gsd debug list for active sessions.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("debug status parses bullet current focus fields", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "parser-crash.md"),
+      [
+        "---",
+        "status: investigating",
+        "trigger: parser crash",
+        "created: 2026-05-06",
+        "updated: 2026-05-06T00:25:00Z",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: schema too strict",
+        "- next_action: widen frontmatter schema",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "status", slug: "parser-crash" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("hypothesis=schema too strict"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("next_action=widen frontmatter schema"),
+      "info",
+    );
+  });
+
+  it("debug status parses plain current focus fields", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "parser-crash.md"),
+      [
+        "---",
+        "status: investigating",
+        "trigger: parser crash",
+        "created: 2026-05-06",
+        "updated: 2026-05-06T00:25:00Z",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "hypothesis: schema too strict",
+        "next_action: widen frontmatter schema",
+        "",
+        "## Evidence Log",
+        "",
+        "- timestamp: 2026-05-06T00:30:00Z",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "status", slug: "parser-crash" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("hypothesis=schema too strict"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("next_action=widen frontmatter schema"),
+      "info",
+    );
+    expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+      expect.stringContaining("timestamp=2026-05-06T00:30:00Z"),
+      "info",
+    );
+  });
+
+  it("debug status counts eliminated hypotheses only from eliminated section", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "parser-crash.md"),
+      [
+        "---",
+        "status: investigating",
+        "trigger: parser crash",
+        "created: 2026-05-06",
+        "updated: 2026-05-06T00:25:00Z",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: schema too strict",
+        "- next_action: widen frontmatter schema",
+        "",
+        "## Eliminated",
+        "",
+        "- hypothesis: bad cache state",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "status", slug: "parser-crash" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("eliminated=1"), "info");
+  });
+
+  it("debug status shows richer output for resolved sessions", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug", "resolved"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "resolved", "auth-fix.md"),
+      [
+        "---",
+        "slug: auth-fix",
+        "status: resolved",
+        "trigger: auth fails",
+        "goal: find_and_fix",
+        "created: 2026-05-01T00:00:00Z",
+        "updated: 2026-05-02T00:00:00Z",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: null token path fixed",
+        "- next_action: verify production deploy",
+        "",
+        "## Resolution",
+        "",
+        "root_cause: token null guard skipped resolved path",
+        "fix: restore resolved-session branch before auth check",
+        "verification: vitest auth debug flow passes",
+        "files_changed:",
+        "- src/auth/session.ts",
+        "- test/auth/session.test.ts",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "status", slug: "auth-fix" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("trigger=auth fails"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("goal=find_and_fix"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("created=2026-05-01T00:00:00Z"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("updated=2026-05-02T00:00:00Z"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("root_cause=token null guard skipped resolved path"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("fix=restore resolved-session branch before auth check"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("verification=vitest auth debug flow passes"),
+      "info",
+    );
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("files_changed=src/auth/session.ts,test/auth/session.test.ts"),
+      "info",
+    );
+  });
+
+  it("debug status shows inline template files_changed values for resolved sessions", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "debug", "resolved"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "debug", "resolved", "auth-inline-fix.md"),
+      [
+        "---",
+        "slug: auth-inline-fix",
+        "status: resolved",
+        "trigger: auth fails",
+        "goal: find_and_fix",
+        "created: 2026-05-01T00:00:00Z",
+        "updated: 2026-05-02T00:00:00Z",
+        "---",
+        "",
+        "## Current Focus",
+        "",
+        "- hypothesis: null token path fixed",
+        "- next_action: verify production deploy",
+        "",
+        "## Resolution",
+        "",
+        "root_cause: token null guard skipped resolved path",
+        "fix: restore resolved-session branch before auth check",
+        "verification: vitest auth debug flow passes",
+        "files_changed: [src/auth/session.ts, test/auth/session.test.ts]",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdDebug(pi, ctx, { debugAction: "status", slug: "auth-inline-fix" });
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("files_changed=src/auth/session.ts,test/auth/session.test.ts"),
+      "info",
+    );
+  });
 });

@@ -55,7 +55,7 @@ Implemented locally:
 | `validate-phase`     | template stub                      | `validate-phase`               |       15 |
 | `progress`           | TS-native instant command          | `progress`                     |       36 |
 | `next`               | local-only instant command         | derived from `progress --next` |       18 |
-| `stats`              | TS-native instant command          | `stats`                        |       22 |
+| `stats`              | TS-native instant command          | `stats`                        |       38 |
 | `health`             | TS-native instant command          | `health`                       |       28 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
 | `help`               | local docs viewer                  | `help`                         |       44 |
@@ -467,7 +467,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 22/100
+Coverage: 38/100
 
 Upstream behavior:
 
@@ -475,13 +475,15 @@ Upstream behavior:
 
 Local behavior:
 
-- computes counts from planning snapshot and prints one-line summary. `src/extensions/gsd/instant/stats.ts:4-9`, `src/extensions/gsd/state/stats.ts:14-32`
+- computes milestone-aware counts from a structured backend and prints one-line summary by default. `src/extensions/gsd/instant/stats.ts`, `src/extensions/gsd/state/stats.ts`
+- supports local `stats json`, `stats table`, `--json`, `--table`, and `--format <json|table>` modes with explicit rejection for unsupported variants instead of silent degradation. `src/extensions/gsd/stats-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
+- structured backend scopes phases to current milestone when milestone metadata is available and counts requirements from planning snapshot. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/read.ts`, `test/gsd/instant.test.ts`
 
 Differences:
 
-- no git metrics
-- no timeline
-- no requirements completion analysis beyond lightweight counts
+- git/timeline fields remain null; no real upstream git-history parity yet
+- default command remains local instant output rather than workflow/dashboard contract
+- no MVP-mode summary or richer last-activity/report narratives yet
 
 ### `health`
 

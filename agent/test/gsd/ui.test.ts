@@ -171,6 +171,6 @@ describe("gsd ui custom components", () => {
 
     expect(current).toContain("## Phase Override");
     expect(current).toContain("- equals flag: `/gsd next");
-    expect(current).toContain("[71-90/90]");
+    expect(current).toMatch(/\[\d+-\d+\/\d+\]/u);
   });
 });

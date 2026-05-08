@@ -28,6 +28,7 @@ export type PlanningSnapshot = {
   stateBody?: string;
   roadmap?: string;
   project?: string;
+  requirements?: string;
   goals: string[];
   milestones: string[];
   pendingTodos: string[];
@@ -90,6 +91,7 @@ export function readPlanningSnapshot(cwd: string): PlanningSnapshot {
   const state = readStateFrontmatter(cwd);
   const roadmapPath = join(planningDir, "ROADMAP.md");
   const projectPath = join(planningDir, "PROJECT.md");
+  const requirementsPath = join(planningDir, "REQUIREMENTS.md");
 
   return {
     config: readPlanningConfig(cwd),
@@ -97,6 +99,7 @@ export function readPlanningSnapshot(cwd: string): PlanningSnapshot {
     stateBody: state?.body,
     roadmap: existsSync(roadmapPath) ? readFileSync(roadmapPath, "utf8") : undefined,
     project: existsSync(projectPath) ? readFileSync(projectPath, "utf8") : undefined,
+    requirements: existsSync(requirementsPath) ? readFileSync(requirementsPath, "utf8") : undefined,
     goals: existsSync(goalsDir)
       ? readdirSync(goalsDir, { withFileTypes: true })
           .filter((entry) => entry.isDirectory() || entry.isFile())

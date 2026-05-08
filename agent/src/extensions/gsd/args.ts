@@ -2,7 +2,9 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { GsdSubcommand } from "./commands.js";
 import { parseExecutePhaseArgs } from "./execute-phase-args.js";
+import { parseProgressArgs } from "./progress-args.js";
 import { parseSecurePhaseArgs } from "./secure-phase-args.js";
+import { parseStatsArgs } from "./stats-args.js";
 import { parseVerifyWorkArgs } from "./verify-work-args.js";
 
 export const GsdCommandArgsSchema = Type.Object(
@@ -65,16 +67,15 @@ export const GsdCommandArgsSchema = Type.Object(
     slug: Type.Optional(Type.String()),
     diagnose: Type.Optional(Type.Boolean()),
     description: Type.Optional(Type.String()),
+    outputMode: Type.Optional(Type.Union([Type.Literal("json"), Type.Literal("table")])),
   },
   { additionalProperties: false },
 );
 
 export type GsdCommandArgs = Static<typeof GsdCommandArgsSchema>;
-
 function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
   let auto = false;
   const parts: string[] = [];
-
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token === "--auto") {
@@ -83,14 +84,12 @@ function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
     }
     parts.push(token);
   }
-
   return validateParsedArgs({
     subcommand: "new-project",
     ...(auto ? { auto: true } : {}),
     ...(parts.length > 0 ? { input: normalizeFreeform(parts.join(" ")) } : {}),
   });
 }
-
 function normalizePhaseToken(token: string | undefined): string | undefined {
   if (token === undefined) {
     return undefined;
@@ -106,7 +105,6 @@ function normalizePositiveIntegerToken(token: string | undefined): string | unde
   }
   return /^[1-9]\d*$/u.test(value) ? value : undefined;
 }
-
 function normalizePathToken(token: string | undefined): string[] | undefined {
   if (token === undefined) {
     return undefined;
@@ -117,7 +115,6 @@ function normalizePathToken(token: string | undefined): string[] | undefined {
     .filter((value) => value.length > 0);
   return paths.length > 0 ? paths : undefined;
 }
-
 function normalizeFreeform(token: string | undefined): string | undefined {
   if (token === undefined) {
     return undefined;
@@ -125,7 +122,6 @@ function normalizeFreeform(token: string | undefined): string | undefined {
   const value = token.trim();
   return value.length > 0 ? value : undefined;
 }
-
 function normalizeFastFocus(token: string | undefined): GsdCommandArgs["focus"] {
   const value = normalizeFreeform(token);
   if (
@@ -592,82 +588,6 @@ function parsePlanPhaseArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 
-function parseProgressArgs(tokens: string[]): GsdCommandArgs {
-  let phase: string | undefined;
-  let next = false;
-  let doMode = false;
-  let forensic = false;
-  let unsupportedModeError: string | undefined;
-  const missingPhaseValueError = "Unsupported /gsd progress flag: --phase requires a value.";
-  const normalizeProgressPhaseValue = (token: string | undefined): string | undefined => {
-    const value = normalizePhaseToken(token);
-    if (value === undefined || value.startsWith("-")) {
-      return undefined;
-    }
-    return value;
-  };
-
-  for (let index = 1; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token === "--phase") {
-      const nextToken = tokens[index + 1];
-      phase = normalizeProgressPhaseValue(nextToken);
-      if (phase === undefined) {
-        unsupportedModeError ??= missingPhaseValueError;
-        continue;
-      }
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--phase=")) {
-      phase = normalizeProgressPhaseValue(token.slice("--phase=".length));
-      if (phase === undefined) {
-        unsupportedModeError ??= missingPhaseValueError;
-      }
-      continue;
-    }
-    if (token === "--next") {
-      next = true;
-      continue;
-    }
-    if (token === "--do") {
-      doMode = true;
-      unsupportedModeError ??=
-        "Unsupported /gsd progress mode: --do. Local command does not implement routed execution from progress yet.";
-      continue;
-    }
-    if (token === "--forensic") {
-      forensic = true;
-      unsupportedModeError ??=
-        "Unsupported /gsd progress mode: --forensic. Local command does not implement forensic workflow routing yet.";
-      continue;
-    }
-    if (!token.startsWith("-") && phase === undefined) {
-      phase = normalizePhaseToken(token);
-      continue;
-    }
-    if (token.startsWith("-")) {
-      unsupportedModeError ??= `Unsupported /gsd progress flag: ${token}.`;
-      continue;
-    }
-    unsupportedModeError ??= `Unsupported /gsd progress argument: ${token}.`;
-  }
-
-  if (phase !== undefined && !next) {
-    unsupportedModeError ??=
-      "Unsupported /gsd progress phase override: use --next with a positional phase or --phase.";
-  }
-
-  return validateParsedArgs({
-    subcommand: "progress",
-    ...(phase === undefined ? {} : { phase }),
-    ...(next ? { next: true } : {}),
-    ...(doMode ? { doMode: true } : {}),
-    ...(forensic ? { forensic: true } : {}),
-    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
-  });
-}
-
 export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
@@ -707,7 +627,14 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   }
 
   if (subcommand === "progress") {
-    return parseProgressArgs(tokens);
+    return parseProgressArgs(tokens, { normalizePhaseToken, validateParsedArgs });
+  }
+
+  if (subcommand === "stats") {
+    return parseStatsArgs(tokens, {
+      normalizeFreeform,
+      validateParsedArgs,
+    });
   }
 
   if (subcommand === "execute-phase") {
@@ -787,6 +714,7 @@ export function usesParsedArgs(subcommand: GsdSubcommand | undefined): boolean {
   return (
     isPhaseOverrideSubcommand(subcommand) ||
     subcommand === "progress" ||
+    subcommand === "stats" ||
     subcommand === "map-codebase" ||
     subcommand === "new-project" ||
     subcommand === "new-milestone" ||

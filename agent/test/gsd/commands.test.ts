@@ -1039,6 +1039,45 @@ test("gsd dashboard fallback reports pending todo count", async () => {
   });
 });
 
+test("gsd stats json and table route to structured local outputs", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("stats json", createCommandContext(cwd, notifications));
+  expect(JSON.parse(notifications.at(-1)?.message ?? "")).toMatchObject({
+    phases_total: 2,
+    total_plans: 2,
+  });
+
+  await command?.handler("stats table", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual(
+    expect.objectContaining({
+      level: "info",
+      message: expect.stringContaining("| Phase | Name | Plans | Completed | Status |"),
+    }),
+  );
+});
+
+test("gsd stats rejects unsupported variants explicitly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("stats yaml", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd stats argument: yaml.",
+    level: "warning",
+  });
+});
+
 test("gsd new-project bootstraps and launches workflow through grouped command", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

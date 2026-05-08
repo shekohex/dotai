@@ -56,6 +56,8 @@
   flags: `--phase <phase>`, `--next`
   parsed with explicit unsupported-local error: `--do`, `--forensic`
 - `/gsd stats`
+  variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
+  unsupported variants fail explicitly instead of falling back to one-line notify output
 - `/gsd health`
 - `/gsd status`
 

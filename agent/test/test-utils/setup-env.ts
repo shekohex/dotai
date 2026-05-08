@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { afterEach } from "vitest";
 
 const configuredAgentDir = process.env.PI_CODING_AGENT_DIR?.trim();
 
@@ -20,3 +21,12 @@ if (
 } else {
   process.env.TEST_PI_CODING_AGENT_DIR = configuredAgentDir;
 }
+
+afterEach(() => {
+  const agentDir = process.env.TEST_PI_CODING_AGENT_DIR?.trim();
+  if (!agentDir) {
+    return;
+  }
+
+  fs.rmSync(path.join(agentDir, "settings.json"), { force: true });
+});

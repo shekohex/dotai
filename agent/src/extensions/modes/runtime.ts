@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { loadModeRegistry, type ModesFile, type ModeSpec } from "../../mode-utils.js";
+import { loadPersistedMode, savePersistedMode } from "./settings.js";
 
 type ModeRuntimeLike = {
   data: ModesFile;
@@ -19,6 +20,7 @@ export async function ensureRuntime(
   const previousActiveMode = runtime.activeMode;
   const loaded = await loadModeRegistry();
   runtime.data = loaded.resolvedData;
+  runtime.data.currentMode = loadPersistedMode();
   runtime.error = loaded.error;
   if (!deps.hasText(runtime.error)) {
     runtime.lastReportedError = undefined;
@@ -72,8 +74,8 @@ export function notifyConfigError(
 }
 
 export function saveRuntime(runtime: ModeRuntimeLike, ctx: ExtensionContext): Promise<void> {
-  void runtime;
   void ctx;
+  savePersistedMode(runtime.data.currentMode);
   return Promise.resolve();
 }
 

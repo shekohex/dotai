@@ -181,12 +181,12 @@ async function restoreModeWithDeps(
 
   const sessionRestoreState = getSessionRestoreState(deps, ctx);
   if (await tryRestoreFromSessionMode(deps, pi, ctx, sessionRestoreState.sessionMode)) return;
+  if (await tryRestoreFromPersistedMode(deps, pi, ctx)) return;
   if (sessionRestoreState.hasExplicitSessionSelection) {
     await emitRestoreFromSelection(deps, pi, ctx);
     return;
   }
 
-  if (await tryRestoreFromPersistedMode(deps, pi, ctx)) return;
   await emitRestoreFromSelection(deps, pi, ctx);
 }
 

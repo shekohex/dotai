@@ -40,6 +40,7 @@ import {
   registerBuiltInModes,
   unregisterBuiltInModes,
 } from "../src/mode-utils.ts";
+import { getModesSettingsPath } from "../src/extensions/modes/settings.ts";
 import {
   discoverSkillPaths,
   installBundledResourcePaths,
@@ -610,6 +611,11 @@ async function writeCliFlagModesFile(cwd: string): Promise<void> {
       },
     }),
   );
+}
+
+async function readPersistedModeSetting(): Promise<string | undefined> {
+  const raw = await readFile(getModesSettingsPath(), "utf8");
+  return (JSON.parse(raw) as { modes?: { current?: string } }).modes?.current;
 }
 
 function getLatestModeState(testSession: TestSession): string | undefined {
@@ -1839,6 +1845,112 @@ timedTest("modes extension skips mode-state persistence for ephemeral sessions",
   } finally {
     session?.dispose();
     providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("mode command persists active mode into settings.json and restores it", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-settings-persist-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-mode-settings-agent-"));
+  let firstSession: TestSession | undefined;
+  let secondSession: TestSession | undefined;
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeHandoffModesFile(cwd);
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      firstSession = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, providers.extensionFactory],
+      });
+      setSessionPersistence(firstSession!, true);
+
+      await firstSession.session.prompt("/mode docs");
+      await firstSession.session.agent.waitForIdle();
+
+      expect(await readPersistedModeSetting()).toBe("docs");
+
+      secondSession = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, providers.extensionFactory],
+      });
+      setSessionPersistence(secondSession, true);
+      await secondSession.session.reload();
+
+      const model = secondSession.session as {
+        model: { provider: string; id: string };
+        thinkingLevel: string;
+      };
+      expect(model.model.provider).toBe("mode-provider");
+      expect(model.model.id).toBe("mode-model");
+      expect(model.thinkingLevel).toBe("high");
+      expect(await readPersistedModeSetting()).toBe("docs");
+    });
+  } finally {
+    firstSession?.dispose();
+    secondSession?.dispose();
+    providers.dispose();
+    await rm(agentDir, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("mode CLI flag overrides persisted settings mode on startup", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flag-overrides-settings-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "agent-mode-flag-overrides-settings-agent-"));
+  let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  await writeSharedSelectionModesFile(cwd);
+
+  try {
+    await withTempAgentDir(agentDir, async () => {
+      await writeFile(
+        getModesSettingsPath(),
+        `${JSON.stringify({ modes: { current: "deep" } }, null, 2)}\n`,
+        "utf8",
+      );
+
+      await withProcessCwd(cwd, async () => {
+        session = await createTestSession({
+          cwd,
+          extensionFactories: [
+            modesExtension,
+            createModeChangeCaptureExtension(observedModeChanges),
+            providers.extensionFactory,
+          ],
+        });
+        setSessionPersistence(session!, true);
+
+        (
+          session!.session as {
+            extensionRunner: { setFlagValue: (name: string, value: boolean | string) => void };
+          }
+        ).extensionRunner.setFlagValue("mode-review", true);
+
+        await session!.session.reload();
+
+        const model = session!.session as {
+          model: { provider: string; id: string };
+          thinkingLevel: string;
+        };
+        expect(model.model.provider).toBe("mode-provider");
+        expect(model.model.id).toBe("mode-model");
+        expect(model.thinkingLevel).toBe("high");
+        expect(await readPersistedModeSetting()).toBe("review");
+
+        const latestModeChange = observedModeChanges.at(-1);
+        expect(latestModeChange?.mode).toBe("review");
+        expect(latestModeChange?.reason).toBe("restore");
+        expect(latestModeChange?.source).toBe("session_start");
+      });
+    });
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(agentDir, { recursive: true, force: true });
     await rm(cwd, { recursive: true, force: true });
   }
 });

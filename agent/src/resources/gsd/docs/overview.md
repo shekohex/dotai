@@ -91,7 +91,8 @@ Must ship in v1:
 - bootstrap + core phase lifecycle command surface
 - delegated orchestration for planning/execution/verification flows
 - delegated execution roles using our subagent SDK
-- instant commands: progress, next, health, stats
+- instant commands: next, health, stats
+- workflow-launch review command: progress
 - persistent `.planning` state handling
 - built-in docs
 - reliable use on existing repos with `.planning`
@@ -232,7 +233,6 @@ src/extensions/gsd/
   roles.ts              -- internal role-to-mode registry
   subagents.ts          -- subagent launch wrappers per role
   instant/
-    progress.ts         -- /gsd progress handler
     next.ts             -- /gsd next handler
     health.ts           -- /gsd health handler
     stats.ts            -- /gsd stats handler
@@ -242,6 +242,7 @@ src/extensions/gsd/
     discuss-phase.ts    -- /gsd discuss-phase handler
     plan-phase.ts       -- /gsd plan-phase handler
     execute-phase.ts    -- /gsd execute-phase handler
+    progress.ts         -- /gsd progress workflow-launch handler
     verify-work.ts      -- /gsd verify-work handler
     validate-phase.ts   -- /gsd validate-phase handler
 
@@ -343,7 +344,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { fuzzyFilter } from "@mariozechner/pi-tui";
 import { getGsdSettings } from "./settings.js";
-import { handleGsdProgress } from "./instant/progress.js";
+import { handleGsdProgress } from "./lifecycle/progress.js";
 import { handleGsdNext } from "./instant/next.js";
 import { handleGsdHealth } from "./instant/health.js";
 import { handleGsdStats } from "./instant/stats.js";
@@ -968,7 +969,7 @@ function extractProjectName(statePath: string): string | undefined {
 
 **How existing repos with valid `.planning` are detected and continued in place**
 
-On `session_start`, the extension calls `detectExistingPlanning(cwd)`. If the result is `valid`, it skips any bootstrap scaffolding and treats the current `.planning` tree as the source of truth. Lifecycle commands such as `/gsd progress` read directly from `STATE.md` and the phases directory. `/gsd next` inspects local planning artifacts and routes to supported grouped commands such as `/gsd plan-phase`, `/gsd execute-phase`, `/gsd verify-work`, or `/gsd complete-milestone`. It only routes to `/gsd complete-milestone` after milestone phases have authoritative local `*-UAT.md` artifacts in `status: complete`; legacy `*-VERIFICATION.md` evidence alone still routes through `/gsd verify-work`. No import dialog, no migration copy, no rewrite of file paths.
+On `session_start`, the extension calls `detectExistingPlanning(cwd)`. If the result is `valid`, it skips any bootstrap scaffolding and treats the current `.planning` tree as the source of truth. Lifecycle commands such as `/gsd progress` now launch bundled local review workflows over that existing `.planning` tree instead of ad-hoc notify output. `/gsd next` inspects local planning artifacts and routes to supported grouped commands such as `/gsd plan-phase`, `/gsd execute-phase`, `/gsd verify-work`, or `/gsd complete-milestone`. It only routes to `/gsd complete-milestone` after milestone phases have authoritative local `*-UAT.md` artifacts in `status: complete`; legacy `*-VERIFICATION.md` evidence alone still routes through `/gsd verify-work`. No import dialog, no migration copy, no rewrite of file paths.
 
 ---
 
@@ -976,38 +977,7 @@ On `session_start`, the extension calls `detectExistingPlanning(cwd)`. If the re
 
 ### Deterministic output contracts
 
-Instant commands must return predictable shapes so UI layers and test assertions can rely on them.
-
-```typescript
-// src/extensions/gsd/instant/progress.ts
-import { Type, type Static } from "typebox";
-
-export const ProgressOutputSchema = Type.Object(
-  {
-    milestone: Type.Optional(Type.String()),
-    currentPhase: Type.Optional(Type.String()),
-    currentPhaseName: Type.Optional(Type.String()),
-    currentPlan: Type.Optional(Type.String()),
-    totalPhases: Type.Integer({ minimum: 0 }),
-    totalPlansInPhase: Type.Integer({ minimum: 0 }),
-    completedPlans: Type.Integer({ minimum: 0 }),
-    percent: Type.Integer({ minimum: 0, maximum: 100 }),
-    status: Type.String(),
-    bar: Type.String(),
-  },
-  { additionalProperties: false },
-);
-
-export type ProgressOutput = Static<typeof ProgressOutputSchema>;
-
-export async function handleGsdProgress(
-  _pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-): Promise<void> {
-  const result = computeProgress(ctx.cwd);
-  ctx.ui.notify(`Progress: ${result.bar} ${result.percent}%`, "info");
-}
-```
+Only local instant commands should return predictable shapes so UI layers and test assertions can rely on them. Workflow-launched commands like `/gsd progress` are not part of this deterministic instant-output contract.
 
 ```typescript
 // src/extensions/gsd/instant/next.ts
@@ -1376,10 +1346,13 @@ Meaning:
 ### Instant
 
 - `/gsd next`
-- `/gsd progress`
 - `/gsd stats`
 - `/gsd health`
 - `/gsd help`
+
+### Workflow Review
+
+- `/gsd progress`
 
 ### Control
 
@@ -1454,7 +1427,7 @@ Key acceptance tests:
 1. existing repo with `.planning` opens and GSD continues in place
 2. `/gsd new-project` boots greenfield flow
 3. `/gsd plan-phase` and `/gsd execute-phase` complete with delegated workers
-4. `/gsd progress|next|stats|health` deterministic
+4. `/gsd next|stats|health` deterministic; default `/gsd progress` launches workflow review
 5. disable/enable toggle works cleanly
 
 ## Risk Areas

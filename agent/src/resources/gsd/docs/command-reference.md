@@ -53,15 +53,19 @@
 
 - `/gsd next [phase]`
   flags: `--phase <phase>`, `--force`
-- `/gsd progress`
-  flags: `--next`
-  `--phase <phase>`, `--force` only with `/gsd progress --next`
-  parsed with explicit unsupported-local error: `--do`, `--forensic`
 - `/gsd stats`
   variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
   unsupported variants fail explicitly instead of falling back to one-line notify output
 - `/gsd health`
 - `/gsd status`
+
+## Workflow Review
+
+- `/gsd progress`
+  default route: bundled workflow-launch review session
+  flags: `--next`
+  `--phase <phase>`, `--force` only with `/gsd progress --next`
+  parsed with explicit unsupported-local error: `--do`, `--forensic`
 
 ## Phase Override
 

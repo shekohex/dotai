@@ -45,13 +45,17 @@
 Current shipped note:
 
 - `validate-phase` is workflow-launch validation review, not stub template writer
+- `progress` default route is workflow-launch review, not one-line notifier
 
 ## Instant Commands
 
 - `next`
-- `progress`
 - `stats`
 - `health`
+
+## Workflow-Launch Review Commands
+
+- `progress`
 
 ## Brownfield
 

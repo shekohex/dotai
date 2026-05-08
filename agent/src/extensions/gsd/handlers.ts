@@ -2,7 +2,6 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import type { GsdCommandArgs } from "./args.js";
 import { handleGsdHealth } from "./instant/health.js";
 import { handleGsdNext } from "./instant/next.js";
-import { handleGsdProgress } from "./instant/progress.js";
 import { handleGsdStats } from "./instant/stats.js";
 import { handleGsdStatus } from "./instant/status.js";
 import {
@@ -15,6 +14,7 @@ import {
   handleGsdNewMilestone,
   handleGsdNewProject,
   handleGsdPlanPhase,
+  handleGsdProgress,
   handleGsdSecurePhase,
   handleGsdValidatePhase,
   handleGsdVerifyWork,

@@ -53,7 +53,7 @@ Implemented locally:
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
 | `validate-phase`     | workflow-launch foundation         | `validate-phase`               |       34 |
-| `progress`           | TS-native instant command          | `progress`                     |       46 |
+| `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       42 |
 | `stats`              | TS-native instant command          | `stats`                        |       38 |
 | `health`             | TS-native instant command          | `health`                       |       45 |
@@ -431,25 +431,25 @@ Differences:
 
 ### `progress`
 
-Coverage: 46/100
+Coverage: 58/100
 
 Upstream behavior:
 
 - standard report, `--next`, `--do`, `--forensic`, and routing into dedicated workflows. `~/.cache/checkouts/github.com/gsd-build/get-shit-done/commands/gsd/progress.md:13-44`
 
-Local behavior:
+- Local behavior:
 
-- computes percent/bar/current phase/current plan and prints one-line summary by default. `src/extensions/gsd/instant/progress.ts:4-10`, `src/extensions/gsd/state/progress.ts:23-56`
-- parses routed flags explicitly, supports local `progress --next`, and rejects unsupported `--do`, `--forensic`, malformed `--phase`, and unsupported standalone phase overrides instead of silently degrading. `src/extensions/gsd/args.ts`, `src/extensions/gsd/instant/progress.ts`
+- default `/gsd progress` now launches bundled local command/workflow resources through workflow-launch instead of a one-line notifier. `src/extensions/gsd/lifecycle/progress.ts`, `src/resources/gsd/commands/gsd/progress.md`, `src/resources/gsd/workflows/progress.md`
+- parses routed flags explicitly, supports local `progress --next`, and rejects unsupported `--do`, `--forensic`, malformed `--phase`, and unsupported standalone phase overrides instead of silently degrading. `src/extensions/gsd/args.ts`, `src/extensions/gsd/progress-args.ts`
 - `progress --next` now routes into supported lifecycle actions with earliest-incomplete-phase semantics, and requires authoritative local `*-UAT.md` `status: complete` before dispatching `/gsd complete-milestone`; legacy verification-only state stays on `/gsd verify-work`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - progress math now unions completed plan IDs across roadmap and snapshot sources under normalized phase keys, avoiding mixed brownfield undercounting from roadmap-only or padded-phase layouts. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
-- focused tests now cover supported `progress --next`, rejected `--do` / `--forensic`, malformed phase overrides, flag-like phase values, unknown phase overrides that must not mutate state, UAT-gated milestone completion, and mixed-source progress percentage regressions. `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`
+- focused tests now cover default workflow launch, supported `progress --next`, rejected `--do` / `--forensic`, malformed phase overrides, flag-like phase values, unknown phase overrides that must not mutate state, UAT-gated milestone completion, and mixed-source progress percentage regressions. `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/resources.test.ts`
 
 Differences:
 
-- still no workflow-backed rich report, route selection, `--do`, or `--forensic`
-- default output remains compact local status rather than upstream situational router
-- parity improved by making claimed local surface honest, UAT-gated, and mathematically correct in mixed brownfield states, not by matching upstream workflow breadth
+- bundled workflow foundation now exists, but richer upstream report branches are still only partially mirrored
+- no `--forensic` or `--do`
+- parity improved by moving default progress onto honest workflow-launch architecture while keeping local next routing and corrected mixed-state math
 
 ### `next`
 

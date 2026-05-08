@@ -7,6 +7,7 @@ export { handleGsdMilestoneSummary } from "./milestone-summary.js";
 export { handleGsdNewMilestone } from "./new-milestone.js";
 export { handleGsdNewProject } from "./new-project.js";
 export { handleGsdPlanPhase } from "./plan-phase.js";
+export { handleGsdProgress } from "./progress.js";
 export { handleGsdSecurePhase } from "./secure-phase.js";
 export { handleGsdValidatePhase } from "./validate-phase.js";
 export { handleGsdVerifyWork } from "./verify-work.js";

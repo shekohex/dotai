@@ -69,6 +69,35 @@ describe("gsd bundled resources", () => {
     expect(loadBundledDoc("command-reference.md")).toContain("new-project");
   });
 
+  it("ships progress workflow-launch foundation resources and wording", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/progress.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/progress.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("workflow-launch foundation");
+    expect(command).toContain("`--next` delegates to existing local next-routing behavior");
+    expect(command).toContain("explicit unsupported-local error for `--do`, `--forensic`");
+    expect(command).toContain("do not recreate old one-line TypeScript notifier");
+    expect(workflow).toContain("move default `/gsd progress` from one-line notify output");
+    expect(workflow).toContain('node "$GSD_TOOLS_PATH" init progress');
+    expect(workflow).toContain('node "$GSD_TOOLS_PATH" progress json');
+    expect(workflow).toContain(
+      "Cross-check helper output against local `.planning/STATE.md`, `.planning/ROADMAP.md`",
+    );
+    expect(workflow).toContain("Default path here is read/review only");
+    expect(workflow).toContain(
+      "Preserve explicit unsupported handling for `--do` and `--forensic`",
+    );
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "default route: bundled workflow-launch review session",
+    );
+  });
+
   it("ships verify-work foundation resources and wording", () => {
     const command = readFileSync(
       join(process.cwd(), "src/resources/gsd/commands/gsd/verify-work.md"),

@@ -1120,6 +1120,21 @@ test("gsd progress --next routes through next behavior to execute-phase workflow
   );
 });
 
+test("gsd progress default routes to bundled progress workflow-launch session", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
+  expect(prompt).toContain('Launch native GSD workflow for "/gsd progress"');
+  expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/progress.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("workflows/progress.md"));
+});
+
 test("gsd progress --next prefers earliest incomplete phase when state drifted ahead", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

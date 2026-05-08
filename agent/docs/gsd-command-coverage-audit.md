@@ -54,7 +54,7 @@ Implemented locally:
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
 | `validate-phase`     | workflow-launch foundation         | `validate-phase`               |       34 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
-| `next`               | local-only instant command         | derived from `progress --next` |       42 |
+| `next`               | local-only instant command         | derived from `progress --next` |       56 |
 | `stats`              | TS-native instant command          | `stats`                        |       57 |
 | `health`             | TS-native instant command          | `health`                       |       74 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
@@ -453,7 +453,7 @@ Differences:
 
 ### `next`
 
-Coverage: 42/100
+Coverage: 56/100
 
 Upstream behavior:
 
@@ -462,8 +462,9 @@ Upstream behavior:
 Local behavior:
 
 - command path now routes into supported next actions using existing grouped local commands instead of only rewriting `STATE.md`. Supported dispatch routes include `plan-phase`, `execute-phase`, `verify-work`, and `complete-milestone`, with a local blocked/error gate and `--force` bypass. `src/extensions/gsd/instant/next.ts`
+- command path now also runs pre-routing safety gates for paused state, `.planning/.continue-here.md`, discuss checkpoints, and unresolved verification FAIL states before dispatching. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`
 - non-workflow helper path still keeps deterministic pointer mutation via `computeNext()` for local roadmap/state callers. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/runtime.ts`
-- route logic preserves earliest-incomplete-phase semantics and keeps `/gsd verify-work` active while UAT status is still `testing` or `partial`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
+- route logic preserves earliest-incomplete-phase semantics, keeps `/gsd verify-work` active while UAT status is still `testing` or `partial`, routes missing discuss prep to `/gsd discuss-phase`, and normalizes padded/unpadded brownfield phase ids for checkpoint/context/failure detection. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/discuss.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - dedicated parsers now handle local `next --phase [N] --force` and `progress --next [--phase N] [--force]`, with explicit rejection for malformed or unsupported forms. `src/extensions/gsd/next-args.ts`, `src/extensions/gsd/progress-args.ts`, `test/gsd/commands.test.ts`
 
 Differences:

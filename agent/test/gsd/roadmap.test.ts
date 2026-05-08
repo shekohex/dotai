@@ -153,7 +153,7 @@ describe("roadmap parser", () => {
     expect(result.currentPlan).toBe("01-01");
   });
 
-  it("fallback next handling prefers earliest incomplete phase when state drifted ahead", () => {
+  it("fallback next handling fails closed when earliest incomplete phase needs workflow routing", () => {
     const root = createPlanningRoot();
     writeFileSync(
       join(root, ".planning", "STATE.md"),
@@ -189,16 +189,17 @@ describe("roadmap parser", () => {
     );
 
     const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
-    expect(state).toContain("current_phase: 1");
-    expect(state).toContain("current_phase_name: Setup");
-    expect(state).toContain("current_plan: 01-01");
+    expect(state).toContain("current_phase: 2");
+    expect(state).toContain("current_phase_name: Build");
+    expect(state).toContain("current_plan: 02-01");
     expect(notifications.at(-1)).toEqual({
-      message: "Next phase=1 plan=01-01",
-      level: "info",
+      message:
+        "Next requires workflow session for /gsd execute-phase 1. Cannot safely fall back to pointer-only state updates.",
+      level: "warning",
     });
   });
 
-  it("updates state when handling next across phases", () => {
+  it("fails closed instead of updating state when next across phases needs workflow routing", () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
@@ -229,13 +230,17 @@ describe("roadmap parser", () => {
       } as never,
     );
     const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
-    expect(state).toContain("current_phase: 2");
-    expect(state).toContain("current_phase_name: Build");
-    expect(state).toContain("current_plan: 02-01");
-    expect(notifications.at(-1)?.level).toBe("info");
+    expect(state).toContain("current_phase: 1");
+    expect(state).toContain("current_phase_name: Setup");
+    expect(state).toContain("current_plan: 01-01");
+    expect(notifications.at(-1)).toEqual({
+      message:
+        "Next requires workflow session for /gsd verify-work 1. Cannot safely fall back to pointer-only state updates.",
+      level: "warning",
+    });
   });
 
-  it("preserves brownfield state body when next updates tracked fields", () => {
+  it("preserves brownfield state body when next fails closed", () => {
     const root = createPlanningRoot();
     writeFileSync(
       join(root, ".planning", "STATE.md"),
@@ -271,9 +276,9 @@ describe("roadmap parser", () => {
       } as never,
     );
     const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
-    expect(state).toContain("current_phase: 2");
-    expect(state).toContain("current_phase_name: Build");
-    expect(state).toContain("current_plan: 02-01");
+    expect(state).toContain("current_phase: 1");
+    expect(state).toContain("current_phase_name: Setup");
+    expect(state).toContain("current_plan: 01-01");
     expect(state).toContain("status: Ready to execute");
     expect(state).toContain("**Project:** Brownfield Demo");
     expect(state).toContain("milestone: v1");
@@ -431,6 +436,226 @@ Plans:
     expect(resolveNextRoute(root)).toMatchObject({
       route: "execute-phase",
       newPhase: "2",
+    });
+  });
+
+  it("blocks next when planning root continue-here has blocking rows", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", ".continue-here.md"),
+      [
+        "# Resume",
+        "",
+        "| Requirement | Status | Blocking Issue |",
+        "| --- | --- | --- |",
+        "| Auth | pending | waiting on checkpoint |",
+      ].join("\n"),
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by .continue-here.md; resume pending work before /gsd next",
+    });
+  });
+
+  it("blocks next when paused state is recorded", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 1\ncurrent_phase_name: Setup\ncurrent_plan: 01-01\nstatus: Paused for review\npaused_at: 2026-05-08T12:00:00Z\n",
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by paused state at 2026-05-08T12:00:00Z",
+    });
+  });
+
+  it("blocks next when discuss checkpoint is active", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "DISCUSS-CHECKPOINT.json"),
+      JSON.stringify({ phase: "1" }),
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by discuss checkpoint in phase 1; resume with /gsd discuss-phase 1",
+    });
+  });
+
+  it("blocks next when discuss checkpoint exists in brownfield phase dir with slug drift", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+## Phase Details
+
+### Phase 1: Renamed Setup
+**Goal**: Establish project baseline
+
+Plans:
+- [ ] 01-01: Create config
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "DISCUSS-CHECKPOINT.json"),
+      JSON.stringify({ phase: "1" }),
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by discuss checkpoint in phase 1; resume with /gsd discuss-phase 1",
+    });
+  });
+
+  it("blocks next when discuss checkpoint exists in zero-padded brownfield phase dir", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "01-setup", "DISCUSS-CHECKPOINT.json"),
+      JSON.stringify({ phase: "01" }),
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by discuss checkpoint in phase 1; resume with /gsd discuss-phase 1",
+    });
+  });
+
+  it("routes verified advance with missing phase prep through discuss-phase", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "discuss-phase",
+      reason: "phase discuss context missing",
+      newPhase: "2",
+    });
+  });
+
+  it("routes successful discuss advance to plan-phase without requiring research artifact", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-CONTEXT.md"), "# CONTEXT\n");
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "plan-phase",
+      reason: "missing plan artifacts",
+      newPhase: "2",
+    });
+  });
+
+  it("routes discuss prep through zero-padded local phase dir context", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "02-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "02-build", "02-CONTEXT.md"), "# CONTEXT\n");
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "plan-phase",
+      reason: "missing plan artifacts",
+      newPhase: "2",
+    });
+  });
+
+  it("blocks next when latest verification failed and no complete UAT resolved it", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-VERIFICATION.md"),
+      "---\nverified: false\n---\n\n# Verification\n",
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by unresolved verification FAIL in phase 1; rerun /gsd verify-work 1",
+    });
+  });
+
+  it("blocks next when verification failed in zero-padded brownfield phase dir", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "01-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "01-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "01-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "01-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "01-setup", "01-VERIFICATION.md"),
+      "---\nverified: false\n---\n\n# Verification\n",
+    );
+
+    expect(resolveNextRoute(root)).toEqual({
+      advanced: false,
+      reason: "blocked by unresolved verification FAIL in phase 1; rerun /gsd verify-work 1",
     });
   });
 });

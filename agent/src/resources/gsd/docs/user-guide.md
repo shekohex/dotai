@@ -30,7 +30,11 @@ Notes:
 - run `/gsd on`
 - continue existing phases in place
 - use `/gsd progress`, `/gsd next`, `/gsd health`, `/gsd stats`
-- `/gsd next` routes to supported local next action; use `--force` only to bypass local blocked/error status gate
+- `/gsd next` routes to supported local next action when safety gates clear
+- `/gsd next` stops on paused state, blocking `.planning/.continue-here.md`, active discuss checkpoints, and unresolved verification FAIL
+- `/gsd next` may route to `/gsd discuss-phase` before planning when next phase lacks local discuss prep
+- use `--force` only to bypass local blocked/error status gate; it does not bypass paused/checkpoint safety stops
+- if workflow session launch support is unavailable, `/gsd next` warns and leaves `STATE.md` unchanged
 - `/gsd health` shows detailed issue and repair lines from bundled validator output, including repair path/detail/error fields when present; `/gsd health --context` accepts bare flag, derives window locally when possible, and reports unknown when token usage is unavailable
 - `/gsd stats` is conservative: phase `Complete` means local authoritative verification finished; executed summaries without complete UAT stay `Executed`, `human_needed` verification shows `Human Needed`
 - `/gsd stats` requirement totals come from local actionable requirements and traceability rows, not only checklist syntax

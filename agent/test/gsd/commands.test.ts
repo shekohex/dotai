@@ -1453,6 +1453,64 @@ test("gsd next blocks error state unless forced", async () => {
   );
 });
 
+test("gsd next fails closed without workflow session instead of mutating state", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  const before = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
+  const noSessionContext = {
+    cwd,
+    hasUI: false,
+    ui: {
+      notify(message: string, level: string) {
+        notifications.push({ message, level });
+      },
+    },
+  };
+
+  await command?.handler("next", noSessionContext);
+
+  const after = await readFile(join(cwd, ".planning", "STATE.md"), "utf8");
+  expect(after).toBe(before);
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Next requires workflow session for /gsd execute-phase 2. Cannot safely fall back to pointer-only state updates.",
+    level: "warning",
+  });
+});
+
+test("gsd next blocks paused checkpoint markers before routing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", ".continue-here.md"),
+    [
+      "# Resume",
+      "",
+      "| Requirement | Status | Blocking Issue |",
+      "| --- | --- | --- |",
+      "| Delivery | pending | waiting on user checkpoint |",
+    ].join("\n"),
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by .continue-here.md; resume pending work before /gsd next",
+    level: "warning",
+  });
+});
+
 test("gsd dashboard fallback reports pending todo count", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

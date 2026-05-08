@@ -5,12 +5,14 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { GsdCommandArgs } from "../args.js";
 import { handleGsdCompleteMilestone } from "../lifecycle/complete-milestone.js";
+import { handleGsdDiscussPhase } from "../lifecycle/discuss-phase.js";
 import { handleGsdExecutePhase } from "../lifecycle/execute-phase.js";
 import { handleGsdPlanPhase } from "../lifecycle/plan-phase.js";
 import { handleGsdVerifyWork } from "../lifecycle/verify-work.js";
 import { readPlanningSnapshot } from "../state/read.js";
 import { readRoadmapPhases, type RoadmapPhase } from "../state/roadmap.js";
-import { resolveNextPlan, writeStateFields } from "../state/runtime.js";
+import { readBlockingContinueHereFile } from "../state/discuss.js";
+import { resolveNextPlan } from "../state/runtime.js";
 
 export const NextOutputSchema = Type.Object(
   {
@@ -26,7 +28,12 @@ export const NextOutputSchema = Type.Object(
 
 export type NextOutput = Static<typeof NextOutputSchema>;
 
-type SupportedNextRoute = "plan-phase" | "execute-phase" | "verify-work" | "complete-milestone";
+type SupportedNextRoute =
+  | "discuss-phase"
+  | "plan-phase"
+  | "execute-phase"
+  | "verify-work"
+  | "complete-milestone";
 
 type RoutedNextOutput = {
   advanced: boolean;
@@ -51,8 +58,125 @@ function hasBlockingStatus(status: string | undefined): boolean {
   return status !== undefined && /\b(blocked|error)\b/iu.test(status);
 }
 
+function hasPausedStatus(status: string | undefined): boolean {
+  return status !== undefined && /\b(paused|stopped)\b/iu.test(status);
+}
+
+function toPhaseDirName(phase: RoadmapPhase): string {
+  const normalized = phase.name
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
+  return `${phase.number}-${normalized || "phase"}`;
+}
+
+function canonicalizePhaseNumber(value: string): string {
+  return value
+    .trim()
+    .split(".")
+    .map((segment) => String(Number.parseInt(segment, 10)))
+    .join(".");
+}
+
+function extractLeadingPhaseNumber(value: string): string {
+  const match = value.match(/^(\d+(?:\.\d+)?)/u);
+  return canonicalizePhaseNumber(match?.[1] ?? value);
+}
+
+function phaseNumbersMatch(left: string, right: string): boolean {
+  return canonicalizePhaseNumber(left) === canonicalizePhaseNumber(right);
+}
+
+function readLatestVerificationStatus(
+  phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
+): "passed" | "gaps_found" | "human_needed" | undefined {
+  const fileName = phaseSnapshot?.verifications
+    .toSorted((left, right) => left.localeCompare(right))
+    .at(-1);
+  if (phaseSnapshot === undefined || fileName === undefined) {
+    return undefined;
+  }
+  const content = readFileSync(join(phaseSnapshot.path, fileName), "utf8");
+  const frontmatter = content.match(/^---\n([\s\S]*?)\n---/u)?.[1] ?? "";
+  const statusMatch = frontmatter.match(/^status:\s*(.+)$/mu)?.[1]?.trim();
+  if (statusMatch === "passed" || statusMatch === "gaps_found" || statusMatch === "human_needed") {
+    return statusMatch;
+  }
+  const verifiedMatch = frontmatter
+    .match(/^verified:\s*(.+)$/mu)?.[1]
+    ?.trim()
+    .toLowerCase();
+  if (verifiedMatch === "true") {
+    return "passed";
+  }
+  if (verifiedMatch === "false") {
+    return "gaps_found";
+  }
+  return undefined;
+}
+
+function findBlockingDiscussCheckpoint(
+  snapshot: ReturnType<typeof readPlanningSnapshot>,
+  phases: RoadmapPhase[],
+): { phase: string; path: string } | undefined {
+  for (const phase of phases) {
+    const phaseSnapshot = snapshot.phases.find((item) =>
+      phaseNumbersMatch(extractLeadingPhaseNumber(item.id), phase.number),
+    );
+    const path =
+      phaseSnapshot === undefined ? undefined : join(phaseSnapshot.path, "DISCUSS-CHECKPOINT.json");
+    if (path !== undefined && existsSync(path)) {
+      return { phase: phase.number, path };
+    }
+  }
+
+  for (const phaseSnapshot of snapshot.phases) {
+    const phaseNumber = extractLeadingPhaseNumber(phaseSnapshot.id);
+    if (phases.some((phase) => phaseNumbersMatch(phase.number, phaseNumber))) {
+      continue;
+    }
+    const path = join(phaseSnapshot.path, "DISCUSS-CHECKPOINT.json");
+    if (existsSync(path)) {
+      return { phase: phaseNumber, path };
+    }
+  }
+  return undefined;
+}
+
+function findBlockingVerificationFailure(
+  snapshot: ReturnType<typeof readPlanningSnapshot>,
+  phases: RoadmapPhase[],
+): { phase: string; status: "gaps_found" | "human_needed" } | undefined {
+  for (const phase of phases) {
+    const phaseSnapshot = findPhaseSnapshot(snapshot, phase);
+    const verificationStatus = readLatestVerificationStatus(phaseSnapshot);
+    if (verificationStatus === "gaps_found" || verificationStatus === "human_needed") {
+      const uatStatus =
+        phaseSnapshot === undefined
+          ? undefined
+          : readPhaseUatStatus(phaseSnapshot.path, phaseSnapshot.uats);
+      if (uatStatus !== "complete") {
+        return { phase: phase.number, status: verificationStatus };
+      }
+    }
+  }
+  return undefined;
+}
+
+function phaseNeedsDiscussPrep(
+  cwd: string,
+  phase: RoadmapPhase,
+  phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
+): boolean {
+  const phaseDir = phaseSnapshot?.path ?? join(cwd, ".planning", "phases", toPhaseDirName(phase));
+  return !existsSync(phaseDir) || phaseSnapshot?.context === undefined;
+}
+
 function findPhaseSnapshot(snapshot: ReturnType<typeof readPlanningSnapshot>, phase: RoadmapPhase) {
-  return snapshot.phases.find((item) => item.id.startsWith(`${phase.number}-`));
+  return snapshot.phases.find((item) =>
+    phaseNumbersMatch(extractLeadingPhaseNumber(item.id), phase.number),
+  );
 }
 
 function readPhaseUatStatus(phasePath: string, uatFiles: string[]): string | undefined {
@@ -137,6 +261,39 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
     return { advanced: false, reason: `unknown phase override: ${requestedPhase}` };
   }
 
+  const rootContinueHere = readBlockingContinueHereFile(
+    join(cwd, ".planning", ".continue-here.md"),
+  );
+  if (rootContinueHere !== undefined) {
+    return {
+      advanced: false,
+      reason: `blocked by ${rootContinueHere}; resume pending work before /gsd next`,
+    };
+  }
+
+  if (snapshot.state?.paused_at !== undefined || hasPausedStatus(snapshot.state?.status)) {
+    return {
+      advanced: false,
+      reason: `blocked by paused state${snapshot.state?.paused_at === undefined ? "" : ` at ${snapshot.state.paused_at}`}`,
+    };
+  }
+
+  const checkpoint = findBlockingDiscussCheckpoint(snapshot, phases);
+  if (checkpoint !== undefined) {
+    return {
+      advanced: false,
+      reason: `blocked by discuss checkpoint in phase ${checkpoint.phase}; resume with /gsd discuss-phase ${checkpoint.phase}`,
+    };
+  }
+
+  const verificationFailure = findBlockingVerificationFailure(snapshot, phases);
+  if (verificationFailure !== undefined) {
+    return {
+      advanced: false,
+      reason: `blocked by unresolved verification FAIL in phase ${verificationFailure.phase}; rerun /gsd verify-work ${verificationFailure.phase}`,
+    };
+  }
+
   const startIndex = resolvePhaseStartIndex(snapshot, phases, requestedPhase);
 
   for (let index = Math.max(startIndex, 0); index < phases.length; index += 1) {
@@ -161,6 +318,14 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
     }
 
     if (totalPlans === 0 || (phase.plans.length > 0 && (phaseSnapshot?.plans.length ?? 0) === 0)) {
+      if (phaseNeedsDiscussPrep(cwd, phase, phaseSnapshot)) {
+        return {
+          advanced: true,
+          route: "discuss-phase",
+          reason: "phase discuss context missing",
+          newPhase: phase.number,
+        };
+      }
       return {
         advanced: true,
         route: "plan-phase",
@@ -227,6 +392,11 @@ async function dispatchNextRoute(
   route: SupportedNextRoute,
   phase: string | undefined,
 ): Promise<void> {
+  if (route === "discuss-phase") {
+    await handleGsdDiscussPhase(pi, ctx, { subcommand: "discuss-phase", phase });
+    return;
+  }
+
   if (route === "plan-phase") {
     await handleGsdPlanPhase(pi, ctx, { subcommand: "plan-phase", phase });
     return;
@@ -299,22 +469,15 @@ export async function handleGsdNext(
   }
 
   if (!canDispatchWorkflow) {
-    if (!result.advanced) {
-      ctx.ui.notify(`Next ${result.reason}`, "warning");
+    const routedResult = resolveNextRoute(ctx.cwd, args.phase);
+    if (!routedResult.advanced || routedResult.route === undefined) {
+      ctx.ui.notify(`Next ${routedResult.reason}`, "warning");
       return;
     }
-    const nextSelection = resolveNextPlan(ctx.cwd, args.phase);
-    if (!nextSelection) {
-      ctx.ui.notify("Next no plans", "warning");
-      return;
-    }
-    writeStateFields(ctx.cwd, {
-      current_phase: nextSelection.phase.number,
-      current_phase_name: nextSelection.phase.name,
-      current_plan: nextSelection.planId ?? "",
-      status: nextSelection.planId === undefined ? "Ready to plan" : "Ready to execute",
-    });
-    ctx.ui.notify(`Next phase=${result.newPhase ?? "-"} plan=${result.currentPlan}`, "info");
+    ctx.ui.notify(
+      `Next requires workflow session for /gsd ${routedResult.route}${routedResult.newPhase === undefined ? "" : ` ${routedResult.newPhase}`}. Cannot safely fall back to pointer-only state updates.`,
+      "warning",
+    );
     return;
   }
 

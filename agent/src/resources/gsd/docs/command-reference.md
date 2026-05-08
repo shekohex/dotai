@@ -53,6 +53,10 @@
 
 - `/gsd next [phase]`
   flags: `--phase <phase>`, `--force`
+  blocks on paused state, blocking `.planning/.continue-here.md`, active discuss checkpoints, and unresolved verification FAIL before any routing
+  `--force` only bypasses blocked/error `STATE.md` status gate; checkpoint and pause safety gates still stop routing
+  missing next-phase discuss prep may route to `/gsd discuss-phase <phase>` before planning
+  without workflow session support, `/gsd next` fails closed with warning instead of mutating `STATE.md`
 - `/gsd stats`
   variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
   unsupported variants fail explicitly instead of falling back to one-line notify output

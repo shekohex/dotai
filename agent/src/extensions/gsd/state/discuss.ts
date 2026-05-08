@@ -168,6 +168,15 @@ export function readDiscussBlockingResumeFile(phaseDir: string): string | undefi
   return hasBlockingResumeRows(content) ? fileName : undefined;
 }
 
+export function readBlockingContinueHereFile(path: string): string | undefined {
+  if (!existsSync(path)) {
+    return undefined;
+  }
+
+  const content = readFileSync(path, "utf8");
+  return hasBlockingResumeRows(content) ? path.split("/").at(-1) : undefined;
+}
+
 function hasBlockingResumeRows(content: string): boolean {
   const lines = content.split(/\r?\n/u);
   let inBlockingTable = false;

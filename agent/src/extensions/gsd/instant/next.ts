@@ -126,7 +126,7 @@ function resolvePhaseStartIndex(
   return statePhaseIndex;
 }
 
-function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNextOutput {
+export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNextOutput {
   const snapshot = readPlanningSnapshot(cwd);
   const phases = readRoadmapPhases(cwd);
   if (phases.length === 0) {
@@ -178,31 +178,18 @@ function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNextOutpu
       };
     }
 
-    if (
-      (phaseSnapshot?.verifications.length ?? 0) === 0 &&
-      (phaseSnapshot?.uats.length ?? 0) === 0
-    ) {
-      return {
-        advanced: true,
-        route: "verify-work",
-        reason: "phase ready to verify",
-        newPhase: phase.number,
-      };
-    }
-
     const uatStatus =
       phaseSnapshot === undefined
         ? undefined
         : readPhaseUatStatus(phaseSnapshot.path, phaseSnapshot.uats);
-    if (
-      (phaseSnapshot?.uats.length ?? 0) > 0 &&
-      uatStatus !== "complete" &&
-      uatStatus !== "diagnosed"
-    ) {
+    if (uatStatus !== "complete") {
       return {
         advanced: true,
         route: "verify-work",
-        reason: "phase verification in progress",
+        reason:
+          (phaseSnapshot?.uats.length ?? 0) === 0
+            ? "phase ready to verify"
+            : "phase verification in progress",
         newPhase: phase.number,
       };
     }

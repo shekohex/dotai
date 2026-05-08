@@ -967,7 +967,7 @@ function extractProjectName(statePath: string): string | undefined {
 
 **How existing repos with valid `.planning` are detected and continued in place**
 
-On `session_start`, the extension calls `detectExistingPlanning(cwd)`. If the result is `valid`, it skips any bootstrap scaffolding and treats the current `.planning` tree as the source of truth. Lifecycle commands such as `/gsd progress` read directly from `STATE.md` and the phases directory. `/gsd next` advances the current plan pointer within the existing tree. No import dialog, no migration copy, no rewrite of file paths.
+On `session_start`, the extension calls `detectExistingPlanning(cwd)`. If the result is `valid`, it skips any bootstrap scaffolding and treats the current `.planning` tree as the source of truth. Lifecycle commands such as `/gsd progress` read directly from `STATE.md` and the phases directory. `/gsd next` inspects local planning artifacts and routes to supported grouped commands such as `/gsd plan-phase`, `/gsd execute-phase`, `/gsd verify-work`, or `/gsd complete-milestone`. It only routes to `/gsd complete-milestone` after milestone phases have authoritative local `*-UAT.md` artifacts in `status: complete`; legacy `*-VERIFICATION.md` evidence alone still routes through `/gsd verify-work`. No import dialog, no migration copy, no rewrite of file paths.
 
 ---
 

@@ -33,6 +33,113 @@ describe("brownfield continuation", () => {
     expect(result.percent).toBe(33);
   });
 
+  it("counts roadmap-only completed plans in mixed brownfield progress", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-progress-mixed-"));
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Done already
+
+Plans:
+- [x] 01-01: Create config
+- [x] 01-02: Add tests
+
+### Phase 2: Build
+**Goal**: In progress
+
+Plans:
+- [ ] 02-01: Ship feature
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 2\ncurrent_phase_name: Build\ncurrent_plan: 02-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+
+    const result = computeProgress(root);
+    expect(result.completedPlans).toBe(2);
+    expect(result.percent).toBe(67);
+  });
+
+  it("unions completed plan ids across roadmap and snapshot sources within phase", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-progress-union-"));
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Build
+**Goal**: In progress
+
+Plans:
+- [x] 02-01: Ship feature
+- [ ] 02-02: Add docs
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 2\ncurrent_phase_name: Build\ncurrent_plan: 02-02\nstatus: Ready to execute\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-02-PLAN.md"),
+      "---\nphase: 02\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/docs.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-02-SUMMARY.md"), "# Summary\n");
+
+    const result = computeProgress(root);
+    expect(result.completedPlans).toBe(2);
+    expect(result.percent).toBe(100);
+  });
+
+  it("treats padded snapshot phase ids and unpadded roadmap phase numbers as same phase", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-gsd-progress-padded-phase-"));
+    mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: In progress
+
+Plans:
+- [x] 01-01: Create config
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 1\ncurrent_phase_name: Setup\ncurrent_plan: 01-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "01-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "01-setup", "01-01-SUMMARY.md"), "# Summary\n");
+
+    const result = computeProgress(root);
+    expect(result.totalPhases).toBe(1);
+    expect(result.completedPlans).toBe(1);
+    expect(result.percent).toBe(100);
+  });
+
   it("computes stats from existing .planning files", () => {
     const result = computeStats(brownfieldRoot);
     expect(result.phaseCount).toBe(2);

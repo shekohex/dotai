@@ -30,16 +30,39 @@ export function computeProgress(cwd: string): ProgressOutput {
   const snapshot = readPlanningSnapshot(cwd);
   const roadmapPhases = readRoadmapPhases(cwd);
   const phaseSnapshots = snapshot.phases;
-  const totalPlansFromSnapshots = phaseSnapshots.reduce(
-    (sum, phase) => sum + phase.plans.length,
-    0,
-  );
-  const totalPlans =
-    totalPlansFromSnapshots > 0
-      ? totalPlansFromSnapshots
-      : roadmapPhases.reduce((sum, phase) => sum + phase.plans.length, 0);
-  const completedPlans = phaseSnapshots.reduce(
-    (sum, phase) => sum + phase.plans.filter((plan) => plan.completed).length,
+  const phasePlanTotals = new Map<string, number>();
+  const completedPlanIdsByPhase = new Map<string, Set<string>>();
+
+  for (const phase of roadmapPhases) {
+    const phaseNumber = normalizePhaseNumber(phase.number);
+    phasePlanTotals.set(phaseNumber, phase.plans.length);
+    completedPlanIdsByPhase.set(
+      phaseNumber,
+      new Set(phase.plans.filter((plan) => plan.completed).map((plan) => plan.id)),
+    );
+  }
+
+  for (const phase of phaseSnapshots) {
+    const phaseNumber = extractPhaseNumber(phase.id);
+    if (phaseNumber === undefined) {
+      continue;
+    }
+    phasePlanTotals.set(
+      phaseNumber,
+      Math.max(phasePlanTotals.get(phaseNumber) ?? 0, phase.plans.length),
+    );
+    const completedPlanIds = completedPlanIdsByPhase.get(phaseNumber) ?? new Set<string>();
+    for (const plan of phase.plans) {
+      if (plan.completed) {
+        completedPlanIds.add(plan.fileName.replace(/-PLAN\.md$/u, ""));
+      }
+    }
+    completedPlanIdsByPhase.set(phaseNumber, completedPlanIds);
+  }
+
+  const totalPlans = [...phasePlanTotals.values()].reduce((sum, count) => sum + count, 0);
+  const completedPlans = [...completedPlanIdsByPhase.values()].reduce(
+    (sum, completedPlanIds) => sum + completedPlanIds.size,
     0,
   );
   const current = resolveCurrentPhase(cwd);
@@ -69,4 +92,17 @@ export function computeProgress(cwd: string): ProgressOutput {
 
 function toOptionalString(value: string | number | undefined): string | undefined {
   return value === undefined ? undefined : String(value);
+}
+
+function extractPhaseNumber(value: string): string | undefined {
+  const match = value.match(/^(\d+(?:\.\d+)?)/u);
+  return match === null ? undefined : normalizePhaseNumber(match[1]);
+}
+
+function normalizePhaseNumber(value: string): string {
+  return value
+    .trim()
+    .split(".")
+    .map((segment) => String(Number.parseInt(segment, 10)))
+    .join(".");
 }

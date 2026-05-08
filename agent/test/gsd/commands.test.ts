@@ -1326,10 +1326,23 @@ test("gsd next routes finished roadmap to complete-milestone workflow", async ()
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
   createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-01-PLAN.md"),
+    "---\nphase: 1\nplan: 01\ntype: build\nwave: 1\ndepends_on: []\nfiles_modified: []\nautonomous: true\nmust_haves: []\n---\n",
+  );
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-01-SUMMARY.md"), "summary\n");
   writeFileSync(join(cwd, ".planning", "phases", "2-delivery", "2-01-SUMMARY.md"), "summary\n");
   writeFileSync(
     join(cwd, ".planning", "phases", "2-delivery", "2-01-VERIFICATION.md"),
     "verification\n",
+  );
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-UAT.md"),
+    "---\nstatus: complete\n---\n\n# UAT\n",
+  );
+  writeFileSync(
+    join(cwd, ".planning", "phases", "2-delivery", "2-UAT.md"),
+    "---\nstatus: complete\n---\n\n# UAT\n",
   );
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
@@ -1374,7 +1387,7 @@ test("gsd dashboard fallback reports pending todo count", async () => {
   await command?.handler("on", createCommandContext(cwd, notifications));
   await command?.handler("", createCommandContext(cwd, notifications));
   expect(notifications.at(-1)).toEqual({
-    message: "GSD enabled=true progress=0% phase=1 goals=2 milestones=1 todos=1",
+    message: "GSD enabled=true progress=50% phase=1 goals=2 milestones=1 todos=1",
     level: "info",
   });
 });

@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { computeNext, handleGsdNext } from "../../src/extensions/gsd/instant/next.js";
+import {
+  computeNext,
+  handleGsdNext,
+  resolveNextRoute,
+} from "../../src/extensions/gsd/instant/next.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { resolveCurrentPhase } from "../../src/extensions/gsd/state/runtime.js";
 
@@ -388,5 +392,45 @@ Plans:
     expect(phases.map((phase) => phase.number)).toEqual(["1", "5"]);
     expect(phases[1]?.name).toBe("Security");
     expect(phases[1]?.plans[0]?.id).toBe("05-01");
+  });
+
+  it("routes legacy verification-only phase to verify-work until authoritative UAT completes", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-VERIFICATION.md"),
+      "# verification\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "verify-work",
+      reason: "phase ready to verify",
+      newPhase: "1",
+    });
+
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "execute-phase",
+      newPhase: "2",
+    });
   });
 });

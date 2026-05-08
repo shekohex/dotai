@@ -64,6 +64,7 @@ Primary UX:
 - `/gsd next`
 - `/gsd progress`
 - `/gsd stats`
+  local instant support: default summary plus `json` and `table` output only; status uses local artifact truth (`Not Started`, `In Progress`, `Executed`, `Human Needed`, `Complete`)
 - `/gsd health`
 - `/gsd help`
 

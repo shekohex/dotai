@@ -32,6 +32,8 @@ Notes:
 - use `/gsd progress`, `/gsd next`, `/gsd health`, `/gsd stats`
 - `/gsd next` routes to supported local next action; use `--force` only to bypass local blocked/error status gate
 - `/gsd health` shows detailed issue and repair lines from bundled validator output, including repair path/detail/error fields when present; `/gsd health --context` accepts bare flag, derives window locally when possible, and reports unknown when token usage is unavailable
+- `/gsd stats` is conservative: phase `Complete` means local authoritative verification finished; executed summaries without complete UAT stay `Executed`, `human_needed` verification shows `Human Needed`
+- `/gsd stats` requirement totals come from local actionable requirements and traceability rows, not only checklist syntax
 
 ## Artifacts
 

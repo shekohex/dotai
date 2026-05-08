@@ -6,7 +6,7 @@ import { computeHealth, computeLocalHealthSummary } from "../../src/extensions/g
 import { computeProgress } from "../../src/extensions/gsd/state/progress.js";
 import { readPlanningSnapshot } from "../../src/extensions/gsd/state/read.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
-import { computeStats } from "../../src/extensions/gsd/state/stats.js";
+import { computeStats, computeStructuredStats } from "../../src/extensions/gsd/state/stats.js";
 import { detectExistingPlanning } from "../../src/extensions/gsd/state/detect.js";
 
 const fixtures = join(import.meta.dirname, "fixtures");
@@ -147,6 +147,17 @@ Plans:
     expect(result.summaryCount).toBe(1);
     expect(result.verificationCount).toBe(0);
     expect(result.decisionsCount).toBe(2);
+  });
+
+  it("counts plain local requirement lists in structured stats", () => {
+    expect(computeStructuredStats(brownfieldRoot)).toMatchObject({
+      requirements_total: 3,
+      requirements_complete: 0,
+      phases: [
+        expect.objectContaining({ number: "1", status: "In Progress" }),
+        expect.objectContaining({ number: "2", status: "In Progress" }),
+      ],
+    });
   });
 
   it("counts verification artifacts from phase snapshots", () => {

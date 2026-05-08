@@ -2,6 +2,13 @@ import { Type, type Static } from "typebox";
 import { readPlanningSnapshot } from "./read.js";
 import { readRoadmapPhases } from "./roadmap.js";
 import { resolveCurrentMilestone } from "./milestones.js";
+import {
+  canonicalizePhaseNumber,
+  deriveStatsPhaseStatus,
+  extractLeadingPhaseNumber,
+  parseRequirementsProgress,
+  type StatsPhaseStatus,
+} from "./stats-support.js";
 
 export const StatsOutputSchema = Type.Object(
   {
@@ -17,17 +24,21 @@ export const StatsOutputSchema = Type.Object(
 
 export type StatsOutput = Static<typeof StatsOutputSchema>;
 
+const StatsPhaseStatusSchema = Type.Union([
+  Type.Literal("Not Started"),
+  Type.Literal("In Progress"),
+  Type.Literal("Executed"),
+  Type.Literal("Human Needed"),
+  Type.Literal("Complete"),
+]);
+
 const StatsPhaseSchema = Type.Object(
   {
     number: Type.String(),
     name: Type.String(),
     plans: Type.Integer({ minimum: 0 }),
     summaries: Type.Integer({ minimum: 0 }),
-    status: Type.Union([
-      Type.Literal("Not Started"),
-      Type.Literal("In Progress"),
-      Type.Literal("Complete"),
-    ]),
+    status: StatsPhaseStatusSchema,
   },
   { additionalProperties: false },
 );
@@ -77,15 +88,14 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   const scopedSnapshotPhases =
     phaseScope === undefined
       ? snapshot.phases
-      : snapshot.phases.filter((phase) => phaseScope.has(extractPhaseNumber(phase.id)));
+      : snapshot.phases.filter((phase) => phaseScope.has(extractLeadingPhaseNumber(phase.id)));
   const scopedRoadmapPhases =
     phaseScope === undefined
       ? roadmapPhases
-      : roadmapPhases.filter((phase) => phaseScope.has(normalizePhaseNumber(phase.number)));
+      : roadmapPhases.filter((phase) => phaseScope.has(canonicalizePhaseNumber(phase.number)));
   const blockers = snapshot.stateBody?.match(/blocker/gi)?.length ?? 0;
   const decisions = snapshot.project?.match(/^\|/gm)?.length ?? 0;
-  const requirementsComplete = snapshot.requirements?.match(/^- \[x\] \*\*/gm)?.length ?? 0;
-  const requirementsPending = snapshot.requirements?.match(/^- \[ \] \*\*/gm)?.length ?? 0;
+  const requirements = parseRequirementsProgress(snapshot.requirements);
   const phases = new Map<
     string,
     {
@@ -93,31 +103,28 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
       name: string;
       plans: number;
       summaries: number;
-      status: StructuredStatsOutput["phases"][number]["status"];
+      status: StatsPhaseStatus;
     }
   >();
 
   for (const phase of scopedRoadmapPhases) {
-    const number = normalizePhaseNumber(phase.number);
+    const number = canonicalizePhaseNumber(phase.number);
     phases.set(number, {
       number,
       name: phase.name,
       plans: phase.plans.length,
       summaries: 0,
-      status: phase.plans.length === 0 ? "Not Started" : "In Progress",
+      status: "Not Started",
     });
   }
 
   let verificationCount = 0;
   for (const phase of scopedSnapshotPhases) {
-    const number = extractPhaseNumber(phase.id);
+    const number = extractLeadingPhaseNumber(phase.id);
     const existing = phases.get(number);
     const plans = phase.plans.length;
     const summaries = phase.summaries.length;
-    let status: StructuredStatsOutput["phases"][number]["status"] = "Not Started";
-    if (plans > 0) {
-      status = summaries >= plans ? "Complete" : "In Progress";
-    }
+    const status = deriveStatsPhaseStatus(phase, existing?.plans ?? 0);
     phases.set(number, {
       number,
       name: existing?.name ?? phase.name,
@@ -151,8 +158,8 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     total_summaries: totalSummaries,
     percent,
     plan_percent: planPercent,
-    requirements_total: requirementsComplete + requirementsPending,
-    requirements_complete: requirementsComplete,
+    requirements_total: requirements.total,
+    requirements_complete: requirements.complete,
     git_commits: null,
     git_first_commit_date: null,
     last_activity: snapshot.state?.last_activity ?? null,
@@ -162,15 +169,6 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   };
 }
 
-function extractPhaseNumber(value: string): string {
-  const match = value.match(/^(\d+(?:\.\d+)?)/u);
-  return normalizePhaseNumber(match?.[1] ?? value);
-}
-
-function normalizePhaseNumber(value: string): string {
-  return value.trim();
-}
-
 function resolveMilestonePhaseNumbers(
   roadmap: string | undefined,
   milestoneVersion: string | undefined,
@@ -178,30 +176,58 @@ function resolveMilestonePhaseNumbers(
   if (roadmap === undefined || milestoneVersion === undefined) {
     return undefined;
   }
-  const escapedVersion = milestoneVersion.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const milestonePattern = new RegExp(`^#{2,4}\\s+.*\\b${escapedVersion}\\b.*$`, "mu");
+  const milestoneLabelPattern = buildExactMilestoneLabelPattern(milestoneVersion);
+  const milestonePattern = new RegExp(`^#{2,4}\\s+.*${milestoneLabelPattern}.*$`, "mu");
+  const milestoneSummaryPattern = new RegExp(
+    `<summary>.*${milestoneLabelPattern}.*<\\/summary>`,
+    "iu",
+  );
   const phasePattern = /^#{3,4}\s+Phase\s+(\d+(?:\.\d+)?)\s*:/gmu;
   const lines = roadmap.split("\n");
   const scopedLines: string[] = [];
   let insideMilestone = false;
+  let milestoneContainer: "heading" | "details" | undefined;
 
   for (const line of lines) {
     if (milestonePattern.test(line)) {
       insideMilestone = true;
+      milestoneContainer = "heading";
       scopedLines.push(line);
       continue;
     }
-    if (insideMilestone && /^#{2,4}\s+.*\bv\d+(?:\.\d+){0,2}\b.*$/u.test(line)) {
+
+    if (milestoneSummaryPattern.test(line)) {
+      insideMilestone = true;
+      milestoneContainer = "details";
+      scopedLines.push(line);
+      continue;
+    }
+
+    if (
+      insideMilestone &&
+      milestoneContainer === "heading" &&
+      /^#{2,4}\s+.*\bv\d+(?:\.\d+){0,2}\b.*$/u.test(line)
+    ) {
       break;
     }
+
     if (insideMilestone) {
       scopedLines.push(line);
+    }
+
+    if (insideMilestone && milestoneContainer === "details" && /<\/details>/iu.test(line)) {
+      break;
     }
   }
 
   const scopedContent = scopedLines.join("\n");
   const phaseMatches = [...scopedContent.matchAll(phasePattern)].map((match) =>
-    normalizePhaseNumber(match[1] ?? ""),
+    canonicalizePhaseNumber(match[1] ?? ""),
   );
   return phaseMatches.length > 0 ? new Set(phaseMatches) : undefined;
+}
+
+function buildExactMilestoneLabelPattern(milestoneVersion: string): string {
+  const escapedVersion = milestoneVersion.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return `(^|[^A-Za-z0-9.])${escapedVersion}([^A-Za-z0-9.]|$)`;
 }

@@ -55,7 +55,7 @@ Implemented locally:
 | `validate-phase`     | workflow-launch foundation         | `validate-phase`               |       34 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       42 |
-| `stats`              | TS-native instant command          | `stats`                        |       38 |
+| `stats`              | TS-native instant command          | `stats`                        |       57 |
 | `health`             | TS-native instant command          | `health`                       |       74 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
 | `help`               | local docs viewer                  | `help`                         |       44 |
@@ -474,7 +474,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 38/100
+Coverage: 57/100
 
 Upstream behavior:
 
@@ -483,6 +483,9 @@ Upstream behavior:
 Local behavior:
 
 - computes milestone-aware counts from a structured backend and prints one-line summary by default. `src/extensions/gsd/instant/stats.ts`, `src/extensions/gsd/state/stats.ts`
+- canonicalizes padded and unpadded phase numbers so roadmap headings and local phase directories merge into the same stats row and milestone scope. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
+- counts real local requirement formats including plain `- REQ-*` bullets and traceability rows, while excluding only deferred `v2+` sections and preventing deferred IDs from leaking back through later traceability tables. `src/extensions/gsd/state/stats-support.ts`, `test/gsd/instant.test.ts`
+- phase status is now conservative and artifact-aware: `Complete` requires authoritative local UAT completion, verification-only phases count as started, and exact milestone matching works across headings and `<details><summary>` containers. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/stats-support.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/roadmap.test.ts`
 - supports local `stats json`, `stats table`, `--json`, `--table`, and `--format <json|table>` modes with explicit rejection for unsupported variants instead of silent degradation. `src/extensions/gsd/stats-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
 - structured backend scopes phases to current milestone when milestone metadata is available and counts requirements from planning snapshot. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/read.ts`, `test/gsd/instant.test.ts`
 
@@ -491,6 +494,7 @@ Differences:
 - git/timeline fields remain null; no real upstream git-history parity yet
 - default command remains local instant output rather than workflow/dashboard contract
 - no MVP-mode summary or richer last-activity/report narratives yet
+- status semantics remain local-artifact driven, not full upstream verifier parity
 
 ### `health`
 

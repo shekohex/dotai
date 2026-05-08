@@ -56,6 +56,9 @@
 - `/gsd stats`
   variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`
   unsupported variants fail explicitly instead of falling back to one-line notify output
+  phase status is local-artifact driven: `Not Started`, `In Progress`, `Executed`, `Human Needed`, `Complete`
+  `Complete` requires authoritative local verification completion, currently `*-UAT.md` with `status: complete`; summarized work without that remains `Executed`
+  requirements counts support checklist items, plain local requirement bullets, and traceability status rows; deferred `v2+` sections stay excluded
 - `/gsd health`
   flags: `--repair`, `--context`, `--tokens-used <int>`, `--context-window <int>`
   bare `--context` derives current session token usage when available and can derive window from session or `.planning/config.json`; if token usage is unavailable it reports unknown instead of guessing

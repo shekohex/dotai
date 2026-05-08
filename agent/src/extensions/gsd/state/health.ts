@@ -150,8 +150,8 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
 
   if (snapshot.config === undefined) {
     issues.push({
-      severity: existsSync(configPath) ? "warning" : "error",
-      code: existsSync(configPath) ? "WLOCAL_CONFIG" : "ELOCAL_CONFIG",
+      severity: existsSync(configPath) ? "error" : "error",
+      code: existsSync(configPath) ? "ELOCAL_CONFIG" : "ELOCAL_CONFIG",
       message: existsSync(configPath) ? "config.json malformed" : "config.json not found",
     });
   }

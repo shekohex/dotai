@@ -56,7 +56,7 @@ Implemented locally:
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       42 |
 | `stats`              | TS-native instant command          | `stats`                        |       38 |
-| `health`             | TS-native instant command          | `health`                       |       45 |
+| `health`             | TS-native instant command          | `health`                       |       62 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
 | `help`               | local docs viewer                  | `help`                         |       44 |
 | `on`                 | local enable toggle                | none                           |      100 |

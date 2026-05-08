@@ -453,12 +453,12 @@ Plans:
 
     expect(() => computeLocalHealthSummary(root)).not.toThrow();
     expect(computeLocalHealthSummary(root)).toMatchObject({
-      status: "degraded",
-      healthy: true,
+      status: "broken",
+      healthy: false,
     });
     expect(computeLocalHealthSummary(root).issues).toContainEqual({
-      severity: "warning",
-      code: "WLOCAL_CONFIG",
+      severity: "error",
+      code: "ELOCAL_CONFIG",
       message: "config.json malformed",
     });
   });

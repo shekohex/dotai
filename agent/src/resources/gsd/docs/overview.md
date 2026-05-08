@@ -1004,7 +1004,17 @@ import { Type, type Static } from "typebox";
 
 export const HealthOutputSchema = Type.Object(
   {
+    status: Type.Union([Type.Literal("healthy"), Type.Literal("degraded"), Type.Literal("broken")]),
     healthy: Type.Boolean(),
+    repairableCount: Type.Number(),
+    repairsPerformed: Type.Optional(
+      Type.Array(
+        Type.Object({
+          action: Type.String(),
+          success: Type.Boolean(),
+        }),
+      ),
+    ),
     issues: Type.Array(
       Type.Object({
         severity: Type.Union([
@@ -1012,7 +1022,7 @@ export const HealthOutputSchema = Type.Object(
           Type.Literal("warning"),
           Type.Literal("info"),
         ]),
-        file: Type.String(),
+        code: Type.String(),
         message: Type.String(),
       }),
     ),

@@ -18,8 +18,10 @@
 ## Planning
 
 - `/gsd map-codebase`
-  flags: `--paths <repo/path,...>`, `--fast`, `--focus <tech|arch|quality|concerns|tech+arch>`, `--query <term|status|diff|refresh>`
+  flags: `--fast`, `--query <term|status|diff|refresh>`
   modes: `refresh`, `update`, `skip`
+  `--focus <tech|arch|quality|concerns|tech+arch>` only with `--fast`
+  unsupported-local but explicit: `--paths <repo/path,...>`
 - `/gsd discuss-phase [phase] [input]`
   flags: `--phase <phase>`, `--assumptions`, `--auto`, `--all`, `--chain`, `--text`
 - `/gsd plan-phase [phase]`

@@ -51,6 +51,7 @@ Implemented locally:
 | `discuss-phase`      | TS-native orchestration            | `discuss-phase`                |       92 |
 | `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
+| `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       48 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
@@ -68,7 +69,7 @@ Upstream has 44 non-namespace commands still missing locally.
 
 Missing non-namespace commands:
 
-`add-tests`, `ai-integration-phase`, `audit-fix`, `audit-milestone`, `audit-uat`, `autonomous`, `capture`, `cleanup`, `code-review`, `config`, `docs-update`, `eval-review`, `explore`, `extract-learnings`, `fast`, `forensics`, `graphify`, `import`, `inbox`, `ingest-docs`, `manager`, `pause-work`, `phase`, `plan-review-convergence`, `pr-branch`, `profile-user`, `quick`, `resume-work`, `review`, `review-backlog`, `secure-phase`, `settings`, `ship`, `sketch`, `spec-phase`, `spike`, `thread`, `ui-phase`, `ui-review`, `ultraplan-phase`, `undo`, `update`, `workspace`, `workstreams`.
+`add-tests`, `ai-integration-phase`, `audit-fix`, `audit-milestone`, `audit-uat`, `autonomous`, `capture`, `cleanup`, `code-review`, `config`, `docs-update`, `eval-review`, `explore`, `extract-learnings`, `fast`, `forensics`, `graphify`, `import`, `inbox`, `ingest-docs`, `manager`, `mvp-phase`, `pause-work`, `phase`, `plan-review-convergence`, `pr-branch`, `profile-user`, `quick`, `resume-work`, `review`, `review-backlog`, `settings`, `ship`, `sketch`, `spec-phase`, `spike`, `thread`, `ui-phase`, `ui-review`, `ultraplan-phase`, `undo`, `update`, `workspace`, `workstreams`.
 
 Upstream source roster: `~/.cache/checkouts/github.com/gsd-build/get-shit-done/commands/gsd/*.md`. Command reference: `~/.cache/checkouts/github.com/gsd-build/get-shit-done/docs/COMMANDS.md:34-260`.
 
@@ -120,6 +121,7 @@ Legend:
 | `discuss-phase`      |        Y |                             N |                        N |                  Y |                         P |           N | parent-owned flow, artifact/checkpoint contract                                                    |
 | `plan-phase`         |        Y |                             N |                        N |                  Y |                         P |           N | planner + checker only                                                                             |
 | `execute-phase`      |        Y |                             Y |                        P |                  N |                         P |           P | workflow-launch foundation, downstream runtime reused; upstream execution-mode flags now preserved |
+| `secure-phase`       |        Y |                             Y |                        Y |                  N |                         P |           P | workflow-launch security review with explicit local arg validation                                 |
 | `verify-work`        |        Y |                             Y |                        Y |                  Y |                         P |           N | workflow-launch foundation; authoritative UAT contract                                             |
 | `validate-phase`     |        Y |                             N |                        N |                  N |                         P |           N | template stub                                                                                      |
 | `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only                                                                                |
@@ -406,6 +408,25 @@ Differences:
 - no automatic diagnosis or gap/fix-plan creation workflow yet; local docs now say so explicitly
 - no workflow-backed artifact acknowledgment, security routing, or completion transition mutation path yet; completion guidance stays summary-only in current slice
 - MVP-mode and Playwright/Puppeteer automated verification branches remain deferred, not supported locally
+
+### `secure-phase`
+
+Coverage: 88/100
+
+Upstream behavior:
+
+- command prompt delegates to secure review workflow for a phase-scoped security pass.
+
+Local behavior:
+
+- routes through workflow-launch foundation with bundled local command/workflow resources. `src/extensions/gsd/lifecycle/secure-phase.ts`, `src/resources/gsd/commands/gsd/secure-phase.md`, `src/resources/gsd/workflows/secure-phase.md`
+- dedicated parser accepts positional or `--phase` override and rejects malformed extra args or unknown flags explicitly. `src/extensions/gsd/secure-phase-args.ts`, `src/extensions/gsd/args.ts`
+- grouped command registration, autocomplete, and help now treat `secure-phase` as shipped local surface. `src/extensions/gsd/commands.ts`, `src/extensions/gsd/autocomplete.ts`, `src/resources/gsd/docs/command-reference.md`
+
+Differences:
+
+- local slice remains workflow-launch driven rather than native TS security audit orchestration
+- deeper upstream security remediation/report branches still depend on bundled workflow/runtime behavior
 
 ### `validate-phase`
 
@@ -699,9 +720,8 @@ After implemented commands reach acceptable parity, add missing upstream command
 |    26 | `code-review`             | major quality gate                    |
 |    27 | `review`                  | cross-AI plan review loop dependency  |
 |    28 | `plan-review-convergence` | higher-order planning quality command |
-|    29 | `secure-phase`            | security parity                       |
-|    30 | `audit-fix`               | auto-remediation pipeline             |
-|    31 | `add-tests`               | complements validation and execution  |
+|    29 | `audit-fix`               | auto-remediation pipeline             |
+|    30 | `add-tests`               | complements validation and execution  |
 
 #### Tier C: Brownfield and knowledge systems
 

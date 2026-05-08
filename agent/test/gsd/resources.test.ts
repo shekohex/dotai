@@ -6,7 +6,38 @@ import {
   loadBundledPrompt,
   loadBundledTemplate,
 } from "../../src/extensions/gsd/resources.js";
+import {
+  getGsdAutocompleteFlags,
+  getGsdSubcommands,
+} from "../../src/extensions/gsd/autocomplete.js";
 import { listGsdRoles } from "../../src/extensions/gsd/roles.js";
+
+function extractBacktickedValues(section: string): string[] {
+  return [...section.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? "");
+}
+
+function extractAuditSection(document: string, heading: string, nextHeading: string): string {
+  const start = document.indexOf(heading);
+  const end = document.indexOf(nextHeading);
+
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+
+  return document.slice(start, end);
+}
+
+function extractImplementedAuditCommands(section: string): string[] {
+  return section
+    .split("\n")
+    .filter((line) => line.startsWith("| `"))
+    .map((line) => {
+      const match = line.match(/^\| `([^`]+)`\s+\|/u);
+
+      expect(match?.[1]).toBeTruthy();
+
+      return match?.[1] ?? "";
+    });
+}
 
 describe("gsd bundled resources", () => {
   it("loads shipped docs", () => {
@@ -96,6 +127,81 @@ describe("gsd bundled resources", () => {
     expect(loadBundledDoc("command-reference.md")).toContain(
       "default route: bundled workflow-launch review session",
     );
+  });
+
+  it("keeps command reference subcommand roster aligned with registered grouped surface", () => {
+    const reference = loadBundledDoc("command-reference.md");
+
+    for (const { value } of getGsdSubcommands()) {
+      expect(reference).toContain(`/gsd ${value}`);
+    }
+  });
+
+  it("keeps command reference honest for key local map-codebase and progress modes", () => {
+    const reference = loadBundledDoc("command-reference.md");
+    const flags = getGsdAutocompleteFlags();
+
+    expect(reference).toContain("- `/gsd map-codebase`");
+    expect(reference).toContain("flags: `--fast`, `--query <term|status|diff|refresh>`");
+    expect(reference).toContain(
+      "`--focus <tech|arch|quality|concerns|tech+arch>` only with `--fast`",
+    );
+    expect(reference).toContain("unsupported-local but explicit: `--paths <repo/path,...>`");
+    expect(reference).not.toContain(
+      "flags: `--paths <repo/path,...>`, `--fast`, `--focus <tech|arch|quality|concerns|tech+arch>`, `--query <term|status|diff|refresh>`",
+    );
+
+    expect(flags["map-codebase"]).toBeUndefined();
+    expect(reference).toContain(
+      "parsed with explicit unsupported-local error: `--do`, `--forensic`",
+    );
+    expect(reference).toContain("`--phase <phase>`, `--force` only with `/gsd progress --next`");
+  });
+
+  it("keeps coverage audit implemented and missing command sections aligned with runtime surface", () => {
+    const audit = readFileSync(join(process.cwd(), "docs/gsd-command-coverage-audit.md"), "utf8");
+    const implementedSection = extractAuditSection(
+      audit,
+      "Implemented locally:",
+      "## Missing Commands",
+    );
+    const missingSection = extractAuditSection(
+      audit,
+      "Missing non-namespace commands:",
+      "Upstream source roster:",
+    );
+    const runtimeSubcommands = new Set(getGsdSubcommands().map(({ value }) => value));
+    const localOnlySubcommands = new Set(["next", "on", "off", "status"]);
+    const upstreamMirroredRuntimeSubcommands = [...runtimeSubcommands].filter(
+      (value) => !localOnlySubcommands.has(value),
+    );
+    const implementedCommands = new Set(extractImplementedAuditCommands(implementedSection));
+    const missingCommands = new Set(extractBacktickedValues(missingSection));
+    const upstreamMirroredAuditCommands = [...implementedCommands].filter(
+      (value) => !localOnlySubcommands.has(value),
+    );
+    const missingCountMatch = audit.match(
+      /Upstream has (\d+) non-namespace commands still missing locally\./u,
+    );
+
+    expect(missingCountMatch?.[1]).toBeTruthy();
+
+    for (const subcommand of upstreamMirroredRuntimeSubcommands) {
+      expect(implementedCommands.has(subcommand)).toBe(true);
+      expect(missingCommands.has(subcommand)).toBe(false);
+    }
+
+    for (const subcommand of upstreamMirroredAuditCommands) {
+      expect(runtimeSubcommands.has(subcommand)).toBe(true);
+      expect(missingCommands.has(subcommand)).toBe(false);
+    }
+
+    expect(implementedCommands.has("secure-phase")).toBe(true);
+    expect(missingCommands.has("secure-phase")).toBe(false);
+    expect(implementedCommands.has("help")).toBe(true);
+    expect(runtimeSubcommands.has("help")).toBe(true);
+    expect(missingCommands.has("mvp-phase")).toBe(true);
+    expect(missingCommands.size).toBe(Number(missingCountMatch?.[1]));
   });
 
   it("ships verify-work foundation resources and wording", () => {

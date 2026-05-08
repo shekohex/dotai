@@ -9,6 +9,7 @@
     "grill-me",
     "using-gemini-cli",
     "librarian",
-    "webfetch"
+    "webfetch",
+    "long-running-agent"
   ]
 }

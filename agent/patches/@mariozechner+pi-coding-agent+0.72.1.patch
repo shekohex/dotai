@@ -1,39 +1,3 @@
-diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session-runtime.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session-runtime.js
-index d567047..412e82e 100644
---- a/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session-runtime.js
-+++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session-runtime.js
-@@ -105,7 +105,7 @@ export class AgentSessionRuntime {
-             targetSessionFile,
-         });
-         this.beforeSessionInvalidate?.();
--        this.session.dispose();
-+        await this.session.dispose();
-     }
-     apply(result) {
-         this._session = result.session;
-@@ -282,7 +282,7 @@ export class AgentSessionRuntime {
-             reason: "quit",
-         });
-         this.beforeSessionInvalidate?.();
--        this.session.dispose();
-+        await this.session.dispose();
-     }
- }
- /**
-diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js
-index 880a364..1b5c42a 100644
---- a/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js
-+++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/agent-session.js
-@@ -505,7 +505,8 @@ export class AgentSession {
-      * Remove all listeners and disconnect from agent.
-      * Call this when completely done with the session.
-      */
--    dispose() {
-+    async dispose() {
-+        await this._agentEventQueue.catch(() => { });
-         this._extensionRunner.invalidate("This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().");
-         this._disconnectFromAgent();
-         this._eventListeners = [];
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 index b57b6ae..9a8e4ac 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
@@ -46,32 +10,6 @@ index b57b6ae..9a8e4ac 100644
          // Always create all shell variants. contentBox is used for default renderer-based composition.
          // selfRenderContainer is used when the tool renders its own framing.
          // contentText is reserved for generic fallback rendering when no tool definition exists.
-diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
-index 466242c..da03663 100644
---- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
-+++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.d.ts
-@@ -4,6 +4,7 @@
-  */
- import { type ImageContent } from "@mariozechner/pi-ai";
- import { type AgentSessionRuntime } from "../../core/agent-session-runtime.js";
-+import type { SessionInfo, SessionListProgress } from "../../core/session-manager.js";
- export declare function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>, builtInProviderIds?: ReadonlySet<string>): boolean;
- /**
-  * Options for InteractiveMode initialization.
-@@ -21,6 +22,13 @@ export interface InteractiveModeOptions {
-     initialMessages?: string[];
-     /** Force verbose startup (overrides quietStartup setting) */
-     verbose?: boolean;
-+    /** Optional override for session resume picker data sources and mutations */
-+    sessionSelectorLoaders?: {
-+        currentSessionsLoader: (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
-+        allSessionsLoader: (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
-+        renameSession?: ((sessionPath: string, nextName: string | undefined) => Promise<void>) | null;
-+        showRenameHint?: boolean;
-+    };
- }
- export declare class InteractiveMode {
-     private options;
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
 index f233135..e9617cb 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
@@ -140,45 +78,3 @@ index f233135..e9617cb 100644
                          if (message.stopReason === "aborted" || message.stopReason === "error") {
                              let errorMessage;
                              if (message.stopReason === "aborted") {
-@@ -3528,7 +3558,19 @@ export class InteractiveMode {
-     }
-     showSessionSelector() {
-         this.showSelector((done) => {
--            const selector = new SessionSelectorComponent((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress), SessionManager.listAll, async (sessionPath) => {
-+            const currentSessionsLoader = this.options.sessionSelectorLoaders?.currentSessionsLoader ??
-+                ((onProgress) => SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress));
-+            const allSessionsLoader = this.options.sessionSelectorLoaders?.allSessionsLoader ?? SessionManager.listAll;
-+            const renameSession = this.options.sessionSelectorLoaders?.renameSession === undefined
-+                ? async (sessionFilePath, nextName) => {
-+                    const next = (nextName ?? "").trim();
-+                    if (!next)
-+                        return;
-+                    const mgr = SessionManager.open(sessionFilePath);
-+                    mgr.appendSessionInfo(next);
-+                }
-+                : this.options.sessionSelectorLoaders.renameSession ?? undefined;
-+            const selector = new SessionSelectorComponent(currentSessionsLoader, allSessionsLoader, async (sessionPath) => {
-                 done();
-                 await this.handleResumeSession(sessionPath);
-             }, () => {
-@@ -3537,16 +3579,10 @@ export class InteractiveMode {
-             }, () => {
-                 void this.shutdown();
-             }, () => this.ui.requestRender(), {
--                renameSession: async (sessionFilePath, nextName) => {
--                    const next = (nextName ?? "").trim();
--                    if (!next)
--                        return;
--                    const mgr = SessionManager.open(sessionFilePath);
--                    mgr.appendSessionInfo(next);
--                },
--                showRenameHint: true,
--                keybindings: this.keybindings,
--            }, this.sessionManager.getSessionFile());
-+                    renameSession,
-+                    showRenameHint: this.options.sessionSelectorLoaders?.showRenameHint ?? true,
-+                    keybindings: this.keybindings,
-+                }, this.sessionManager.getSessionFile());
-             return { component: selector, focus: selector };
-         });
-     }

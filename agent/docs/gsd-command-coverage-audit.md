@@ -563,7 +563,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 52/100
+Coverage: 58/100
 
 Upstream behavior:
 
@@ -575,14 +575,16 @@ Local behavior:
 - no-UI `/gsd help` now emits durable command output instead of transient notify-only text, making headless/RPC consumption more reliable. `src/extensions/gsd/help.ts`, `test/gsd/commands.test.ts`
 - command reference now documents shipped local subcommands and meaningful local flags, including `new-milestone`, `complete-milestone`, `milestone-summary`, `debug`, `secure-phase`, `status`, and current execute/progress flag semantics. `src/resources/gsd/docs/command-reference.md`
 - command reference now adds concise first-run guidance, quick start, when-to-use notes, and examples for implemented local commands without widening support claims. `src/resources/gsd/docs/command-reference.md`, `test/gsd/ui.test.ts`
+- command reference now includes an explicit upstream-to-local crosswalk for common missing upstream commands and unsupported-command guidance so migration failures are explained rather than implied. `src/resources/gsd/docs/command-reference.md`, `test/gsd/resources.test.ts`
 - TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
-- focused tests now cover canonical help rendering, durable headless output, runtime/audit guardrails, and key local wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`
+- durable non-UI help now has a registered `gsd-help` renderer contract in message rendering. `src/extensions/gsd/ui/messages.ts`, `test/gsd/index.test.ts`
+- focused tests now cover canonical help rendering, durable headless output, runtime/audit guardrails, crosswalk wording, and key local wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`, `test/gsd/index.test.ts`
 
 Differences:
 
 - reference content still local-only and documents only local command surface, not upstream full 65-command universe
 - no generated manifest yet; command reference is still hand-maintained, though now much closer to shipped local surface
-- help content breadth still trails upstream workflow help significantly, especially around richer workflow narratives and absent upstream-only commands
+- help content breadth still trails upstream workflow help significantly, especially around richer workflow narratives and full upstream command catalog coverage
 
 ### `on` and `off`
 

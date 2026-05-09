@@ -3,12 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
+import type { MessageRenderer } from "@mariozechner/pi-coding-agent";
 import type { Component, TUI } from "@mariozechner/pi-tui";
 import {
   createGsdHelpComponent,
   getGsdHelpReference,
   showGsdHelp,
 } from "../../src/extensions/gsd/help.js";
+import gsdExtension from "../../src/extensions/gsd/index.ts";
 import { showGsdDashboard } from "../../src/extensions/gsd/ui.js";
 
 const fakeHelpPi = {
@@ -61,6 +63,9 @@ function writeProjectFiles(root: string): void {
 
 function createTheme(): Theme {
   return {
+    bg(_color, text) {
+      return text;
+    },
     fg(_color, text) {
       return text;
     },
@@ -74,6 +79,14 @@ function createTui(): TUI {
   return {
     requestRender() {},
   } as TUI;
+}
+
+function renderMessage(
+  renderer: MessageRenderer,
+  message: { content: string; customType: string },
+): string {
+  const component = renderer(message, { expanded: true }, createTheme());
+  return component.render(100).join("\n");
 }
 
 async function renderCustomComponent(
@@ -142,9 +155,8 @@ describe("gsd ui custom components", () => {
     );
     const reference = getGsdHelpReference();
     expect(rendered).toContain("# GSD Command Reference");
-    expect(rendered).toContain("## Quick Start");
-    expect(rendered).toContain("/gsd new-project [brief]`");
-    expect(rendered).toContain("/gsd on`");
+    expect(rendered).toContain("## Upstream Crosswalk");
+    expect(rendered).toContain("## Unsupported Upstream Commands");
     expect(rendered).toContain("PgUp/PgDn page");
     expect(reference).toContain("## Milestones");
     expect(reference).toContain("## Planning");
@@ -158,12 +170,35 @@ describe("gsd ui custom components", () => {
     expect(rendered).not.toContain("overview.md");
   });
 
+  it("registered non-ui help renderer has clear durable handling path", () => {
+    const messageRenderers = new Map<string, unknown>();
+    gsdExtension({
+      registerCommand() {},
+      registerMessageRenderer(customType: string, renderer: unknown) {
+        messageRenderers.set(customType, renderer);
+      },
+      on() {},
+    } as never);
+
+    const renderer = messageRenderers.get("gsd-help");
+    expect(renderer).toBeTypeOf("function");
+
+    const rendered = renderMessage(renderer as MessageRenderer, {
+      customType: "gsd-help",
+      content: getGsdHelpReference(),
+    });
+
+    expect(rendered).toContain("GSD Help");
+    expect(rendered).toContain("# GSD Command Reference");
+    expect(rendered).toContain("## Unsupported Upstream Commands");
+  });
+
   it("help component pages through canonical reference", () => {
     const component = createGsdHelpComponent(() => {});
 
     const firstPage = component.render(100).join("\n");
     expect(firstPage).toContain("# GSD Command Reference");
-    expect(firstPage).toContain("## Quick Start");
+    expect(firstPage).toContain("## Upstream Crosswalk");
     expect(firstPage).not.toContain("## Execution");
     expect(firstPage).not.toContain("## Debug");
     expect(firstPage).not.toContain("## Instant");
@@ -171,16 +206,23 @@ describe("gsd ui custom components", () => {
     component.handleInput?.("\u001b[6~");
 
     const secondPage = component.render(100).join("\n");
-    expect(secondPage).toContain("## Milestones");
+    expect(secondPage).toContain("## Quick Start");
     expect(secondPage).not.toContain("## Debug");
 
+    component.handleInput?.("\u001b[6~");
     component.handleInput?.("\u001b[6~");
     component.handleInput?.("\u001b[6~");
 
     const thirdPage = component.render(100).join("\n");
     expect(thirdPage).toContain("/gsd secure-phase [phase]");
-    expect(thirdPage).toContain("## Debug");
 
+    component.handleInput?.("\u001b[6~");
+
+    const fourthPage = component.render(100).join("\n");
+    expect(fourthPage).toContain("## Debug");
+
+    component.handleInput?.("\u001b[5~");
+    component.handleInput?.("\u001b[5~");
     component.handleInput?.("\u001b[5~");
     component.handleInput?.("\u001b[5~");
     component.handleInput?.("\u001b[5~");

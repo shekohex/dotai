@@ -1561,13 +1561,26 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
   expect(content).toContain(
     "Start new local planning tree with `/gsd new-project [brief]`, or run `/gsd on` if planning already exists.",
   );
+  expect(content).toContain("## Upstream Crosswalk");
+  expect(content).toContain(
+    "Upstream `/gsd phase` does not exist here as one grouped command. Use local `/gsd discuss-phase`, `/gsd plan-phase`, `/gsd execute-phase`, `/gsd verify-work`, `/gsd secure-phase`, `/gsd validate-phase`.",
+  );
+  expect(content).toContain("## Unsupported Upstream Commands");
+  expect(content).toContain(
+    "If upstream docs mention `/gsd <name>` command not listed below, command is unavailable in this repo.",
+  );
+  expect(content).toContain(
+    "Common unavailable examples: `/gsd retro`, `/gsd phase`, `/gsd project`, `/gsd milestone`, `/gsd map`.",
+  );
   expect(content).toContain("Local-only command surface. Only commands below supported here.");
+  expect(content).toContain(
+    "Non-UI `/gsd help` emits durable `gsd-help` message output; registered local renderer is intended handling path.",
+  );
   expect(content).toContain(
     "Some commands reject unsupported local flags explicitly; others still accept extra tokens or freeform input.",
   );
   expect(content).toContain("Not claim upstream parity.");
   expect(content).toContain("/gsd new-project --auto @idea.md");
-  expect(content).not.toContain("/gsd retro");
 });
 
 test("gsd stats json and table route to structured local outputs", async () => {

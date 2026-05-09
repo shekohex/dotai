@@ -137,6 +137,7 @@ test("registers both codebase-map and intel-refresh message renderers", () => {
   const fakePi = new FakePi();
   gsdExtension(fakePi as ExtensionAPI);
 
+  expect(fakePi.messageRenderers.has("gsd-help")).toBe(true);
   expect(fakePi.messageRenderers.has("gsd-codebase-map-summary")).toBe(true);
   expect(fakePi.messageRenderers.has("gsd-intel-refresh-summary")).toBe(true);
 });

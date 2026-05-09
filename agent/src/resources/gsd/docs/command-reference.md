@@ -2,6 +2,21 @@
 
 Local help for commands implemented in this repo. Not claim upstream parity.
 
+## Upstream Crosswalk
+
+- Upstream `/gsd next` maps to local `/gsd next` for safest next-step routing from local `.planning` state.
+- Upstream `/gsd phase` does not exist here as one grouped command. Use local `/gsd discuss-phase`, `/gsd plan-phase`, `/gsd execute-phase`, `/gsd verify-work`, `/gsd secure-phase`, `/gsd validate-phase`.
+- Upstream `/gsd project` does not exist here. Use local `/gsd new-project`, `/gsd progress`, `/gsd stats`, `/gsd health`.
+- Upstream `/gsd milestone` does not exist here. Use local `/gsd new-milestone`, `/gsd complete-milestone`, `/gsd milestone-summary`.
+- Upstream `/gsd map` does not exist here. Use local `/gsd map-codebase`.
+
+## Unsupported Upstream Commands
+
+- If upstream docs mention `/gsd <name>` command not listed below, command is unavailable in this repo.
+- Do not assume alias or partial parity.
+- Try `/gsd help`, root `/gsd` dashboard, or one listed local command instead.
+- Common unavailable examples: `/gsd retro`, `/gsd phase`, `/gsd project`, `/gsd milestone`, `/gsd map`.
+
 ## Quick Start
 
 1. Start new local planning tree with `/gsd new-project [brief]`, or run `/gsd on` if planning already exists.
@@ -19,6 +34,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 - Local-only command surface. Only commands below supported here.
 - Some commands reject unsupported local flags explicitly; others still accept extra tokens or freeform input.
 - Help keeps deferred or workflow-forwarded behavior labeled as such.
+- Non-UI `/gsd help` emits durable `gsd-help` message output; registered local renderer is intended handling path.
 
 ## Control
 

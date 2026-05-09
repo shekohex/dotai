@@ -3,6 +3,7 @@ import { Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/p
 import { loadBundledDoc } from "./resources.js";
 
 const HELP_PAGE_LINES = 20;
+export const GSD_HELP_MESSAGE = "gsd-help";
 
 export function getGsdHelpReference(): string {
   return loadBundledDoc("command-reference.md");
@@ -81,7 +82,7 @@ export async function showGsdHelp(
   if (!ctx.hasUI) {
     pi.sendMessage(
       {
-        customType: "gsd-help",
+        customType: GSD_HELP_MESSAGE,
         content: reference,
         display: true,
       },

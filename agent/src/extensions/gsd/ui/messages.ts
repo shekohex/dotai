@@ -1,6 +1,7 @@
 import type { Component } from "@mariozechner/pi-tui";
 import { Box, Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI, MessageRenderer } from "@mariozechner/pi-coding-agent";
+import { GSD_HELP_MESSAGE } from "../help.js";
 
 export const GSD_CODEBASE_MAP_SUMMARY_MESSAGE = "gsd-codebase-map-summary";
 export const GSD_INTEL_REFRESH_SUMMARY_MESSAGE = "gsd-intel-refresh-summary";
@@ -84,7 +85,16 @@ function createIntelRefreshSummaryRenderer(): MessageRenderer<GsdIntelRefreshSum
   };
 }
 
+function createHelpRenderer(): MessageRenderer {
+  return (message, _state, theme) => {
+    const content = typeof message.content === "string" ? message.content : "";
+    const lines = [theme.fg("accent", theme.bold("GSD Help")), "", content];
+    return createMessageBox(lines, theme);
+  };
+}
+
 export function registerGsdMessageRenderers(pi: ExtensionAPI): void {
+  pi.registerMessageRenderer(GSD_HELP_MESSAGE, createHelpRenderer());
   pi.registerMessageRenderer(GSD_CODEBASE_MAP_SUMMARY_MESSAGE, createCodebaseMapSummaryRenderer());
   pi.registerMessageRenderer(
     GSD_INTEL_REFRESH_SUMMARY_MESSAGE,

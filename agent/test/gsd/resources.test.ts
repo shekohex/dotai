@@ -141,6 +141,14 @@ describe("gsd bundled resources", () => {
     const reference = loadBundledDoc("command-reference.md");
     const flags = getGsdAutocompleteFlags();
 
+    expect(reference).toContain("## Upstream Crosswalk");
+    expect(reference).toContain(
+      "Upstream `/gsd map` does not exist here. Use local `/gsd map-codebase`.",
+    );
+    expect(reference).toContain("## Unsupported Upstream Commands");
+    expect(reference).toContain(
+      "If upstream docs mention `/gsd <name>` command not listed below, command is unavailable in this repo.",
+    );
     expect(reference).toContain("- `/gsd map-codebase`");
     expect(reference).toContain("flags: `--fast`, `--query <term|status|diff|refresh>`");
     expect(reference).toContain(
@@ -156,6 +164,9 @@ describe("gsd bundled resources", () => {
       "parsed with explicit unsupported-local error: `--do`, `--forensic`",
     );
     expect(reference).toContain("`--phase <phase>`, `--force` only with `/gsd progress --next`");
+    expect(reference).toContain(
+      "Non-UI `/gsd help` emits durable `gsd-help` message output; registered local renderer is intended handling path.",
+    );
   });
 
   it("keeps coverage audit implemented and missing command sections aligned with runtime surface", () => {

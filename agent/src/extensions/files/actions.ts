@@ -1,6 +1,6 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 
 export type FileAction = "reveal" | "quicklook" | "open" | "edit" | "addToPrompt" | "diff";
 

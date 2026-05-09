@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { buildAssumptionsDraft } from "./discuss-phase-assumptions.js";
 import type { DiscussCheckpoint } from "../state/schema.js";
 import type { CurrentPhaseSelection } from "../state/runtime.js";

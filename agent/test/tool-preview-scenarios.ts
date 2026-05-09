@@ -3,8 +3,8 @@ import {
   ToolExecutionComponent,
   keyHint,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
-import { Text, visibleWidth } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { applyPatchTool } from "../src/extensions/patch.js";
 import { webFetchTool } from "../src/extensions/fetch.js";
@@ -291,7 +291,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
     '\tconst marker = "row\u0007";',
     "const issues = await tools.github_rest_api.issues.listForRepo({",
     '  owner: "badlogic",',
-    '  repo: "pi-mono",',
+    '  repo: "pi",',
     '  state: "open",',
     "  per_page: 3,",
     "});",

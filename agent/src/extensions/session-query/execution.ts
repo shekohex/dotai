@@ -1,4 +1,4 @@
-import { stream, type Api, type Message, type Model } from "@mariozechner/pi-ai";
+import { stream, type Api, type Message, type Model } from "@earendil-works/pi-ai";
 import {
   type AgentToolUpdateCallback,
   type ExtensionContext,
@@ -6,7 +6,7 @@ import {
   convertToLlm,
   serializeConversation,
   type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { errorMessage } from "../../utils/error-message.js";

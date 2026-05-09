@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
   buildTPSStats,
   calculateIntervalTPS,

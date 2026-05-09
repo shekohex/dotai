@@ -1,5 +1,5 @@
-import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 import type { HandoffLaunchResult } from "../handoff.js";
 import { REVIEW_ADDRESS_FINDINGS_PROMPT, type CreateReviewExtensionOptions } from "./deps.js";
 import { errorMessage } from "../../utils/error-message.js";

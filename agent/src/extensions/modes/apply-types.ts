@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ModeSpec, ModesFile } from "../../mode-utils.js";
 import type { ModeChangeReason, ModeChangeSource } from "./events.js";
 

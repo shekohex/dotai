@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRecord, readNumber as readOptionalNumber } from "../../utils/unknown-data.js";
 import type { CoreUIState, CoreUITPSStats } from "./types.js";
 import { buildTPSStats, calculateIntervalTPS, formatCompactCount } from "./tps-metrics.js";

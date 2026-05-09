@@ -1,4 +1,4 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
 import { createWrappedError, getErrorMessage, toError } from "./errors.js";
 import { isNonEmptyString } from "./guards.js";

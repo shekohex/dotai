@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
-import { createTestSession, type TestSession } from "@marcfargas/pi-test-harness";
+import { createTestSession, type TestSession } from "@support/pi-test-harness";
 
 import {
   buildReviewHandoffPrompt,

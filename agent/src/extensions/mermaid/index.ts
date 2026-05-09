@@ -1,6 +1,6 @@
-import type { ExtensionAPI, MessageRenderer, ThemeColor } from "@mariozechner/pi-coding-agent";
-import { keyHint } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, type Component } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, MessageRenderer, ThemeColor } from "@earendil-works/pi-coding-agent";
+import { keyHint } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { installAssistantMessagePatch } from "./patch.js";
 import { extractMermaidBlocks } from "./parsing.js";
 import {

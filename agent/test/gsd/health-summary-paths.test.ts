@@ -14,8 +14,8 @@ vi.mock("../../src/extensions/gsd/state/health.js", () => ({
   })),
 }));
 
-import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
-import type { Component, TUI } from "@mariozechner/pi-tui";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { getGsdSubcommandHint } from "../../src/extensions/gsd/state/suggestions.js";
 import { showGsdDashboard } from "../../src/extensions/gsd/ui.js";
 

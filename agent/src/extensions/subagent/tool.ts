@@ -2,7 +2,7 @@ import {
   defineTool,
   type ExtensionAPI,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { SubagentSDK } from "../../subagent-sdk/sdk.js";
 import {

@@ -1,6 +1,6 @@
-import { getModels } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { getModels } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
 
 type LiteLLMCandidate = {

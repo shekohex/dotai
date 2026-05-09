@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildGsdSystemContext } from "./context.js";
 import { registerGsdCommands } from "./commands.js";
 import { registerBuiltInGsdModes } from "./modes.js";

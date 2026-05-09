@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { MuxAdapter } from "../../subagent-sdk/mux.js";
 import type { RuntimeSubagent, SubagentToolParams, TSchemaBase } from "../../subagent-sdk/types.js";
 

@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { SelectItem } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { SelectItem } from "@earendil-works/pi-tui";
 import {
   getCurrentBranch,
   getDefaultBranch,

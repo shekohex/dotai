@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
 import { formatDetachedGsdFailure, runDetachedGsdJob } from "../detached-job.js";
 import { resolvePlanningDir } from "../shared.js";

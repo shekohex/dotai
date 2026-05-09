@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveSupportedProviderId } from "./model-map.js";
 import { getRemainingPercent, renderStatusText, setStatus } from "./status.js";
 import { createRuntimeState } from "./state.js";

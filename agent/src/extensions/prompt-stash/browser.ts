@@ -1,4 +1,4 @@
-import type { KeybindingsManager, Theme } from "@mariozechner/pi-coding-agent";
+import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import {
   Container,
   Input,
@@ -12,7 +12,7 @@ import {
   type Focusable,
   type SelectListTheme,
   type TUI,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import {
   countLines,
   createSelectItem,

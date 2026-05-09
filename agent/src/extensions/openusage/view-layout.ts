@@ -1,4 +1,4 @@
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getMetricLabel, maskAccountLabel, type OpenUsageDisplayMode } from "./status.js";
 import type { ResetTimeFormat, SupportedProviderId, UsageSnapshot } from "./types.js";
 import { formatAge, providerDisplayName, renderMetricSection } from "./view-metrics.js";

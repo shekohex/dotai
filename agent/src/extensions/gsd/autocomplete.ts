@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
+import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
 import type { GsdSubcommand } from "./commands.js";
 import { getLastKnownGsdCwd } from "./state/cwd.js";
 import {

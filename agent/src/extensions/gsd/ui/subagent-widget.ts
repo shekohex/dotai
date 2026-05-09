@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
-import { Container, Text, type Component, type TUI } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { Container, Text, type Component, type TUI } from "@earendil-works/pi-tui";
 import { createDefaultSubagentRuntimeHooks } from "../../../subagent-sdk/index.js";
 import type { RuntimeSubagent } from "../../../subagent-sdk/index.js";
 import type { SubagentRuntimeHooks } from "../../../subagent-sdk/runtime-hooks.js";

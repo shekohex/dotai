@@ -1,5 +1,5 @@
-import { stream } from "@mariozechner/pi-ai";
-import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { stream } from "@earendil-works/pi-ai";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MODEL,
   DEFAULT_TIMEOUT_MS,

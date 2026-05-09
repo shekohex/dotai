@@ -1,4 +1,4 @@
-import type { ThemeColor as PackageThemeColor } from "@mariozechner/pi-coding-agent";
+import type { ThemeColor as PackageThemeColor } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 const themeColorNames = [

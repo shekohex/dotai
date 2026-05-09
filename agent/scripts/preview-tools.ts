@@ -1,12 +1,12 @@
-import { Theme, initTheme } from "@mariozechner/pi-coding-agent";
-import { ProcessTerminal, Spacer, Text, TUI, setKeybindings } from "@mariozechner/pi-tui";
+import { Theme, initTheme } from "@earendil-works/pi-coding-agent";
+import { ProcessTerminal, Spacer, Text, TUI, setKeybindings } from "@earendil-works/pi-tui";
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { errorMessage } from "../src/utils/error-message.js";
-import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
-import { setThemeInstance } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
+import { setThemeInstance } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import * as previewScenariosModule from "../test/tool-preview-scenarios.ts";
 import { ToolPreviewApp } from "./preview-tools-app.js";
 import {

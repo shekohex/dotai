@@ -1,4 +1,4 @@
-import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { cloneRuntimeSubagent } from "./types.js";
 import type { MessageSubagentParams, RuntimeSubagent } from "./types.js";

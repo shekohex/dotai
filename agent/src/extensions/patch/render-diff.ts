@@ -1,5 +1,5 @@
 import { createTwoFilesPatch } from "diff";
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { trimDiff } from "./content.js";
 import type { PatchFileDetails } from "./types.js";
 

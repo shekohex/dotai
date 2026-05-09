@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { MODE_ACTIVATE_EVENT } from "../modes/index.js";
 import {
   resolveSessionLaunchOptions,

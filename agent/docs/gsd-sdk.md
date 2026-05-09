@@ -288,7 +288,7 @@ src/resources/
 ### `src/extensions/gsd/index.ts`
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerGsdCommands } from "./commands.js";
 import { getGsdSettings } from "./settings.js";
 import { detectExistingPlanning } from "./state/detect.js";
@@ -339,9 +339,9 @@ export default function gsdExtension(pi: ExtensionAPI): void {
 ### `src/extensions/gsd/commands.ts`
 
 ```typescript
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
-import { fuzzyFilter } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { fuzzyFilter } from "@earendil-works/pi-tui";
 import { getGsdSettings } from "./settings.js";
 import { handleGsdProgress } from "./instant/progress.js";
 import { handleGsdNext } from "./instant/next.js";
@@ -789,7 +789,7 @@ Each role entry maps to a mode name (e.g., `gsd-planner`). The extension injects
 ### `src/extensions/gsd/subagents.ts`
 
 ```typescript
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import type { SubagentSDK } from "../../subagent-sdk/sdk-types.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
@@ -1223,7 +1223,7 @@ describe("detectExistingPlanning", () => {
 // test/gsd/subagents.test.ts
 import { describe, it, expect, vi } from "vitest";
 import { spawnPlanner } from "../../src/extensions/gsd/subagents.js";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 describe("spawnPlanner", () => {
   it("returns parsed plan output on success", async () => {

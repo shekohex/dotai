@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseGsdCommandArgs, usesParsedArgs } from "./args.js";
 import { getGsdArgumentCompletions, getGsdSubcommands } from "./autocomplete.js";
 import { gsdHandlers } from "./handlers.js";

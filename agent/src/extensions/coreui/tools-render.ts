@@ -1,4 +1,4 @@
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { readToolDefinition } from "./builtins.js";
 
 type ToolTheme = Parameters<NonNullable<typeof readToolDefinition.renderCall>>[1];

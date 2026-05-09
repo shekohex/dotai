@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
 import { resolvePlanningDir } from "../shared.js";
 

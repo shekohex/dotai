@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { downloadCliproxyAuthFile, resolveCliproxySelectedAccount } from "../cliproxy.js";
 import type { OpenUsageRuntimeState } from "../types.js";
 import {

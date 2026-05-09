@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { handleGsdPlanPhase } from "../../src/extensions/gsd/lifecycle/plan-phase.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
 

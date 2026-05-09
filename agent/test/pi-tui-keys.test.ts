@@ -3,7 +3,7 @@ import {
   matchesKey,
   parseKey,
   setKittyProtocolActive,
-} from "../node_modules/@mariozechner/pi-tui/dist/keys.js";
+} from "../node_modules/@earendil-works/pi-tui/dist/keys.js";
 
 afterEach(() => {
   setKittyProtocolActive(false);

@@ -1,4 +1,4 @@
-import { copyToClipboard } from "@mariozechner/pi-coding-agent";
+import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 
 export async function copyTextToClipboard(text: string): Promise<void> {
   if (!text.trim()) {

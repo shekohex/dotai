@@ -1,4 +1,4 @@
-import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 import os from "node:os";
 import type { RGB } from "./types.js";
 

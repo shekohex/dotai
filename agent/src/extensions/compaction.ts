@@ -1,10 +1,10 @@
-import { complete } from "@mariozechner/pi-ai";
+import { complete } from "@earendil-works/pi-ai";
 import {
   convertToLlm,
   serializeConversation,
   type ExtensionAPI,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
 
 const COMPACTION_PROVIDER = "gemini" as const;

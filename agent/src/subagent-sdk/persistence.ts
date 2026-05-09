@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { SessionManager, getAgentDir, type SessionEntry } from "@mariozechner/pi-coding-agent";
+import { SessionManager, getAgentDir, type SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 import {

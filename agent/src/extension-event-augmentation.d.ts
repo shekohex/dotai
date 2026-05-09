@@ -1,6 +1,6 @@
-import type { CompactionResult, ExtensionHandler } from "@mariozechner/pi-coding-agent";
+import type { CompactionResult, ExtensionHandler } from "@earendil-works/pi-coding-agent";
 
-declare module "@mariozechner/pi-coding-agent" {
+declare module "@earendil-works/pi-coding-agent" {
   interface QueueUpdateExtensionEvent {
     type: "queue_update";
     steering: readonly string[];

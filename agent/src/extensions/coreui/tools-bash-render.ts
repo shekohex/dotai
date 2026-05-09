@@ -1,5 +1,5 @@
-import { type BashToolDetails, type ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import { type BashToolDetails, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { bashToolDefinition, readToolDefinition } from "./builtins.js";

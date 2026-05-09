@@ -1,9 +1,9 @@
-import { stream } from "@mariozechner/pi-ai";
+import { stream } from "@earendil-works/pi-ai";
 import {
   BorderedLoader,
   type ExtensionContext,
   type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 import { resolveModeSpec, type ModeSpec, type ThinkingLevel } from "../mode-utils.js";
 import { CONTEXT_TRANSFER_SYSTEM_PROMPT } from "./session-launch-utils.constants.js";

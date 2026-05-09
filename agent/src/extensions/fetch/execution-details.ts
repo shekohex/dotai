@@ -8,7 +8,7 @@ import {
   truncateHead,
   type TruncationResult,
   withFileMutationQueue,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   getTempFilePath,
   MAX_RESPONSE_BYTES,

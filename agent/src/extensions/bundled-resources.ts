@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { DefaultResourceLoader, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { DefaultResourceLoader, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const extensionDir = import.meta.dirname;
 const bundledResourcesDir = join(extensionDir, "..", "resources");

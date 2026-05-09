@@ -3,7 +3,7 @@ import type {
   AgentToolUpdateCallback,
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "../runtime-hooks.js";
 import type { LaunchCommandBuilder } from "../launch.js";
 import type { MuxAdapter } from "../mux.js";

@@ -2,8 +2,8 @@ import {
   DefaultResourceLoader,
   type Extension,
   type ExtensionFactory,
-} from "@mariozechner/pi-coding-agent";
-import type { LoadExtensionsResult } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
+import type { LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 
 const inlineExtensionNameSymbol = Symbol.for("@shekohex/agent/inline-extension-name");
 const loaderPatchInstalledSymbol = Symbol.for("@shekohex/agent/inline-extension-name-patch");

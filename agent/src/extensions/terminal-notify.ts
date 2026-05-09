@@ -8,10 +8,10 @@
  * Terminal.app, Windows Terminal, Alacritty
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { Markdown, type MarkdownTheme } from "@mariozechner/pi-tui";
+import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { isRecord } from "../utils/unknown-data.js";
 
 const ESC = "\u001B";

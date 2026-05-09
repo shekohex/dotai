@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
 import { parseGsdCommandArgs } from "../../src/extensions/gsd/args.ts";
 import { resolveInstructionFileName } from "../../src/extensions/gsd/lifecycle/new-project.ts";

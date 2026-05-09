@@ -1,5 +1,5 @@
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { applyLinePrefix } from "../coreui/tools.js";
 import {
   STREAM_PREVIEW_LINE_LIMIT,

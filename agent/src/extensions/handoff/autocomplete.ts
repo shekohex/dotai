@@ -1,5 +1,5 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
 import type { ModeSpec } from "../../mode-utils.js";
 import { loadAvailableModes } from "../available-modes.js";
 import type { SessionModel } from "../session-launch-utils.js";

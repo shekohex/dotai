@@ -1,4 +1,4 @@
-import type { ExtensionContext, WorkingIndicatorOptions } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext, WorkingIndicatorOptions } from "@earendil-works/pi-coding-agent";
 
 const DOTS2_INTERVAL_MS = 80;
 const DOTS2_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];

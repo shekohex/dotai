@@ -3,7 +3,7 @@ import { cp, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
 
 type RegisteredCommand = {

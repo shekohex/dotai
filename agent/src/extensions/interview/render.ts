@@ -2,7 +2,7 @@ import type {
   AgentToolResult,
   Theme,
   ToolRenderResultOptions,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 import { createTextComponent, formatToolRail, getTextContent } from "../coreui/tools.js";
 import { isNonNullObject } from "./guards.js";

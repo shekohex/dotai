@@ -8,7 +8,7 @@ import {
   orchestrateVerifyWork,
   type GsdOrchestrationDeps,
 } from "../../src/extensions/gsd/orchestration.js";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 function createRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "agent-gsd-orch-"));

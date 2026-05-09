@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { asRecord, readString } from "../../../utils/unknown-data.js";

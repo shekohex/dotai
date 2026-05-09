@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
 import { listCliproxyAccounts } from "./cliproxy.js";
 import { handleDebug } from "./command-debug.js";

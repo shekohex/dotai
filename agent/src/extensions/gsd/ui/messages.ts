@@ -1,6 +1,6 @@
-import type { Component } from "@mariozechner/pi-tui";
-import { Box, Text } from "@mariozechner/pi-tui";
-import type { ExtensionAPI, MessageRenderer } from "@mariozechner/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import { Box, Text } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, MessageRenderer } from "@earendil-works/pi-coding-agent";
 import { GSD_HELP_MESSAGE } from "../help.js";
 
 export const GSD_CODEBASE_MAP_SUMMARY_MESSAGE = "gsd-codebase-map-summary";

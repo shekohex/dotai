@@ -1,6 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import type { ThemeColor } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { shortenHome } from "./path.js";

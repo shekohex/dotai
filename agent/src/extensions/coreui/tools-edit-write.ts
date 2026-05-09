@@ -2,7 +2,7 @@ import {
   type AgentToolResult,
   type ToolRenderResultOptions,
   renderDiff,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { editToolDefinition, readToolDefinition, writeToolDefinition } from "./builtins.js";
 import {
   formatDiffStats,
@@ -26,7 +26,7 @@ import {
   styleToolOutput,
   summarizeLineCount,
 } from "./tools-output.js";
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { createTextComponent, renderStreamingPreview, renderToolError } from "./tools-render.js";

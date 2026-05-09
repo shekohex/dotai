@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Text, type TUI } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Text, type TUI } from "@earendil-works/pi-tui";
 import { showActionSelector, type FileAction } from "./actions.js";
 import { openDiff } from "./diff.js";
 

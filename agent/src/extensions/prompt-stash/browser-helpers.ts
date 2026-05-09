@@ -1,5 +1,5 @@
-import type { Theme } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, type SelectItem, type SelectListTheme } from "@mariozechner/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, type SelectItem, type SelectListTheme } from "@earendil-works/pi-tui";
 
 type PromptStashEntry = {
   id: string;

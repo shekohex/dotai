@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { matchesKey, visibleWidth, type Focusable, type TUI } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import { matchesKey, visibleWidth, type Focusable, type TUI } from "@earendil-works/pi-tui";
 import type { RuntimeSubagent } from "../../../subagent-sdk/types.js";
 import { listGsdSubagents } from "../subagents.js";
 

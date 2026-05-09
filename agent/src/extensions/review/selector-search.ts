@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import {
   Container,
   fuzzyFilter,
@@ -8,7 +8,7 @@ import {
   SelectList,
   Spacer,
   Text,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { hasUncommittedChanges, getCurrentBranch, getDefaultBranch } from "./deps.js";
 
 type SearchableSelectNavigation = {

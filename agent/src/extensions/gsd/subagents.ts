@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createSubagentSDK, TmuxAdapter, buildLaunchCommand } from "../../subagent-sdk/index.js";

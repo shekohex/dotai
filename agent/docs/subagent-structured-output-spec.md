@@ -2,7 +2,7 @@
 
 ## Scope
 
-This spec captures the current findings from the `opencode` and `pi-mono` codebases and defines the intended subagent structured-output design for our codebase.
+This spec captures the current findings from the `opencode` and `pi` codebases and defines the intended subagent structured-output design for our codebase.
 
 ## Findings
 
@@ -27,7 +27,7 @@ Observed behavior:
 - The tool `execute()` captures the parsed args into local state.
 - If the assistant finishes without calling the tool, `StructuredOutputError` is stored on the assistant message.
 
-### `pi-mono`
+### `pi`
 
 - `pi-ai` does not have a first-class structured-output API today.
 - Tools are already schema-backed and validated with TypeBox.

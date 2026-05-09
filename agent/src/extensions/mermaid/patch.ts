@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { AssistantMessageComponent } from "@mariozechner/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import {
   Markdown,
   Spacer,
@@ -7,7 +7,7 @@ import {
   type Component,
   type Container,
   type MarkdownTheme,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import {
   buildInlineRenderableSegments,
   hasRenderableMermaid,

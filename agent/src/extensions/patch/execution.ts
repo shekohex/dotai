@@ -1,7 +1,7 @@
 import { createTwoFilesPatch, diffLines } from "diff";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { deriveNewContentsFromChunks, trimDiff } from "./content.js";
 import { parsePatch, summarizeHunks } from "./parser.js";
 import { createPatchFileDetailsFromChanges, emitApplyPatchUpdate } from "./render.js";

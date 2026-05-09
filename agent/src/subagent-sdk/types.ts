@@ -1,4 +1,4 @@
-import type { CustomEntry } from "@mariozechner/pi-coding-agent";
+import type { CustomEntry } from "@earendil-works/pi-coding-agent";
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 

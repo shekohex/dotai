@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { isChildSession, readChildState, type RuntimeSubagent } from "../../subagent-sdk/index.js";
 import { copyTextToClipboard } from "../../utils/clipboard.js";
 import { errorMessage } from "../../utils/error-message.js";

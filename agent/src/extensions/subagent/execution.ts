@@ -2,7 +2,7 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { buildAvailableModesPromptGuideline } from "../available-modes.js";
 import type { SubagentSDK } from "../../subagent-sdk/sdk.js";
 import type {

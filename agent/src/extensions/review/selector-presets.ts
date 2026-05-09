@@ -1,6 +1,6 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { REVIEW_PRESETS, TOGGLE_CUSTOM_INSTRUCTIONS_VALUE, type ReviewTarget } from "./deps.js";
 
 type SmartDefaultPreset = "uncommitted" | "baseBranch" | "commit";

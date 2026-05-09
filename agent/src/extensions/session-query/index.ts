@@ -1,4 +1,4 @@
-import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createSessionQueryRequest, executeSessionQueryRequest } from "./execution.js";
 import { renderSessionQueryCall, renderSessionQueryResult } from "./render.js";

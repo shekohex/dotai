@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Key, Text, matchesKey, type Component, type TUI } from "@earendil-works/pi-tui";
 import { loadBundledDoc } from "./resources.js";
 
 const HELP_PAGE_LINES = 20;

@@ -1,5 +1,5 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { matchesKey, Input, SelectList, type TUI } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { matchesKey, Input, SelectList, type TUI } from "@earendil-works/pi-tui";
 
 type SelectableFileEntry = {
   canonicalPath: string;

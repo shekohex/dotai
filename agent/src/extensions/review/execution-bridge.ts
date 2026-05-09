@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { SummaryGenerationResult } from "../session-launch-utils.js";
 import { getConversationMessages } from "../session-launch-utils.js";
 import { resolveGeneratedReviewHandoffPrompt } from "./handoff-generation.js";

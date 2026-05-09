@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { ParsedReviewArgs, ReviewTarget } from "./deps.js";
 
 type ResolvedInitialReviewTarget = {

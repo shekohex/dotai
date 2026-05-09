@@ -4,7 +4,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { ResumeAction } from "./mcp-client.js";
 import { withExecutorMcpClient } from "./mcp-client.js";
 import {

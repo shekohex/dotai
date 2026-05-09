@@ -1,6 +1,10 @@
 import { expect, afterEach, test } from "vitest";
 import { createServer } from "node:http";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import createExecutorExtension from "../src/extensions/executor/index.ts";
 import { getExecutorState } from "../src/extensions/executor/status.ts";
 import {

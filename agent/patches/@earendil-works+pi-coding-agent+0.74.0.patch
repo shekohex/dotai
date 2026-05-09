@@ -1,7 +1,7 @@
-diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
-index b57b6ae..9a8e4ac 100644
---- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
-+++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+diff --git a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
+index e099877..0c5c8e7 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
++++ b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 @@ -39,7 +39,6 @@ export class ToolExecutionComponent extends Container {
          this.imageWidthCells = options.imageWidthCells ?? 60;
          this.ui = ui;
@@ -10,11 +10,11 @@ index b57b6ae..9a8e4ac 100644
          // Always create all shell variants. contentBox is used for default renderer-based composition.
          // selfRenderContainer is used when the tool renders its own framing.
          // contentText is reserved for generic fallback rendering when no tool definition exists.
-diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-index f233135..e9617cb 100644
---- a/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-+++ b/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
-@@ -95,6 +95,36 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
+diff --git a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+index ad8ef4a..e1c1fe0 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js
++++ b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+@@ -103,6 +103,36 @@ export function isApiKeyLoginProvider(providerId, oauthProviderIds, builtInProvi
      }
      return !oauthProviderIds.has(providerId);
  }
@@ -51,7 +51,7 @@ index f233135..e9617cb 100644
  export class InteractiveMode {
      options;
      runtimeHost;
-@@ -2187,7 +2217,7 @@ export class InteractiveMode {
+@@ -2196,7 +2226,7 @@ export class InteractiveMode {
                                      imageWidthCells: this.settingsManager.getImageWidthCells(),
                                  }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
                                  component.setExpanded(this.toolOutputExpanded);
@@ -60,7 +60,7 @@ index f233135..e9617cb 100644
                                  this.pendingTools.set(content.id, component);
                              }
                              else {
-@@ -2248,7 +2278,7 @@ export class InteractiveMode {
+@@ -2257,7 +2287,7 @@ export class InteractiveMode {
                          imageWidthCells: this.settingsManager.getImageWidthCells(),
                      }, this.getRegisteredToolDefinition(event.toolName), this.ui, this.sessionManager.getCwd());
                      component.setExpanded(this.toolOutputExpanded);
@@ -69,12 +69,12 @@ index f233135..e9617cb 100644
                      this.pendingTools.set(event.toolCallId, component);
                  }
                  component.markExecutionStarted();
-@@ -2526,7 +2556,7 @@ export class InteractiveMode {
-                             imageWidthCells: this.settingsManager.getImageWidthCells(),
-                         }, this.getRegisteredToolDefinition(content.name), this.ui, this.sessionManager.getCwd());
+@@ -2480,7 +2510,7 @@ export class InteractiveMode {
+                         // Render skill block (collapsible)
+                         const component = new SkillInvocationMessageComponent(skillBlock, this.getMarkdownThemeWithSettings());
                          component.setExpanded(this.toolOutputExpanded);
 -                        this.chatContainer.addChild(component);
 +                        addToolExecutionToChat(this, component);
-                         if (message.stopReason === "aborted" || message.stopReason === "error") {
-                             let errorMessage;
-                             if (message.stopReason === "aborted") {
+                         // Render user message separately if present
+                         if (skillBlock.userMessage) {
+                             const userComponent = new UserMessageComponent(skillBlock.userMessage, this.getMarkdownThemeWithSettings());

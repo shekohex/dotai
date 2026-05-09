@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isRecord } from "../../utils/unknown-data.js";
 import type { FileToolName, SessionFileChange } from "./model.js";
 import { toCanonicalPath } from "./path-utils.js";

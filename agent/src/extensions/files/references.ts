@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isRecord } from "../../utils/unknown-data.js";
 import type { FileReference } from "./model.js";
 import { formatDisplayPath } from "./path-utils.js";

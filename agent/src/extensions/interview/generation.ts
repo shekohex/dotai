@@ -1,4 +1,4 @@
-import { complete, type Api, type AssistantMessage, type Model } from "@mariozechner/pi-ai";
+import { complete, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 

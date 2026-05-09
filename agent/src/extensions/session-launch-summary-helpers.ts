@@ -1,9 +1,9 @@
-import { stream, type Api, type Message, type Model } from "@mariozechner/pi-ai";
+import { stream, type Api, type Message, type Model } from "@earendil-works/pi-ai";
 import {
   convertToLlm,
   serializeConversation,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   CONTEXT_TRANSFER_MODEL,
   CONTEXT_TRANSFER_PROVIDER,

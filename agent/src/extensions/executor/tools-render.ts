@@ -1,4 +1,4 @@
-import { type Container, type Text } from "@mariozechner/pi-tui";
+import { type Container, type Text } from "@earendil-works/pi-tui";
 import {
   applyLinePrefix,
   createTextComponent,

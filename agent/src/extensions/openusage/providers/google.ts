@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { UsageProvider, UsageSnapshot } from "../types.js";
 import { discoverProjectId, fetchLoadCodeAssist, fetchQuota } from "./google-api.js";
 import { resolveCliproxyGoogleCredential, resolveGoogleCredential } from "./google-auth.js";

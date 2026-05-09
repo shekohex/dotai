@@ -1,6 +1,6 @@
 # @shekohex/agent
 
-A TypeScript-based wrapper around `@mariozechner/pi-coding-agent` that bundles team defaults, custom extensions, and additional providers.
+A TypeScript-based wrapper around `@earendil-works/pi-coding-agent` that bundles team defaults, custom extensions, and additional providers.
 
 ## Project Rules
 
@@ -83,13 +83,14 @@ DON'T:
 
 ## Upstream Patches
 
-Uses `patch-package` to maintain patches on `@mariozechner/pi-coding-agent`. After upgrading:
+When upgrading upstream pi packages:
 
-1. Reapply patches: `npm run patch:deps`
-2. Test: `npm run test:tool-preview && npm run test:harness`
-3. Rebuild: `npm run build`
+1. Inspect fresh installed files in `node_modules` and rerun targeted tests before deleting or declaring a patch obsolete.
+2. If patch still needed, regenerate it against current package scope and version with `npm run patch:deps` or `npx patch-package <pkg>`.
+3. Test: `npm run test:tool-preview && npm run test:harness`
+4. Rebuild: `npm run build`
 
-## External Repos.
+## External Repos
 
 When the user mentions upstream pi, assume it is `earendil-works/pi` repo, and use the `librarian` skill and then you an search the following repos:
 

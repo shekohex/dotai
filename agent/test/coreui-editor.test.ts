@@ -1,7 +1,11 @@
 import { expect, test } from "vitest";
-import { initTheme, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
-import { theme as activeTheme } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import {
+  initTheme,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
+import { theme as activeTheme } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import coreUIExtension from "../src/extensions/coreui.ts";
 
 const TEST_TIMEOUT_MS = 15_000;

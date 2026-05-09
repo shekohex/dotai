@@ -1,4 +1,4 @@
-import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 export function shouldUsePatch(modelId: string | undefined): boolean {
   if (modelId === undefined || modelId.length === 0) {

@@ -10,6 +10,7 @@
   "ignorePatterns": [
     ".pi/extensions/forbid.ts",
     "src/resources/gsd/bin/**",
+    "support/pi-test-harness/**",
     "test/**",
     "**/**/*.test.ts"
   ],

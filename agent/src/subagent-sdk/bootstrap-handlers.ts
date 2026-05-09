@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 

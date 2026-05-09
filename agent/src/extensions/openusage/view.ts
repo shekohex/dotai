@@ -1,5 +1,5 @@
-import { DynamicBorder, type Theme } from "@mariozechner/pi-coding-agent";
-import { Container, Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
+import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import { Container, Key, Text, matchesKey, type Component, type TUI } from "@earendil-works/pi-tui";
 import { errorMessage } from "../../utils/error-message.js";
 import { setResetTimeFormat, setSelectedAccount } from "./state.js";
 import type { ResetTimeFormat, SupportedProviderId, UsageSnapshot } from "./types.js";

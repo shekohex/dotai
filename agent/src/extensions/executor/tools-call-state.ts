@@ -1,4 +1,4 @@
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import {
   countTextLines,
   createTextComponent,
@@ -15,7 +15,7 @@ import {
   type ExecutorRenderTheme,
 } from "./tools-shared.js";
 import { sanitizeDisplayText } from "./tools-text.js";
-import { highlightCode } from "@mariozechner/pi-coding-agent";
+import { highlightCode } from "@earendil-works/pi-coding-agent";
 
 const trimTrailingEmptyLines = (lines: string[]): string[] => {
   let end = lines.length;

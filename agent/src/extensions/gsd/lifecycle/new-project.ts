@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { basename, join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
 import { launchGsdWorkflowSession } from "../workflow-launch.js";
 import { resolvePlanningDir } from "../shared.js";

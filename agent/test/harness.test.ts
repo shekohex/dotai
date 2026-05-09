@@ -4,20 +4,14 @@ import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  calls,
-  createTestSession,
-  says,
-  when,
-  type TestSession,
-} from "@marcfargas/pi-test-harness";
-import { DefaultResourceLoader, initTheme, InteractiveMode } from "@mariozechner/pi-coding-agent";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { setKeybindings } from "@mariozechner/pi-tui";
-import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
+import { calls, createTestSession, says, when, type TestSession } from "@support/pi-test-harness";
+import { DefaultResourceLoader, initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { setKeybindings } from "@earendil-works/pi-tui";
+import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai";
 import stripAnsi from "strip-ansi";
-import { createPlaybookStreamFn } from "../node_modules/@marcfargas/pi-test-harness/src/playbook.ts";
-import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
+import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
+import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
 import webFetchExtension from "../src/extensions/fetch.ts";
 import mermaidExtension, { extractMermaidBlocks } from "../src/extensions/mermaid.ts";
 import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.ts";
@@ -57,7 +51,7 @@ import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import {
   setRegisteredThemes,
   theme as activeTheme,
-} from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+} from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 
 process.env.OPENAI_API_KEY ??= "test-key";
 
@@ -1227,23 +1221,19 @@ timedTest("websearch uses the LiteLLM api key with the gemini model provider", a
 timedTest("bundled themes are available before reload", async () => {
   installBundledResourcePaths();
 
-  let session: TestSession | undefined;
+  const loader = new DefaultResourceLoader({
+    cwd: process.cwd(),
+    agentDir: join(homedir(), ".pi", "agent"),
+  });
+  await loader.reload();
 
-  try {
-    session = await createTestSession();
+  const bundledThemes = loader.getThemes().themes;
+  expect(bundledThemes.some((loadedTheme) => loadedTheme.name === "catppuccin-mocha")).toBeTruthy();
 
-    const bundledThemes = session.session.resourceLoader.getThemes().themes;
-    expect(
-      bundledThemes.some((loadedTheme) => loadedTheme.name === "catppuccin-mocha"),
-    ).toBeTruthy();
+  setRegisteredThemes(bundledThemes);
+  initTheme("catppuccin-mocha");
 
-    setRegisteredThemes(bundledThemes);
-    initTheme("catppuccin-mocha");
-
-    expect(activeTheme.name).toBe("catppuccin-mocha");
-  } finally {
-    session?.dispose();
-  }
+  expect(activeTheme.name).toBe("catppuccin-mocha");
 });
 
 timedTest("handoff command starts the new session in the requested mode", async () => {
@@ -2049,44 +2039,74 @@ timedTest("LiteLLM provider registrations add the gemini provider via v1beta", (
 });
 
 timedTest(
-  "model family system prompt updates immediately on model switching and preserves the pi tail",
+  "model family system prompt is selected per model family while preserving pi tail",
   async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-"));
     let session: TestSession | undefined;
     const providers = createModelFamilyTestProviders();
+    const seenSystemPrompts: string[] = [];
+    const captureSystemPromptExtension = (pi: ExtensionAPI) => {
+      pi.on("before_agent_start", (event) => {
+        seenSystemPrompts.push(event.systemPrompt);
+        return;
+      });
+    };
 
     try {
       session = await createTestSession({
         cwd,
-        extensionFactories: [modelFamilySystemPromptExtension, providers.extensionFactory],
+        extensionFactories: [
+          modelFamilySystemPromptExtension,
+          captureSystemPromptExtension,
+          providers.extensionFactory,
+        ],
       });
       await session.session.setModel(providers.getModel("gpt-5.4") as never);
 
-      const initialPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello");
+      await session.session.agent.waitForIdle();
+
+      const initialPrompt = seenSystemPrompts.at(-1)!;
       expect(initialPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4"));
       const initialTail = extractPiDynamicTail(initialPrompt);
 
       await session.session.setModel(providers.getModel("gpt-5.4-mini") as never);
-      expect(getCurrentSystemPrompt(session)).toBe(initialPrompt);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello again");
+      await session.session.agent.waitForIdle();
+      expect(seenSystemPrompts.at(-1)).toBe(initialPrompt);
 
       await session.session.setModel(providers.getModel("gpt-5.4-codex") as never);
-      const codexSystemPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello codex");
+      await session.session.agent.waitForIdle();
+      const codexSystemPrompt = seenSystemPrompts.at(-1)!;
       expect(codexSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4-codex"));
       expect(extractPiDynamicTail(codexSystemPrompt)).toBe(initialTail);
 
       await session.session.setModel(providers.getModel("gemini-2.5-pro") as never);
-      const geminiSystemPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello gemini");
+      await session.session.agent.waitForIdle();
+      const geminiSystemPrompt = seenSystemPrompts.at(-1)!;
       expect(geminiSystemPrompt).toBe(
         buildModelFamilySystemPrompt(initialPrompt, "gemini-2.5-pro"),
       );
       expect(extractPiDynamicTail(geminiSystemPrompt)).toBe(initialTail);
 
       await session.session.setModel(providers.getModel("kimi-k2.5") as never);
-      const kimiSystemPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello kimi");
+      await session.session.agent.waitForIdle();
+      const kimiSystemPrompt = seenSystemPrompts.at(-1)!;
       expect(kimiSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "kimi-k2.5"));
 
       await session.session.setModel(providers.getModel("router-1") as never);
-      const defaultSystemPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello default");
+      await session.session.agent.waitForIdle();
+      const defaultSystemPrompt = seenSystemPrompts.at(-1)!;
       expect(defaultSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "router-1"));
       expect(extractPiDynamicTail(defaultSystemPrompt)).toBe(initialTail);
     } finally {
@@ -2147,11 +2167,18 @@ timedTest(
 );
 
 timedTest(
-  "mode changes switch the system prompt when the selected mode changes model family",
+  "mode changes switch provider request system prompt when selected mode changes model family",
   async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-modes-"));
     let session: TestSession | undefined;
     const providers = createModelFamilyTestProviders();
+    const seenSystemPrompts: string[] = [];
+    const captureSystemPromptExtension = (pi: ExtensionAPI) => {
+      pi.on("before_agent_start", (event) => {
+        seenSystemPrompts.push(event.systemPrompt);
+        return;
+      });
+    };
 
     await writeModelFamilyModesFile(cwd);
 
@@ -2160,16 +2187,25 @@ timedTest(
         cwd,
         extensionFactories: [
           modelFamilySystemPromptExtension,
+          captureSystemPromptExtension,
           modesExtension,
           providers.extensionFactory,
         ],
       });
 
-      const gptPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello");
+      await session.session.agent.waitForIdle();
+      const gptPrompt = seenSystemPrompts.at(-1)!;
+
       await session.session.prompt("/mode research");
       await session.session.agent.waitForIdle();
 
-      const currentPrompt = getCurrentSystemPrompt(session);
+      providers.setResponses(fauxAssistantMessage("ok"));
+      await session.session.prompt("hello after mode change");
+      await session.session.agent.waitForIdle();
+
+      const currentPrompt = seenSystemPrompts.at(-1)!;
       expect(currentPrompt).toBe(buildModelFamilySystemPrompt(gptPrompt, "gemini-2.5-pro"));
     } finally {
       session?.dispose();

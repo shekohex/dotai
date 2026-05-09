@@ -10,8 +10,8 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
-import { setKeybindings } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { setKeybindings } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import stripAnsi from "strip-ansi";
 
@@ -65,7 +65,7 @@ import {
   type RuntimeSubagent,
 } from "../src/subagent-sdk/types.ts";
 import { renderSubagentWidget } from "../src/subagent-sdk/ui.ts";
-import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
+import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
 
 const TEST_TIMEOUT_MS = 15_000;
 

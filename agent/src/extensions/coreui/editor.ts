@@ -1,7 +1,7 @@
-import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import type { ExtensionContext, KeybindingsManager, Theme } from "@mariozechner/pi-coding-agent";
-import type { EditorTheme, TUI } from "@mariozechner/pi-tui";
-import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
   addVerticalPaddingLines,
   createPasteMarker,

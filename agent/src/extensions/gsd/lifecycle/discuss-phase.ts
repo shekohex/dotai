@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
 import { buildAssumptionsDraft } from "./discuss-phase-assumptions.js";
 import {

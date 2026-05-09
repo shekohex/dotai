@@ -3,7 +3,7 @@ import type {
   AgentToolUpdateCallback,
   ExtensionContext,
   Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { createTextComponent } from "../coreui/tools.js";
 import { summarizePartialPatchText } from "./parser.js";
 import { getApplyPatchDetails } from "./render-details.js";

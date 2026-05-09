@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
-import { Key } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { PromptStashBrowser, type PromptStashBrowserAction } from "./browser.js";

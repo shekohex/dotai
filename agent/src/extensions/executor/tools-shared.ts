@@ -1,6 +1,6 @@
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { JsonObject, JsonValue } from "./http.js";
 import type { ResumeAction } from "./mcp-client.js";
 import type { ExecuteToolDetails } from "./executor-adapter.js";

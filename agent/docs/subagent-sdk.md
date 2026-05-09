@@ -513,7 +513,7 @@ await restoreCheckoutTarget(pi, checkoutToRestore);
 ### Basic Extension Using the SDK
 
 ```typescript
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createSubagentSDK } from "./subagent-sdk/sdk.js";
 import { TmuxAdapter } from "./subagent-sdk/tmux.js";
 import { buildLaunchCommand } from "./subagent-sdk/launch.js";

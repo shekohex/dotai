@@ -4,8 +4,8 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type WorkingIndicatorOptions,
-} from "@mariozechner/pi-coding-agent";
-import { theme as activeTheme } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+} from "@earendil-works/pi-coding-agent";
+import { theme as activeTheme } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import coreUIExtension from "../src/extensions/coreui.ts";
 
 const TEST_TIMEOUT_MS = 15_000;

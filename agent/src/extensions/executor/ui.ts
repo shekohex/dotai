@@ -1,6 +1,6 @@
-import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, matchesKey, Text, type Component, type TUI } from "@mariozechner/pi-tui";
+import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { Container, matchesKey, Text, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { ExecutorConnectionAttempt, ExecutorEndpoint } from "./connection.js";
 import { getExecutorSettings } from "./settings.js";
 import { formatExecutorRuntimeState, getExecutorState } from "./status.js";

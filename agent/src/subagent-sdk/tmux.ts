@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { ExecOptions, ExecResult } from "@mariozechner/pi-coding-agent";
+import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 
 import type { CreatePaneOptions, MuxAdapter, PaneCapture, PaneSubmitMode } from "./mux.js";
 

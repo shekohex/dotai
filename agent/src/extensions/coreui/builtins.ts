@@ -1,10 +1,10 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   createBashToolDefinition,
   createEditToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const builtInToolDefinitionCwd = process.cwd();
 

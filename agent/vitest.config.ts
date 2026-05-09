@@ -1,8 +1,14 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 const runningInGitHubActions = process.env.GITHUB_ACTIONS === "true";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@support/pi-test-harness": resolve(import.meta.dirname, "test/support/pi-test-harness"),
+    },
+  },
   test: {
     dir: "test",
     include: ["**/*.test.ts"],

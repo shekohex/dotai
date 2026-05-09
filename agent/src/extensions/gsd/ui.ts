@@ -1,5 +1,5 @@
-import { getSettingsListTheme, type Theme } from "@mariozechner/pi-coding-agent";
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { getSettingsListTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
   Container,
   Key,
@@ -9,7 +9,7 @@ import {
   type Component,
   type SettingItem,
   type TUI,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { loadBundledDoc } from "./resources.js";
 import { getGsdSettings, saveGsdSettings } from "./settings.js";
 import { computeLocalHealthSummary } from "./state/health.js";

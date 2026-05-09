@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
 import { errorMessage } from "../../utils/error-message.js";
 import { openBrowserTarget } from "./browser.js";
 import { ExecutorUnavailableError } from "./connection.js";

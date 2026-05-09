@@ -8,7 +8,7 @@ import {
   unregisterBuiltInModes,
 } from "../src/mode-utils.ts";
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { createSubagentSDK } from "../src/subagent-sdk/sdk.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";

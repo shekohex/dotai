@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ModeSpec } from "../../mode-utils.js";
 import { normalizeToolNamesForModel, shouldUsePatch } from "../patch.js";
 import { readChildState } from "../../subagent-sdk/launch.js";

@@ -1,5 +1,5 @@
-import { fuzzyFilter, type AutocompleteItem } from "@mariozechner/pi-tui";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { REVIEW_FLAG_AUTOCOMPLETE_ITEMS, REVIEW_TARGET_AUTOCOMPLETE_ITEMS } from "./constants.js";
 import { getLocalBranches, getRecentCommits, getTrackedPaths } from "./git.js";

@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 import type { MuxAdapter } from "../../subagent-sdk/mux.js";
 import type { HandoffLaunchResult } from "../handoff.js";

@@ -1,5 +1,5 @@
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { getMarkdownTheme, type Theme } from "@mariozechner/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { getTextContent } from "../coreui/tools.js";
 import type { JsonValue } from "./http.js";
 import type { ExecuteToolDetails } from "./executor-adapter.js";

@@ -1,4 +1,4 @@
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 export const REVIEW_STATE_TYPE = "review-session";
 export const REVIEW_ANCHOR_TYPE = "review-anchor";

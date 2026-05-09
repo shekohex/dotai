@@ -1,5 +1,5 @@
-import { formatSize } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import { formatSize } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { applyLinePrefix } from "../coreui/tools.js";
 import {
   normalizeStatusText,

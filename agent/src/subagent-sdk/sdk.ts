@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { SubagentRuntimeEventBus } from "./events.js";
 import type { MuxAdapter } from "./mux.js";
@@ -9,7 +9,7 @@ import { createSpawnFunction } from "./sdk-spawn.js";
 import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
 import type { RuntimeSubagent } from "./types.js";
 import type { SubagentHandle, SubagentSDK } from "./sdk-types.js";
-import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type {
   StartSubagentParams,
   StartSubagentParamsJsonSchema,

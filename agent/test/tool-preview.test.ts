@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { initTheme, InteractiveMode } from "@mariozechner/pi-coding-agent";
-import { setKeybindings } from "@mariozechner/pi-tui";
-import { ToolExecutionComponent } from "@mariozechner/pi-coding-agent";
-import { KeybindingsManager } from "../node_modules/@mariozechner/pi-coding-agent/dist/core/keybindings.js";
+import { initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { setKeybindings } from "@earendil-works/pi-tui";
+import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
 import stripAnsi from "strip-ansi";
 import {
   createBashToolOverrideDefinition,
@@ -770,7 +770,7 @@ timedTest(
       expect(interruptIndex).not.toBe(-1);
       expect(thirdToolIndex).not.toBe(-1);
       expect(secondToolIndex - firstToolIndex).toBe(1);
-      expect(thirdToolIndex - interruptIndex).toBe(2);
+      expect(thirdToolIndex - interruptIndex).toBe(1);
     } finally {
       (mode as any).footerDataProvider.dispose();
     }

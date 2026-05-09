@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";

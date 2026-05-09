@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AgentSession, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export type ModelFamilySystemPrompt = "codex" | "gpt" | "gemini" | "kimi" | "default";
 

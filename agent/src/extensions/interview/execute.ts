@@ -6,8 +6,8 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import type { Api, Model } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
 import { openBrowserTarget } from "../executor/browser.js";
 import { getErrorMessage, toError } from "./errors.js";

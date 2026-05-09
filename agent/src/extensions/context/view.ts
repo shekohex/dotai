@@ -1,5 +1,5 @@
-import { DynamicBorder, type Theme } from "@mariozechner/pi-coding-agent";
-import { Container, Key, Text, matchesKey, type Component, type TUI } from "@mariozechner/pi-tui";
+import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import { Container, Key, Text, matchesKey, type Component, type TUI } from "@earendil-works/pi-tui";
 import { formatUsd } from "./shared.js";
 
 function renderUsageBar(

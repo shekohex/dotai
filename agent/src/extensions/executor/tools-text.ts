@@ -1,4 +1,4 @@
-import { highlightCode } from "@mariozechner/pi-coding-agent";
+import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { getTextContent, styleToolOutput } from "../coreui/tools.js";
 import type { JsonObject, JsonValue } from "./http.js";
 import type { ExecuteToolDetails } from "./executor-adapter.js";

@@ -1,4 +1,4 @@
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { createTextComponent } from "../coreui/tools.js";

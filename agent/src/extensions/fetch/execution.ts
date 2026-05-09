@@ -1,5 +1,5 @@
 import FirecrawlApi, { type Document, type ScrapeOptions } from "@mendable/firecrawl-js";
-import { AuthStorage, type AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, type AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
 import { buildDetails, isTimeoutError } from "./execution-details.js";
 import { formatResult } from "./render.js";
 import {

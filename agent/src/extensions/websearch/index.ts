@@ -1,5 +1,5 @@
-import { StringEnum } from "@mariozechner/pi-ai";
-import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { formatToolRail } from "../coreui/tools.js";
 import {

@@ -1,5 +1,5 @@
 import { defaultSettings } from "../src/default-settings.js";
-import { Container, Key, matchesKey, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, Key, matchesKey, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import type {
   PreviewPanelEntry,
   PreviewScenario,

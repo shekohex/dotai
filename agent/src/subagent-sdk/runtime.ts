@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { LaunchCommandBuilder } from "./launch.js";
 import type { MuxAdapter } from "./mux.js";
 import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "./runtime-hooks.js";

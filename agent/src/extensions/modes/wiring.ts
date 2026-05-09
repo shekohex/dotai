@@ -1,6 +1,6 @@
-import { Key } from "@mariozechner/pi-tui";
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ModeActivateEvent, ModeSelectionApplyEvent } from "./events.js";
 
 type ModeSource = "command" | "shortcut" | "session_start" | "model_select" | "before_agent_start";

@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { RuntimeSubagent } from "../../subagent-sdk/index.js";
 import type { ReviewCheckoutTarget, ReviewSessionState, ReviewSettingsState } from "./deps.js";

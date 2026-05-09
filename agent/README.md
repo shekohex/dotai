@@ -1,6 +1,6 @@
 # @shekohex/agent
 
-A small wrapper around `@mariozechner/pi-coding-agent`.
+A small wrapper around `@earendil-works/pi-coding-agent`.
 
 It keeps the usual `pi` command, the usual `.pi` project folder, and the usual `~/.pi` user config, while bundling a few team defaults on top.
 
@@ -49,14 +49,18 @@ This compiles the TypeScript sources, copies bundled resources, and generates th
 
 It also prepares `bin/pi.js` and `bin/pi.cmd`, and marks the Unix entrypoints executable.
 
-## Maintaining upstream UI patches
+## Upstream UI patches
 
-This package uses `patch-package` to keep a small UI patch on top of `@mariozechner/pi-coding-agent`.
+This package carries a small UI patch on top of `@earendil-works/pi-coding-agent`.
 
-When upgrading `@mariozechner/pi-coding-agent`:
+Current patch:
 
-1. Reinstall dependencies for the new version.
-2. Reapply or regenerate the patch in `patches/` if `patch-package` reports a conflict.
+- `patches/@earendil-works+pi-coding-agent+0.74.0.patch`
+
+When upgrading pi again:
+
+1. Inspect fresh installed files in `node_modules` and rerun targeted preview/harness tests before deleting a patch.
+2. If patch still needed, regenerate `patches/` for current package scope and version.
 3. Run:
 
 ```bash
@@ -64,4 +68,4 @@ npm run test:tool-preview
 npm run test:harness
 ```
 
-4. Rebuild and reload pi to verify the real runtime still matches the preview harness.
+1. Rebuild and reload pi to verify the real runtime still matches the preview harness.

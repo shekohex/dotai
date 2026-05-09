@@ -1,4 +1,4 @@
-import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readChildState } from "./launch.js";
 import { SUBAGENT_CHILD_WIDGET_KEY, type ChildBootstrapState } from "./types.js";
 import {

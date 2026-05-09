@@ -2,8 +2,8 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+} from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { CoreUIState } from "./types.js";
 import {

@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
-import type { MessageRenderer } from "@mariozechner/pi-coding-agent";
-import type { Component, TUI } from "@mariozechner/pi-tui";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import {
   createGsdHelpComponent,
   getGsdHelpReference,

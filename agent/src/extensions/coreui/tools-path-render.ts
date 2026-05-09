@@ -1,4 +1,4 @@
-import type { Text } from "@mariozechner/pi-tui";
+import type { Text } from "@earendil-works/pi-tui";
 import { readToolDefinition } from "./builtins.js";
 import { splitToolPath, type ToolPathDisplay } from "./path.js";
 import { countTextLines, summarizeLineCount } from "./tools-output.js";

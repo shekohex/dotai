@@ -1,4 +1,4 @@
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { BreakdownData, BreakdownView, MeasurementMode, RGB, RangeAgg } from "./types.js";
 import { RANGE_DAYS, todBucketLabel } from "./types.js";
 import { graphMetricForRange, rangeSummary, weeksForRange } from "./metrics.js";

@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
 import type { JsonObject } from "./http.js";
 import type { ResumeAction } from "./mcp-client.js";

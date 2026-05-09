@@ -1,6 +1,6 @@
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import type { Theme } from "@mariozechner/pi-coding-agent";
-import { Container, Input, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { Container, Input, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { countLines, formatPreview, formatRelativeAge } from "./browser-helpers.js";
 
 type PromptStashEntry = {

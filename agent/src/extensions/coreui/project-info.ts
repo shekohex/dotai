@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getGitState } from "../git-state.js";
 import type { CoreUIState } from "./types.js";
 

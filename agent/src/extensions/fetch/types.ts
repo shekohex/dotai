@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import type { TruncationResult } from "@mariozechner/pi-coding-agent";
+import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 

@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../../session-replacement.js";
 import { errorMessage } from "../../../utils/error-message.js";
 import type { GsdCommandArgs } from "../args.js";

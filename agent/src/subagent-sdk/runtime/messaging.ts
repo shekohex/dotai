@@ -1,4 +1,4 @@
-import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type {
   CancelSubagentParams,
   MessageSubagentParams,

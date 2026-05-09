@@ -1,4 +1,4 @@
-import type { SessionEntry, SessionMessageEntry } from "@mariozechner/pi-coding-agent";
+import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 

@@ -1,7 +1,6 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -27,9 +26,10 @@ import { handleGsdVerifyWork } from "../../src/extensions/gsd/lifecycle/verify-w
 import { resolveGsdBundlePath } from "../../src/extensions/gsd/resources.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
 import { applyPendingGsdWorkflowLaunch } from "../../src/extensions/gsd/workflow-launch.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agent-gsd-lifecycle-"));
+  return createTempDirSync("agent-gsd-lifecycle-");
 }
 
 function createPlanningRoot(): string {

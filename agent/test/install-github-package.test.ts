@@ -1,22 +1,8 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { afterEach, describe, expect, it } from "vitest";
-
-const createdTempDirs: string[] = [];
-
-afterEach(() => {
-  for (const directoryPath of createdTempDirs.splice(0)) {
-    rmSync(directoryPath, { force: true, recursive: true });
-  }
-});
-
-function createTempDir(prefix: string): string {
-  const directoryPath = mkdtempSync(join(tmpdir(), prefix));
-  createdTempDirs.push(directoryPath);
-  return directoryPath;
-}
+import { describe, expect, it } from "vitest";
+import { createTempDirSync } from "./test-utils/temp-paths.ts";
 
 function createMockCommand(directoryPath: string, commandName: string, source: string): void {
   const commandPath = join(directoryPath, commandName);
@@ -24,7 +10,7 @@ function createMockCommand(directoryPath: string, commandName: string, source: s
 }
 
 function createFixtureScript(defaultPackageVersion: string): string {
-  const fixtureDir = createTempDir("install-script-");
+  const fixtureDir = createTempDirSync("install-script-");
   const fixturePath = join(fixtureDir, "install-github-package.sh");
   cpSync(join(process.cwd(), "scripts/install-github-package.sh"), fixturePath);
 
@@ -39,7 +25,7 @@ function createFixtureScript(defaultPackageVersion: string): string {
 
 function runFixtureScript(args: string[]): { bunArgs: string; curlArgs: string[] } {
   const fixturePath = createFixtureScript("0.72.1-dev.6119212");
-  const binDir = createTempDir("install-bin-");
+  const binDir = createTempDirSync("install-bin-");
   const curlLogPath = join(binDir, "curl.log");
   const bunLogPath = join(binDir, "bun.log");
 

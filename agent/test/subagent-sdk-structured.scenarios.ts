@@ -14,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { createSubagentSDK } from "../src/subagent-sdk/sdk.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SUBAGENT_STRUCTURED_OUTPUT_ENTRY } from "../src/subagent-sdk/types.ts";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 const TEST_MODE_SOURCE = "test-subagent-sdk-reviewer-structured";
@@ -141,12 +142,8 @@ timedTest(
   "SubagentSDK spawn returns typed error outcome for structured output failure",
   async () => {
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-    const agentDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "agent-subagent-sdk-structured-error-dir-"),
-    );
-    const cwd = await fs.mkdtemp(
-      path.join(os.tmpdir(), "agent-subagent-sdk-structured-error-cwd-"),
-    );
+    const agentDir = await createTempDir("agent-subagent-sdk-structured-error-dir-");
+    const cwd = await createTempDir("agent-subagent-sdk-structured-error-cwd-");
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     const fakePi = new FakePi();

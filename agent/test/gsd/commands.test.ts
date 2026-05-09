@@ -1,7 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
@@ -10,6 +9,7 @@ import { resolveInstructionFileName } from "../../src/extensions/gsd/lifecycle/n
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.ts";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.ts";
 import { resolveGsdBundlePath } from "../../src/extensions/gsd/resources.ts";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 type RegisteredCommand = {
   description: string;
@@ -131,7 +131,7 @@ function createCommandContext(
 }
 
 function createTempCwd(): string {
-  return mkdtempSync(join(tmpdir(), "agent-gsd-command-"));
+  return createTempDirSync("agent-gsd-command-");
 }
 
 function createPlanningFixture(cwd: string): void {
@@ -1790,7 +1790,7 @@ test("gsd verify-work rejects unsupported args before workflow launch", async ()
 });
 
 test("gsd secure-phase launches workflow resources", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "agent-gsd-secure-"));
+  const cwd = createTempDirSync("agent-gsd-secure-");
   const notifications: Array<{ message: string; level: string }> = [];
   const fakePi = new FakePi();
   gsdExtension(fakePi as ExtensionAPI);

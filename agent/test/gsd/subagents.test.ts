@@ -1,5 +1,3 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,9 +10,10 @@ import {
   spawnRole,
   spawnStructuredRole,
 } from "../../src/extensions/gsd/subagents.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agent-gsd-subagents-"));
+  return createTempDirSync("agent-gsd-subagents-");
 }
 
 function createContext(cwd: string): ExtensionCommandContext {

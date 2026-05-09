@@ -27,11 +27,12 @@ import { createMockUIContext } from "./mock-ui.js";
 import { createEventCollector } from "./events.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
 import type { TestSessionOptions, TestSession, Turn, ToolCallRecord } from "./types.js";
+import { createTempDirSync } from "../../test-utils/temp-paths.ts";
 
 export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSession> {
   const propagateErrors = options.propagateErrors ?? true;
   const ownsTmpDir = !options.cwd;
-  const cwd = options.cwd ?? fs.mkdtempSync(path.join(os.tmpdir(), "pi-test-harness-"));
+  const cwd = options.cwd ?? createTempDirSync("pi-test-harness-");
 
   // Ensure cwd exists
   if (!fs.existsSync(cwd)) {

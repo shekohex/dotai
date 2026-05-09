@@ -1,11 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { mkdtempSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const require = createRequire(import.meta.url);
 const testDir = fileURLToPath(new URL(".", import.meta.url));
@@ -25,7 +24,7 @@ const drift = require("../../src/resources/gsd/bin/lib/drift.cjs") as {
 };
 
 function createRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agent-gsd-drift-"));
+  return createTempDirSync("agent-gsd-drift-");
 }
 
 function initRepo(root: string): void {

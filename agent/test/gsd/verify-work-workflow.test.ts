@@ -1,14 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { resolvePhaseDir } from "../../src/resources/gsd/bin/lib/verify-work.cjs";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agent-gsd-verify-work-"));
+  return createTempDirSync("agent-gsd-verify-work-");
 }
 
 function runTool(root: string, ...args: string[]): unknown {

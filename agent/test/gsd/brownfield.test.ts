@@ -1,5 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { computeHealth, computeLocalHealthSummary } from "../../src/extensions/gsd/state/health.js";
@@ -8,6 +7,7 @@ import { readPlanningSnapshot } from "../../src/extensions/gsd/state/read.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { computeStats, computeStructuredStats } from "../../src/extensions/gsd/state/stats.js";
 import { detectExistingPlanning } from "../../src/extensions/gsd/state/detect.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const fixtures = join(import.meta.dirname, "fixtures");
 const brownfieldRoot = join(fixtures, "brownfield-v1");
@@ -34,7 +34,7 @@ describe("brownfield continuation", () => {
   });
 
   it("counts roadmap-only completed plans in mixed brownfield progress", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-progress-mixed-"));
+    const root = createTempDirSync("agent-gsd-progress-mixed-");
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -73,7 +73,7 @@ Plans:
   });
 
   it("unions completed plan ids across roadmap and snapshot sources within phase", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-progress-union-"));
+    const root = createTempDirSync("agent-gsd-progress-union-");
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -107,7 +107,7 @@ Plans:
   });
 
   it("treats padded snapshot phase ids and unpadded roadmap phase numbers as same phase", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-progress-padded-phase-"));
+    const root = createTempDirSync("agent-gsd-progress-padded-phase-");
     mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -185,7 +185,7 @@ Plans:
   });
 
   it("loads upstream-style state frontmatter with blank current_plan and nested yaml", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-state-yaml-"));
+    const root = createTempDirSync("agent-gsd-state-yaml-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -226,7 +226,7 @@ Plans:
   });
 
   it("loads upstream-style nested plan frontmatter without invalid frontmatter errors", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-plan-yaml-"));
+    const root = createTempDirSync("agent-gsd-plan-yaml-");
     mkdirSync(join(root, ".planning", "phases", "4.5-stabilization"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -296,7 +296,7 @@ Plans:
   });
 
   it("reads pending todo files from brownfield-compatible planning tree", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-todos-"));
+    const root = createTempDirSync("agent-gsd-todos-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     mkdirSync(join(root, ".planning", "todos", "pending"), { recursive: true });
     writeFileSync(
@@ -313,7 +313,7 @@ Plans:
   });
 
   it("reads milestone artifacts from planning tree", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-milestones-"));
+    const root = createTempDirSync("agent-gsd-milestones-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     mkdirSync(join(root, ".planning", "milestones", "v1.0-mvp"), { recursive: true });
     writeFileSync(
@@ -330,7 +330,7 @@ Plans:
   });
 
   it("reads goal artifacts from planning tree", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-goals-"));
+    const root = createTempDirSync("agent-gsd-goals-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     mkdirSync(join(root, ".planning", "goals", "active"), { recursive: true });
     writeFileSync(
@@ -347,7 +347,7 @@ Plans:
   });
 
   it("extracts structured task titles from plan bodies", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-plan-tasks-"));
+    const root = createTempDirSync("agent-gsd-plan-tasks-");
     mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -385,7 +385,7 @@ Plans:
   });
 
   it("falls back to roadmap phases when phase directories do not exist yet", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-only-"));
+    const root = createTempDirSync("agent-gsd-roadmap-only-");
     mkdirSync(join(root, ".planning"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -433,7 +433,7 @@ Plans:
   });
 
   it("treats missing PROJECT.md as unhealthy", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-health-project-"));
+    const root = createTempDirSync("agent-gsd-health-project-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -454,7 +454,7 @@ Plans:
   });
 
   it("local summary survives malformed config without throwing", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-local-health-malformed-config-"));
+    const root = createTempDirSync("agent-gsd-local-health-malformed-config-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(join(root, ".planning", "config.json"), "{bad json\n");
     writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
@@ -475,7 +475,7 @@ Plans:
   });
 
   it("local summary keeps empty valid planning degraded instead of broken", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-local-health-empty-phases-"));
+    const root = createTempDirSync("agent-gsd-local-health-empty-phases-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),

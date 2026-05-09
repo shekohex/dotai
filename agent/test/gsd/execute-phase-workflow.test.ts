@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agent-gsd-execute-phase-"));
+  return createTempDirSync("agent-gsd-execute-phase-");
 }
 
 function initRepo(root: string): void {

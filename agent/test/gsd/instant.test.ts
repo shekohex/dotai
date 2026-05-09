@@ -1,10 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { handleGsdHealth } from "../../src/extensions/gsd/instant/health.js";
 import { handleGsdStats } from "../../src/extensions/gsd/instant/stats.js";
 import { computeStructuredStats } from "../../src/extensions/gsd/state/stats.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const fixtures = join(import.meta.dirname, "fixtures");
 const brownfieldRoot = join(fixtures, "brownfield-v1");
@@ -59,7 +59,7 @@ describe("gsd instant commands", () => {
   });
 
   it("stats scope counts to current milestone", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-milestone-"));
+    const root = createTempDirSync("agent-gsd-stats-milestone-");
     mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
     mkdirSync(join(root, ".planning", "phases", "5-security"), { recursive: true });
     writeFileSync(
@@ -135,7 +135,7 @@ Plans:
   });
 
   it("stats scopes shipped milestone phases from details summary blocks", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-milestone-details-"));
+    const root = createTempDirSync("agent-gsd-stats-milestone-details-");
     mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
     mkdirSync(join(root, ".planning", "phases", "5-security"), { recursive: true });
     writeFileSync(
@@ -192,7 +192,7 @@ Plans:
   });
 
   it("stats scopes milestone labels exactly instead of partial version matches", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-milestone-exact-"));
+    const root = createTempDirSync("agent-gsd-stats-milestone-exact-");
     mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
     mkdirSync(join(root, ".planning", "phases", "2-release"), { recursive: true });
     writeFileSync(
@@ -256,7 +256,7 @@ Plans:
   });
 
   it("stats canonicalizes padded local phase ids and keeps executed work distinct from complete", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-phase-status-"));
+    const root = createTempDirSync("agent-gsd-stats-phase-status-");
     mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });
     mkdirSync(join(root, ".planning", "phases", "2-release"), { recursive: true });
     mkdirSync(join(root, ".planning", "phases", "3-manual"), { recursive: true });
@@ -322,7 +322,7 @@ Plans:
   });
 
   it("stats counts requirements from checklist, plain bullets, and traceability status", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-requirements-"));
+    const root = createTempDirSync("agent-gsd-stats-requirements-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -362,7 +362,7 @@ Plans:
   });
 
   it("stats excludes deferred full semver requirement headings", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-requirements-semver-"));
+    const root = createTempDirSync("agent-gsd-stats-requirements-semver-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -393,7 +393,7 @@ Plans:
   });
 
   it("stats treats v1.x requirement headings as current actionable scope", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-requirements-v1x-"));
+    const root = createTempDirSync("agent-gsd-stats-requirements-v1x-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -426,7 +426,7 @@ Plans:
   });
 
   it("stats keeps deferred requirement ids excluded when traceability repeats them", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-requirements-traceability-"));
+    const root = createTempDirSync("agent-gsd-stats-requirements-traceability-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -464,7 +464,7 @@ Plans:
   });
 
   it("stats treats verification-only local phases as started", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-stats-verification-only-status-"));
+    const root = createTempDirSync("agent-gsd-stats-verification-only-status-");
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -513,7 +513,7 @@ Plans:
   });
 
   it("health reports missing PROJECT.md as non-green", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-health-missing-project-"));
+    const root = createTempDirSync("agent-gsd-health-missing-project-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -550,7 +550,7 @@ Plans:
   });
 
   it("health reports malformed config as structured output instead of crashing", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-health-malformed-config-"));
+    const root = createTempDirSync("agent-gsd-health-malformed-config-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(join(root, ".planning", "config.json"), "{bad json\n");
     writeFileSync(

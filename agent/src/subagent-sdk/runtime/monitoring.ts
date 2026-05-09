@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { isStaleSessionReplacementContextError } from "../../extensions/session-replacement.js";
 import type { RuntimeSubagent, SubagentActivityEntry } from "../types.js";
 import {
+  cleanupSubagentPersistenceArtifacts,
   getParentInjectedInputMarkerPath,
   isAutoExitTimeoutModeActive,
   readLatestChildActivityState,
@@ -204,6 +205,7 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
 
     this.states.set(terminal.sessionId, terminal);
     this.activeSessionIds.delete(terminal.sessionId);
+    cleanupSubagentPersistenceArtifacts(terminal.sessionId);
     await this.hooks.persistState(terminal);
     this.stopPollingIfIdle();
 

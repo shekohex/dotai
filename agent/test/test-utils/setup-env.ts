@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach } from "vitest";
+import { cleanupRegisteredTempPaths } from "./temp-paths.ts";
 
 const suppressedStderrPatterns = [
   /^Error: UAT session is already complete; no pending checkpoint to render$/u,
@@ -57,11 +58,11 @@ if (
   process.env.TEST_PI_CODING_AGENT_DIR = configuredAgentDir;
 }
 
-afterEach(() => {
+afterEach(async () => {
   const agentDir = process.env.TEST_PI_CODING_AGENT_DIR?.trim();
-  if (!agentDir) {
-    return;
+  if (agentDir) {
+    fs.rmSync(path.join(agentDir, "settings.json"), { force: true });
   }
 
-  fs.rmSync(path.join(agentDir, "settings.json"), { force: true });
+  await cleanupRegisteredTempPaths();
 });

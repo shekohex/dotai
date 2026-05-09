@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import { execFile as execFileCallback } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -16,6 +15,7 @@ import {
   parseReviewPaths,
 } from "../src/extensions/review.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 const execFile = promisify(execFileCallback);
@@ -251,7 +251,7 @@ async function getCommandArgumentCompletions(
 }
 
 timedTest("review refuses to start a second review while one is already running", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-running-"));
+  const cwd = await createTempDir("agent-review-running-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -280,7 +280,7 @@ timedTest("review refuses to start a second review while one is already running"
 });
 
 timedTest("review auto-clears state after the subagent completes", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-complete-"));
+  const cwd = await createTempDir("agent-review-complete-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -341,7 +341,7 @@ timedTest("review auto-clears state after the subagent completes", async () => {
 });
 
 timedTest("completed review offers an action picker", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-complete-actions-"));
+  const cwd = await createTempDir("agent-review-complete-actions-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const pickedSummaries: string[] = [];
@@ -400,7 +400,7 @@ timedTest("completed review offers an action picker", async () => {
 });
 
 timedTest("review loads REVIEW_GUIDELINES.md from repo root without .pi", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-guidelines-"));
+  const cwd = await createTempDir("agent-review-guidelines-");
 
   try {
     await initGitRepo(cwd);
@@ -416,7 +416,7 @@ timedTest("review loads REVIEW_GUIDELINES.md from repo root without .pi", async 
 });
 
 timedTest("review guidelines lookup does not read above git root", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "agent-review-guidelines-boundary-"));
+  const parent = await createTempDir("agent-review-guidelines-boundary-");
   const cwd = join(parent, "repo");
 
   try {
@@ -432,7 +432,7 @@ timedTest("review guidelines lookup does not read above git root", async () => {
 });
 
 timedTest("completed review can copy the summary to the clipboard", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-copy-summary-"));
+  const cwd = await createTempDir("agent-review-copy-summary-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const copiedSummaries: string[] = [];
@@ -500,7 +500,7 @@ timedTest("completed review can copy the summary to the clipboard", async () => 
 });
 
 timedTest("completed review can fork into a new fix branch", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-fork-summary-"));
+  const cwd = await createTempDir("agent-review-fork-summary-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   let forkPicked = 0;
@@ -580,7 +580,7 @@ timedTest("completed review can fork into a new fix branch", async () => {
 });
 
 timedTest("completed review reports handoff runner exceptions", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-address-error-"));
+  const cwd = await createTempDir("agent-review-handoff-address-error-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -646,7 +646,7 @@ timedTest("completed review reports handoff runner exceptions", async () => {
 });
 
 timedTest("completed review can handoff and address findings", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-address-"));
+  const cwd = await createTempDir("agent-review-handoff-address-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   let handoffPicked = 0;
@@ -712,7 +712,7 @@ timedTest("completed review can handoff and address findings", async () => {
 });
 
 timedTest("review restores the original branch after PR review completes", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-restore-"));
+  const cwd = await createTempDir("agent-review-pr-restore-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const previousPath = process.env.PATH;
@@ -777,7 +777,7 @@ timedTest("review restores the original branch after PR review completes", async
 });
 
 timedTest("review restores the original branch when PR handoff generation aborts", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-handoff-abort-"));
+  const cwd = await createTempDir("agent-review-pr-handoff-abort-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const previousPath = process.env.PATH;
@@ -819,7 +819,7 @@ timedTest("review restores the original branch when PR handoff generation aborts
 });
 
 timedTest("review blocks PR checkout when untracked files are present", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-untracked-"));
+  const cwd = await createTempDir("agent-review-pr-untracked-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const previousPath = process.env.PATH;
@@ -856,7 +856,7 @@ timedTest("review blocks PR checkout when untracked files are present", async ()
 });
 
 timedTest("failed PR review startup restores the original branch after checkout", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-pr-failure-"));
+  const cwd = await createTempDir("agent-review-pr-failure-");
   let session: TestSession | undefined;
   const mux = new FailingMuxAdapter();
   const previousPath = process.env.PATH;

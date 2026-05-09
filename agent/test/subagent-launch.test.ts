@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -12,6 +11,7 @@ import {
   SUBAGENT_DEBUG_ENV_ALLOWLIST,
 } from "../src/subagent-sdk/launch.ts";
 import type { RuntimeSubagent } from "../src/subagent-sdk/types.ts";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const previousPiCommand = process.env[PI_COMMAND_ENV];
 const previousDebugProviderRequests = process.env.PI_DEBUG_PROVIDER_REQUESTS;
@@ -197,7 +197,7 @@ describe("buildLaunchCommand", () => {
   });
 
   it("fails closed only for strict file-backed child state", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-launch-invalid-"));
+    const dir = await createTempDir("agent-subagent-launch-invalid-");
     const filePath = path.join(dir, "child-state.json");
     await fs.writeFile(filePath, "{not-json", "utf8");
     delete process.env[CHILD_STATE_ENV];
@@ -212,7 +212,7 @@ describe("buildLaunchCommand", () => {
   });
 
   it("falls through to valid file-backed child state when env JSON is malformed", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-launch-fallback-"));
+    const dir = await createTempDir("agent-subagent-launch-fallback-");
     const filePath = path.join(dir, "child-state.json");
     await fs.writeFile(
       filePath,

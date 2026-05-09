@@ -1,6 +1,6 @@
 import http from "node:http";
 import os from "node:os";
-import { mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadSavedInterview } from "../src/extensions/interview/questions.js";
 import { startInterviewServer } from "../src/extensions/interview/server.js";
 import { normalizePath } from "../src/extensions/interview/server-session-store.js";
+import { createTempDir as createRegisteredTempDir } from "./test-utils/temp-paths.ts";
 
 interface JsonResponse {
   statusCode: number;
@@ -27,7 +28,7 @@ afterEach(async () => {
 });
 
 async function createTempDir(prefix: string, parentDir: string = os.tmpdir()): Promise<string> {
-  const tempDir = await mkdtemp(join(parentDir, prefix));
+  const tempDir = await createRegisteredTempDir(prefix, parentDir);
   cleanupPaths.add(tempDir);
   return tempDir;
 }

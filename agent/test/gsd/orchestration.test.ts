@@ -1,5 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -9,9 +8,10 @@ import {
   type GsdOrchestrationDeps,
 } from "../../src/extensions/gsd/orchestration.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-orch-"));
+  const root = createTempDirSync("agent-gsd-orch-");
   mkdirSync(join(root, ".planning", "phases"), { recursive: true });
   writeFileSync(
     join(root, ".planning", "config.json"),

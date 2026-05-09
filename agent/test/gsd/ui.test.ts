@@ -1,5 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
@@ -12,6 +11,7 @@ import {
 } from "../../src/extensions/gsd/help.js";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
 import { showGsdDashboard } from "../../src/extensions/gsd/ui.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const fakeHelpPi = {
   sendMessage() {},
@@ -20,7 +20,7 @@ const fakeHelpPi = {
 initTheme("dark");
 
 function createRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-ui-"));
+  const root = createTempDirSync("agent-gsd-ui-");
   mkdirSync(join(root, ".planning", "goals", "active"), { recursive: true });
   mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
   mkdirSync(join(root, ".planning", "milestones", "v1.0-mvp"), { recursive: true });

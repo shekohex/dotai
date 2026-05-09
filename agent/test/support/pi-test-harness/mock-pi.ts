@@ -23,6 +23,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createTempDirSync } from "../../test-utils/temp-paths.ts";
 import { fileURLToPath } from "node:url";
 import type { MockPi, MockPiCall } from "./types.js";
 
@@ -67,7 +68,7 @@ function findMockPiScript(): string {
  * depend on response ordering.
  */
 export function createMockPi(): MockPi {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-mock-"));
+  const dir = createTempDirSync("pi-mock-");
   let originalPath: string | undefined;
   let installed = false;
 

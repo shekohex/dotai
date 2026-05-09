@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,9 +8,10 @@ import {
   unregisterBuiltInGsdModesForTests,
 } from "../src/extensions/gsd/modes.js";
 import { registerModeFlags, subscribeModeFlagRefresh } from "../src/extensions/modes/flags.js";
+import { createTempDirSync } from "./test-utils/temp-paths.ts";
 
 function createRoot(): string {
-  return mkdtempSync(join(tmpdir(), "agent-modes-flags-"));
+  return createTempDirSync("agent-modes-flags-");
 }
 
 class FakePi {

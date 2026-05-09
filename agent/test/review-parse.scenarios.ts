@@ -1,8 +1,7 @@
 import { expect, test } from "vitest";
 import { execFile as execFileCallback } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -17,6 +16,7 @@ import {
   parseReviewPaths,
 } from "../src/extensions/review.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 const execFile = promisify(execFileCallback);
@@ -229,7 +229,7 @@ async function getCommandArgumentCompletions(
 timedTest(
   "review command launches a review-mode subagent with target-specific prompt",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-review-command-"));
+    const cwd = await createTempDir("agent-review-command-");
     let session: TestSession | undefined;
     const mux = new HarnessMuxAdapter();
 
@@ -272,7 +272,7 @@ timedTest(
 );
 
 timedTest("review command keeps quoted folder paths intact", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-folder-quotes-"));
+  const cwd = await createTempDir("agent-review-folder-quotes-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -305,7 +305,7 @@ timedTest("review command keeps quoted folder paths intact", async () => {
 });
 
 timedTest("review preserves multi-word --extra values with equals syntax", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-extra-equals-"));
+  const cwd = await createTempDir("agent-review-extra-equals-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -337,7 +337,7 @@ timedTest("review preserves multi-word --extra values with equals syntax", async
 });
 
 timedTest("review supports flag-first target parsing", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-flag-first-"));
+  const cwd = await createTempDir("agent-review-flag-first-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -367,7 +367,7 @@ timedTest("review supports flag-first target parsing", async () => {
 });
 
 timedTest("review supports multi-flag target-first parsing", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-multi-flag-first-"));
+  const cwd = await createTempDir("agent-review-multi-flag-first-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -402,7 +402,7 @@ timedTest("review supports multi-flag target-first parsing", async () => {
 });
 
 timedTest("review supports unquoted flag-first --extra values", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-flag-first-unquoted-"));
+  const cwd = await createTempDir("agent-review-flag-first-unquoted-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -432,7 +432,7 @@ timedTest("review supports unquoted flag-first --extra values", async () => {
 });
 
 timedTest("review rejects --extra with no value", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-extra-missing-"));
+  const cwd = await createTempDir("agent-review-extra-missing-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -458,7 +458,7 @@ timedTest("review rejects --extra with no value", async () => {
 });
 
 timedTest("review preserves target keywords inside --extra text", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-extra-keywords-"));
+  const cwd = await createTempDir("agent-review-extra-keywords-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -487,7 +487,7 @@ timedTest("review preserves target keywords inside --extra text", async () => {
 });
 
 timedTest("review preserves target keywords inside --handoff text", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-keywords-"));
+  const cwd = await createTempDir("agent-review-handoff-keywords-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -516,7 +516,7 @@ timedTest("review preserves target keywords inside --handoff text", async () => 
 });
 
 timedTest("review generates handoff from the parent session before branching", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-handoff-parent-"));
+  const cwd = await createTempDir("agent-review-handoff-parent-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
   const handoffCalls: string[] = [];

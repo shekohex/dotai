@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { calls, createTestSession, says, when, type TestSession } from "@support/pi-test-harness";
 import { DefaultResourceLoader, initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
@@ -12,6 +12,7 @@ import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-a
 import stripAnsi from "strip-ansi";
 import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 import webFetchExtension from "../src/extensions/fetch.ts";
 import mermaidExtension, { extractMermaidBlocks } from "../src/extensions/mermaid.ts";
 import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.ts";
@@ -831,7 +832,7 @@ function createPromptStashEntry(id: string, text: string, createdAt: number): Pr
 }
 
 timedTest("pi-test-harness runs apply_patch against the real tool implementation", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-harness-"));
+  const cwd = await createTempDir("agent-harness-");
   const filePath = join(cwd, "sample.ts");
   let session: TestSession | undefined;
 
@@ -1238,7 +1239,7 @@ timedTest("bundled themes are available before reload", async () => {
 });
 
 timedTest("handoff command starts the new session in the requested mode", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-command-"));
+  const cwd = await createTempDir("agent-handoff-command-");
   let session: TestSession | undefined;
   const observedModeChanges: CapturedModeChange[] = [];
   const providers = createHandoffTestProviders(
@@ -1315,7 +1316,7 @@ timedTest("handoff command starts the new session in the requested mode", async 
 });
 
 timedTest("handoff command with mode and model applies the startup selection once", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-command-mixed-"));
+  const cwd = await createTempDir("agent-handoff-command-mixed-");
   let session: TestSession | undefined;
   const observedModeChanges: CapturedModeChange[] = [];
   const providers = createHandoffTestProviders(
@@ -1379,7 +1380,7 @@ timedTest("handoff command with mode and model applies the startup selection onc
 });
 
 timedTest("handoff command autocompletes flags, modes, and models", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-autocomplete-"));
+  const cwd = await createTempDir("agent-handoff-autocomplete-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
@@ -1428,7 +1429,7 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
 });
 
 timedTest("executor command autocompletes subcommands with fuzzy search", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-executor-autocomplete-"));
+  const cwd = await createTempDir("agent-executor-autocomplete-");
   let session: TestSession | undefined;
   const server = await createExecutorProbeServer(cwd);
 
@@ -1459,7 +1460,7 @@ timedTest("executor command autocompletes subcommands with fuzzy search", async 
 });
 
 timedTest("executor command without arguments shows status", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-executor-command-"));
+  const cwd = await createTempDir("agent-executor-command-");
   let session: TestSession | undefined;
   const server = await createExecutorProbeServer(cwd);
 
@@ -1525,7 +1526,7 @@ timedTest("executor command without arguments shows status", async () => {
 timedTest(
   "subagent tool prompt includes available modes and refreshes after mode changes",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-handoff-modes-prompt-"));
+    const cwd = await createTempDir("agent-handoff-modes-prompt-");
     let session: TestSession | undefined;
     const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
@@ -1563,7 +1564,7 @@ timedTest(
 );
 
 timedTest("modes extension registers CLI flags from discovered modes", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-"));
+  const cwd = await createTempDir("agent-mode-flags-");
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
   await writeCliFlagModesFile(cwd);
@@ -1592,7 +1593,7 @@ timedTest("modes extension registers CLI flags from discovered modes", async () 
 });
 
 timedTest("mode CLI flags apply the selected mode on reload startup", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-reload-"));
+  const cwd = await createTempDir("agent-mode-flags-reload-");
   let session: TestSession | undefined;
   const observedModeChanges: CapturedModeChange[] = [];
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1646,7 +1647,7 @@ timedTest("mode CLI flags apply the selected mode on reload startup", async () =
 });
 
 timedTest("mode reload startup does not append mode-state entry when nothing changed", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-reload-state-"));
+  const cwd = await createTempDir("agent-mode-reload-state-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
@@ -1699,7 +1700,7 @@ timedTest("mode reload startup does not append mode-state entry when nothing cha
 });
 
 timedTest("mode state dedupe is scoped to current branch", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-branch-dedupe-"));
+  const cwd = await createTempDir("agent-mode-branch-dedupe-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
@@ -1757,8 +1758,8 @@ timedTest("mode state dedupe is scoped to current branch", async () => {
 timedTest(
   "mode CLI flags preserve the explicit startup mode when modes share a selection",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-"));
-    const agentDir = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-agent-"));
+    const cwd = await createTempDir("agent-mode-flags-shared-selection-");
+    const agentDir = await createTempDir("agent-mode-flags-shared-selection-agent-");
     let session: TestSession | undefined;
     const observedModeChanges: CapturedModeChange[] = [];
     const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1815,7 +1816,7 @@ timedTest(
 );
 
 timedTest("modes extension skips mode-state persistence for ephemeral sessions", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-ephemeral-"));
+  const cwd = await createTempDir("agent-mode-ephemeral-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
@@ -1841,8 +1842,8 @@ timedTest("modes extension skips mode-state persistence for ephemeral sessions",
 });
 
 timedTest("mode command persists active mode into settings.json and restores it", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-settings-persist-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-mode-settings-agent-"));
+  const cwd = await createTempDir("agent-mode-settings-persist-");
+  const agentDir = await createTempDir("agent-mode-settings-agent-");
   let firstSession: TestSession | undefined;
   let secondSession: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1888,8 +1889,8 @@ timedTest("mode command persists active mode into settings.json and restores it"
 });
 
 timedTest("mode CLI flag overrides persisted settings mode on startup", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-flag-overrides-settings-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-mode-flag-overrides-settings-agent-"));
+  const cwd = await createTempDir("agent-mode-flag-overrides-settings-");
+  const agentDir = await createTempDir("agent-mode-flag-overrides-settings-agent-");
   let session: TestSession | undefined;
   const observedModeChanges: CapturedModeChange[] = [];
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -1949,8 +1950,8 @@ timedTest("mode CLI flag overrides persisted settings mode on startup", async ()
 timedTest(
   "mode CLI flags keep explicit startup mode after other loaders register different flags",
   async () => {
-    const sessionCwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-shared-selection-local-"));
-    const loaderCwd = await mkdtemp(join(tmpdir(), "agent-mode-flags-overwrite-loader-"));
+    const sessionCwd = await createTempDir("agent-mode-flags-shared-selection-local-");
+    const loaderCwd = await createTempDir("agent-mode-flags-overwrite-loader-");
     let session: TestSession | undefined;
     const observedModeChanges: CapturedModeChange[] = [];
     const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
@@ -2042,7 +2043,7 @@ timedTest("LiteLLM provider registrations add the gemini provider via v1beta", (
 timedTest(
   "model family system prompt is selected per model family while preserving pi tail",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-"));
+    const cwd = await createTempDir("agent-family-system-prompt-");
     let session: TestSession | undefined;
     const providers = createModelFamilyTestProviders();
     const seenSystemPrompts: string[] = [];
@@ -2121,7 +2122,7 @@ timedTest(
 timedTest(
   "model family system prompt is used for provider requests after switching models",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-provider-"));
+    const cwd = await createTempDir("agent-family-system-prompt-provider-");
     let session: TestSession | undefined;
     const providers = createModelFamilyTestProviders();
     const seenSystemPrompts: string[] = [];
@@ -2170,7 +2171,7 @@ timedTest(
 timedTest(
   "mode changes switch provider request system prompt when selected mode changes model family",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-family-system-prompt-modes-"));
+    const cwd = await createTempDir("agent-family-system-prompt-modes-");
     let session: TestSession | undefined;
     const providers = createModelFamilyTestProviders();
     const seenSystemPrompts: string[] = [];
@@ -2217,7 +2218,7 @@ timedTest(
 );
 
 timedTest("modes extension applies mode systemPrompt to active session on next turn", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-system-prompt-state-"));
+  const cwd = await createTempDir("agent-mode-system-prompt-state-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
 
@@ -2243,7 +2244,7 @@ timedTest("modes extension applies mode systemPrompt to active session on next t
 });
 
 timedTest("modes extension injects selected mode systemPrompt into next agent turn", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-mode-system-prompt-turn-"));
+  const cwd = await createTempDir("agent-mode-system-prompt-turn-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
   const seenSystemPrompts: string[] = [];
@@ -2280,7 +2281,7 @@ timedTest("modes extension injects selected mode systemPrompt into next agent tu
 });
 
 timedTest("gsd debug manager mode activates interview and subagent tools", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-gsd-debug-mode-tools-"));
+  const cwd = await createTempDir("agent-gsd-debug-mode-tools-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
   const capturedToolSets: string[][] = [];
@@ -2315,7 +2316,7 @@ timedTest("gsd debug manager mode activates interview and subagent tools", async
 });
 
 timedTest("gsd debug manager mode exposes interview and subagent in system prompt", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-gsd-debug-mode-prompt-tools-"));
+  const cwd = await createTempDir("agent-gsd-debug-mode-prompt-tools-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
 
@@ -2350,7 +2351,7 @@ timedTest("gsd debug manager mode exposes interview and subagent in system promp
 timedTest(
   "/gsd debug launches replacement session with interview in prompt and active tools",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-gsd-debug-launch-tools-"));
+    const cwd = await createTempDir("agent-gsd-debug-launch-tools-");
     let session: TestSession | undefined;
     const providers = createHandoffTestProviders("ok");
     const capturedToolSets: string[][] = [];
@@ -2393,7 +2394,7 @@ timedTest(
 );
 
 timedTest("bundled extension stack exposes interview in gsd debug manager mode", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-bundled-gsd-debug-mode-tools-"));
+  const cwd = await createTempDir("agent-bundled-gsd-debug-mode-tools-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
 
@@ -2419,7 +2420,7 @@ timedTest("bundled extension stack exposes interview in gsd debug manager mode",
 timedTest(
   "modes extension scopes tools and restores the default toolset when leaving a scoped mode",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-mode-tools-"));
+    const cwd = await createTempDir("agent-mode-tools-");
     let session: TestSession | undefined;
     const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
     const capturedToolSets: string[][] = [];
@@ -2531,8 +2532,8 @@ timedTest(
 timedTest(
   "agents-md extension loads nested AGENTS context once per session and notifies the UI",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-agents-md-"));
-    const agentDir = await mkdtemp(join(tmpdir(), "agent-agents-md-global-"));
+    const cwd = await createTempDir("agent-agents-md-");
+    const agentDir = await createTempDir("agent-agents-md-global-");
     let session: TestSession | undefined;
 
     try {
@@ -2615,7 +2616,7 @@ timedTest(
 );
 
 timedTest("agents-md extension ignores bundled skill reads outside the session cwd", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-agents-md-skill-"));
+  const cwd = await createTempDir("agent-agents-md-skill-");
   let session: TestSession | undefined;
 
   try {
@@ -2663,7 +2664,7 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
 });
 
 timedTest("skill reads return full content in one go", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-skill-read-"));
+  const cwd = await createTempDir("agent-skill-read-");
   const skillDir = join(cwd, ".agents", "skills", "demo-skill");
   const skillPath = join(skillDir, "SKILL.md");
   let session: TestSession | undefined;
@@ -2724,7 +2725,7 @@ timedTest("skill reads return full content in one go", async () => {
 });
 
 timedTest("skill reads ignore invalid offset and still return full content", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-skill-read-offset-"));
+  const cwd = await createTempDir("agent-skill-read-offset-");
   const skillDir = join(cwd, ".agents", "skills", "demo-skill");
   const skillPath = join(skillDir, "SKILL.md");
   let session: TestSession | undefined;
@@ -2776,7 +2777,7 @@ timedTest("skill reads ignore invalid offset and still return full content", asy
 });
 
 timedTest("non-skill reads still honor offset and limit", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-skill-read-negative-"));
+  const cwd = await createTempDir("agent-skill-read-negative-");
   const filePath = join(cwd, "note.md");
   let session: TestSession | undefined;
 
@@ -2823,9 +2824,9 @@ timedTest("non-skill reads still honor offset and limit", async () => {
 });
 
 timedTest("agents-md extension loads AGENTS only within the session git root", async () => {
-  const repoRoot = await mkdtemp(join(tmpdir(), "agent-agents-md-repo-root-"));
+  const repoRoot = await createTempDir("agent-agents-md-repo-root-");
   const cwd = join(repoRoot, "apps", "cli");
-  const externalDir = await mkdtemp(join(homedir(), "agent-agents-md-external-"));
+  const externalDir = await createTempDir("agent-agents-md-external-", homedir());
   let session: TestSession | undefined;
 
   try {
@@ -3057,7 +3058,7 @@ timedTest(
 );
 
 timedTest("subagent extension launches into a tmux window when the mode requests it", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-subagent-window-mode-"));
+  const cwd = await createTempDir("agent-subagent-window-mode-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 
@@ -3110,7 +3111,7 @@ timedTest("subagent extension launches into a tmux window when the mode requests
 timedTest(
   "subagent extension propagates mode-specific idle timeout into the child bootstrap state",
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "agent-subagent-timeout-mode-"));
+    const cwd = await createTempDir("agent-subagent-timeout-mode-");
     let session: TestSession | undefined;
     const mux = new HarnessMuxAdapter();
 
@@ -3479,8 +3480,8 @@ timedTest(
 );
 
 timedTest("prompt stash persistence round-trips clean JSONL entries", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-happy-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const cwd = await createTempDir("agent-prompt-stash-happy-");
+  const agentDir = await createTempDir("agent-prompt-stash-agent-");
   const entries = [
     createPromptStashEntry("entry-1", "First draft", 1_000),
     createPromptStashEntry("entry-2", "Second draft\nWith two lines", 2_000),
@@ -3503,8 +3504,8 @@ timedTest("prompt stash persistence round-trips clean JSONL entries", async () =
 });
 
 timedTest("prompt stash load self-heals malformed JSONL lines", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-heal-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const cwd = await createTempDir("agent-prompt-stash-heal-");
+  const agentDir = await createTempDir("agent-prompt-stash-agent-");
   const entries = [
     createPromptStashEntry("entry-1", "Keep me", 1_000),
     createPromptStashEntry("entry-2", "Keep me too", 2_000),
@@ -3537,8 +3538,8 @@ timedTest("prompt stash load self-heals malformed JSONL lines", async () => {
 });
 
 timedTest("prompt stash normalizes oversized JSONL files on load", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-load-cap-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const cwd = await createTempDir("agent-prompt-stash-load-cap-");
+  const agentDir = await createTempDir("agent-prompt-stash-agent-");
   const entries = Array.from({ length: 52 }, (_, index) =>
     createPromptStashEntry(`entry-${index + 1}`, `Prompt ${index + 1}`, index + 1),
   );
@@ -3570,8 +3571,8 @@ timedTest("prompt stash normalizes oversized JSONL files on load", async () => {
 });
 
 timedTest("prompt stash caps persisted entries at fifty", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-cap-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const cwd = await createTempDir("agent-prompt-stash-cap-");
+  const agentDir = await createTempDir("agent-prompt-stash-agent-");
   const entries = Array.from({ length: 51 }, (_, index) =>
     createPromptStashEntry(`entry-${index + 1}`, `Prompt ${index + 1}`, index + 1),
   );
@@ -3672,8 +3673,8 @@ timedTest("files extension registers alt-based shortcuts", async () => {
 });
 
 timedTest("/stash pop applies the latest entry and removes it from disk", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-prompt-stash-pop-"));
-  const agentDir = await mkdtemp(join(tmpdir(), "agent-prompt-stash-agent-"));
+  const cwd = await createTempDir("agent-prompt-stash-pop-");
+  const agentDir = await createTempDir("agent-prompt-stash-agent-");
   const entries = [
     createPromptStashEntry("entry-1", "Latest draft\nSecond line", 2_000),
     createPromptStashEntry("entry-2", "Older draft", 1_000),

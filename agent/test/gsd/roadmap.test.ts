@@ -1,5 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,9 +8,10 @@ import {
 } from "../../src/extensions/gsd/instant/next.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { resolveCurrentPhase } from "../../src/extensions/gsd/state/runtime.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createPlanningRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-"));
+  const root = createTempDirSync("agent-gsd-roadmap-");
   mkdirSync(join(root, ".planning", "phases"), { recursive: true });
   writeFileSync(
     join(root, ".planning", "config.json"),
@@ -285,7 +285,7 @@ describe("roadmap parser", () => {
   });
 
   it("parses and resolves inserted decimal phases in place", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-decimal-"));
+    const root = createTempDirSync("agent-gsd-roadmap-decimal-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),
@@ -341,7 +341,7 @@ Plans:
   });
 
   it("parses milestone-grouped roadmap phase headings with level four markdown headers", () => {
-    const root = mkdtempSync(join(tmpdir(), "agent-gsd-roadmap-milestone-"));
+    const root = createTempDirSync("agent-gsd-roadmap-milestone-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
     writeFileSync(
       join(root, ".planning", "config.json"),

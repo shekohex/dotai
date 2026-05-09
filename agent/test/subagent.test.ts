@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import {
@@ -14,6 +13,7 @@ import {
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import stripAnsi from "strip-ansi";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 import {
   defineModesFile,
@@ -27,6 +27,7 @@ import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes
 import { TmuxAdapter } from "../src/subagent-sdk/tmux.ts";
 import {
   activateAutoExitTimeoutMode,
+  cleanupSubagentPersistenceArtifacts,
   createChildSessionFile,
   getDefaultSessionDir,
   getAutoExitTimeoutModeMarkerPath,
@@ -301,7 +302,7 @@ timedTest("structured child failure fallback mentions StructuredOutput tool", ()
 });
 
 timedTest("resolveSubagentMode loads mode config from the child cwd", async () => {
-  const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-parent-"));
+  const parentCwd = await createTempDir("agent-subagent-parent-");
   const childCwd = path.join(parentCwd, "child");
   registerBuiltInModes(
     "test-subagent-child-reviewer",
@@ -341,7 +342,7 @@ timedTest("resolveSubagentMode loads mode config from the child cwd", async () =
 });
 
 timedTest("resolveSubagentMode normalizes GPT-5 child tools to apply_patch", async () => {
-  const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-gpt5-tools-"));
+  const parentCwd = await createTempDir("agent-subagent-gpt5-tools-");
   const childCwd = path.join(parentCwd, "child");
   registerBuiltInModes(
     "test-subagent-child-mapper",
@@ -383,8 +384,8 @@ timedTest("resolveSubagentMode normalizes GPT-5 child tools to apply_patch", asy
 timedTest(
   "resolveSubagentMode expands file system prompts relative to the defining modes file",
   async () => {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-global-"));
-    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-global-config-"));
+    const cwd = await createTempDir("agent-subagent-global-");
+    const agentDir = await createTempDir("agent-subagent-global-config-");
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 
     process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -423,7 +424,7 @@ timedTest(
 timedTest(
   "resolveSubagentMode defaults and preserves subagent auto-exit idle timeout",
   async () => {
-    const parentCwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-timeout-parent-"));
+    const parentCwd = await createTempDir("agent-subagent-timeout-parent-");
     const childCwd = path.join(parentCwd, "child");
     registerBuiltInModes(
       "test-subagent-child-timeout",
@@ -482,7 +483,7 @@ timedTest(
   "child bootstrap names child sessions with subagent name plus normalized prompt",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-name-"));
+    const cwd = await createTempDir("agent-subagent-child-name-");
     const sessionPath = path.join(cwd, "child.jsonl");
 
     process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
@@ -528,7 +529,7 @@ timedTest(
 
 timedTest("child bootstrap installs when subagent extension is disabled", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-wrapper-"));
+  const cwd = await createTempDir("agent-subagent-child-wrapper-");
   const sessionPath = path.join(cwd, "child.jsonl");
 
   process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
@@ -573,7 +574,7 @@ timedTest("child bootstrap installs when subagent extension is disabled", async 
 
 timedTest("modes sync preserves StructuredOutput for structured child sessions", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-modes-"));
+  const cwd = await createTempDir("agent-subagent-child-modes-");
   const sessionPath = path.join(cwd, "child.jsonl");
 
   process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
@@ -700,7 +701,7 @@ timedTest(
   "child bootstrap auto-exits immediately on idle with no manual terminal input",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-auto-exit-"));
+    const cwd = await createTempDir("agent-subagent-child-auto-exit-");
     const sessionPath = path.join(cwd, "child.jsonl");
     let shutdownCount = 0;
     const notifications: Array<{ message: string; level: string }> = [];
@@ -759,7 +760,7 @@ timedTest(
   "child bootstrap manual terminal input activates idle timeout mode across idle transitions",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-timeout-mode-"));
+    const cwd = await createTempDir("agent-subagent-child-timeout-mode-");
     const sessionPath = path.join(cwd, "child.jsonl");
     let terminalInputHandler: ((data: string) => unknown) | undefined;
     let shutdownCount = 0;
@@ -826,7 +827,7 @@ timedTest(
 
 timedTest("child bootstrap ignores parent-injected input for timeout mode activation", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-parent-input-"));
+  const cwd = await createTempDir("agent-subagent-child-parent-input-");
   const sessionPath = path.join(cwd, "child.jsonl");
   let terminalInputHandler: ((data: string) => unknown) | undefined;
   let shutdownCount = 0;
@@ -894,7 +895,7 @@ timedTest("child bootstrap ignores parent-injected input for timeout mode activa
 
 timedTest("child bootstrap rejects structured output mixed with other tool calls", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-final-tool-"));
+  const cwd = await createTempDir("agent-subagent-child-final-tool-");
   const sessionPath = path.join(cwd, "child.jsonl");
   let shutdownCount = 0;
 
@@ -1011,7 +1012,7 @@ timedTest(
   "child bootstrap preserves captured structured output across empty follow-up turns",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-followup-turn-"));
+    const cwd = await createTempDir("agent-subagent-child-followup-turn-");
     const sessionPath = path.join(cwd, "child.jsonl");
     let shutdownCount = 0;
 
@@ -1132,7 +1133,7 @@ timedTest(
   "child bootstrap captures structured output even if agent ends without turn_end",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-no-turn-end-"));
+    const cwd = await createTempDir("agent-subagent-child-no-turn-end-");
     const sessionPath = path.join(cwd, "child.jsonl");
     let shutdownCount = 0;
 
@@ -1216,7 +1217,7 @@ timedTest(
   "ephemeral child writes structured outcome on successful turn_end before agent_end",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-ephemeral-success-"));
+    const cwd = await createTempDir("agent-subagent-child-ephemeral-success-");
     const sessionId = "child-session-id";
 
     process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
@@ -1303,7 +1304,7 @@ timedTest(
 
 timedTest("child bootstrap treats retryCount as total allowed turns", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-retry-budget-"));
+  const cwd = await createTempDir("agent-subagent-child-retry-budget-");
   const sessionPath = path.join(cwd, "child.jsonl");
 
   process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
@@ -1385,7 +1386,7 @@ timedTest("child bootstrap treats retryCount as total allowed turns", async () =
 
 timedTest("child bootstrap resumes structured retry counters from persisted state", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-child-retry-resume-"));
+  const cwd = await createTempDir("agent-subagent-child-retry-resume-");
   const sessionPath = path.join(cwd, "child.jsonl");
 
   await fs.writeFile(
@@ -1528,7 +1529,7 @@ timedTest("subagent widget shows idle auto-exit countdown only while idle", () =
 });
 
 timedTest("subagent manager arms idle countdown only after timeout mode activates", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-manager-timeout-mode-"));
+  const dir = await createTempDir("agent-subagent-manager-timeout-mode-");
   const sessionPath = path.join(dir, "idle.jsonl");
   const sessionId = "child-session-id";
   const idleAt = new Date().toISOString();
@@ -1738,7 +1739,7 @@ timedTest("subagent tool metadata explains tmux inspection and wait-for-summary 
 timedTest(
   "subagent tool prompt guidelines include available modes xml and refresh on modes change",
   async () => {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-modes-prompt-"));
+    const cwd = await createTempDir("agent-subagent-modes-prompt-");
     const fakePi = new FakePi();
     createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
       fakePi as unknown as ExtensionAPI,
@@ -2091,8 +2092,8 @@ timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
 
 timedTest("createChildSessionFile bootstraps a persisted child session header", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-bootstrap-dir-"));
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-bootstrap-cwd-"));
+  const agentDir = await createTempDir("agent-subagent-bootstrap-dir-");
+  const cwd = await createTempDir("agent-subagent-bootstrap-cwd-");
   process.env.PI_CODING_AGENT_DIR = agentDir;
 
   try {
@@ -2117,7 +2118,7 @@ timedTest("createChildSessionFile bootstraps a persisted child session header", 
 
 timedTest("getDefaultSessionDir ignores literal undefined agent-dir env value", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-session-dir-"));
+  const cwd = await createTempDir("agent-subagent-session-dir-");
 
   process.env.PI_CODING_AGENT_DIR = "undefined";
 
@@ -2136,7 +2137,7 @@ timedTest("getDefaultSessionDir ignores literal undefined agent-dir env value", 
 });
 
 timedTest("createChildSessionFile returns undefined for ephemeral child sessions", async () => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-ephemeral-cwd-"));
+  const cwd = await createTempDir("agent-subagent-ephemeral-cwd-");
 
   try {
     const sessionPath = await createChildSessionFile({
@@ -2166,12 +2167,64 @@ timedTest("ephemeral child outcome persists structured output via temp file", as
     expect(outcome.summary).toBe("Structured run finished");
     expect(outcome.structured).toEqual({ summary: "All clear", risk: "low" });
   } finally {
-    await fs.rm(getEphemeralChildOutcomePath(sessionId), { force: true });
+    cleanupSubagentPersistenceArtifacts(sessionId);
+  }
+});
+
+timedTest("SubagentRuntime removes temp persistence artifacts after completion", async () => {
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const runtime = new SubagentRuntime(
+    fakePi as unknown as ExtensionAPI,
+    fakeMux,
+    () => "pi --no-session fake",
+  );
+
+  try {
+    const ctx = createFakeContext({ cwd: process.cwd(), sessionFile: "/tmp/parent.jsonl" });
+    const started = await runtime.spawn(
+      {
+        name: "worker-cleanup",
+        task: "Inspect the failing tests",
+        persisted: false,
+      },
+      ctx,
+    );
+    const sessionId = started.state.sessionId;
+
+    await fs.mkdir(path.dirname(getParentInjectedInputMarkerPath(sessionId)), { recursive: true });
+    await fs.writeFile(
+      getParentInjectedInputMarkerPath(sessionId),
+      JSON.stringify({ expiresAt: Date.now() + 5_000 }),
+      "utf8",
+    );
+    activateAutoExitTimeoutMode(sessionId);
+    writeEphemeralChildSessionOutcome(sessionId, {
+      summary: "Done",
+      failed: false,
+    });
+
+    expect(await fs.stat(getParentInjectedInputMarkerPath(sessionId))).toBeTruthy();
+    expect(await fs.stat(getAutoExitTimeoutModeMarkerPath(sessionId))).toBeTruthy();
+    expect(await fs.stat(getEphemeralChildOutcomePath(sessionId))).toBeTruthy();
+
+    await (
+      runtime as unknown as { finalizeInactiveSubagent(state: RuntimeSubagent): Promise<void> }
+    ).finalizeInactiveSubagent(started.state);
+
+    await expect(fs.stat(getParentInjectedInputMarkerPath(sessionId))).rejects.toThrow();
+    await expect(fs.stat(getAutoExitTimeoutModeMarkerPath(sessionId))).rejects.toThrow();
+    await expect(fs.stat(getEphemeralChildOutcomePath(sessionId))).rejects.toThrow();
+  } finally {
+    runtime.dispose();
+    for (const state of runtime.listStates()) {
+      cleanupSubagentPersistenceArtifacts(state.sessionId);
+    }
   }
 });
 
 timedTest("readChildSessionOutcome extracts the last assistant summary", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-outcome-"));
+  const dir = await createTempDir("agent-subagent-outcome-");
   const sessionPath = path.join(dir, "child.jsonl");
   await fs.writeFile(
     sessionPath,
@@ -2208,7 +2261,7 @@ timedTest("readChildSessionOutcome extracts the last assistant summary", async (
 });
 
 timedTest("readChildSessionOutcome marks missing assistant outcome as failed", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-outcome-missing-"));
+  const dir = await createTempDir("agent-subagent-outcome-missing-");
   const sessionPath = path.join(dir, "child.jsonl");
   await fs.writeFile(
     sessionPath,
@@ -2234,7 +2287,7 @@ timedTest("readChildSessionOutcome marks missing assistant outcome as failed", a
 });
 
 timedTest("readChildSessionStatus distinguishes running and idle child sessions", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-status-"));
+  const dir = await createTempDir("agent-subagent-status-");
   const idlePath = path.join(dir, "idle.jsonl");
   const runningPath = path.join(dir, "running.jsonl");
   const timestamp = new Date().toISOString();
@@ -2489,8 +2542,8 @@ timedTest("subagent tool renders collapsed list summary counts and cancel status
 
 timedTest("subagent tool execute preserves prompt and expanded start details", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-dir-"));
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-cwd-"));
+  const agentDir = await createTempDir("agent-subagent-tool-dir-");
+  const cwd = await createTempDir("agent-subagent-tool-cwd-");
   process.env.PI_CODING_AGENT_DIR = agentDir;
 
   const fakePi = new FakePi();
@@ -2566,10 +2619,8 @@ timedTest(
   "subagent tool execute returns structured JSON in content for structured start",
   async () => {
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-    const agentDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "agent-subagent-tool-structured-dir-"),
-    );
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-structured-cwd-"));
+    const agentDir = await createTempDir("agent-subagent-tool-structured-dir-");
+    const cwd = await createTempDir("agent-subagent-tool-structured-cwd-");
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     const fakePi = new FakePi();
@@ -2714,8 +2765,8 @@ timedTest(
   "SubagentRuntime spawn, resume, message, cancel, and restore cover the lifecycle",
   async () => {
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-dir-"));
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-cwd-"));
+    const agentDir = await createTempDir("agent-subagent-dir-");
+    const cwd = await createTempDir("agent-subagent-cwd-");
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     const fakePi = new FakePi();
@@ -3123,8 +3174,8 @@ timedTest(
   "subagent tool execute auto-resumes dead child sessions before delivering a message",
   async () => {
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-message-dir-"));
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-tool-message-cwd-"));
+    const agentDir = await createTempDir("agent-subagent-tool-message-dir-");
+    const cwd = await createTempDir("agent-subagent-tool-message-cwd-");
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     const fakePi = new FakePi();

@@ -1,10 +1,9 @@
-import { mkdtempSync } from "node:fs";
 import { cp, mkdir, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 type RegisteredCommand = {
   description: string;
@@ -32,7 +31,7 @@ class FakePi implements Partial<ExtensionAPI> {
 }
 
 async function copyFixture(name: string): Promise<string> {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-index-"));
+  const root = createTempDirSync("agent-gsd-index-");
   await mkdir(join(root), { recursive: true });
   await cp(join(import.meta.dirname, "fixtures", name, ".planning"), join(root, ".planning"), {
     recursive: true,
@@ -120,7 +119,7 @@ test("before_agent_start appends brownfield planning context when enabled", asyn
 test("before_agent_start leaves prompt untouched when planning tree missing", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
-  const cwd = mkdtempSync(join(tmpdir(), "agent-gsd-index-empty-"));
+  const cwd = createTempDirSync("agent-gsd-index-empty-");
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));

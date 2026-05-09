@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import { execFile as execFileCallback } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -16,6 +15,7 @@ import {
   parseReviewPaths,
 } from "../src/extensions/review.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 const execFile = promisify(execFileCallback);
@@ -220,7 +220,7 @@ async function getCommandArgumentCompletions(
 }
 
 timedTest("review command autocompletes targets, flags, branches, and commits", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "agent-review-autocomplete-"));
+  const cwd = await createTempDir("agent-review-autocomplete-");
   let session: TestSession | undefined;
   const mux = new HarnessMuxAdapter();
 

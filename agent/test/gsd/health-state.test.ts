@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { computeLocalHealthSummary } from "../../src/extensions/gsd/state/health.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 function createRootWithMalformedConfig(): string {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-health-state-"));
+  const root = createTempDirSync("agent-gsd-health-state-");
   mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });
   writeFileSync(join(root, ".planning", "config.json"), "{broken\n");
   writeFileSync(

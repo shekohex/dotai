@@ -14,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { createSubagentSDK } from "../src/subagent-sdk/sdk.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SUBAGENT_STRUCTURED_OUTPUT_ENTRY } from "../src/subagent-sdk/types.ts";
+import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
 const TEST_MODE_SOURCE = "test-subagent-sdk-reviewer";
@@ -140,8 +141,8 @@ function createFakeContext(options: {
 timedTest("SubagentSDK exposes handles and completion events", async () => {
   vi.useFakeTimers();
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-sdk-dir-"));
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-sdk-cwd-"));
+  const agentDir = await createTempDir("agent-subagent-sdk-dir-");
+  const cwd = await createTempDir("agent-subagent-sdk-cwd-");
   process.env.PI_CODING_AGENT_DIR = agentDir;
 
   const fakePi = new FakePi();
@@ -243,8 +244,8 @@ timedTest("SubagentSDK exposes handles and completion events", async () => {
 
 timedTest("SubagentSDK state access returns snapshots, not mutable internals", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-sdk-snapshots-dir-"));
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "agent-subagent-sdk-snapshots-cwd-"));
+  const agentDir = await createTempDir("agent-subagent-sdk-snapshots-dir-");
+  const cwd = await createTempDir("agent-subagent-sdk-snapshots-cwd-");
   process.env.PI_CODING_AGENT_DIR = agentDir;
 
   const fakePi = new FakePi();

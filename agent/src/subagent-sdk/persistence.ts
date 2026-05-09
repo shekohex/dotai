@@ -93,6 +93,23 @@ export function getEphemeralChildOutcomePath(sessionId: string): string {
   return path.join(os.tmpdir(), "pi-subagent-outcome", `${sessionId}.json`);
 }
 
+function removeFileIfPresent(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch {}
+}
+
+export function cleanupSubagentPersistenceArtifacts(
+  sessionId: string,
+  options?: { preserveOutcome?: boolean },
+): void {
+  removeFileIfPresent(getParentInjectedInputMarkerPath(sessionId));
+  removeFileIfPresent(getAutoExitTimeoutModeMarkerPath(sessionId));
+  if (options?.preserveOutcome !== true) {
+    removeFileIfPresent(getEphemeralChildOutcomePath(sessionId));
+  }
+}
+
 export function consumeParentInjectedInputMarker(sessionId: string): boolean {
   const markerPath = getParentInjectedInputMarkerPath(sessionId);
   let marker: ExpiringMarker | undefined;

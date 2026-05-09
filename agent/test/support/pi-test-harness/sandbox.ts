@@ -15,6 +15,7 @@ import { execSync } from "node:child_process";
 import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { SandboxOptions, SandboxResult } from "./types.js";
 import { createTestSession } from "./session.js";
+import { createTempDirSync } from "../../test-utils/temp-paths.ts";
 
 export async function verifySandboxInstall(options: SandboxOptions): Promise<SandboxResult> {
   const packageDir = path.resolve(options.packageDir);
@@ -28,7 +29,7 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
   const pkgName = pkgJson.name;
 
   // Create sandbox temp dir
-  const sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-sandbox-"));
+  const sandboxDir = createTempDirSync("pi-sandbox-");
 
   try {
     // 1. npm pack → tarball

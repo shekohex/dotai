@@ -1,10 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { handleGsdPlanPhase } from "../../src/extensions/gsd/lifecycle/plan-phase.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
+import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const { execFileSyncMock } = vi.hoisted(() => ({
   execFileSyncMock: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock("node:child_process", async () => {
 });
 
 function createRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "agent-gsd-plan-phase-"));
+  const root = createTempDirSync("agent-gsd-plan-phase-");
   mkdirSync(join(root, ".planning", "phases"), { recursive: true });
   writeFileSync(
     join(root, ".planning", "config.json"),

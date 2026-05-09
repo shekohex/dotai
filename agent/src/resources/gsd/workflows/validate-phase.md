@@ -4,7 +4,7 @@ Purpose:
 
 - move `/gsd validate-phase` from stub template writer to visible workflow-launch foundation
 - preserve thin local TypeScript entrypoint and keep validation behavior in bundled resources
-- align omitted-phase local default to last completed phase semantics as closely as practical
+- align omitted-phase local default to helper-ready roadmap-matching phase semantics as closely as practical
 
 Required local reading before execution:
 
@@ -23,7 +23,7 @@ Core rules:
 2. Treat this file as local adapted behavior contract, not literal shell script.
 3. Do not recreate old native template-writer behavior as success path.
 4. Authoritative artifact path is `.planning/phases/<phase-dir>/<phase>-VALIDATION.md`.
-5. Omitted phase has already been locally biased toward last completed SUMMARY-backed phase. Preserve that target unless user explicitly changes it in-session.
+5. Omitted phase has already been locally biased toward last helper-ready roadmap-matching SUMMARY-backed phase. Preserve that target unless user explicitly changes it in-session.
 6. If selected phase lacks execution evidence, stop with explicit failure. Do not write placeholder validation output.
 7. If selected phase has no `*-SUMMARY.md`, fail closed.
 8. If selected phase has unresolved core execution absence or phase never ran locally, say this validation path is not supported for non-executed phases in this slice.

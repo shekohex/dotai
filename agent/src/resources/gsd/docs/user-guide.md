@@ -21,7 +21,7 @@
 Notes:
 
 - `/gsd validate-phase` now runs delegated validation review for executed local phases
-- omitted `/gsd validate-phase` target prefers last completed local phase with SUMMARY evidence
+- omitted `/gsd validate-phase` target prefers last helper-ready local phase with roadmap-matching SUMMARY evidence
 - unsupported flags, incomplete phases, or non-executed phases stop with explicit warning instead of writing placeholder template
 - `/gsd validate-phase` does not auto-complete phase state in this slice
 

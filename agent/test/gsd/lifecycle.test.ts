@@ -5683,6 +5683,63 @@ Plans:
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("validate-phase fails closed for explicit malformed summary inventory", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+- [ ] 02-02: Finish feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-02-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-99-SUMMARY.md"), "junk\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: phase 2 has malformed or non-roadmap SUMMARY.md artifacts.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("validate-phase explicit malformed summary inventory wins over incompleteness", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+- [ ] 02-02: Finish feature
+- [ ] 02-03: Ship feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-02-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-99-SUMMARY.md"), "junk\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: phase 2 has malformed or non-roadmap SUMMARY.md artifacts.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("validate-phase omitted phase prefers last completed local phase", async () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
@@ -5741,6 +5798,79 @@ Plans:
     expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
       'Launch native GSD workflow for "/gsd validate-phase 2"',
     );
+  });
+
+  it("validate-phase omitted phase skips malformed higher phase and falls back to last helper-ready phase", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Establish baseline
+
+Plans:
+- [ ] 01-01: Create config
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+- [ ] 02-02: Finish feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-02-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-99-SUMMARY.md"), "junk\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 1"',
+    );
+  });
+
+  it("validate-phase omitted phase reports malformed summary inventory when highest local candidate blocks selection", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Establish baseline
+
+Plans:
+- [ ] 01-01: Create config
+- [ ] 01-02: Create docs
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-99-SUMMARY.md"), "junk\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: phase 1 has malformed or non-roadmap SUMMARY.md artifacts.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("validate-phase launch includes workflow required reading resources", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    const prompt = String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]);
+    expect(prompt).toContain("templates/VALIDATION.md");
+    expect(prompt).toContain("references/gates.md");
   });
 
   it("validate-phase fails closed when no executed local phase exists", async () => {

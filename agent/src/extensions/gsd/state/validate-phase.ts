@@ -33,6 +33,20 @@ function isPhaseCompletedLocally(
   return phaseSnapshot.plans.length > 0 && phaseSnapshot.plans.every((plan) => plan.completed);
 }
 
+function hasUnexpectedSummaryIds(
+  roadmapPhase: RoadmapPhase,
+  phaseSnapshot: ReturnType<typeof readPlanningSnapshot>["phases"][number] | undefined,
+): boolean {
+  if (phaseSnapshot === undefined || phaseSnapshot.summaries.length === 0) {
+    return false;
+  }
+
+  const roadmapPlanIds = new Set(roadmapPhase.plans.map((plan) => plan.id));
+  return phaseSnapshot.summaries
+    .map(normalizeSummaryId)
+    .some((summaryId) => !roadmapPlanIds.has(summaryId));
+}
+
 function comparePhaseNumbers(left: string, right: string): number {
   const leftParts = left.split(".").map((value) => Number.parseInt(value, 10));
   const rightParts = right.split(".").map((value) => Number.parseInt(value, 10));
@@ -48,6 +62,44 @@ function comparePhaseNumbers(left: string, right: string): number {
 
 function findPhaseByNumber(phases: RoadmapPhase[], phaseNumber: string): RoadmapPhase | undefined {
   return phases.find((phase) => phase.number === phaseNumber);
+}
+
+function findHighestLocalPhaseWithSummaries(
+  roadmapPhases: RoadmapPhase[],
+  byNumber: Map<string | undefined, ReturnType<typeof readPlanningSnapshot>["phases"][number]>,
+):
+  | {
+      roadmapPhase: RoadmapPhase;
+      phaseSnapshot: ReturnType<typeof readPlanningSnapshot>["phases"][number];
+    }
+  | undefined {
+  return [...byNumber.entries()]
+    .filter(
+      (entry): entry is [string, ReturnType<typeof readPlanningSnapshot>["phases"][number]] => {
+        const [phaseNumber, phaseSnapshot] = entry;
+        return (
+          phaseNumber !== undefined &&
+          phaseSnapshot !== undefined &&
+          phaseSnapshot.summaries.length > 0
+        );
+      },
+    )
+    .map(([phaseNumber, phaseSnapshot]) => ({
+      roadmapPhase: findPhaseByNumber(roadmapPhases, phaseNumber),
+      phaseSnapshot,
+    }))
+    .filter(
+      (
+        candidate,
+      ): candidate is {
+        roadmapPhase: RoadmapPhase;
+        phaseSnapshot: ReturnType<typeof readPlanningSnapshot>["phases"][number];
+      } => candidate.roadmapPhase !== undefined,
+    )
+    .toSorted((left, right) =>
+      comparePhaseNumbers(left.roadmapPhase.number, right.roadmapPhase.number),
+    )
+    .at(-1);
 }
 
 export function resolveValidatePhaseSelection(
@@ -77,7 +129,9 @@ export function resolveValidatePhaseSelection(
           (() => {
             const roadmapPhase = findPhaseByNumber(roadmapPhases, phaseNumber);
             return (
-              roadmapPhase !== undefined && isPhaseCompletedLocally(roadmapPhase, phaseSnapshot)
+              roadmapPhase !== undefined &&
+              isPhaseCompletedLocally(roadmapPhase, phaseSnapshot) &&
+              !hasUnexpectedSummaryIds(roadmapPhase, phaseSnapshot)
             );
           })(),
       )
@@ -87,6 +141,17 @@ export function resolveValidatePhaseSelection(
       .at(-1);
 
   if (selectedPhaseNumber === undefined) {
+    const highestLocalPhase = findHighestLocalPhaseWithSummaries(roadmapPhases, byNumber);
+    if (
+      requestedPhase === undefined &&
+      highestLocalPhase !== undefined &&
+      hasUnexpectedSummaryIds(highestLocalPhase.roadmapPhase, highestLocalPhase.phaseSnapshot)
+    ) {
+      return {
+        error: `Cannot run /gsd validate-phase: phase ${highestLocalPhase.roadmapPhase.number} has malformed or non-roadmap SUMMARY.md artifacts.`,
+      };
+    }
+
     return {
       error:
         "Cannot run /gsd validate-phase: no completed local phase found. Need phase with at least one SUMMARY.md artifact.",
@@ -108,6 +173,12 @@ export function resolveValidatePhaseSelection(
   }
 
   const phaseSnapshot = byNumber.get(roadmapPhase.number);
+  if (hasUnexpectedSummaryIds(roadmapPhase, phaseSnapshot)) {
+    return {
+      error: `Cannot run /gsd validate-phase: phase ${roadmapPhase.number} has malformed or non-roadmap SUMMARY.md artifacts.`,
+    };
+  }
+
   if (!isPhaseCompletedLocally(roadmapPhase, phaseSnapshot)) {
     return {
       error: `Cannot run /gsd validate-phase: phase ${roadmapPhase.number} is not locally complete enough yet. Need SUMMARY evidence for every roadmap plan before validation.`,

@@ -266,14 +266,19 @@ describe("gsd bundled resources", () => {
     );
 
     expect(command).toContain("workflow-launch foundation");
-    expect(command).toContain("last completed local phase with SUMMARY evidence");
+    expect(command).toContain(
+      "last helper-ready local phase with roadmap-matching SUMMARY evidence",
+    );
     expect(command).toContain("Rejected now:");
     expect(command).toContain("unknown flags");
     expect(command).toContain("do not use native template-writer shortcut");
     expect(workflow).toContain(
       "Do not recreate old native template-writer behavior as success path",
     );
+    expect(workflow).toContain("$GSD_BUNDLE_DIR/templates/VALIDATION.md");
+    expect(workflow).toContain("$GSD_BUNDLE_DIR/references/gates.md");
     expect(workflow).toContain('node "$GSD_TOOLS_PATH" init validate-phase "<phase>"');
+    expect(workflow).toContain("last helper-ready roadmap-matching SUMMARY-backed phase");
     expect(workflow).toContain("fail closed");
     expect(workflow).toContain("selected phase has no `*-SUMMARY.md`");
     expect(workflow).toContain("existing `*-VALIDATION.md` already exists");

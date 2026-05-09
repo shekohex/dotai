@@ -34,9 +34,10 @@ export async function handleGsdValidatePhase(
     commandArguments,
     commandResourcePath: "commands/gsd/validate-phase.md",
     workflowResourcePaths: ["workflows/validate-phase.md"],
+    extraResourcePaths: ["templates/VALIDATION.md", "references/gates.md"],
     extraInstructions: [
       "Use workflow-launch architecture for local `/gsd validate-phase` parity.",
-      `Default omitted-phase target already resolved locally to phase ${resolved.selection.phase.number} using last-completed local SUMMARY evidence.`,
+      `Default omitted-phase target already resolved locally to phase ${resolved.selection.phase.number} using helper-ready roadmap-matching SUMMARY evidence.`,
       "Fail closed if bundled workflow discovers missing validation prerequisites or non-executed phase state.",
     ],
   });

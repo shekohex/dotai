@@ -537,14 +537,16 @@ Plans:
       } as never,
     );
 
-    expect(notifications.at(-1)).toEqual({
-      message: [
+    expect(notifications.at(-1)?.level).toBe("warning");
+    expect(notifications.at(-1)?.message).toBe(
+      [
         "Health broken errors=1 warnings=1 info=0",
         "ERROR E002: PROJECT.md not found",
-        'WARNING W010: No GSD agents found in /home/coder/dotai/agent/src/resources/agents — Task(subagent_type="gsd-*") will fall back to general-purpose',
+        "WARNING W010: No GSD agents found in " +
+          `${join(import.meta.dirname, "../../src/resources/agents")} — ` +
+          'Task(subagent_type="gsd-*") will fall back to general-purpose',
       ].join("\n"),
-      level: "warning",
-    });
+    );
   });
 
   it("health reports malformed config as structured output instead of crashing", () => {

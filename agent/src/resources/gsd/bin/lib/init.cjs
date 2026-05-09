@@ -255,6 +255,43 @@ function createValidatePhaseInfoFromDirectory(
   };
 }
 
+function resolveValidatePhaseTarget(relativeDirectory, phasePrefix, validationPaths) {
+  if (!relativeDirectory || !phasePrefix) {
+    return {
+      target_path: null,
+      target_mode: null,
+      failure_reason: "validation target could not be resolved",
+    };
+  }
+
+  const canonicalPath = toPosixPath(path.join(relativeDirectory, `${phasePrefix}-VALIDATION.md`));
+  const normalizedPaths = Array.isArray(validationPaths)
+    ? validationPaths.map((filePath) => toPosixPath(filePath)).sort()
+    : [];
+
+  if (normalizedPaths.length === 0) {
+    return {
+      target_path: canonicalPath,
+      target_mode: "create",
+      failure_reason: null,
+    };
+  }
+
+  if (normalizedPaths.length === 1 && normalizedPaths[0] === canonicalPath) {
+    return {
+      target_path: canonicalPath,
+      target_mode: "update",
+      failure_reason: null,
+    };
+  }
+
+  return {
+    target_path: null,
+    target_mode: null,
+    failure_reason: `phase ${phasePrefix} has ambiguous or non-canonical VALIDATION.md artifacts`,
+  };
+}
+
 function cmdInitExecutePhase(cwd, phase, raw, options = {}) {
   if (!phase) {
     error("phase required for init execute-phase");
@@ -1015,7 +1052,7 @@ function cmdInitValidatePhase(cwd, phase, raw) {
     .filter((file) => file.endsWith("-UAT.md"))
     .map((file) => toPosixPath(path.join(phaseInfo.directory, file)));
   const validationPaths = phaseFiles
-    .filter((file) => file.endsWith("-VALIDATION.md"))
+    .filter((file) => /-validation\.md$/i.test(file))
     .map((file) => toPosixPath(path.join(phaseInfo.directory, file)));
   const phasePrefix = roadmapPhase?.phase_number
     ? String(roadmapPhase.phase_number).includes(".")
@@ -1026,6 +1063,16 @@ function cmdInitValidatePhase(cwd, phase, raw) {
     phaseInfo?.directory && phasePrefix
       ? toPosixPath(path.join(phaseInfo.directory, `${phasePrefix}-VALIDATION.md`))
       : null;
+  const validationTarget = resolveValidatePhaseTarget(
+    phaseInfo?.directory ? toPosixPath(phaseInfo.directory) : null,
+    phasePrefix,
+    validationPaths,
+  );
+
+  if (readiness.ready && validationTarget.failure_reason !== null) {
+    readiness.ready = false;
+    readiness.reason = validationTarget.failure_reason;
+  }
 
   const result = {
     planner_model: resolveModelInternal(cwd, "gsd-planner"),
@@ -1045,8 +1092,10 @@ function cmdInitValidatePhase(cwd, phase, raw) {
     verification_paths: verificationPaths,
     uat_paths: uatPaths,
     validation_paths: validationPaths,
-    validation_path: validationPath,
+    validation_path: validationTarget.failure_reason === null ? validationPath : null,
     validation_exists: validationPaths.length > 0,
+    validation_target_path: validationTarget.target_path,
+    validation_target_mode: validationTarget.target_mode,
     incomplete_plan_count: incompletePlanCount,
     unexpected_summary_ids: Array.isArray(phaseInfo?.unexpected_summaries)
       ? phaseInfo.unexpected_summaries

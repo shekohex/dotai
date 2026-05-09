@@ -53,6 +53,8 @@ describe("validate-phase workflow contracts", () => {
       verification_count: number;
       uat_count: number;
       validation_path: string | null;
+      validation_target_path: string | null;
+      validation_target_mode: string | null;
       summary_paths: string[];
     };
 
@@ -64,10 +66,146 @@ describe("validate-phase workflow contracts", () => {
     expect(result.verification_count).toBe(1);
     expect(result.uat_count).toBe(1);
     expect(result.validation_path).toBe(".planning/phases/2-build/02-VALIDATION.md");
+    expect(result.validation_target_path).toBe(".planning/phases/2-build/02-VALIDATION.md");
+    expect(result.validation_target_mode).toBe("create");
     expect(result.summary_paths).toEqual([
       ".planning/phases/2-build/02-01-SUMMARY.md",
       ".planning/phases/2-build/02-02-SUMMARY.md",
     ]);
+  });
+
+  it("init validate-phase reports update target for canonical existing validation artifact", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{}\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      ["### Phase 2: Build", "", "Plans:", "- [ ] 02-01: Implement feature"].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "# Validation\n",
+    );
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      validation_exists: boolean;
+      validation_target_path: string | null;
+      validation_target_mode: string | null;
+    };
+
+    expect(result.ready).toBe(true);
+    expect(result.failure_reason).toBeNull();
+    expect(result.validation_exists).toBe(true);
+    expect(result.validation_target_path).toBe(".planning/phases/2-build/02-VALIDATION.md");
+    expect(result.validation_target_mode).toBe("update");
+  });
+
+  it("init validate-phase fails closed for ambiguous validation artifacts", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{}\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      ["### Phase 2: Build", "", "Plans:", "- [ ] 02-01: Implement feature"].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "# Validation\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-extra-VALIDATION.md"),
+      "# Validation\n",
+    );
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      validation_exists: boolean;
+      validation_path: string | null;
+      validation_target_path: string | null;
+      validation_target_mode: string | null;
+    };
+
+    expect(result.ready).toBe(false);
+    expect(result.failure_reason).toBe(
+      "phase 02 has ambiguous or non-canonical VALIDATION.md artifacts",
+    );
+    expect(result.validation_exists).toBe(true);
+    expect(result.validation_path).toBeNull();
+    expect(result.validation_target_path).toBeNull();
+    expect(result.validation_target_mode).toBeNull();
+  });
+
+  it("init validate-phase fails closed for non-canonical validation artifact", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{}\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      ["### Phase 2: Build", "", "Plans:", "- [ ] 02-01: Implement feature"].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "build-VALIDATION.md"),
+      "# Validation\n",
+    );
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      validation_exists: boolean;
+      validation_path: string | null;
+      validation_target_path: string | null;
+      validation_target_mode: string | null;
+    };
+
+    expect(result.ready).toBe(false);
+    expect(result.failure_reason).toBe(
+      "phase 02 has ambiguous or non-canonical VALIDATION.md artifacts",
+    );
+    expect(result.validation_exists).toBe(true);
+    expect(result.validation_path).toBeNull();
+    expect(result.validation_target_path).toBeNull();
+    expect(result.validation_target_mode).toBeNull();
+  });
+
+  it("init validate-phase fails closed for lowercase validation artifact variant", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{}\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      ["### Phase 2: Build", "", "Plans:", "- [ ] 02-01: Implement feature"].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-validation.md"),
+      "# Validation\n",
+    );
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      validation_count: number;
+      validation_exists: boolean;
+      validation_path: string | null;
+      validation_target_path: string | null;
+      validation_target_mode: string | null;
+    };
+
+    expect(result.ready).toBe(false);
+    expect(result.failure_reason).toBe(
+      "phase 02 has ambiguous or non-canonical VALIDATION.md artifacts",
+    );
+    expect(result.validation_count).toBe(1);
+    expect(result.validation_exists).toBe(true);
+    expect(result.validation_path).toBeNull();
+    expect(result.validation_target_path).toBeNull();
+    expect(result.validation_target_mode).toBeNull();
   });
 
   it("init validate-phase fails closed for incomplete phase", () => {

@@ -53,7 +53,7 @@ Implemented locally:
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
-| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       55 |
+| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       60 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       56 |
 | `stats`              | TS-native instant command          | `stats`                        |       57 |
@@ -441,7 +441,7 @@ Local behavior:
 - routes through workflow-launch foundation with bundled local command/workflow resources instead of writing a template stub directly. `src/extensions/gsd/lifecycle/validate-phase.ts`, `src/resources/gsd/commands/gsd/validate-phase.md`, `src/resources/gsd/workflows/validate-phase.md`
 - dedicated parser rejects malformed flags and extra positional args explicitly instead of silently ignoring them. `src/extensions/gsd/validate-phase-args.ts`, `src/extensions/gsd/args.ts`
 - omitted phase resolution now prefers the last helper-ready roadmap-matching phase with real execution evidence, and explicit phase selection also fails closed unless roadmap plan coverage is complete enough for current contract. Malformed or non-roadmap SUMMARY inventories are rejected before workflow launch. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
-- helper-backed `init validate-phase <phase>` now provides deterministic readiness/artifact preflight, including create-vs-update target, artifact bundle, incomplete plan count, and rejection of malformed/non-roadmap SUMMARY sets by matching summary ids to roadmap plan ids. `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/validate-phase-workflow.test.ts`
+- helper-backed `init validate-phase <phase>` now provides deterministic readiness/artifact preflight, including a single canonical validation target or closed failure on ambiguous/non-canonical validation inventory, incomplete plan count, and rejection of malformed/non-roadmap SUMMARY sets by matching summary ids to roadmap plan ids. `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/validate-phase-workflow.test.ts`
 
 Differences:
 

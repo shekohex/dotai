@@ -292,7 +292,8 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain("last helper-ready roadmap-matching SUMMARY-backed phase");
     expect(workflow).toContain("fail closed");
     expect(workflow).toContain("selected phase has no `*-SUMMARY.md`");
-    expect(workflow).toContain("existing `*-VALIDATION.md` already exists");
+    expect(workflow).toContain("validation_target_path");
+    expect(workflow).toContain("validation_target_mode");
   });
 
   it("ships execute-phase foundation resources and wording", () => {

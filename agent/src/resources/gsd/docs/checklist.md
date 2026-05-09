@@ -45,6 +45,7 @@
 Current shipped note:
 
 - `validate-phase` is workflow-launch validation review, not stub template writer
+- `validate-phase` helper resolves one canonical validation target or fails closed
 - `progress` default route is workflow-launch review, not one-line notifier
 
 ## Instant Commands

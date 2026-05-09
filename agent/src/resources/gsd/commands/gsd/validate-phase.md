@@ -26,7 +26,8 @@ Execution model in this slice:
 
 Contract notes:
 
-- authoritative local artifact remains `.planning/phases/<phase-dir>/<phase>-VALIDATION.md`
+- authoritative local write/update target must come from helper-reported `validation_target_path`
 - omitted phase should prefer honest helper-ready roadmap-matching semantics, not current/incomplete phase pointer
 - if selected phase has not been executed locally, stop with explicit non-support or missing-prerequisite message
+- helper fails closed when existing `*-VALIDATION.md` inventory is ambiguous or non-canonical
 - use grouped local command names consistently: `/gsd validate-phase`, `/gsd verify-work`, `/gsd execute-phase`

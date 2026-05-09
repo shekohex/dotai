@@ -22,6 +22,7 @@ Notes:
 
 - `/gsd validate-phase` now runs delegated validation review for executed local phases
 - omitted `/gsd validate-phase` target prefers last helper-ready local phase with roadmap-matching SUMMARY evidence
+- validation write target must be single canonical helper-resolved `*-VALIDATION.md` path or command stops
 - unsupported flags, incomplete phases, or non-executed phases stop with explicit warning instead of writing placeholder template
 - `/gsd validate-phase` does not auto-complete phase state in this slice
 

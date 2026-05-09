@@ -217,18 +217,18 @@ function Verify-PackageAccess {
 
 function Get-PackageSpec {
   if (-not [string]::IsNullOrWhiteSpace($script:packageVersion)) {
-    return "$PackageName@$script:packageVersion"
+    return "${PackageName}@$script:packageVersion"
   }
 
   if (-not [string]::IsNullOrWhiteSpace($script:defaultPackageVersion)) {
     if ($script:packageManager -eq 'bun') {
       $metadata = Fetch-RegistryMetadata
       if (Registry-PreviewTagMatchesDefaultVersion -Metadata $metadata) {
-        return "$PackageName@preview"
+        return "${PackageName}@preview"
       }
     }
 
-    return "$PackageName@$script:defaultPackageVersion"
+    return "${PackageName}@$script:defaultPackageVersion"
   }
 
   return $PackageName
@@ -244,7 +244,7 @@ function Write-Npmrc {
   param([string]$DirectoryPath)
 
   $content = @(
-    "$PackageScope:registry=$RegistryUrl"
+    "${PackageScope}:registry=$RegistryUrl"
     "//npm.pkg.github.com/:_authToken=$script:tokenValue"
   )
 

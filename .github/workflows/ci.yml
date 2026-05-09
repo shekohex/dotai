@@ -52,11 +52,8 @@ jobs:
       - name: Format check
         run: npm run format:check
 
-      - name: Test
-        run: npm test -- --reporter=github-actions --reporter=json
-
-      - name: Coverage
-        run: npm run test:coverage -- --reporter=github-actions
+      - name: Test + Coverage
+        run: npm run test:coverage -- --reporter=github-actions --reporter=json
 
       - name: Build
         run: npm run build

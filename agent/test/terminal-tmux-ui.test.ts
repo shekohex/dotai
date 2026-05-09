@@ -112,53 +112,6 @@ test("session_start handler uses current ctx session manager instead of captured
   );
 });
 
-test("agent_end ignores stale replacement ctx", () => {
-  process.env.TMUX = "/tmp/tmux-1000/default,123,0";
-  delete process.env.SSH_CONNECTION;
-  delete process.env.SSH_CLIENT;
-  delete process.env.SSH_TTY;
-
-  let agentEndHandler:
-    | ((
-        event: unknown,
-        ctx: { cwd: string; sessionManager: { getSessionName(): string | undefined } },
-      ) => void)
-    | undefined;
-  const extensionApi = {
-    on: (eventName: string, handler: typeof agentEndHandler) => {
-      if (eventName === "agent_end") {
-        agentEndHandler = handler;
-      }
-    },
-  } as unknown as ExtensionAPI;
-  vi.spyOn(terminalNotifyRuntime, "execFileSync").mockReturnValue("/dev/ttys009\n");
-  const writeFileSyncSpy = vi
-    .spyOn(terminalNotifyRuntime, "writeFileSync")
-    .mockImplementation(() => undefined);
-
-  terminalTmuxUiExtension(extensionApi);
-
-  expect(agentEndHandler).toBeDefined();
-  expect(() =>
-    agentEndHandler?.(
-      {},
-      {
-        get cwd() {
-          throw new Error(
-            "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
-          );
-        },
-        sessionManager: { getSessionName: () => "fresh-session" },
-      },
-    ),
-  ).not.toThrow();
-  expect(writeFileSyncSpy).toHaveBeenCalledWith(
-    "/dev/ttys009",
-    "\u001bPtmux;\u001b\u001b\u001b]9;4;0;\u0007\u001b\\",
-    { encoding: "utf8" },
-  );
-});
-
 test("emitTmuxTitle writes direct OSC title to client tty over SSH", () => {
   process.env.TMUX = "/tmp/tmux-1000/default,123,0";
   process.env.SSH_CONNECTION = "127.0.0.1 1 127.0.0.1 2";

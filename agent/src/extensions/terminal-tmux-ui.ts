@@ -7,7 +7,6 @@ import {
   isSshSession,
   terminalNotifyRuntime,
 } from "./terminal-notify.js";
-import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 
 const ESC = "\u001B";
 const BEL = "\u0007";
@@ -83,13 +82,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    try {
-      emitTmuxTitle(getDefaultTmuxTitle(ctx.sessionManager, ctx.cwd));
-    } catch (error) {
-      if (!isStaleSessionReplacementContextError(error)) {
-        throw error;
-      }
-    }
+    emitTmuxTitle(getDefaultTmuxTitle(ctx.sessionManager, ctx.cwd));
   };
 
   pi.on("session_start", (_event, ctx) => {

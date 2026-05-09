@@ -12,6 +12,18 @@ describe("install-github-package.ps1", () => {
     expect(source).toContain('"${PackageScope}:registry=$RegistryUrl"');
   });
 
+  it("invokes package managers through resolved command paths with argument arrays", () => {
+    const source = readFileSync(join(process.cwd(), "scripts/install-github-package.ps1"), "utf8");
+
+    expect(source).toContain("function Get-CommandPath {");
+    expect(source).toContain(
+      "$npmArguments = @('install', '--global', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))",
+    );
+    expect(source).toContain("& $npmCommand @npmArguments");
+    expect(source).toContain("$pnpmArguments = @('add', '--global', $packageReference)");
+    expect(source).toContain("& $pnpmCommand @pnpmArguments");
+  });
+
   it("sets default package version placeholder once", () => {
     const source = readFileSync(join(process.cwd(), "scripts/install-github-package.ps1"), "utf8");
     const rendered = source.replace(

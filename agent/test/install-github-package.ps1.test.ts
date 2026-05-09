@@ -24,18 +24,6 @@ describe("install-github-package.ps1", () => {
     expect(source).toContain("pnpm @pnpmArguments");
   });
 
-  it("emits verbose debug notes for command execution", () => {
-    const source = readFileSync(join(process.cwd(), "scripts/install-github-package.ps1"), "utf8");
-
-    expect(source).toContain("function Debug-Note {");
-    expect(source).toContain('Debug-Note "selected package manager=$script:packageManager"');
-    expect(source).toContain('Debug-Note "package reference=$packageReference"');
-    expect(source).toContain(
-      'Debug-Note "resolved package version from metadata=$resolvedPackageVersion"',
-    );
-    expect(source).toContain("Debug-Note \"command=npm $(\$npmArguments -join ' ')\"");
-  });
-
   it("resolves default version from registry metadata", () => {
     const source = readFileSync(join(process.cwd(), "scripts/install-github-package.ps1"), "utf8");
 

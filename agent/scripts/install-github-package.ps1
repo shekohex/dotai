@@ -28,14 +28,6 @@ function Note {
   [Console]::Error.WriteLine($Message)
 }
 
-function Debug-Note {
-  param([string]$Message)
-
-  if ($script:verboseMode) {
-    Note "debug: $Message"
-  }
-}
-
 function Show-Usage {
   [Console]::Error.WriteLine(@'
 Usage: install-github-package.ps1 [-Npm|-Pnpm|-Bun|-Yarn] [-Version VERSION] [-VerboseMode]
@@ -256,7 +248,6 @@ function Get-PackageSpec {
 
   $metadata = Fetch-RegistryMetadata
   $resolvedPackageVersion = Resolve-DefaultPackageVersionFromMetadata -Metadata $metadata
-  Debug-Note "resolved package version from metadata=$resolvedPackageVersion"
 
   return "${PackageName}@$resolvedPackageVersion"
 }
@@ -276,7 +267,6 @@ function Write-Npmrc {
   )
 
   Set-Content -Path (Join-Path $DirectoryPath '.npmrc') -Value $content
-  Debug-Note "wrote npmrc to $(Join-Path $DirectoryPath '.npmrc')"
 }
 
 function Install-WithNpm {
@@ -286,9 +276,6 @@ function Install-WithNpm {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $npmArguments = @('install', '--global', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))
-    Debug-Note "package manager=npm"
-    Debug-Note "package reference=$packageReference"
-    Debug-Note "command=npm $($npmArguments -join ' ')"
     npm @npmArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -307,10 +294,6 @@ function Install-WithPnpm {
     Write-Npmrc -DirectoryPath $tempDirectory
     $env:NPM_CONFIG_USERCONFIG = Join-Path $tempDirectory '.npmrc'
     $pnpmArguments = @('add', '--global', $packageReference)
-    Debug-Note "package manager=pnpm"
-    Debug-Note "package reference=$packageReference"
-    Debug-Note "command=pnpm $($pnpmArguments -join ' ')"
-    Debug-Note "NPM_CONFIG_USERCONFIG=$env:NPM_CONFIG_USERCONFIG"
     pnpm @pnpmArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -330,10 +313,6 @@ function Install-WithBun {
     Write-Npmrc -DirectoryPath $tempDirectory
     $env:XDG_CONFIG_HOME = $tempDirectory
     $bunArguments = @('add', '--global', $packageReference)
-    Debug-Note "package manager=bun"
-    Debug-Note "package reference=$packageReference"
-    Debug-Note "command=bun $($bunArguments -join ' ')"
-    Debug-Note "XDG_CONFIG_HOME=$env:XDG_CONFIG_HOME"
     bun @bunArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -352,9 +331,6 @@ function Install-WithYarn {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $yarnArguments = @('global', 'add', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))
-    Debug-Note "package manager=yarn"
-    Debug-Note "package reference=$packageReference"
-    Debug-Note "command=yarn $($yarnArguments -join ' ')"
     yarn @yarnArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -370,9 +346,6 @@ function Main {
   Resolve-AuthToken
   Verify-PackageAccess
   Note "Using token from $script:tokenSource"
-  Debug-Note "selected package manager=$script:packageManager"
-  Debug-Note "requested package version=$script:packageVersion"
-  Debug-Note "default package version=$script:defaultPackageVersion"
 
   switch ($script:packageManager) {
     'npm' { Install-WithNpm }

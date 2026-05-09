@@ -369,7 +369,7 @@ function Main {
         Write-Host "  - skills/ -> ~/.opencode/skill/"
         Write-Host "  - skills/ -> ~/.codex/skills/"
     }
-    if (Test-Path -LiteralPath (Join-Path $RepoDir ".codex/prompts") -or (Test-Path -LiteralPath (Join-Path $RepoDir ".claude/commands"))) {
+    if ((Test-Path -LiteralPath (Join-Path $RepoDir ".codex/prompts")) -or (Test-Path -LiteralPath (Join-Path $RepoDir ".claude/commands"))) {
         Write-Host "  - prompts/ -> ~/.codex/prompts/"
     }
     if (Test-Path -LiteralPath $McpJson) {

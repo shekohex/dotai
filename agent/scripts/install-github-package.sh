@@ -159,6 +159,26 @@ registry_preview_tag_matches_default_version() {
   [[ "$metadata" == *"\"preview\":\"${default_package_version}\""* ]]
 }
 
+resolve_default_package_version_from_metadata() {
+  local metadata="$1"
+  local compact_metadata latest_version preview_version
+
+  compact_metadata="$(printf '%s' "$metadata" | tr -d '\n\r')"
+  latest_version="$(printf '%s' "$compact_metadata" | sed -n 's/.*"latest"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if [[ -n "$latest_version" ]]; then
+    printf '%s' "$latest_version"
+    return
+  fi
+
+  preview_version="$(printf '%s' "$compact_metadata" | sed -n 's/.*"preview"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if [[ -n "$preview_version" ]]; then
+    printf '%s' "$preview_version"
+    return
+  fi
+
+  fail 'failed to resolve package version from registry metadata.'
+}
+
 verify_package_access() {
   require_command curl
 
@@ -203,7 +223,18 @@ package_spec() {
     return
   fi
 
-  printf '%s' "$PACKAGE_NAME"
+  local metadata resolved_package_version
+  metadata="$(fetch_registry_metadata)"
+  resolved_package_version="$(resolve_default_package_version_from_metadata "$metadata")"
+
+  if [[ "$package_manager" == 'bun' && "$metadata" == *'"preview"'* && "$resolved_package_version" != 'latest' ]]; then
+    if registry_preview_tag_matches_default_version "${metadata//${default_package_version}/${resolved_package_version}}"; then
+      printf '%s@%s' "$PACKAGE_NAME" 'preview'
+      return
+    fi
+  fi
+
+  printf '%s@%s' "$PACKAGE_NAME" "$resolved_package_version"
 }
 
 make_temp_dir() {

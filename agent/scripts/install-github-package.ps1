@@ -28,6 +28,14 @@ function Note {
   [Console]::Error.WriteLine($Message)
 }
 
+function Debug-Note {
+  param([string]$Message)
+
+  if ($script:verboseMode) {
+    Note "debug: $Message"
+  }
+}
+
 function Show-Usage {
   [Console]::Error.WriteLine(@'
 Usage: install-github-package.ps1 [-Npm|-Pnpm|-Bun|-Yarn] [-Version VERSION] [-VerboseMode]
@@ -192,6 +200,21 @@ function Registry-PreviewTagMatchesDefaultVersion {
   return $Metadata -match ('"preview"\s*:\s*"' + [regex]::Escape($script:defaultPackageVersion) + '"')
 }
 
+function Resolve-DefaultPackageVersionFromMetadata {
+  param([string]$Metadata)
+
+  $parsedMetadata = $Metadata | ConvertFrom-Json
+  if ($parsedMetadata.'dist-tags'.latest) {
+    return $parsedMetadata.'dist-tags'.latest
+  }
+
+  if ($parsedMetadata.'dist-tags'.preview) {
+    return $parsedMetadata.'dist-tags'.preview
+  }
+
+  Fail 'failed to resolve package version from registry metadata.'
+}
+
 function Verify-PackageAccess {
   try {
     $null = Invoke-WebRequestWithAuth -Method 'Get' -Uri $RawPackageEndpoint -Accept 'application/vnd.npm.install-v1+json'
@@ -231,7 +254,11 @@ function Get-PackageSpec {
     return "${PackageName}@$script:defaultPackageVersion"
   }
 
-  return $PackageName
+  $metadata = Fetch-RegistryMetadata
+  $resolvedPackageVersion = Resolve-DefaultPackageVersionFromMetadata -Metadata $metadata
+  Debug-Note "resolved package version from metadata=$resolvedPackageVersion"
+
+  return "${PackageName}@$resolvedPackageVersion"
 }
 
 function New-TempDirectory {
@@ -249,6 +276,7 @@ function Write-Npmrc {
   )
 
   Set-Content -Path (Join-Path $DirectoryPath '.npmrc') -Value $content
+  Debug-Note "wrote npmrc to $(Join-Path $DirectoryPath '.npmrc')"
 }
 
 function Install-WithNpm {
@@ -258,6 +286,9 @@ function Install-WithNpm {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $npmArguments = @('install', '--global', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))
+    Debug-Note "package manager=npm"
+    Debug-Note "package reference=$packageReference"
+    Debug-Note "command=npm $($npmArguments -join ' ')"
     npm @npmArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -276,6 +307,10 @@ function Install-WithPnpm {
     Write-Npmrc -DirectoryPath $tempDirectory
     $env:NPM_CONFIG_USERCONFIG = Join-Path $tempDirectory '.npmrc'
     $pnpmArguments = @('add', '--global', $packageReference)
+    Debug-Note "package manager=pnpm"
+    Debug-Note "package reference=$packageReference"
+    Debug-Note "command=pnpm $($pnpmArguments -join ' ')"
+    Debug-Note "NPM_CONFIG_USERCONFIG=$env:NPM_CONFIG_USERCONFIG"
     pnpm @pnpmArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -295,6 +330,10 @@ function Install-WithBun {
     Write-Npmrc -DirectoryPath $tempDirectory
     $env:XDG_CONFIG_HOME = $tempDirectory
     $bunArguments = @('add', '--global', $packageReference)
+    Debug-Note "package manager=bun"
+    Debug-Note "package reference=$packageReference"
+    Debug-Note "command=bun $($bunArguments -join ' ')"
+    Debug-Note "XDG_CONFIG_HOME=$env:XDG_CONFIG_HOME"
     bun @bunArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -313,6 +352,9 @@ function Install-WithYarn {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $yarnArguments = @('global', 'add', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))
+    Debug-Note "package manager=yarn"
+    Debug-Note "package reference=$packageReference"
+    Debug-Note "command=yarn $($yarnArguments -join ' ')"
     yarn @yarnArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
@@ -328,6 +370,9 @@ function Main {
   Resolve-AuthToken
   Verify-PackageAccess
   Note "Using token from $script:tokenSource"
+  Debug-Note "selected package manager=$script:packageManager"
+  Debug-Note "requested package version=$script:packageVersion"
+  Debug-Note "default package version=$script:defaultPackageVersion"
 
   switch ($script:packageManager) {
     'npm' { Install-WithNpm }

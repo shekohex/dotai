@@ -46,6 +46,7 @@ import promptStashExtension, {
   type PromptStashEntry,
 } from "../src/extensions/prompt-stash.ts";
 import agentsMdExtension from "../src/extensions/agents-md.ts";
+import skillReadExtension from "../src/extensions/skill-read.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import {
@@ -2655,6 +2656,166 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
 
     const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);
     expect(notifications).toEqual([]);
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("skill reads return full content in one go", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-skill-read-"));
+  const skillDir = join(cwd, ".agents", "skills", "demo-skill");
+  const skillPath = join(skillDir, "SKILL.md");
+  let session: TestSession | undefined;
+
+  try {
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      skillPath,
+      [
+        "---",
+        "name: demo-skill",
+        "description: Demo skill",
+        "---",
+        "",
+        ...Array.from({ length: 220 }, (_, index) => `line ${index + 1}`),
+      ].join("\n"),
+      "utf8",
+    );
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [skillReadExtension],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Read long skill with offset and limit", [
+        calls("read", { path: skillPath, offset: 50, limit: 5 }),
+        says("done"),
+      ]),
+    );
+
+    const readResult = session.events.all
+      .filter((event) => event.type === "tool_execution_end" && event.toolName === "read")
+      .map((event) =>
+        (
+          (event as { result?: { content?: Array<{ type: string; text?: string }> } }).result
+            ?.content ?? []
+        )
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("\n"),
+      )
+      .join("\n");
+    const effectiveInput = session.events.toolResultsFor("read")[0]?.input;
+
+    expect(readResult).toContain("name: demo-skill");
+    expect(readResult).toContain("line 1");
+    expect(readResult).toContain("line 220");
+    expect(readResult).not.toContain("Use offset=");
+    expect(readResult).not.toContain("Showing lines");
+    expect(effectiveInput?.offset).toBeUndefined();
+    expect(effectiveInput?.limit).toBeUndefined();
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("skill reads ignore invalid offset and still return full content", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-skill-read-offset-"));
+  const skillDir = join(cwd, ".agents", "skills", "demo-skill");
+  const skillPath = join(skillDir, "SKILL.md");
+  let session: TestSession | undefined;
+
+  try {
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      skillPath,
+      ["---", "name: demo-skill", "---", "", "full body"].join("\n"),
+      "utf8",
+    );
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [skillReadExtension],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Read skill with impossible offset", [
+        calls("read", { path: skillPath, offset: 9999, limit: 1 }),
+        says("done"),
+      ]),
+    );
+
+    const readResult = session.events.all
+      .filter((event) => event.type === "tool_execution_end" && event.toolName === "read")
+      .map((event) =>
+        (
+          (event as { result?: { content?: Array<{ type: string; text?: string }> } }).result
+            ?.content ?? []
+        )
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("\n"),
+      )
+      .join("\n");
+    const effectiveInput = session.events.toolResultsFor("read")[0]?.input;
+
+    expect(readResult).toContain("name: demo-skill");
+    expect(readResult).toContain("full body");
+    expect(readResult).not.toContain("Offset 9999 is beyond end of file");
+    expect(effectiveInput?.offset).toBeUndefined();
+    expect(effectiveInput?.limit).toBeUndefined();
+  } finally {
+    session?.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("non-skill reads still honor offset and limit", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agent-skill-read-negative-"));
+  const filePath = join(cwd, "note.md");
+  let session: TestSession | undefined;
+
+  try {
+    await writeFile(filePath, ["line 1", "line 2", "line 3"].join("\n"), "utf8");
+
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [skillReadExtension],
+    });
+    patchHarnessAgent(session);
+
+    await session.run(
+      when("Read non-skill with offset and limit", [
+        calls("read", { path: filePath, offset: 2, limit: 1 }),
+        says("done"),
+      ]),
+    );
+
+    const readResult = session.events.all
+      .filter((event) => event.type === "tool_execution_end" && event.toolName === "read")
+      .map((event) =>
+        (
+          (event as { result?: { content?: Array<{ type: string; text?: string }> } }).result
+            ?.content ?? []
+        )
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("\n"),
+      )
+      .join("\n");
+
+    const effectiveInput = session.events.toolResultsFor("read")[0]?.input;
+
+    expect(readResult).toContain("line 2");
+    expect(readResult).not.toContain("line 1");
+    expect(readResult).toContain("[1 more lines in file. Use offset=3 to continue.]");
+    expect(effectiveInput?.offset).toBe(2);
+    expect(effectiveInput?.limit).toBe(1);
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });

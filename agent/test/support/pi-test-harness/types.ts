@@ -56,6 +56,7 @@ export interface ToolResultRecord {
   step: number;
   toolName: string;
   toolCallId: string;
+  input: Record<string, unknown>;
   text: string;
   content: Array<{ type: string; text?: string }>;
   isError: boolean;

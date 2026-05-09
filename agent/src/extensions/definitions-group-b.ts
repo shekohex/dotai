@@ -7,6 +7,7 @@ import handoffExtension from "./handoff.js";
 import reviewExtension from "./review.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
 import sessionQueryExtension from "./session-query.js";
+import skillReadExtension from "./skill-read.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsB: GroupedExtensionDefinition[] = [
@@ -19,4 +20,5 @@ export const groupedExtensionsB: GroupedExtensionDefinition[] = [
   { id: "context", factory: contextExtension },
   { id: "session-breakdown", factory: sessionBreakdownExtension },
   { id: "files", factory: filesExtension },
+  { id: "skill-read", factory: skillReadExtension },
 ];

@@ -10,7 +10,7 @@ export type DefaultModes = Static<typeof ModesFileSchema>;
 
 export const defaultModesSchema = ModesFileSchema;
 
-export const defaultModes: DefaultModes = {
+export const defaultModes = {
   version: 1,
   currentMode: "build",
   modes: {
@@ -115,7 +115,7 @@ export const defaultModes: DefaultModes = {
       description: "Use me when you want a general-purpose worker for a focused task.",
     },
   },
-};
+} as const satisfies DefaultModes;
 
 function modeSystemPrompt(mode: keyof DefaultModes["modes"]): string {
   return readFileSync(join(cwd, "resources", "modes", `${mode}.md`), {

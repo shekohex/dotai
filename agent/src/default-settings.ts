@@ -18,9 +18,17 @@ const packageJson = Value.Parse(
   JSON.parse(readFileSync(packageJsonFile, { encoding: "utf8" })),
 );
 
-export type DefaultSettings = AgentSettings & { interview: typeof defaultInterviewSettings };
+export type AvailableModes = keyof (typeof defaultModes)["modes"];
+export type DefaultModesSettings = { current: AvailableModes };
 
-export const defaultSettings: DefaultSettings = {
+export type DefaultSettings = AgentSettings & {
+  interview: typeof defaultInterviewSettings;
+  modes: DefaultModesSettings;
+};
+
+export const defaultMode = "build" as const satisfies AvailableModes;
+
+export const defaultSettings = {
   defaultProvider: "codex-openai",
   defaultModel: "gpt-5.5",
   hideThinkingBlock: true,
@@ -42,7 +50,10 @@ export const defaultSettings: DefaultSettings = {
     showTerminalProgress: true,
   },
   interview: defaultInterviewSettings,
-};
+  modes: {
+    current: defaultMode,
+  },
+} as const satisfies DefaultSettings;
 
 export { defaultModes, defaultModesSchema };
 export type { DefaultModes };

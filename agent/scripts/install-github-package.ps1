@@ -116,17 +116,6 @@ function Require-Command {
   }
 }
 
-function Get-CommandPath {
-  param([string]$CommandName)
-
-  $command = Get-Command $CommandName -ErrorAction SilentlyContinue
-  if (-not $command) {
-    Fail "missing required command: $CommandName"
-  }
-
-  return $command.Source
-}
-
 function Resolve-AuthToken {
   $candidates = @(
     @{ Name = 'NODE_AUTH_TOKEN'; Value = $env:NODE_AUTH_TOKEN },
@@ -263,13 +252,13 @@ function Write-Npmrc {
 }
 
 function Install-WithNpm {
-  $npmCommand = Get-CommandPath 'npm'
+  Require-Command 'npm'
   $tempDirectory = New-TempDirectory
   try {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $npmArguments = @('install', '--global', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))
-    & $npmCommand @npmArguments
+    npm @npmArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
     }
@@ -280,14 +269,14 @@ function Install-WithNpm {
 }
 
 function Install-WithPnpm {
-  $pnpmCommand = Get-CommandPath 'pnpm'
+  Require-Command 'pnpm'
   $tempDirectory = New-TempDirectory
   try {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $env:NPM_CONFIG_USERCONFIG = Join-Path $tempDirectory '.npmrc'
     $pnpmArguments = @('add', '--global', $packageReference)
-    & $pnpmCommand @pnpmArguments
+    pnpm @pnpmArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
     }
@@ -299,14 +288,14 @@ function Install-WithPnpm {
 }
 
 function Install-WithBun {
-  $bunCommand = Get-CommandPath 'bun'
+  Require-Command 'bun'
   $tempDirectory = New-TempDirectory
   try {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $env:XDG_CONFIG_HOME = $tempDirectory
     $bunArguments = @('add', '--global', $packageReference)
-    & $bunCommand @bunArguments
+    bun @bunArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
     }
@@ -318,13 +307,13 @@ function Install-WithBun {
 }
 
 function Install-WithYarn {
-  $yarnCommand = Get-CommandPath 'yarn'
+  Require-Command 'yarn'
   $tempDirectory = New-TempDirectory
   try {
     $packageReference = Get-PackageSpec
     Write-Npmrc -DirectoryPath $tempDirectory
     $yarnArguments = @('global', 'add', $packageReference, '--userconfig', (Join-Path $tempDirectory '.npmrc'))
-    & $yarnCommand @yarnArguments
+    yarn @yarnArguments
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
     }

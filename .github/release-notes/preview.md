@@ -4,6 +4,8 @@
 
 ## Install
 
+### UNIX
+
 ```bash
 curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --npm
 ```
@@ -18,6 +20,24 @@ curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --bun
 
 ```bash
 curl -fsSL {{INSTALL_SCRIPT_URL}} | bash -s -- --yarn
+```
+
+### Windows PowerShell
+
+```powershell
+$env:PI_PACKAGE_MANAGER='npm'; irm {{WINDOWS_INSTALL_SCRIPT_URL}} | iex
+```
+
+```powershell
+$env:PI_PACKAGE_MANAGER='pnpm'; irm {{WINDOWS_INSTALL_SCRIPT_URL}} | iex
+```
+
+```powershell
+$env:PI_PACKAGE_MANAGER='bun'; irm {{WINDOWS_INSTALL_SCRIPT_URL}} | iex
+```
+
+```powershell
+$env:PI_PACKAGE_MANAGER='yarn'; irm {{WINDOWS_INSTALL_SCRIPT_URL}} | iex
 ```
 
 ## Notes

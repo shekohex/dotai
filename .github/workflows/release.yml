@@ -75,6 +75,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/preview/install-github-package.sh
+          WINDOWS_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/preview/install-github-package.ps1
         shell: bash
         run: |
           PREVIOUS_TARGET=''
@@ -98,7 +99,7 @@ jobs:
           import os
 
           template = Path('.github/release-notes/preview.md').read_text()
-          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.preview_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY']).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL'])
+          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.preview_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY']).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL']).replace('{{WINDOWS_INSTALL_SCRIPT_URL}}', os.environ['WINDOWS_INSTALL_SCRIPT_URL'])
           Path('/tmp/preview-release-notes.md').write_text(rendered)
           PY
 
@@ -126,13 +127,17 @@ jobs:
           source = Path('agent/scripts/install-github-package.sh').read_text()
           rendered = source.replace("default_package_version=''", "default_package_version='${{ steps.preview_version.outputs.value }}'", 1)
           Path('/tmp/install-github-package.sh').write_text(rendered)
+
+          windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
+          windows_rendered = windows_source.replace("$defaultPackageVersion = ''", "$defaultPackageVersion = '${{ steps.preview_version.outputs.value }}'", 1)
+          Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
           PY
 
       - name: Upload preview installer asset
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh --clobber
+        run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
 
   create_manual_release:
     if: github.event_name == 'workflow_dispatch'
@@ -159,6 +164,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/install-github-package.sh
+          WINDOWS_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/install-github-package.ps1
         shell: bash
         run: |
           CHANGELOG_BODY="$(gh api "repos/${REPOSITORY}/releases/generate-notes" \
@@ -177,7 +183,7 @@ jobs:
           import os
 
           template = Path('.github/release-notes/release.md').read_text()
-          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.release_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY']).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL'])
+          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.release_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY']).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL']).replace('{{WINDOWS_INSTALL_SCRIPT_URL}}', os.environ['WINDOWS_INSTALL_SCRIPT_URL'])
           Path('/tmp/release-notes.md').write_text(rendered)
           PY
 
@@ -206,13 +212,17 @@ jobs:
           source = Path('agent/scripts/install-github-package.sh').read_text()
           rendered = source.replace("default_package_version=''", "default_package_version='${{ steps.release_version.outputs.value }}'", 1)
           Path('/tmp/install-github-package.sh').write_text(rendered)
+
+          windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
+          windows_rendered = windows_source.replace("$defaultPackageVersion = ''", "$defaultPackageVersion = '${{ steps.release_version.outputs.value }}'", 1)
+          Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
           PY
 
       - name: Upload manual release installer asset
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload '${{ inputs.tag }}' /tmp/install-github-package.sh#install-github-package.sh --clobber
+        run: gh release upload '${{ inputs.tag }}' /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
 
   update_release_notes:
     if: github.event_name == 'release' && github.event.action == 'published'
@@ -228,6 +238,7 @@ jobs:
         env:
           RELEASE_BODY: ${{ github.event.release.body }}
           INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/install-github-package.sh
+          WINDOWS_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/install-github-package.ps1
         run: |
           CHANGELOG_BODY="$RELEASE_BODY"
           if [[ -z "$CHANGELOG_BODY" ]]; then
@@ -242,7 +253,7 @@ jobs:
           template = Path('.github/release-notes/release.md').read_text()
           package_version = os.environ['GITHUB_REF_NAME'].removeprefix('v')
           changelog_body = os.environ['CHANGELOG_BODY']
-          rendered = template.replace('{{PACKAGE_VERSION}}', package_version).replace('{{CHANGELOG_BODY}}', changelog_body).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL'])
+          rendered = template.replace('{{PACKAGE_VERSION}}', package_version).replace('{{CHANGELOG_BODY}}', changelog_body).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL']).replace('{{WINDOWS_INSTALL_SCRIPT_URL}}', os.environ['WINDOWS_INSTALL_SCRIPT_URL'])
           Path('/tmp/release-notes.md').write_text(rendered)
           PY
 
@@ -257,13 +268,17 @@ jobs:
           package_version = os.environ['GITHUB_REF_NAME'].removeprefix('v')
           rendered = source.replace("default_package_version=''", f"default_package_version='{package_version}'", 1)
           Path('/tmp/install-github-package.sh').write_text(rendered)
+
+          windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
+          windows_rendered = windows_source.replace("$defaultPackageVersion = ''", f"$defaultPackageVersion = '{package_version}'", 1)
+          Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
           PY
 
       - name: Upload release installer asset
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload '${{ github.event.release.tag_name }}' /tmp/install-github-package.sh#install-github-package.sh --clobber
+        run: gh release upload '${{ github.event.release.tag_name }}' /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
 
       - name: Update GitHub release notes
         env:

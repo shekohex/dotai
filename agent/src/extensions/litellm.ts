@@ -62,6 +62,7 @@ export function createLiteLLMProviderRegistrations(
       config: {
         baseUrl: state.baseUrl,
         apiKey,
+        api: "openai-responses",
         models: createCodexOpenAIModels(),
       },
     },
@@ -82,6 +83,7 @@ export function createLiteLLMProviderRegistrations(
       config: {
         baseUrl: `${state.origin}/v1beta`,
         apiKey,
+        api: "google-generative-ai",
         models: createGeminiModels(),
       },
     });

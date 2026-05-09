@@ -91,9 +91,9 @@ Uses `patch-package` to maintain patches on `@mariozechner/pi-coding-agent`. Aft
 
 ## External Repos.
 
-When the user mentions upstream pi, assume it is `badlogic/pi-mono` repo, and use the `librarian` skill and then you an search the following repos:
+When the user mentions upstream pi, assume it is `earendil-works/pi` repo, and use the `librarian` skill and then you an search the following repos:
 
-- `badlogic/pi-mono`: whenever you need to get the source code for the pi coding agent and any other package releated to pi.
+- `earendil-works/pi`: whenever you need to get the source code for the pi coding agent and any other package releated to pi.
 - `durable-streams/durable-streams`: when you need to learn anything about `durable-streams`
 - `anomalyco/opencode`: when the user mention opencode, or any opencode releated things.
 - `gsd-build/get-shit-done`: when the user mention upstream gsd or upstream get-shit-done.

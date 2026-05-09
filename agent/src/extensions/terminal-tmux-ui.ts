@@ -78,7 +78,7 @@ export const getDefaultTmuxTitle = (sessionNameReader: SessionNameReader, cwd: s
 
 export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
   const updateTitle = (ctx: ExtensionContext): void => {
-    if (!isTmuxSession()) {
+    if (!isTmuxSession() || !ctx.hasUI) {
       return;
     }
 
@@ -94,7 +94,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_start", (_event, ctx) => {
-    if (!isTmuxSession()) {
+    if (!isTmuxSession() || !ctx.hasUI) {
       return;
     }
 
@@ -103,7 +103,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", (_event, ctx) => {
-    if (!isTmuxSession()) {
+    if (!isTmuxSession() || !ctx.hasUI) {
       return;
     }
 
@@ -112,7 +112,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("compaction_start", (_event, ctx) => {
-    if (!isTmuxSession()) {
+    if (!isTmuxSession() || !ctx.hasUI) {
       return;
     }
 
@@ -121,7 +121,7 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("compaction_end", (_event, ctx) => {
-    if (!isTmuxSession()) {
+    if (!isTmuxSession() || !ctx.hasUI) {
       return;
     }
 
@@ -129,8 +129,8 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
     updateTitle(ctx);
   });
 
-  pi.on("session_shutdown", () => {
-    if (!isTmuxSession()) {
+  pi.on("session_shutdown", (_event, ctx) => {
+    if (!isTmuxSession() || !ctx.hasUI) {
       return;
     }
 

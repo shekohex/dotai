@@ -100,6 +100,7 @@ test("session_start handler uses current ctx session manager instead of captured
   sessionStartHandler?.(
     {},
     {
+      hasUI: true,
       cwd: "/tmp/project-name",
       sessionManager: { getSessionName: () => "fresh-session" },
     },
@@ -110,6 +111,44 @@ test("session_start handler uses current ctx session manager instead of captured
     "\u001bPtmux;\u001b\u001b\u001b]0;π - fresh-session - project-name\u0007\u001b\\",
     { encoding: "utf8" },
   );
+});
+
+test("session_start does nothing without UI", () => {
+  process.env.TMUX = "/tmp/tmux-1000/default,123,0";
+
+  let sessionStartHandler:
+    | ((
+        event: unknown,
+        ctx: {
+          hasUI: boolean;
+          cwd: string;
+          sessionManager: { getSessionName(): string | undefined };
+        },
+      ) => void)
+    | undefined;
+  const extensionApi = {
+    on: (eventName: string, handler: typeof sessionStartHandler) => {
+      if (eventName === "session_start") {
+        sessionStartHandler = handler;
+      }
+    },
+  } as unknown as ExtensionAPI;
+  const writeFileSyncSpy = vi
+    .spyOn(terminalNotifyRuntime, "writeFileSync")
+    .mockImplementation(() => undefined);
+
+  terminalTmuxUiExtension(extensionApi);
+
+  sessionStartHandler?.(
+    {},
+    {
+      hasUI: false,
+      cwd: "/tmp/project-name",
+      sessionManager: { getSessionName: () => "headless-session" },
+    },
+  );
+
+  expect(writeFileSyncSpy).not.toHaveBeenCalled();
 });
 
 test("emitTmuxTitle writes direct OSC title to client tty over SSH", () => {

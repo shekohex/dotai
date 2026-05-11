@@ -12,6 +12,7 @@ import { json, parseBody } from "./helpers.js";
 import type { IncomingMessage } from "node:http";
 
 import { buildFileTree, FILE_BROWSER_EXCLUDED } from "../generated/reference-common.js";
+import { parseCodePath } from "../generated/code-file.js";
 import { detectObsidianVaults } from "../generated/integrations-common.js";
 import {
   isAbsoluteUserPath,
@@ -126,7 +127,8 @@ export async function handleDocRequest(res: Res, url: URL): Promise<void> {
 
   // Code files: try literal resolve first; on miss, fall back to smart resolver.
   if (isCodeFilePath(requestedPath)) {
-    const literalPath = resolveUserPath(requestedPath, resolvedBase ?? projectRoot);
+    const parsed = parseCodePath(requestedPath);
+    const literalPath = resolveUserPath(parsed.filePath, resolvedBase ?? projectRoot);
     const literalAllowed = resolvedBase !== null || isWithinProjectRoot(literalPath, projectRoot);
 
     let resolvedCode: string | null = null;
@@ -135,7 +137,7 @@ export async function handleDocRequest(res: Res, url: URL): Promise<void> {
     }
 
     if (resolvedCode === null) {
-      const result = await resolveCodeFile(requestedPath, projectRoot);
+      const result = await resolveCodeFile(parsed.filePath, projectRoot);
       if (result.kind === "found") {
         resolvedCode = result.path;
       } else if (result.kind === "ambiguous") {
@@ -173,7 +175,14 @@ export async function handleDocRequest(res: Res, url: URL): Promise<void> {
       } catch {
         // Fall back to client-side rendering
       }
-      json(res, { codeFile: true, contents, filepath: resolvedCode, prerenderedHTML });
+      json(res, {
+        codeFile: true,
+        contents,
+        filepath: resolvedCode,
+        prerenderedHTML,
+        line: parsed.line,
+        lineEnd: parsed.lineEnd,
+      });
       return;
     } catch {
       json(res, { error: `File not found: ${requestedPath}` }, 404);
@@ -241,7 +250,7 @@ export async function handleDocExistsRequest(res: Res, req: IncomingMessage): Pr
 
   await Promise.all(
     paths.map(async (p) => {
-      const r = await resolveCodeFile(p, projectRoot, baseDir);
+      const r = await resolveCodeFile(parseCodePath(p).filePath, projectRoot, baseDir);
       if (r.kind === "found") {
         results[p] = { status: "found", resolved: r.path };
       } else if (r.kind === "ambiguous") {

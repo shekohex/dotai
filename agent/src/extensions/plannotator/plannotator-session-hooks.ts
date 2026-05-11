@@ -8,6 +8,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { loadConfig } from "./generated/config.js";
+import { readImprovementHook } from "./plannotator-improvement-hooks.js";
+import { composeImproveContext } from "./plannotator-pfm-reminder.js";
 
 import { hasPlanBrowserHtml } from "./plannotator-events.js";
 import {
@@ -258,10 +261,18 @@ function registerContextHooks(args: Parameters<typeof registerPlannotatorSession
     }
 
     if (args.getPhase() === "planning") {
+      const config = loadConfig();
+      const hook = readImprovementHook("enterplanmode-improve");
+      const improveContext = composeImproveContext({
+        pfmEnabled: config.pfmReminder === true,
+        improvementHookContent: hook?.content ?? null,
+      });
+      const baseMessage = getPlanningSystemMessage(PLAN_SUBMIT_TOOL);
       return {
         message: {
           customType: "plannotator-context",
-          content: getPlanningSystemMessage(PLAN_SUBMIT_TOOL),
+          content:
+            improveContext === null ? baseMessage : `${baseMessage}\n\n---\n\n${improveContext}`,
           display: false,
         },
       };

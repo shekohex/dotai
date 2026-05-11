@@ -9,14 +9,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { Value } from "typebox/value";
 import { createTextComponent, formatToolRail } from "../coreui/tools.js";
 
 import {
   FILE_BROWSER_EXCLUDED,
   hasMarkdownFiles,
   resolveUserPath,
-  htmlToMarkdown,
   isConvertedSource,
   urlToMarkdown,
   loadConfig,
@@ -54,23 +52,17 @@ import {
   shouldAnchorLastMessageFeedback,
 } from "./plannotator-support.js";
 import { errorMessage } from "../../utils/error-message.js";
-import { isSshSession, resolveBrowserAccessUrl } from "../../utils/browser-launch.js";
-import { getServerPort } from "./server/network.js";
+import { isSshSession } from "../../utils/browser-launch.js";
+import {
+  canReconnectToRunningAnnotationServer,
+  canReconnectToRunningReviewServerForCwd,
+} from "./plannotator-running-browser-session.js";
 
 const PlanSubmitParametersSchema = Type.Object({
   filePath: Type.String({
     description:
       "Path to markdown plan file, relative to working directory. Must end in .md or .mdx and resolve inside cwd.",
   }),
-});
-
-const RunningReviewServerSchema = Type.Object({
-  agentCwd: Type.Optional(Type.String()),
-  gitContext: Type.Optional(
-    Type.Object({
-      cwd: Type.Optional(Type.String()),
-    }),
-  ),
 });
 
 type SessionUpdater = { update: (ctx: ExtensionContext) => void };
@@ -147,52 +139,6 @@ function notifyBrowserSessionStarted(ctx: ExtensionContext, label: string, url: 
 
 function isPortInUseStartupError(err: unknown): boolean {
   return getStartupErrorMessage(err).includes("in use after");
-}
-
-function normalizeWorkspacePath(filePath: string): string {
-  return resolve(filePath);
-}
-
-async function canReconnectToRunningReviewServerForCwd(cwd: string): Promise<string | null> {
-  const { port } = getServerPort();
-  if (port <= 0) {
-    return null;
-  }
-
-  const localhostUrl = `http://127.0.0.1:${port}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, 1000);
-
-  try {
-    const response = await fetch(`${localhostUrl}/api/diff`, {
-      method: "GET",
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const payload: unknown = await response.json();
-    if (!Value.Check(RunningReviewServerSchema, payload)) {
-      return null;
-    }
-    const expectedCwd = normalizeWorkspacePath(cwd);
-    let serverCwd: string | null = null;
-    if (typeof payload.agentCwd === "string") {
-      serverCwd = payload.agentCwd;
-    } else if (typeof payload.gitContext?.cwd === "string") {
-      serverCwd = payload.gitContext.cwd;
-    }
-    if (serverCwd === null || normalizeWorkspacePath(serverCwd) !== expectedCwd) {
-      return null;
-    }
-    return resolveBrowserAccessUrl({ serverUrl: localhostUrl, port });
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 function handleReviewDecision(args: {
@@ -299,6 +245,8 @@ type AnnotationTarget = {
   mode: "annotate" | "annotate-folder";
   sourceInfo?: string;
   sourceConverted: boolean;
+  rawHtml?: string;
+  renderHtml?: boolean;
   isFolder: boolean;
 };
 
@@ -365,12 +313,15 @@ async function resolveAnnotationTarget(
       return null;
     }
     ctx.ui.notify(`Opening annotation UI for ${filePath}...`, "info");
+    const rawHtml = readFileSync(absolutePath, "utf-8");
     return {
-      markdown: htmlToMarkdown(readFileSync(absolutePath, "utf-8")),
+      markdown: "",
       absolutePath,
       mode: "annotate",
       sourceInfo: basename(absolutePath),
-      sourceConverted: true,
+      sourceConverted: false,
+      rawHtml,
+      renderHtml: true,
       isFolder: false,
     };
   }
@@ -418,6 +369,19 @@ export function createPlannotatorAnnotateHandler(args: {
     args.currentPiSession.update(ctx);
     const origin = getPiSessionIdentity(ctx);
     try {
+      const runningUrl = await canReconnectToRunningAnnotationServer({
+        cwd: ctx.cwd,
+        filePath: target.absolutePath,
+        mode: target.mode,
+      });
+      if (runningUrl !== null) {
+        notifyBrowserSessionStarted(
+          ctx,
+          "Annotation already running. Reusing existing browser session.",
+          runningUrl,
+        );
+        return;
+      }
       const session = await startMarkdownAnnotationSession(
         ctx,
         target.absolutePath,
@@ -427,6 +391,8 @@ export function createPlannotatorAnnotateHandler(args: {
         target.sourceInfo,
         target.sourceConverted,
         gate,
+        target.rawHtml,
+        target.renderHtml,
       );
       notifyBrowserSessionStarted(
         ctx,
@@ -500,6 +466,19 @@ export function createPlannotatorLastHandler(args: {
     }
     ctx.ui.notify("Opening annotation UI for last message...", "info");
     try {
+      const runningUrl = await canReconnectToRunningAnnotationServer({
+        cwd: ctx.cwd,
+        filePath: "last-message",
+        mode: "annotate-last",
+      });
+      if (runningUrl !== null) {
+        notifyBrowserSessionStarted(
+          ctx,
+          "Last-message annotation already running. Reusing existing browser session.",
+          runningUrl,
+        );
+        return;
+      }
       const session = await startLastMessageAnnotationSession(ctx, snapshot.text, gate);
       notifyBrowserSessionStarted(
         ctx,

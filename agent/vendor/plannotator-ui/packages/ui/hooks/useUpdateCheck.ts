@@ -65,6 +65,8 @@ export function useUpdateCheck(): UpdateInfo | null {
           return;
         }
 
+        return;
+
         const response = await fetch(GITHUB_API);
         if (!response.ok) return;
 

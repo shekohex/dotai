@@ -13,6 +13,8 @@ import { execSync } from "child_process";
 
 export type DefaultDiffType = "uncommitted" | "unstaged" | "staged" | "merge-base" | "all";
 
+export type DiffLineBgIntensity = "subtle" | "normal" | "strong";
+
 export interface DiffOptions {
   diffStyle?: "split" | "unified";
   overflow?: "scroll" | "wrap";
@@ -25,6 +27,7 @@ export interface DiffOptions {
   tabSize?: number;
   hideWhitespace?: boolean;
   defaultDiffType?: DefaultDiffType;
+  lineBgIntensity?: DiffLineBgIntensity;
 }
 
 /** Single conventional comment label entry stored in config.json */
@@ -113,6 +116,11 @@ export interface PlannotatorConfig {
    * reader-mode extraction. Set to false to always use plain fetch + Turndown.
    */
   jina?: boolean;
+  /**
+   * Inject a Plannotator Flavored Markdown reminder into planning context so the agent knows about
+   * code-file links, callouts, tables, diagrams, task lists, and the other rendered extensions.
+   */
+  pfmReminder?: boolean;
 }
 
 const CONFIG_DIR = join(homedir(), ".plannotator");

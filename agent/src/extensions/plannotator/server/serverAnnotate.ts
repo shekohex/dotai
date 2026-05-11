@@ -47,6 +47,64 @@ type AnnotateDecision = {
   approved?: boolean;
 };
 
+function getAnnotateDraftSource(options: {
+  mode?: string;
+  folderPath?: string;
+  renderHtml?: boolean;
+  rawHtml?: string;
+  markdown: string;
+}): string {
+  if (
+    options.mode === "annotate-folder" &&
+    options.folderPath !== undefined &&
+    options.folderPath.length > 0
+  ) {
+    return `folder:${resolvePath(options.folderPath)}`;
+  }
+  if (options.renderHtml === true && options.rawHtml !== undefined) {
+    return options.rawHtml;
+  }
+  return options.markdown;
+}
+
+function getAnnotatePlanPayload(options: {
+  markdown: string;
+  origin?: string;
+  mode?: string;
+  filePath: string;
+  sourceInfo?: string;
+  sourceConverted?: boolean;
+  gate?: boolean;
+  rawHtml?: string;
+  renderHtml?: boolean;
+  sharingEnabled: boolean;
+  shareBaseUrl?: string;
+  pasteApiUrl?: string;
+  repoInfo: ReturnType<typeof getRepoInfo>;
+  folderPath?: string;
+  gitUser: ReturnType<typeof detectGitUser>;
+}): Record<string, unknown> {
+  return {
+    plan: options.markdown,
+    origin: options.origin ?? "pi",
+    mode: options.mode ?? "annotate",
+    filePath: options.filePath,
+    sourceInfo: options.sourceInfo,
+    sourceConverted: options.sourceConverted ?? false,
+    gate: options.gate ?? false,
+    renderAs: options.renderHtml === true && options.rawHtml !== undefined ? "html" : "markdown",
+    ...(options.renderHtml === true && options.rawHtml !== undefined
+      ? { rawHtml: options.rawHtml }
+      : {}),
+    sharingEnabled: options.sharingEnabled,
+    shareBaseUrl: options.shareBaseUrl,
+    pasteApiUrl: options.pasteApiUrl,
+    repoInfo: options.repoInfo,
+    projectRoot: options.folderPath ?? process.cwd(),
+    serverConfig: getServerConfig(options.gitUser),
+  };
+}
+
 async function saveAnnotateConfig(req: IncomingMessage): Promise<Record<string, unknown> | null> {
   try {
     const body = (await parseBody(req)) as {
@@ -76,6 +134,8 @@ function createAnnotateRequestHandler(options: {
   sourceInfo?: string;
   sourceConverted?: boolean;
   gate?: boolean;
+  rawHtml?: string;
+  renderHtml?: boolean;
   sharingEnabled: boolean;
   shareBaseUrl?: string;
   pasteApiUrl?: string;
@@ -91,21 +151,7 @@ function createAnnotateRequestHandler(options: {
       if (await options.externalAnnotations.handle(req, res, url)) return;
 
       if (url.pathname === "/api/plan" && req.method === "GET") {
-        json(res, {
-          plan: options.markdown,
-          origin: options.origin ?? "pi",
-          mode: options.mode ?? "annotate",
-          filePath: options.filePath,
-          sourceInfo: options.sourceInfo,
-          sourceConverted: options.sourceConverted ?? false,
-          gate: options.gate ?? false,
-          sharingEnabled: options.sharingEnabled,
-          shareBaseUrl: options.shareBaseUrl,
-          pasteApiUrl: options.pasteApiUrl,
-          repoInfo: options.repoInfo,
-          projectRoot: options.folderPath ?? process.cwd(),
-          serverConfig: getServerConfig(options.gitUser),
-        });
+        json(res, getAnnotatePlanPayload(options));
         return;
       }
 
@@ -212,6 +258,8 @@ export async function startAnnotateServer(options: {
   sourceInfo?: string;
   sourceConverted?: boolean;
   gate?: boolean;
+  rawHtml?: string;
+  renderHtml?: boolean;
 }): Promise<AnnotateServerResult> {
   // Side-channel pre-warm so /api/doc/exists POSTs land on warm cache.
   void warmFileListCache(process.cwd(), "code");
@@ -226,12 +274,7 @@ export async function startAnnotateServer(options: {
   });
 
   // Folder annotation has no stable markdown body, so key drafts by folder path instead.
-  const draftSource =
-    options.mode === "annotate-folder" &&
-    options.folderPath !== undefined &&
-    options.folderPath.length > 0
-      ? `folder:${resolvePath(options.folderPath)}`
-      : options.markdown;
+  const draftSource = getAnnotateDraftSource(options);
   const draftKey = contentHash(draftSource);
 
   // Detect repo info (cached for this session)

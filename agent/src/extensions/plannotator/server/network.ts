@@ -78,12 +78,27 @@ export async function listenOnPort(
   const result = getServerPort();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const requestedPort =
+      result.portSource === "remote-default" && result.port > 0
+        ? result.port + (attempt - 1)
+        : result.port;
     try {
       await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(result.port, getServerHostname(), () => {
-          server.removeListener("error", reject);
+        const handleError = (error: unknown) => {
+          server.removeListener("listening", handleListening);
+          void server.close(() => {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          });
+        };
+        const handleListening = () => {
+          server.removeListener("error", handleError);
           resolve();
+        };
+
+        server.once("error", handleError);
+        server.once("listening", handleListening);
+        server.listen(requestedPort, getServerHostname(), () => {
+          handleListening();
         });
       });
       const addr = server.address();
@@ -101,7 +116,7 @@ export async function listenOnPort(
       }
       if (isAddressInUse) {
         const hint = isRemoteSession() ? " (set PLANNOTATOR_PORT to use a different port)" : "";
-        throw new Error(`Port ${result.port} in use after ${MAX_RETRIES} retries${hint}`, {
+        throw new Error(`Port ${requestedPort} in use after ${MAX_RETRIES} retries${hint}`, {
           cause: err,
         });
       }

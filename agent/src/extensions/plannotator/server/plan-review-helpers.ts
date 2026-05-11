@@ -32,10 +32,17 @@ import {
   saveToOctarine,
   type IntegrationResult,
 } from "./integrations.js";
-import { getServerConfig, type detectGitUser } from "../generated/config.js";
+import {
+  getServerConfig,
+  loadConfig,
+  saveConfig,
+  type detectGitUser,
+} from "../generated/config.js";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "../../../utils/error-message.js";
+import { readImprovementHook } from "../plannotator-improvement-hooks.js";
+import { composeImproveContext } from "../plannotator-pfm-reminder.js";
 
 const VersionDiffRequestSchema = Type.Object({ baseVersion: Type.Number() });
 const PlanSaveSchema = Type.Object({
@@ -244,6 +251,26 @@ async function handlePlanUtilityRoutes(
   args: Parameters<typeof handlePlanServerRequest>[0],
 ): Promise<boolean> {
   const { req, res, url, setup } = args;
+  if (url.pathname === "/api/hooks/status" && req.method === "GET") {
+    const config = loadConfig();
+    const hook = readImprovementHook("enterplanmode-improve");
+    const pfmEnabled = config.pfmReminder === true;
+    const composed = composeImproveContext({
+      pfmEnabled,
+      improvementHookContent: hook?.content ?? null,
+    });
+    json(res, {
+      pfmReminder: { enabled: pfmEnabled },
+      improvementHook: {
+        present: hook !== null,
+        filePath: hook?.filePath ?? null,
+        fileSize: hook?.content.length ?? null,
+        content: hook?.content ?? null,
+      },
+      composedLength: composed?.length ?? null,
+    });
+    return true;
+  }
   if (url.pathname === "/api/config" && req.method === "POST") {
     try {
       const body = await parseBody(req);
@@ -253,7 +280,10 @@ async function handlePlanUtilityRoutes(
         toSave.diffOptions = body.diffOptions;
       if (typeof body.conventionalComments === "boolean")
         toSave.conventionalComments = body.conventionalComments;
-      void toSave;
+      if (typeof body.pfmReminder === "boolean") toSave.pfmReminder = body.pfmReminder;
+      if (Object.keys(toSave).length > 0) {
+        saveConfig(toSave as Parameters<typeof saveConfig>[0]);
+      }
       json(res, { ok: true });
     } catch {
       json(res, { error: "Invalid request" }, 400);

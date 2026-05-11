@@ -90,14 +90,36 @@ export function notifyModeFlagRefresh(): void {
 
 export function getStartupModeSelection(
   pi: ExtensionAPI,
-  registeredModeFlags: Map<string, string>,
+  modeNames: string[],
 ): {
   selectedMode?: string;
   requestedModes: string[];
 } {
+  const modeFlags = new Map<string, string>();
+  const collisions = new Set<string>();
+
+  for (const modeName of modeNames) {
+    const flagName = toModeFlagName(modeName);
+    if (flagName === undefined) {
+      continue;
+    }
+
+    const existingModeName = modeFlags.get(flagName);
+    if (existingModeName !== undefined && existingModeName !== modeName) {
+      collisions.add(flagName);
+      continue;
+    }
+
+    modeFlags.set(flagName, modeName);
+  }
+
+  for (const flagName of collisions) {
+    modeFlags.delete(flagName);
+  }
+
   const requestedModes: string[] = [];
 
-  for (const [flagName, modeName] of registeredModeFlags) {
+  for (const [flagName, modeName] of modeFlags) {
     if (pi.getFlag(flagName) === true) {
       requestedModes.push(modeName);
     }

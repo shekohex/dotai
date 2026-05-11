@@ -239,7 +239,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
     appendModeState,
     emitModeChanged,
     getStartupModeSelection: (extensionApi) =>
-      getStartupModeSelection(extensionApi, registeredModeFlags),
+      getStartupModeSelection(extensionApi, orderedModeNames(runtime.data)),
     notifyStartupModeConflict,
   });
 

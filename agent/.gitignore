@@ -1,3 +1,5 @@
 .tmp/
 tmp/
-vendor/plannotator-ui/
+vendor/plannotator-ui/**/node_modules/
+vendor/plannotator-ui/apps/review/dist/
+vendor/plannotator-ui/apps/hook/dist/

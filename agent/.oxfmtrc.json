@@ -1,5 +1,5 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["dist/**", ".tmp/**", "tmp/**", "*.jsonl"],
+  "ignorePatterns": ["dist/**", "vendor/**", ".tmp/**", "tmp/**", "*.jsonl"],
   "jsdoc": true
 }

@@ -1,0 +1,33 @@
+.theme-dracula,
+.theme-dracula.light {
+  --background: rgb(40, 42, 54);
+  --foreground: rgb(248, 248, 242);
+  --card: rgb(68, 71, 90);
+  --card-foreground: rgb(248, 248, 242);
+  --popover: rgb(68, 71, 90);
+  --popover-foreground: rgb(248, 248, 242);
+  --primary: rgb(189, 147, 249);
+  --primary-foreground: rgb(40, 42, 54);
+  --secondary: rgb(68, 71, 90);
+  --secondary-foreground: rgb(248, 248, 242);
+  --muted: rgb(55, 57, 73);
+  --muted-foreground: rgb(188, 190, 206);
+  --accent: rgb(139, 233, 253);
+  --accent-foreground: rgb(40, 42, 54);
+  --destructive: rgb(255, 85, 85);
+  --destructive-foreground: rgb(248, 248, 242);
+  --border: rgb(68, 71, 90);
+  --input: rgb(68, 71, 90);
+  --ring: rgb(189, 147, 249);
+  --success: rgb(80, 250, 123);
+  --success-foreground: rgb(40, 42, 54);
+  --warning: rgb(241, 250, 140);
+  --warning-foreground: rgb(40, 42, 54);
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: rgb(33, 34, 44);
+  --focus-highlight: rgb(139, 233, 253);
+}

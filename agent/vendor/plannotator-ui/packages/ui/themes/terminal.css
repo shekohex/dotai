@@ -1,0 +1,62 @@
+.theme-terminal,
+.theme-terminal.light {
+  --background: #000001;
+  --foreground: #eeeeee;
+  --card: #010203;
+  --card-foreground: #eeeeee;
+  --popover: #010203;
+  --popover-foreground: #eeeeee;
+  --primary: #f99100;
+  --primary-foreground: #ffffff;
+  --secondary: #2e2e2e;
+  --secondary-foreground: #eeeeee;
+  --muted: #202127;
+  --muted-foreground: #9e9e9e;
+  --accent: #00a1ff;
+  --accent-foreground: #ffffff;
+  --destructive: #f20024;
+  --destructive-foreground: #ffffff;
+  --border: #2e2e2e;
+  --input: #010203;
+  --ring: #00a1ff;
+  --chart-1: #2dd047;
+  --chart-2: #f20024;
+  --chart-3: #821698;
+  --chart-4: #f6d653;
+  --chart-5: #00a1ff;
+  --sidebar: #010203;
+  --sidebar-foreground: #eeeeee;
+  --sidebar-primary: #f99100;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #00a1ff;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2e2e2e;
+  --sidebar-ring: #00a1ff;
+  --font-sans: system-ui;
+  --font-serif: system-ui;
+  --font-mono: system-ui;
+  --radius: 4px;
+  --shadow-2xs: 0px 2px 4px 0px hsl(0 0% 0% / 0.1);
+  --shadow-xs: 0px 2px 4px 0px hsl(0 0% 0% / 0.1);
+  --shadow-sm: 0px 2px 4px 0px hsl(0 0% 0% / 0.2), 0px 1px 2px -1px hsl(0 0% 0% / 0.2);
+  --shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.2), 0px 1px 2px -1px hsl(0 0% 0% / 0.2);
+  --shadow-md: 0px 2px 4px 0px hsl(0 0% 0% / 0.2), 0px 2px 4px -1px hsl(0 0% 0% / 0.2);
+  --shadow-lg: 0px 2px 4px 0px hsl(0 0% 0% / 0.2), 0px 4px 6px -1px hsl(0 0% 0% / 0.2);
+  --shadow-xl: 0px 2px 4px 0px hsl(0 0% 0% / 0.2), 0px 8px 10px -1px hsl(0 0% 0% / 0.2);
+  --shadow-2xl: 0px 2px 4px 0px hsl(0 0% 0% / 0.5);
+
+  /* Plannotator extended tokens */
+  --success: oklch(0.72 0.17 150);
+  --success-foreground: oklch(0.15 0.02 260);
+  --warning: oklch(0.75 0.15 85);
+  --warning-foreground: oklch(0.20 0.02 260);
+  --code-bg: #000000;
+  --focus-highlight: oklch(0.70 0.20 200);
+}
+
+.theme-terminal .bg-grid,
+.theme-terminal.light .bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(0, 255, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 255, 0, 0.04) 1px, transparent 1px);
+}

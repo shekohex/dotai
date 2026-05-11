@@ -1,0 +1,57 @@
+.theme-tinacious,
+.theme-tinacious.light {
+  --background: rgb(248, 248, 255);
+  --foreground: rgb(29, 29, 38);
+  --card: rgb(255, 255, 255);
+  --card-foreground: rgb(29, 29, 38);
+  --popover: rgb(255, 255, 255);
+  --popover-foreground: rgb(29, 29, 38);
+  --primary: rgb(0, 203, 255);
+  --primary-foreground: rgb(255, 255, 255);
+  --secondary: rgb(203, 203, 240);
+  --secondary-foreground: rgb(29, 29, 38);
+  --muted: rgb(213, 214, 243);
+  --muted-foreground: rgb(99, 102, 103);
+  --accent: rgb(0, 206, 202);
+  --accent-foreground: rgb(29, 29, 38);
+  --destructive: rgb(255, 51, 153);
+  --destructive-foreground: rgb(255, 255, 255);
+  --border: rgb(213, 214, 243);
+  --input: rgb(213, 214, 243);
+  --ring: rgb(0, 203, 255);
+  --chart-1: rgb(255, 51, 153);
+  --chart-2: rgb(0, 211, 100);
+  --chart-3: rgb(255, 204, 102);
+  --chart-4: rgb(204, 102, 255);
+  --chart-5: rgb(0, 206, 202);
+  --sidebar: rgb(240, 240, 248);
+  --sidebar-foreground: rgb(29, 29, 38);
+  --sidebar-primary: rgb(0, 203, 255);
+  --sidebar-primary-foreground: rgb(255, 255, 255);
+  --sidebar-accent: rgb(0, 206, 202);
+  --sidebar-accent-foreground: rgb(29, 29, 38);
+  --sidebar-border: rgb(213, 214, 243);
+  --sidebar-ring: rgb(0, 203, 255);
+  --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo,
+    monospace;
+  --radius: 0.625rem;
+  --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-xs: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-2xl: 0 35px 60px -15px rgb(0 0 0 / 0.3);
+
+  /* Plannotator extended tokens */
+  --success: oklch(0.45 0.20 150);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.55 0.18 85);
+  --warning-foreground: oklch(0.18 0.02 260);
+  --code-bg: rgb(240, 240, 248);
+  --focus-highlight: oklch(0.70 0.20 200);
+}

@@ -1,0 +1,34 @@
+/* Synthwave '84 — by Robb Owen */
+.theme-synthwave-84,
+.theme-synthwave-84.light {
+  --background: #262335;
+  --foreground: #ffffff;
+  --card: #2a2139;
+  --card-foreground: #ffffff;
+  --popover: #2a2139;
+  --popover-foreground: #ffffff;
+  --primary: #ff7edb;
+  --primary-foreground: #262335;
+  --secondary: #34294f;
+  --secondary-foreground: #ffffff;
+  --muted: #37294d;
+  --muted-foreground: #ffffff99;
+  --accent: #72f1b8;
+  --accent-foreground: #262335;
+  --destructive: #fe4450;
+  --destructive-foreground: #ffffff;
+  --border: #495495;
+  --input: #2a2139;
+  --ring: #ff7edb;
+  --success: #72f1b8;
+  --success-foreground: #262335;
+  --warning: #fede5d;
+  --warning-foreground: #262335;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #241b2f;
+  --focus-highlight: #36f9f6;
+}

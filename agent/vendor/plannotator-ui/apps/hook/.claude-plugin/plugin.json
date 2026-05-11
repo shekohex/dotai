@@ -1,0 +1,10 @@
+{
+  "name": "plannotator",
+  "description": "Interactive Plan Review: Mark up and refine your plans using a UI, easily share for team collaboration, automatically integrates with plan mode hooks.",
+  "version": "0.19.12",
+  "author": {
+    "name": "backnotprop"
+  },
+  "repository": "https://github.com/backnotprop/plannotator",
+  "keywords": ["planning", "review", "hooks", "ExitPlanMode", "collaboration"]
+}

@@ -1,0 +1,62 @@
+/* Tokyo Night — Storm (dark) + Day (light) */
+.theme-tokyo-night {
+  --background: #24283b;
+  --foreground: #c0caf5;
+  --card: #1d202f;
+  --card-foreground: #c0caf5;
+  --popover: #1d202f;
+  --popover-foreground: #c0caf5;
+  --primary: #7aa2f7;
+  --primary-foreground: #1d202f;
+  --secondary: #414868;
+  --secondary-foreground: #c0caf5;
+  --muted: #343a52;
+  --muted-foreground: #787c99;
+  --accent: #7dcfff;
+  --accent-foreground: #1d202f;
+  --destructive: #f7768e;
+  --destructive-foreground: #1d202f;
+  --border: #414868;
+  --input: #343a52;
+  --ring: #7aa2f7;
+  --success: #9ece6a;
+  --success-foreground: #1d202f;
+  --warning: #e0af68;
+  --warning-foreground: #1d202f;
+
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #1a1b2e;
+  --focus-highlight: #7dcfff;
+}
+
+.theme-tokyo-night.light {
+  --background: #e1e2e7;
+  --foreground: #3760bf;
+  --card: #e9e9ed;
+  --card-foreground: #3760bf;
+  --popover: #e9e9ed;
+  --popover-foreground: #3760bf;
+  --primary: #2e7de9;
+  --primary-foreground: #e1e2e7;
+  --secondary: #a1a6c5;
+  --secondary-foreground: #3760bf;
+  --muted: #d0d3e1;
+  --muted-foreground: #848cb5;
+  --accent: #007197;
+  --accent-foreground: #e1e2e7;
+  --destructive: #f52a65;
+  --destructive-foreground: #e1e2e7;
+  --border: #a1a6c5;
+  --input: #d0d3e1;
+  --ring: #2e7de9;
+  --success: #587539;
+  --success-foreground: #e1e2e7;
+  --warning: #8c6c3e;
+  --warning-foreground: #e1e2e7;
+
+  --code-bg: #d5d6db;
+  --focus-highlight: #007197;
+}

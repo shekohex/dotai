@@ -1,0 +1,62 @@
+/* Rosé Pine — Moon (dark) + Dawn (light) */
+.theme-rose-pine {
+  --background: #191724;
+  --foreground: #e0def4;
+  --card: #26233a;
+  --card-foreground: #e0def4;
+  --popover: #26233a;
+  --popover-foreground: #e0def4;
+  --primary: #c4a7e7;
+  --primary-foreground: #191724;
+  --secondary: #403d52;
+  --secondary-foreground: #e0def4;
+  --muted: #26233a;
+  --muted-foreground: #6e6a86;
+  --accent: #f6c177;
+  --accent-foreground: #191724;
+  --destructive: #eb6f92;
+  --destructive-foreground: #191724;
+  --border: #403d52;
+  --input: #26233a;
+  --ring: #c4a7e7;
+  --success: #31748f;
+  --success-foreground: #e0def4;
+  --warning: #f6c177;
+  --warning-foreground: #191724;
+
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #1f1d2e;
+  --focus-highlight: #9ccfd8;
+}
+
+.theme-rose-pine.light {
+  --background: #faf4ed;
+  --foreground: #575279;
+  --card: #fffaf3;
+  --card-foreground: #575279;
+  --popover: #fffaf3;
+  --popover-foreground: #575279;
+  --primary: #907aa9;
+  --primary-foreground: #faf4ed;
+  --secondary: #dfdad9;
+  --secondary-foreground: #575279;
+  --muted: #f2e9e1;
+  --muted-foreground: #9893a5;
+  --accent: #ea9d34;
+  --accent-foreground: #faf4ed;
+  --destructive: #b4637a;
+  --destructive-foreground: #faf4ed;
+  --border: #dfdad9;
+  --input: #f2e9e1;
+  --ring: #907aa9;
+  --success: #286983;
+  --success-foreground: #faf4ed;
+  --warning: #ea9d34;
+  --warning-foreground: #faf4ed;
+
+  --code-bg: #f2e9e1;
+  --focus-highlight: #56949f;
+}

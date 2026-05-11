@@ -1,0 +1,34 @@
+/* Monokai Pro — dark only */
+.theme-monokai-pro,
+.theme-monokai-pro.light {
+  --background: #2d2a2e;
+  --foreground: #fcfcfa;
+  --card: #403e41;
+  --card-foreground: #fcfcfa;
+  --popover: #403e41;
+  --popover-foreground: #fcfcfa;
+  --primary: #ffd866;
+  --primary-foreground: #2d2a2e;
+  --secondary: #5b595c;
+  --secondary-foreground: #fcfcfa;
+  --muted: #403e41;
+  --muted-foreground: #727072;
+  --accent: #78dce8;
+  --accent-foreground: #2d2a2e;
+  --destructive: #ff6188;
+  --destructive-foreground: #2d2a2e;
+  --border: #5b595c;
+  --input: #403e41;
+  --ring: #ffd866;
+  --success: #a9dc76;
+  --success-foreground: #2d2a2e;
+  --warning: #fc9867;
+  --warning-foreground: #2d2a2e;
+
+  --font-sans: system-ui, sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #221f22;
+  --focus-highlight: #78dce8;
+}

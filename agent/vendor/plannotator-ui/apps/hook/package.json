@@ -1,0 +1,41 @@
+{
+  "name": "@plannotator/hooks",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && cp dist/index.html dist/redline.html && cp ../review/dist/index.html dist/review.html",
+    "serve": "bun run server/index.ts"
+  },
+  "dependencies": {
+    "@plannotator/editor": "file:../../packages/editor",
+    "@plannotator/shared": "file:../../packages/shared",
+    "@plannotator/ui": "file:../../packages/ui",
+    "@plannotator/web-highlighter": "^0.8.1",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@tanstack/react-table": "^8.21.3",
+    "@viz-js/viz": "^3.25.0",
+    "diff": "^8.0.3",
+    "highlight.js": "^11.11.1",
+    "marked": "^17.0.6",
+    "mermaid": "^11.12.2",
+    "overlayscrollbars": "^2.11.0",
+    "overlayscrollbars-react": "^0.5.6",
+    "perfect-freehand": "^1.2.2",
+    "unique-username-generator": "^1.5.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "tailwindcss": "^4.1.18",
+    "@tailwindcss/vite": "^4.1.18"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "vite-plugin-singlefile": "^2.0.3",
+    "@types/node": "^22.14.0"
+  }
+}

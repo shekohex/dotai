@@ -1,0 +1,34 @@
+/* Kanagawa Wave — cool blue-purple, classic Kanagawa */
+.theme-kanagawa-wave,
+.theme-kanagawa-wave.light {
+  --background: #1f1f28;
+  --foreground: #dcd7ba;
+  --card: #2a2a37;
+  --card-foreground: #dcd7ba;
+  --popover: #2a2a37;
+  --popover-foreground: #dcd7ba;
+  --primary: #7e9cd8;
+  --primary-foreground: #1f1f28;
+  --secondary: #363646;
+  --secondary-foreground: #dcd7ba;
+  --muted: #2d2d3b;
+  --muted-foreground: #727169;
+  --accent: #957fb8;
+  --accent-foreground: #1f1f28;
+  --destructive: #c34043;
+  --destructive-foreground: #dcd7ba;
+  --border: #363646;
+  --input: #2d2d3b;
+  --ring: #7fb4ca;
+  --success: #98bb6c;
+  --success-foreground: #1f1f28;
+  --warning: #e6c384;
+  --warning-foreground: #1f1f28;
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #16161d;
+  --focus-highlight: #7aa89f;
+}

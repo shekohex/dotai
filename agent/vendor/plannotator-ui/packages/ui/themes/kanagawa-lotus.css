@@ -1,0 +1,34 @@
+/* Kanagawa Lotus — light variant, yellow-tan paper background */
+.theme-kanagawa-lotus,
+.theme-kanagawa-lotus.light {
+  --background: #f2ecbc;
+  --foreground: #545464;
+  --card: #e5ddb0;
+  --card-foreground: #545464;
+  --popover: #e5ddb0;
+  --popover-foreground: #545464;
+  --primary: #4d699b;
+  --primary-foreground: #f2ecbc;
+  --secondary: #dcd5ac;
+  --secondary-foreground: #545464;
+  --muted: #e7dba0;
+  --muted-foreground: #716e61;
+  --accent: #624c83;
+  --accent-foreground: #f2ecbc;
+  --destructive: #c84053;
+  --destructive-foreground: #f2ecbc;
+  --border: #dcd5ac;
+  --input: #e7dba0;
+  --ring: #4d699b;
+  --success: #6f894e;
+  --success-foreground: #f2ecbc;
+  --warning: #836f4a;
+  --warning-foreground: #f2ecbc;
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #d5cea3;
+  --focus-highlight: #4e8ca2;
+}

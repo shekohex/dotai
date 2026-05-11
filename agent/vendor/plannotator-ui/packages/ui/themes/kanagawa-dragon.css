@@ -1,0 +1,34 @@
+/* Kanagawa Dragon — warm ash-black, muted teal accent */
+.theme-kanagawa-dragon,
+.theme-kanagawa-dragon.light {
+  --background: #181616;
+  --foreground: #c8c093;
+  --card: #211e1e;
+  --card-foreground: #c8c093;
+  --popover: #211e1e;
+  --popover-foreground: #c8c093;
+  --primary: #7fb4ca;
+  --primary-foreground: #181616;
+  --secondary: #2a2625;
+  --secondary-foreground: #c8c093;
+  --muted: #252220;
+  --muted-foreground: #a6a69c;
+  --accent: #7aa89f;
+  --accent-foreground: #181616;
+  --destructive: #c4746e;
+  --destructive-foreground: #c8c093;
+  --border: #2e2b28;
+  --input: #252220;
+  --ring: #7fb4ca;
+  --success: #87a987;
+  --success-foreground: #181616;
+  --warning: #e6c384;
+  --warning-foreground: #181616;
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --radius: 0.625rem;
+
+  --code-bg: #0d0c0c;
+  --focus-highlight: #7aa89f;
+}

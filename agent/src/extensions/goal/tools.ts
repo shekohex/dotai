@@ -1,9 +1,12 @@
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
   defineTool,
   type ExtensionAPI,
   type ExtensionContext,
+  type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createTextComponent, formatToolRail, renderToolError } from "../coreui/tools.js";
@@ -109,10 +112,7 @@ const GoalToolDetailsSchema = Type.Object(
 
 type GoalToolDetails = Static<typeof GoalToolDetailsSchema>;
 type GoalToolTheme = {
-  fg: (
-    token: "dim" | "muted" | "error" | "text" | "toolOutput" | "borderAccent" | "borderMuted",
-    text: string,
-  ) => string;
+  fg: (token: ThemeColor, text: string) => string;
   bold: (value: string) => string;
   italic: (value: string) => string;
 };
@@ -172,72 +172,79 @@ function isGoalUpdateActionParams(params: GoalToolParamsInput): params is GoalUp
   return Value.Check(GoalUpdateActionObjectSchema, params);
 }
 
-function formatCallLabel(args: GoalToolParamsInput): string {
-  if (args.action === "get") {
-    return "inspect goal";
-  }
-
-  if (isGoalCreateActionParams(args)) {
-    const objective = args.objective.trim();
-    const budgetSuffix =
-      args.token_budget === undefined ? "" : ` · ${formatTokenValue(args.token_budget)}`;
-    return `${objective.length > 0 ? objective : "create goal"}${budgetSuffix}`;
-  }
-
-  return "mark complete";
-}
-
-function formatCallVerb(
+function getGoalStatusTone(
   theme: GoalToolTheme,
-  context: { isPartial: boolean; isError: boolean },
+  status: GoalToolRecord["status"] | "failed" | "none",
 ): string {
-  if (context.isError) {
-    return theme.bold(theme.fg("error", "goal"));
+  switch (status) {
+    case "complete":
+      return theme.bold(theme.fg("success", "completed"));
+    case "paused":
+      return theme.bold(theme.fg("warning", "paused"));
+    case "budgetLimited":
+      return theme.bold(theme.fg("warning", "budget limited"));
+    case "active":
+      return theme.bold(theme.fg("accent", "active"));
+    case "failed":
+      return theme.bold(theme.fg("error", "failed"));
+    case "none":
+      return theme.fg("muted", "not set");
+    default:
+      return theme.fg("muted", status);
   }
-
-  if (context.isPartial) {
-    return theme.italic(theme.fg("muted", "goal"));
-  }
-
-  return theme.bold(theme.fg("muted", "goal"));
 }
 
-function formatGoalSummary(goal: GoalToolRecord | null): string {
+function formatGoalSummary(
+  theme: GoalToolTheme,
+  goal: GoalToolRecord | null,
+  isError: boolean,
+): string {
   if (goal === null) {
-    return "no goal set";
+    return `${theme.fg("muted", "goal")} ${getGoalStatusTone(theme, isError ? "failed" : "none")}`;
   }
 
-  const parts = [goal.status, formatTokenValue(goal.tokensUsed)];
-  if (goal.tokenBudget !== null) {
-    parts.push(`of ${formatTokenValue(goal.tokenBudget)}`);
-  }
+  const parts = [
+    `${theme.fg("muted", "goal")} ${getGoalStatusTone(theme, isError ? "failed" : goal.status)}`,
+    theme.fg("muted", `${formatTokenValue(goal.tokensUsed)} tokens`),
+  ];
   if (goal.timeUsedSeconds > 0) {
-    parts.push(formatDuration(goal.timeUsedSeconds));
+    parts.push(theme.fg("muted", `took ${formatDuration(goal.timeUsedSeconds)}`));
   }
-  return parts.join(" · ");
+  return parts.join(theme.fg("muted", " · "));
 }
 
-function renderExpandedResult(theme: GoalToolTheme, details: GoalToolDetails): string {
-  const lines = [`Action: ${details.action}`];
+function buildExpandedMarkdown(details: GoalToolDetails): string {
+  const lines = ["# Goal"];
   if (details.goal === null) {
-    lines.push("Goal: none");
+    lines.push("\nNo active goal.");
   } else {
-    lines.push(`Status: ${details.goal.status}`);
-    lines.push(`Objective: ${details.goal.objective}`);
-    lines.push(`Time used: ${formatDuration(details.goal.timeUsedSeconds)}`);
-    lines.push(`Tokens used: ${formatTokenValue(details.goal.tokensUsed)}`);
+    lines.push("");
+    lines.push(`- Action: ${details.action}`);
+    lines.push(`- Status: ${details.goal.status}`);
+    lines.push(`- Objective: ${details.goal.objective}`);
+    lines.push(`- Time used: ${formatDuration(details.goal.timeUsedSeconds)}`);
+    lines.push(`- Tokens used: ${formatTokenValue(details.goal.tokensUsed)}`);
     lines.push(
-      `Token budget: ${details.goal.tokenBudget === null ? "none" : formatTokenValue(details.goal.tokenBudget)}`,
+      `- Token budget: ${details.goal.tokenBudget === null ? "none" : formatTokenValue(details.goal.tokenBudget)}`,
     );
     lines.push(
-      `Remaining tokens: ${details.remainingTokens === null ? "unbounded" : formatTokenValue(details.remainingTokens)}`,
+      `- Remaining tokens: ${details.remainingTokens === null ? "unbounded" : formatTokenValue(details.remainingTokens)}`,
     );
   }
   if (details.completionBudgetReport !== null) {
+    lines.push("");
+    lines.push("## Completion");
+    lines.push("");
     lines.push(details.completionBudgetReport);
   }
+  if (details.error !== null) {
+    lines.push("");
+    lines.push("## Error");
+    lines.push("");
+    lines.push(details.error);
+  }
 
-  return lines.map((line) => theme.fg("toolOutput", line)).join("\n");
+  return lines.join("\n");
 }
 
 export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
@@ -250,16 +257,20 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
       "Use action get to inspect goal, action create to start one active goal, and action update only to mark completed goal complete.",
     promptGuidelines: [...GOAL_TOOL_PROMPT_GUIDELINES],
     parameters: GoalToolParams,
-    renderCall(args, theme, context) {
-      const rail = formatToolRail(theme, context);
-      return createTextComponent(
-        context.lastComponent,
-        `${rail}${formatCallVerb(theme, context)} ${theme.fg("text", formatCallLabel(args))}`,
-      );
+    renderCall(_args, _theme, context) {
+      return createTextComponent(context.lastComponent, "");
     },
     renderResult(result, options, theme, context) {
       const details = parseGoalToolDetails(result.details);
       if (context.isError) {
+        if (!options.expanded) {
+          const rail = formatToolRail(theme, context);
+          return createTextComponent(
+            context.lastComponent,
+            `${rail}${formatGoalSummary(theme, details?.goal ?? null, true)}`,
+          );
+        }
+
         return renderToolError(details?.error ?? "goal failed", theme, context.lastComponent);
       }
 
@@ -271,14 +282,21 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
       if (!options.expanded) {
         return createTextComponent(
           context.lastComponent,
-          `${rail}${theme.fg("dim", "↳ ")}${theme.fg("muted", formatGoalSummary(details.goal))}`,
+          `${rail}${formatGoalSummary(theme, details.goal, false)}`,
         );
       }
 
-      return createTextComponent(
-        context.lastComponent,
-        `${renderExpandedResult(theme, details)}\n${rail}${theme.fg("dim", "↳ ")}${theme.fg("muted", formatGoalSummary(details.goal))}`,
+      const container =
+        context.lastComponent instanceof Container ? context.lastComponent : new Container();
+      container.clear();
+      container.addChild(
+        new Markdown(buildExpandedMarkdown(details), 1, 0, getMarkdownTheme(), {
+          color: (text: string) => theme.fg("toolOutput", text),
+        }),
       );
+      container.addChild(new Spacer(1));
+      container.addChild(new Text(`${rail}${formatGoalSummary(theme, details.goal, false)}`, 1, 0));
+      return container;
     },
     execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!Value.Check(GoalToolParams, params)) {

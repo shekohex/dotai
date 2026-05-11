@@ -19,50 +19,63 @@ import { GOAL_TOOL_PROMPT_GUIDELINES } from "./prompts.js";
 import { createGoal } from "./state.js";
 import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
 
-const GoalGetActionParams = Type.Object(
-  {
-    action: Type.Literal("get"),
-  },
-  { additionalProperties: false },
-);
+const GoalToolActionSchema = Type.Union([
+  Type.Literal("get"),
+  Type.Literal("create"),
+  Type.Literal("update"),
+]);
 
-const GoalCreateActionParams = Type.Object(
+const GoalToolParams = Type.Object(
   {
-    action: Type.Literal("create"),
-    objective: Type.String({
-      description: "Concrete objective to pursue until completion.",
-    }),
+    action: GoalToolActionSchema,
+    objective: Type.Optional(
+      Type.String({
+        description: "Concrete objective to pursue until completion.",
+      }),
+    ),
     token_budget: Type.Optional(
       Type.Integer({
         description: "Optional positive integer token budget.",
         minimum: 1,
       }),
     ),
+    status: Type.Optional(
+      StringEnum(["complete"] as const, {
+        description: "Only complete is accepted. Do not call this until no required work remains.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
 
-const GoalUpdateActionParams = Type.Object(
+const GoalGetActionObjectSchema = Type.Object(
+  {
+    action: Type.Literal("get"),
+  },
+  { additionalProperties: false },
+);
+
+const GoalCreateActionObjectSchema = Type.Object(
+  {
+    action: Type.Literal("create"),
+    objective: Type.String(),
+    token_budget: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+);
+
+const GoalUpdateActionObjectSchema = Type.Object(
   {
     action: Type.Literal("update"),
-    status: StringEnum(["complete"] as const, {
-      description: "Only complete is accepted. Do not call this until no required work remains.",
-    }),
+    status: Type.Literal("complete"),
   },
   { additionalProperties: false },
 );
 
-const GoalToolParams = Type.Union([
-  GoalGetActionParams,
-  GoalCreateActionParams,
-  GoalUpdateActionParams,
-]);
-
-const GoalToolActionSchema = Type.Union([
-  Type.Literal("get"),
-  Type.Literal("create"),
-  Type.Literal("update"),
-]);
+type GoalGetActionParams = Static<typeof GoalGetActionObjectSchema>;
+type GoalCreateActionParams = Static<typeof GoalCreateActionObjectSchema>;
+type GoalUpdateActionParams = Static<typeof GoalUpdateActionObjectSchema>;
+type GoalToolParamsInput = Static<typeof GoalToolParams>;
 
 const GoalToolRecordSchema = Type.Object(
   {
@@ -94,7 +107,6 @@ const GoalToolDetailsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-type GoalToolActionParams = Static<typeof GoalToolParams>;
 type GoalToolDetails = Static<typeof GoalToolDetailsSchema>;
 type GoalToolTheme = {
   fg: (
@@ -148,19 +160,31 @@ function parseGoalToolDetails(details: unknown): GoalToolDetails | undefined {
   return Value.Parse(GoalToolDetailsSchema, details);
 }
 
-function formatCallLabel(args: GoalToolActionParams): string {
+function isGoalGetActionParams(params: GoalToolParamsInput): params is GoalGetActionParams {
+  return Value.Check(GoalGetActionObjectSchema, params);
+}
+
+function isGoalCreateActionParams(params: GoalToolParamsInput): params is GoalCreateActionParams {
+  return Value.Check(GoalCreateActionObjectSchema, params);
+}
+
+function isGoalUpdateActionParams(params: GoalToolParamsInput): params is GoalUpdateActionParams {
+  return Value.Check(GoalUpdateActionObjectSchema, params);
+}
+
+function formatCallLabel(args: GoalToolParamsInput): string {
   if (args.action === "get") {
     return "inspect goal";
   }
 
-  if (args.action === "create") {
+  if (isGoalCreateActionParams(args)) {
     const objective = args.objective.trim();
     const budgetSuffix =
       args.token_budget === undefined ? "" : ` · ${formatTokenValue(args.token_budget)}`;
     return `${objective.length > 0 ? objective : "create goal"}${budgetSuffix}`;
   }
 
-  return `mark ${args.status}`;
+  return "mark complete";
 }
 
 function formatCallVerb(
@@ -261,12 +285,13 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
         return Promise.resolve(textResult("get", null, "Invalid goal tool parameters."));
       }
 
-      const actionParams: GoalToolActionParams = Value.Parse(GoalToolParams, params);
-      if (actionParams.action === "get") {
+      const actionParams = Value.Parse(GoalToolParams, params);
+
+      if (isGoalGetActionParams(actionParams)) {
         return Promise.resolve(textResult("get", host.getGoal(), null));
       }
 
-      if (actionParams.action === "create") {
+      if (isGoalCreateActionParams(actionParams)) {
         const result = createGoal(
           host.getGoal(),
           actionParams.objective,
@@ -278,6 +303,10 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
 
         host.setGoal(result.goal, "tool", ctx);
         return Promise.resolve(textResult("create", result.goal, null));
+      }
+
+      if (!isGoalUpdateActionParams(actionParams)) {
+        return Promise.resolve(textResult("get", null, "Invalid goal tool parameters."));
       }
 
       const result = host.completeGoal("tool", ctx);

@@ -275,6 +275,19 @@ describe("goal extension", () => {
     );
   });
 
+  test("goal tool can create new goal after previous goal is complete", async () => {
+    const harness = createGoalHarness();
+
+    await harness.runTool({ action: "create", objective: "first goal" });
+    await harness.runTool({ action: "update", status: "complete" });
+    const created = (await harness.runTool({
+      action: "create",
+      objective: "second goal",
+    })) as { details: Record<string, unknown> };
+
+    expect((created.details.goal as { objective?: string }).objective).toBe("second goal");
+  });
+
   test("command start queues continuation and persists entry", async () => {
     const harness = createGoalHarness();
     await harness.runCommand("ship it");

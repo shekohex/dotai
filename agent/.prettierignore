@@ -1,4 +1,6 @@
 dist/
 .tmp/
 tmp/
+vendor/plannotator-ui/
 *.jsonl
+src/resources/plannotator/*.html

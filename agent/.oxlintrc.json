@@ -11,6 +11,8 @@
     ".pi/extensions/forbid.ts",
     "src/resources/gsd/bin/**",
     "support/pi-test-harness/**",
+    "resources/plannotator/**",
+    "src/extensions/plannotator/generated/**",
     "test/**",
     "**/**/*.test.ts"
   ],

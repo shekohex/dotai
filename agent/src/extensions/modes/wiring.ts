@@ -140,6 +140,7 @@ export function registerModeLifecycleHandlers(
       return;
     }
     await deps.syncFromSelection(pi, ctx, "before_agent_start");
+    deps.appendModeState(pi, ctx, deps.getActiveMode());
   });
 
   pi.on("turn_start", (_event, ctx) => {

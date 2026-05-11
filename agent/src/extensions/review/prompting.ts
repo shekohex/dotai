@@ -24,7 +24,6 @@ export function buildReviewTaskPrompt(input: {
       ? `Project review guidelines:\n${input.projectGuidelines}`
       : undefined,
   ].filter((value): value is string => value !== undefined && value.length > 0);
-
   return [
     "Please perform a code review using the built-in review mode.",
     ...promptSections,

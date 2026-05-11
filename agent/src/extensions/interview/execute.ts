@@ -9,7 +9,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
-import { openBrowserTarget } from "../executor/browser.js";
+import { openBrowserTarget, shouldAutoOpenBrowser } from "../../utils/browser-launch.js";
 import { getErrorMessage, toError } from "./errors.js";
 import { buildAskModelsData, formatModelRef, selectGenerateModels } from "./generation.js";
 import { createGenerationCallbacks } from "./generation-callbacks.js";
@@ -60,14 +60,6 @@ function formatTimeAgo(timestamp: number): string {
 
 function toTerminalHyperlink(url: string, label?: string): string {
   return `\u001B]8;;${url}\u0007${label ?? url}\u001B]8;;\u0007`;
-}
-
-function shouldAutoOpenBrowser(): boolean {
-  return (
-    process.env.SSH_CONNECTION === undefined &&
-    process.env.SSH_CLIENT === undefined &&
-    process.env.SSH_TTY === undefined
-  );
 }
 
 function mergeThemeConfig(

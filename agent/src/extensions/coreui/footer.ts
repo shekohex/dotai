@@ -1,8 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import { GOAL_STATUS_KEY } from "../goal/types.js";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
+import { appendGoalRuntimeStatus } from "./goal-status.js";
 import { shortenHome } from "./path.js";
 import { formatDuration } from "./tps.js";
 import type { CoreUIState } from "./types.js";
@@ -47,7 +49,11 @@ export function bindCoreUI(
       render(width: number): string[] {
         try {
           const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
-          const leftBottom = buildTPSStatus(theme, state);
+          const leftBottom = appendGoalRuntimeStatus(
+            theme,
+            buildTPSStatus(theme, state),
+            footerData.getExtensionStatuses().get(GOAL_STATUS_KEY),
+          );
           const rightTop = buildModelStatus(theme, ctx, pi, state);
           const rightBottom = buildUsageStatus(
             theme,

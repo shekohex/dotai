@@ -15,6 +15,17 @@ const packageDirs = [
   join(vendorRoot, "packages", "review-editor"),
 ];
 
+function isCiEnvironment(): boolean {
+  return process.env.CI === "true";
+}
+
+function runNpmInstall(cwd: string): void {
+  execFileSync("npm", ["install"], {
+    cwd,
+    stdio: "inherit",
+  });
+}
+
 function runNpmBuild(cwd: string): void {
   execFileSync("npm", ["run", "build"], {
     cwd,
@@ -22,9 +33,14 @@ function runNpmBuild(cwd: string): void {
   });
 }
 
-function assertNodeModulesPresent(cwd: string): void {
+function ensureNodeModulesPresent(cwd: string): void {
   const nodeModulesDir = join(cwd, "node_modules");
   if (existsSync(nodeModulesDir)) {
+    return;
+  }
+  if (isCiEnvironment()) {
+    console.log(`[shekohex/agent] Installing vendored UI dependencies in ${cwd}`);
+    runNpmInstall(cwd);
     return;
   }
   throw new Error(
@@ -38,7 +54,7 @@ if (!existsSync(reviewAppDir) || !existsSync(hookAppDir)) {
 }
 
 for (const vendoredPackageDir of [...packageDirs, reviewAppDir, hookAppDir]) {
-  assertNodeModulesPresent(vendoredPackageDir);
+  ensureNodeModulesPresent(vendoredPackageDir);
 }
 
 runNpmBuild(reviewAppDir);

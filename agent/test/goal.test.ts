@@ -17,7 +17,14 @@ interface SentGoalMessage {
 }
 
 function createGoalHarness(
-  options: { idle?: boolean; pendingMessages?: boolean; confirm?: boolean } = {},
+  options: {
+    idle?: boolean;
+    pendingMessages?: boolean;
+    confirm?: boolean;
+    contextUsagePercent?: number | null;
+    contextUsageTokens?: number | null;
+    contextWindow?: number;
+  } = {},
 ) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, GoalEventHandler[]>();
@@ -28,6 +35,9 @@ function createGoalHarness(
     idle: options.idle ?? true,
     pendingMessages: options.pendingMessages ?? false,
     confirm: options.confirm ?? true,
+    contextUsagePercent: options.contextUsagePercent,
+    contextUsageTokens: options.contextUsageTokens,
+    contextWindow: options.contextWindow ?? 1000,
   };
   let commandHandler:
     | ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>)
@@ -150,7 +160,17 @@ function createGoalHarness(
     compact() {},
     cwd: "/tmp",
     fork: async () => ({ cancelled: false }),
-    getContextUsage: () => undefined,
+    getContextUsage: () => {
+      if (runtime.contextUsagePercent === undefined) {
+        return undefined;
+      }
+
+      return {
+        tokens: runtime.contextUsageTokens ?? null,
+        percent: runtime.contextUsagePercent ?? null,
+        contextWindow: runtime.contextWindow,
+      };
+    },
     getSystemPrompt: () => "",
     hasUI: true,
     hasPendingMessages: () => runtime.pendingMessages,
@@ -206,6 +226,10 @@ function createGoalHarness(
     },
     setPendingMessages(pendingMessages: boolean) {
       runtime.pendingMessages = pendingMessages;
+    },
+    setContextUsage(percent: number | null | undefined, tokens: number | null = null) {
+      runtime.contextUsagePercent = percent;
+      runtime.contextUsageTokens = tokens;
     },
     get abortCount() {
       return runtime.abortCount;
@@ -406,6 +430,57 @@ describe("goal extension", () => {
     harness.setIdle(true);
     harness.setPendingMessages(false);
     await waitForContinuationRetry();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("does not continue while context usage is near limit", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("does not continue during compaction but resumes after compaction when usage is unknown", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    await harness.emit("compaction_start", { type: "compaction_start", reason: "overflow" });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+
+    expect(harness.sentMessages).toHaveLength(0);
+
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "overflow",
+      aborted: false,
+      willRetry: false,
+    });
 
     expect(harness.sentMessages).toHaveLength(1);
     expect(harness.sentMessages[0]?.message.details).toEqual({

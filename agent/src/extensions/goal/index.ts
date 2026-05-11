@@ -83,6 +83,7 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
 );
 
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
+const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 100;
 
 function usageChannelTokens(value: number): number {
   if (!Number.isFinite(value)) {
@@ -159,6 +160,7 @@ const CONTINUATION_RETRY_MS = 50;
 
 class GoalRuntime {
   private goal: ThreadGoal | null = null;
+  private isCompacting = false;
   private continuationQueuedFor: string | null = null;
   private continuationScheduledFor: string | null = null;
   private continuationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -430,6 +432,10 @@ class GoalRuntime {
       return;
     }
 
+    if (this.isCompacting || this.isContextNearLimit(ctx)) {
+      return;
+    }
+
     const goalId = this.goal.goalId;
     if (!ctx.isIdle() || ctx.hasPendingMessages()) {
       if (this.continuationScheduledFor === goalId) {
@@ -452,6 +458,16 @@ class GoalRuntime {
     }
 
     this.sendContinuation(this.goal);
+  }
+
+  private isContextNearLimit(ctx: ExtensionContext): boolean {
+    const usage = ctx.getContextUsage();
+    const percent = usage?.percent;
+    if (percent === null || percent === undefined || !Number.isFinite(percent)) {
+      return false;
+    }
+
+    return percent >= CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT;
   }
 
   private async handleSessionStart(
@@ -555,10 +571,12 @@ class GoalRuntime {
   }
 
   private handleSessionBeforeCompact(_event: object, ctx: ExtensionContext): void {
+    this.isCompacting = true;
     this.accountProgress(ctx, false, 0, true);
   }
 
   private handleSessionCompact(_event: object, ctx: ExtensionContext): void {
+    this.isCompacting = false;
     if (this.goal !== null) {
       this.persistGoal(this.goal, "runtime");
     }
@@ -567,6 +585,7 @@ class GoalRuntime {
   }
 
   private handleSessionShutdown(_event: object, ctx: ExtensionContext): void {
+    this.isCompacting = false;
     this.accountProgress(ctx, false, 0, true);
     this.clearContinuationTimer();
     this.stopStatusRefresh();
@@ -631,6 +650,12 @@ class GoalRuntime {
     });
     this.pi.on("session_compact", (event, ctx) => {
       this.handleSessionCompact(event, ctx);
+    });
+    this.pi.on("compaction_start", () => {
+      this.isCompacting = true;
+    });
+    this.pi.on("compaction_end", () => {
+      this.isCompacting = false;
     });
     this.pi.on("session_shutdown", (event, ctx) => {
       this.handleSessionShutdown(event, ctx);

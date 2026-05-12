@@ -1688,6 +1688,31 @@ test("gsd progress --next --force still blocks unresolved verification fail", as
   });
 });
 
+test("gsd progress --next --force still blocks discuss checkpoints", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "DISCUSS-CHECKPOINT.json"),
+    JSON.stringify({ phase: "1" }),
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "progress --next --force",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by discuss checkpoint in phase 1; resume with /gsd discuss-phase 1",
+    level: "warning",
+  });
+});
+
 test("gsd progress --next can route discuss-phase without workflow session", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -2258,6 +2283,28 @@ test("gsd next blocks paused checkpoint markers before routing", async () => {
   expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
   expect(notifications.at(-1)).toEqual({
     message: "Next blocked by .continue-here.md; resume pending work before /gsd next",
+    level: "warning",
+  });
+});
+
+test("gsd next force still blocks discuss checkpoints before routing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "DISCUSS-CHECKPOINT.json"),
+    JSON.stringify({ phase: "1" }),
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("next --force", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by discuss checkpoint in phase 1; resume with /gsd discuss-phase 1",
     level: "warning",
   });
 });

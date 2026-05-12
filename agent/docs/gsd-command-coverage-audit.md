@@ -461,7 +461,7 @@ Differences:
 
 ### `progress`
 
-Coverage: 69/100
+Coverage: 70/100
 
 Upstream behavior:
 
@@ -476,6 +476,7 @@ Upstream behavior:
 - parses routed flags explicitly, supports local `progress --next`, and rejects unsupported `--do`, `--forensic`, malformed `--phase`, and unsupported standalone phase overrides instead of silently degrading. `src/extensions/gsd/args.ts`, `src/extensions/gsd/progress-args.ts`
 - `progress --next` now routes into supported lifecycle actions with earliest-incomplete-phase semantics, and requires authoritative local `*-UAT.md` `status: complete` before dispatching `/gsd complete-milestone`; legacy verification-only state stays on `/gsd verify-work`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - command-level coverage now also proves the `progress --next --force` alias preserves `/gsd next` safety gates for `.continue-here.md`, paused state, and unresolved verification FAIL, matching current local docs instead of implying `--force` can bulldoze those blockers. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
+- command-level coverage now also proves the `progress --next --force` alias preserves discuss-checkpoint blocking, not just `.continue-here.md`, paused-state, and verification-fail gates. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - command-level coverage now also proves the `progress --next` alias preserves `/gsd next` no-session routing semantics: local `discuss-phase` and `plan-phase` routes still dispatch without workflow session support, while workflow-native `verify-work` still fails closed. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - `progress --next --phase` now has explicit command-level regression coverage for padded/unpadded phase overrides, confirming that routed progress honors the same normalized phase matching as `/gsd next` instead of false-rejecting `02` for phase `2`. `test/gsd/commands.test.ts`
 - progress math now unions completed plan IDs across roadmap and snapshot sources under normalized phase keys, avoiding mixed brownfield undercounting from roadmap-only or padded-phase layouts. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
@@ -491,7 +492,7 @@ Differences:
 
 ### `next`
 
-Coverage: 67/100
+Coverage: 68/100
 
 Upstream behavior:
 
@@ -503,6 +504,7 @@ Local behavior:
 - command path now also runs pre-routing safety gates for paused state, `.planning/.continue-here.md`, discuss checkpoints, and unresolved verification FAIL states before dispatching. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`
 - command-level coverage now directly proves paused-state and `.continue-here.md` fail-closed behavior before routing, instead of relying only on route-unit coverage for those safety gates. `test/gsd/commands.test.ts`
 - command-level coverage now also proves `--force` does not bypass `.continue-here.md`, paused-state, or unresolved verification-FAIL safety gates, matching the documented local contract that `--force` only bypasses blocked/error `STATE.md` status. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
+- command-level coverage now also proves active discuss checkpoints still block `/gsd next --force`, matching the documented local safety contract instead of relying only on route-level unit tests. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - no-session command execution now still allows local `discuss-phase` and `plan-phase` routing instead of blanket session gating; workflow-launched routes fail closed on missing session primitives, with command-level coverage now proving `execute-phase`, `verify-work`, and `complete-milestone` boundaries. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`
 - non-workflow helper path still keeps deterministic pointer mutation via `computeNext()` for local roadmap/state callers. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/runtime.ts`
 - command path now also has direct fail-closed proof for empty-roadmap planning trees, and stale pre-routing `computeNext()` fallback logic was removed so slash-command behavior follows routed `resolveNextRoute()` decisions only. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`

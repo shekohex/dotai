@@ -83,7 +83,7 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
 );
 
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
-const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 100;
+const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
 
 function usageChannelTokens(value: number): number {
   if (!Number.isFinite(value)) {

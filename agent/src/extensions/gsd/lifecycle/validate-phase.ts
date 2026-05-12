@@ -71,10 +71,34 @@ function resolveValidationRowStatus(
   if (fileExists === "❌") {
     return "MISSING";
   }
+  if (!hasAutomatedRunner) {
+    return "MISSING";
+  }
   if (hasAutomatedRunner && (hasVerificationEvidence || hasUatEvidence)) {
     return "COVERED";
   }
   return "PARTIAL";
+}
+
+function buildWaveZeroItems(
+  selection: NonNullable<ReturnType<typeof resolveValidatePhaseSelection>["selection"]>,
+  hasAutomatedRunner: boolean,
+  hasVerificationEvidence: boolean,
+  hasUatEvidence: boolean,
+): string[] {
+  const items: string[] = [];
+  if (!hasAutomatedRunner) {
+    items.push("- [ ] Install or confirm test runner before claiming automated coverage");
+  }
+  if (hasAutomatedRunner && !hasVerificationEvidence && !hasUatEvidence) {
+    items.push(
+      `- [ ] Add first automated verification command for phase ${selection.phase.number} before claiming COVERED status`,
+    );
+  }
+  if (items.length === 0) {
+    items.push("Existing infrastructure covers all phase requirements.");
+  }
+  return items;
 }
 
 function buildTaskRows(
@@ -282,9 +306,12 @@ function buildValidationDraft(
     hasVerificationEvidence,
     hasUatEvidence,
   );
-  const waveZeroItems = hasAutomatedRunner
-    ? ["Existing infrastructure covers all phase requirements."]
-    : ["- [ ] Install or confirm test runner before claiming automated coverage"];
+  const waveZeroItems = buildWaveZeroItems(
+    selection,
+    hasAutomatedRunner,
+    hasVerificationEvidence,
+    hasUatEvidence,
+  );
   const manualVerificationRows = buildManualVerificationRows(auditUat, selection);
 
   return [

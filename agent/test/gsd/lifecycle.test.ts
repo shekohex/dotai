@@ -5972,6 +5972,42 @@ Plans:
     );
   });
 
+  it("validate-phase marks missing automation when no test runner is detected", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      [
+        "---",
+        "phase: 02",
+        "plan: 01",
+        "type: implementation",
+        "wave: 1",
+        "depends_on: []",
+        "files_modified: [src/build.ts]",
+        "autonomous: true",
+        "must_haves: [done]",
+        "---",
+      ].join("\n") + "\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+
+    const draft = readFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "utf8",
+    );
+    expect(draft).toContain(
+      "| 02-01 | 01 | 1 | REQ-2 | — | Pending workflow audit | unknown | `not detected` | ✅ | MISSING |",
+    );
+    expect(draft).toContain(
+      "- [ ] Install or confirm test runner before claiming automated coverage",
+    );
+  });
+
   it("validate-phase preserves existing validation artifact when helper target is update", async () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });

@@ -430,7 +430,7 @@ Differences:
 
 ### `validate-phase`
 
-Coverage: 71/100
+Coverage: 72/100
 
 Upstream behavior:
 
@@ -445,6 +445,7 @@ Local behavior:
 - local handler now consumes helper preflight before workflow launch and fails closed when helper reports blocked config/state, ambiguous validation inventory, or malformed backend output instead of spawning a doomed workflow session. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 - helper-approved create path now pre-seeds canonical `*-VALIDATION.md` draft artifact before workflow launch, with deterministic phase metadata, basic test-infrastructure detection, and per-plan verification rows grounded in actual local plan `wave`, `requirements`, and summary presence instead of placeholders. Existing canonical validation artifacts remain untouched on update path. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 - draft seeding now also imports existing unresolved verification/UAT debt through helper-backed `audit-uat`, populating `Manual-Only Verifications` rows from real local artifacts instead of placeholder “None yet” output when human follow-up already exists. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`, `test/gsd/uat.test.ts`
+- missing automation is now classified more honestly: completed tasks without a detected test runner seed `MISSING` validation rows and concrete Wave 0 work, while runner-present phases with no verification evidence stay `PARTIAL`. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 
 Differences:
 

@@ -163,7 +163,23 @@ function normalizeSummaryPlanId(fileName) {
   return String(fileName).replace(/-SUMMARY\.md$/i, "");
 }
 
-function buildValidatePhaseReadiness(phaseInfo, roadmapPhase) {
+function resolveValidatePhaseState(phaseInfo, validationPaths) {
+  const summaryCount = Array.isArray(phaseInfo?.summaries) ? phaseInfo.summaries.length : 0;
+  const validationCount = Array.isArray(validationPaths) ? validationPaths.length : 0;
+  if (summaryCount === 0) {
+    return "C";
+  }
+  return validationCount > 0 ? "A" : "B";
+}
+
+function buildValidatePhaseReadiness(config, phaseInfo, roadmapPhase) {
+  if (config?.nyquist_validation === false) {
+    return {
+      ready: false,
+      reason: "Nyquist validation is disabled in config (workflow.nyquist_validation=false)",
+    };
+  }
+
   if (!roadmapPhase?.found) {
     return {
       ready: false,
@@ -1036,7 +1052,6 @@ function cmdInitValidatePhase(cwd, phase, raw) {
   const requirements = roadmapPhase?.section
     ? extractRoadmapRequirementsFromSection(roadmapPhase.section)
     : [];
-  const readiness = buildValidatePhaseReadiness(phaseInfo, roadmapPhase);
   const phaseFiles = phaseInfo?.directory ? fs.readdirSync(phaseInfo.directory).sort() : [];
   const summaryPaths = (phaseInfo?.summaries || []).map((file) =>
     toPosixPath(path.join(phaseInfo.directory, file)),
@@ -1068,6 +1083,8 @@ function cmdInitValidatePhase(cwd, phase, raw) {
     phasePrefix,
     validationPaths,
   );
+  const validationState = resolveValidatePhaseState(phaseInfo, validationPaths);
+  const readiness = buildValidatePhaseReadiness(config, phaseInfo, roadmapPhase);
 
   if (readiness.ready && validationTarget.failure_reason !== null) {
     readiness.ready = false;
@@ -1083,6 +1100,8 @@ function cmdInitValidatePhase(cwd, phase, raw) {
     phase_number: roadmapPhase?.phase_number || null,
     phase_name: roadmapPhase?.phase_name || null,
     phase_goal: roadmapPhase?.goal || null,
+    nyquist_validation_enabled: config.nyquist_validation !== false,
+    validation_state: validationState,
     phase_requirements: requirements,
     summary_count: summaryPaths.length,
     verification_count: verificationPaths.length,

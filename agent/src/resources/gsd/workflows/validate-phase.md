@@ -35,12 +35,13 @@ Core rules:
 Recommended execution shape:
 
 1. Resolve selected phase via `node "$GSD_TOOLS_PATH" init validate-phase "<phase>"`.
-2. Treat helper output as authoritative for readiness, target path, target mode, roadmap goal, and requirements in this slice.
-3. If helper returns `ready: false`, stop with its `failure_reason`. Do not write placeholder validation output.
-4. Read all helper-reported `summary_paths`.
-5. Read helper-reported `verification_paths` and `uat_paths` when present.
-6. If evidence is too weak to validate truthfully, stop with explicit gap summary instead of creating optimistic template output.
-7. Otherwise create or update helper-reported `validation_target_path` according to helper-reported `validation_target_mode`, with concrete validation findings and clear pass/gap status.
+2. Treat helper output as authoritative for readiness, validation state, target path, target mode, roadmap goal, and requirements in this slice.
+3. If helper reports `nyquist_validation_enabled: false`, stop with its `failure_reason`. Do not continue validation authoring.
+4. If helper returns `ready: false`, stop with its `failure_reason`. Do not write placeholder validation output.
+5. Read all helper-reported `summary_paths`.
+6. Read helper-reported `verification_paths` and `uat_paths` when present.
+7. If evidence is too weak to validate truthfully, stop with explicit gap summary instead of creating optimistic template output.
+8. Otherwise create or update helper-reported `validation_target_path` according to helper-reported `validation_target_mode`, with concrete validation findings and clear pass/gap status.
 
 Explicit deferrals in this slice:
 

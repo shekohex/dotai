@@ -22,6 +22,7 @@ Execution model in this slice:
 - handler fails closed when selected local phase is not complete enough for validation contract
 - bundled workflow owns validation review and artifact-writing contract
 - bundled workflow should use `node "$GSD_TOOLS_PATH" init validate-phase "<phase>"` as deterministic preflight
+- helper preflight also exposes `nyquist_validation_enabled` and `validation_state` for deterministic config/state branching
 - do not use native template-writer shortcut as authoritative path
 
 Contract notes:

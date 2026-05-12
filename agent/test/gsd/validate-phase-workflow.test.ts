@@ -48,6 +48,8 @@ describe("validate-phase workflow contracts", () => {
       ready: boolean;
       failure_reason: string | null;
       phase_goal: string | null;
+      nyquist_validation_enabled: boolean;
+      validation_state: string;
       phase_requirements: string[];
       summary_count: number;
       verification_count: number;
@@ -61,6 +63,8 @@ describe("validate-phase workflow contracts", () => {
     expect(result.ready).toBe(true);
     expect(result.failure_reason).toBeNull();
     expect(result.phase_goal).toBe("Ship feature");
+    expect(result.nyquist_validation_enabled).toBe(true);
+    expect(result.validation_state).toBe("B");
     expect(result.phase_requirements).toEqual(["REQ-2", "REQ-3"]);
     expect(result.summary_count).toBe(2);
     expect(result.verification_count).toBe(1);
@@ -92,6 +96,7 @@ describe("validate-phase workflow contracts", () => {
       ready: boolean;
       failure_reason: string | null;
       validation_exists: boolean;
+      validation_state: string;
       validation_target_path: string | null;
       validation_target_mode: string | null;
     };
@@ -99,8 +104,57 @@ describe("validate-phase workflow contracts", () => {
     expect(result.ready).toBe(true);
     expect(result.failure_reason).toBeNull();
     expect(result.validation_exists).toBe(true);
+    expect(result.validation_state).toBe("A");
     expect(result.validation_target_path).toBe(".planning/phases/2-build/02-VALIDATION.md");
     expect(result.validation_target_mode).toBe("update");
+  });
+
+  it("init validate-phase reports state C for non-executed phase", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{}\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      ["### Phase 2: Build", "", "Plans:", "- [ ] 02-01: Implement feature"].join("\n"),
+    );
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      validation_state: string;
+    };
+
+    expect(result.ready).toBe(false);
+    expect(result.validation_state).toBe("C");
+    expect(result.failure_reason).toBe("phase 2 has no SUMMARY.md artifacts");
+  });
+
+  it("init validate-phase fails closed when nyquist validation is disabled", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      JSON.stringify({ workflow: { nyquist_validation: false } }) + "\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      ["### Phase 2: Build", "", "Plans:", "- [ ] 02-01: Implement feature"].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      nyquist_validation_enabled: boolean;
+      validation_state: string;
+    };
+
+    expect(result.ready).toBe(false);
+    expect(result.nyquist_validation_enabled).toBe(false);
+    expect(result.validation_state).toBe("B");
+    expect(result.failure_reason).toBe(
+      "Nyquist validation is disabled in config (workflow.nyquist_validation=false)",
+    );
   });
 
   it("init validate-phase fails closed for ambiguous validation artifacts", () => {

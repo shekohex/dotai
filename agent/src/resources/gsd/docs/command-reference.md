@@ -114,7 +114,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   use when you need local artifact summary without opening docs
   examples: `/gsd stats table`, `/gsd stats json`
 - `/gsd health`
-  flags: `--repair`, `--context`, `--tokens-used <int>`, `--context-window <int>`
+  flags: `--repair`, `--context`, `--tokens-used <int>`, `--tokens-used=<int>`, `--context-window <int>`, `--context-window=<int>`
   bare `--context` derives current session token usage when available and can derive window from session or `.planning/config.json`; if token usage is unavailable it reports unknown instead of guessing
   `--tokens-used` and `--context-window` require `--context`; `--repair` and `--context` cannot be combined in one run
 - `/gsd status`

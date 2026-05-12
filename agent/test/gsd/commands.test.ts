@@ -350,6 +350,15 @@ test("gsd health parser accepts bare context mode", () => {
   });
 });
 
+test("gsd health parser accepts equals-form context counters", () => {
+  expect(parseGsdCommandArgs("health --context --tokens-used=650 --context-window=1000")).toEqual({
+    subcommand: "health",
+    context: true,
+    tokensUsed: "650",
+    contextWindow: "1000",
+  });
+});
+
 test("gsd status routes to subagent status handler", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

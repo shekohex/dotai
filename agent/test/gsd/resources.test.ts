@@ -198,6 +198,9 @@ describe("gsd bundled resources", () => {
       "variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`",
     );
     expect(reference).toContain(
+      "flags: `--repair`, `--context`, `--tokens-used <int>`, `--tokens-used=<int>`, `--context-window <int>`, `--context-window=<int>`",
+    );
+    expect(reference).toContain(
       "`--force` only bypasses blocked/error `STATE.md` status gate; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing",
     );
   });

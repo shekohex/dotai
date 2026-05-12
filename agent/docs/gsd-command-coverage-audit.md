@@ -59,7 +59,7 @@ Implemented locally:
 | `stats`              | TS-native instant command          | `stats`                        |       72 |
 | `health`             | TS-native instant command          | `health`                       |       75 |
 | `status`             | local-only runtime monitor         | none                           |       52 |
-| `help`               | local docs viewer                  | `help`                         |       70 |
+| `help`               | local docs viewer                  | `help`                         |       71 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
 
@@ -610,7 +610,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 70/100
+Coverage: 71/100
 
 Upstream behavior:
 
@@ -627,6 +627,7 @@ Local behavior:
 - test guardrails now also ensure every runtime-advertised autocomplete flag remains represented in canonical help text, reducing future doc/runtime drift when command flags change. `test/gsd/resources.test.ts`
 - runtime autocomplete now includes `plan-phase --gaps` and `--reviews`, closing a real help/runtime drift where docs and parser supported those routes but interactive completion did not advertise them. `src/extensions/gsd/autocomplete.ts`, `test/gsd/commands.test.ts`
 - health help text now documents actual runtime flag constraints instead of implying all listed flags compose freely: `--tokens-used` / `--context-window` require `--context`, and `--repair` cannot be combined with `--context`. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
+- health help text now also documents both spaced and equals-form counter flags (`--tokens-used=<int>`, `--context-window=<int>`) that the parser already accepts, preventing under-documented supported syntax on a command whose boundary wording is otherwise tightly guarded. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`, `test/gsd/resources.test.ts`
 - `/gsd status` help wording now matches real runtime behavior by describing active local GSD subagent/session status rather than implying a generic detached service-health command. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`
 - `/gsd progress` help now reflects current fail-closed behavior in headless/no-session contexts instead of implying workflow launch is unconditional. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - `/gsd progress` help now also documents core prelaunch artifact gates, matching runtime fail-closed behavior when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`

@@ -176,6 +176,20 @@ describe("gsd bundled resources", () => {
     );
   });
 
+  it("keeps help unsupported upstream catalog aligned with audit missing command list", () => {
+    const reference = loadBundledDoc("command-reference.md");
+    const audit = readFileSync(join(process.cwd(), "docs/gsd-command-coverage-audit.md"), "utf8");
+    const missingSection = extractAuditSection(
+      audit,
+      "Missing non-namespace commands:",
+      "Upstream source roster:",
+    );
+
+    for (const command of extractBacktickedValues(missingSection)) {
+      expect(reference).toContain(`\`${command}\``);
+    }
+  });
+
   it("keeps coverage audit implemented and missing command sections aligned with runtime surface", () => {
     const audit = readFileSync(join(process.cwd(), "docs/gsd-command-coverage-audit.md"), "utf8");
     const implementedSection = extractAuditSection(

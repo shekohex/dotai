@@ -42,7 +42,7 @@ Implemented locally:
 | `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            72 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            72 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
-| `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
+| `health`             |            76 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            52 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            71 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -105,11 +105,32 @@ Implemented locally:
     - `npm run lint`
     - `npm run format:check`
 - current state:
-  - green at 791 tests after latest `next` canonical-UAT scoping slice
+  - green at 797 tests after latest `help` / `health` boundary slices
 - remaining work:
   - must rerun full gates again before any future completion claim
 
 ## Lowest-Score Command Evidence Map
+
+### `health` (`76`)
+
+- runtime:
+  - `src/extensions/gsd/instant/health.ts`
+  - `src/extensions/gsd/state/health.ts`
+- direct proofs:
+  - `test/gsd/commands.test.ts`
+  - `test/gsd/instant.test.ts`
+  - `test/gsd/brownfield.test.ts`
+  - `test/gsd/health-state.test.ts`
+  - `test/gsd/health-summary-paths.test.ts`
+- covered now:
+  - bare `--context` session/config/default-window fallback
+  - unknown token-usage honesty
+  - malformed config survives as broken output
+  - detailed repair rendering
+  - hot-path local summary scoping
+  - missing or flag-like `--tokens-used` / `--context-window` values rejected explicitly
+- weakest remaining areas:
+  - richer repair/context parity still partial
 
 ### `status` (`52`)
 

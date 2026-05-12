@@ -359,6 +359,29 @@ test("gsd health parser accepts equals-form context counters", () => {
   });
 });
 
+test("gsd health parser rejects missing context counter values explicitly", () => {
+  expect(parseGsdCommandArgs("health --context --tokens-used")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError: "Unsupported /gsd health flag: --tokens-used requires a value.",
+  });
+  expect(parseGsdCommandArgs("health --context --tokens-used=")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError: "Unsupported /gsd health flag: --tokens-used requires a value.",
+  });
+  expect(parseGsdCommandArgs("health --context --context-window")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError: "Unsupported /gsd health flag: --context-window requires a value.",
+  });
+  expect(parseGsdCommandArgs("health --context --context-window=")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError: "Unsupported /gsd health flag: --context-window requires a value.",
+  });
+});
+
 test("gsd status routes to subagent status handler", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

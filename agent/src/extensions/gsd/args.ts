@@ -2,6 +2,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { GsdSubcommand } from "./commands.js";
 import { parseExecutePhaseArgs } from "./execute-phase-args.js";
+import { parseHealthArgs } from "./health-args.js";
 import { parseNextArgs } from "./next-args.js";
 import { parseProgressArgs } from "./progress-args.js";
 import { parseSecurePhaseArgs } from "./secure-phase-args.js";
@@ -590,63 +591,6 @@ function parsePlanPhaseArgs(tokens: string[]): GsdCommandArgs {
   });
 }
 
-function parseHealthArgs(tokens: string[]): GsdCommandArgs {
-  let repair = false;
-  let context = false;
-  let tokensUsed: string | undefined;
-  let contextWindow: string | undefined;
-  let unsupportedModeError: string | undefined;
-
-  for (let index = 1; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token === "--repair") {
-      repair = true;
-      continue;
-    }
-    if (token === "--context") {
-      context = true;
-      continue;
-    }
-    if (token === "--tokens-used") {
-      tokensUsed = normalizeFreeform(tokens[index + 1]);
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--tokens-used=")) {
-      tokensUsed = normalizeFreeform(token.slice("--tokens-used=".length));
-      continue;
-    }
-    if (token === "--context-window") {
-      contextWindow = normalizeFreeform(tokens[index + 1]);
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--context-window=")) {
-      contextWindow = normalizeFreeform(token.slice("--context-window=".length));
-      continue;
-    }
-    unsupportedModeError ??= `Unsupported /gsd health flag: ${token}.`;
-  }
-
-  if (!context && (tokensUsed !== undefined || contextWindow !== undefined)) {
-    unsupportedModeError ??=
-      "Unsupported /gsd health context mode: add --context when passing context utilization flags.";
-  }
-  if (repair && context) {
-    unsupportedModeError ??=
-      "Unsupported /gsd health mode: choose either --repair or --context per run.";
-  }
-
-  return validateParsedArgs({
-    subcommand: "health",
-    ...(repair ? { repair: true } : {}),
-    ...(context ? { context: true } : {}),
-    ...(tokensUsed === undefined ? {} : { tokensUsed }),
-    ...(contextWindow === undefined ? {} : { contextWindow }),
-    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
-  });
-}
-
 export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const subcommand = tokens[0];
@@ -697,7 +641,7 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   }
 
   if (subcommand === "health") {
-    return parseHealthArgs(tokens);
+    return parseHealthArgs(tokens, { normalizeFreeform, validateParsedArgs });
   }
 
   if (subcommand === "execute-phase") {

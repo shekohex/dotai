@@ -584,6 +584,38 @@ test("gsd status headless output ignores non-GSD child sessions", async () => {
   });
 });
 
+test("gsd status headless output counts idle subagents explicitly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  setGsdSubagentSdkFactoryForTests(
+    () =>
+      ({
+        list: () => [
+          {
+            sessionId: "child-1",
+            sessionPath: "/tmp/child-1.jsonl",
+            name: "gsd-planner",
+            task: "plan phase",
+            status: "idle",
+            startedAt: Date.now() - 6_000,
+            activity: { label: "idle", detail: "Waiting for follow-up input" },
+          },
+        ],
+      }) as never,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  expect(command).toBeTruthy();
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "1 total · 1 idle\n\ngsd-planner: idle · 0:06 · Waiting for follow-up input",
+    level: "info",
+  });
+});
+
 test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("plan-phase 2")).toEqual({ subcommand: "plan-phase", phase: "2" });
   expect(parseGsdCommandArgs("plan-phase")).toEqual({ subcommand: "plan-phase" });

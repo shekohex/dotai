@@ -589,7 +589,7 @@ Differences:
 
 ### `status`
 
-Coverage: 52/100
+Coverage: 53/100
 
 Upstream behavior:
 
@@ -603,6 +603,7 @@ Local behavior:
 - direct command/UI proofs now also cover `cancelled` labeling and detail truncation, confirming both renderers preserve compact truthful summaries for long activity strings rather than overflowing output or collapsing cancelled runs into generic status text. `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
 - runtime now trims whitespace-only activity labels before choosing display status, so blank subagent activity metadata falls back to real runtime status (`running`, etc.) instead of rendering empty label segments in plain-text output. `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`
 - status source now filters raw child-session listings down to actual local GSD workers (`gsd-*`, `codebase-mapper:*`, `intel-updater:*`), so unrelated detached sessions no longer leak into `/gsd status` despite help/docs promising GSD-only activity. `src/extensions/gsd/subagents.ts`, `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
+- summary counts now report active `idle` workers explicitly instead of collapsing them into bare `N total`, so `/gsd status` stays truthful for paused-awaiting-input local sessions in both headless and UI renderers. `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
 - UI path now has direct panel-render proof for live status summary, activity detail rendering, and close/help footer text. `test/gsd/ui.test.ts`
 
 Assessment:

@@ -61,6 +61,7 @@ function sortSubagents(subagents: RuntimeSubagent[]): RuntimeSubagent[] {
 
 function buildStatusSummary(subagents: RuntimeSubagent[]): string {
   const runningCount = subagents.filter((subagent) => subagent.status === "running").length;
+  const idleCount = subagents.filter((subagent) => subagent.status === "idle").length;
   const doneCount = subagents.filter(
     (subagent) =>
       subagent.status === "completed" ||
@@ -71,6 +72,7 @@ function buildStatusSummary(subagents: RuntimeSubagent[]): string {
   return [
     `${subagents.length} total`,
     runningCount > 0 ? `${runningCount} running` : undefined,
+    idleCount > 0 ? `${idleCount} idle` : undefined,
     doneCount > 0 ? `${doneCount} done` : undefined,
   ]
     .filter((value): value is string => value !== undefined)

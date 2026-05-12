@@ -132,7 +132,7 @@ Implemented locally:
 - weakest remaining areas:
   - richer repair/context parity still partial
 
-### `status` (`52`)
+### `status` (`53`)
 
 - runtime:
   - `src/extensions/gsd/instant/status.ts`
@@ -146,6 +146,7 @@ Implemented locally:
 - deterministic oldest-first ordering
 - UI live panel rendering
 - non-GSD child sessions filtered out from both headless and UI output
+- idle subagents counted explicitly in both headless and UI summaries
 - weakest remaining areas:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display

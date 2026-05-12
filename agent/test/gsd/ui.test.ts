@@ -369,4 +369,37 @@ describe("gsd ui custom components", () => {
     expect(rendered).not.toContain("worker");
     expect(rendered).not.toContain("Should stay out of /gsd status");
   });
+
+  it("status command UI counts idle subagents explicitly", async () => {
+    let rendered = "";
+    setGsdSubagentSdkFactoryForTests(
+      () =>
+        ({
+          list: () => [
+            {
+              sessionId: "child-1",
+              sessionPath: "/tmp/child-1.jsonl",
+              name: "gsd-planner",
+              task: "plan phase",
+              status: "idle",
+              startedAt: Date.now() - 6_000,
+              activity: { label: "idle", detail: "Waiting for follow-up input" },
+            },
+          ],
+        }) as never,
+    );
+    await handleGsdStatus({} as never, {
+      cwd: createRoot(),
+      hasUI: true,
+      ui: {
+        notify() {},
+        async custom(custom: Parameters<typeof renderCustomComponent>[0]) {
+          rendered = await renderCustomComponent(custom);
+        },
+      },
+    });
+
+    expect(rendered).toContain("1 total · 1 idle");
+    expect(rendered).toContain("gsd-planner · idle · 0:06 · Waiting for follow-up input");
+  });
 });

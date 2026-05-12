@@ -67,6 +67,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   flags: `--phase <phase>`, `--assumptions`, `--auto`, `--all`, `--chain`, `--text`
 - `/gsd plan-phase [phase]`
   flags: `--phase <phase>`, `--research-phase <phase>`, `--research`, `--skip-research`, `--skip-verify`, `--gaps`, `--reviews`, `--view`, `--text`
+  `--view` only works with `--research-phase` in current local slice
   use when phase needs local planning artifacts before execution
   examples: `/gsd plan-phase 2`, `/gsd plan-phase --phase 3.1 --research`
 

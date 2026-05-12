@@ -576,6 +576,11 @@ function parsePlanPhaseArgs(tokens: string[]): GsdCommandArgs {
     }
   }
 
+  if (view && researchPhase === undefined) {
+    unsupportedModeError ??=
+      "Unsupported /gsd plan-phase flag combination: --view only works with --research-phase in Slice 1.";
+  }
+
   return validateParsedArgs({
     subcommand: "plan-phase",
     ...(phase === undefined ? {} : { phase }),

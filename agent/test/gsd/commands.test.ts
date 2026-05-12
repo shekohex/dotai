@@ -656,6 +656,12 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "plan-phase",
     reviews: true,
   });
+  expect(parseGsdCommandArgs("plan-phase --view")).toEqual({
+    subcommand: "plan-phase",
+    view: true,
+    unsupportedModeError:
+      "Unsupported /gsd plan-phase flag combination: --view only works with --research-phase in Slice 1.",
+  });
   expect(parseGsdCommandArgs("plan-phase --research-phase 2 --view")).toEqual({
     subcommand: "plan-phase",
     researchPhase: "2",

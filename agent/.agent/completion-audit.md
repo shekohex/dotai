@@ -249,6 +249,7 @@ Implemented locally:
 - progress and validate prelaunch fail-closed wording now synced
 - direct guards for stats variants and next force safety wording
 - health equals-form counter flags now documented to match accepted parser syntax
+- `plan-phase --view` boundary now documented to require `--research-phase`, matching parser/runtime fail-closed behavior
 - weakest remaining areas:
   - hand-maintained reference breadth still lower than upstream help universe
 

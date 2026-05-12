@@ -2577,6 +2577,12 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
     "fails closed when workflow session support is unavailable in current context",
   );
   expect(content).toContain(
+    "variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`",
+  );
+  expect(content).toContain(
+    "`--force` only bypasses blocked/error `STATE.md` status gate; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing",
+  );
+  expect(content).toContain(
     "fails closed when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing",
   );
   expect(content).toContain(

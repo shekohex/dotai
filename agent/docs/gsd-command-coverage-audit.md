@@ -600,7 +600,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 69/100
+Coverage: 70/100
 
 Upstream behavior:
 
@@ -622,6 +622,7 @@ Local behavior:
 - `/gsd progress` help now also documents core prelaunch artifact gates, matching runtime fail-closed behavior when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - `/gsd validate-phase` help now documents key preflight fail-closed boundaries for config-disabled Nyquist validation and ambiguous/non-canonical `VALIDATION.md` inventory, matching current runtime helper-gated behavior. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/commands.test.ts`
 - `/gsd map-codebase` help now documents that local fast mode only supports `--fast refresh`, matching shipped explicit rejections for `--fast update` and `--fast skip`. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/map-codebase.ts`, `test/gsd/commands.test.ts`
+- direct help-content guardrails now also pin the documented `/gsd stats` output variants and `/gsd next --force` safety contract, reducing drift risk for these hand-maintained parser/runtime reference lines. `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`
 - TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
 - durable non-UI help now has a registered `gsd-help` renderer contract in message rendering. `src/extensions/gsd/ui/messages.ts`, `test/gsd/index.test.ts`
 - focused tests now cover canonical help rendering, durable headless output, runtime/audit guardrails, crosswalk wording, and key local wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`, `test/gsd/index.test.ts`

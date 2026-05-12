@@ -194,6 +194,12 @@ describe("gsd bundled resources", () => {
     expect(reference).toContain(
       "Non-UI `/gsd help` emits durable `gsd-help` message output; registered local renderer is intended handling path.",
     );
+    expect(reference).toContain(
+      "variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`",
+    );
+    expect(reference).toContain(
+      "`--force` only bypasses blocked/error `STATE.md` status gate; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing",
+    );
   });
 
   it("keeps help unsupported upstream catalog aligned with audit missing command list", () => {

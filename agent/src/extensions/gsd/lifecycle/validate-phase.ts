@@ -101,9 +101,27 @@ function buildWaveZeroItems(
   return items;
 }
 
+function resolveValidationTestType(
+  framework: string,
+  hasAutomatedRunner: boolean,
+  hasUatEvidence: boolean,
+): string {
+  if (!hasAutomatedRunner) {
+    return "manual-only";
+  }
+  if (hasUatEvidence) {
+    return "smoke";
+  }
+  if (framework === "vitest" || framework === "jest") {
+    return "unit";
+  }
+  return "unknown";
+}
+
 function buildTaskRows(
   phaseSnapshot: ReturnType<typeof readPlanningSnapshot>["phases"][number] | undefined,
   selection: NonNullable<ReturnType<typeof resolveValidatePhaseSelection>["selection"]>,
+  framework: string,
   quickRunCommand: string,
   hasAutomatedRunner: boolean,
   hasVerificationEvidence: boolean,
@@ -128,7 +146,8 @@ function buildTaskRows(
         hasVerificationEvidence,
         hasUatEvidence,
       );
-      return `| ${plan.id} | ${plan.id.split("-")[1] ?? "--"} | ${waveValue} | ${requirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ${fileExists} | ${status} |`;
+      const testType = resolveValidationTestType(framework, hasAutomatedRunner, hasUatEvidence);
+      return `| ${plan.id} | ${plan.id.split("-")[1] ?? "--"} | ${waveValue} | ${requirementValue} | — | Pending workflow audit | ${testType} | \`${quickRunCommand}\` | ${fileExists} | ${status} |`;
     })
     .join("\n");
 }
@@ -301,6 +320,7 @@ function buildValidationDraft(
   const taskRows = buildTaskRows(
     phaseSnapshot,
     selection,
+    framework,
     quickRunCommand,
     hasAutomatedRunner,
     hasVerificationEvidence,

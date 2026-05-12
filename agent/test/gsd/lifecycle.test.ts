@@ -5911,7 +5911,7 @@ Plans:
     expect(draft).toContain("# Phase 02 — Validation Strategy");
     expect(draft).toContain("| **Framework**          | vitest |");
     expect(draft).toContain(
-      "| 02-01 | 01 | 3 | REQ-LOCAL | — | Pending workflow audit | unknown | `npm test` | ✅ | PARTIAL |",
+      "| 02-01 | 01 | 3 | REQ-LOCAL | — | Pending workflow audit | unit | `npm test` | ✅ | PARTIAL |",
     );
     expect(draft).toContain("_Status: COVERED · PARTIAL · MISSING_");
     expect(draft).toContain("Existing infrastructure covers all phase requirements.");
@@ -5968,6 +5968,9 @@ Plans:
       "utf8",
     );
     expect(draft).toContain(
+      "| 02-01 | 01 | 1 | REQ-LOCAL | — | Pending workflow audit | unit | `npm test` | ✅ | COVERED |",
+    );
+    expect(draft).toContain(
       "| Verify login works on real iPhone | REQ-2 | Needs real-device keyboard behavior | Login succeeds and lands on dashboard |",
     );
   });
@@ -6001,10 +6004,52 @@ Plans:
       "utf8",
     );
     expect(draft).toContain(
-      "| 02-01 | 01 | 1 | REQ-2 | — | Pending workflow audit | unknown | `not detected` | ✅ | MISSING |",
+      "| 02-01 | 01 | 1 | REQ-2 | — | Pending workflow audit | manual-only | `not detected` | ✅ | MISSING |",
     );
     expect(draft).toContain(
       "- [ ] Install or confirm test runner before claiming automated coverage",
+    );
+  });
+
+  it("validate-phase prefers smoke test type when UAT evidence exists", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" }, devDependencies: { vitest: "^4.1.5" } }) +
+        "\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      [
+        "---",
+        "phase: 02",
+        "plan: 01",
+        "type: implementation",
+        "wave: 1",
+        "depends_on: []",
+        "files_modified: [src/build.ts]",
+        "autonomous: true",
+        "must_haves: [done]",
+        "---",
+      ].join("\n") + "\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-UAT.md"),
+      "---\nstatus: partial\n---\n\n## Tests\n\n### 1. Cold start smoke test\n\nexpected: Open app\nresult: [pending]\n",
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+
+    const draft = readFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "utf8",
+    );
+    expect(draft).toContain(
+      "| 02-01 | 01 | 1 | REQ-2 | — | Pending workflow audit | smoke | `npm test` | ✅ | COVERED |",
     );
   });
 

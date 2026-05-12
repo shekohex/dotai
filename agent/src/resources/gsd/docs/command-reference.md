@@ -118,7 +118,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   bare `--context` derives current session token usage when available and can derive window from session or `.planning/config.json`; if token usage is unavailable it reports unknown instead of guessing
   `--tokens-used` and `--context-window` require `--context`; `--repair` and `--context` cannot be combined in one run
 - `/gsd status`
-  shows active local GSD subagent/session status in UI panel or plain text
+  shows active local GSD subagent/session status in UI panel or plain text summary with counts, elapsed time, and activity detail when available
   use when you want current local GSD worker activity, not upstream/global service health
 
 ## Workflow Review

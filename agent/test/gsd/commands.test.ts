@@ -364,7 +364,8 @@ test("gsd status routes to subagent status handler", async () => {
             name: "gsd-planner",
             task: "plan phase",
             status: "running",
-            startedAt: Date.now(),
+            startedAt: Date.now() - 65_000,
+            activity: { label: "planning", detail: "Reviewing roadmap and current plan gaps" },
           },
         ],
       }) as never,
@@ -374,7 +375,11 @@ test("gsd status routes to subagent status handler", async () => {
   expect(command).toBeTruthy();
   await command?.handler("on", createCommandContext(cwd, notifications));
   await command?.handler("status", createCommandContext(cwd, notifications));
-  expect(notifications.at(-1)).toEqual({ message: "gsd-planner: running", level: "info" });
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "1 total · 1 running\n\ngsd-planner: planning · 1:05 · Reviewing roadmap and current plan gaps",
+    level: "info",
+  });
 });
 
 test("gsd status reports no active subagents honestly", async () => {
@@ -392,7 +397,10 @@ test("gsd status reports no active subagents honestly", async () => {
   expect(command).toBeTruthy();
   await command?.handler("on", createCommandContext(cwd, notifications));
   await command?.handler("status", createCommandContext(cwd, notifications));
-  expect(notifications.at(-1)).toEqual({ message: "No GSD subagents active.", level: "info" });
+  expect(notifications.at(-1)).toEqual({
+    message: "0 total\n\nNo GSD subagents active.",
+    level: "info",
+  });
 });
 
 test("gsd status headless output summarizes completed and failed subagents", async () => {
@@ -409,7 +417,7 @@ test("gsd status headless output summarizes completed and failed subagents", asy
             name: "gsd-plan-checker",
             task: "check phase",
             status: "completed",
-            startedAt: Date.now() - 1_000,
+            startedAt: Date.now() - 2_000,
           },
           {
             sessionId: "child-2",
@@ -417,7 +425,8 @@ test("gsd status headless output summarizes completed and failed subagents", asy
             name: "gsd-debugger",
             task: "debug auth",
             status: "failed",
-            startedAt: Date.now() - 2_000,
+            startedAt: Date.now() - 1_000,
+            activity: { detail: "Auth token parser crashed after retry loop" },
           },
         ],
       }) as never,
@@ -428,7 +437,8 @@ test("gsd status headless output summarizes completed and failed subagents", asy
   await command?.handler("on", createCommandContext(cwd, notifications));
   await command?.handler("status", createCommandContext(cwd, notifications));
   expect(notifications.at(-1)).toEqual({
-    message: "gsd-plan-checker: done\ngsd-debugger: failed",
+    message:
+      "2 total · 2 done\n\ngsd-plan-checker: done · 0:02\ngsd-debugger: failed · 0:01 · Auth token parser crashed after retry loop",
     level: "info",
   });
 });

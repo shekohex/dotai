@@ -54,7 +54,11 @@ function colorStatus(theme: Theme, subagent: RuntimeSubagent, label: string): st
   return theme.fg("muted", label);
 }
 
-function buildPanelLines(theme: Theme, subagents: RuntimeSubagent[]): string[] {
+function sortSubagents(subagents: RuntimeSubagent[]): RuntimeSubagent[] {
+  return subagents.toSorted((left, right) => left.startedAt - right.startedAt);
+}
+
+function buildStatusSummary(subagents: RuntimeSubagent[]): string {
   const runningCount = subagents.filter((subagent) => subagent.status === "running").length;
   const doneCount = subagents.filter(
     (subagent) =>
@@ -63,16 +67,40 @@ function buildPanelLines(theme: Theme, subagents: RuntimeSubagent[]): string[] {
       subagent.status === "cancelled",
   ).length;
 
-  const lines = [
-    [
-      `${subagents.length} total`,
-      runningCount > 0 ? `${runningCount} running` : undefined,
-      doneCount > 0 ? `${doneCount} done` : undefined,
-    ]
-      .filter((value): value is string => value !== undefined)
-      .join(" · "),
-    "",
-  ];
+  return [
+    `${subagents.length} total`,
+    runningCount > 0 ? `${runningCount} running` : undefined,
+    doneCount > 0 ? `${doneCount} done` : undefined,
+  ]
+    .filter((value): value is string => value !== undefined)
+    .join(" · ");
+}
+
+function buildPlainTextLines(subagents: RuntimeSubagent[]): string[] {
+  const lines = [buildStatusSummary(subagents), ""];
+
+  if (subagents.length === 0) {
+    lines.push("No GSD subagents active.");
+    return lines;
+  }
+
+  for (const subagent of subagents) {
+    lines.push(
+      [
+        `${subagent.name}: ${formatStatusLabel(subagent)}`,
+        formatElapsed(subagent),
+        summarizeText(subagent.activity?.detail),
+      ]
+        .filter((value): value is string => value !== undefined && value.length > 0)
+        .join(" · "),
+    );
+  }
+
+  return lines;
+}
+
+function buildPanelLines(theme: Theme, subagents: RuntimeSubagent[]): string[] {
+  const lines = [buildStatusSummary(subagents), ""];
 
   if (subagents.length === 0) {
     lines.push("No GSD subagents active.");
@@ -123,9 +151,7 @@ class GsdStatusPanel implements Focusable {
   render(_width: number): string[] {
     const width = this.width;
     const innerWidth = width - 2;
-    const subagents = listGsdSubagents(this.pi, this.ctx).toSorted(
-      (left, right) => left.startedAt - right.startedAt,
-    );
+    const subagents = sortSubagents(listGsdSubagents(this.pi, this.ctx));
     const lines = buildPanelLines(this.theme, subagents);
     const row = (content: string) => {
       const padding = Math.max(0, innerWidth - visibleWidth(content));
@@ -160,14 +186,8 @@ export async function handleGsdStatus(
   ctx: ExtensionCommandContext,
 ): Promise<void> {
   if (!ctx.hasUI) {
-    const subagents = listGsdSubagents(pi, ctx);
-    const summary =
-      subagents.length === 0
-        ? "No GSD subagents active."
-        : subagents
-            .map((subagent) => `${subagent.name}: ${formatStatusLabel(subagent)}`)
-            .join("\n");
-    ctx.ui.notify(summary, "info");
+    const subagents = sortSubagents(listGsdSubagents(pi, ctx));
+    ctx.ui.notify(buildPlainTextLines(subagents).join("\n"), "info");
     return;
   }
 

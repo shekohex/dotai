@@ -39,6 +39,10 @@ function extractImplementedAuditCommands(section: string): string[] {
     });
 }
 
+function normalizeDocumentedFlag(value: string): string {
+  return value.endsWith("=") ? value.slice(0, -1) : value;
+}
+
 describe("gsd bundled resources", () => {
   it("loads shipped docs", () => {
     expect(loadBundledDoc("overview.md")).toContain("# Built-in GSD For Our Agent");
@@ -141,6 +145,22 @@ describe("gsd bundled resources", () => {
 
     for (const { value } of getGsdSubcommands()) {
       expect(reference).toContain(`/gsd ${value}`);
+    }
+  });
+
+  it("keeps command reference flag docs aligned with runtime autocomplete flags", () => {
+    const reference = loadBundledDoc("command-reference.md");
+    const flags = getGsdAutocompleteFlags();
+
+    for (const [subcommand, values] of Object.entries(flags)) {
+      if (values === undefined) {
+        continue;
+      }
+
+      expect(reference).toContain(`/gsd ${subcommand}`);
+      for (const value of values) {
+        expect(reference).toContain(normalizeDocumentedFlag(value));
+      }
     }
   });
 

@@ -575,7 +575,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 61/100
+Coverage: 62/100
 
 Upstream behavior:
 
@@ -589,6 +589,7 @@ Local behavior:
 - command reference now adds concise first-run guidance, quick start, when-to-use notes, and examples for implemented local commands without widening support claims. `src/resources/gsd/docs/command-reference.md`, `test/gsd/ui.test.ts`
 - command reference now includes an explicit upstream-to-local crosswalk for common missing upstream commands and unsupported-command guidance so migration failures are explained rather than implied. `src/resources/gsd/docs/command-reference.md`, `test/gsd/resources.test.ts`
 - help now lists the full current unsupported upstream command catalog, not only a few examples, and test guardrails ensure that every command marked missing in the parity audit also appears in help output. `src/resources/gsd/docs/command-reference.md`, `test/gsd/resources.test.ts`
+- test guardrails now also ensure every runtime-advertised autocomplete flag remains represented in canonical help text, reducing future doc/runtime drift when command flags change. `test/gsd/resources.test.ts`
 - TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
 - durable non-UI help now has a registered `gsd-help` renderer contract in message rendering. `src/extensions/gsd/ui/messages.ts`, `test/gsd/index.test.ts`
 - focused tests now cover canonical help rendering, durable headless output, runtime/audit guardrails, crosswalk wording, and key local wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`, `test/gsd/index.test.ts`

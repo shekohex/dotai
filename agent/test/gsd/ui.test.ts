@@ -211,17 +211,21 @@ describe("gsd ui custom components", () => {
     expect(secondPage).toContain("## Quick Start");
     expect(secondPage).not.toContain("## Debug");
 
-    component.handleInput?.("\u001b[6~");
-    component.handleInput?.("\u001b[6~");
-    component.handleInput?.("\u001b[6~");
+    let sawExecution = false;
+    let sawDebug = false;
 
-    const thirdPage = component.render(100).join("\n");
-    expect(thirdPage).toContain("/gsd secure-phase [phase]");
+    for (let page = 0; page < 8; page += 1) {
+      component.handleInput?.("\u001b[6~");
+      const renderedPage = component.render(100).join("\n");
+      sawExecution ||= renderedPage.includes("/gsd secure-phase [phase]");
+      sawDebug ||= renderedPage.includes("## Debug");
+      if (sawExecution && sawDebug) {
+        break;
+      }
+    }
 
-    component.handleInput?.("\u001b[6~");
-
-    const fourthPage = component.render(100).join("\n");
-    expect(fourthPage).toContain("## Debug");
+    expect(sawExecution).toBe(true);
+    expect(sawDebug).toBe(true);
 
     component.handleInput?.("\u001b[5~");
     component.handleInput?.("\u001b[5~");

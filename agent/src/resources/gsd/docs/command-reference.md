@@ -33,6 +33,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 ## Guardrails
 
 - Local-only command surface. Only commands below supported here.
+- Unknown local `/gsd <name>` subcommands fail closed with warning instead of falling through to dashboard output.
 - Some commands reject unsupported local flags explicitly; others still accept extra tokens or freeform input.
 - Help keeps deferred or workflow-forwarded behavior labeled as such.
 - Non-UI `/gsd help` emits durable `gsd-help` message output; registered local renderer is intended handling path.

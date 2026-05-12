@@ -3001,6 +3001,23 @@ test("gsd dashboard fallback reports pending todo count", async () => {
   });
 });
 
+test("gsd rejects unknown subcommands instead of falling through to dashboard", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("retro", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd command: retro. Run /gsd help.",
+    level: "warning",
+  });
+});
+
 test("gsd help in non-ui mode emits durable command output instead of notification", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

@@ -44,7 +44,7 @@ Implemented locally:
 | `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            54 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
-| `help`               |            71 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
+| `help`               |            72 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 
@@ -233,7 +233,7 @@ Implemented locally:
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
 
-### `help` (`71`)
+### `help` (`72`)
 
 - runtime/docs:
   - `src/extensions/gsd/help.ts`
@@ -249,6 +249,7 @@ Implemented locally:
   - unsupported command catalog
 - autocomplete flag drift guard
 - key local guardrails wording
+- unknown grouped subcommands fail closed instead of falling through to dashboard
 - progress and validate prelaunch fail-closed wording now synced
 - direct guards for stats variants and next force safety wording
 - health equals-form counter flags now documented to match accepted parser syntax

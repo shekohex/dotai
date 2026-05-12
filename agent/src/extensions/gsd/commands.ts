@@ -34,6 +34,13 @@ function parseSubcommand(args: string): GsdSubcommand | undefined {
   return getGsdSubcommands().find((item) => item.value === parsed.subcommand)?.value;
 }
 
+function getRequestedSubcommand(args: string): string | undefined {
+  return args
+    .trim()
+    .split(/\s+/u)
+    .find((token) => token.length > 0);
+}
+
 export function registerGsdCommands(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
     description: "Get Shit Done: /gsd [subcommand]",
@@ -41,6 +48,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       rememberGsdCwd(ctx.cwd);
       const subcommand = parseSubcommand(args);
+      const requestedSubcommand = getRequestedSubcommand(args);
       const parsedArgs = parseGsdCommandArgs(args);
       const settings = getGsdSettings(ctx.cwd);
       if (subcommand === "on") {
@@ -91,7 +99,14 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
           await showGsdHelp(pi, ctx);
           return;
         case undefined:
-          await showGsdDashboard(ctx);
+          if (requestedSubcommand === undefined) {
+            await showGsdDashboard(ctx);
+          } else {
+            ctx.ui.notify(
+              `Unsupported /gsd command: ${requestedSubcommand}. Run /gsd help.`,
+              "warning",
+            );
+          }
       }
     },
   });

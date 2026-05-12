@@ -53,11 +53,11 @@ Implemented locally:
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       90 |
-| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       76 |
-| `progress`           | workflow-launch + local next path  | `progress`                     |       70 |
-| `next`               | local-only instant command         | derived from `progress --next` |       68 |
-| `stats`              | TS-native instant command          | `stats`                        |       69 |
-| `health`             | TS-native instant command          | `health`                       |       74 |
+| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       77 |
+| `progress`           | workflow-launch + local next path  | `progress`                     |       71 |
+| `next`               | local-only instant command         | derived from `progress --next` |       70 |
+| `stats`              | TS-native instant command          | `stats`                        |       71 |
+| `health`             | TS-native instant command          | `health`                       |       75 |
 | `status`             | local-only runtime monitor         | none                           |       48 |
 | `help`               | local docs viewer                  | `help`                         |       69 |
 | `on`                 | local enable toggle                | none                           |      100 |

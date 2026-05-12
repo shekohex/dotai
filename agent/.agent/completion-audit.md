@@ -38,11 +38,11 @@ Implemented locally:
 | `execute-phase`      |            91 | `src/extensions/gsd/lifecycle/execute-phase.ts`              | strong              | completion audit still needed                                |
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
-| `validate-phase`     |            76 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
-| `progress`           |            70 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
-| `next`               |            68 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
-| `stats`              |            69 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
-| `health`             |            74 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
+| `validate-phase`     |            77 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
+| `progress`           |            71 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
+| `next`               |            70 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
+| `stats`              |            71 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
+| `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            48 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            69 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -105,7 +105,7 @@ Implemented locally:
     - `npm run lint`
     - `npm run format:check`
 - current state:
-  - green at 779 tests after latest `next` / `progress` slice
+  - green at 786 tests after latest `health` / `validate-phase` slice
 - remaining work:
   - must rerun full gates again before any future completion claim
 
@@ -128,7 +128,7 @@ Implemented locally:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display
 
-### `next` (`68`)
+### `next` (`70`)
 
 - runtime:
   - `src/extensions/gsd/instant/next.ts`
@@ -146,11 +146,12 @@ Implemented locally:
   - no-session workflow-route fail-closed boundaries
   - local no-session discuss/plan routing
   - padded/unpadded phase normalization
+  - roadmap-scoped plan/summary routing counts
 - weakest remaining areas:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose
 
-### `progress` (`70`)
+### `progress` (`71`)
 
 - runtime:
   - `src/extensions/gsd/lifecycle/progress.ts`
@@ -168,6 +169,7 @@ Implemented locally:
   - `progress --next --force` inherits `next` safety gates at command level
   - `progress --next` preserves no-session local discuss/plan routing semantics
   - `progress --next --force` preserves discuss-checkpoint blocking
+  - `progress --next` preserves roadmap-scoped artifact routing semantics
   - malformed `--phase`
   - explicit unsupported `--do`, `--forensic`
   - brownfield progress math fixes
@@ -175,7 +177,7 @@ Implemented locally:
   - richer upstream report branches still absent
   - likely best next non-local lifecycle target after audit sweep
 
-### `stats` (`69`)
+### `stats` (`71`)
 
 - runtime:
   - `src/extensions/gsd/instant/stats.ts`
@@ -192,11 +194,13 @@ Implemented locally:
   - git/activity enrichment
   - invalid `last_activity` fallback
   - ignores stale non-roadmap snapshot phases
+  - malformed summary ids excluded from completion counts
+  - mixed output mode errors normalized across positional/flag forms
   - truthful `verification_count`, `decisions_count`, `open_blockers`
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
 
-### `help` (`69`)
+### `help` (`70`)
 
 - runtime/docs:
   - `src/extensions/gsd/help.ts`
@@ -213,10 +217,11 @@ Implemented locally:
   - autocomplete flag drift guard
   - key local guardrails wording
   - progress and validate prelaunch fail-closed wording now synced
+  - direct guards for stats variants and next force safety wording
 - weakest remaining areas:
   - hand-maintained reference breadth still lower than upstream help universe
 
-### `validate-phase` (`76`)
+### `validate-phase` (`77`)
 
 - runtime:
   - `src/extensions/gsd/state/validate-phase.ts`
@@ -233,6 +238,7 @@ Implemented locally:
   - malformed helper payload rejection
   - thrown helper failure rejection
   - exact canonical target-path revalidation
+  - omitted-phase fallback across helper-unready higher completed phases
   - deterministic draft scaffolding
   - manual verification debt import
   - test type derivation
@@ -244,15 +250,15 @@ Implemented locally:
 
 Best next runtime slice after audit prep:
 
-1. `stats`
-2. `help`
+1. `status`
+2. `secure-phase`
 3. `health`
 
 Reason:
 
-- `status` now mostly local-only UX proof work
-- `next`, `stats`, and `help` have meaningful guardrails already, but remaining gaps are more about breadth than hidden safety failures
-- `validate-phase`, `next`, and `progress` safety-boundary risk is lower than before; `stats` and `help` now look like better ROI among weaker scores
+- `status` remains by far lowest score and needs direct contract broadening or tighter truthful boundaries
+- `next`, `progress`, `stats`, `help`, `health`, and `validate-phase` all gained recent truth-model or proof slices, reducing immediate hidden-failure risk
+- `secure-phase` may now offer better parity ROI than repeatedly polishing already-improved instant commands
 
 ## Not Completion Yet
 

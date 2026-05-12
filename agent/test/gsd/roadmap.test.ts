@@ -695,6 +695,22 @@ Plans:
     });
   });
 
+  it("ignores malformed summary ids when routing incomplete phases", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-extra-SUMMARY.md"), "junk\n");
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "execute-phase",
+      reason: "phase ready to execute",
+      newPhase: "1",
+    });
+  });
+
   it("blocks next when latest verification failed and no complete UAT resolved it", () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });

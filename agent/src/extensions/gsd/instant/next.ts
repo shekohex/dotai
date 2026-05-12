@@ -92,6 +92,55 @@ function phaseNumbersMatch(left: string, right: string): boolean {
   return canonicalizePhaseNumber(left) === canonicalizePhaseNumber(right);
 }
 
+function normalizeSummaryId(fileName: string): string {
+  return fileName.replace(/-SUMMARY\.md$/u, "");
+}
+
+function normalizePlanArtifactId(value: string): string {
+  const match = value.match(/^(\d+(?:\.\d+)?)-(\d+)$/u);
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return value;
+  }
+
+  return `${canonicalizePhaseNumber(match[1])}-${String(Number.parseInt(match[2], 10))}`;
+}
+
+function countRoadmapMatchingSummaries(
+  phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
+  phase: RoadmapPhase,
+): number {
+  if (phaseSnapshot === undefined) {
+    return 0;
+  }
+
+  if (phase.plans.length === 0) {
+    return phaseSnapshot.summaries.length;
+  }
+
+  const roadmapPlanIds = new Set(phase.plans.map((plan) => normalizePlanArtifactId(plan.id)));
+  return phaseSnapshot.summaries.filter((fileName) =>
+    roadmapPlanIds.has(normalizePlanArtifactId(normalizeSummaryId(fileName))),
+  ).length;
+}
+
+function countRoadmapMatchingPlans(
+  phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
+  phase: RoadmapPhase,
+): number {
+  if (phaseSnapshot === undefined) {
+    return 0;
+  }
+
+  if (phase.plans.length === 0) {
+    return phaseSnapshot.plans.length;
+  }
+
+  const roadmapPlanIds = new Set(phase.plans.map((plan) => normalizePlanArtifactId(plan.id)));
+  return phaseSnapshot.plans.filter((plan) =>
+    roadmapPlanIds.has(normalizePlanArtifactId(plan.fileName.replace(/-PLAN\.md$/u, ""))),
+  ).length;
+}
+
 function readLatestVerificationStatus(
   phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
 ): "passed" | "gaps_found" | "human_needed" | undefined {
@@ -222,14 +271,15 @@ function resolvePhaseStartIndex(
       : phases.findIndex((phase) => phaseNumbersMatch(phase.number, statePhase));
   const earliestIncompletePhaseIndex = phases.findIndex((phase) => {
     const phaseSnapshot = findPhaseSnapshot(snapshot, phase);
-    const totalPlans = Math.max(phase.plans.length, phaseSnapshot?.plans.length ?? 0);
-    const completedPlans = phaseSnapshot?.summaries.length ?? 0;
+    const localPlanCount = countRoadmapMatchingPlans(phaseSnapshot, phase);
+    const totalPlans = phase.plans.length > 0 ? phase.plans.length : localPlanCount;
+    const completedPlans = countRoadmapMatchingSummaries(phaseSnapshot, phase);
     const roadmapPhaseComplete =
       phase.plans.length > 0 && phase.plans.every((plan) => plan.completed);
 
     if (
       roadmapPhaseComplete &&
-      (phaseSnapshot?.plans.length ?? 0) === 0 &&
+      localPlanCount === 0 &&
       completedPlans === 0 &&
       (phaseSnapshot?.verifications.length ?? 0) === 0 &&
       (phaseSnapshot?.uats.length ?? 0) === 0
@@ -311,14 +361,15 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
       continue;
     }
     const phaseSnapshot = findPhaseSnapshot(snapshot, phase);
-    const totalPlans = Math.max(phase.plans.length, phaseSnapshot?.plans.length ?? 0);
-    const completedPlans = phaseSnapshot?.summaries.length ?? 0;
+    const localPlanCount = countRoadmapMatchingPlans(phaseSnapshot, phase);
+    const totalPlans = phase.plans.length > 0 ? phase.plans.length : localPlanCount;
+    const completedPlans = countRoadmapMatchingSummaries(phaseSnapshot, phase);
     const roadmapPhaseComplete =
       phase.plans.length > 0 && phase.plans.every((plan) => plan.completed);
 
     if (
       roadmapPhaseComplete &&
-      (phaseSnapshot?.plans.length ?? 0) === 0 &&
+      localPlanCount === 0 &&
       completedPlans === 0 &&
       (phaseSnapshot?.verifications.length ?? 0) === 0 &&
       (phaseSnapshot?.uats.length ?? 0) === 0
@@ -326,7 +377,7 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
       continue;
     }
 
-    if (totalPlans === 0 || (phase.plans.length > 0 && (phaseSnapshot?.plans.length ?? 0) === 0)) {
+    if (totalPlans === 0 || (phase.plans.length > 0 && localPlanCount === 0)) {
       if (phaseNeedsDiscussPrep(cwd, phase, phaseSnapshot)) {
         return {
           advanced: true,

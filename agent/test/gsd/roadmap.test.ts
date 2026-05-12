@@ -611,6 +611,26 @@ Plans:
     });
   });
 
+  it("accepts zero-padded requested phase override for roadmap routing", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+
+    expect(resolveNextRoute(root, "02")).toMatchObject({
+      route: "discuss-phase",
+      reason: "phase discuss context missing",
+      newPhase: "2",
+    });
+  });
+
   it("blocks next when latest verification failed and no complete UAT resolved it", () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });

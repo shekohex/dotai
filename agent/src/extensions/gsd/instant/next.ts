@@ -212,7 +212,7 @@ function resolvePhaseStartIndex(
   requestedPhase?: string,
 ): number {
   if (requestedPhase !== undefined) {
-    return phases.findIndex((phase) => phase.number === requestedPhase);
+    return phases.findIndex((phase) => phaseNumbersMatch(phase.number, requestedPhase));
   }
 
   const statePhase = `${snapshot.state?.current_phase ?? ""}`.trim() || undefined;
@@ -261,7 +261,10 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
     return { advanced: false, reason: "no roadmap phases" };
   }
 
-  if (requestedPhase !== undefined && !phases.some((phase) => phase.number === requestedPhase)) {
+  if (
+    requestedPhase !== undefined &&
+    !phases.some((phase) => phaseNumbersMatch(phase.number, requestedPhase))
+  ) {
     return { advanced: false, reason: `unknown phase override: ${requestedPhase}` };
   }
 
@@ -455,7 +458,7 @@ export async function handleGsdNext(
 
   if (
     args.phase !== undefined &&
-    !readRoadmapPhases(ctx.cwd).some((phase) => phase.number === args.phase)
+    !readRoadmapPhases(ctx.cwd).some((phase) => phaseNumbersMatch(phase.number, args.phase ?? ""))
   ) {
     ctx.ui.notify(`Unknown /gsd next phase override: ${args.phase}.`, "warning");
     return;

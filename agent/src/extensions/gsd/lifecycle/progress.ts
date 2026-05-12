@@ -19,11 +19,19 @@ const ProgressInitSchema = Type.Object(
   { additionalProperties: true },
 );
 
+let progressExecFileSync: typeof execFileSync = execFileSync;
+
+export function setProgressExecFileSyncForTests(
+  replacement: typeof execFileSync | undefined,
+): void {
+  progressExecFileSync = replacement ?? execFileSync;
+}
+
 function readProgressLaunchPrerequisites(cwd: string): { ok: true } | { ok: false; error: string } {
   const toolPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
 
   try {
-    const stdout = execFileSync(process.execPath, [toolPath, "init", "progress"], {
+    const stdout = progressExecFileSync(process.execPath, [toolPath, "init", "progress"], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],

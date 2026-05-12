@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
 import { parseGsdCommandArgs } from "../../src/extensions/gsd/args.ts";
+import { setProgressExecFileSyncForTests } from "../../src/extensions/gsd/lifecycle/progress.ts";
 import { resolveInstructionFileName } from "../../src/extensions/gsd/lifecycle/new-project.ts";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.ts";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.ts";
@@ -50,6 +51,7 @@ class FakePi implements Partial<ExtensionAPI> {
 
 afterEach(() => {
   setGsdSubagentSdkFactoryForTests(undefined);
+  setProgressExecFileSyncForTests(undefined);
 });
 
 async function emitFakeSessionStart(
@@ -1253,6 +1255,44 @@ test("gsd progress fails closed when STATE.md is missing", async () => {
   await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
   expect(notifications.at(-1)).toEqual({
     message: "Cannot run /gsd progress: missing .planning/STATE.md.",
+    level: "warning",
+  });
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("gsd progress fails closed when helper returns invalid init payload", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  setProgressExecFileSyncForTests(() => '{"project_exists":true}\n' as never);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd progress: helper returned invalid init progress payload.",
+    level: "warning",
+  });
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("gsd progress fails closed when helper init throws", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  setProgressExecFileSyncForTests(() => {
+    throw new Error("helper exploded");
+  });
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd progress: helper exploded.",
     level: "warning",
   });
   expect(fakePi.sendUserMessage).not.toHaveBeenCalled();

@@ -240,6 +240,10 @@ function resolveMilestonePhaseNumbers(
     "iu",
   );
   const phasePattern = /^#{3,4}\s+Phase\s+(\d+(?:\.\d+)?)\s*:/gmu;
+  const milestoneRange = resolveMilestoneRangePhaseNumbers(roadmap, milestoneVersion);
+  if (milestoneRange !== undefined) {
+    return milestoneRange;
+  }
   const lines = roadmap.split("\n");
   const scopedLines: string[] = [];
   let insideMilestone = false;
@@ -282,6 +286,50 @@ function resolveMilestonePhaseNumbers(
     canonicalizePhaseNumber(match[1] ?? ""),
   );
   return phaseMatches.length > 0 ? new Set(phaseMatches) : undefined;
+}
+
+function resolveMilestoneRangePhaseNumbers(
+  roadmap: string,
+  milestoneVersion: string,
+): Set<string> | undefined {
+  for (const line of roadmap.split("\n")) {
+    if (!lineHasExactMilestoneVersion(line, milestoneVersion)) {
+      continue;
+    }
+    const phaseNumbers = extractPhaseNumbersFromMilestoneLine(line);
+    if (phaseNumbers !== undefined) {
+      return phaseNumbers;
+    }
+  }
+  return undefined;
+}
+
+function extractPhaseNumbersFromMilestoneLine(line: string): Set<string> | undefined {
+  const rangeMatch = line.match(/\bPhases?\s+(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/iu);
+  if (rangeMatch?.[1] !== undefined && rangeMatch[2] !== undefined) {
+    return buildPhaseRange(rangeMatch[1], rangeMatch[2]);
+  }
+
+  const singleMatch = line.match(/\bPhase\s+(\d+(?:\.\d+)?)(?!\s*-)/iu);
+  if (singleMatch?.[1] !== undefined) {
+    return new Set([canonicalizePhaseNumber(singleMatch[1])]);
+  }
+
+  return undefined;
+}
+
+function buildPhaseRange(start: string, end: string): Set<string> | undefined {
+  const startValue = Number.parseFloat(start);
+  const endValue = Number.parseFloat(end);
+  if (!Number.isInteger(startValue) || !Number.isInteger(endValue) || endValue < startValue) {
+    return undefined;
+  }
+
+  const values = new Set<string>();
+  for (let current = startValue; current <= endValue; current += 1) {
+    values.add(canonicalizePhaseNumber(String(current)));
+  }
+  return values;
 }
 
 function buildExactMilestoneLabelPattern(milestoneVersion: string): string {

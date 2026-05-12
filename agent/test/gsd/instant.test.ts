@@ -135,6 +135,103 @@ Plans:
     });
   });
 
+  it("stats scopes milestone phases from milestone range bullets without dedicated milestone containers", () => {
+    const root = createTempDirSync("agent-gsd-stats-milestone-range-bullets-");
+    mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-delivery"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "5-security"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+## Milestones
+
+- ✅ **v1.0 MVP** - Phases 1-4 (shipped 2026-05-04)
+- 🚧 **v1.1 Security** - Phases 5-6 (in progress)
+
+## Phases
+
+### Phase 1: Foundation
+**Goal**: Already shipped
+
+Plans:
+- [x] 01-01: Done
+
+### Phase 2: Delivery
+**Goal**: Already shipped
+
+Plans:
+- [x] 02-01: Done
+
+### Phase 5: Security
+**Goal**: Secure auth
+
+Plans:
+- [ ] 05-01: Lock auth
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "milestone: v1.1\ncurrent_phase: 5\ncurrent_phase_name: Security\ncurrent_plan: 05-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "phases", "1-foundation", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-delivery", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "5-security", "05-01-PLAN.md"),
+      "---\nphase: 05\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/auth.ts]\nautonomous: true\nmust_haves: [secure]\n---\n",
+    );
+
+    expect(computeStructuredStats(root).phases.map((phase) => phase.number)).toEqual(["5"]);
+  });
+
+  it("stats scopes exact milestone bullet ranges instead of partial version matches", () => {
+    const root = createTempDirSync("agent-gsd-stats-milestone-range-exact-");
+    mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-release"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+## Milestones
+
+- ✅ **v1.0 Foundation** - Phases 1-1
+- 🚧 **v1.1 Release** - Phases 2-2
+
+## Phases
+
+### Phase 1: Foundation
+**Goal**: Foundation
+
+Plans:
+- [ ] 01-01: Build base
+
+### Phase 2: Release
+**Goal**: Release
+
+Plans:
+- [ ] 02-01: Ship release
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "milestone: v1\ncurrent_phase: 1\ncurrent_phase_name: Foundation\ncurrent_plan: 01-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+
+    expect(computeStructuredStats(root).phases.map((phase) => phase.number)).toEqual(["1", "2"]);
+  });
+
   it("stats scopes shipped milestone phases from details summary blocks", () => {
     const root = createTempDirSync("agent-gsd-stats-milestone-details-");
     mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });

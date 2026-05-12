@@ -105,7 +105,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   const requirements = parseRequirementsProgress(snapshot.requirements);
   const gitCommitCount = readGitCommitCount(cwd);
   const gitFirstCommitDate = readGitFirstCommitDate(cwd);
-  const lastActivity = snapshot.state?.last_activity ?? readLatestPlanningActivity(cwd);
+  const lastActivity = resolveLastActivity(snapshot.state?.last_activity, cwd);
   const phases = new Map<
     string,
     {
@@ -177,6 +177,14 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     open_blockers: blockers,
     decisions_count: decisions,
   };
+}
+
+function resolveLastActivity(stateLastActivity: string | undefined, cwd: string): string | null {
+  if (stateLastActivity !== undefined && !Number.isNaN(Date.parse(stateLastActivity))) {
+    return stateLastActivity;
+  }
+
+  return readLatestPlanningActivity(cwd);
 }
 
 function countProjectDecisionRows(project: string | undefined): number {

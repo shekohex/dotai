@@ -580,6 +580,35 @@ Plans:
     expect(computeStructuredStats(root).last_activity).toBe("2030-05-09T08:15:00.000Z");
   });
 
+  it("stats falls back to latest planning artifact timestamp when state last_activity is invalid", () => {
+    const root = createTempDirSync("agent-gsd-stats-activity-invalid-");
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      [
+        "# Roadmap: Demo",
+        "",
+        "### Phase 1: Setup",
+        "",
+        "Plans:",
+        "- [ ] 01-01: Create config",
+      ].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "last_activity: not-a-timestamp\n");
+    const summaryPath = join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md");
+    writeFileSync(summaryPath, "done\n");
+    const modified = new Date("2031-06-01T09:00:00.000Z");
+    utimesSync(summaryPath, modified, modified);
+
+    expect(computeStructuredStats(root).last_activity).toBe("2031-06-01T09:00:00.000Z");
+  });
+
   it("stats canonicalizes padded local phase ids and keeps executed work distinct from complete", () => {
     const root = createTempDirSync("agent-gsd-stats-phase-status-");
     mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });

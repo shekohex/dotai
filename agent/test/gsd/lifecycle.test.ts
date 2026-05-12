@@ -6180,6 +6180,30 @@ Plans:
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("validate-phase fails closed before workflow launch when preflight returns nested target path", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    setValidatePhaseExecFileSyncForTests(
+      () =>
+        (JSON.stringify({
+          ready: true,
+          failure_reason: null,
+          nyquist_validation_enabled: true,
+          validation_target_path: ".planning/phases/2-build/nested/02-VALIDATION.md",
+          validation_target_mode: "create",
+        }) + "\n") as never,
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: validate-phase preflight returned non-canonical validation target path.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("verify-work launches workflow foundation instead of native artifact path", async () => {
     const root = createPlanningRoot();
     const pi = createPi();

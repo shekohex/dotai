@@ -181,13 +181,13 @@ function isCanonicalValidationTargetPath(
   const expectedDirectory = normalize(
     join(".planning", "phases", basename(selection.phaseDir)),
   ).replaceAll("\\", "/");
+  const expectedTargetPath = `${expectedDirectory}/${selection.phaseFilePrefix}-VALIDATION.md`;
   const expectedFileName = `${selection.phaseFilePrefix}-VALIDATION.md`;
 
-  if (!normalizedTargetPath.startsWith(`${expectedDirectory}/`)) {
-    return false;
-  }
-
-  return basename(normalizedTargetPath) === expectedFileName;
+  return (
+    normalizedTargetPath === expectedTargetPath &&
+    basename(normalizedTargetPath) === expectedFileName
+  );
 }
 
 export function resolveValidatePhaseSelection(

@@ -81,7 +81,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   flags: `--phase <phase>`
 - `/gsd validate-phase [phase]`
   flags: `--phase <phase>`
-  unsupported args fail explicitly; omitted phase prefers last helper-ready local SUMMARY-backed phase; malformed or non-roadmap SUMMARY inventories fail closed; explicit incomplete or non-executed phases fail closed; config-disabled Nyquist validation, ambiguous/non-canonical VALIDATION inventory, malformed helper payloads, helper execution failures, and non-canonical helper target paths fail closed before workflow launch; workflow uses helper-backed readiness preflight and does not auto-mutate phase state
+  unsupported args fail explicitly; omitted phase prefers last helper-ready local SUMMARY-backed phase; malformed or non-roadmap SUMMARY inventories fail closed; explicit incomplete or non-executed phases fail closed; config-disabled Nyquist validation, ambiguous/non-canonical VALIDATION inventory, malformed helper payloads, helper execution failures, and helper target paths outside the exact canonical phase `*-VALIDATION.md` fail closed before workflow launch; workflow uses helper-backed readiness preflight and does not auto-mutate phase state
 
 ## Debug
 

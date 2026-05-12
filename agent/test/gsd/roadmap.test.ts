@@ -503,6 +503,31 @@ Plans:
     });
   });
 
+  it("ignores noncanonical UAT artifacts when deciding phase completion", () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "99-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "verify-work",
+      reason: "phase ready to verify",
+      newPhase: "1",
+    });
+  });
+
   it("blocks next when planning root continue-here has blocking rows", () => {
     const root = createPlanningRoot();
     writeFileSync(

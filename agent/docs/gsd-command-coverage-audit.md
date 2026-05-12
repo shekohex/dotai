@@ -494,7 +494,7 @@ Differences:
 
 ### `next`
 
-Coverage: 70/100
+Coverage: 71/100
 
 Upstream behavior:
 
@@ -514,6 +514,7 @@ Local behavior:
 - requested phase overrides now also honor padded/unpadded equivalence consistently across slash-command validation and route resolution, so `/gsd next --phase 02` no longer false-rejects phase `2` in brownfield/local roadmap layouts. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - padded `STATE.md current_phase` values now also participate in normalized route-start selection, so `next` no longer ignores legitimate `02` state pointers and reroutes from the wrong phase after earlier work already completed. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - roadmap-backed route math now ignores malformed/non-roadmap `*-SUMMARY.md` files and snapshot-only `*-PLAN.md` artifacts when counting phase completion, preventing junk local artifacts from skipping unfinished roadmap work or inflating padded brownfield phases into the wrong route. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
+- phase completion now also scopes UAT truth to canonical phase-prefix artifacts (`01-UAT.md`, `02-UAT.md`, etc.), so stray noncanonical UAT files in a phase dir cannot falsely mark work complete and skip `/gsd verify-work`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`
 - shared fallback planner logic now normalizes padded phase and plan identifiers too, so `computeNext()` / `resolveCurrentPhase()` stay aligned with routed `next` behavior for brownfield state like `current_phase: 02` and `current_plan: 2-01`. `src/extensions/gsd/state/runtime.ts`, `test/gsd/roadmap.test.ts`
 - dedicated parsers now handle local `next --phase [N] --force` and `progress --next [--phase N] [--force]`, with explicit rejection for malformed or unsupported forms. `src/extensions/gsd/next-args.ts`, `src/extensions/gsd/progress-args.ts`, `test/gsd/commands.test.ts`
 

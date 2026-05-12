@@ -105,6 +105,11 @@ function normalizePlanArtifactId(value: string): string {
   return `${canonicalizePhaseNumber(match[1])}-${String(Number.parseInt(match[2], 10))}`;
 }
 
+function isCanonicalPhaseArtifact(fileName: string, phaseNumber: string, suffix: string): boolean {
+  const artifactPrefix = fileName.replace(suffix, "");
+  return canonicalizePhaseNumber(artifactPrefix) === canonicalizePhaseNumber(phaseNumber);
+}
+
 function countRoadmapMatchingSummaries(
   phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
   phase: RoadmapPhase,
@@ -208,7 +213,7 @@ function findBlockingVerificationFailure(
       const uatStatus =
         phaseSnapshot === undefined
           ? undefined
-          : readPhaseUatStatus(phaseSnapshot.path, phaseSnapshot.uats);
+          : readPhaseUatStatus(phaseSnapshot.path, phase.number, phaseSnapshot.uats);
       if (uatStatus !== "complete") {
         return { phase: phase.number, status: verificationStatus };
       }
@@ -232,8 +237,14 @@ function findPhaseSnapshot(snapshot: ReturnType<typeof readPlanningSnapshot>, ph
   );
 }
 
-function readPhaseUatStatus(phasePath: string, uatFiles: string[]): string | undefined {
-  const uatFile = uatFiles.toSorted((left, right) => left.localeCompare(right))[0];
+function readPhaseUatStatus(
+  phasePath: string,
+  phaseNumber: string,
+  uatFiles: string[],
+): string | undefined {
+  const uatFile = uatFiles
+    .filter((fileName) => isCanonicalPhaseArtifact(fileName, phaseNumber, "-UAT.md"))
+    .toSorted((left, right) => left.localeCompare(right))[0];
   if (uatFile === undefined) {
     return undefined;
   }
@@ -406,15 +417,19 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
     const uatStatus =
       phaseSnapshot === undefined
         ? undefined
-        : readPhaseUatStatus(phaseSnapshot.path, phaseSnapshot.uats);
+        : readPhaseUatStatus(phaseSnapshot.path, phase.number, phaseSnapshot.uats);
+    const hasCanonicalUat =
+      (phaseSnapshot?.uats.filter((fileName) =>
+        isCanonicalPhaseArtifact(fileName, phase.number, "-UAT.md"),
+      ).length ?? 0) > 0;
     if (uatStatus !== "complete") {
+      const verifyReason = hasCanonicalUat
+        ? "phase verification in progress"
+        : "phase ready to verify";
       return {
         advanced: true,
         route: "verify-work",
-        reason:
-          (phaseSnapshot?.uats.length ?? 0) === 0
-            ? "phase ready to verify"
-            : "phase verification in progress",
+        reason: verifyReason,
         newPhase: phase.number,
       };
     }

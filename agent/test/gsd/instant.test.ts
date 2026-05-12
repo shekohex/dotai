@@ -11,11 +11,15 @@ const fixtures = join(import.meta.dirname, "fixtures");
 const brownfieldRoot = join(fixtures, "brownfield-v1");
 
 function createNotifications() {
+  return createNotificationsForRoot(brownfieldRoot);
+}
+
+function createNotificationsForRoot(cwd: string) {
   const notifications: Array<{ message: string; level: string }> = [];
   return {
     notifications,
     ctx: {
-      cwd: brownfieldRoot,
+      cwd,
       hasUI: false,
       ui: {
         notify(message: string, level: string) {
@@ -42,11 +46,9 @@ describe("gsd instant commands", () => {
         },
       } as never,
     );
-    expect(notifications.at(-1)).toEqual({
-      message:
-        "Stats milestone=current phases=1 plans=1 summaries=0 verifications=1 blockers=0 decisions=0",
-      level: "info",
-    });
+    expect(notifications.at(-1)?.level).toBe("info");
+    expect(notifications.at(-1)?.message).toContain("# current Current — Statistics");
+    expect(notifications.at(-1)?.message).toContain("| 1 | Setup | 1 | 0 | In Progress |");
   });
 
   it("stats verification count excludes validation and UAT artifacts", () => {
@@ -93,11 +95,9 @@ Plans:
   it("stats includes blockers and decisions from brownfield state", () => {
     const { notifications, ctx } = createNotifications();
     handleGsdStats({} as never, ctx as never);
-    expect(notifications.at(-1)).toEqual({
-      message:
-        "Stats milestone=current phases=2 plans=3 summaries=1 verifications=0 blockers=0 decisions=2",
-      level: "info",
-    });
+    expect(notifications.at(-1)?.level).toBe("info");
+    expect(notifications.at(-1)?.message).toContain("# current Current — Statistics");
+    expect(notifications.at(-1)?.message).toContain("Requirements: 0/3 complete");
   });
 
   it("stats scope counts to current milestone", () => {
@@ -169,11 +169,9 @@ Plans:
       } as never,
     );
 
-    expect(notifications.at(-1)).toEqual({
-      message:
-        "Stats milestone=v1.1 phases=1 plans=1 summaries=0 verifications=0 blockers=0 decisions=0",
-      level: "info",
-    });
+    expect(notifications.at(-1)?.level).toBe("info");
+    expect(notifications.at(-1)?.message).toContain("# v1.1");
+    expect(notifications.at(-1)?.message).toContain("| 5 | Security | 1 | 0 | In Progress |");
   });
 
   it("stats scopes milestone phases from milestone range bullets without dedicated milestone containers", () => {
@@ -498,7 +496,52 @@ Plans:
     expect(notifications.at(-1)?.message).toContain("Requirements: 0/3 complete");
     expect(notifications.at(-1)?.message).toContain("Git commits: ");
     expect(notifications.at(-1)?.message).toContain("First commit: ");
+    expect(notifications.at(-1)?.message).toContain("Project age: ");
     expect(notifications.at(-1)?.message).toContain("Last activity: ");
+  });
+
+  it("stats emits MVP phase summary when roadmap modes exist", () => {
+    const root = createTempDirSync("agent-gsd-stats-mvp-mode-");
+    mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Foundation
+**Goal**: Build base
+**Mode**: mVp
+
+Plans:
+- [ ] 01-01: Create base
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+`,
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+
+    const { notifications, ctx } = createNotificationsForRoot(root);
+    handleGsdStats({} as never, ctx as never, { outputMode: "table" });
+
+    expect(notifications.at(-1)?.message).toContain("Phases: 2 total | 1 MVP | 1 standard");
+    expect(computeStructuredStats(root)).toMatchObject({
+      mvp_phases: 1,
+      standard_phases: 1,
+      phases: [
+        expect.objectContaining({ number: "1", mode: "mvp" }),
+        expect.objectContaining({ number: "2", mode: null }),
+      ],
+    });
   });
 
   it("stats decisions count excludes unrelated project tables", () => {

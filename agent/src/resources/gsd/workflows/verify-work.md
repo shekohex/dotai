@@ -8,6 +8,7 @@ Purpose:
 - make upstream-shaped `UAT.md` authoritative for verify progress
 - keep scope to highest-leverage core UAT session path only
 - preserve existing `init verify-work` phase resolution semantics as authoritative
+- preserve diagnosis, gap-follow-up, and post-UAT closure behavior in bundled local runtime
 
 Required local reading before execution:
 
@@ -34,7 +35,7 @@ Core rules:
 5. Authoritative artifact is `.planning/phases/<phase-dir>/<phase>-UAT.md`.
 6. `UAT.md` must survive `/clear`, drive resume, and feed later gap-closure planning.
 7. Required lifecycle states in active `/gsd verify-work` flow: `testing`, `partial`, `complete`.
-8. Diagnosed state may exist on disk after manual helper-backed diagnosis persistence, but this workflow does not auto-run diagnosis.
+8. Diagnosed state may exist on disk after helper-backed diagnosis persistence and should be preserved when diagnosis branch runs.
 9. Use helper-backed mutation primitives as authoritative write path for test responses and diagnosis persistence.
 10. Use grouped local command names consistently in all user-facing guidance: `/gsd verify-work`, `/gsd plan-phase`, `/gsd execute-phase`.
 11. If deferred branches surface, say they are not yet supported in this slice.
@@ -99,18 +100,43 @@ Core rules:
 1. If external/manual diagnosis data is available, persist it via `verify-work apply-diagnosis`.
 2. Persist `root_cause`, `artifacts`, `missing`, and `debug_session` into UAT.
 3. Status helper must preserve `diagnosed` when stored in frontmatter.
-4. Do not claim auto diagnosis, auto planning, or auto checker routing from local `/gsd verify-work` in this slice.
+4. When UAT issues are confirmed, workflow may run diagnosis and follow-up planning steps, but must persist outputs through helper-backed `apply-diagnosis`.
 
-## 6. Explicit Deferrals
+## 6. Diagnosis And Gap-Planning Branch
+
+1. If one or more checkpoints end in issue/blocker state, pause normal pass-through and summarize open gaps from authoritative `UAT.md`.
+2. Ask whether to:
+   - diagnose now
+   - stop and resume later
+   - accept current UAT artifact only
+3. Diagnose-now branch:
+   - derive root-cause notes from current UAT gaps, relevant summaries, verification artifacts, and available debug context
+   - persist diagnosis via `verify-work apply-diagnosis`
+   - if diagnosis identifies clear execution follow-up, prepare `/gsd plan-phase --gaps <phase>` style guidance
+4. If follow-up planning is requested, spawn planner/checker style analysis using local grouped command names and keep implementation edits out of this workflow.
+5. Do not pretend gaps are closed after diagnosis. Persist diagnosed state and stop with explicit next-step guidance when fixes are still required.
+
+## 7. Post-UAT Closure Guidance
+
+1. If status is `complete` and no unresolved issues remain, run closure review before final summary.
+2. Artifact acknowledgment branch:
+   - check whether open artifact debt should be acknowledged before final completion claims
+   - if artifact debt exists, surface it explicitly and tell user to resolve or acknowledge it before calling phase fully done
+3. Security closure branch:
+   - if UAT is clear and security review is still pending, point to `/gsd secure-phase {phase}`
+4. Transition closure branch:
+   - if UAT and security are both clear, point to the next grouped local command rather than mutating phase state automatically in this workflow slice
+5. Final success summary should distinguish:
+   - UAT complete, security pending
+   - UAT complete, artifact acknowledgment pending
+   - UAT complete, ready for next grouped command
+
+## 8. Explicit Deferrals
 
 1. Not yet supported in this slice:
    - Playwright/Puppeteer auto-verification branch
    - MVP-mode branch via `phase.mvp-mode`
-   - auto diagnosis via `diagnose-issues.md`
-   - auto gap planning and checker revision loop
-   - artifact acknowledgment gate via `audit-open --json`
-   - security gating and `/gsd secure-phase {phase}` routing
-   - transition workflow handoff and phase completion mutation
+   - automatic phase completion mutation
 
 Runtime contract:
 

@@ -18,6 +18,7 @@ export function parseHealthArgs(
   { normalizeFreeform, validateParsedArgs }: HealthParserDependencies,
 ): GsdCommandArgs {
   let repair = false;
+  let backfill = false;
   let context = false;
   let tokensUsed: string | undefined;
   let contextWindow: string | undefined;
@@ -27,6 +28,10 @@ export function parseHealthArgs(
     const token = tokens[index];
     if (token === "--repair") {
       repair = true;
+      continue;
+    }
+    if (token === "--backfill") {
+      backfill = true;
       continue;
     }
     if (token === "--context") {
@@ -102,10 +107,15 @@ export function parseHealthArgs(
     unsupportedModeError ??=
       "Unsupported /gsd health mode: choose either --repair or --context per run.";
   }
+  if (backfill && context) {
+    unsupportedModeError ??=
+      "Unsupported /gsd health mode: choose either --backfill or --context per run.";
+  }
 
   return validateParsedArgs({
     subcommand: "health",
     ...(repair ? { repair: true } : {}),
+    ...(backfill ? { backfill: true } : {}),
     ...(context ? { context: true } : {}),
     ...(tokensUsed === undefined ? {} : { tokensUsed }),
     ...(contextWindow === undefined ? {} : { contextWindow }),

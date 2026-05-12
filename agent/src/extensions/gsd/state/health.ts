@@ -86,11 +86,14 @@ const BundledCommandErrorSchema = Type.Object(
   { additionalProperties: true },
 );
 
-function runBundledHealthCommand(cwd: string, repair: boolean): HealthOutput {
+function runBundledHealthCommand(cwd: string, repair: boolean, backfill: boolean): HealthOutput {
   const toolPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
   const args = [toolPath, "validate", "health", "--cwd", cwd, "--json-errors"];
   if (repair) {
     args.push("--repair");
+  }
+  if (backfill) {
+    args.push("--backfill");
   }
 
   try {
@@ -164,8 +167,11 @@ function malformedHealthResult(message: string): HealthOutput {
   };
 }
 
-export function computeHealth(cwd: string, options: { repair?: boolean } = {}): HealthOutput {
-  return runBundledHealthCommand(cwd, options.repair === true);
+export function computeHealth(
+  cwd: string,
+  options: { repair?: boolean; backfill?: boolean } = {},
+): HealthOutput {
+  return runBundledHealthCommand(cwd, options.repair === true, options.backfill === true);
 }
 
 export function computeLocalHealthSummary(cwd: string): HealthSummary {

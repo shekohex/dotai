@@ -2,14 +2,26 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import type { GsdCommandArgs } from "../args.js";
 import { launchGsdWorkflowSession } from "../workflow-launch.js";
 
+function stripNewMilestoneSubcommand(rawArgs: string | undefined): string | undefined {
+  if (rawArgs === undefined) {
+    return undefined;
+  }
+  const normalizedRawArgs = rawArgs
+    .trim()
+    .replace(/^new-milestone(?:\s+|$)/u, "")
+    .trim();
+  return normalizedRawArgs.length > 0 ? normalizedRawArgs : undefined;
+}
+
 export async function handleGsdNewMilestone(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs,
+  rawArgs?: string,
 ): Promise<void> {
   await launchGsdWorkflowSession(pi, ctx, {
     commandName: "new-milestone",
-    commandArguments: args.milestone,
+    commandArguments: stripNewMilestoneSubcommand(rawArgs) ?? args.milestone,
     commandResourcePath: "commands/gsd/new-milestone.md",
     workflowResourcePaths: ["workflows/new-milestone.md"],
     extraResourcePaths: [

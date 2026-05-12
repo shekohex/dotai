@@ -14,6 +14,7 @@ export const GsdCommandArgsSchema = Type.Object(
   {
     subcommand: Type.Optional(Type.String()),
     auto: Type.Optional(Type.Boolean()),
+    resetPhaseNumbers: Type.Optional(Type.Boolean()),
     crossAi: Type.Optional(Type.Boolean()),
     noCrossAi: Type.Optional(Type.Boolean()),
     tdd: Type.Optional(Type.Boolean()),
@@ -73,6 +74,7 @@ export const GsdCommandArgsSchema = Type.Object(
     description: Type.Optional(Type.String()),
     outputMode: Type.Optional(Type.Union([Type.Literal("json"), Type.Literal("table")])),
     repair: Type.Optional(Type.Boolean()),
+    backfill: Type.Optional(Type.Boolean()),
     context: Type.Optional(Type.Boolean()),
     tokensUsed: Type.Optional(Type.String()),
     contextWindow: Type.Optional(Type.String()),
@@ -99,6 +101,41 @@ function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
     ...(parts.length > 0 ? { input: normalizeFreeform(parts.join(" ")) } : {}),
   });
 }
+
+function parseNewMilestoneArgs(tokens: string[]): GsdCommandArgs {
+  let text = false;
+  let resetPhaseNumbers = false;
+  let unsupportedModeError: string | undefined;
+  const milestoneParts: string[] = [];
+
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--text") {
+      text = true;
+      continue;
+    }
+    if (token === "--reset-phase-numbers") {
+      resetPhaseNumbers = true;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      unsupportedModeError ??= `Unsupported /gsd new-milestone flag: ${token}.`;
+      continue;
+    }
+    milestoneParts.push(token);
+  }
+
+  return validateParsedArgs({
+    subcommand: "new-milestone",
+    ...(text ? { text: true } : {}),
+    ...(resetPhaseNumbers ? { resetPhaseNumbers: true } : {}),
+    ...(milestoneParts.length > 0
+      ? { milestone: normalizeFreeform(milestoneParts.join(" ")) }
+      : {}),
+    ...(unsupportedModeError === undefined ? {} : { unsupportedModeError }),
+  });
+}
+
 function normalizePhaseToken(token: string | undefined): string | undefined {
   const value = token?.trim();
   return value !== undefined && value.length > 0 ? value : undefined;
@@ -605,10 +642,7 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   }
 
   if (subcommand === "new-milestone") {
-    return validateParsedArgs({
-      subcommand,
-      milestone: normalizeFreeform(tokens.slice(1).join(" ")),
-    });
+    return parseNewMilestoneArgs(tokens);
   }
 
   if (subcommand === "complete-milestone" || subcommand === "milestone-summary") {

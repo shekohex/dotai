@@ -4,6 +4,7 @@ export type RoadmapPhase = {
   number: string;
   name: string;
   goal?: string;
+  mode?: string;
   requirements: string[];
   successCriteria: string[];
   dependsOn?: string;
@@ -78,6 +79,7 @@ export function parseRoadmap(content: string): RoadmapPhase[] {
       number: header[1] ?? "",
       name: header[2]?.trim() ?? "",
       goal: extractSingle(section, "Goal"),
+      mode: extractSingle(section, "Mode")?.toLowerCase(),
       requirements: extractList(section, "Requirements"),
       successCriteria: extractSuccessCriteria(section),
       dependsOn: extractSingle(section, "Depends on"),

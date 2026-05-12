@@ -51,6 +51,19 @@ function ensureGitRepo(cwd: string): void {
   execFileSync("git", ["init"], { cwd, stdio: "ignore" });
 }
 
+function ensureInstructionFile(cwd: string): void {
+  const instructionFilePath = join(cwd, resolveInstructionFileName());
+  const gsdToolsPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
+  execFileSync(
+    process.execPath,
+    [gsdToolsPath, "generate-claude-md", "--output", instructionFilePath],
+    {
+      cwd,
+      stdio: ["ignore", "ignore", "ignore"],
+    },
+  );
+}
+
 function extractAutoSourceMaterial(rawArgs: string): string {
   return rawArgs.replaceAll(/(^|\s)--auto(?=\s|$)/gu, " ").trim();
 }
@@ -349,6 +362,7 @@ export async function handleGsdNewProject(
 
   ensureGitRepo(ctx.cwd);
   const planningDir = ensureBootstrapArtifacts(ctx.cwd);
+  ensureInstructionFile(ctx.cwd);
   saveGsdSettings(ctx.cwd, { enabled: true });
   ctx.ui.notify(`GSD initialized bootstrap in ${planningDir}`, "info");
   const instructionFileName = resolveInstructionFileName();

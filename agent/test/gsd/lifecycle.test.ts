@@ -512,6 +512,7 @@ describe("gsd lifecycle handlers", () => {
       "Init metadata: GIT_WORKTREE_READY=true",
     );
     expect(existsSync(join(root, ".git"))).toBe(true);
+    expect(existsSync(join(root, resolveInstructionFileName()))).toBe(true);
   });
 
   it("new-project injects brownfield init metadata for recovery in existing repo", async () => {
@@ -815,21 +816,38 @@ describe("gsd lifecycle handlers", () => {
     expect(prompt).toContain("Init metadata: CODEBASE_DOCS=");
   });
 
-  it("map-codebase rejects scoped --paths remap to protect canonical docs", async () => {
+  it("map-codebase forwards scoped --paths remap to canonical mapper prompts", async () => {
     const root = createPlanningRoot();
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
     const ctx = createContext(root);
-    const spawn = vi.fn();
+    const pi = createPi() as ExtensionAPI & { sendMessage: ReturnType<typeof vi.fn> };
+    const spawn = createMapCodebaseSpawn(root);
     setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
 
-    await handleGsdMapCodebase({} as ExtensionAPI, ctx, {
-      paths: ["src", "packages/ui", "../bad", "apps/$oops"],
+    await handleGsdMapCodebase(pi, ctx, {
+      paths: ["src", "packages/ui"],
     });
 
-    expect(spawn).not.toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledTimes(4);
+    expect(spawn.mock.calls[0]?.[0]?.task).toContain("--paths src,packages/ui");
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "Unsupported /gsd map-codebase mode: --paths local scoped remap is not yet safe for canonical codebase docs. Run full `/gsd map-codebase`.",
-      "warning",
+      "Started scoped codebase map: 4 subagents (src, packages/ui)",
+      "info",
     );
+    await vi.waitFor(() => {
+      expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain(
+      "Scoped codebase mapping complete.",
+    );
+    expect(pi.sendMessage.mock.calls[0]?.[0]?.content).toContain("Scope: src, packages/ui");
   });
 
   it("map-codebase fast mode runs one partial non-canonical mapper by default", async () => {
@@ -3815,7 +3833,7 @@ describe("gsd lifecycle handlers", () => {
     expect(readFileSync(join(codebaseDir, "TESTING.md"), "utf8")).toContain("stale testing");
   });
 
-  it("map-codebase refresh does not delete existing docs before invalid scoped paths abort", async () => {
+  it("map-codebase rejects invalid scoped paths before deleting existing docs", async () => {
     const root = createPlanningRoot();
     const codebaseDir = join(root, ".planning", "codebase");
     mkdirSync(codebaseDir, { recursive: true });
@@ -3831,7 +3849,7 @@ describe("gsd lifecycle handlers", () => {
 
     expect(spawn).not.toHaveBeenCalled();
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "Unsupported /gsd map-codebase mode: --paths local scoped remap is not yet safe for canonical codebase docs. Run full `/gsd map-codebase`.",
+      "Unsupported /gsd map-codebase mode: invalid --paths entries: ../bad. Use repo-relative paths without '..', leading '/', or shell metacharacters.",
       "warning",
     );
     expect(existsSync(join(codebaseDir, "OLD.md"))).toBe(true);
@@ -6371,6 +6389,21 @@ Plans:
     expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
     expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
       'Launch native GSD workflow for "/gsd new-milestone v1.1 Notifications"',
+    );
+  });
+
+  it("new-milestone preserves supported workflow flags in launch prompt", async () => {
+    const root = createPlanningRoot();
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdNewMilestone(
+      pi,
+      ctx,
+      { milestone: "v2.0 Platform", text: true, resetPhaseNumbers: true },
+      "new-milestone --text --reset-phase-numbers v2.0 Platform",
+    );
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd new-milestone --text --reset-phase-numbers v2.0 Platform"',
     );
   });
 

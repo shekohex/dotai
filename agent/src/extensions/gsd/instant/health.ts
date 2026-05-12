@@ -28,18 +28,18 @@ const ContextHealthErrorSchema = Type.Object(
   { additionalProperties: true },
 );
 
-export function handleGsdHealth(
+export async function handleGsdHealth(
   _pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs = {},
-): void {
+): Promise<void> {
   if (args.unsupportedModeError !== undefined) {
     ctx.ui.notify(args.unsupportedModeError, "warning");
     return;
   }
 
   if (args.context === true) {
-    const derivedUsage = deriveContextUsage(ctx, args);
+    const derivedUsage = await deriveContextUsage(ctx, args);
     if (derivedUsage.tokensUsed === undefined) {
       ctx.ui.notify(formatUnknownContextHealthMessage(derivedUsage.contextWindow), "warning");
       return;
@@ -54,15 +54,18 @@ export function handleGsdHealth(
     return;
   }
 
-  const result = computeHealth(ctx.cwd, { repair: args.repair === true });
+  const result = computeHealth(ctx.cwd, {
+    repair: args.repair === true,
+    backfill: args.backfill === true,
+  });
   const level = result.status === "healthy" ? "info" : "warning";
   ctx.ui.notify(formatHealthMessage(result), level);
 }
 
-function deriveContextUsage(
+async function deriveContextUsage(
   ctx: ExtensionCommandContext,
   args: GsdCommandArgs,
-): { tokensUsed?: string; contextWindow: string } {
+): Promise<{ tokensUsed?: string; contextWindow: string }> {
   const usage = ctx.getContextUsage?.();
   let contextWindow = args.contextWindow;
   if (contextWindow === undefined) {
@@ -84,10 +87,45 @@ function deriveContextUsage(
     tokensUsed = String(usage.tokens);
   }
 
+  if (tokensUsed === undefined && ctx.hasUI && typeof ctx.ui.input === "function") {
+    const promptedTokensUsed = await ctx.ui.input(
+      "Approximate tokens used",
+      "Enter approximate current session token usage",
+    );
+    const normalizedTokensUsed = normalizeContextMetric(promptedTokensUsed, false);
+    if (normalizedTokensUsed !== undefined) {
+      tokensUsed = normalizedTokensUsed;
+    }
+
+    if (args.contextWindow === undefined && usage?.contextWindow === undefined) {
+      const promptedContextWindow = await ctx.ui.input(
+        "Context window size",
+        "Enter active model context window",
+      );
+      const normalizedContextWindow = normalizeContextMetric(promptedContextWindow, true);
+      if (normalizedContextWindow !== undefined) {
+        contextWindow = normalizedContextWindow;
+      }
+    }
+  }
+
   return {
     tokensUsed,
     contextWindow,
   };
+}
+
+function normalizeContextMetric(
+  value: string | undefined,
+  requirePositive: boolean,
+): string | undefined {
+  const normalized = value?.trim();
+  if (normalized === undefined || normalized.length === 0) {
+    return undefined;
+  }
+
+  const pattern = requirePositive ? /^[1-9]\d*$/u : /^\d+$/u;
+  return pattern.test(normalized) ? normalized : undefined;
 }
 
 function formatUnknownContextHealthMessage(contextWindow: string): string {

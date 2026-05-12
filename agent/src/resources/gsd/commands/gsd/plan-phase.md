@@ -10,20 +10,19 @@ Supported now:
 - `--view` only with `--research-phase`
 - `--research`
 - `--skip-research`
+- `--gaps`
+- `--reviews`
 - `--skip-verify`
 - `--text`
 
 Deferred with explicit error:
 
-- `--gaps`
-- `--reviews`
 - `--prd`
 - `--bounce`
 - `--skip-bounce`
 - `--chunked`
 - `--mvp`
 - `--skip-ui`
-- omitted phase autodetect
 - auto or chain orchestration semantics
 
 Canonical plan source of truth:
@@ -33,3 +32,10 @@ Canonical plan source of truth:
 - optional `.planning/phases/<phase-dir>/<padded-phase>-PATTERNS.md`
 
 Parent TypeScript orchestrator owns route selection, role spawning, disk validation, checker loop, and final state mutation.
+
+Contract notes:
+
+- omitted phase prefers next unplanned roadmap phase first, then falls back to last eligible completed route-specific phase only when needed
+- `--gaps` skips research and requires verification evidence from `VERIFICATION.md` or `UAT.md`
+- `--reviews` skips research and requires `REVIEWS.md`
+- checker-approved plans or `--skip-verify` success still run roadmap dependency annotation plus bundled post-planning helper before final state mutation

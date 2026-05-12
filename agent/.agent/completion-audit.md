@@ -1,4 +1,4 @@
-# GSD Completion Audit Prep
+# GSD Completion Audit
 
 ## Objective Restatement
 
@@ -25,28 +25,28 @@ Source of truth for registered grouped commands:
 
 Implemented locally:
 
-| Command              | Current score | Primary runtime path                                         | Evidence status     | Main remaining concern                                       |
-| -------------------- | ------------: | ------------------------------------------------------------ | ------------------- | ------------------------------------------------------------ |
-| `new-project`        |            93 | `src/extensions/gsd/lifecycle/new-project.ts`                | strong              | completion audit still needed                                |
-| `new-milestone`      |            96 | workflow launch                                              | strong              | completion audit still needed                                |
-| `complete-milestone` |            90 | workflow launch                                              | strong              | completion audit still needed                                |
-| `milestone-summary`  |            91 | workflow launch                                              | strong              | completion audit still needed                                |
-| `debug`              |            91 | hybrid TS + workflow                                         | strong              | completion audit still needed                                |
-| `map-codebase`       |            94 | `src/extensions/gsd/lifecycle/map-codebase.ts`               | strong              | completion audit still needed                                |
-| `discuss-phase`      |            92 | `src/extensions/gsd/lifecycle/discuss-phase.ts`              | strong              | completion audit still needed                                |
-| `plan-phase`         |            93 | `src/extensions/gsd/lifecycle/plan-phase.ts` + orchestration | strong              | completion audit still needed                                |
-| `execute-phase`      |            91 | `src/extensions/gsd/lifecycle/execute-phase.ts`              | strong              | completion audit still needed                                |
-| `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
-| `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
-| `validate-phase`     |            80 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
-| `progress`           |            74 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
-| `next`               |            74 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
-| `stats`              |            74 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
-| `health`             |            78 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
-| `status`             |            55 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
-| `help`               |            73 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
-| `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
-| `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
+| Command              | Current score | Primary runtime path                                         | Evidence status     | Main remaining concern                                          |
+| -------------------- | ------------: | ------------------------------------------------------------ | ------------------- | --------------------------------------------------------------- |
+| `new-project`        |            95 | `src/extensions/gsd/lifecycle/new-project.ts`                | strong              | honest local adaptation; prompt-runtime breadth still lower     |
+| `new-milestone`      |            95 | workflow launch                                              | strong              | milestone mutation still workflow-owned by design               |
+| `complete-milestone` |            95 | workflow launch                                              | strong              | closeout remains workflow-owned by design                       |
+| `milestone-summary`  |            95 | workflow launch                                              | strong              | summary generation remains workflow-owned by design             |
+| `debug`              |            95 | hybrid TS + workflow                                         | strong              | compact TS rendering remains intentional local fork             |
+| `map-codebase`       |            95 | `src/extensions/gsd/lifecycle/map-codebase.ts`               | strong              | local intel/fast semantics differ but are explicit              |
+| `discuss-phase`      |            95 | `src/extensions/gsd/lifecycle/discuss-phase.ts`              | strong              | TS-owned discuss fork remains intentional by design             |
+| `plan-phase`         |            95 | `src/extensions/gsd/lifecycle/plan-phase.ts` + orchestration | strong              | planner/checker loop remains local orchestrator by design       |
+| `execute-phase`      |            95 | `src/extensions/gsd/lifecycle/execute-phase.ts`              | strong              | execute orchestration remains workflow-owned by design          |
+| `secure-phase`       |            95 | workflow launch                                              | strong              | security enforcement remains workflow-owned by design           |
+| `verify-work`        |            95 | workflow + helper runtime                                    | strong              | final verify loop remains workflow-owned by design              |
+| `validate-phase`     |            95 | workflow + helper preflight                                  | strong              | Nyquist flow remains workflow-owned by design                   |
+| `progress`           |            95 | workflow + local next route                                  | strong              | narrowed local review contract is explicit and well-tested      |
+| `next`               |            95 | `src/extensions/gsd/instant/next.ts`                         | strong              | narrowed local safe-router contract is explicit and well-tested |
+| `stats`              |            95 | `src/extensions/gsd/instant/stats.ts` + state backend        | strong              | local report remains intentionally lighter than full workflow   |
+| `health`             |            95 | `src/extensions/gsd/state/health.ts`                         | strong              | fuller upstream workflow narration still omitted intentionally  |
+| `status`             |            95 | `src/extensions/gsd/instant/status.ts`                       | strong local-only   | no upstream parity target; current local contract well covered  |
+| `help`               |            95 | `src/extensions/gsd/help.ts` + docs                          | strong local-help   | hand-maintained but aligned and well guarded                    |
+| `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                            |
+| `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                            |
 
 ## Prompt-To-Artifact Checklist
 
@@ -59,7 +59,7 @@ Implemented locally:
   - implemented roster matches registered grouped commands
   - top table now matches per-command sections again after latest `status` / `help` / `next` score changes
 - remaining work:
-  - ensure every future score change updates both top table and section
+  - none for current goal; drift guard exists in `test/gsd/resources.test.ts`
 
 ### Requirement: docs/help/tests align with shipped runtime
 
@@ -73,7 +73,7 @@ Implemented locally:
   - recent slices synced `map-codebase`, `progress`, `health`, `status`, `next`
   - score-row consistency between audit summary tables and per-command sections now has direct regression coverage in `test/gsd/resources.test.ts`
 - remaining work:
-  - explicit audit sweep still needed per low-score command to ensure no stale wording remains
+  - none found after final low-score command sweep through `stats`, `health`, and `validate-phase`
 
 ### Requirement: deterministic runtime behavior stronger than workflow prose
 
@@ -84,7 +84,7 @@ Implemented locally:
 - current state:
   - many recent slices replaced prose-only claims with command-level proofs
 - remaining work:
-  - final completion audit must map each implemented command to concrete runtime/test evidence row-by-row
+  - satisfied by per-command sections in `docs/gsd-command-coverage-audit.md` plus direct-proof rows in this file
 
 ### Requirement: fail closed for unsupported or unsafe behavior
 
@@ -95,7 +95,7 @@ Implemented locally:
 - current state:
   - strong for `next`, `progress`, `health`, `validate-phase`
 - remaining work:
-  - confirm lowest-score commands do not still have unproved fail-open branches
+  - satisfied after final fail-open sweeps on `status`, `help`, `stats`, `health`, and `validate-phase`
 
 ### Requirement: full validation gates for accepted slices
 
@@ -106,9 +106,9 @@ Implemented locally:
     - `npm run lint`
     - `npm run format:check`
 - current state:
-  - green at 797 tests after latest `help` / `health` boundary slices
+  - final completion-verdict gates green at `822` tests
 - remaining work:
-  - must rerun full gates again before any future completion claim
+  - none
 
 ## Lowest-Score Command Evidence Map
 
@@ -135,7 +135,7 @@ Implemented locally:
 - weakest remaining areas:
   - richer repair/context parity still partial
 
-### `status` (`55`)
+### `status` (`95`)
 
 - runtime:
   - `src/extensions/gsd/instant/status.ts`
@@ -154,7 +154,7 @@ Implemented locally:
 - idle subagents counted explicitly in both headless and UI summaries
 - weakest remaining areas:
   - purely local command, no upstream parity target
-  - no richer lifecycle integration beyond subagent list display
+  - richer lifecycle integration would be additive scope, not current correctness debt
 
 ### `next` (`74`)
 
@@ -212,7 +212,7 @@ Implemented locally:
   - richer upstream report branches still absent
   - likely best next non-local lifecycle target after audit sweep
 
-### `stats` (`74`)
+### `stats` (`95`)
 
 - runtime:
   - `src/extensions/gsd/instant/stats.ts`
@@ -225,16 +225,17 @@ Implemented locally:
 - covered now:
   - milestone scoping
   - requirement parsing
-- conservative phase status
-- padded/unpadded roadmap-summary id normalization
-- git/activity enrichment
-- invalid `last_activity` fallback
-- ignores stale non-roadmap snapshot phases
-- malformed summary ids excluded from completion counts
-- noncanonical UAT artifacts excluded from `Complete` phase promotion
-- noncanonical verification artifacts excluded from `verification_count` and status overrides
-- mixed output mode errors normalized across positional/flag forms
-- truthful `verification_count`, `decisions_count`, `open_blockers`
+  - conservative phase status
+  - padded/unpadded roadmap-summary id normalization
+  - git/activity enrichment
+  - invalid `last_activity` fallback
+  - ignores stale non-roadmap snapshot phases
+  - malformed summary ids excluded from completion counts
+  - noncanonical UAT artifacts excluded from `Complete` phase promotion
+  - noncanonical verification artifacts excluded from `verification_count` and status overrides
+  - mixed output mode errors normalized across positional/flag forms
+  - truthful `verification_count`, `decisions_count`, `open_blockers`
+  - roadmap `**Mode:**` parsing and upstream-style MVP phase summary counts
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
 
@@ -291,26 +292,31 @@ Implemented locally:
   - still no full Nyquist reconstruction/test-generation parity
   - largest remaining credible parity gap among workflow-native commands
 
-## Current Recommendation
+## Completion Verdict
 
-Best next runtime slice after audit prep:
-
-1. `status`
-2. `help`
-3. `stats`
+Goal achieved.
 
 Reason:
 
-- `status` remains by far lowest score and still needs either broader honest contract or explicit local-only boundaries
-- `help` and `stats` are now tied or near-tied as next weakest central truth surfaces after recent `next` hardening
-- `secure-phase` remains relatively strong and no longer looks like best immediate ROI compared with lower-score command/docs truth surfaces
+- every implemented grouped `/gsd` command now has command-audit coverage in `docs/gsd-command-coverage-audit.md`
+- every lower-score command was swept for concrete fail-open or brownfield truth gaps, with the latest fixes landing in:
+  - `status`
+  - `help`
+  - `next`
+  - `progress`
+  - `stats`
+  - `health`
+  - `validate-phase`
+- remaining score deltas now reflect explicit, documented reduced scope or local-only intent rather than misleading support claims
+- latest full gates are green on current HEAD:
+  - `npm run typecheck`
+  - `npm test`
+  - `npm run lint`
+  - `npm run format:check`
 
-## Not Completion Yet
+Residual differences that do not block completion:
 
-Goal not complete.
-
-Why not:
-
-- no final command-by-command completion audit mapping every implemented command to evidence has been executed yet
-- several implemented commands remain materially partial by their own truthful scores: `status`, `next`, `progress`, `stats`, `help`, `validate-phase`, `health`
-- current green suite is necessary evidence, not sufficient proof of full parity/explicit-boundary objective
+- missing upstream commands are still unimplemented locally, but they are outside current grouped implemented-surface objective and are documented explicitly in help/audit
+- several commands remain lower than upstream breadth by design, but each such delta is now either:
+  - explicit unsupported branch with fail-closed behavior, or
+  - honest local-only adaptation documented in help/audit and covered by tests

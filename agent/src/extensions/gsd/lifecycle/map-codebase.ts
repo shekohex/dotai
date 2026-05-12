@@ -109,15 +109,39 @@ function rejectUnsupportedModes(ctx: ExtensionCommandContext, args: GsdCommandAr
     return true;
   }
 
-  if (args.paths !== undefined) {
-    ctx.ui.notify(
-      "Unsupported /gsd map-codebase mode: --paths local scoped remap is not yet safe for canonical codebase docs. Run full `/gsd map-codebase`.",
-      "warning",
-    );
-    return true;
+  return false;
+}
+
+function isValidScopedCodebasePath(value: string): boolean {
+  if (value.length === 0) {
+    return false;
   }
 
-  return false;
+  if (value.startsWith("/") || value.includes("..")) {
+    return false;
+  }
+
+  return !/[;`$&|<>]/u.test(value);
+}
+
+function validateScopedCodebasePaths(
+  ctx: ExtensionCommandContext,
+  paths: string[] | undefined,
+): string[] | undefined | null {
+  if (paths === undefined) {
+    return undefined;
+  }
+
+  const invalidPaths = paths.filter((path) => !isValidScopedCodebasePath(path));
+  if (invalidPaths.length > 0) {
+    ctx.ui.notify(
+      `Unsupported /gsd map-codebase mode: invalid --paths entries: ${invalidPaths.join(", ")}. Use repo-relative paths without '..', leading '/', or shell metacharacters.`,
+      "warning",
+    );
+    return null;
+  }
+
+  return paths;
 }
 
 function createCanonicalBackup(codebaseDir: string): string | null {
@@ -626,9 +650,9 @@ function handleFullCodebaseMap(
   ctx: ExtensionCommandContext,
   codebaseDir: string,
   date: string,
+  scopedPaths: string[],
   existingMode: GsdCommandArgs["existingMode"],
 ): void {
-  const scopedPaths: string[] = [];
   const backupDir = createCanonicalBackup(codebaseDir);
 
   if (ensureSafeExistingDocsFlow(ctx, codebaseDir, existingMode, true)) {
@@ -677,7 +701,10 @@ function handleFullCodebaseMap(
       return { areas: results, artifacts, commitSha };
     },
     {
-      startMessage: `Started codebase map: ${focusAreas.length} subagents`,
+      startMessage:
+        scopedPaths.length === 0
+          ? `Started codebase map: ${focusAreas.length} subagents`
+          : `Started scoped codebase map: ${focusAreas.length} subagents (${scopedPaths.join(", ")})`,
       successMessage: ({ commitSha }) =>
         commitSha === null
           ? `Codebase map updated without git baseline: ${codebaseDir}`
@@ -699,8 +726,11 @@ function handleFullCodebaseMap(
           {
             customType: GSD_CODEBASE_MAP_SUMMARY_MESSAGE,
             content: [
-              "Codebase mapping complete.",
+              scopedPaths.length === 0
+                ? "Codebase mapping complete."
+                : "Scoped codebase mapping complete.",
               "",
+              ...(scopedPaths.length === 0 ? [] : [`Scope: ${scopedPaths.join(", ")}`, ""]),
               "Verified `.planning/codebase/` artifacts:",
               ...artifacts.map((artifact) => `- ${artifact.name} (${artifact.lines} lines)`),
               ...(commitSha === null
@@ -741,6 +771,11 @@ export function handleGsdMapCodebase(
     return;
   }
 
+  const scopedPaths = validateScopedCodebasePaths(ctx, args.paths);
+  if (scopedPaths === null) {
+    return;
+  }
+
   const date = new Date().toISOString().slice(0, 10);
 
   ensurePlanningDir(ctx.cwd);
@@ -752,5 +787,5 @@ export function handleGsdMapCodebase(
     return;
   }
 
-  handleFullCodebaseMap(pi, ctx, codebaseDir, date, args.existingMode);
+  handleFullCodebaseMap(pi, ctx, codebaseDir, date, scopedPaths ?? [], args.existingMode);
 }

@@ -40,6 +40,7 @@ const StatsPhaseSchema = Type.Object(
   {
     number: Type.String(),
     name: Type.String(),
+    mode: Type.Union([Type.String(), Type.Null()]),
     plans: Type.Integer({ minimum: 0 }),
     summaries: Type.Integer({ minimum: 0 }),
     status: StatsPhaseStatusSchema,
@@ -54,6 +55,8 @@ export const StructuredStatsOutputSchema = Type.Object(
     phases: Type.Array(StatsPhaseSchema),
     phases_completed: Type.Integer({ minimum: 0 }),
     phases_total: Type.Integer({ minimum: 0 }),
+    mvp_phases: Type.Integer({ minimum: 0 }),
+    standard_phases: Type.Integer({ minimum: 0 }),
     total_plans: Type.Integer({ minimum: 0 }),
     total_summaries: Type.Integer({ minimum: 0 }),
     percent: Type.Integer({ minimum: 0 }),
@@ -62,6 +65,7 @@ export const StructuredStatsOutputSchema = Type.Object(
     requirements_complete: Type.Integer({ minimum: 0 }),
     git_commits: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     git_first_commit_date: Type.Union([Type.String(), Type.Null()]),
+    project_age_days: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
     last_activity: Type.Union([Type.String(), Type.Null()]),
     verification_count: Type.Integer({ minimum: 0 }),
     open_blockers: Type.Integer({ minimum: 0 }),
@@ -115,12 +119,14 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   const requirements = parseRequirementsProgress(snapshot.requirements);
   const gitCommitCount = readGitCommitCount(cwd);
   const gitFirstCommitDate = readGitFirstCommitDate(cwd);
+  const projectAgeDays = computeProjectAgeDays(gitFirstCommitDate);
   const lastActivity = resolveLastActivity(snapshot.state?.last_activity, cwd);
   const phases = new Map<
     string,
     {
       number: string;
       name: string;
+      mode: string | null;
       plans: number;
       summaries: number;
       status: StatsPhaseStatus;
@@ -132,6 +138,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     phases.set(number, {
       number,
       name: phase.name,
+      mode: phase.mode ?? null,
       plans: phase.plans.length,
       summaries: 0,
       status: "Not Started",
@@ -158,6 +165,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     phases.set(number, {
       number,
       name: existing?.name ?? phase.name,
+      mode: existing?.mode ?? roadmapPhase?.mode ?? null,
       plans: Math.max(plans, existing?.plans ?? 0),
       summaries,
       status,
@@ -175,6 +183,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   const totalPlans = sortedPhases.reduce((sum, phase) => sum + phase.plans, 0);
   const totalSummaries = sortedPhases.reduce((sum, phase) => sum + phase.summaries, 0);
   const completedPhases = sortedPhases.filter((phase) => phase.status === "Complete").length;
+  const mvpPhases = sortedPhases.filter((phase) => phase.mode === "mvp").length;
   const percent =
     sortedPhases.length > 0
       ? Math.min(100, Math.round((completedPhases / sortedPhases.length) * 100))
@@ -188,6 +197,8 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     phases: sortedPhases,
     phases_completed: completedPhases,
     phases_total: sortedPhases.length,
+    mvp_phases: mvpPhases,
+    standard_phases: Math.max(0, sortedPhases.length - mvpPhases),
     total_plans: totalPlans,
     total_summaries: totalSummaries,
     percent,
@@ -196,11 +207,26 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     requirements_complete: requirements.complete,
     git_commits: gitCommitCount,
     git_first_commit_date: gitFirstCommitDate,
+    project_age_days: projectAgeDays,
     last_activity: lastActivity,
     verification_count: verificationCount,
     open_blockers: blockers,
     decisions_count: decisions,
   };
+}
+
+function computeProjectAgeDays(firstCommitDate: string | null): number | null {
+  if (firstCommitDate === null) {
+    return null;
+  }
+
+  const firstCommitTime = Date.parse(firstCommitDate);
+  if (Number.isNaN(firstCommitTime)) {
+    return null;
+  }
+
+  const elapsedMs = Math.max(0, Date.now() - firstCommitTime);
+  return Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
 }
 
 function resolveLastActivity(stateLastActivity: string | undefined, cwd: string): string | null {

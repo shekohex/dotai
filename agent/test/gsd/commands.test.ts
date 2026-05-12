@@ -349,6 +349,37 @@ test("gsd health routes bare --context using config window fallback", async () =
   });
 });
 
+test("gsd health prompts once for context metrics when UI input is available", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications, fakePi));
+  const inputs = ["650", "1000"];
+  await command?.handler("health --context", {
+    ...createCommandContext(cwd, notifications, fakePi),
+    hasUI: true,
+    ui: {
+      notify(message: string, level: string) {
+        notifications.push({ message, level });
+      },
+      input: vi.fn(async () => inputs.shift()),
+    },
+  });
+
+  expect(notifications.at(-1)).toEqual({
+    message: [
+      "Health context 65% warning",
+      "Window: 650/1000 tokens",
+      "Recommendation: Context is approaching the fracture zone — consider /gsd-thread to continue in a fresh window.",
+    ].join("\n"),
+    level: "warning",
+  });
+});
+
 test("gsd health ignores invalid config context_window and falls back to bundled default", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -410,6 +441,13 @@ test("gsd health parser accepts equals-form context counters", () => {
     context: true,
     tokensUsed: "650",
     contextWindow: "1000",
+  });
+});
+
+test("gsd health parser accepts backfill mode", () => {
+  expect(parseGsdCommandArgs("health --backfill")).toEqual({
+    subcommand: "health",
+    backfill: true,
   });
 });
 
@@ -1169,6 +1207,12 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "new-milestone",
     milestone: "v1.1 Notifications",
   });
+  expect(parseGsdCommandArgs("new-milestone --text --reset-phase-numbers v2.0 Platform")).toEqual({
+    subcommand: "new-milestone",
+    text: true,
+    resetPhaseNumbers: true,
+    milestone: "v2.0 Platform",
+  });
   expect(parseGsdCommandArgs("new-project --auto @idea.md")).toEqual({
     subcommand: "new-project",
     auto: true,
@@ -1440,11 +1484,43 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
     ]),
   );
 
+  const newMilestoneItems = await command?.getArgumentCompletions?.("new-milestone ");
+  expect(newMilestoneItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "new-milestone --text", label: "--text" }),
+      expect.objectContaining({
+        value: "new-milestone --reset-phase-numbers",
+        label: "--reset-phase-numbers",
+      }),
+    ]),
+  );
+
   const planItems = await command?.getArgumentCompletions?.("plan-phase ");
   expect(planItems).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ value: "plan-phase --gaps", label: "--gaps" }),
       expect.objectContaining({ value: "plan-phase --reviews", label: "--reviews" }),
+    ]),
+  );
+
+  const statsItems = await command?.getArgumentCompletions?.("stats ");
+  expect(statsItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "stats json", label: "json" }),
+      expect.objectContaining({ value: "stats table", label: "table" }),
+      expect.objectContaining({ value: "stats --json", label: "--json" }),
+      expect.objectContaining({ value: "stats --table", label: "--table" }),
+      expect.objectContaining({ value: "stats --format", label: "--format" }),
+      expect.objectContaining({ value: "stats --format=", label: "--format=" }),
+    ]),
+  );
+
+  const healthItems = await command?.getArgumentCompletions?.("health ");
+  expect(healthItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "health --backfill", label: "--backfill" }),
+      expect.objectContaining({ value: "health --tokens-used=", label: "--tokens-used=" }),
+      expect.objectContaining({ value: "health --context-window=", label: "--context-window=" }),
     ]),
   );
 
@@ -3215,7 +3291,7 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
   expect(content).toContain("Not claim upstream parity.");
   expect(content).toContain("/gsd new-project --auto @idea.md");
   expect(content).toContain(
-    "`--tokens-used` and `--context-window` require `--context`; `--repair` and `--context` cannot be combined in one run",
+    "`--tokens-used` and `--context-window` require `--context`; `--repair` / `--backfill` cannot be combined with `--context` in one run",
   );
   expect(content).toContain(
     "shows active local GSD subagent/session status in UI panel or plain text",
@@ -3640,6 +3716,22 @@ test("gsd new-milestone and milestone-summary route through grouped command surf
       String(prompt).includes('Launch native GSD workflow for "/gsd milestone-summary v1.1"'),
     ),
   ).toBe(true);
+});
+
+test("gsd new-milestone forwards supported workflow flags through grouped command surface", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("on", context);
+  await command?.handler("new-milestone --text --reset-phase-numbers v2.0 Platform", context);
+
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-milestone --text --reset-phase-numbers v2.0 Platform"',
+  );
 });
 
 test("gsd debug grouped command launches workflow prompt in forked session", async () => {

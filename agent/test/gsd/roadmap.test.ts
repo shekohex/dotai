@@ -77,6 +77,33 @@ describe("roadmap parser", () => {
     expect(phases[0]?.plans[1]?.completed).toBe(true);
   });
 
+  it("parses optional per-phase mode field", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+## Phase Details
+
+### Phase 1: Setup
+**Goal**: Establish project baseline
+**Mode**: MVP
+Plans:
+- [ ] 01-01: Create config
+
+### Phase 2: Build
+**Goal**: Ship feature
+Plans:
+- [ ] 02-01: Implement feature
+`,
+    );
+
+    expect(readRoadmapPhases(root)).toMatchObject([
+      { number: "1", mode: "mvp" },
+      { number: "2", mode: undefined },
+    ]);
+  });
+
   it("resolves current phase from state", () => {
     const root = createPlanningRoot();
     const current = resolveCurrentPhase(root);

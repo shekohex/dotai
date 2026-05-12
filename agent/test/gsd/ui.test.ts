@@ -227,11 +227,13 @@ describe("gsd ui custom components", () => {
     expect(sawExecution).toBe(true);
     expect(sawDebug).toBe(true);
 
-    component.handleInput?.("\u001b[5~");
-    component.handleInput?.("\u001b[5~");
-    component.handleInput?.("\u001b[5~");
-    component.handleInput?.("\u001b[5~");
-    component.handleInput?.("\u001b[5~");
+    for (let page = 0; page < 12; page += 1) {
+      component.handleInput?.("\u001b[5~");
+      const renderedPage = component.render(100).join("\n");
+      if (renderedPage.includes("# GSD Command Reference")) {
+        break;
+      }
+    }
 
     const backToFirstPage = component.render(100).join("\n");
     expect(backToFirstPage).toContain("# GSD Command Reference");

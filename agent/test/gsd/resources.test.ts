@@ -183,7 +183,80 @@ describe("gsd bundled resources", () => {
       "default route: bundled workflow-launch review session",
     );
     expect(loadBundledDoc("command-reference.md")).toContain(
-      "structured/table output also includes git commit count, first commit date, and last activity",
+      "structured/table output also includes git commit count, first commit date, project age, and last activity",
+    );
+  });
+
+  it("ships new-milestone workflow contract for reset, state switch, and commit branches", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/new-milestone.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/new-milestone.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("Preserve all workflow gates");
+    expect(workflow).toContain("`--reset-phase-numbers` flag");
+    expect(workflow).toContain("`--text` flag");
+    expect(workflow).toContain('gsd-sdk query state.milestone-switch --milestone "v[X.Y]"');
+    expect(workflow).toContain("gsd-sdk query phases.clear --confirm");
+    expect(workflow).toContain('gsd-sdk query commit "docs: start milestone v[X.Y] [Name]"');
+    expect(workflow).toContain("If `phase_dir_count > 0` but `phase_archive_path` is missing");
+    expect(workflow).toContain("Ask user, preferably via `interview`");
+    expect(workflow).toContain("subagent start (prompt=");
+  });
+
+  it("ships complete-milestone workflow contract for audit, archive, and tag gates", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/complete-milestone.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/complete-milestone.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("recommend `/gsd audit-milestone` first");
+    expect(command).toContain("archive to milestones/");
+    expect(workflow).toContain("gsd-sdk query audit-open");
+    expect(workflow).toContain("Acknowledge all — document as deferred and proceed with close");
+    expect(workflow).toContain(".planning/milestones/v[X.Y]-ROADMAP.md");
+    expect(workflow).toContain(".planning/milestones/v[X.Y]-REQUIREMENTS.md");
+    expect(workflow).toContain('gsd-sdk query commit "chore: archive v[X.Y] milestone files"');
+    expect(workflow).toContain('git tag -a v[X.Y] -m "v[X.Y] [Name]');
+    expect(workflow).toContain("Archive UI artifacts (`*-UI-SPEC.md`, `*-UI-REVIEW.md`)");
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "local source of truth is `.planning/milestones/`; tagging should pause for explicit confirmation",
+    );
+  });
+
+  it("ships secure-phase workflow contract for threat register and blocking gates", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/secure-phase.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/secure-phase.md"),
+      "utf8",
+    );
+
+    expect(command).toContain(
+      "bundled workflow owns security review orchestration and SECURITY.md follow-up",
+    );
+    expect(workflow).toContain("gsd-sdk query init.phase-op");
+    expect(workflow).toContain("Build Threat Register");
+    expect(workflow).toContain("register_authored_at_plan_time");
+    expect(workflow).toContain("retroactive-STRIDE mode");
+    expect(workflow).toContain("gsd-security-auditor");
+    expect(workflow).toContain("Write/Update SECURITY.md");
+    expect(workflow).toContain("threats_open > 0 BLOCKS advancement");
+    expect(workflow).toContain(
+      'gsd-sdk query commit "docs(phase-${PHASE}): add/update security threat verification"',
+    );
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "workflow-owned security review builds or reuses per-phase threat register, can document accepted risks, writes `*-SECURITY.md`, and blocks advancement while threats remain open",
     );
   });
 
@@ -224,20 +297,31 @@ describe("gsd bundled resources", () => {
       "If upstream docs mention `/gsd <name>` command not listed below, command is unavailable in this repo.",
     );
     expect(reference).toContain("- `/gsd map-codebase`");
-    expect(reference).toContain("flags: `--fast`, `--query <term|status|diff|refresh>`");
+    expect(reference).toContain(
+      "flags: `--paths <repo/path,...>`, `--fast`, `--query <term|status|diff|refresh>`",
+    );
     expect(reference).toContain(
       "`--focus <tech|arch|quality|concerns|tech+arch>` only with `--fast`",
     );
-    expect(reference).toContain("unsupported-local but explicit: `--paths <repo/path,...>`");
-    expect(reference).not.toContain(
-      "flags: `--paths <repo/path,...>`, `--fast`, `--focus <tech|arch|quality|concerns|tech+arch>`, `--query <term|status|diff|refresh>`",
+    expect(reference).toContain(
+      "`--paths <repo/path,...>` runs scoped canonical remap with strict repo-relative path validation",
     );
 
     expect(flags["map-codebase"]).toBeUndefined();
     expect(reference).toContain(
       "parsed with explicit unsupported-local error: `--do`, `--forensic`",
     );
+    expect(reference).toContain("narrowed local router, not full upstream `next.md` route graph");
+    expect(reference).toContain(
+      "unsupported upstream-equivalent branches stay manual boundaries here: paused-state resume, prior-phase deferral/backlog choices, and spike/sketch notices",
+    );
+    expect(reference).toContain(
+      "narrowed local situational review command, not upstream routed execution hub",
+    );
     expect(reference).toContain("`--phase <phase>`, `--force` only with `/gsd progress --next`");
+    expect(reference).toContain(
+      "unsupported upstream-equivalent branches stay fenced here: default post-report route graph, freeform `--do` dispatch, and `--forensic` integrity audit",
+    );
     expect(reference).toContain(
       "Non-UI `/gsd help` emits durable `gsd-help` message output; registered local renderer is intended handling path.",
     );
@@ -245,7 +329,11 @@ describe("gsd bundled resources", () => {
       "variants: `json`, `table`, `--json`, `--table`, `--format json`, `--format table`",
     );
     expect(reference).toContain(
-      "flags: `--repair`, `--context`, `--tokens-used <int>`, `--tokens-used=<int>`, `--context-window <int>`, `--context-window=<int>`",
+      "flags: `--repair`, `--backfill`, `--context`, `--tokens-used <int>`, `--tokens-used=<int>`, `--context-window <int>`, `--context-window=<int>`",
+    );
+    expect(reference).toContain("flags: `--text`, `--reset-phase-numbers`");
+    expect(reference).toContain(
+      "git statistics stay milestone-bound and the workflow must not dirty `STATE.md` as a side effect of report generation",
     );
     expect(reference).toContain(
       "`--force` only bypasses blocked/error `STATE.md` status gate; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing",
@@ -354,6 +442,9 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("/gsd verify-work");
     expect(command).toContain("/gsd plan-phase");
     expect(command).toContain("/gsd execute-phase");
+    expect(command).toContain(
+      "workflow-owned diagnosis, gap-planning, and post-UAT closure guidance",
+    );
     expect(command).toContain("Rejected now:");
     expect(command).toContain("unknown flags");
     expect(workflow).toContain('node "$GSD_TOOLS_PATH" init verify-work "<phase>"');
@@ -367,12 +458,17 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain(
       "Status helper must preserve `diagnosed` when stored in frontmatter",
     );
+    expect(workflow).toContain("Diagnosis And Gap-Planning Branch");
+    expect(workflow).toContain("persist diagnosis via `verify-work apply-diagnosis`");
+    expect(workflow).toContain("/gsd plan-phase --gaps <phase>");
+    expect(workflow).toContain("Post-UAT Closure Guidance");
+    expect(workflow).toContain("point to `/gsd secure-phase {phase}`");
+    expect(workflow).toContain("UAT complete, security pending");
+    expect(workflow).toContain("UAT complete, artifact acknowledgment pending");
     expect(workflow).toContain("Not yet supported in this slice");
     expect(workflow).toContain("Playwright/Puppeteer auto-verification branch");
     expect(workflow).toContain("MVP-mode branch via `phase.mvp-mode`");
-    expect(workflow).toContain("auto diagnosis via `diagnose-issues.md`");
-    expect(workflow).toContain("artifact acknowledgment gate via `audit-open --json`");
-    expect(workflow).toContain("transition workflow handoff and phase completion mutation");
+    expect(workflow).not.toContain("auto diagnosis via `diagnose-issues.md`");
     expect(uatTemplate).toContain("status: testing | partial | complete | diagnosed");
     expect(uatTemplate).toContain("Current Test");
     expect(uatTemplate).toContain("Summary");
@@ -382,8 +478,32 @@ describe("gsd bundled resources", () => {
     expect(uatTemplate).toContain("artifacts");
     expect(uatTemplate).toContain("missing");
     expect(uatTemplate).toContain("debug_session");
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "workflow-owned UAT path now includes helper-backed diagnosis persistence, issue-to-gap follow-up guidance, artifact-acknowledgment/security/transition closure guidance",
+    );
     expect(uatTemplate).toContain("single source of truth for verify progress");
     expect(uatTemplate).toContain("does not auto-run diagnosis, security gating, or transition");
+  });
+
+  it("keeps debug help explicit about TS-owned list/status fork and workflow handoff", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/debug.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("- `list` — List all active debug sessions");
+    expect(command).toContain(
+      "- `status <slug>` — Print full summary of a session without spawning an agent",
+    );
+    expect(command).toContain("- `continue <slug>` — Resume a specific session by slug");
+    expect(command).toContain("gsd-debug-session-manager");
+    expect(command).toContain("Check for active sessions");
+    expect(command).toContain(
+      "`AskUserQuestion(...)` => use `interview` for user-facing decisions and symptom intake when UI is available.",
+    );
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "local fork is intentional: `list` and `status` are TS-rendered compact session views",
+    );
   });
 
   it("ships validate-phase foundation resources and wording", () => {
@@ -406,6 +526,8 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("nyquist_validation_enabled");
     expect(command).toContain("validation_state");
     expect(command).toContain("handler pre-seeds draft `*-VALIDATION.md` artifact");
+    expect(command).toContain("workflow-owned Nyquist gap review");
+    expect(command).toContain("fix-all / manual-only / cancel gate");
     expect(workflow).toContain(
       "Do not recreate old native template-writer behavior as success path",
     );
@@ -421,6 +543,56 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain("revise that file in place");
     expect(workflow).toContain("validation_target_path");
     expect(workflow).toContain("validation_target_mode");
+    expect(workflow).toContain("Gap review and auditor contract");
+    expect(workflow).toContain("gsd-nyquist-auditor");
+    expect(workflow).toContain("fix all gaps");
+    expect(workflow).toContain("skip and mark manual-only");
+    expect(workflow).toContain("## GAPS FILLED");
+    expect(workflow).toContain(
+      'git commit -m "test(phase-${PHASE}): add Nyquist validation tests"',
+    );
+    expect(workflow).toContain(
+      'gsd-sdk query commit "docs(phase-${PHASE}): add/update validation strategy"',
+    );
+    expect(workflow).toContain("point to `/gsd audit-milestone`");
+  });
+
+  it("keeps plan-phase docs aligned with shipped route behavior", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/resources/gsd/commands/gsd/plan-phase.md"),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      join(process.cwd(), "src/resources/gsd/workflows/plan-phase.md"),
+      "utf8",
+    );
+
+    expect(command).toContain("- `--gaps`");
+    expect(command).toContain("- `--reviews`");
+    expect(command).toContain("omitted phase prefers next unplanned roadmap phase first");
+    expect(command).toContain("checker-approved plans or `--skip-verify` success");
+    expect(workflow).toContain("Omitted phase prefers next unplanned roadmap phase first.");
+    expect(workflow).toContain("Gaps route:");
+    expect(workflow).toContain(
+      "Require `VERIFICATION.md` or `UAT.md` evidence before planner runs.",
+    );
+    expect(workflow).toContain("Reviews route:");
+    expect(workflow).toContain("Require `REVIEWS.md`.");
+    expect(workflow).toContain("run roadmap dependency annotation and post-planning helper");
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "omitted phase prefers next unplanned roadmap phase first; `--gaps` requires verification or UAT evidence and `--reviews` requires `REVIEWS.md`",
+    );
+  });
+
+  it("keeps discuss-phase help explicit about TS-owned local fork", () => {
+    const reference = loadBundledDoc("command-reference.md");
+
+    expect(reference).toContain(
+      "TS-owned local flow: checkpointed discuss loop, assumptions preview/artifact route, prior-context/codebase-scout loading, and phase-local blocking `.continue-here.md` gate",
+    );
+    expect(reference).toContain(
+      "explicit local non-support: `--batch`, `--analyze`, `--power`, upstream advisor/methodology overlays, and assumptions-list artifact listing beyond preview/artifact routes",
+    );
   });
 
   it("ships execute-phase foundation resources and wording", () => {
@@ -512,6 +684,9 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain("Use existing local runtime helpers");
     expect(workflow).toContain("GSD_BUNDLE_DIR");
     expect(workflow).not.toContain("{{GSD_BUNDLE_DIR}}/commands/gsd/execute-phase.md");
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "local slice requires explicit phase, preserves workflow-native flag pass-through, and uses bundled branch/worktree/checkpoint/regression/drift/verifier gates rather than native TS reimplementation",
+    );
     expect(worktreeGate).toContain("currentPaths ∩ siblingPaths != ∅");
     expect(worktreeGate).toContain("parent-child overlap");
     expect(worktreeGate).toContain(

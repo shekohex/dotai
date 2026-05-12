@@ -45,6 +45,7 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
 ];
 
 const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
+  "new-milestone": ["--text", "--reset-phase-numbers"],
   "discuss-phase": ["--phase", "--phase=", "--assumptions", "--auto", "--all", "--chain", "--text"],
   "plan-phase": [
     "--phase",
@@ -78,7 +79,16 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
   "validate-phase": ["--phase", "--phase="],
   next: ["--phase", "--phase=", "--force"],
   progress: ["--next"],
-  health: ["--repair", "--context", "--tokens-used", "--context-window"],
+  stats: ["json", "table", "--json", "--table", "--format", "--format="],
+  health: [
+    "--repair",
+    "--backfill",
+    "--context",
+    "--tokens-used",
+    "--tokens-used=",
+    "--context-window",
+    "--context-window=",
+  ],
   debug: ["--diagnose"],
 };
 

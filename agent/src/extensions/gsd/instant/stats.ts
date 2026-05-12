@@ -20,10 +20,7 @@ export function handleGsdStats(
     ctx.ui.notify(renderStatsTable(result), "info");
     return;
   }
-  ctx.ui.notify(
-    `Stats milestone=${result.milestone_version} phases=${result.phases_total} plans=${result.total_plans} summaries=${result.total_summaries} verifications=${result.verification_count} blockers=${result.open_blockers} decisions=${result.decisions_count}`,
-    "info",
-  );
+  ctx.ui.notify(renderStatsTable(result), "info");
 }
 
 function renderStatsTable(result: ReturnType<typeof computeStructuredStats>): string {
@@ -33,11 +30,17 @@ function renderStatsTable(result: ReturnType<typeof computeStructuredStats>): st
     `# ${result.milestone_version} ${result.milestone_name} — Statistics`,
     "",
     `Progress: [${bar}] ${result.phases_completed}/${result.phases_total} phases (${result.percent}%)`,
+    ...(result.mvp_phases > 0
+      ? [
+          `Phases: ${result.phases_total} total | ${result.mvp_phases} MVP | ${result.standard_phases} standard`,
+        ]
+      : []),
     `Plans: ${result.total_summaries}/${result.total_plans} complete (${result.plan_percent}%)`,
     `Requirements: ${result.requirements_complete}/${result.requirements_total} complete`,
     `Git commits: ${result.git_commits ?? "unknown"}`,
     `First commit: ${result.git_first_commit_date ?? "unknown"}`,
     `Last activity: ${result.last_activity ?? "unknown"}`,
+    `Project age: ${result.project_age_days === null ? "unknown" : `${String(result.project_age_days)} days`}`,
     "",
     "| Phase | Name | Plans | Completed | Status |",
     "| --- | --- | --- | --- | --- |",

@@ -553,7 +553,9 @@ const App: React.FC = () => {
   const headingCount = useMemo(() => blocks.filter(b => b.type === 'heading').length, [blocks]);
   const activeSection = useActiveSection(containerRef, headingCount, scrollViewport);
 
-  const { editorAnnotations, deleteEditorAnnotation } = useEditorAnnotations();
+  const { editorAnnotations, deleteEditorAnnotation } = useEditorAnnotations({
+    enabled: isApiMode && annotateSource !== 'message' && !archive.archiveMode,
+  });
   const { externalAnnotations, updateExternalAnnotation, deleteExternalAnnotation } = useExternalAnnotations<Annotation>({ enabled: isApiMode });
 
   // Drive DOM highlights for SSE-delivered external annotations. Disabled

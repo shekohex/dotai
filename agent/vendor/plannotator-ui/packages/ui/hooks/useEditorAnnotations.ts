@@ -18,7 +18,10 @@ interface UseEditorAnnotationsReturn {
 /**
  * Polls the server for editor annotations.
  */
-export function useEditorAnnotations(): UseEditorAnnotationsReturn {
+export function useEditorAnnotations(
+  options?: { enabled?: boolean },
+): UseEditorAnnotationsReturn {
+  const enabled = options?.enabled ?? true;
   const [annotations, setAnnotations] = useState<EditorAnnotation[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fallbackRef = useRef(false);
@@ -40,7 +43,10 @@ export function useEditorAnnotations(): UseEditorAnnotationsReturn {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
+    fallbackRef.current = false;
+    receivedSnapshotRef.current = false;
     const eventSource = new EventSource(STREAM_URL);
 
     eventSource.onmessage = (event) => {
@@ -82,7 +88,7 @@ export function useEditorAnnotations(): UseEditorAnnotationsReturn {
         intervalRef.current = null;
       }
     };
-  }, [fetchAnnotations]);
+  }, [enabled, fetchAnnotations]);
 
   const deleteEditorAnnotation = useCallback(async (id: string) => {
     try {

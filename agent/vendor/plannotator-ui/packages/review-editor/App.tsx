@@ -256,7 +256,7 @@ const ReviewApp: React.FC = () => {
   }, []);
 
   // VS Code editor annotations (only polls when inside VS Code webview)
-  const { editorAnnotations, deleteEditorAnnotation } = useEditorAnnotations();
+  const { editorAnnotations, deleteEditorAnnotation } = useEditorAnnotations({ enabled: !!origin });
 
   // External annotations (SSE-based, for any external tool)
   // TODO: Replace !!origin with a dedicated isApiMode boolean (set on /api/diff success/failure).

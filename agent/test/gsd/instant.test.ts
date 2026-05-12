@@ -49,6 +49,47 @@ describe("gsd instant commands", () => {
     });
   });
 
+  it("stats verification count excludes validation and UAT artifacts", () => {
+    const root = createTempDirSync("agent-gsd-stats-verification-only-count-");
+    mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Foundation
+**Goal**: Build base
+
+Plans:
+- [ ] 01-01: Create base
+`,
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/index.ts]\nautonomous: true\nmust_haves: [works]\n---\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "01-01-VERIFICATION.md"),
+      "verification\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "01-01-VALIDATION.md"),
+      "validation\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+
+    expect(computeStructuredStats(root).verification_count).toBe(1);
+  });
+
   it("stats includes blockers and decisions from brownfield state", () => {
     const { notifications, ctx } = createNotifications();
     handleGsdStats({} as never, ctx as never);

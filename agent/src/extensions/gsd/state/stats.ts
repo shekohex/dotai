@@ -142,7 +142,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
       summaries,
       status,
     });
-    verificationCount += phase.verifications.length + phase.validations.length + phase.uats.length;
+    verificationCount += phase.verifications.length;
   }
 
   const sortedPhases = [...phases.values()].toSorted((left, right) =>

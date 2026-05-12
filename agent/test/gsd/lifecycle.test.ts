@@ -5677,6 +5677,20 @@ Plans:
     );
   });
 
+  it("validate-phase omitted phase accepts padded local artifact ids for helper-ready selection", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "02-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "02-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 2"',
+    );
+  });
+
   it("validate-phase fails closed for explicit incomplete phase", async () => {
     const root = createPlanningRoot();
     writeFileSync(

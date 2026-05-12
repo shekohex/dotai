@@ -14,6 +14,20 @@ type ValidatePhaseSelection = CurrentPhaseSelection & {
   validationTargetMode: "create" | "update";
 };
 
+function withSnapshotPhaseDir(
+  selection: CurrentPhaseSelection,
+  phaseSnapshot: ReturnType<typeof readPlanningSnapshot>["phases"][number] | undefined,
+): CurrentPhaseSelection {
+  if (phaseSnapshot === undefined) {
+    return selection;
+  }
+
+  return {
+    ...selection,
+    phaseDir: phaseSnapshot.path,
+  };
+}
+
 const ValidatePhasePreflightSchema = Type.Object(
   {
     ready: Type.Boolean(),
@@ -96,6 +110,14 @@ function comparePhaseNumbers(left: string, right: string): number {
   return 0;
 }
 
+function canonicalizePhaseNumber(value: string): string {
+  return value
+    .trim()
+    .split(".")
+    .map((segment) => String(Number.parseInt(segment, 10)))
+    .join(".");
+}
+
 function findPhaseByNumber(phases: RoadmapPhase[], phaseNumber: string): RoadmapPhase | undefined {
   return phases.find((phase) => phase.number === phaseNumber);
 }
@@ -171,6 +193,7 @@ function resolveHelperReadySelection(
     }
 
     const phaseSnapshot = byNumber.get(roadmapPhase.number);
+    const resolvedSelection = withSnapshotPhaseDir(selection, phaseSnapshot);
     const preflight = runValidatePhasePreflight(cwd, roadmapPhase.number);
     if (!preflight.ok) {
       return { blockedPhaseNumber: roadmapPhase.number, blockedReason: `${preflight.error}.` };
@@ -190,7 +213,9 @@ function resolveHelperReadySelection(
       };
     }
 
-    if (!isCanonicalValidationTargetPath(selection, preflight.value.validation_target_path)) {
+    if (
+      !isCanonicalValidationTargetPath(resolvedSelection, preflight.value.validation_target_path)
+    ) {
       return {
         blockedPhaseNumber: roadmapPhase.number,
         blockedReason: "validate-phase preflight returned non-canonical validation target path.",
@@ -199,7 +224,7 @@ function resolveHelperReadySelection(
 
     return {
       selection: {
-        ...selection,
+        ...resolvedSelection,
         summaryCount: phaseSnapshot?.summaries.length ?? 0,
         validationExists: (phaseSnapshot?.validations.length ?? 0) > 0,
         validationTargetPath: preflight.value.validation_target_path,
@@ -279,7 +304,10 @@ export function resolveValidatePhaseSelection(
   const byNumber = new Map(
     snapshot.phases.map((phaseSnapshot) => {
       const number = phaseSnapshot.id.match(/(\d+(?:\.\d+)?)/u)?.[1];
-      return [number, phaseSnapshot] as const;
+      return [
+        number === undefined ? undefined : canonicalizePhaseNumber(number),
+        phaseSnapshot,
+      ] as const;
     }),
   );
 
@@ -331,6 +359,7 @@ export function resolveValidatePhaseSelection(
   }
 
   const phaseSnapshot = byNumber.get(roadmapPhase.number);
+  const resolvedSelection = withSnapshotPhaseDir(selection, phaseSnapshot);
   if (hasUnexpectedSummaryIds(roadmapPhase, phaseSnapshot)) {
     return {
       error: `Cannot run /gsd validate-phase: phase ${roadmapPhase.number} has malformed or non-roadmap SUMMARY.md artifacts.`,
@@ -374,7 +403,7 @@ export function resolveValidatePhaseSelection(
     };
   }
 
-  if (!isCanonicalValidationTargetPath(selection, preflight.value.validation_target_path)) {
+  if (!isCanonicalValidationTargetPath(resolvedSelection, preflight.value.validation_target_path)) {
     return {
       error:
         "Cannot run /gsd validate-phase: validate-phase preflight returned non-canonical validation target path.",
@@ -383,7 +412,7 @@ export function resolveValidatePhaseSelection(
 
   return {
     selection: {
-      ...selection,
+      ...resolvedSelection,
       summaryCount,
       validationExists,
       validationTargetPath: preflight.value.validation_target_path,

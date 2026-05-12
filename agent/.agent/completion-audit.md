@@ -38,7 +38,7 @@ Implemented locally:
 | `execute-phase`      |            91 | `src/extensions/gsd/lifecycle/execute-phase.ts`              | strong              | completion audit still needed                                |
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
-| `validate-phase`     |            77 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
+| `validate-phase`     |            78 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            72 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            72 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
@@ -248,7 +248,7 @@ Implemented locally:
 - weakest remaining areas:
   - hand-maintained reference breadth still lower than upstream help universe
 
-### `validate-phase` (`77`)
+### `validate-phase` (`78`)
 
 - runtime:
   - `src/extensions/gsd/state/validate-phase.ts`
@@ -264,8 +264,9 @@ Implemented locally:
   - canonical target resolution
   - malformed helper payload rejection
   - thrown helper failure rejection
-  - exact canonical target-path revalidation
-  - omitted-phase fallback across helper-unready higher completed phases
+- exact canonical target-path revalidation
+- padded local snapshot phase dirs preserved during helper-ready selection/target validation
+- omitted-phase fallback across helper-unready higher completed phases
   - deterministic draft scaffolding
   - manual verification debt import
   - test type derivation

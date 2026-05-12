@@ -41,6 +41,32 @@ function planFilePrefix(phaseNumber: string): string {
   return phaseNumber.includes(".") ? phaseNumber : phaseNumber.padStart(2, "0");
 }
 
+function canonicalizePhaseNumber(value: string | number): string {
+  return String(value)
+    .trim()
+    .split(".")
+    .map((segment) => String(Number.parseInt(segment, 10)))
+    .join(".");
+}
+
+function phaseNumbersMatch(left: string | number, right: string | number): boolean {
+  return canonicalizePhaseNumber(left) === canonicalizePhaseNumber(right);
+}
+
+function canonicalizePlanId(value: string): string {
+  const parts = value.trim().split("-");
+  if (parts.length < 2) {
+    return value.trim();
+  }
+  const phase = canonicalizePhaseNumber(parts[0] ?? "");
+  const plan = String(Number.parseInt(parts[1] ?? "", 10)).padStart(2, "0");
+  return `${phase}-${plan}`;
+}
+
+function planIdsMatch(left: string, right: string): boolean {
+  return canonicalizePlanId(left) === canonicalizePlanId(right);
+}
+
 export function resolveCurrentPhase(
   cwd: string,
   requestedPhase?: string,
@@ -52,7 +78,7 @@ export function resolveCurrentPhase(
   }
   const requested = requestedPhase ?? snapshot.state?.current_phase;
   const active =
-    phases.find((phase) => phase.number === requested) ??
+    phases.find((phase) => requested !== undefined && phaseNumbersMatch(phase.number, requested)) ??
     phases.find((phase) => phase.plans.some((plan) => !plan.completed)) ??
     phases[0];
   const phaseDir = join(resolvePhasesDir(cwd), toPhaseDirName(active));
@@ -118,9 +144,12 @@ export function resolveNextPlan(
   const currentPlanId = snapshot.state?.current_plan;
   const requestedPhaseIndex =
     requestedPhase !== undefined && requestedPhase.length > 0
-      ? phases.findIndex((phase) => phase.number === requestedPhase)
+      ? phases.findIndex((phase) => phaseNumbersMatch(phase.number, requestedPhase))
       : -1;
-  const statePhaseIndex = phases.findIndex((phase) => phase.number === currentPhaseNumber);
+  const statePhaseIndex = phases.findIndex(
+    (phase) =>
+      currentPhaseNumber !== undefined && phaseNumbersMatch(phase.number, currentPhaseNumber),
+  );
   const earliestIncompletePhaseIndex = phases.findIndex((phase) => {
     const plans = resolvePhasePlans(snapshot, phase);
     if (plans.length === 0) {
@@ -162,7 +191,7 @@ export function resolveNextPlan(
     if (index === currentPhaseIndex) {
       const currentIndex =
         currentPlanId !== undefined && currentPlanId.length > 0
-          ? plans.findIndex((plan) => plan.id === currentPlanId)
+          ? plans.findIndex((plan) => planIdsMatch(plan.id, currentPlanId))
           : -1;
       const afterCurrent = currentIndex >= 0 ? plans.slice(currentIndex + 1) : plans;
       const nextInPhase = findIncompletePlan(afterCurrent);

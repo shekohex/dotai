@@ -187,6 +187,36 @@ describe("roadmap parser", () => {
     });
   });
 
+  it("computeNext honors padded requested phase and padded current plan ids", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 02\ncurrent_phase_name: Build\ncurrent_plan: 2-01\nstatus: Ready to execute\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-02-PLAN.md"),
+      "---\nphase: 02\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/d.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+
+    const next = computeNext(root, "02");
+    expect(next.reason).toBe("plan-advanced");
+    expect(next.currentPlan).toBe("02-02");
+    expect(next.newPhase).toBe("2");
+  });
+
+  it("resolveCurrentPhase honors padded requested phase", () => {
+    const root = createPlanningRoot();
+    const current = resolveCurrentPhase(root, "02");
+    expect(current?.phase.number).toBe("2");
+    expect(current?.phase.name).toBe("Build");
+  });
+
   it("fallback next handling fails closed when earliest incomplete phase needs workflow routing", () => {
     const root = createPlanningRoot();
     writeFileSync(

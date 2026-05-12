@@ -5,6 +5,14 @@ type HealthParserDependencies = {
   validateParsedArgs: (parsed: GsdCommandArgs) => GsdCommandArgs;
 };
 
+function isNonNegativeInteger(value: string): boolean {
+  return /^\d+$/u.test(value);
+}
+
+function isPositiveInteger(value: string): boolean {
+  return /^[1-9]\d*$/u.test(value);
+}
+
 export function parseHealthArgs(
   tokens: string[],
   { normalizeFreeform, validateParsedArgs }: HealthParserDependencies,
@@ -31,16 +39,27 @@ export function parseHealthArgs(
         unsupportedModeError ??= "Unsupported /gsd health flag: --tokens-used requires a value.";
         continue;
       }
+      if (!isNonNegativeInteger(nextToken)) {
+        unsupportedModeError ??=
+          "Unsupported /gsd health flag: --tokens-used requires non-negative integer value.";
+        continue;
+      }
       tokensUsed = nextToken;
       index += 1;
       continue;
     }
     if (token.startsWith("--tokens-used=")) {
-      tokensUsed = normalizeFreeform(token.slice("--tokens-used=".length));
-      if (tokensUsed === undefined || tokensUsed.startsWith("--")) {
+      const inlineTokensUsed = normalizeFreeform(token.slice("--tokens-used=".length));
+      if (inlineTokensUsed === undefined || inlineTokensUsed.startsWith("--")) {
         unsupportedModeError ??= "Unsupported /gsd health flag: --tokens-used requires a value.";
         continue;
       }
+      if (!isNonNegativeInteger(inlineTokensUsed)) {
+        unsupportedModeError ??=
+          "Unsupported /gsd health flag: --tokens-used requires non-negative integer value.";
+        continue;
+      }
+      tokensUsed = inlineTokensUsed;
       continue;
     }
     if (token === "--context-window") {
@@ -49,16 +68,27 @@ export function parseHealthArgs(
         unsupportedModeError ??= "Unsupported /gsd health flag: --context-window requires a value.";
         continue;
       }
+      if (!isPositiveInteger(nextToken)) {
+        unsupportedModeError ??=
+          "Unsupported /gsd health flag: --context-window requires positive integer value.";
+        continue;
+      }
       contextWindow = nextToken;
       index += 1;
       continue;
     }
     if (token.startsWith("--context-window=")) {
-      contextWindow = normalizeFreeform(token.slice("--context-window=".length));
-      if (contextWindow === undefined || contextWindow.startsWith("--")) {
+      const inlineContextWindow = normalizeFreeform(token.slice("--context-window=".length));
+      if (inlineContextWindow === undefined || inlineContextWindow.startsWith("--")) {
         unsupportedModeError ??= "Unsupported /gsd health flag: --context-window requires a value.";
         continue;
       }
+      if (!isPositiveInteger(inlineContextWindow)) {
+        unsupportedModeError ??=
+          "Unsupported /gsd health flag: --context-window requires positive integer value.";
+        continue;
+      }
+      contextWindow = inlineContextWindow;
       continue;
     }
     unsupportedModeError ??= `Unsupported /gsd health flag: ${token}.`;

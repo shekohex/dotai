@@ -57,7 +57,7 @@ Implemented locally:
 | `progress`           | workflow-launch + local next path  | `progress`                     |       72 |
 | `next`               | local-only instant command         | derived from `progress --next` |       72 |
 | `stats`              | TS-native instant command          | `stats`                        |       73 |
-| `health`             | TS-native instant command          | `health`                       |       76 |
+| `health`             | TS-native instant command          | `health`                       |       77 |
 | `status`             | local-only runtime monitor         | none                           |       53 |
 | `help`               | local docs viewer                  | `help`                         |       71 |
 | `on`                 | local enable toggle                | none                           |      100 |
@@ -564,7 +564,7 @@ Differences:
 
 ### `health`
 
-Coverage: 76/100
+Coverage: 77/100
 
 Upstream behavior:
 
@@ -575,6 +575,7 @@ Local behavior:
 - slash command now routes explicit `--repair` and `--context` requests through shipped bundled validator/context backends instead of silently ignoring flags. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/args.ts`
 - bare `/gsd health --context` now works without hidden numeric flags by deriving values in honest order from explicit args, live session metrics, `.planning/config.json` `context_window`, then bundled default window; when token usage is unavailable it reports unknown state instead of fabricating `0`. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/schema.ts`
 - parser now rejects missing or flag-like values for `--tokens-used` and `--context-window` explicitly instead of silently accepting malformed context-counter flags as absent or misparsed values. `src/extensions/gsd/health-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
+- parser now also rejects malformed numeric counter values (`--tokens-used nope`, `--tokens-used=-1`, `--context-window nope`, `--context-window=0`) before bundled backend execution, avoiding dishonest fallback output like `Window: 0/...` from invalid user input. `src/extensions/gsd/health-args.ts`, `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - normal `/gsd health` output now preserves `healthy`, `degraded`, and `broken` states, shows detailed issue and repair lines, preserves bundled repair detail fields, and converts malformed planning/config failures into structured command output instead of crashing. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/read.ts`
 - autocomplete and dashboard now use cheap local summary heuristics instead of synchronously invoking bundled validator on every hot-path refresh. `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/suggestions.ts`, `src/extensions/gsd/ui.ts`
 - hot-path local summary now classifies malformed config as broken, aligning severity better with real command behavior while remaining intentionally cheaper than full validator runs. `src/extensions/gsd/state/health.ts`, `test/gsd/health-state.test.ts`, `test/gsd/brownfield.test.ts`

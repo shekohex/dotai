@@ -319,7 +319,7 @@ test("gsd health routes bare --context using config window fallback", async () =
   });
 });
 
-test("gsd health surfaces bundled context validation failures as warning output", async () => {
+test("gsd health rejects malformed context counters before bundled backend", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -334,11 +334,7 @@ test("gsd health surfaces bundled context validation failures as warning output"
   );
 
   expect(notifications.at(-1)).toEqual({
-    message: [
-      "Health context 0% critical",
-      "Window: 0/1000 tokens",
-      "Recommendation: --tokens-used must be a non-negative integer (window > 0), got the values supplied",
-    ].join("\n"),
+    message: "Unsupported /gsd health flag: --tokens-used requires non-negative integer value.",
     level: "warning",
   });
 });
@@ -379,6 +375,33 @@ test("gsd health parser rejects missing context counter values explicitly", () =
     subcommand: "health",
     context: true,
     unsupportedModeError: "Unsupported /gsd health flag: --context-window requires a value.",
+  });
+});
+
+test("gsd health parser rejects malformed context counter values explicitly", () => {
+  expect(parseGsdCommandArgs("health --context --tokens-used nope")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError:
+      "Unsupported /gsd health flag: --tokens-used requires non-negative integer value.",
+  });
+  expect(parseGsdCommandArgs("health --context --tokens-used=-1")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError:
+      "Unsupported /gsd health flag: --tokens-used requires non-negative integer value.",
+  });
+  expect(parseGsdCommandArgs("health --context --context-window nope")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError:
+      "Unsupported /gsd health flag: --context-window requires positive integer value.",
+  });
+  expect(parseGsdCommandArgs("health --context --context-window=0")).toEqual({
+    subcommand: "health",
+    context: true,
+    unsupportedModeError:
+      "Unsupported /gsd health flag: --context-window requires positive integer value.",
   });
 });
 

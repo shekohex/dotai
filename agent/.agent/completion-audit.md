@@ -42,7 +42,7 @@ Implemented locally:
 | `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            72 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
-| `health`             |            76 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
+| `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            53 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            71 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -112,7 +112,7 @@ Implemented locally:
 
 ## Lowest-Score Command Evidence Map
 
-### `health` (`76`)
+### `health` (`77`)
 
 - runtime:
   - `src/extensions/gsd/instant/health.ts`
@@ -130,6 +130,7 @@ Implemented locally:
   - detailed repair rendering
   - hot-path local summary scoping
   - missing or flag-like `--tokens-used` / `--context-window` values rejected explicitly
+  - malformed numeric `--tokens-used` / `--context-window` values rejected before backend execution
 - weakest remaining areas:
   - richer repair/context parity still partial
 

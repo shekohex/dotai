@@ -123,6 +123,9 @@ function buildValidationDraft(
       : "Unmapped in ROADMAP.md";
   const snapshot = readPlanningSnapshot(cwd);
   const phaseSnapshot = snapshot.phases.find((phase) => phase.path === selection.phaseDir);
+  const hasAutomatedRunner = quickRunCommand !== "not detected";
+  const hasVerificationEvidence = (phaseSnapshot?.verifications.length ?? 0) > 0;
+  const hasUatEvidence = (phaseSnapshot?.uats.length ?? 0) > 0;
   const taskRows = selection.phase.plans
     .map((plan) => {
       const planFile = phaseSnapshot?.plans.find((entry) =>
@@ -141,9 +144,18 @@ function buildValidationDraft(
         planFile?.frontmatter.wave === undefined ? "-" : String(planFile.frontmatter.wave);
       const fileExists =
         phaseSnapshot?.summaries.includes(`${plan.id}-SUMMARY.md`) === true ? "✅" : "❌";
-      return `| ${plan.id} | ${plan.id.split("-")[1] ?? "--"} | ${waveValue} | ${requirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ${fileExists} | ⬜ pending |`;
+      let status = "PARTIAL";
+      if (fileExists === "❌") {
+        status = "MISSING";
+      } else if (hasAutomatedRunner && (hasVerificationEvidence || hasUatEvidence)) {
+        status = "COVERED";
+      }
+      return `| ${plan.id} | ${plan.id.split("-")[1] ?? "--"} | ${waveValue} | ${requirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ${fileExists} | ${status} |`;
     })
     .join("\n");
+  const waveZeroItems = hasAutomatedRunner
+    ? ["Existing infrastructure covers all phase requirements."]
+    : ["- [ ] Install or confirm test runner before claiming automated coverage"];
 
   return [
     "---",
@@ -190,15 +202,13 @@ function buildValidationDraft(
       ? taskRows
       : `| ${phaseNumber}-00 | -- | - | ${fallbackRequirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ❌ | ⬜ pending |`,
     "",
-    "_Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky_",
+    "_Status: COVERED · PARTIAL · MISSING_",
     "",
     "---",
     "",
     "## Wave 0 Requirements",
     "",
-    "- [ ] Detect missing automated tests during workflow audit",
-    "- [ ] Map existing shared fixtures or helpers if needed",
-    "- [ ] Install or confirm framework only if workflow audit proves missing",
+    ...waveZeroItems,
     "",
     '_If none: "Existing infrastructure covers all phase requirements."_',
     "",

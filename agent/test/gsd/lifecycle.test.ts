@@ -5911,8 +5911,10 @@ Plans:
     expect(draft).toContain("# Phase 02 — Validation Strategy");
     expect(draft).toContain("| **Framework**          | vitest |");
     expect(draft).toContain(
-      "| 02-01 | 01 | 3 | REQ-LOCAL | — | Pending workflow audit | unknown | `npm test` | ✅ | ⬜ pending |",
+      "| 02-01 | 01 | 3 | REQ-LOCAL | — | Pending workflow audit | unknown | `npm test` | ✅ | PARTIAL |",
     );
+    expect(draft).toContain("_Status: COVERED · PARTIAL · MISSING_");
+    expect(draft).toContain("Existing infrastructure covers all phase requirements.");
     expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
   });
 

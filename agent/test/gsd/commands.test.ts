@@ -1390,6 +1390,28 @@ test("gsd progress --next rejects unknown phase override without mutating state"
   });
 });
 
+test("gsd progress --next accepts zero-padded phase override", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-01-SUMMARY.md"), "summary\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-UAT.md"),
+    "---\nstatus: complete\n---\n\n# UAT\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler(
+    "progress --next --phase 02",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2"',
+  );
+});
+
 test("gsd next accepts zero-padded phase override", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

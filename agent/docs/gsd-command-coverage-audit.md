@@ -461,7 +461,7 @@ Differences:
 
 ### `progress`
 
-Coverage: 70/100
+Coverage: 71/100
 
 Upstream behavior:
 
@@ -478,6 +478,7 @@ Upstream behavior:
 - command-level coverage now also proves the `progress --next --force` alias preserves `/gsd next` safety gates for `.continue-here.md`, paused state, and unresolved verification FAIL, matching current local docs instead of implying `--force` can bulldoze those blockers. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - command-level coverage now also proves the `progress --next --force` alias preserves discuss-checkpoint blocking, not just `.continue-here.md`, paused-state, and verification-fail gates. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - command-level coverage now also proves the `progress --next` alias preserves `/gsd next` no-session routing semantics: local `discuss-phase` and `plan-phase` routes still dispatch without workflow session support, while workflow-native `verify-work` still fails closed. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
+- command-level coverage now also proves the `progress --next` alias preserves roadmap-backed artifact scoping from `/gsd next`, so malformed/non-roadmap `*-SUMMARY.md` files do not skip unfinished phase work or misroute straight to later verification paths. `test/gsd/commands.test.ts`, `src/extensions/gsd/instant/next.ts`
 - `progress --next --phase` now has explicit command-level regression coverage for padded/unpadded phase overrides, confirming that routed progress honors the same normalized phase matching as `/gsd next` instead of false-rejecting `02` for phase `2`. `test/gsd/commands.test.ts`
 - progress math now unions completed plan IDs across roadmap and snapshot sources under normalized phase keys, avoiding mixed brownfield undercounting from roadmap-only or padded-phase layouts. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
 - local progress model now also ignores drifted-ahead `STATE.md current_phase/current_plan` when earlier roadmap phases still contain incomplete work, keeping progress summaries aligned with earliest incomplete execution state instead of stale pointers. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`

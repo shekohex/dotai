@@ -1913,6 +1913,59 @@ test("gsd progress --next fails closed without workflow session for verify-work 
   });
 });
 
+test("gsd progress --next ignores malformed summary ids before verify-work routing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases", "1-foundation"), { recursive: true });
+  mkdirSync(join(cwd, ".planning", "phases", "2-delivery"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "config.json"),
+    '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+  );
+  writeFileSync(
+    join(cwd, ".planning", "STATE.md"),
+    "milestone: v1.0\ncurrent_phase: 1\ncurrent_phase_name: Foundation\ncurrent_plan: 1-01\nstatus: Ready to execute\n",
+  );
+  writeFileSync(
+    join(cwd, ".planning", "ROADMAP.md"),
+    [
+      "### Phase 1: Foundation",
+      "",
+      "**Goal**: foundation",
+      "",
+      "Plans:",
+      "- [ ] 1-01: build",
+      "",
+      "### Phase 2: Delivery",
+      "",
+      "**Goal**: delivery",
+      "",
+      "Plans:",
+      "- [ ] 2-01: ship",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-01-PLAN.md"),
+    "---\nphase: 1\nplan: 01\ntype: build\nwave: 1\ndepends_on: []\nfiles_modified: []\nautonomous: true\nmust_haves: []\n---\n",
+  );
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-extra-SUMMARY.md"), "junk\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "2-delivery", "2-01-PLAN.md"),
+    "---\nphase: 2\nplan: 01\ntype: build\nwave: 1\ndepends_on: []\nfiles_modified: []\nautonomous: true\nmust_haves: []\n---\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress --next", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 1"',
+  );
+});
+
 test("gsd next routes completed phase to verify-work workflow", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

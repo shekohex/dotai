@@ -39,7 +39,7 @@ Implemented locally:
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
 | `validate-phase`     |            77 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
-| `progress`           |            71 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
+| `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            71 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            72 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
@@ -153,7 +153,7 @@ Implemented locally:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose
 
-### `progress` (`71`)
+### `progress` (`72`)
 
 - runtime:
   - `src/extensions/gsd/lifecycle/progress.ts`
@@ -170,9 +170,10 @@ Implemented locally:
   - routed `--next`
   - `progress --next --force` inherits `next` safety gates at command level
   - `progress --next` preserves no-session local discuss/plan routing semantics
-  - `progress --next --force` preserves discuss-checkpoint blocking
-  - `progress --next` preserves roadmap-scoped artifact routing semantics
-  - malformed `--phase`
+- `progress --next --force` preserves discuss-checkpoint blocking
+- `progress --next` preserves roadmap-scoped artifact routing semantics
+- `progress --next` preserves canonical phase-scoped UAT gating semantics
+- malformed `--phase`
   - explicit unsupported `--do`, `--forensic`
   - brownfield progress math fixes
 - weakest remaining areas:

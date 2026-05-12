@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { PhaseSnapshot } from "./read.js";
 
@@ -20,6 +21,65 @@ type ParsedRequirement = {
 type VerificationStatus = "passed" | "gaps_found" | "human_needed" | undefined;
 
 type UatStatus = "testing" | "partial" | "complete" | "diagnosed" | undefined;
+
+export function readGitCommitCount(cwd: string): number | null {
+  try {
+    const stdout = execFileSync("git", ["rev-list", "--count", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const count = Number.parseInt(stdout, 10);
+    return Number.isFinite(count) ? count : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readGitFirstCommitDate(cwd: string): string | null {
+  try {
+    return (
+      execFileSync("git", ["log", "--reverse", "--format=%cI", "HEAD"], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function readLatestPlanningActivity(cwd: string): string | null {
+  const planningDir = join(cwd, ".planning");
+  if (!existsSync(planningDir)) {
+    return null;
+  }
+
+  let latestTimestamp = 0;
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(path);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const modified = statSync(path).mtimeMs;
+      if (modified > latestTimestamp) {
+        latestTimestamp = modified;
+      }
+    }
+  };
+
+  visit(planningDir);
+  return latestTimestamp > 0 ? new Date(latestTimestamp).toISOString() : null;
+}
 
 export function canonicalizePhaseNumber(value: string): string {
   return value

@@ -501,7 +501,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 57/100
+Coverage: 61/100
 
 Upstream behavior:
 
@@ -514,11 +514,11 @@ Local behavior:
 - counts real local requirement formats including plain `- REQ-*` bullets and traceability rows, while excluding only deferred `v2+` sections and preventing deferred IDs from leaking back through later traceability tables. `src/extensions/gsd/state/stats-support.ts`, `test/gsd/instant.test.ts`
 - phase status is now conservative and artifact-aware: `Complete` requires authoritative local UAT completion, verification-only phases count as started, and exact milestone matching works across headings and `<details><summary>` containers. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/stats-support.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/roadmap.test.ts`
 - supports local `stats json`, `stats table`, `--json`, `--table`, and `--format <json|table>` modes with explicit rejection for unsupported variants instead of silent degradation. `src/extensions/gsd/stats-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
-- structured backend scopes phases to current milestone when milestone metadata is available and counts requirements from planning snapshot. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/read.ts`, `test/gsd/instant.test.ts`
+- structured backend scopes phases to current milestone, counts requirements from planning snapshot, derives git commit count and first commit date when repository history is available, and falls back to latest `.planning` artifact timestamp when `STATE.md` lacks `last_activity`. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/stats-support.ts`, `src/extensions/gsd/state/read.ts`, `test/gsd/instant.test.ts`
 
 Differences:
 
-- git/timeline fields remain null; no real upstream git-history parity yet
+- git enrichment is still lightweight; no branch-aware timeline, author breakdown, or milestone-bounded git history yet
 - default command remains local instant output rather than workflow/dashboard contract
 - no MVP-mode summary or richer last-activity/report narratives yet
 - status semantics remain local-artifact driven, not full upstream verifier parity

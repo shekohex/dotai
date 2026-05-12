@@ -108,6 +108,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   phase status is local-artifact driven: `Not Started`, `In Progress`, `Executed`, `Human Needed`, `Complete`
   `Complete` requires authoritative local verification completion, currently `*-UAT.md` with `status: complete`; summarized work without that remains `Executed`
   requirements counts support checklist items, plain local requirement bullets, and traceability status rows; deferred `v2+` sections stay excluded
+  structured/table output also includes git commit count, first commit date, and last activity when local repo or planning artifacts provide them
   use when you need local artifact summary without opening docs
   examples: `/gsd stats table`, `/gsd stats json`
 - `/gsd health`

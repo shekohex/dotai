@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { handleGsdHealth } from "../../src/extensions/gsd/instant/health.js";
@@ -253,6 +254,70 @@ Plans:
     );
     expect(notifications.at(-1)?.message).toContain("# current Current — Statistics");
     expect(notifications.at(-1)?.message).toContain("Requirements: 0/3 complete");
+    expect(notifications.at(-1)?.message).toContain("Git commits: ");
+    expect(notifications.at(-1)?.message).toContain("First commit: ");
+    expect(notifications.at(-1)?.message).toContain("Last activity: ");
+  });
+
+  it("stats structured output includes git history and state last_activity when repo exists", () => {
+    const root = createTempDirSync("agent-gsd-stats-git-");
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "last_activity: 2026-05-10T12:00:00.000Z\nstatus: Ready to execute\n",
+    );
+
+    execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: root,
+      stdio: "ignore",
+    });
+    writeFileSync(join(root, "README.md"), "demo\n");
+    execFileSync("git", ["add", "README.md"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: root, stdio: "ignore" });
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      git_commits: 1,
+      git_first_commit_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      last_activity: "2026-05-10T12:00:00.000Z",
+    });
+  });
+
+  it("stats falls back to latest planning artifact timestamp when state last_activity is absent", () => {
+    const root = createTempDirSync("agent-gsd-stats-activity-");
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      [
+        "# Roadmap: Demo",
+        "",
+        "### Phase 1: Setup",
+        "",
+        "Plans:",
+        "- [ ] 01-01: Create config",
+      ].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+    const summaryPath = join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md");
+    writeFileSync(summaryPath, "done\n");
+    const modified = new Date("2030-05-09T08:15:00.000Z");
+    utimesSync(summaryPath, modified, modified);
+
+    expect(computeStructuredStats(root).last_activity).toBe("2030-05-09T08:15:00.000Z");
   });
 
   it("stats canonicalizes padded local phase ids and keeps executed work distinct from complete", () => {

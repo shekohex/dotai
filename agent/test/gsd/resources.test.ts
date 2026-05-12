@@ -127,6 +127,9 @@ describe("gsd bundled resources", () => {
     expect(loadBundledDoc("command-reference.md")).toContain(
       "default route: bundled workflow-launch review session",
     );
+    expect(loadBundledDoc("command-reference.md")).toContain(
+      "structured/table output also includes git commit count, first commit date, and last activity",
+    );
   });
 
   it("keeps command reference subcommand roster aligned with registered grouped surface", () => {

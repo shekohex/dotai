@@ -7,6 +7,9 @@ import {
   deriveStatsPhaseStatus,
   extractLeadingPhaseNumber,
   parseRequirementsProgress,
+  readGitCommitCount,
+  readGitFirstCommitDate,
+  readLatestPlanningActivity,
   type StatsPhaseStatus,
 } from "./stats-support.js";
 
@@ -96,6 +99,9 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   const blockers = snapshot.stateBody?.match(/blocker/gi)?.length ?? 0;
   const decisions = snapshot.project?.match(/^\|/gm)?.length ?? 0;
   const requirements = parseRequirementsProgress(snapshot.requirements);
+  const gitCommitCount = readGitCommitCount(cwd);
+  const gitFirstCommitDate = readGitFirstCommitDate(cwd);
+  const lastActivity = snapshot.state?.last_activity ?? readLatestPlanningActivity(cwd);
   const phases = new Map<
     string,
     {
@@ -160,9 +166,9 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     plan_percent: planPercent,
     requirements_total: requirements.total,
     requirements_complete: requirements.complete,
-    git_commits: null,
-    git_first_commit_date: null,
-    last_activity: snapshot.state?.last_activity ?? null,
+    git_commits: gitCommitCount,
+    git_first_commit_date: gitFirstCommitDate,
+    last_activity: lastActivity,
     verification_count: verificationCount,
     open_blockers: blockers,
     decisions_count: Math.max(0, decisions - 2),

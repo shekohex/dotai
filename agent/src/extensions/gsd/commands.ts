@@ -41,6 +41,13 @@ function getRequestedSubcommand(args: string): string | undefined {
     .find((token) => token.length > 0);
 }
 
+function getUnexpectedArgument(args: string): string | undefined {
+  return args
+    .trim()
+    .split(/\s+/u)
+    .filter((token) => token.length > 0)[1];
+}
+
 export function registerGsdCommands(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
     description: "Get Shit Done: /gsd [subcommand]",
@@ -49,14 +56,23 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
       rememberGsdCwd(ctx.cwd);
       const subcommand = parseSubcommand(args);
       const requestedSubcommand = getRequestedSubcommand(args);
+      const unexpectedArgument = getUnexpectedArgument(args);
       const parsedArgs = parseGsdCommandArgs(args);
       const settings = getGsdSettings(ctx.cwd);
       if (subcommand === "on") {
+        if (unexpectedArgument !== undefined) {
+          ctx.ui.notify(`Unsupported /gsd on argument: ${unexpectedArgument}.`, "warning");
+          return;
+        }
         saveGsdSettings(ctx.cwd, { enabled: true });
         ctx.ui.notify("GSD enabled", "info");
         return;
       }
       if (subcommand === "off") {
+        if (unexpectedArgument !== undefined) {
+          ctx.ui.notify(`Unsupported /gsd off argument: ${unexpectedArgument}.`, "warning");
+          return;
+        }
         saveGsdSettings(ctx.cwd, { enabled: false });
         ctx.ui.notify("GSD disabled", "info");
         return;
@@ -87,7 +103,6 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         case "progress":
         case "stats":
         case "health":
-        case "status":
           await gsdHandlers[subcommand](
             pi,
             ctx,
@@ -95,8 +110,19 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
             args,
           );
           return;
+        case "status":
+          if (unexpectedArgument === undefined) {
+            await gsdHandlers[subcommand](pi, ctx, {}, args);
+          } else {
+            ctx.ui.notify(`Unsupported /gsd status argument: ${unexpectedArgument}.`, "warning");
+          }
+          return;
         case "help":
-          await showGsdHelp(pi, ctx);
+          if (unexpectedArgument === undefined) {
+            await showGsdHelp(pi, ctx);
+          } else {
+            ctx.ui.notify(`Unsupported /gsd help argument: ${unexpectedArgument}.`, "warning");
+          }
           return;
         case undefined:
           if (requestedSubcommand === undefined) {

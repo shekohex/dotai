@@ -58,8 +58,8 @@ Implemented locally:
 | `next`               | local-only instant command         | derived from `progress --next` |       73 |
 | `stats`              | TS-native instant command          | `stats`                        |       73 |
 | `health`             | TS-native instant command          | `health`                       |       77 |
-| `status`             | local-only runtime monitor         | none                           |       54 |
-| `help`               | local docs viewer                  | `help`                         |       72 |
+| `status`             | local-only runtime monitor         | none                           |       55 |
+| `help`               | local docs viewer                  | `help`                         |       73 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
 
@@ -594,7 +594,7 @@ Differences:
 
 ### `status`
 
-Coverage: 54/100
+Coverage: 55/100
 
 Upstream behavior:
 
@@ -610,6 +610,7 @@ Local behavior:
 - status source now filters raw child-session listings down to actual local GSD workers (`gsd-*`, `codebase-mapper:*`, `intel-updater:*`), so unrelated detached sessions no longer leak into `/gsd status` despite help/docs promising GSD-only activity. `src/extensions/gsd/subagents.ts`, `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
 - summary counts now report active `idle` workers explicitly instead of collapsing them into bare `N total`, so `/gsd status` stays truthful for paused-awaiting-input local sessions in both headless and UI renderers. `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
 - equal `startedAt` timestamps now break ties deterministically by name/session id instead of inheriting arbitrary raw SDK list order, keeping the documented oldest-first status ordering truthful in both headless and UI renderers. `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
+- `/gsd status` now rejects stray extra tokens explicitly instead of silently treating them as successful status requests, closing another local false-support path on a zero-arg command. `src/extensions/gsd/commands.ts`, `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - UI path now has direct panel-render proof for live status summary, activity detail rendering, and close/help footer text. `test/gsd/ui.test.ts`
 
 Assessment:
@@ -620,7 +621,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 72/100
+Coverage: 73/100
 
 Upstream behavior:
 
@@ -641,6 +642,7 @@ Local behavior:
 - plan-phase help now documents that `--view` only works with `--research-phase`, matching the shipped local parser/runtime boundary instead of implying standalone `--view` support. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/args.ts`, `src/extensions/gsd/lifecycle/plan-phase.ts`, `test/gsd/commands.test.ts`
 - `/gsd status` help wording now matches real runtime behavior by describing active local GSD subagent/session status rather than implying a generic detached service-health command. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`
 - unknown grouped `/gsd <name>` commands now fail closed with explicit warning instead of falling through to dashboard output, and help guardrails now document that local-only boundary directly. `src/extensions/gsd/commands.ts`, `src/resources/gsd/docs/command-reference.md`, `test/gsd/commands.test.ts`
+- zero-arg local control/view commands (`/gsd on`, `/gsd off`, `/gsd help`, `/gsd status`) now reject stray extra tokens explicitly instead of silently succeeding or rendering output, and help guardrails document that stricter boundary. `src/extensions/gsd/commands.ts`, `src/resources/gsd/docs/command-reference.md`, `test/gsd/commands.test.ts`
 - `/gsd progress` help now reflects current fail-closed behavior in headless/no-session contexts instead of implying workflow launch is unconditional. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - `/gsd progress` help now also documents core prelaunch artifact gates, matching runtime fail-closed behavior when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - `/gsd validate-phase` help now documents key preflight fail-closed boundaries for config-disabled Nyquist validation and ambiguous/non-canonical `VALIDATION.md` inventory, matching current runtime helper-gated behavior. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/commands.test.ts`

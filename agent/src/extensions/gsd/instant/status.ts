@@ -199,6 +199,8 @@ class GsdStatusPanel implements Focusable {
 export async function handleGsdStatus(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
+  _args?: object,
+  _rawArgs?: string,
 ): Promise<void> {
   if (!ctx.hasUI) {
     const subagents = sortSubagents(listGsdSubagents(pi, ctx));

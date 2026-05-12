@@ -206,6 +206,36 @@ test("gsd command enables feature with on subcommand", async () => {
   expect(notifications.at(-1)).toEqual({ message: "GSD enabled", level: "info" });
 });
 
+test("gsd on rejects extra arguments", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on now", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd on argument: now.",
+    level: "warning",
+  });
+});
+
+test("gsd off rejects extra arguments", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("off now", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd off argument: now.",
+    level: "warning",
+  });
+});
+
 test("gsd command blocks disabled lifecycle commands", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -3001,6 +3031,22 @@ test("gsd dashboard fallback reports pending todo count", async () => {
   });
 });
 
+test("gsd status rejects extra arguments", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status now", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd status argument: now.",
+    level: "warning",
+  });
+});
+
 test("gsd rejects unknown subcommands instead of falling through to dashboard", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -3037,6 +3083,22 @@ test("gsd help in non-ui mode emits durable command output instead of notificati
     }),
     { triggerTurn: false },
   );
+});
+
+test("gsd help rejects extra arguments", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("help now", createCommandContext(cwd, notifications));
+
+  expect(fakePi.sendMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd help argument: now.",
+    level: "warning",
+  });
 });
 
 test("gsd help content mentions enablement gate and local-only guardrails", async () => {

@@ -43,8 +43,8 @@ Implemented locally:
 | `next`               |            73 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
-| `status`             |            54 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
-| `help`               |            72 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
+| `status`             |            55 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
+| `help`               |            73 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 
@@ -134,7 +134,7 @@ Implemented locally:
 - weakest remaining areas:
   - richer repair/context parity still partial
 
-### `status` (`54`)
+### `status` (`55`)
 
 - runtime:
   - `src/extensions/gsd/instant/status.ts`
@@ -147,6 +147,7 @@ Implemented locally:
 - elapsed time and activity detail
 - deterministic oldest-first ordering
 - deterministic tie-breaks when start times match
+- zero-arg stray-token rejection
 - UI live panel rendering
 - non-GSD child sessions filtered out from both headless and UI output
 - idle subagents counted explicitly in both headless and UI summaries
@@ -233,7 +234,7 @@ Implemented locally:
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
 
-### `help` (`72`)
+### `help` (`73`)
 
 - runtime/docs:
   - `src/extensions/gsd/help.ts`
@@ -246,10 +247,11 @@ Implemented locally:
 - covered now:
   - non-UI renderer
   - UI paging
-  - unsupported command catalog
+- unsupported command catalog
 - autocomplete flag drift guard
 - key local guardrails wording
 - unknown grouped subcommands fail closed instead of falling through to dashboard
+- zero-arg control/view commands reject stray tokens explicitly
 - progress and validate prelaunch fail-closed wording now synced
 - direct guards for stats variants and next force safety wording
 - health equals-form counter flags now documented to match accepted parser syntax

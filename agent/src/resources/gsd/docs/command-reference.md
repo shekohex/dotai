@@ -61,6 +61,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   flags: `--fast`, `--query <term|status|diff|refresh>`
   modes: `refresh`, `update`, `skip`
   `--focus <tech|arch|quality|concerns|tech+arch>` only with `--fast`
+  local fast mode only supports `--fast refresh`; `--fast update` and `--fast skip` fail explicitly
   unsupported-local but explicit: `--paths <repo/path,...>`
 - `/gsd discuss-phase [phase] [input]`
   flags: `--phase <phase>`, `--assumptions`, `--auto`, `--all`, `--chain`, `--text`

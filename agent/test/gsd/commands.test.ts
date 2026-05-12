@@ -2055,6 +2055,9 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
   expect(content).toContain(
     "fails closed when workflow session support is unavailable in current context",
   );
+  expect(content).toContain(
+    "local fast mode only supports `--fast refresh`; `--fast update` and `--fast skip` fail explicitly",
+  );
 });
 
 test("gsd stats json and table route to structured local outputs", async () => {

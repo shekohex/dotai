@@ -55,11 +55,11 @@ Implemented locally:
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       90 |
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       77 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       71 |
-| `next`               | local-only instant command         | derived from `progress --next` |       70 |
+| `next`               | local-only instant command         | derived from `progress --next` |       71 |
 | `stats`              | TS-native instant command          | `stats`                        |       71 |
 | `health`             | TS-native instant command          | `health`                       |       75 |
-| `status`             | local-only runtime monitor         | none                           |       48 |
-| `help`               | local docs viewer                  | `help`                         |       69 |
+| `status`             | local-only runtime monitor         | none                           |       51 |
+| `help`               | local docs viewer                  | `help`                         |       70 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
 
@@ -694,6 +694,8 @@ Template-driven artifact writing is local TS, not upstream workflow-directed, fo
 
 ## Recommended Priority Order
 
+Historical planning snapshot only. Not authoritative for current scores. Use top coverage table and per-command sections above as source of truth.
+
 1. `new-project`
 2. `verify-work`
 3. `execute-phase`
@@ -734,6 +736,8 @@ Execution strategy:
 5. then add advanced/optional upstream commands
 
 ### Phase Roadmap
+
+Historical rollout plan only. `Current coverage` values below are preserved as planning history, not live audit scores.
 
 | Phase | Command              | Current coverage | Priority | Why this order                                             | Definition of done                                                                                                   |
 | ----: | -------------------- | ---------------: | -------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |

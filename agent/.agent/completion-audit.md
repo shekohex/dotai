@@ -40,11 +40,11 @@ Implemented locally:
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
 | `validate-phase`     |            77 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            71 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
-| `next`               |            70 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
+| `next`               |            71 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            71 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
-| `status`             |            48 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
-| `help`               |            69 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
+| `status`             |            51 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
+| `help`               |            70 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 
@@ -57,7 +57,7 @@ Implemented locally:
   - `docs/gsd-command-coverage-audit.md` top table
 - current state:
   - implemented roster matches registered grouped commands
-  - top table was recently synced to per-command sections
+  - top table now matches per-command sections again after latest `status` / `help` / `next` score changes
 - remaining work:
   - ensure every future score change updates both top table and section
 
@@ -105,13 +105,13 @@ Implemented locally:
     - `npm run lint`
     - `npm run format:check`
 - current state:
-  - green at 786 tests after latest `health` / `validate-phase` slice
+  - green at 791 tests after latest `next` canonical-UAT scoping slice
 - remaining work:
   - must rerun full gates again before any future completion claim
 
 ## Lowest-Score Command Evidence Map
 
-### `status` (`48`)
+### `status` (`51`)
 
 - runtime:
   - `src/extensions/gsd/instant/status.ts`
@@ -128,7 +128,7 @@ Implemented locally:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display
 
-### `next` (`70`)
+### `next` (`71`)
 
 - runtime:
   - `src/extensions/gsd/instant/next.ts`
@@ -146,7 +146,8 @@ Implemented locally:
   - no-session workflow-route fail-closed boundaries
   - local no-session discuss/plan routing
   - padded/unpadded phase normalization
-  - roadmap-scoped plan/summary routing counts
+- roadmap-scoped plan/summary routing counts
+- canonical phase-scoped UAT artifacts only; stray noncanonical `*-UAT.md` files no longer skip `/gsd verify-work`
 - weakest remaining areas:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose
@@ -251,14 +252,14 @@ Implemented locally:
 Best next runtime slice after audit prep:
 
 1. `status`
-2. `secure-phase`
-3. `health`
+2. `help`
+3. `stats`
 
 Reason:
 
-- `status` remains by far lowest score and needs direct contract broadening or tighter truthful boundaries
-- `next`, `progress`, `stats`, `help`, `health`, and `validate-phase` all gained recent truth-model or proof slices, reducing immediate hidden-failure risk
-- `secure-phase` may now offer better parity ROI than repeatedly polishing already-improved instant commands
+- `status` remains by far lowest score and still needs either broader honest contract or explicit local-only boundaries
+- `help` and `stats` are now tied or near-tied as next weakest central truth surfaces after recent `next` hardening
+- `secure-phase` remains relatively strong and no longer looks like best immediate ROI compared with lower-score command/docs truth surfaces
 
 ## Not Completion Yet
 

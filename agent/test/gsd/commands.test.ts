@@ -1187,6 +1187,7 @@ test("gsd progress default routes to bundled progress workflow-launch session", 
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
   createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));
@@ -1195,6 +1196,66 @@ test("gsd progress default routes to bundled progress workflow-launch session", 
   expect(prompt).toContain('Launch native GSD workflow for "/gsd progress"');
   expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/progress.md"));
   expect(prompt).toContain(resolveGsdBundlePath("workflows/progress.md"));
+});
+
+test("gsd progress fails closed when PROJECT.md is missing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases"), { recursive: true });
+  writeFileSync(join(cwd, ".planning", "config.json"), "{}\n");
+  writeFileSync(join(cwd, ".planning", "ROADMAP.md"), "# Roadmap\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  writeFileSync(join(cwd, ".planning", "STATE.md"), "status: Ready to plan\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd progress: missing .planning/PROJECT.md.",
+    level: "warning",
+  });
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("gsd progress fails closed when ROADMAP.md is missing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases"), { recursive: true });
+  writeFileSync(join(cwd, ".planning", "config.json"), "{}\n");
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  writeFileSync(join(cwd, ".planning", "STATE.md"), "status: Ready to plan\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd progress: missing .planning/ROADMAP.md.",
+    level: "warning",
+  });
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("gsd progress fails closed when STATE.md is missing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases"), { recursive: true });
+  writeFileSync(join(cwd, ".planning", "config.json"), "{}\n");
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  writeFileSync(join(cwd, ".planning", "ROADMAP.md"), "# Roadmap\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd progress: missing .planning/STATE.md.",
+    level: "warning",
+  });
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
 });
 
 test("gsd progress --next prefers earliest incomplete phase when state drifted ahead", async () => {

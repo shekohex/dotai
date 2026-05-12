@@ -17,11 +17,12 @@ Core rules:
 2. Treat this file as local adapted behavior contract, not literal shell script.
 3. Default path here is read/review only. Do not launch plan execution from progress in this slice.
 4. Do not recreate old one-line TypeScript notifier as success path.
-5. Preserve explicit unsupported handling for `--do` and `--forensic`; those modes are not implemented here.
-6. Reuse bundled local helper/query surface before making claims: `node "$GSD_TOOLS_PATH" init progress` and `node "$GSD_TOOLS_PATH" progress json`.
-7. Cross-check helper output against local `.planning/STATE.md`, `.planning/ROADMAP.md`, and relevant phase artifacts when wording user-facing summary.
-8. If helper/query output and on-disk artifacts disagree, say so plainly and identify likely source of drift instead of smoothing it over.
-9. Use grouped local command names consistently in all user-facing guidance.
+5. Local handler may stop before workflow launch when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing. Treat those prerequisite failures as authoritative.
+6. Preserve explicit unsupported handling for `--do` and `--forensic`; those modes are not implemented here.
+7. Reuse bundled local helper/query surface before making claims: `node "$GSD_TOOLS_PATH" init progress` and `node "$GSD_TOOLS_PATH" progress json`.
+8. Cross-check helper output against local `.planning/STATE.md`, `.planning/ROADMAP.md`, and relevant phase artifacts when wording user-facing summary.
+9. If helper/query output and on-disk artifacts disagree, say so plainly and identify likely source of drift instead of smoothing it over.
+10. Use grouped local command names consistently in all user-facing guidance.
 
 Recommended execution shape:
 

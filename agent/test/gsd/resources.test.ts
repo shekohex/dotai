@@ -113,10 +113,14 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("workflow-launch foundation");
     expect(command).toContain("`--next` delegates to existing local next-routing behavior");
     expect(command).toContain("explicit unsupported-local error for `--do`, `--forensic`");
+    expect(command).toContain(
+      "fails closed when core planning files required for truthful progress review are missing",
+    );
     expect(command).toContain("do not recreate old one-line TypeScript notifier");
     expect(workflow).toContain("move default `/gsd progress` from one-line notify output");
     expect(workflow).toContain('node "$GSD_TOOLS_PATH" init progress');
     expect(workflow).toContain('node "$GSD_TOOLS_PATH" progress json');
+    expect(workflow).toContain("Local handler may stop before workflow launch");
     expect(workflow).toContain(
       "Cross-check helper output against local `.planning/STATE.md`, `.planning/ROADMAP.md`",
     );

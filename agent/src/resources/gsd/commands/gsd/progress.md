@@ -12,6 +12,7 @@ Supported now:
 Execution model in this slice:
 
 - default handler routes into workflow-launch foundation
+- default handler first fails closed when core planning files required for truthful progress review are missing
 - bundled workflow owns progress inspection, artifact reading, summary shaping, and next-step guidance
 - local runtime primitives already shipped in bundle remain source of truth for progress math and roadmap/state interpretation
 - do not recreate old one-line TypeScript notifier as authoritative success path

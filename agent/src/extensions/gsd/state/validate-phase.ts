@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { basename, join, normalize } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { resolveGsdBundlePath } from "../resources.js";
@@ -172,6 +173,23 @@ function findHighestLocalPhaseWithSummaries(
     .at(-1);
 }
 
+function isCanonicalValidationTargetPath(
+  selection: CurrentPhaseSelection,
+  validationTargetPath: string,
+): boolean {
+  const normalizedTargetPath = normalize(validationTargetPath).replaceAll("\\", "/");
+  const expectedDirectory = normalize(
+    join(".planning", "phases", basename(selection.phaseDir)),
+  ).replaceAll("\\", "/");
+  const expectedFileName = `${selection.phaseFilePrefix}-VALIDATION.md`;
+
+  if (!normalizedTargetPath.startsWith(`${expectedDirectory}/`)) {
+    return false;
+  }
+
+  return basename(normalizedTargetPath) === expectedFileName;
+}
+
 export function resolveValidatePhaseSelection(
   cwd: string,
   requestedPhase?: string,
@@ -283,6 +301,13 @@ export function resolveValidatePhaseSelection(
     return {
       error:
         "Cannot run /gsd validate-phase: validate-phase preflight returned no canonical validation target.",
+    };
+  }
+
+  if (!isCanonicalValidationTargetPath(selection, preflight.value.validation_target_path)) {
+    return {
+      error:
+        "Cannot run /gsd validate-phase: validate-phase preflight returned non-canonical validation target path.",
     };
   }
 

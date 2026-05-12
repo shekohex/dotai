@@ -127,6 +127,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   flags: `--next`
   `--phase <phase>`, `--force` only with `/gsd progress --next`
   parsed with explicit unsupported-local error: `--do`, `--forensic`
+  fails closed when workflow session support is unavailable in current context
 
 ## Phase Override
 

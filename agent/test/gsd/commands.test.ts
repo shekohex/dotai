@@ -2052,6 +2052,9 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
   expect(content).toContain(
     "use when you want current local GSD worker activity, not upstream/global service health",
   );
+  expect(content).toContain(
+    "fails closed when workflow session support is unavailable in current context",
+  );
 });
 
 test("gsd stats json and table route to structured local outputs", async () => {

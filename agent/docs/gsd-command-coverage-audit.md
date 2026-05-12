@@ -581,7 +581,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 64/100
+Coverage: 65/100
 
 Upstream behavior:
 
@@ -598,6 +598,7 @@ Local behavior:
 - test guardrails now also ensure every runtime-advertised autocomplete flag remains represented in canonical help text, reducing future doc/runtime drift when command flags change. `test/gsd/resources.test.ts`
 - runtime autocomplete now includes `plan-phase --gaps` and `--reviews`, closing a real help/runtime drift where docs and parser supported those routes but interactive completion did not advertise them. `src/extensions/gsd/autocomplete.ts`, `test/gsd/commands.test.ts`
 - health help text now documents actual runtime flag constraints instead of implying all listed flags compose freely: `--tokens-used` / `--context-window` require `--context`, and `--repair` cannot be combined with `--context`. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
+- `/gsd status` help wording now matches real runtime behavior by describing active local GSD subagent/session status rather than implying a generic detached service-health command. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`
 - TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
 - durable non-UI help now has a registered `gsd-help` renderer contract in message rendering. `src/extensions/gsd/ui/messages.ts`, `test/gsd/index.test.ts`
 - focused tests now cover canonical help rendering, durable headless output, runtime/audit guardrails, crosswalk wording, and key local wording. `test/gsd/ui.test.ts`, `test/gsd/resources.test.ts`, `test/gsd/commands.test.ts`, `test/gsd/index.test.ts`

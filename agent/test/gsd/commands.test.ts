@@ -2018,6 +2018,12 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
   expect(content).toContain(
     "`--tokens-used` and `--context-window` require `--context`; `--repair` and `--context` cannot be combined in one run",
   );
+  expect(content).toContain(
+    "shows active local GSD subagent/session status in UI panel or plain text",
+  );
+  expect(content).toContain(
+    "use when you want current local GSD worker activity, not upstream/global service health",
+  );
 });
 
 test("gsd stats json and table route to structured local outputs", async () => {

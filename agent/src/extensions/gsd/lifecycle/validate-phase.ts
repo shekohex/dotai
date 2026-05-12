@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GsdCommandArgs } from "../args.js";
 import { resolveValidatePhaseSelection } from "../state/validate-phase.js";
+import { readPlanningSnapshot } from "../state/read.js";
 import { launchGsdWorkflowSession } from "../workflow-launch.js";
 
 function stripValidatePhaseSubcommand(rawArgs: string): string | undefined {
@@ -116,15 +117,32 @@ function buildValidationDraft(
   const phaseNumber = selection.phaseFilePrefix;
   const phaseSlug = normalizePhaseSlug(selection.phase.name);
   const created = new Date().toISOString().slice(0, 10);
-  const requirementValue =
+  const fallbackRequirementValue =
     selection.phase.requirements.length > 0
       ? selection.phase.requirements.join(", ")
       : "Unmapped in ROADMAP.md";
+  const snapshot = readPlanningSnapshot(cwd);
+  const phaseSnapshot = snapshot.phases.find((phase) => phase.path === selection.phaseDir);
   const taskRows = selection.phase.plans
-    .map(
-      (plan) =>
-        `| ${plan.id} | ${plan.id.split("-")[1] ?? "--"} | - | ${requirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ❌ | ⬜ pending |`,
-    )
+    .map((plan) => {
+      const planFile = phaseSnapshot?.plans.find((entry) =>
+        entry.fileName.startsWith(`${plan.id}-`),
+      );
+      let requirementValue = "Unmapped in ROADMAP.md";
+      if (
+        planFile?.frontmatter.requirements !== undefined &&
+        planFile.frontmatter.requirements.length > 0
+      ) {
+        requirementValue = planFile.frontmatter.requirements.join(", ");
+      } else if (selection.phase.requirements.length > 0) {
+        requirementValue = selection.phase.requirements.join(", ");
+      }
+      const waveValue =
+        planFile?.frontmatter.wave === undefined ? "-" : String(planFile.frontmatter.wave);
+      const fileExists =
+        phaseSnapshot?.summaries.includes(`${plan.id}-SUMMARY.md`) === true ? "✅" : "❌";
+      return `| ${plan.id} | ${plan.id.split("-")[1] ?? "--"} | ${waveValue} | ${requirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ${fileExists} | ⬜ pending |`;
+    })
     .join("\n");
 
   return [
@@ -170,7 +188,7 @@ function buildValidationDraft(
     "| ------- | ---- | ---- | ----------- | ---------- | --------------- | --------- | ----------------- | ----------- | ------ |",
     taskRows.length > 0
       ? taskRows
-      : `| ${phaseNumber}-00 | -- | - | ${requirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ❌ | ⬜ pending |`,
+      : `| ${phaseNumber}-00 | -- | - | ${fallbackRequirementValue} | — | Pending workflow audit | unknown | \`${quickRunCommand}\` | ❌ | ⬜ pending |`,
     "",
     "_Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky_",
     "",

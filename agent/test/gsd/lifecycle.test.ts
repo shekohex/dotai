@@ -5881,6 +5881,23 @@ Plans:
         "\n",
     );
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      [
+        "---",
+        "phase: 02",
+        "plan: 01",
+        "type: implementation",
+        "wave: 3",
+        "depends_on: []",
+        "files_modified: [src/build.ts]",
+        "autonomous: true",
+        "requirements:",
+        "  - REQ-LOCAL",
+        "must_haves: [done]",
+        "---",
+      ].join("\n") + "\n",
+    );
     writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
     const pi = createPi();
     const ctx = createContext(root, pi);
@@ -5893,7 +5910,9 @@ Plans:
     expect(draft).toContain("slug: build");
     expect(draft).toContain("# Phase 02 — Validation Strategy");
     expect(draft).toContain("| **Framework**          | vitest |");
-    expect(draft).toContain("| 02-01 | 01 | - | REQ-2 |");
+    expect(draft).toContain(
+      "| 02-01 | 01 | 3 | REQ-LOCAL | — | Pending workflow audit | unknown | `npm test` | ✅ | ⬜ pending |",
+    );
     expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
   });
 

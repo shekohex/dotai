@@ -5659,6 +5659,24 @@ Plans:
     );
   });
 
+  it("validate-phase accepts padded local artifact ids for roadmap-complete explicit phase", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/build.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 2"',
+    );
+  });
+
   it("validate-phase fails closed for explicit incomplete phase", async () => {
     const root = createPlanningRoot();
     writeFileSync(
@@ -5831,6 +5849,59 @@ Plans:
     const pi = createPi();
     const ctx = createContext(root, pi);
     await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 1"',
+    );
+  });
+
+  it("validate-phase omitted phase skips higher completed phase when helper preflight is not ready", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Establish baseline
+
+Plans:
+- [ ] 01-01: Create config
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+`,
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    setValidatePhaseExecFileSyncForTests((file, args, options) => {
+      const phase = String(args.at(-1) ?? "");
+      if (phase === "2") {
+        return JSON.stringify({
+          ready: false,
+          failure_reason: "phase 02 has ambiguous or non-canonical VALIDATION.md artifacts",
+          nyquist_validation_enabled: true,
+          validation_target_path: null,
+          validation_target_mode: null,
+        }) as never;
+      }
+
+      return JSON.stringify({
+        ready: true,
+        failure_reason: null,
+        nyquist_validation_enabled: true,
+        validation_target_path: ".planning/phases/1-setup/01-VALIDATION.md",
+        validation_target_mode: "create",
+      }) as never;
+    });
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdValidatePhase(pi, ctx, {}, "validate-phase");
+
     expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
       'Launch native GSD workflow for "/gsd validate-phase 1"',
     );

@@ -135,6 +135,82 @@ function runValidatePhasePreflight(cwd: string, phaseNumber: string): ValidatePh
   }
 }
 
+function resolveHelperReadySelection(
+  cwd: string,
+  roadmapPhases: RoadmapPhase[],
+  byNumber: Map<string | undefined, ReturnType<typeof readPlanningSnapshot>["phases"][number]>,
+): { selection?: ValidatePhaseSelection; blockedPhaseNumber?: string; blockedReason?: string } {
+  const completedPhaseNumbers = [...byNumber.entries()]
+    .filter(
+      ([phaseNumber, phaseSnapshot]) =>
+        phaseNumber !== undefined &&
+        phaseSnapshot !== undefined &&
+        (() => {
+          const roadmapPhase = findPhaseByNumber(roadmapPhases, phaseNumber);
+          return (
+            roadmapPhase !== undefined &&
+            isPhaseCompletedLocally(roadmapPhase, phaseSnapshot) &&
+            !hasUnexpectedSummaryIds(roadmapPhase, phaseSnapshot)
+          );
+        })(),
+    )
+    .map(([phaseNumber]) => phaseNumber)
+    .filter((phaseNumber): phaseNumber is string => phaseNumber !== undefined)
+    .toSorted(comparePhaseNumbers)
+    .toReversed();
+
+  for (const phaseNumber of completedPhaseNumbers) {
+    const roadmapPhase = findPhaseByNumber(roadmapPhases, phaseNumber);
+    if (roadmapPhase === undefined) {
+      continue;
+    }
+
+    const selection = resolveCurrentPhase(cwd, roadmapPhase.number);
+    if (selection === undefined) {
+      continue;
+    }
+
+    const phaseSnapshot = byNumber.get(roadmapPhase.number);
+    const preflight = runValidatePhasePreflight(cwd, roadmapPhase.number);
+    if (!preflight.ok) {
+      return { blockedPhaseNumber: roadmapPhase.number, blockedReason: `${preflight.error}.` };
+    }
+
+    if (!preflight.value.nyquist_validation_enabled || !preflight.value.ready) {
+      continue;
+    }
+
+    if (
+      preflight.value.validation_target_path === null ||
+      preflight.value.validation_target_mode === null
+    ) {
+      return {
+        blockedPhaseNumber: roadmapPhase.number,
+        blockedReason: "validate-phase preflight returned no canonical validation target.",
+      };
+    }
+
+    if (!isCanonicalValidationTargetPath(selection, preflight.value.validation_target_path)) {
+      return {
+        blockedPhaseNumber: roadmapPhase.number,
+        blockedReason: "validate-phase preflight returned non-canonical validation target path.",
+      };
+    }
+
+    return {
+      selection: {
+        ...selection,
+        summaryCount: phaseSnapshot?.summaries.length ?? 0,
+        validationExists: (phaseSnapshot?.validations.length ?? 0) > 0,
+        validationTargetPath: preflight.value.validation_target_path,
+        validationTargetMode: preflight.value.validation_target_mode,
+      },
+    };
+  }
+
+  return {};
+}
+
 function findHighestLocalPhaseWithSummaries(
   roadmapPhases: RoadmapPhase[],
   byNumber: Map<string | undefined, ReturnType<typeof readPlanningSnapshot>["phases"][number]>,
@@ -207,26 +283,20 @@ export function resolveValidatePhaseSelection(
     }),
   );
 
-  const selectedPhaseNumber =
-    requestedPhase ??
-    [...byNumber.entries()]
-      .filter(
-        ([phaseNumber, phaseSnapshot]) =>
-          phaseNumber !== undefined &&
-          phaseSnapshot !== undefined &&
-          (() => {
-            const roadmapPhase = findPhaseByNumber(roadmapPhases, phaseNumber);
-            return (
-              roadmapPhase !== undefined &&
-              isPhaseCompletedLocally(roadmapPhase, phaseSnapshot) &&
-              !hasUnexpectedSummaryIds(roadmapPhase, phaseSnapshot)
-            );
-          })(),
-      )
-      .map(([phaseNumber]) => phaseNumber)
-      .filter((phaseNumber): phaseNumber is string => phaseNumber !== undefined)
-      .toSorted(comparePhaseNumbers)
-      .at(-1);
+  const selectedPhaseNumber = requestedPhase;
+
+  if (requestedPhase === undefined) {
+    const helperReadySelection = resolveHelperReadySelection(cwd, roadmapPhases, byNumber);
+    if (helperReadySelection.selection !== undefined) {
+      return { selection: helperReadySelection.selection };
+    }
+
+    if (helperReadySelection.blockedPhaseNumber !== undefined) {
+      return {
+        error: `Cannot run /gsd validate-phase: ${helperReadySelection.blockedReason ?? `phase ${helperReadySelection.blockedPhaseNumber} failed validate-phase preflight`}`,
+      };
+    }
+  }
 
   if (selectedPhaseNumber === undefined) {
     const highestLocalPhase = findHighestLocalPhaseWithSummaries(roadmapPhases, byNumber);

@@ -43,23 +43,23 @@ Implemented locally:
 | Command              | Local shape                        | Upstream equivalent            | Coverage |
 | -------------------- | ---------------------------------- | ------------------------------ | -------: |
 | `new-project`        | hybrid bootstrap + workflow        | `new-project`                  |       93 |
-| `new-milestone`      | workflow-launch shim               | `new-milestone`                |       92 |
+| `new-milestone`      | workflow-launch shim               | `new-milestone`                |       96 |
 | `complete-milestone` | workflow-launch shim               | `complete-milestone`           |       90 |
 | `milestone-summary`  | workflow-launch shim               | `milestone-summary`            |       91 |
 | `debug`              | hybrid TS + workflow-launch        | `debug`                        |       91 |
-| `map-codebase`       | TS-native orchestration            | `map-codebase`                 |       92 |
+| `map-codebase`       | TS-native orchestration            | `map-codebase`                 |       94 |
 | `discuss-phase`      | TS-native orchestration            | `discuss-phase`                |       92 |
 | `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
-| `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
-| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       68 |
-| `progress`           | workflow-launch + local next path  | `progress`                     |       60 |
-| `next`               | local-only instant command         | derived from `progress --next` |       58 |
-| `stats`              | TS-native instant command          | `stats`                        |       61 |
+| `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       90 |
+| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       73 |
+| `progress`           | workflow-launch + local next path  | `progress`                     |       67 |
+| `next`               | local-only instant command         | derived from `progress --next` |       66 |
+| `stats`              | TS-native instant command          | `stats`                        |       67 |
 | `health`             | TS-native instant command          | `health`                       |       74 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
-| `help`               | local docs viewer                  | `help`                         |       52 |
+| `help`               | local docs viewer                  | `help`                         |       67 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
 

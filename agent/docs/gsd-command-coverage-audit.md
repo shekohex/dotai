@@ -522,7 +522,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 70/100
+Coverage: 71/100
 
 Upstream behavior:
 
@@ -538,6 +538,7 @@ Local behavior:
 - `decisions_count` is now scoped to actual project decision tables (`## Key Decisions` or legacy `| Decision | ... |` tables) instead of inflating from unrelated markdown tables elsewhere in `PROJECT.md`. `src/extensions/gsd/state/stats.ts`, `src/resources/gsd/templates/project.md`, `test/gsd/instant.test.ts`
 - `open_blockers` is now scoped to active entries under the `### Blockers/Concerns` section in `STATE.md` instead of counting every stray `blocker` word anywhere in state prose. `src/extensions/gsd/state/stats.ts`, `src/resources/gsd/templates/state.md`, `test/gsd/instant.test.ts`
 - supports local `stats json`, `stats table`, `--json`, `--table`, and `--format <json|table>` modes with explicit rejection for unsupported variants instead of silent degradation. `src/extensions/gsd/stats-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
+- mixed output mode requests now fail with one consistent explicit `Unsupported /gsd stats mode: multiple output modes requested.` error across positional and flag forms, instead of degrading positional follow-on modes into generic unsupported-argument wording. `src/extensions/gsd/stats-args.ts`, `test/gsd/commands.test.ts`
 - structured backend scopes phases to current milestone, counts requirements from planning snapshot, derives git commit count and first commit date when repository history is available, and falls back to latest `.planning` artifact timestamp when `STATE.md` lacks `last_activity`. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/stats-support.ts`, `src/extensions/gsd/state/read.ts`, `test/gsd/instant.test.ts`
 - `last_activity` now also treats malformed `STATE.md` timestamps as invalid boundary data and falls back to latest `.planning` artifact activity instead of echoing dishonest junk values. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - stale snapshot-only phase dirs that are no longer present in `ROADMAP.md` are now ignored in structured stats totals and phase rows, avoiding inflated counts from orphaned brownfield artifacts. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`

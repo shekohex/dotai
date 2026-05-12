@@ -15,7 +15,7 @@ export function parseStatsArgs(tokens: string[], helpers: StatsArgHelpers): GsdC
       if (outputMode === undefined) {
         outputMode = token;
       } else {
-        unsupportedModeError ??= `Unsupported /gsd stats argument: ${token}.`;
+        unsupportedModeError ??= "Unsupported /gsd stats mode: multiple output modes requested.";
       }
       continue;
     }

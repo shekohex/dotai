@@ -683,6 +683,44 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "progress",
     unsupportedModeError: "Unsupported /gsd progress flag: --bogus.",
   });
+  expect(parseGsdCommandArgs("stats json")).toEqual({ subcommand: "stats", outputMode: "json" });
+  expect(parseGsdCommandArgs("stats table")).toEqual({
+    subcommand: "stats",
+    outputMode: "table",
+  });
+  expect(parseGsdCommandArgs("stats --json")).toEqual({
+    subcommand: "stats",
+    outputMode: "json",
+  });
+  expect(parseGsdCommandArgs("stats --table")).toEqual({
+    subcommand: "stats",
+    outputMode: "table",
+  });
+  expect(parseGsdCommandArgs("stats --format json")).toEqual({
+    subcommand: "stats",
+    outputMode: "json",
+  });
+  expect(parseGsdCommandArgs("stats --format=table")).toEqual({
+    subcommand: "stats",
+    outputMode: "table",
+  });
+  expect(parseGsdCommandArgs("stats --format")).toEqual({
+    subcommand: "stats",
+    unsupportedModeError: "Unsupported /gsd stats format: .",
+  });
+  expect(parseGsdCommandArgs("stats --format csv")).toEqual({
+    subcommand: "stats",
+    unsupportedModeError: "Unsupported /gsd stats format: csv.",
+  });
+  expect(parseGsdCommandArgs("stats --json table")).toEqual({
+    subcommand: "stats",
+    outputMode: "json",
+    unsupportedModeError: "Unsupported /gsd stats mode: multiple output modes requested.",
+  });
+  expect(parseGsdCommandArgs("stats --bogus")).toEqual({
+    subcommand: "stats",
+    unsupportedModeError: "Unsupported /gsd stats flag: --bogus.",
+  });
   expect(parseGsdCommandArgs("map-codebase --paths src,packages/ui")).toEqual({
     subcommand: "map-codebase",
     paths: ["src", "packages/ui"],

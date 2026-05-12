@@ -153,6 +153,40 @@ describe("roadmap parser", () => {
     expect(result.currentPlan).toBe("01-01");
   });
 
+  it("normalizes padded state current_phase when resolving next plan", () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 02\ncurrent_phase_name: Build\ncurrent_plan: 02-01\nstatus: Ready to execute\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-02-PLAN.md"),
+      "---\nphase: 01\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "# summary\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/c.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      route: "execute-phase",
+      reason: "phase ready to execute",
+      newPhase: "2",
+    });
+  });
+
   it("fallback next handling fails closed when earliest incomplete phase needs workflow routing", () => {
     const root = createPlanningRoot();
     writeFileSync(

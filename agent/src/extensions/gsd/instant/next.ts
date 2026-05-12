@@ -217,7 +217,9 @@ function resolvePhaseStartIndex(
 
   const statePhase = `${snapshot.state?.current_phase ?? ""}`.trim() || undefined;
   const statePhaseIndex =
-    statePhase === undefined ? -1 : phases.findIndex((phase) => phase.number === statePhase);
+    statePhase === undefined
+      ? -1
+      : phases.findIndex((phase) => phaseNumbersMatch(phase.number, statePhase));
   const earliestIncompletePhaseIndex = phases.findIndex((phase) => {
     const phaseSnapshot = findPhaseSnapshot(snapshot, phase);
     const totalPlans = Math.max(phase.plans.length, phaseSnapshot?.plans.length ?? 0);

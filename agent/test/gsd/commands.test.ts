@@ -1326,6 +1326,39 @@ test("gsd progress --next prefers earliest incomplete phase when state drifted a
   );
 });
 
+test("gsd next respects padded state current_phase when earlier work is complete", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "STATE.md"),
+    "milestone: v1.0\ncurrent_phase: 02\ncurrent_phase_name: Delivery\ncurrent_plan: 02-01\nstatus: Ready to execute\n",
+  );
+  mkdirSync(join(cwd, ".planning", "phases", "1-foundation"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-01-PLAN.md"),
+    "---\nphase: 1\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+  );
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-01-SUMMARY.md"), "summary\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-02-PLAN.md"),
+    "---\nphase: 1\nplan: 02\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+  );
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-02-SUMMARY.md"), "summary\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-UAT.md"),
+    "---\nstatus: complete\n---\n\n# UAT\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd execute-phase 2"',
+  );
+});
+
 test("gsd progress rejects unsupported routed modes explicitly", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

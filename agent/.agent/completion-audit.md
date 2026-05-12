@@ -38,13 +38,13 @@ Implemented locally:
 | `execute-phase`      |            91 | `src/extensions/gsd/lifecycle/execute-phase.ts`              | strong              | completion audit still needed                                |
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
-| `validate-phase`     |            73 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
-| `progress`           |            67 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
+| `validate-phase`     |            76 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
+| `progress`           |            68 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            67 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            67 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            74 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            48 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
-| `help`               |            67 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
+| `help`               |            69 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 
@@ -105,7 +105,7 @@ Implemented locally:
     - `npm run lint`
     - `npm run format:check`
 - current state:
-  - green at 765 tests after latest `next` slice
+  - green at 772 tests after latest `validate-phase` slice
 - remaining work:
   - must rerun full gates again before any future completion claim
 
@@ -149,7 +149,7 @@ Implemented locally:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose
 
-### `progress` (`67`)
+### `progress` (`68`)
 
 - runtime:
   - `src/extensions/gsd/lifecycle/progress.ts`
@@ -164,6 +164,7 @@ Implemented locally:
   - helper prelaunch gates
   - no-session guard
   - routed `--next`
+  - `progress --next --force` inherits `next` safety gates at command level
   - malformed `--phase`
   - explicit unsupported `--do`, `--forensic`
   - brownfield progress math fixes
@@ -190,7 +191,7 @@ Implemented locally:
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
 
-### `help` (`67`)
+### `help` (`69`)
 
 - runtime/docs:
   - `src/extensions/gsd/help.ts`
@@ -206,10 +207,11 @@ Implemented locally:
   - unsupported command catalog
   - autocomplete flag drift guard
   - key local guardrails wording
+  - progress and validate prelaunch fail-closed wording now synced
 - weakest remaining areas:
   - hand-maintained reference breadth still lower than upstream help universe
 
-### `validate-phase` (`73`)
+### `validate-phase` (`76`)
 
 - runtime:
   - `src/extensions/gsd/state/validate-phase.ts`
@@ -223,6 +225,9 @@ Implemented locally:
   - helper preflight
   - config gating
   - canonical target resolution
+  - malformed helper payload rejection
+  - thrown helper failure rejection
+  - exact canonical target-path revalidation
   - deterministic draft scaffolding
   - manual verification debt import
   - test type derivation
@@ -234,15 +239,15 @@ Implemented locally:
 
 Best next runtime slice after audit prep:
 
-1. `progress`
-2. `validate-phase`
+1. `stats`
+2. `progress`
 3. `health`
 
 Reason:
 
 - `status` now mostly local-only UX proof work
 - `next`, `stats`, and `help` have meaningful guardrails already, but remaining gaps are more about breadth than hidden safety failures
-- `progress` and `validate-phase` still have most central lifecycle parity risk relative to upstream behavior
+- `validate-phase` helper-boundary risk is lower than before; `stats` and `progress` now look like better ROI among weaker scores
 
 ## Not Completion Yet
 

@@ -1208,6 +1208,34 @@ test("gsd progress default routes to bundled progress workflow-launch session", 
   expect(prompt).toContain(resolveGsdBundlePath("workflows/progress.md"));
 });
 
+test("gsd progress fails closed without workflow session support", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  const noSessionContext = {
+    cwd,
+    hasUI: false,
+    ui: {
+      notify(message: string, level: string) {
+        notifications.push({ message, level });
+      },
+    },
+  };
+
+  await expect(command?.handler("progress", noSessionContext)).resolves.toBeUndefined();
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd progress: workflow session support unavailable in this context.",
+    level: "warning",
+  });
+});
+
 test("gsd progress fails closed when PROJECT.md is missing", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

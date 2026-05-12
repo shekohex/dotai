@@ -459,7 +459,7 @@ Differences:
 
 ### `progress`
 
-Coverage: 65/100
+Coverage: 67/100
 
 Upstream behavior:
 
@@ -470,6 +470,7 @@ Upstream behavior:
 - default `/gsd progress` now launches bundled local command/workflow resources through workflow-launch instead of a one-line notifier. `src/extensions/gsd/lifecycle/progress.ts`, `src/resources/gsd/commands/gsd/progress.md`, `src/resources/gsd/workflows/progress.md`
 - default handler now fails closed before workflow launch when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing, instead of launching a progress review session without core source-of-truth artifacts. `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - helper prelaunch boundary now also has direct failure-path coverage for malformed `init progress` payloads and helper execution errors, proving default `/gsd progress` stops cleanly instead of launching workflow on bad helper state. `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
+- default `/gsd progress` now also fails closed when workflow session primitives are unavailable, instead of throwing on `ctx.sessionManager.getLeafId()` in headless/no-session contexts. `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - parses routed flags explicitly, supports local `progress --next`, and rejects unsupported `--do`, `--forensic`, malformed `--phase`, and unsupported standalone phase overrides instead of silently degrading. `src/extensions/gsd/args.ts`, `src/extensions/gsd/progress-args.ts`
 - `progress --next` now routes into supported lifecycle actions with earliest-incomplete-phase semantics, and requires authoritative local `*-UAT.md` `status: complete` before dispatching `/gsd complete-milestone`; legacy verification-only state stays on `/gsd verify-work`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - `progress --next --phase` now has explicit command-level regression coverage for padded/unpadded phase overrides, confirming that routed progress honors the same normalized phase matching as `/gsd next` instead of false-rejecting `02` for phase `2`. `test/gsd/commands.test.ts`

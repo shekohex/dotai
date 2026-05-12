@@ -97,6 +97,18 @@ export async function handleGsdProgress(
     return;
   }
 
+  if (
+    ctx.sessionManager === undefined ||
+    typeof ctx.fork !== "function" ||
+    typeof ctx.newSession !== "function"
+  ) {
+    ctx.ui.notify(
+      "Cannot run /gsd progress: workflow session support unavailable in this context.",
+      "warning",
+    );
+    return;
+  }
+
   await launchGsdWorkflowSession(pi, ctx, {
     commandName: "progress",
     commandResourcePath: "commands/gsd/progress.md",

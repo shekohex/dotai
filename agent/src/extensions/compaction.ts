@@ -7,8 +7,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
 
-const COMPACTION_PROVIDER = "gemini" as const;
-const COMPACTION_MODEL = "gemini-3.1-flash-lite-preview" as const;
+const COMPACTION_MODEL_FALLBACKS = [
+  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
+  { provider: "openai", model: "gpt-5.4-mini" },
+  { provider: "opencode-go", model: "deepseek-v4-flash" },
+] as const;
 const SUMMARY_PREFIX =
   "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
 
@@ -21,65 +24,85 @@ type CompactionModelAuth = {
 export default function (pi: ExtensionAPI) {
   pi.on("session_before_compact", async (event, ctx) => {
     ctx.ui.notify("Compaction extension triggered", "info");
-    const modelAuth = await resolveCompactionModelAndAuth(ctx);
-    if (!modelAuth) {
-      return {};
-    }
-
     const preparation = event.preparation;
     const allMessages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
-    ctx.ui.notify(
-      `Compaction: summarizing ${allMessages.length} messages (${preparation.tokensBefore.toLocaleString()} tokens) with ${modelAuth.model.id}...`,
-      "info",
-    );
 
-    try {
-      const summary = await summarizeCompaction(
-        modelAuth,
-        allMessages,
-        preparation.previousSummary,
-        event.signal,
+    for (const fallbackModel of COMPACTION_MODEL_FALLBACKS) {
+      const modelAuth = await resolveCompactionModelAndAuth(
+        ctx,
+        fallbackModel.provider,
+        fallbackModel.model,
       );
-      if (!summary.trim()) {
-        if (!event.signal.aborted) {
-          ctx.ui.notify("Compaction summary was empty, using default compaction", "warning");
-        }
-        return {};
+      if (!modelAuth) {
+        continue;
       }
 
-      return {
-        compaction: {
-          summary: `${SUMMARY_PREFIX}\n\n${summary}`,
-          firstKeptEntryId: preparation.firstKeptEntryId,
-          tokensBefore: preparation.tokensBefore,
-        },
-      };
-    } catch (error) {
-      ctx.ui.notify(`Compaction failed: ${errorMessage(error)}`, "error");
-      return {};
+      ctx.ui.notify(
+        `Compaction: summarizing ${allMessages.length} messages (${preparation.tokensBefore.toLocaleString()} tokens) with ${modelAuth.model.id}...`,
+        "info",
+      );
+
+      try {
+        const summary = await summarizeCompaction(
+          modelAuth,
+          allMessages,
+          preparation.previousSummary,
+          event.signal,
+        );
+        if (!summary.trim()) {
+          if (!event.signal.aborted) {
+            ctx.ui.notify(
+              `Compaction summary was empty for ${modelAuth.model.id}, trying next fallback`,
+              "warning",
+            );
+          }
+          continue;
+        }
+
+        return {
+          compaction: {
+            summary: `${SUMMARY_PREFIX}\n\n${summary}`,
+            firstKeptEntryId: preparation.firstKeptEntryId,
+            tokensBefore: preparation.tokensBefore,
+          },
+        };
+      } catch (error) {
+        ctx.ui.notify(
+          `Compaction failed with ${modelAuth.model.id}: ${errorMessage(error)}. Trying next fallback`,
+          "error",
+        );
+      }
     }
+
+    if (!event.signal.aborted) {
+      ctx.ui.notify("Compaction fallback list exhausted, using default compaction", "warning");
+    }
+
+    return {};
   });
 }
 
 async function resolveCompactionModelAndAuth(
   ctx: ExtensionContext,
+  provider: string,
+  modelId: string,
 ): Promise<CompactionModelAuth | undefined> {
-  const model = ctx.modelRegistry.find(COMPACTION_PROVIDER, COMPACTION_MODEL);
+  const model = ctx.modelRegistry.find(provider, modelId);
   if (!model) {
-    ctx.ui.notify(
-      `Could not find ${COMPACTION_PROVIDER}/${COMPACTION_MODEL} model, using default compaction`,
-      "warning",
-    );
+    ctx.ui.notify(`Could not find ${provider}/${modelId} model, trying next fallback`, "warning");
     return undefined;
   }
 
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
-    ctx.ui.notify(`Compaction auth failed: ${auth.error}`, "warning");
+    ctx.ui.notify(
+      `Compaction auth failed for ${model.id}: ${auth.error}. Trying next fallback`,
+      "warning",
+    );
     return undefined;
   }
   if (auth.apiKey === undefined || auth.apiKey.length === 0) {
-    ctx.ui.notify(`No API key for ${model.provider}, using default compaction`, "warning");
+    ctx.ui.notify(`No API key for ${model.id}, trying next fallback`, "warning");
     return undefined;
   }
 

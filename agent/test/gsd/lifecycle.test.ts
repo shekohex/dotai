@@ -5885,6 +5885,46 @@ Plans:
     expect(pi.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("validate-phase fails closed before workflow launch when nyquist validation is disabled", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      JSON.stringify({ workflow: { nyquist_validation: false } }) + "\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: Nyquist validation is disabled in config (workflow.nyquist_validation=false)",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("validate-phase fails closed before workflow launch for ambiguous validation target inventory", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "# Validation\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-extra-VALIDATION.md"),
+      "# Validation\n",
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: phase 02 has ambiguous or non-canonical VALIDATION.md artifacts",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("verify-work launches workflow foundation instead of native artifact path", async () => {
     const root = createPlanningRoot();
     const pi = createPi();

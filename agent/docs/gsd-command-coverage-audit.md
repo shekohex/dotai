@@ -430,7 +430,7 @@ Differences:
 
 ### `validate-phase`
 
-Coverage: 55/100
+Coverage: 64/100
 
 Upstream behavior:
 
@@ -441,7 +441,8 @@ Local behavior:
 - routes through workflow-launch foundation with bundled local command/workflow resources instead of writing a template stub directly. `src/extensions/gsd/lifecycle/validate-phase.ts`, `src/resources/gsd/commands/gsd/validate-phase.md`, `src/resources/gsd/workflows/validate-phase.md`
 - dedicated parser rejects malformed flags and extra positional args explicitly instead of silently ignoring them. `src/extensions/gsd/validate-phase-args.ts`, `src/extensions/gsd/args.ts`
 - omitted phase resolution now prefers the last helper-ready roadmap-matching phase with real execution evidence, and explicit phase selection also fails closed unless roadmap plan coverage is complete enough for current contract. Malformed or non-roadmap SUMMARY inventories are rejected before workflow launch. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
-- helper-backed `init validate-phase <phase>` now provides deterministic readiness/artifact preflight, including a single canonical validation target or closed failure on ambiguous/non-canonical validation inventory, incomplete plan count, and rejection of malformed/non-roadmap SUMMARY sets by matching summary ids to roadmap plan ids. `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/validate-phase-workflow.test.ts`
+- helper-backed `init validate-phase <phase>` now provides deterministic readiness/artifact preflight, including a single canonical validation target or closed failure on ambiguous/non-canonical validation inventory, incomplete plan count, config-disabled Nyquist gating, and explicit validation state (`A`/`B`/`C`). `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/validate-phase-workflow.test.ts`
+- local handler now consumes helper preflight before workflow launch and fails closed when helper reports blocked config/state, ambiguous validation inventory, or malformed backend output instead of spawning a doomed workflow session. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 
 Differences:
 

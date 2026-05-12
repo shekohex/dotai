@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
+import { resolveGsdBundlePath } from "../resources.js";
 import { readPlanningSnapshot } from "./read.js";
 import { readRoadmapPhases, type RoadmapPhase } from "./roadmap.js";
 import { resolveCurrentPhase, type CurrentPhaseSelection } from "./runtime.js";
@@ -6,6 +10,27 @@ type ValidatePhaseSelection = CurrentPhaseSelection & {
   summaryCount: number;
   validationExists: boolean;
 };
+
+const ValidatePhasePreflightSchema = Type.Object(
+  {
+    ready: Type.Boolean(),
+    failure_reason: Type.Union([Type.String(), Type.Null()]),
+    nyquist_validation_enabled: Type.Boolean(),
+    validation_target_path: Type.Union([Type.String(), Type.Null()]),
+    validation_target_mode: Type.Union([
+      Type.Literal("create"),
+      Type.Literal("update"),
+      Type.Null(),
+    ]),
+  },
+  { additionalProperties: true },
+);
+
+type ValidatePhasePreflight = Static<typeof ValidatePhasePreflightSchema>;
+
+type ValidatePhasePreflightResult =
+  | { ok: true; value: ValidatePhasePreflight }
+  | { ok: false; error: string };
 
 function normalizeSummaryId(fileName: string): string {
   return fileName.replace(/-SUMMARY\.md$/u, "");
@@ -62,6 +87,41 @@ function comparePhaseNumbers(left: string, right: string): number {
 
 function findPhaseByNumber(phases: RoadmapPhase[], phaseNumber: string): RoadmapPhase | undefined {
   return phases.find((phase) => phase.number === phaseNumber);
+}
+
+function runValidatePhasePreflight(cwd: string, phaseNumber: string): ValidatePhasePreflightResult {
+  const toolPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
+
+  try {
+    const stdout = execFileSync(
+      process.execPath,
+      [toolPath, "init", "validate-phase", phaseNumber],
+      {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const parsed = JSON.parse(stdout) as unknown;
+    if (!Value.Check(ValidatePhasePreflightSchema, parsed)) {
+      return {
+        ok: false,
+        error: "validate-phase preflight returned invalid JSON shape",
+      };
+    }
+    return { ok: true, value: parsed };
+  } catch (error) {
+    if (error instanceof Error) {
+      return {
+        ok: false,
+        error: error.message,
+      };
+    }
+    return {
+      ok: false,
+      error: "validate-phase preflight failed",
+    };
+  }
 }
 
 function findHighestLocalPhaseWithSummaries(
@@ -190,6 +250,19 @@ export function resolveValidatePhaseSelection(
   if (summaryCount === 0) {
     return {
       error: `Cannot run /gsd validate-phase: phase ${roadmapPhase.number} has no SUMMARY.md artifacts.`,
+    };
+  }
+
+  const preflight = runValidatePhasePreflight(cwd, roadmapPhase.number);
+  if (!preflight.ok) {
+    return {
+      error: `Cannot run /gsd validate-phase: ${preflight.error}.`,
+    };
+  }
+
+  if (!preflight.value.nyquist_validation_enabled || !preflight.value.ready) {
+    return {
+      error: `Cannot run /gsd validate-phase: ${preflight.value.failure_reason ?? "validate-phase preflight failed."}`,
     };
   }
 

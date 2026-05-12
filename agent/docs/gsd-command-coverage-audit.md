@@ -51,14 +51,14 @@ Implemented locally:
 | `discuss-phase`      | TS-native orchestration            | `discuss-phase`                |       92 |
 | `plan-phase`         | TS-native orchestration            | `plan-phase`                   |       93 |
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
-| `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
+| `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       89 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       90 |
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       78 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       72 |
 | `next`               | local-only instant command         | derived from `progress --next` |       72 |
 | `stats`              | TS-native instant command          | `stats`                        |       73 |
 | `health`             | TS-native instant command          | `health`                       |       76 |
-| `status`             | local-only runtime monitor         | none                           |       52 |
+| `status`             | local-only runtime monitor         | none                           |       53 |
 | `help`               | local docs viewer                  | `help`                         |       71 |
 | `on`                 | local enable toggle                | none                           |      100 |
 | `off`                | local enable toggle                | none                           |      100 |
@@ -611,6 +611,7 @@ Assessment:
 
 - useful local-only runtime introspection command
 - should not be counted as upstream parity gap, only as additive local UX
+- summary coverage tables now have direct regression coverage against per-command detailed coverage sections, so score rows cannot silently drift after later slices. `test/gsd/resources.test.ts`
 
 ### `help`
 

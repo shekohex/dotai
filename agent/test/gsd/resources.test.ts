@@ -39,6 +39,53 @@ function extractImplementedAuditCommands(section: string): string[] {
     });
 }
 
+function extractCoverageByCommandFromAuditTable(section: string): Map<string, number> {
+  return new Map(
+    section
+      .split("\n")
+      .filter((line) => line.startsWith("| `"))
+      .map((line) => {
+        const match = line.match(/^\| `([^`]+)`\s+\|.*\|\s+(\d+)\s+\|$/u);
+
+        expect(match?.[1]).toBeTruthy();
+        expect(match?.[2]).toBeTruthy();
+
+        return [match?.[1] ?? "", Number.parseInt(match?.[2] ?? "0", 10)] as const;
+      }),
+  );
+}
+
+function extractCoverageByCommandFromCoverageSections(document: string): Map<string, number> {
+  return new Map(
+    [...document.matchAll(/^### `([^`]+)`\n\nCoverage: (\d+)\/100$/gmu)].map((match) => [
+      match[1] ?? "",
+      Number.parseInt(match[2] ?? "0", 10),
+    ]),
+  );
+}
+
+function extractCoverageByCommandFromCompletionAuditTable(document: string): Map<string, number> {
+  const section = extractAuditSection(
+    document,
+    "Implemented locally:",
+    "## Prompt-To-Artifact Checklist",
+  );
+
+  return new Map(
+    section
+      .split("\n")
+      .filter((line) => line.startsWith("| `"))
+      .map((line) => {
+        const match = line.match(/^\| `([^`]+)`\s+\|\s+(\d+)\s+\|/u);
+
+        expect(match?.[1]).toBeTruthy();
+        expect(match?.[2]).toBeTruthy();
+
+        return [match?.[1] ?? "", Number.parseInt(match?.[2] ?? "0", 10)] as const;
+      }),
+  );
+}
+
 function normalizeDocumentedFlag(value: string): string {
   return value.endsWith("=") ? value.slice(0, -1) : value;
 }
@@ -263,6 +310,29 @@ describe("gsd bundled resources", () => {
     expect(runtimeSubcommands.has("help")).toBe(true);
     expect(missingCommands.has("mvp-phase")).toBe(true);
     expect(missingCommands.size).toBe(Number(missingCountMatch?.[1]));
+  });
+
+  it("keeps audit score tables aligned with per-command coverage sections", () => {
+    const coverageAudit = readFileSync(
+      join(process.cwd(), "docs/gsd-command-coverage-audit.md"),
+      "utf8",
+    );
+    const completionAudit = readFileSync(join(process.cwd(), ".agent/completion-audit.md"), "utf8");
+
+    const coverageAuditTable = extractCoverageByCommandFromAuditTable(
+      extractAuditSection(coverageAudit, "Implemented locally:", "## Missing Commands"),
+    );
+    const coverageAuditSections = extractCoverageByCommandFromCoverageSections(coverageAudit);
+    const completionAuditTable = extractCoverageByCommandFromCompletionAuditTable(completionAudit);
+    const completionAuditSections = extractCoverageByCommandFromCoverageSections(completionAudit);
+
+    for (const [command, score] of coverageAuditSections) {
+      expect(coverageAuditTable.get(command)).toBe(score);
+    }
+
+    for (const [command, score] of completionAuditSections) {
+      expect(completionAuditTable.get(command)).toBe(score);
+    }
   });
 
   it("ships verify-work foundation resources and wording", () => {

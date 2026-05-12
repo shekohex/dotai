@@ -41,9 +41,9 @@ Implemented locally:
 | `validate-phase`     |            78 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            72 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
-| `stats`              |            72 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
+| `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            76 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
-| `status`             |            52 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
+| `status`             |            53 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            71 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -71,6 +71,7 @@ Implemented locally:
 - current state:
   - help drift guards exist for unsupported catalog and autocomplete flags
   - recent slices synced `map-codebase`, `progress`, `health`, `status`, `next`
+  - score-row consistency between audit summary tables and per-command sections now has direct regression coverage in `test/gsd/resources.test.ts`
 - remaining work:
   - explicit audit sweep still needed per low-score command to ensure no stale wording remains
 

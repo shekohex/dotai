@@ -8,6 +8,14 @@ import { resolvePlanningDir } from "../shared.js";
 import { readPlanningSnapshot } from "./read.js";
 import { readRoadmapPhases } from "./roadmap.js";
 
+function canonicalizePhaseNumber(value: string): string {
+  return value
+    .trim()
+    .split(".")
+    .map((segment) => String(Number.parseInt(segment, 10)))
+    .join(".");
+}
+
 const HealthIssueSchema = Type.Object(
   {
     severity: Type.Union([Type.Literal("error"), Type.Literal("warning"), Type.Literal("info")]),
@@ -161,6 +169,9 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
   const roadmapPhases = readRoadmapPhases(cwd);
   const issues: HealthOutput["issues"] = [];
   const configPath = join(resolvePlanningDir(cwd), "config.json");
+  const roadmapPhaseNumbers = new Set(
+    roadmapPhases.map((phase) => canonicalizePhaseNumber(phase.number)),
+  );
 
   if (snapshot.config === undefined) {
     issues.push({
@@ -199,6 +210,14 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
   }
 
   for (const phase of snapshot.phases) {
+    const phaseNumber = phase.id.match(/^(\d+(?:\.\d+)?)/u)?.[1];
+    if (
+      phaseNumber === undefined ||
+      !roadmapPhaseNumbers.has(canonicalizePhaseNumber(phaseNumber))
+    ) {
+      continue;
+    }
+
     if (!/^\d{2}(?:\.\d+)?-/u.test(phase.id)) {
       issues.push({
         severity: "warning",

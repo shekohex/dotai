@@ -558,7 +558,7 @@ Differences:
 
 ### `health`
 
-Coverage: 74/100
+Coverage: 75/100
 
 Upstream behavior:
 
@@ -571,6 +571,7 @@ Local behavior:
 - normal `/gsd health` output now preserves `healthy`, `degraded`, and `broken` states, shows detailed issue and repair lines, preserves bundled repair detail fields, and converts malformed planning/config failures into structured command output instead of crashing. `src/extensions/gsd/instant/health.ts`, `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/read.ts`
 - autocomplete and dashboard now use cheap local summary heuristics instead of synchronously invoking bundled validator on every hot-path refresh. `src/extensions/gsd/state/health.ts`, `src/extensions/gsd/state/suggestions.ts`, `src/extensions/gsd/ui.ts`
 - hot-path local summary now classifies malformed config as broken, aligning severity better with real command behavior while remaining intentionally cheaper than full validator runs. `src/extensions/gsd/state/health.ts`, `test/gsd/health-state.test.ts`, `test/gsd/brownfield.test.ts`
+- hot-path local summary now also ignores stale non-roadmap phase dirs when surfacing phase-name and missing-summary warnings, while still normalizing padded/unpadded roadmap phase ids for real phase artifacts. This avoids dashboard/autocomplete health drift from orphaned brownfield directories that full roadmap-scoped command paths already ignore. `src/extensions/gsd/state/health.ts`, `test/gsd/health-state.test.ts`
 - focused tests now cover bare `--context`, malformed config survival, degraded/detailed output, unknown-usage honesty, repair detail rendering, and hot-path isolation. `test/gsd/commands.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/ui.test.ts`, `test/gsd/health-summary-paths.test.ts`, `test/gsd/health-state.test.ts`
 
 Differences:

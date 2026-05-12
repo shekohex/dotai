@@ -127,6 +127,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   default route: bundled workflow-launch review session
   flags: `--next`
   `--phase <phase>`, `--force` only with `/gsd progress --next`
+  `progress --next --force` inherits `/gsd next` safety gates; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing
   parsed with explicit unsupported-local error: `--do`, `--forensic`
   fails closed when workflow session support is unavailable in current context
 

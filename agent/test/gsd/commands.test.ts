@@ -1606,6 +1606,88 @@ test("gsd next accepts zero-padded phase override", async () => {
   );
 });
 
+test("gsd progress --next --force still blocks paused checkpoint markers", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", ".continue-here.md"),
+    [
+      "# Resume",
+      "",
+      "| Requirement | Status | Blocking Issue |",
+      "| --- | --- | --- |",
+      "| Delivery | pending | waiting on user checkpoint |",
+    ].join("\n"),
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "progress --next --force",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by .continue-here.md; resume pending work before /gsd next",
+    level: "warning",
+  });
+});
+
+test("gsd progress --next --force still blocks paused state", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "STATE.md"),
+    "milestone: v1.0\ncurrent_phase: 1\ncurrent_phase_name: Foundation\ncurrent_plan: 01-01\nstatus: Paused for review\npaused_at: 2026-05-08T12:00:00Z\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "progress --next --force",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by paused state at 2026-05-08T12:00:00Z",
+    level: "warning",
+  });
+});
+
+test("gsd progress --next --force still blocks unresolved verification fail", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "phases", "1-foundation", "1-01-SUMMARY.md"), "summary\n");
+  writeFileSync(
+    join(cwd, ".planning", "phases", "1-foundation", "1-VERIFICATION.md"),
+    "---\nverified: false\n---\n\n# Verification\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "progress --next --force",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by unresolved verification FAIL in phase 1; rerun /gsd verify-work 1",
+    level: "warning",
+  });
+});
+
 test("gsd next routes completed phase to verify-work workflow", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

@@ -511,6 +511,47 @@ test("gsd status headless output ignores blank activity labels and details", asy
   });
 });
 
+test("gsd status headless output ignores non-GSD child sessions", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  setGsdSubagentSdkFactoryForTests(
+    () =>
+      ({
+        list: () => [
+          {
+            sessionId: "child-1",
+            sessionPath: "/tmp/child-1.jsonl",
+            name: "worker",
+            task: "generic detached task",
+            status: "running",
+            startedAt: Date.now() - 12_000,
+            activity: { label: "working", detail: "Should stay out of /gsd status" },
+          },
+          {
+            sessionId: "child-2",
+            sessionPath: "/tmp/child-2.jsonl",
+            name: "codebase-mapper:tech",
+            task: "map codebase",
+            status: "running",
+            startedAt: Date.now() - 5_000,
+            activity: { label: "mapping", detail: "Refreshing tech docs" },
+          },
+        ],
+      }) as never,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  expect(command).toBeTruthy();
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "1 total · 1 running\n\ncodebase-mapper:tech: mapping · 0:05 · Refreshing tech docs",
+    level: "info",
+  });
+});
+
 test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("plan-phase 2")).toEqual({ subcommand: "plan-phase", phase: "2" });
   expect(parseGsdCommandArgs("plan-phase")).toEqual({ subcommand: "plan-phase" });

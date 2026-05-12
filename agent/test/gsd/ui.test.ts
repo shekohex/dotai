@@ -323,4 +323,50 @@ describe("gsd ui custom components", () => {
     expect(rendered).toContain("gsd-reviewer · cancelled · 0:03 · Cancelled after");
     expect(rendered).toContain("…");
   });
+
+  it("status command UI ignores non-GSD child sessions", async () => {
+    let rendered = "";
+    setGsdSubagentSdkFactoryForTests(
+      () =>
+        ({
+          list: () => [
+            {
+              sessionId: "child-1",
+              sessionPath: "/tmp/child-1.jsonl",
+              name: "worker",
+              task: "generic detached task",
+              status: "running",
+              startedAt: Date.now() - 12_000,
+              activity: { label: "working", detail: "Should stay out of /gsd status" },
+            },
+            {
+              sessionId: "child-2",
+              sessionPath: "/tmp/child-2.jsonl",
+              name: "intel-updater:full-refresh",
+              task: "refresh intel",
+              status: "running",
+              startedAt: Date.now() - 4_000,
+              activity: { label: "refreshing", detail: "Updating intel snapshot" },
+            },
+          ],
+        }) as never,
+    );
+    await handleGsdStatus({} as never, {
+      cwd: createRoot(),
+      hasUI: true,
+      ui: {
+        notify() {},
+        async custom(custom: Parameters<typeof renderCustomComponent>[0]) {
+          rendered = await renderCustomComponent(custom);
+        },
+      },
+    });
+
+    expect(rendered).toContain("1 total · 1 running");
+    expect(rendered).toContain(
+      "intel-updater:full-refresh · refreshing · 0:04 · Updating intel snapshot",
+    );
+    expect(rendered).not.toContain("worker");
+    expect(rendered).not.toContain("Should stay out of /gsd status");
+  });
 });

@@ -86,6 +86,8 @@ let spawnSdkFactory: SpawnSdkFactory = (pi) =>
 
 const sessionScopedSdks = new Map<string, SessionScopedSdkEntry>();
 
+const gsdSubagentNamePrefixes = ["gsd-", "codebase-mapper:", "intel-updater:"];
+
 function clearSessionScopedSdks(): void {
   for (const entry of sessionScopedSdks.values()) {
     entry.sdk.dispose?.();
@@ -113,7 +115,11 @@ export function listGsdSubagents(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
 ): RuntimeSubagent[] {
-  return createSdk(pi, ctx).list();
+  return createSdk(pi, ctx)
+    .list()
+    .filter((subagent) =>
+      gsdSubagentNamePrefixes.some((prefix) => subagent.name.startsWith(prefix)),
+    );
 }
 
 function matchesSchema<TSchema extends TSchemaBase>(schema: TSchema, value: unknown): boolean {

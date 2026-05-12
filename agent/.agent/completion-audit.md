@@ -43,7 +43,7 @@ Implemented locally:
 | `next`               |            71 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            71 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
-| `status`             |            51 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
+| `status`             |            52 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            70 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -111,7 +111,7 @@ Implemented locally:
 
 ## Lowest-Score Command Evidence Map
 
-### `status` (`51`)
+### `status` (`52`)
 
 - runtime:
   - `src/extensions/gsd/instant/status.ts`
@@ -119,11 +119,12 @@ Implemented locally:
   - `test/gsd/commands.test.ts`
   - `test/gsd/ui.test.ts`
 - covered now:
-  - empty state
-  - headless summary counts
-  - elapsed time and activity detail
-  - deterministic oldest-first ordering
-  - UI live panel rendering
+- empty state
+- headless summary counts
+- elapsed time and activity detail
+- deterministic oldest-first ordering
+- UI live panel rendering
+- non-GSD child sessions filtered out from both headless and UI output
 - weakest remaining areas:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display

@@ -5918,6 +5918,60 @@ Plans:
     expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("validate-phase seeds manual-only verification rows from existing audit-uat debt", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" }, devDependencies: { vitest: "^4.1.5" } }) +
+        "\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      [
+        "---",
+        "phase: 02",
+        "plan: 01",
+        "type: implementation",
+        "wave: 1",
+        "depends_on: []",
+        "files_modified: [src/build.ts]",
+        "autonomous: true",
+        "requirements:",
+        "  - REQ-LOCAL",
+        "must_haves: [done]",
+        "---",
+      ].join("\n") + "\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VERIFICATION.md"),
+      [
+        "---",
+        "status: human_needed",
+        "human_verification:",
+        '  - test: "Verify login works on real iPhone"',
+        '    expected: "Login succeeds and lands on dashboard"',
+        '    why_human: "Needs real-device keyboard behavior"',
+        "    result: pending",
+        "---",
+        "",
+        "# Verification",
+      ].join("\n"),
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+
+    const draft = readFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "utf8",
+    );
+    expect(draft).toContain(
+      "| Verify login works on real iPhone | REQ-2 | Needs real-device keyboard behavior | Login succeeds and lands on dashboard |",
+    );
+  });
+
   it("validate-phase preserves existing validation artifact when helper target is update", async () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });

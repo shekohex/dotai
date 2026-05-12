@@ -493,6 +493,32 @@ Plans:
     expect(computeStructuredStats(root).decisions_count).toBe(0);
   });
 
+  it("stats blocker count excludes unrelated blocker mentions outside blockers section", () => {
+    const root = createTempDirSync("agent-gsd-stats-blockers-section-");
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      [
+        "status: Ready to execute",
+        "",
+        "Notes: blocker terminology here is historical only.",
+        "",
+        "### Blockers/Concerns",
+        "",
+        "- Waiting on API token",
+      ].join("\n"),
+    );
+
+    expect(computeStructuredStats(root).open_blockers).toBe(1);
+  });
+
   it("stats structured output includes git history and state last_activity when repo exists", () => {
     const root = createTempDirSync("agent-gsd-stats-git-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });

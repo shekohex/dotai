@@ -100,7 +100,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     phaseScope === undefined
       ? roadmapPhases
       : roadmapPhases.filter((phase) => phaseScope.has(canonicalizePhaseNumber(phase.number)));
-  const blockers = snapshot.stateBody?.match(/blocker/gi)?.length ?? 0;
+  const blockers = countActiveBlockers(snapshot.stateBody);
   const decisions = countProjectDecisionRows(snapshot.project);
   const requirements = parseRequirementsProgress(snapshot.requirements);
   const gitCommitCount = readGitCommitCount(cwd);
@@ -224,6 +224,38 @@ function countProjectDecisionRows(project: string | undefined): number {
   }
 
   return rowCount;
+}
+
+function countActiveBlockers(stateBody: string | undefined): number {
+  if (stateBody === undefined) {
+    return 0;
+  }
+
+  const lines = stateBody.split("\n");
+  let insideBlockers = false;
+  let count = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^###\s+Blockers\/Concerns\s*$/u.test(trimmed)) {
+      insideBlockers = true;
+      continue;
+    }
+
+    if (insideBlockers && /^##{1,3}\s+/u.test(trimmed)) {
+      break;
+    }
+
+    if (!insideBlockers) {
+      continue;
+    }
+
+    if (/^-\s+/u.test(trimmed) && !/^[-*]\s+None yet\.?$/iu.test(trimmed)) {
+      count += 1;
+    }
+  }
+
+  return count;
 }
 
 function isDecisionTableHeader(line: string): boolean {

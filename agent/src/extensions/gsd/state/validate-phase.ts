@@ -119,7 +119,8 @@ function canonicalizePhaseNumber(value: string): string {
 }
 
 function findPhaseByNumber(phases: RoadmapPhase[], phaseNumber: string): RoadmapPhase | undefined {
-  return phases.find((phase) => phase.number === phaseNumber);
+  const canonicalRequested = canonicalizePhaseNumber(phaseNumber);
+  return phases.find((phase) => canonicalizePhaseNumber(phase.number) === canonicalRequested);
 }
 
 function runValidatePhasePreflight(cwd: string, phaseNumber: string): ValidatePhasePreflightResult {

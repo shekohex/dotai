@@ -34,6 +34,14 @@ type ValidatePhasePreflightResult =
   | { ok: true; value: ValidatePhasePreflight }
   | { ok: false; error: string };
 
+let validatePhaseExecFileSync: typeof execFileSync = execFileSync;
+
+export function setValidatePhaseExecFileSyncForTests(
+  replacement: typeof execFileSync | undefined,
+): void {
+  validatePhaseExecFileSync = replacement ?? execFileSync;
+}
+
 function normalizeSummaryId(fileName: string): string {
   return fileName.replace(/-SUMMARY\.md$/u, "");
 }
@@ -95,7 +103,7 @@ function runValidatePhasePreflight(cwd: string, phaseNumber: string): ValidatePh
   const toolPath = resolveGsdBundlePath("bin", "gsd-tools.cjs");
 
   try {
-    const stdout = execFileSync(
+    const stdout = validatePhaseExecFileSync(
       process.execPath,
       [toolPath, "init", "validate-phase", phaseNumber],
       {

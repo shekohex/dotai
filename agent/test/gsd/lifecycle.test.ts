@@ -25,6 +25,7 @@ import { handleGsdSecurePhase } from "../../src/extensions/gsd/lifecycle/secure-
 import { handleGsdVerifyWork } from "../../src/extensions/gsd/lifecycle/verify-work.js";
 import { resolveGsdBundlePath } from "../../src/extensions/gsd/resources.js";
 import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.js";
+import { setValidatePhaseExecFileSyncForTests } from "../../src/extensions/gsd/state/validate-phase.js";
 import { applyPendingGsdWorkflowLaunch } from "../../src/extensions/gsd/workflow-launch.js";
 import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
@@ -460,6 +461,7 @@ function createIntelRefreshSpawn(
 
 afterEach(() => {
   setGsdSubagentSdkFactoryForTests(undefined);
+  setValidatePhaseExecFileSyncForTests(undefined);
 });
 
 describe("gsd lifecycle handlers", () => {
@@ -6117,6 +6119,38 @@ Plans:
     await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       "Cannot run /gsd validate-phase: phase 02 has ambiguous or non-canonical VALIDATION.md artifacts",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("validate-phase fails closed before workflow launch when preflight returns invalid JSON shape", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    setValidatePhaseExecFileSyncForTests(() => '{"ready":true}\n' as never);
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: validate-phase preflight returned invalid JSON shape.",
+      "warning",
+    );
+    expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("validate-phase fails closed before workflow launch when preflight helper throws", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    setValidatePhaseExecFileSyncForTests(() => {
+      throw new Error("validate helper exploded");
+    });
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot run /gsd validate-phase: validate helper exploded.",
       "warning",
     );
     expect(pi.sendUserMessage).not.toHaveBeenCalled();

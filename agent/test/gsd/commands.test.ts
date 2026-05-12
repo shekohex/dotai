@@ -607,6 +607,49 @@ test("gsd status headless output ignores non-GSD child sessions", async () => {
   });
 });
 
+test("gsd status headless output breaks equal start-time ties deterministically", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  const startedAt = Date.now() - 5_000;
+  setGsdSubagentSdkFactoryForTests(
+    () =>
+      ({
+        list: () => [
+          {
+            sessionId: "child-b",
+            sessionPath: "/tmp/child-b.jsonl",
+            name: "gsd-reviewer",
+            task: "review phase",
+            status: "running",
+            startedAt,
+            activity: { label: "reviewing", detail: "Second by name" },
+          },
+          {
+            sessionId: "child-a",
+            sessionPath: "/tmp/child-a.jsonl",
+            name: "gsd-planner",
+            task: "plan phase",
+            status: "running",
+            startedAt,
+            activity: { label: "planning", detail: "First by name" },
+          },
+        ],
+      }) as never,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  expect(command).toBeTruthy();
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "2 total · 2 running\n\ngsd-planner: planning · 0:05 · First by name\ngsd-reviewer: reviewing · 0:05 · Second by name",
+    level: "info",
+  });
+});
+
 test("gsd status headless output counts idle subagents explicitly", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

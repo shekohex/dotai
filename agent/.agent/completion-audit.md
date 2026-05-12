@@ -43,7 +43,7 @@ Implemented locally:
 | `next`               |            73 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
-| `status`             |            53 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
+| `status`             |            54 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            71 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
 | `off`                |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -134,7 +134,7 @@ Implemented locally:
 - weakest remaining areas:
   - richer repair/context parity still partial
 
-### `status` (`53`)
+### `status` (`54`)
 
 - runtime:
   - `src/extensions/gsd/instant/status.ts`
@@ -146,6 +146,7 @@ Implemented locally:
 - headless summary counts
 - elapsed time and activity detail
 - deterministic oldest-first ordering
+- deterministic tie-breaks when start times match
 - UI live panel rendering
 - non-GSD child sessions filtered out from both headless and UI output
 - idle subagents counted explicitly in both headless and UI summaries

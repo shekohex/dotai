@@ -56,7 +56,19 @@ function colorStatus(theme: Theme, subagent: RuntimeSubagent, label: string): st
 }
 
 function sortSubagents(subagents: RuntimeSubagent[]): RuntimeSubagent[] {
-  return subagents.toSorted((left, right) => left.startedAt - right.startedAt);
+  return subagents.toSorted((left, right) => {
+    const startedAtDiff = left.startedAt - right.startedAt;
+    if (startedAtDiff !== 0) {
+      return startedAtDiff;
+    }
+
+    const nameDiff = left.name.localeCompare(right.name);
+    if (nameDiff !== 0) {
+      return nameDiff;
+    }
+
+    return left.sessionId.localeCompare(right.sessionId);
+  });
 }
 
 function buildStatusSummary(subagents: RuntimeSubagent[]): string {

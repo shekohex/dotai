@@ -370,6 +370,50 @@ describe("gsd ui custom components", () => {
     expect(rendered).not.toContain("Should stay out of /gsd status");
   });
 
+  it("status command UI breaks equal start-time ties deterministically", async () => {
+    let rendered = "";
+    const startedAt = Date.now() - 5_000;
+    setGsdSubagentSdkFactoryForTests(
+      () =>
+        ({
+          list: () => [
+            {
+              sessionId: "child-b",
+              sessionPath: "/tmp/child-b.jsonl",
+              name: "gsd-reviewer",
+              task: "review phase",
+              status: "running",
+              startedAt,
+              activity: { label: "reviewing", detail: "Second by name" },
+            },
+            {
+              sessionId: "child-a",
+              sessionPath: "/tmp/child-a.jsonl",
+              name: "gsd-planner",
+              task: "plan phase",
+              status: "running",
+              startedAt,
+              activity: { label: "planning", detail: "First by name" },
+            },
+          ],
+        }) as never,
+    );
+    await handleGsdStatus({} as never, {
+      cwd: createRoot(),
+      hasUI: true,
+      ui: {
+        notify() {},
+        async custom(custom: Parameters<typeof renderCustomComponent>[0]) {
+          rendered = await renderCustomComponent(custom);
+        },
+      },
+    });
+
+    expect(rendered.indexOf("gsd-planner · planning · 0:05 · First by name")).toBeLessThan(
+      rendered.indexOf("gsd-reviewer · reviewing · 0:05 · Second by name"),
+    );
+  });
+
   it("status command UI counts idle subagents explicitly", async () => {
     let rendered = "";
     setGsdSubagentSdkFactoryForTests(

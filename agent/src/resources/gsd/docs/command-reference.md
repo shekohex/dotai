@@ -122,6 +122,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 - `/gsd health`
   flags: `--repair`, `--context`, `--tokens-used <int>`, `--tokens-used=<int>`, `--context-window <int>`, `--context-window=<int>`
   bare `--context` derives current session token usage when available and can derive window from session or `.planning/config.json`; if token usage is unavailable it reports unknown instead of guessing
+  local hot-path summary treats canonical phase dirs as valid whether prefixed `02-` or `2-`
   malformed counter values fail closed locally: `--tokens-used` requires non-negative integer, `--context-window` requires positive integer
   `--tokens-used` and `--context-window` require `--context`; `--repair` and `--context` cannot be combined in one run
 - `/gsd status`

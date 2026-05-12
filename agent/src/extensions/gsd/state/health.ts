@@ -16,6 +16,10 @@ function canonicalizePhaseNumber(value: string): string {
     .join(".");
 }
 
+function hasCanonicalPhaseDirName(phaseId: string): boolean {
+  return /^\d+(?:\.\d+)?-/u.test(phaseId);
+}
+
 const HealthIssueSchema = Type.Object(
   {
     severity: Type.Union([Type.Literal("error"), Type.Literal("warning"), Type.Literal("info")]),
@@ -218,7 +222,7 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
       continue;
     }
 
-    if (!/^\d{2}(?:\.\d+)?-/u.test(phase.id)) {
+    if (!hasCanonicalPhaseDirName(phase.id)) {
       issues.push({
         severity: "warning",
         code: "WLOCAL_PHASE_NAME",

@@ -349,6 +349,34 @@ test("gsd health routes bare --context using config window fallback", async () =
   });
 });
 
+test("gsd health ignores invalid config context_window and falls back to bundled default", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "config.json"),
+    '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false,"context_window":0}\n',
+  );
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  writeFileSync(join(cwd, ".planning", "ROADMAP.md"), "# Roadmap\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  writeFileSync(join(cwd, ".planning", "STATE.md"), "status: Ready to execute\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("health --context", createCommandContext(cwd, notifications, fakePi));
+
+  expect(notifications.at(-1)).toEqual({
+    message: [
+      "Health context unknown",
+      "Window: ?/200000 tokens",
+      "Recommendation: token usage unavailable in current session. Re-run with --tokens-used <int> or from active session with context metrics.",
+    ].join("\n"),
+    level: "warning",
+  });
+});
+
 test("gsd health rejects malformed context counters before bundled backend", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

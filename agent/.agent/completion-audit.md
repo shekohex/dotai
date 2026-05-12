@@ -42,7 +42,7 @@ Implemented locally:
 | `progress`           |            74 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            74 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            74 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
-| `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
+| `health`             |            78 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            55 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            73 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
 | `on`                 |           100 | `src/extensions/gsd/commands.ts`                             | complete local-only | none                                                         |
@@ -112,7 +112,7 @@ Implemented locally:
 
 ## Lowest-Score Command Evidence Map
 
-### `health` (`77`)
+### `health` (`78`)
 
 - runtime:
   - `src/extensions/gsd/instant/health.ts`
@@ -127,6 +127,7 @@ Implemented locally:
   - bare `--context` session/config/default-window fallback
   - unknown token-usage honesty
   - malformed config survives as broken output
+  - padded/unpadded canonical phase dir acceptance in hot-path summary
   - detailed repair rendering
   - hot-path local summary scoping
   - missing or flag-like `--tokens-used` / `--context-window` values rejected explicitly

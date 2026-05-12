@@ -57,7 +57,7 @@ Implemented locally:
 | `progress`           | workflow-launch + local next path  | `progress`                     |       74 |
 | `next`               | local-only instant command         | derived from `progress --next` |       74 |
 | `stats`              | TS-native instant command          | `stats`                        |       74 |
-| `health`             | TS-native instant command          | `health`                       |       77 |
+| `health`             | TS-native instant command          | `health`                       |       78 |
 | `status`             | local-only runtime monitor         | none                           |       55 |
 | `help`               | local docs viewer                  | `help`                         |       73 |
 | `on`                 | local enable toggle                | none                           |      100 |
@@ -570,7 +570,7 @@ Differences:
 
 ### `health`
 
-Coverage: 77/100
+Coverage: 78/100
 
 Upstream behavior:
 
@@ -594,6 +594,7 @@ Differences:
 - autocomplete/dashboard summaries are intentionally cheaper local approximations, not full bundled health evaluation
 - no full workflow prompt handoff for repair confirmation loops
 - bare `--context` still depends on live session metrics for exact token usage; config fallback can only provide window size and now says so explicitly
+- local hot-path health summary now accepts both padded and unpadded canonical roadmap phase dir names (`02-build`, `2-build`) instead of falsely warning that unpadded brownfield dirs are malformed.
 
 ### `status`
 

@@ -1693,6 +1693,35 @@ test("gsd next fails closed without workflow session instead of mutating state",
   });
 });
 
+test("gsd next fails closed without workflow session for verify-work route", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "phases", "2-delivery", "2-01-SUMMARY.md"), "summary\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  const noSessionContext = {
+    cwd,
+    hasUI: false,
+    ui: {
+      notify(message: string, level: string) {
+        notifications.push({ message, level });
+      },
+    },
+  };
+
+  await command?.handler("next", noSessionContext);
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Next requires workflow session for /gsd verify-work 2. Cannot safely fall back to pointer-only state updates.",
+    level: "warning",
+  });
+});
+
 test("gsd next fails closed without workflow session for complete-milestone route", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

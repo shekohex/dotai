@@ -1527,6 +1527,32 @@ test("gsd next routes completed phase to verify-work workflow", async () => {
   );
 });
 
+test("gsd next fails closed when roadmap has no phases", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  mkdirSync(join(cwd, ".planning", "phases"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".planning", "config.json"),
+    '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+  );
+  writeFileSync(join(cwd, ".planning", "ROADMAP.md"), "# Roadmap\n\nNo phases yet.\n");
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+  writeFileSync(join(cwd, ".planning", "STATE.md"), "status: Ready to plan\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next no roadmap phases",
+    level: "warning",
+  });
+});
+
 test("gsd next keeps incomplete UAT routing on verify-work workflow", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

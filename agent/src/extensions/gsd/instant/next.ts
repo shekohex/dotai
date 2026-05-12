@@ -466,16 +466,10 @@ export async function handleGsdNext(
     return;
   }
 
-  const result = computeNext(ctx.cwd, args.phase);
   const canDispatchWorkflow =
     ctx.sessionManager !== undefined &&
     typeof ctx.fork === "function" &&
     typeof ctx.newSession === "function";
-
-  if (result.reason.startsWith("unknown phase override:")) {
-    ctx.ui.notify(`Unknown /gsd next phase override: ${args.phase}.`, "warning");
-    return;
-  }
 
   const routedResult = resolveNextRoute(ctx.cwd, args.phase);
   if (!routedResult.advanced || routedResult.route === undefined) {

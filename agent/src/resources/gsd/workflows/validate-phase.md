@@ -23,14 +23,15 @@ Core rules:
 2. Treat this file as local adapted behavior contract, not literal shell script.
 3. Do not recreate old native template-writer behavior as success path.
 4. Validation target must come from helper-reported `validation_target_path`. If helper cannot return one authoritative target, fail closed.
-5. Omitted phase has already been locally biased toward last helper-ready roadmap-matching SUMMARY-backed phase. Preserve that target unless user explicitly changes it in-session.
-6. If selected phase lacks execution evidence, stop with explicit failure. Do not write placeholder validation output.
-7. If selected phase has no `*-SUMMARY.md`, fail closed.
-8. If selected phase has unresolved core execution absence or phase never ran locally, say this validation path is not supported for non-executed phases in this slice.
-9. When validation proceeds, use `$GSD_BUNDLE_DIR/templates/VALIDATION.md` as starting artifact shape.
-10. Validation review should focus on shipped local evidence from summaries, roadmap phase goal, requirements mapping, and any existing UAT or verification artifacts.
-11. Only treat helper-reported `validation_target_mode: update` as resume/update path. Do not infer update mode from loose glob matches.
-12. Use grouped local command names consistently in all user-facing guidance: `/gsd validate-phase`, `/gsd verify-work`, `/gsd execute-phase`.
+5. Local handler may already pre-seed helper-reported create target with draft `VALIDATION.md` structure before workflow launch. Treat that draft as scaffold only, not final audit output.
+6. Omitted phase has already been locally biased toward last helper-ready roadmap-matching SUMMARY-backed phase. Preserve that target unless user explicitly changes it in-session.
+7. If selected phase lacks execution evidence, stop with explicit failure. Do not write placeholder validation output.
+8. If selected phase has no `*-SUMMARY.md`, fail closed.
+9. If selected phase has unresolved core execution absence or phase never ran locally, say this validation path is not supported for non-executed phases in this slice.
+10. When validation proceeds, use `$GSD_BUNDLE_DIR/templates/VALIDATION.md` as starting artifact shape.
+11. Validation review should focus on shipped local evidence from summaries, roadmap phase goal, requirements mapping, and any existing UAT or verification artifacts.
+12. Only treat helper-reported `validation_target_mode: update` as resume/update path. Do not infer update mode from loose glob matches.
+13. Use grouped local command names consistently in all user-facing guidance: `/gsd validate-phase`, `/gsd verify-work`, `/gsd execute-phase`.
 
 Recommended execution shape:
 
@@ -41,7 +42,7 @@ Recommended execution shape:
 5. Read all helper-reported `summary_paths`.
 6. Read helper-reported `verification_paths` and `uat_paths` when present.
 7. If evidence is too weak to validate truthfully, stop with explicit gap summary instead of creating optimistic template output.
-8. Otherwise create or update helper-reported `validation_target_path` according to helper-reported `validation_target_mode`, with concrete validation findings and clear pass/gap status.
+8. Otherwise create or update helper-reported `validation_target_path` according to helper-reported `validation_target_mode`, with concrete validation findings and clear pass/gap status. If local handler pre-seeded a draft on create path, revise that file in place instead of creating a second artifact.
 
 Explicit deferrals in this slice:
 

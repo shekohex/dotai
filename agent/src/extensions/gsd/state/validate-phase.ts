@@ -9,6 +9,8 @@ import { resolveCurrentPhase, type CurrentPhaseSelection } from "./runtime.js";
 type ValidatePhaseSelection = CurrentPhaseSelection & {
   summaryCount: number;
   validationExists: boolean;
+  validationTargetPath: string;
+  validationTargetMode: "create" | "update";
 };
 
 const ValidatePhasePreflightSchema = Type.Object(
@@ -266,11 +268,23 @@ export function resolveValidatePhaseSelection(
     };
   }
 
+  if (
+    preflight.value.validation_target_path === null ||
+    preflight.value.validation_target_mode === null
+  ) {
+    return {
+      error:
+        "Cannot run /gsd validate-phase: validate-phase preflight returned no canonical validation target.",
+    };
+  }
+
   return {
     selection: {
       ...selection,
       summaryCount,
       validationExists,
+      validationTargetPath: preflight.value.validation_target_path,
+      validationTargetMode: preflight.value.validation_target_mode,
     },
   };
 }

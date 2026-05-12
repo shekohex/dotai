@@ -53,7 +53,7 @@ Implemented locally:
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
-| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       60 |
+| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       68 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
 | `next`               | local-only instant command         | derived from `progress --next` |       58 |
 | `stats`              | TS-native instant command          | `stats`                        |       57 |
@@ -123,7 +123,7 @@ Legend:
 | `execute-phase`      |        Y |                             Y |                        P |                  N |                         P |           P | workflow-launch foundation, downstream runtime reused; upstream execution-mode flags now preserved |
 | `secure-phase`       |        Y |                             Y |                        Y |                  N |                         P |           P | workflow-launch security review with explicit local arg validation                                 |
 | `verify-work`        |        Y |                             Y |                        Y |                  Y |                         P |           N | workflow-launch foundation; authoritative UAT contract                                             |
-| `validate-phase`     |        Y |                             N |                        N |                  N |                         P |           N | template stub                                                                                      |
+| `validate-phase`     |        Y |                             Y |                        P |                  Y |                         P |           N | helper-gated workflow foundation with draft scaffold                                               |
 | `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only                                                                                |
 | `next`               |        Y |                             N |                        N |                  Y |                         P |           L | local helper                                                                                       |
 | `stats`              |        Y |                             N |                        N |                  N |                         N |           P | snapshot stats only                                                                                |
@@ -430,7 +430,7 @@ Differences:
 
 ### `validate-phase`
 
-Coverage: 64/100
+Coverage: 68/100
 
 Upstream behavior:
 
@@ -443,12 +443,13 @@ Local behavior:
 - omitted phase resolution now prefers the last helper-ready roadmap-matching phase with real execution evidence, and explicit phase selection also fails closed unless roadmap plan coverage is complete enough for current contract. Malformed or non-roadmap SUMMARY inventories are rejected before workflow launch. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 - helper-backed `init validate-phase <phase>` now provides deterministic readiness/artifact preflight, including a single canonical validation target or closed failure on ambiguous/non-canonical validation inventory, incomplete plan count, config-disabled Nyquist gating, and explicit validation state (`A`/`B`/`C`). `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/validate-phase-workflow.test.ts`
 - local handler now consumes helper preflight before workflow launch and fails closed when helper reports blocked config/state, ambiguous validation inventory, or malformed backend output instead of spawning a doomed workflow session. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
+- helper-approved create path now pre-seeds canonical `*-VALIDATION.md` draft artifact before workflow launch, with deterministic phase metadata, basic test-infrastructure detection, and per-plan verification rows. Existing canonical validation artifacts remain untouched on update path. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 
 Differences:
 
 - still no full upstream audit/reconstruction/test-generation parity
 - many advanced Nyquist branches remain deferred or workflow-driven in this slice rather than being natively emulated
-- actual validation authoring still depends on workflow session behavior, not native TS executor logic
+- actual gap classification and final validation authoring still depend on workflow session behavior, not native TS executor logic
 - no reconstruction
 - no test generation
 - no workflow branching

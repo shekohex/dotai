@@ -20,6 +20,7 @@ Execution model in this slice:
 
 - handler resolves explicit phase or last helper-ready local phase before launch
 - handler fails closed when selected local phase is not complete enough for validation contract
+- when helper reports canonical create target, handler pre-seeds draft `*-VALIDATION.md` artifact before workflow launch using local deterministic scaffold
 - bundled workflow owns validation review and artifact-writing contract
 - bundled workflow should use `node "$GSD_TOOLS_PATH" init validate-phase "<phase>"` as deterministic preflight
 - helper preflight also exposes `nyquist_validation_enabled` and `validation_state` for deterministic config/state branching

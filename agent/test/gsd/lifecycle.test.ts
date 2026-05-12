@@ -5873,6 +5873,47 @@ Plans:
     expect(prompt).toContain("references/gates.md");
   });
 
+  it("validate-phase creates canonical validation draft before workflow launch when target is missing", async () => {
+    const root = createPlanningRoot();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" }, devDependencies: { vitest: "^4.1.5" } }) +
+        "\n",
+    );
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    const draft = readFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "utf8",
+    );
+    expect(draft).toContain("phase: 02");
+    expect(draft).toContain("slug: build");
+    expect(draft).toContain("# Phase 02 — Validation Strategy");
+    expect(draft).toContain("| **Framework**          | vitest |");
+    expect(draft).toContain("| 02-01 | 01 | - | REQ-2 |");
+    expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("validate-phase preserves existing validation artifact when helper target is update", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "phases", "2-build", "02-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"),
+      "# Existing Validation\n",
+    );
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+    expect(
+      readFileSync(join(root, ".planning", "phases", "2-build", "02-VALIDATION.md"), "utf8"),
+    ).toBe("# Existing Validation\n");
+    expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("validate-phase fails closed when no executed local phase exists", async () => {
     const root = createPlanningRoot();
     const pi = createPi();

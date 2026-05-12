@@ -285,6 +285,7 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("do not use native template-writer shortcut");
     expect(command).toContain("nyquist_validation_enabled");
     expect(command).toContain("validation_state");
+    expect(command).toContain("handler pre-seeds draft `*-VALIDATION.md` artifact");
     expect(workflow).toContain(
       "Do not recreate old native template-writer behavior as success path",
     );
@@ -296,6 +297,8 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain("selected phase has no `*-SUMMARY.md`");
     expect(workflow).toContain("nyquist_validation_enabled: false");
     expect(workflow).toContain("validation state");
+    expect(workflow).toContain("pre-seed helper-reported create target");
+    expect(workflow).toContain("revise that file in place");
     expect(workflow).toContain("validation_target_path");
     expect(workflow).toContain("validation_target_mode");
   });

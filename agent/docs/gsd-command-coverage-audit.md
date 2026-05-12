@@ -487,7 +487,7 @@ Differences:
 
 ### `next`
 
-Coverage: 66/100
+Coverage: 67/100
 
 Upstream behavior:
 
@@ -498,6 +498,7 @@ Local behavior:
 - command path now routes into supported next actions using existing grouped local commands instead of only rewriting `STATE.md`. Supported dispatch routes include `plan-phase`, `execute-phase`, `verify-work`, and `complete-milestone`, with a local blocked/error gate and `--force` bypass. `src/extensions/gsd/instant/next.ts`
 - command path now also runs pre-routing safety gates for paused state, `.planning/.continue-here.md`, discuss checkpoints, and unresolved verification FAIL states before dispatching. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`
 - command-level coverage now directly proves paused-state and `.continue-here.md` fail-closed behavior before routing, instead of relying only on route-unit coverage for those safety gates. `test/gsd/commands.test.ts`
+- command-level coverage now also proves `--force` does not bypass `.continue-here.md`, paused-state, or unresolved verification-FAIL safety gates, matching the documented local contract that `--force` only bypasses blocked/error `STATE.md` status. `test/gsd/commands.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - no-session command execution now still allows local `discuss-phase` and `plan-phase` routing instead of blanket session gating; workflow-launched routes fail closed on missing session primitives, with command-level coverage now proving `execute-phase`, `verify-work`, and `complete-milestone` boundaries. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`
 - non-workflow helper path still keeps deterministic pointer mutation via `computeNext()` for local roadmap/state callers. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/runtime.ts`
 - command path now also has direct fail-closed proof for empty-roadmap planning trees, and stale pre-routing `computeNext()` fallback logic was removed so slash-command behavior follows routed `resolveNextRoute()` decisions only. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`

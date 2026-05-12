@@ -99,7 +99,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 - `/gsd next [phase]`
   flags: `--phase <phase>`, `--force`
   blocks on paused state, blocking `.planning/.continue-here.md`, active discuss checkpoints, and unresolved verification FAIL before any routing
-  `--force` only bypasses blocked/error `STATE.md` status gate; checkpoint and pause safety gates still stop routing
+  `--force` only bypasses blocked/error `STATE.md` status gate; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing
   missing next-phase discuss prep may route to `/gsd discuss-phase <phase>` before planning
   without workflow session support, `/gsd next` fails closed with warning instead of mutating `STATE.md`
   use when you want safest local next-step routing from current planning state

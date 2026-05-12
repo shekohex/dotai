@@ -1,5 +1,5 @@
 import { completeSimple } from "@earendil-works/pi-ai";
-import type { Api, Model, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Message, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const RENAME_INTERVAL = 15;
@@ -94,6 +94,7 @@ Follow all rules below.
 Your output must be:
 - A single line
 - No explanations
+- Must be in title case for that language
 
 Rules:
 - Use the same language as the user message being summarized
@@ -102,22 +103,22 @@ Rules:
 - Focus on main topic or question the user needs to retrieve
 - Vary phrasing - avoid repetitive patterns
 - When file is mentioned, focus on WHAT the user wants WITH it
-- Keep exact: technical terms, numbers, filenames, HTTP codes
+- Keep exact: technical terms, numbers, filenames, HTTP codes, ACRNOMs
 - Remove: the, this, my, a, an
 - Never assume tech stack
-- Never use tools
 - NEVER respond to questions, just generate a title
 - Title should NEVER include "summarizing" or "generating"
 - Always output something meaningful, even if input is minimal
 - If message is short or conversational, create a title reflecting tone or intent
+- If title changes, follow the same rules.
 
 Examples:
-"debug 500 errors in production" -> "debugging production 500 errors"
-"refactor user service" -> "refactoring user service"
+"debug 500 errors in production" -> "Debugging production 500 errors"
+"refactor user service" -> "Refactoring user service"
 "why is app.js failing" -> "app.js failure investigation"
-"implement rate limiting" -> "rate limiting implementation"
-"how do I connect postgres to my API" -> "postgres api connection"
-"best practices for React hooks" -> "react hooks best practices"`;
+"implement rate limiting" -> "Rate limiting implementation"
+"how do I connect postgres to my API" -> "Postgres api connection"
+"best practices for React hooks" -> "React hooks best practices"`;
 
 async function generateAndSetName(
   ctx: ExtensionContext,
@@ -133,16 +134,35 @@ async function generateAndSetName(
     m.length > MAX_INPUT_CHARS ? m.slice(0, MAX_INPUT_CHARS) + "..." : m,
   );
 
-  const messages: { role: "user"; content: { type: "text"; text: string }[]; timestamp: number }[] =
-    [];
+  const messages: Message[] = [];
 
   if (isFirst) {
+    messages.push({
+      role: "user",
+      content: [
+        {
+          type: "text" as const,
+          text: "Generate the title based on the following message:",
+        },
+      ],
+      timestamp: Date.now(),
+    });
     messages.push({
       role: "user" as const,
       content: [{ type: "text" as const, text: userMessage.slice(0, MAX_INPUT_CHARS) }],
       timestamp: Date.now(),
     });
   } else {
+    messages.push({
+      role: "user",
+      content: [
+        {
+          type: "text" as const,
+          text: "Here is a list of Recent Messages, please generate the title based on them:",
+        },
+      ],
+      timestamp: Date.now(),
+    });
     for (const msg of truncated) {
       messages.push({
         role: "user" as const,

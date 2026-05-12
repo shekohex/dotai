@@ -203,7 +203,7 @@ Implemented locally:
   - richer upstream report branches still absent
   - likely best next non-local lifecycle target after audit sweep
 
-### `stats` (`72`)
+### `stats` (`73`)
 
 - runtime:
   - `src/extensions/gsd/instant/stats.ts`
@@ -222,6 +222,7 @@ Implemented locally:
 - ignores stale non-roadmap snapshot phases
 - malformed summary ids excluded from completion counts
 - noncanonical UAT artifacts excluded from `Complete` phase promotion
+- noncanonical verification artifacts excluded from `verification_count` and status overrides
 - mixed output mode errors normalized across positional/flag forms
 - truthful `verification_count`, `decisions_count`, `open_blockers`
 - weakest remaining areas:

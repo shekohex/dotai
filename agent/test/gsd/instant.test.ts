@@ -949,6 +949,47 @@ Plans:
     ]);
   });
 
+  it("stats ignores noncanonical verification artifacts when deriving phase status and counts", () => {
+    const root = createTempDirSync("agent-gsd-stats-noncanonical-verification-");
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Verify shipped work
+
+Plans:
+- [ ] 01-01: Legacy task
+`,
+    );
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/setup.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-VERIFICATION.md"),
+      "---\nstatus: passed\n---\n\n# Verification\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "99-VERIFICATION.md"),
+      "---\nstatus: human_needed\n---\n\n# Verification\n",
+    );
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      verification_count: 1,
+      phases: [expect.objectContaining({ number: "1", status: "Executed" })],
+    });
+  });
+
   it("stats rejects unsupported output variants explicitly", () => {
     const { notifications, ctx } = createNotifications();
     handleGsdStats({} as never, ctx as never, {

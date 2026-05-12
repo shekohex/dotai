@@ -6,6 +6,7 @@ import {
   canonicalizePhaseNumber,
   deriveStatsPhaseStatus,
   extractLeadingPhaseNumber,
+  filterCanonicalPhaseArtifacts,
   parseRequirementsProgress,
   readGitCommitCount,
   readGitFirstCommitDate,
@@ -161,7 +162,11 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
       summaries,
       status,
     });
-    verificationCount += phase.verifications.length;
+    verificationCount += filterCanonicalPhaseArtifacts(
+      phase.verifications,
+      number,
+      "-VERIFICATION.md",
+    ).length;
   }
 
   const sortedPhases = [...phases.values()].toSorted((left, right) =>

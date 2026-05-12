@@ -1924,6 +1924,28 @@ test("gsd next blocks paused checkpoint markers before routing", async () => {
   });
 });
 
+test("gsd next blocks paused state before routing", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "STATE.md"),
+    "milestone: v1.0\ncurrent_phase: 1\ncurrent_phase_name: Foundation\ncurrent_plan: 01-01\nstatus: Paused for review\npaused_at: 2026-05-08T12:00:00Z\n",
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Next blocked by paused state at 2026-05-08T12:00:00Z",
+    level: "warning",
+  });
+});
+
 test("gsd dashboard fallback reports pending todo count", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

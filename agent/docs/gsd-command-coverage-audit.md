@@ -54,9 +54,9 @@ Implemented locally:
 | `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       88 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       92 |
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       68 |
-| `progress`           | workflow-launch + local next path  | `progress`                     |       58 |
+| `progress`           | workflow-launch + local next path  | `progress`                     |       60 |
 | `next`               | local-only instant command         | derived from `progress --next` |       58 |
-| `stats`              | TS-native instant command          | `stats`                        |       57 |
+| `stats`              | TS-native instant command          | `stats`                        |       61 |
 | `health`             | TS-native instant command          | `health`                       |       74 |
 | `status`             | local-only runtime monitor         | none                           |       35 |
 | `help`               | local docs viewer                  | `help`                         |       52 |
@@ -124,9 +124,9 @@ Legend:
 | `secure-phase`       |        Y |                             Y |                        Y |                  N |                         P |           P | workflow-launch security review with explicit local arg validation                                 |
 | `verify-work`        |        Y |                             Y |                        Y |                  Y |                         P |           N | workflow-launch foundation; authoritative UAT contract                                             |
 | `validate-phase`     |        Y |                             Y |                        P |                  Y |                         P |           N | helper-gated workflow foundation with draft scaffold                                               |
-| `progress`           |        Y |                             N |                        N |                  N |                         N |           N | compact status only                                                                                |
+| `progress`           |        Y |                             Y |                        P |                  N |                         N |           N | workflow-launch review path with local next routing and prelaunch gating                           |
 | `next`               |        Y |                             N |                        N |                  Y |                         P |           L | local helper                                                                                       |
-| `stats`              |        Y |                             N |                        N |                  N |                         N |           P | snapshot stats only                                                                                |
+| `stats`              |        Y |                             N |                        N |                  Y |                         N |           P | instant stats with git/activity enrichment                                                         |
 | `health`             |        Y |                             N |                        N |                  N |                         N |           N | no repair/context mode                                                                             |
 | `status`             |        Y |                             N |                        N |                  N |                         N |           L | local subagent monitor                                                                             |
 | `help`               |        Y |                             P |                        N |                  N |                         N |           P | local docs viewer                                                                                  |

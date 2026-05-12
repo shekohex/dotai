@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -1482,6 +1482,134 @@ test("gsd next fails closed without workflow session instead of mutating state",
       "Next requires workflow session for /gsd execute-phase 2. Cannot safely fall back to pointer-only state updates.",
     level: "warning",
   });
+});
+
+test("gsd next can route discuss-phase without workflow session", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  rmSync(join(cwd, ".planning", "phases", "2-delivery"), { recursive: true, force: true });
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  const noSessionContext = {
+    cwd,
+    hasUI: false,
+    ui: {
+      notify(message: string, level: string) {
+        notifications.push({ message, level });
+      },
+    },
+  };
+
+  await command?.handler("next", noSessionContext);
+
+  expect(
+    notifications.some((item) => item.message.includes("Next requires workflow session")),
+  ).toBe(false);
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Existing context for phase 2\n\nOptions:\n- Use existing context\n- View context summary\n- Skip prior context",
+    level: "info",
+  });
+});
+
+test("gsd next can route plan-phase without workflow session", async () => {
+  const fakePi = new FakePi();
+  const spawn = vi.fn(async (request: { name?: string; outputFormat?: { type: string } }) => {
+    if (request.outputFormat?.type === "json_schema") {
+      if (request.name === "gsd-planner") {
+        return {
+          ok: true,
+          value: {
+            structured: {
+              status: "created",
+              summary: "created",
+            },
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        value: {
+          structured: {
+            approved: true,
+            summary: "approved",
+            issues: [],
+          },
+        },
+      };
+    }
+
+    const planPath = join(cwd, ".planning", "phases", "2-delivery", "02-01-PLAN.md");
+    if (!existsSync(planPath)) {
+      writeFileSync(
+        planPath,
+        [
+          "---",
+          "phase: 02",
+          "plan: 01",
+          "type: build",
+          "wave: 1",
+          "depends_on: []",
+          "files_modified: []",
+          "autonomous: true",
+          "must_haves: [ship]",
+          "---",
+          "",
+          "# Plan",
+          "",
+          "## Tasks",
+          "",
+          "### Task 1: Ship",
+          "",
+          "Do work.",
+        ].join("\n"),
+      );
+    }
+
+    return {
+      ok: true,
+      value: {
+        handle: {
+          sessionId: "stub-session",
+          async waitForCompletion() {
+            return { sessionId: "stub-session", status: "completed", summary: "ok" };
+          },
+          async captureOutput() {
+            return { text: "", truncated: false };
+          },
+        },
+      },
+    };
+  });
+  setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  rmSync(join(cwd, ".planning", "phases", "2-delivery", "2-01-PLAN.md"), { force: true });
+  writeFileSync(join(cwd, ".planning", "phases", "2-delivery", "2-CONTEXT.md"), "# Context\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  const noSessionContext = {
+    cwd,
+    hasUI: false,
+    ui: {
+      notify(message: string, level: string) {
+        notifications.push({ message, level });
+      },
+    },
+  };
+
+  await command?.handler("next", noSessionContext);
+
+  expect(
+    notifications.some((item) => item.message.includes("Next requires workflow session")),
+  ).toBe(false);
+  expect(spawn).toHaveBeenCalled();
 });
 
 test("gsd next blocks paused checkpoint markers before routing", async () => {

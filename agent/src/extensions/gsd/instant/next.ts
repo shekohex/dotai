@@ -42,6 +42,10 @@ type RoutedNextOutput = {
   newPhase?: string;
 };
 
+function routeRequiresWorkflowSession(route: SupportedNextRoute): boolean {
+  return route === "execute-phase" || route === "verify-work" || route === "complete-milestone";
+}
+
 const UatStatusSchema = Type.Object(
   {
     status: Type.Union([
@@ -468,22 +472,17 @@ export async function handleGsdNext(
     return;
   }
 
-  if (!canDispatchWorkflow) {
-    const routedResult = resolveNextRoute(ctx.cwd, args.phase);
-    if (!routedResult.advanced || routedResult.route === undefined) {
-      ctx.ui.notify(`Next ${routedResult.reason}`, "warning");
-      return;
-    }
+  const routedResult = resolveNextRoute(ctx.cwd, args.phase);
+  if (!routedResult.advanced || routedResult.route === undefined) {
+    ctx.ui.notify(`Next ${routedResult.reason}`, "warning");
+    return;
+  }
+
+  if (!canDispatchWorkflow && routeRequiresWorkflowSession(routedResult.route)) {
     ctx.ui.notify(
       `Next requires workflow session for /gsd ${routedResult.route}${routedResult.newPhase === undefined ? "" : ` ${routedResult.newPhase}`}. Cannot safely fall back to pointer-only state updates.`,
       "warning",
     );
-    return;
-  }
-
-  const routedResult = resolveNextRoute(ctx.cwd, args.phase);
-  if (!routedResult.advanced || routedResult.route === undefined) {
-    ctx.ui.notify(`Next ${routedResult.reason}`, "warning");
     return;
   }
 

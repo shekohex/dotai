@@ -863,6 +863,19 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "validate-phase",
     unsupportedModeError: "Unsupported /gsd validate-phase flag: --phase requires a value.",
   });
+  expect(parseGsdCommandArgs("next 2 --phase 3")).toEqual({
+    subcommand: "next",
+    phase: "3",
+    unsupportedModeError:
+      "Unsupported /gsd next phase override: choose either positional phase or --phase, not both.",
+  });
+  expect(parseGsdCommandArgs("progress --next 2 --phase 3")).toEqual({
+    subcommand: "progress",
+    next: true,
+    phase: "3",
+    unsupportedModeError:
+      "Unsupported /gsd progress phase override: choose either positional phase or --phase, not both.",
+  });
   expect(parseGsdCommandArgs("execute-phase 2 junk")).toEqual({
     subcommand: "execute-phase",
     phase: "2",
@@ -1917,6 +1930,27 @@ test("gsd progress --next accepts zero-padded phase override", async () => {
   );
 });
 
+test("gsd progress --next rejects conflicting positional and flag phase overrides", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler(
+    "progress --next 2 --phase 3",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Unsupported /gsd progress phase override: choose either positional phase or --phase, not both.",
+    level: "warning",
+  });
+});
+
 test("gsd next accepts zero-padded phase override", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -1934,6 +1968,24 @@ test("gsd next accepts zero-padded phase override", async () => {
   expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
     'Launch native GSD workflow for "/gsd execute-phase 2"',
   );
+});
+
+test("gsd next rejects conflicting positional and flag phase overrides", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("next 2 --phase 3", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message:
+      "Unsupported /gsd next phase override: choose either positional phase or --phase, not both.",
+    level: "warning",
+  });
 });
 
 test("gsd progress --next --force still blocks paused checkpoint markers", async () => {

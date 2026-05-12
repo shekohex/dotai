@@ -102,6 +102,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 
 - `/gsd next [phase]`
   flags: `--phase <phase>`, `--force`
+  conflicting positional phase plus `--phase` fails closed explicitly
   blocks on paused state, blocking `.planning/.continue-here.md`, active discuss checkpoints, and unresolved verification FAIL before any routing
   `--force` only bypasses blocked/error `STATE.md` status gate; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing
   missing next-phase discuss prep may route to `/gsd discuss-phase <phase>` before planning
@@ -132,6 +133,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   default route: bundled workflow-launch review session
   flags: `--next`
   `--phase <phase>`, `--force` only with `/gsd progress --next`
+  conflicting positional phase plus `--phase` in `progress --next` fails closed explicitly
   `progress --next` inherits `/gsd next` routing; local `discuss-phase` and `plan-phase` routes still work without workflow session support, while workflow-native routes fail closed
   `progress --next --force` inherits `/gsd next` safety gates; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing
   parsed with explicit unsupported-local error: `--do`, `--forensic`

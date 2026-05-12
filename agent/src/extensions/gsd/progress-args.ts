@@ -12,7 +12,11 @@ export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers)
   let doMode = false;
   let forensic = false;
   let unsupportedModeError: string | undefined;
+  let sawPositionalPhase = false;
+  let sawFlagPhase = false;
   const missingPhaseValueError = "Unsupported /gsd progress flag: --phase requires a value.";
+  const conflictingPhaseOverrideError =
+    "Unsupported /gsd progress phase override: choose either positional phase or --phase, not both.";
   const normalizeProgressPhaseValue = (token: string | undefined): string | undefined => {
     const value = helpers.normalizePhaseToken(token);
     if (value === undefined || value.startsWith("-")) {
@@ -29,6 +33,11 @@ export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers)
       if (phase === undefined) {
         unsupportedModeError ??= missingPhaseValueError;
         continue;
+      } else {
+        sawFlagPhase = true;
+        if (sawPositionalPhase) {
+          unsupportedModeError ??= conflictingPhaseOverrideError;
+        }
       }
       index += 1;
       continue;
@@ -37,6 +46,11 @@ export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers)
       phase = normalizeProgressPhaseValue(token.slice("--phase=".length));
       if (phase === undefined) {
         unsupportedModeError ??= missingPhaseValueError;
+      } else {
+        sawFlagPhase = true;
+        if (sawPositionalPhase) {
+          unsupportedModeError ??= conflictingPhaseOverrideError;
+        }
       }
       continue;
     }
@@ -62,6 +76,12 @@ export function parseProgressArgs(tokens: string[], helpers: ProgressArgHelpers)
     }
     if (!token.startsWith("-") && phase === undefined) {
       phase = helpers.normalizePhaseToken(token);
+      if (phase !== undefined) {
+        sawPositionalPhase = true;
+        if (sawFlagPhase) {
+          unsupportedModeError ??= conflictingPhaseOverrideError;
+        }
+      }
       continue;
     }
     if (token.startsWith("-")) {

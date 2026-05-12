@@ -9,7 +9,11 @@ export function parseNextArgs(tokens: string[], helpers: NextArgHelpers): GsdCom
   let phase: string | undefined;
   let force = false;
   let unsupportedModeError: string | undefined;
+  let sawPositionalPhase = false;
+  let sawFlagPhase = false;
   const missingPhaseValueError = "Unsupported /gsd next flag: --phase requires a value.";
+  const conflictingPhaseOverrideError =
+    "Unsupported /gsd next phase override: choose either positional phase or --phase, not both.";
 
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -22,6 +26,11 @@ export function parseNextArgs(tokens: string[], helpers: NextArgHelpers): GsdCom
       phase = helpers.normalizePhaseToken(nextToken);
       if (phase === undefined) {
         unsupportedModeError ??= missingPhaseValueError;
+      } else {
+        sawFlagPhase = true;
+        if (sawPositionalPhase) {
+          unsupportedModeError ??= conflictingPhaseOverrideError;
+        }
       }
       index += 1;
       continue;
@@ -35,6 +44,11 @@ export function parseNextArgs(tokens: string[], helpers: NextArgHelpers): GsdCom
       phase = helpers.normalizePhaseToken(rawPhase);
       if (phase === undefined) {
         unsupportedModeError ??= missingPhaseValueError;
+      } else {
+        sawFlagPhase = true;
+        if (sawPositionalPhase) {
+          unsupportedModeError ??= conflictingPhaseOverrideError;
+        }
       }
       continue;
     }
@@ -44,6 +58,12 @@ export function parseNextArgs(tokens: string[], helpers: NextArgHelpers): GsdCom
     }
     if (!token.startsWith("-") && phase === undefined) {
       phase = helpers.normalizePhaseToken(token);
+      if (phase !== undefined) {
+        sawPositionalPhase = true;
+        if (sawFlagPhase) {
+          unsupportedModeError ??= conflictingPhaseOverrideError;
+        }
+      }
       continue;
     }
     if (token.startsWith("-")) {

@@ -1938,6 +1938,9 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
   );
   expect(content).toContain("Not claim upstream parity.");
   expect(content).toContain("/gsd new-project --auto @idea.md");
+  expect(content).toContain(
+    "`--tokens-used` and `--context-window` require `--context`; `--repair` and `--context` cannot be combined in one run",
+  );
 });
 
 test("gsd stats json and table route to structured local outputs", async () => {

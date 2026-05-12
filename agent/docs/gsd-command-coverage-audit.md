@@ -459,7 +459,7 @@ Differences:
 
 ### `progress`
 
-Coverage: 64/100
+Coverage: 65/100
 
 Upstream behavior:
 
@@ -475,6 +475,7 @@ Upstream behavior:
 - `progress --next --phase` now has explicit command-level regression coverage for padded/unpadded phase overrides, confirming that routed progress honors the same normalized phase matching as `/gsd next` instead of false-rejecting `02` for phase `2`. `test/gsd/commands.test.ts`
 - progress math now unions completed plan IDs across roadmap and snapshot sources under normalized phase keys, avoiding mixed brownfield undercounting from roadmap-only or padded-phase layouts. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
 - local progress model now also ignores drifted-ahead `STATE.md current_phase/current_plan` when earlier roadmap phases still contain incomplete work, keeping progress summaries aligned with earliest incomplete execution state instead of stale pointers. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
+- fallback local progress summaries now normalize snapshot directory ids back to canonical phase numbers when `STATE.md current_phase` is absent, avoiding dishonest outputs like `2-delivery` in edge-case summary payloads. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
 - focused tests now cover default workflow launch, supported `progress --next`, rejected `--do` / `--forensic`, malformed phase overrides, flag-like phase values, unknown phase overrides that must not mutate state, UAT-gated milestone completion, and mixed-source progress percentage regressions. `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/resources.test.ts`
 
 Differences:

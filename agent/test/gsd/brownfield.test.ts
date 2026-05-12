@@ -479,6 +479,30 @@ Plans:
     expect(stats.planCount).toBe(3);
   });
 
+  it("normalizes fallback progress phase number from snapshot dir ids when state phase is absent", () => {
+    const root = createTempDirSync("agent-gsd-progress-fallback-phase-");
+    mkdirSync(join(root, ".planning", "phases", "2-delivery"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "status: Ready to execute\ncurrent_phase_name: Delivery\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "2-delivery", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/delivery.ts]\nautonomous: true\nmust_haves: [ship]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-delivery", "02-01-SUMMARY.md"), "done\n");
+
+    const progress = computeProgress(root);
+    expect(progress.currentPhase).toBe("2");
+    expect(progress.currentPhaseName).toBe("Delivery");
+  });
+
   it("treats missing PROJECT.md as unhealthy", () => {
     const root = createTempDirSync("agent-gsd-health-project-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });

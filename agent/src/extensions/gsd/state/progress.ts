@@ -121,15 +121,17 @@ function resolveActiveProgressPhase(input: {
   }
 
   const current = resolveCurrentPhase(input.cwd);
+  const firstSnapshotPhaseNumber = extractPhaseNumber(input.snapshot.phases[0]?.id ?? "");
   const currentPhase =
     toOptionalString(input.snapshot.state?.current_phase) ??
     current?.phase.number ??
-    input.snapshot.phases[0]?.id;
+    firstSnapshotPhaseNumber;
   const activeSnapshot = input.snapshot.phases.find(
     (phase) => phase.id === current?.phaseDir.split("/").at(-1),
   );
   const fallbackSnapshot =
-    activeSnapshot ?? input.snapshot.phases.find((phase) => phase.id === currentPhase);
+    activeSnapshot ??
+    input.snapshot.phases.find((phase) => extractPhaseNumber(phase.id) === currentPhase);
   return {
     number: currentPhase,
     name: input.snapshot.state?.current_phase_name ?? fallbackSnapshot?.name ?? current?.phase.name,

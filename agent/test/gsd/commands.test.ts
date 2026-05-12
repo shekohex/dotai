@@ -2277,6 +2277,9 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
     "fails closed when workflow session support is unavailable in current context",
   );
   expect(content).toContain(
+    "fails closed when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing",
+  );
+  expect(content).toContain(
     "local fast mode only supports `--fast refresh`; `--fast update` and `--fast skip` fail explicitly",
   );
 });

@@ -590,7 +590,7 @@ Assessment:
 
 ### `help`
 
-Coverage: 67/100
+Coverage: 68/100
 
 Upstream behavior:
 
@@ -609,6 +609,7 @@ Local behavior:
 - health help text now documents actual runtime flag constraints instead of implying all listed flags compose freely: `--tokens-used` / `--context-window` require `--context`, and `--repair` cannot be combined with `--context`. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
 - `/gsd status` help wording now matches real runtime behavior by describing active local GSD subagent/session status rather than implying a generic detached service-health command. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`
 - `/gsd progress` help now reflects current fail-closed behavior in headless/no-session contexts instead of implying workflow launch is unconditional. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
+- `/gsd progress` help now also documents core prelaunch artifact gates, matching runtime fail-closed behavior when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/progress.ts`, `test/gsd/commands.test.ts`
 - `/gsd map-codebase` help now documents that local fast mode only supports `--fast refresh`, matching shipped explicit rejections for `--fast update` and `--fast skip`. `src/resources/gsd/docs/command-reference.md`, `src/extensions/gsd/lifecycle/map-codebase.ts`, `test/gsd/commands.test.ts`
 - TUI path now pages through the full canonical help with viewport-aware navigation instead of dumping inaccessible wrapped content. `src/extensions/gsd/help.ts`, `test/gsd/ui.test.ts`
 - durable non-UI help now has a registered `gsd-help` renderer contract in message rendering. `src/extensions/gsd/ui/messages.ts`, `test/gsd/index.test.ts`

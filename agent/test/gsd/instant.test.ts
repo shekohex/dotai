@@ -707,6 +707,39 @@ Plans:
     });
   });
 
+  it("stats ignores malformed summary ids that do not match roadmap plans", () => {
+    const root = createTempDirSync("agent-gsd-stats-malformed-summaries-");
+    mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Foundation
+**Goal**: Build base
+
+Plans:
+- [ ] 01-01: Create base
+`,
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+    writeFileSync(join(root, ".planning", "phases", "1-foundation", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "01-extra-SUMMARY.md"),
+      "junk\n",
+    );
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      total_summaries: 1,
+      phases: [expect.objectContaining({ number: "1", summaries: 1, status: "Executed" })],
+    });
+  });
+
   it("stats counts requirements from checklist, plain bullets, and traceability status", () => {
     const root = createTempDirSync("agent-gsd-stats-requirements-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });

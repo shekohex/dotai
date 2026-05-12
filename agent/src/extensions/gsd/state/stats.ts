@@ -142,8 +142,18 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     const number = extractLeadingPhaseNumber(phase.id);
     const existing = phases.get(number);
     const plans = phase.plans.length;
-    const summaries = phase.summaries.length;
-    const status = deriveStatsPhaseStatus(phase, existing?.plans ?? 0);
+    const roadmapPhase = scopedRoadmapPhases.find(
+      (candidate) => canonicalizePhaseNumber(candidate.number) === number,
+    );
+    const relevantSummaries = filterSummaryFileNamesToRoadmapPlans(
+      phase.summaries,
+      roadmapPhase?.plans.map((plan) => plan.id) ?? [],
+    );
+    const summaries = relevantSummaries.length;
+    const status = deriveStatsPhaseStatus(
+      { ...phase, summaries: relevantSummaries },
+      existing?.plans ?? 0,
+    );
     phases.set(number, {
       number,
       name: existing?.name ?? phase.name,
@@ -194,6 +204,22 @@ function resolveLastActivity(stateLastActivity: string | undefined, cwd: string)
   }
 
   return readLatestPlanningActivity(cwd);
+}
+
+function normalizeSummaryId(fileName: string): string {
+  return fileName.replace(/-SUMMARY\.md$/u, "");
+}
+
+function filterSummaryFileNamesToRoadmapPlans(
+  summaryFileNames: string[],
+  roadmapPlanIds: string[],
+): string[] {
+  if (roadmapPlanIds.length === 0) {
+    return summaryFileNames;
+  }
+
+  const roadmapPlanIdSet = new Set(roadmapPlanIds);
+  return summaryFileNames.filter((fileName) => roadmapPlanIdSet.has(normalizeSummaryId(fileName)));
 }
 
 function countProjectDecisionRows(project: string | undefined): number {

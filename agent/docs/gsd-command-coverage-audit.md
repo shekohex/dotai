@@ -485,7 +485,7 @@ Differences:
 
 ### `next`
 
-Coverage: 62/100
+Coverage: 63/100
 
 Upstream behavior:
 
@@ -495,7 +495,7 @@ Local behavior:
 
 - command path now routes into supported next actions using existing grouped local commands instead of only rewriting `STATE.md`. Supported dispatch routes include `plan-phase`, `execute-phase`, `verify-work`, and `complete-milestone`, with a local blocked/error gate and `--force` bypass. `src/extensions/gsd/instant/next.ts`
 - command path now also runs pre-routing safety gates for paused state, `.planning/.continue-here.md`, discuss checkpoints, and unresolved verification FAIL states before dispatching. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`
-- no-session command execution now still allows local `discuss-phase` and `plan-phase` routing instead of blanket session gating; only workflow-launched routes fail closed on missing session primitives. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`
+- no-session command execution now still allows local `discuss-phase` and `plan-phase` routing instead of blanket session gating; workflow-launched routes fail closed on missing session primitives, with command-level coverage now proving both `execute-phase` and `complete-milestone` boundaries. `src/extensions/gsd/instant/next.ts`, `test/gsd/commands.test.ts`
 - non-workflow helper path still keeps deterministic pointer mutation via `computeNext()` for local roadmap/state callers. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/runtime.ts`
 - route logic preserves earliest-incomplete-phase semantics, keeps `/gsd verify-work` active while UAT status is still `testing` or `partial`, routes missing discuss prep to `/gsd discuss-phase`, and normalizes padded/unpadded brownfield phase ids for checkpoint/context/failure detection. `src/extensions/gsd/instant/next.ts`, `src/extensions/gsd/state/discuss.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - requested phase overrides now also honor padded/unpadded equivalence consistently across slash-command validation and route resolution, so `/gsd next --phase 02` no longer false-rejects phase `2` in brownfield/local roadmap layouts. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`

@@ -582,6 +582,23 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     subcommand: "secure-phase",
     phase: "2",
   });
+  expect(parseGsdCommandArgs("secure-phase 1 junk")).toEqual({
+    subcommand: "secure-phase",
+    phase: "1",
+    unsupportedModeError: "Unsupported /gsd secure-phase extra positional argument: junk.",
+  });
+  expect(parseGsdCommandArgs("secure-phase --bogus")).toEqual({
+    subcommand: "secure-phase",
+    unsupportedModeError: "Unsupported /gsd secure-phase flag: --bogus.",
+  });
+  expect(parseGsdCommandArgs("secure-phase --phase")).toEqual({
+    subcommand: "secure-phase",
+    unsupportedModeError: "Unsupported /gsd secure-phase flag: --phase requires a value.",
+  });
+  expect(parseGsdCommandArgs("secure-phase --phase=")).toEqual({
+    subcommand: "secure-phase",
+    unsupportedModeError: "Unsupported /gsd secure-phase flag: --phase requires a value.",
+  });
   expect(parseGsdCommandArgs("validate-phase 2")).toEqual({
     subcommand: "validate-phase",
     phase: "2",
@@ -2908,6 +2925,34 @@ test("gsd secure-phase launches workflow resources", async () => {
   expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
     resolveGsdBundlePath("workflows/secure-phase.md"),
   );
+});
+
+test("gsd secure-phase rejects malformed and unsupported args explicitly", async () => {
+  const cwd = createTempDirSync("agent-gsd-secure-args-");
+  const notifications: Array<{ message: string; level: string }> = [];
+  const fakePi = new FakePi();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("secure-phase --phase", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd secure-phase flag: --phase requires a value.",
+    level: "warning",
+  });
+
+  await command?.handler("secure-phase --bogus", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd secure-phase flag: --bogus.",
+    level: "warning",
+  });
+
+  await command?.handler("secure-phase 1 junk", createCommandContext(cwd, notifications, fakePi));
+  expect(notifications.at(-1)).toEqual({
+    message: "Unsupported /gsd secure-phase extra positional argument: junk.",
+    level: "warning",
+  });
+  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
 });
 
 test("gsd execute-phase requires explicit phase before workflow launch", async () => {

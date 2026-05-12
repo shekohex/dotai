@@ -411,7 +411,7 @@ Differences:
 
 ### `secure-phase`
 
-Coverage: 88/100
+Coverage: 89/100
 
 Upstream behavior:
 
@@ -420,7 +420,7 @@ Upstream behavior:
 Local behavior:
 
 - routes through workflow-launch foundation with bundled local command/workflow resources. `src/extensions/gsd/lifecycle/secure-phase.ts`, `src/resources/gsd/commands/gsd/secure-phase.md`, `src/resources/gsd/workflows/secure-phase.md`
-- dedicated parser accepts positional or `--phase` override and rejects malformed extra args or unknown flags explicitly. `src/extensions/gsd/secure-phase-args.ts`, `src/extensions/gsd/args.ts`
+- dedicated parser accepts positional or `--phase` override and now rejects malformed `--phase` values, extra positional args, and unknown flags explicitly instead of silently dropping missing phase values. `src/extensions/gsd/secure-phase-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
 - grouped command registration, autocomplete, and help now treat `secure-phase` as shipped local surface. `src/extensions/gsd/commands.ts`, `src/extensions/gsd/autocomplete.ts`, `src/resources/gsd/docs/command-reference.md`
 
 Differences:

@@ -13,11 +13,17 @@ export function parseSecurePhaseArgs(
     const token = tokens[index];
     if (token === "--phase") {
       phase = helpers.normalizePhaseToken(tokens[index + 1]);
+      if (phase === undefined) {
+        unsupportedModeError ??= "Unsupported /gsd secure-phase flag: --phase requires a value.";
+      }
       index += 1;
       continue;
     }
     if (token.startsWith("--phase=")) {
       phase = helpers.normalizePhaseToken(token.slice("--phase=".length));
+      if (phase === undefined) {
+        unsupportedModeError ??= "Unsupported /gsd secure-phase flag: --phase requires a value.";
+      }
       continue;
     }
     if (!token.startsWith("-") && phase === undefined) {

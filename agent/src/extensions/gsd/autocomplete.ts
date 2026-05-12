@@ -54,6 +54,8 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
     "--research",
     "--skip-research",
     "--skip-verify",
+    "--gaps",
+    "--reviews",
     "--view",
     "--text",
   ],

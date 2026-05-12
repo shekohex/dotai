@@ -1003,6 +1003,14 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
     ]),
   );
 
+  const planItems = await command?.getArgumentCompletions?.("plan-phase ");
+  expect(planItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "plan-phase --gaps", label: "--gaps" }),
+      expect.objectContaining({ value: "plan-phase --reviews", label: "--reviews" }),
+    ]),
+  );
+
   const debugItems = await command?.getArgumentCompletions?.("debug ");
   expect(debugItems).toEqual(
     expect.arrayContaining([

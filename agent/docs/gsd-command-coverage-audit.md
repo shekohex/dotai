@@ -55,7 +55,7 @@ Implemented locally:
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       90 |
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       77 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       72 |
-| `next`               | local-only instant command         | derived from `progress --next` |       71 |
+| `next`               | local-only instant command         | derived from `progress --next` |       72 |
 | `stats`              | TS-native instant command          | `stats`                        |       72 |
 | `health`             | TS-native instant command          | `health`                       |       75 |
 | `status`             | local-only runtime monitor         | none                           |       52 |
@@ -495,7 +495,7 @@ Differences:
 
 ### `next`
 
-Coverage: 71/100
+Coverage: 72/100
 
 Upstream behavior:
 
@@ -516,6 +516,7 @@ Local behavior:
 - padded `STATE.md current_phase` values now also participate in normalized route-start selection, so `next` no longer ignores legitimate `02` state pointers and reroutes from the wrong phase after earlier work already completed. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - roadmap-backed route math now ignores malformed/non-roadmap `*-SUMMARY.md` files and snapshot-only `*-PLAN.md` artifacts when counting phase completion, preventing junk local artifacts from skipping unfinished roadmap work or inflating padded brownfield phases into the wrong route. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - phase completion now also scopes UAT truth to canonical phase-prefix artifacts (`01-UAT.md`, `02-UAT.md`, etc.), so stray noncanonical UAT files in a phase dir cannot falsely mark work complete and skip `/gsd verify-work`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`
+- command-level coverage now also proves that canonical phase-scoped UAT gating survives the actual `/gsd next` command surface, so stray noncanonical `*-UAT.md` files do not falsely skip `/gsd verify-work` and route straight into later phase execution. `test/gsd/commands.test.ts`, `src/extensions/gsd/instant/next.ts`
 - shared fallback planner logic now normalizes padded phase and plan identifiers too, so `computeNext()` / `resolveCurrentPhase()` stay aligned with routed `next` behavior for brownfield state like `current_phase: 02` and `current_plan: 2-01`. `src/extensions/gsd/state/runtime.ts`, `test/gsd/roadmap.test.ts`
 - dedicated parsers now handle local `next --phase [N] --force` and `progress --next [--phase N] [--force]`, with explicit rejection for malformed or unsupported forms. `src/extensions/gsd/next-args.ts`, `src/extensions/gsd/progress-args.ts`, `test/gsd/commands.test.ts`
 

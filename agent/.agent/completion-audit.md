@@ -40,7 +40,7 @@ Implemented locally:
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
 | `validate-phase`     |            77 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
-| `next`               |            71 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
+| `next`               |            72 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            72 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            52 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
@@ -129,7 +129,7 @@ Implemented locally:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display
 
-### `next` (`71`)
+### `next` (`72`)
 
 - runtime:
   - `src/extensions/gsd/instant/next.ts`
@@ -144,11 +144,12 @@ Implemented locally:
   - discuss checkpoint
   - command-level forced discuss-checkpoint blocking proof
   - verification fail
-  - no-session workflow-route fail-closed boundaries
-  - local no-session discuss/plan routing
-  - padded/unpadded phase normalization
+- no-session workflow-route fail-closed boundaries
+- local no-session discuss/plan routing
+- padded/unpadded phase normalization
 - roadmap-scoped plan/summary routing counts
 - canonical phase-scoped UAT artifacts only; stray noncanonical `*-UAT.md` files no longer skip `/gsd verify-work`
+- direct command-level proof for canonical phase-scoped UAT gating on `/gsd next`
 - weakest remaining areas:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose

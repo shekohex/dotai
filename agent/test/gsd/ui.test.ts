@@ -286,4 +286,41 @@ describe("gsd ui custom components", () => {
     expect(rendered).toContain("Reviewing roadmap and current plan gaps");
     expect(rendered).toContain("Esc/q close • auto-refreshing live");
   });
+
+  it("status command UI renders cancelled label and truncated detail", async () => {
+    let rendered = "";
+    setGsdSubagentSdkFactoryForTests(
+      () =>
+        ({
+          list: () => [
+            {
+              sessionId: "child-1",
+              sessionPath: "/tmp/child-1.jsonl",
+              name: "gsd-reviewer",
+              task: "review phase",
+              status: "cancelled",
+              startedAt: Date.now() - 3_000,
+              activity: {
+                detail:
+                  "Cancelled after a very long detail message that should be truncated before it can overwhelm the live panel output with too much content",
+              },
+            },
+          ],
+        }) as never,
+    );
+    await handleGsdStatus({} as never, {
+      cwd: createRoot(),
+      hasUI: true,
+      ui: {
+        notify() {},
+        async custom(custom: Parameters<typeof renderCustomComponent>[0]) {
+          rendered = await renderCustomComponent(custom);
+        },
+      },
+    });
+
+    expect(rendered).toContain("1 total · 1 done");
+    expect(rendered).toContain("gsd-reviewer · cancelled · 0:03 · Cancelled after");
+    expect(rendered).toContain("…");
+  });
 });

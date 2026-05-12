@@ -583,7 +583,7 @@ Differences:
 
 ### `status`
 
-Coverage: 48/100
+Coverage: 50/100
 
 Upstream behavior:
 
@@ -594,6 +594,7 @@ Local behavior:
 - shows active GSD subagents in UI or plain text. `src/extensions/gsd/instant/status.ts:57-177`
 - headless plain-text mode now shares deterministic oldest-first ordering with the UI panel and includes summary counts, elapsed time, and activity detail when available instead of bare `name: status` lines. `src/extensions/gsd/instant/status.ts`, `test/gsd/commands.test.ts`
 - headless path now has direct proof for honest empty-state output and richer summary labels like `done` / `failed`, instead of only indirect command routing coverage. `test/gsd/commands.test.ts`
+- direct command/UI proofs now also cover `cancelled` labeling and detail truncation, confirming both renderers preserve compact truthful summaries for long activity strings rather than overflowing output or collapsing cancelled runs into generic status text. `test/gsd/commands.test.ts`, `test/gsd/ui.test.ts`
 - UI path now has direct panel-render proof for live status summary, activity detail rendering, and close/help footer text. `test/gsd/ui.test.ts`
 
 Assessment:

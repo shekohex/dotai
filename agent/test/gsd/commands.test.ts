@@ -377,6 +377,62 @@ test("gsd status routes to subagent status handler", async () => {
   expect(notifications.at(-1)).toEqual({ message: "gsd-planner: running", level: "info" });
 });
 
+test("gsd status reports no active subagents honestly", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  setGsdSubagentSdkFactoryForTests(
+    () =>
+      ({
+        list: () => [],
+      }) as never,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  expect(command).toBeTruthy();
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({ message: "No GSD subagents active.", level: "info" });
+});
+
+test("gsd status headless output summarizes completed and failed subagents", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  setGsdSubagentSdkFactoryForTests(
+    () =>
+      ({
+        list: () => [
+          {
+            sessionId: "child-1",
+            sessionPath: "/tmp/child-1.jsonl",
+            name: "gsd-plan-checker",
+            task: "check phase",
+            status: "completed",
+            startedAt: Date.now() - 1_000,
+          },
+          {
+            sessionId: "child-2",
+            sessionPath: "/tmp/child-2.jsonl",
+            name: "gsd-debugger",
+            task: "debug auth",
+            status: "failed",
+            startedAt: Date.now() - 2_000,
+          },
+        ],
+      }) as never,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  expect(command).toBeTruthy();
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status", createCommandContext(cwd, notifications));
+  expect(notifications.at(-1)).toEqual({
+    message: "gsd-plan-checker: done\ngsd-debugger: failed",
+    level: "info",
+  });
+});
+
 test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("plan-phase 2")).toEqual({ subcommand: "plan-phase", phase: "2" });
   expect(parseGsdCommandArgs("plan-phase")).toEqual({ subcommand: "plan-phase" });

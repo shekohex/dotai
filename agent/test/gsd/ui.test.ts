@@ -10,6 +10,8 @@ import {
   showGsdHelp,
 } from "../../src/extensions/gsd/help.js";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
+import { handleGsdStatus } from "../../src/extensions/gsd/instant/status.ts";
+import { setGsdSubagentSdkFactoryForTests } from "../../src/extensions/gsd/subagents.ts";
 import { showGsdDashboard } from "../../src/extensions/gsd/ui.js";
 import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
@@ -247,5 +249,41 @@ describe("gsd ui custom components", () => {
     expect(current).toContain("## Phase Override");
     expect(current).toContain("- equals flag: `/gsd next");
     expect(current).toMatch(/\[\d+-\d+\/\d+\]/u);
+  });
+
+  it("status command renders live status panel in UI mode", async () => {
+    let rendered = "";
+    setGsdSubagentSdkFactoryForTests(
+      () =>
+        ({
+          list: () => [
+            {
+              sessionId: "child-1",
+              sessionPath: "/tmp/child-1.jsonl",
+              name: "gsd-planner",
+              task: "plan phase",
+              status: "running",
+              startedAt: Date.now() - 65_000,
+              activity: { label: "planning", detail: "Reviewing roadmap and current plan gaps" },
+            },
+          ],
+        }) as never,
+    );
+    await handleGsdStatus({} as never, {
+      cwd: createRoot(),
+      hasUI: true,
+      ui: {
+        notify() {},
+        async custom(custom: Parameters<typeof renderCustomComponent>[0]) {
+          rendered = await renderCustomComponent(custom);
+        },
+      },
+    });
+
+    expect(rendered).toContain("GSD Subagent Status");
+    expect(rendered).toContain("1 total · 1 running");
+    expect(rendered).toContain("gsd-planner · planning");
+    expect(rendered).toContain("Reviewing roadmap and current plan gaps");
+    expect(rendered).toContain("Esc/q close • auto-refreshing live");
   });
 });

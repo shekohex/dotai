@@ -2280,6 +2280,9 @@ test("gsd help content mentions enablement gate and local-only guardrails", asyn
     "fails closed when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing",
   );
   expect(content).toContain(
+    "config-disabled Nyquist validation and ambiguous/non-canonical VALIDATION inventory fail closed before workflow launch",
+  );
+  expect(content).toContain(
     "local fast mode only supports `--fast refresh`; `--fast update` and `--fast skip` fail explicitly",
   );
 });

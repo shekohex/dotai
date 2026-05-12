@@ -89,6 +89,11 @@ export function canonicalizePhaseNumber(value: string): string {
     .join(".");
 }
 
+function isCanonicalPhaseArtifact(fileName: string, phaseNumber: string, suffix: string): boolean {
+  const artifactPrefix = fileName.replace(suffix, "");
+  return canonicalizePhaseNumber(artifactPrefix) === canonicalizePhaseNumber(phaseNumber);
+}
+
 export function extractLeadingPhaseNumber(value: string): string {
   const match = value.match(/^(\d+(?:\.\d+)?)/u);
   return canonicalizePhaseNumber(match?.[1] ?? value);
@@ -199,6 +204,8 @@ export function deriveStatsPhaseStatus(
   phaseSnapshot: PhaseSnapshot | undefined,
   roadmapPlanCount: number,
 ): StatsPhaseStatus {
+  const phaseNumber =
+    phaseSnapshot === undefined ? undefined : extractLeadingPhaseNumber(phaseSnapshot.id);
   const planCount = Math.max(roadmapPlanCount, phaseSnapshot?.plans.length ?? 0);
   const summaryCount = phaseSnapshot?.summaries.length ?? 0;
 
@@ -219,7 +226,7 @@ export function deriveStatsPhaseStatus(
     return "Human Needed";
   }
 
-  const uatStatus = readLatestUatStatus(phaseSnapshot);
+  const uatStatus = readLatestUatStatus(phaseSnapshot, phaseNumber);
   if (uatStatus === "complete") {
     return "Complete";
   }
@@ -311,8 +318,18 @@ function readLatestVerificationStatus(
   return undefined;
 }
 
-function readLatestUatStatus(phaseSnapshot: PhaseSnapshot | undefined): UatStatus {
-  const fileName = phaseSnapshot?.uats.toSorted((left, right) => left.localeCompare(right)).at(-1);
+function readLatestUatStatus(
+  phaseSnapshot: PhaseSnapshot | undefined,
+  phaseNumber: string | undefined,
+): UatStatus {
+  const fileName = phaseSnapshot?.uats
+    .filter((candidate) =>
+      phaseNumber === undefined
+        ? false
+        : isCanonicalPhaseArtifact(candidate, phaseNumber, "-UAT.md"),
+    )
+    .toSorted((left, right) => left.localeCompare(right))
+    .at(-1);
   if (phaseSnapshot === undefined || fileName === undefined) {
     return undefined;
   }

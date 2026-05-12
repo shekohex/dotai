@@ -41,7 +41,7 @@ Implemented locally:
 | `validate-phase`     |            77 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            71 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            71 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
-| `stats`              |            71 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
+| `stats`              |            72 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            75 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            52 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            70 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
@@ -179,7 +179,7 @@ Implemented locally:
   - richer upstream report branches still absent
   - likely best next non-local lifecycle target after audit sweep
 
-### `stats` (`71`)
+### `stats` (`72`)
 
 - runtime:
   - `src/extensions/gsd/instant/stats.ts`
@@ -194,11 +194,12 @@ Implemented locally:
   - requirement parsing
   - conservative phase status
   - git/activity enrichment
-  - invalid `last_activity` fallback
-  - ignores stale non-roadmap snapshot phases
-  - malformed summary ids excluded from completion counts
-  - mixed output mode errors normalized across positional/flag forms
-  - truthful `verification_count`, `decisions_count`, `open_blockers`
+- invalid `last_activity` fallback
+- ignores stale non-roadmap snapshot phases
+- malformed summary ids excluded from completion counts
+- noncanonical UAT artifacts excluded from `Complete` phase promotion
+- mixed output mode errors normalized across positional/flag forms
+- truthful `verification_count`, `decisions_count`, `open_blockers`
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
 

@@ -56,7 +56,7 @@ Implemented locally:
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       77 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       71 |
 | `next`               | local-only instant command         | derived from `progress --next` |       71 |
-| `stats`              | TS-native instant command          | `stats`                        |       71 |
+| `stats`              | TS-native instant command          | `stats`                        |       72 |
 | `health`             | TS-native instant command          | `health`                       |       75 |
 | `status`             | local-only runtime monitor         | none                           |       52 |
 | `help`               | local docs viewer                  | `help`                         |       70 |
@@ -526,7 +526,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 71/100
+Coverage: 72/100
 
 Upstream behavior:
 
@@ -547,6 +547,7 @@ Local behavior:
 - `last_activity` now also treats malformed `STATE.md` timestamps as invalid boundary data and falls back to latest `.planning` artifact activity instead of echoing dishonest junk values. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - stale snapshot-only phase dirs that are no longer present in `ROADMAP.md` are now ignored in structured stats totals and phase rows, avoiding inflated counts from orphaned brownfield artifacts. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - malformed or non-roadmap `*-SUMMARY.md` files inside an otherwise valid roadmap phase are now excluded from `summaries`, `total_summaries`, and derived phase status math, avoiding inflated completion stats from junk summary artifacts. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
+- phase completion now also scopes UAT truth to canonical phase-prefix artifacts (`01-UAT.md`, `02-UAT.md`, etc.), so stray noncanonical UAT files cannot falsely promote a roadmap phase from `Executed` to `Complete`. `src/extensions/gsd/state/stats-support.ts`, `test/gsd/instant.test.ts`
 - when `STATE.md` omits `milestone_name`, structured stats now derive a truthful display name from matching roadmap milestone headings or `<summary>` blocks instead of echoing the raw version string. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - milestone scoping now also honors common roadmap milestone bullets like `- v1.1 ... - Phases 5-6` instead of silently falling back to all phases when dedicated milestone containers are absent, while exact version matching still avoids `v1` accidentally scoping `v1.0` or `v1.1`. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 

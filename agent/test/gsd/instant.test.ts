@@ -675,6 +675,42 @@ Plans:
     ]);
   });
 
+  it("stats ignores noncanonical UAT artifacts when deriving complete phase status", () => {
+    const root = createTempDirSync("agent-gsd-stats-noncanonical-uat-");
+    mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Foundation
+**Goal**: Build base
+
+Plans:
+- [ ] 01-01: Create base
+`,
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/base.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-foundation", "01-01-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "1-foundation", "99-UAT.md"),
+      "---\nstatus: complete\n---\n\n# UAT\n",
+    );
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      phases: [expect.objectContaining({ number: "1", status: "Executed" })],
+    });
+  });
+
   it("stats ignores stale snapshot phases that are not present in roadmap", () => {
     const root = createTempDirSync("agent-gsd-stats-stale-phase-");
     mkdirSync(join(root, ".planning", "phases", "1-foundation"), { recursive: true });

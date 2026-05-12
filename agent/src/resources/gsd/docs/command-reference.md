@@ -127,6 +127,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   default route: bundled workflow-launch review session
   flags: `--next`
   `--phase <phase>`, `--force` only with `/gsd progress --next`
+  `progress --next` inherits `/gsd next` routing; local `discuss-phase` and `plan-phase` routes still work without workflow session support, while workflow-native routes fail closed
   `progress --next --force` inherits `/gsd next` safety gates; `.continue-here.md`, paused state, discuss checkpoints, and unresolved verification FAIL still stop routing
   parsed with explicit unsupported-local error: `--do`, `--forensic`
   fails closed when `.planning/PROJECT.md`, `.planning/ROADMAP.md`, or `.planning/STATE.md` is missing

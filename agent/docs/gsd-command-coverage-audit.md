@@ -56,7 +56,7 @@ Implemented locally:
 | `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       79 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       74 |
 | `next`               | local-only instant command         | derived from `progress --next` |       74 |
-| `stats`              | TS-native instant command          | `stats`                        |       73 |
+| `stats`              | TS-native instant command          | `stats`                        |       74 |
 | `health`             | TS-native instant command          | `health`                       |       77 |
 | `status`             | local-only runtime monitor         | none                           |       55 |
 | `help`               | local docs viewer                  | `help`                         |       73 |
@@ -534,7 +534,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 73/100
+Coverage: 74/100
 
 Upstream behavior:
 
@@ -555,6 +555,7 @@ Local behavior:
 - `last_activity` now also treats malformed `STATE.md` timestamps as invalid boundary data and falls back to latest `.planning` artifact activity instead of echoing dishonest junk values. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - stale snapshot-only phase dirs that are no longer present in `ROADMAP.md` are now ignored in structured stats totals and phase rows, avoiding inflated counts from orphaned brownfield artifacts. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - malformed or non-roadmap `*-SUMMARY.md` files inside an otherwise valid roadmap phase are now excluded from `summaries`, `total_summaries`, and derived phase status math, avoiding inflated completion stats from junk summary artifacts. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
+- roadmap summary matching now also normalizes padded/unpadded local plan ids, so canonical roadmap plan `2-01` correctly counts local brownfield summary artifacts like `02-01-SUMMARY.md` instead of underreporting progress as `Not Started`. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - phase completion now also scopes UAT truth to canonical phase-prefix artifacts (`01-UAT.md`, `02-UAT.md`, etc.), so stray noncanonical UAT files cannot falsely promote a roadmap phase from `Executed` to `Complete`. `src/extensions/gsd/state/stats-support.ts`, `test/gsd/instant.test.ts`
 - verification status and `verification_count` now also scope to canonical phase-prefix verification artifacts (`01-VERIFICATION.md`, `02-VERIFICATION.md`, etc.), so stray noncanonical verification files cannot inflate counts or falsely override a roadmap phase to `Human Needed`. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/stats-support.ts`, `test/gsd/instant.test.ts`
 - when `STATE.md` omits `milestone_name`, structured stats now derive a truthful display name from matching roadmap milestone headings or `<summary>` blocks instead of echoing the raw version string. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`

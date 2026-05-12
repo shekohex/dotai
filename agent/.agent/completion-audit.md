@@ -41,7 +41,7 @@ Implemented locally:
 | `validate-phase`     |            79 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            74 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            74 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
-| `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
+| `stats`              |            74 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            55 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            73 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
@@ -211,7 +211,7 @@ Implemented locally:
   - richer upstream report branches still absent
   - likely best next non-local lifecycle target after audit sweep
 
-### `stats` (`73`)
+### `stats` (`74`)
 
 - runtime:
   - `src/extensions/gsd/instant/stats.ts`
@@ -224,8 +224,9 @@ Implemented locally:
 - covered now:
   - milestone scoping
   - requirement parsing
-  - conservative phase status
-  - git/activity enrichment
+- conservative phase status
+- padded/unpadded roadmap-summary id normalization
+- git/activity enrichment
 - invalid `last_activity` fallback
 - ignores stale non-roadmap snapshot phases
 - malformed summary ids excluded from completion counts

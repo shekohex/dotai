@@ -215,6 +215,15 @@ function normalizeSummaryId(fileName: string): string {
   return fileName.replace(/-SUMMARY\.md$/u, "");
 }
 
+function normalizePlanArtifactId(value: string): string {
+  const match = value.match(/^(\d+(?:\.\d+)?)-(\d+)$/u);
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return value;
+  }
+
+  return `${canonicalizePhaseNumber(match[1])}-${String(Number.parseInt(match[2], 10))}`;
+}
+
 function filterSummaryFileNamesToRoadmapPlans(
   summaryFileNames: string[],
   roadmapPlanIds: string[],
@@ -223,8 +232,10 @@ function filterSummaryFileNamesToRoadmapPlans(
     return summaryFileNames;
   }
 
-  const roadmapPlanIdSet = new Set(roadmapPlanIds);
-  return summaryFileNames.filter((fileName) => roadmapPlanIdSet.has(normalizeSummaryId(fileName)));
+  const roadmapPlanIdSet = new Set(roadmapPlanIds.map((planId) => normalizePlanArtifactId(planId)));
+  return summaryFileNames.filter((fileName) =>
+    roadmapPlanIdSet.has(normalizePlanArtifactId(normalizeSummaryId(fileName))),
+  );
 }
 
 function countProjectDecisionRows(project: string | undefined): number {

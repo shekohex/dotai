@@ -450,6 +450,41 @@ Plans:
     });
   });
 
+  it("stats counts padded local summary ids against canonical roadmap plan ids", () => {
+    const root = createTempDirSync("agent-gsd-stats-padded-summary-");
+    mkdirSync(join(root, ".planning", "phases", "02-delivery"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Delivery
+
+**Goal**: Ship delivery
+
+Plans:
+- [ ] 2-01: Ship feature
+`,
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "milestone: current\ncurrent_phase: 2\ncurrent_phase_name: Delivery\nstatus: Ready to execute\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "02-delivery", "02-01-SUMMARY.md"), "done\n");
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      total_plans: 1,
+      total_summaries: 1,
+      plan_percent: 100,
+      phases: [{ number: "2", summaries: 1, status: "Executed" }],
+    });
+  });
+
   it("stats table emits structured table output", () => {
     const { notifications, ctx } = createNotifications();
     handleGsdStats({} as never, ctx as never, { outputMode: "table" });

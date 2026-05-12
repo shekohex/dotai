@@ -9,7 +9,7 @@ import { errorMessage } from "../utils/error-message.js";
 
 const COMPACTION_MODEL_FALLBACKS = [
   { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
-  { provider: "openai", model: "gpt-5.4-mini" },
+  { provider: "codex-openai", model: "gpt-5.4-mini" },
   { provider: "opencode-go", model: "deepseek-v4-flash" },
 ] as const;
 const SUMMARY_PREFIX =

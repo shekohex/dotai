@@ -149,7 +149,14 @@ function countRoadmapMatchingPlans(
 function readLatestVerificationStatus(
   phaseSnapshot: ReturnType<typeof findPhaseSnapshot>,
 ): "passed" | "gaps_found" | "human_needed" | undefined {
+  const phaseNumber =
+    phaseSnapshot === undefined ? undefined : extractLeadingPhaseNumber(phaseSnapshot.id);
   const fileName = phaseSnapshot?.verifications
+    .filter((verificationFileName) =>
+      phaseNumber === undefined
+        ? false
+        : isCanonicalPhaseArtifact(verificationFileName, phaseNumber, "-VERIFICATION.md"),
+    )
     .toSorted((left, right) => left.localeCompare(right))
     .at(-1);
   if (phaseSnapshot === undefined || fileName === undefined) {

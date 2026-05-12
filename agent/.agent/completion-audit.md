@@ -39,8 +39,8 @@ Implemented locally:
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
 | `validate-phase`     |            78 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
-| `progress`           |            72 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
-| `next`               |            72 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
+| `progress`           |            73 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
+| `next`               |            73 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            73 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            77 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            53 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
@@ -153,7 +153,7 @@ Implemented locally:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display
 
-### `next` (`72`)
+### `next` (`73`)
 
 - runtime:
   - `src/extensions/gsd/instant/next.ts`
@@ -174,11 +174,12 @@ Implemented locally:
 - roadmap-scoped plan/summary routing counts
 - canonical phase-scoped UAT artifacts only; stray noncanonical `*-UAT.md` files no longer skip `/gsd verify-work`
 - direct command-level proof for canonical phase-scoped UAT gating on `/gsd next`
+- canonical phase-scoped verification artifacts only; stray noncanonical `*-VERIFICATION.md` files no longer block routing with stale verification status
 - weakest remaining areas:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose
 
-### `progress` (`72`)
+### `progress` (`73`)
 
 - runtime:
   - `src/extensions/gsd/lifecycle/progress.ts`
@@ -198,6 +199,7 @@ Implemented locally:
 - `progress --next --force` preserves discuss-checkpoint blocking
 - `progress --next` preserves roadmap-scoped artifact routing semantics
 - `progress --next` preserves canonical phase-scoped UAT gating semantics
+- `progress --next` preserves canonical phase-scoped verification blocker gating semantics
 - malformed `--phase`
   - explicit unsupported `--do`, `--forensic`
   - brownfield progress math fixes

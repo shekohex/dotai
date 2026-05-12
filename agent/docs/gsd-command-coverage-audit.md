@@ -519,7 +519,7 @@ Differences:
 
 ### `stats`
 
-Coverage: 68/100
+Coverage: 69/100
 
 Upstream behavior:
 
@@ -537,6 +537,7 @@ Local behavior:
 - supports local `stats json`, `stats table`, `--json`, `--table`, and `--format <json|table>` modes with explicit rejection for unsupported variants instead of silent degradation. `src/extensions/gsd/stats-args.ts`, `src/extensions/gsd/args.ts`, `test/gsd/commands.test.ts`
 - structured backend scopes phases to current milestone, counts requirements from planning snapshot, derives git commit count and first commit date when repository history is available, and falls back to latest `.planning` artifact timestamp when `STATE.md` lacks `last_activity`. `src/extensions/gsd/state/stats.ts`, `src/extensions/gsd/state/stats-support.ts`, `src/extensions/gsd/state/read.ts`, `test/gsd/instant.test.ts`
 - `last_activity` now also treats malformed `STATE.md` timestamps as invalid boundary data and falls back to latest `.planning` artifact activity instead of echoing dishonest junk values. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
+- stale snapshot-only phase dirs that are no longer present in `ROADMAP.md` are now ignored in structured stats totals and phase rows, avoiding inflated counts from orphaned brownfield artifacts. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - when `STATE.md` omits `milestone_name`, structured stats now derive a truthful display name from matching roadmap milestone headings or `<summary>` blocks instead of echoing the raw version string. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 - milestone scoping now also honors common roadmap milestone bullets like `- v1.1 ... - Phases 5-6` instead of silently falling back to all phases when dedicated milestone containers are absent, while exact version matching still avoids `v1` accidentally scoping `v1.0` or `v1.1`. `src/extensions/gsd/state/stats.ts`, `test/gsd/instant.test.ts`
 

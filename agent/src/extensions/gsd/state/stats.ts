@@ -91,11 +91,20 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     milestone === undefined
       ? undefined
       : (resolveMilestoneName(snapshot.roadmap, milestone.version) ?? milestone.name);
+  const roadmapPhaseNumbers = new Set(
+    roadmapPhases.map((phase) => canonicalizePhaseNumber(phase.number)),
+  );
   const phaseScope = resolveMilestonePhaseNumbers(snapshot.roadmap, milestone?.version);
   const scopedSnapshotPhases =
     phaseScope === undefined
-      ? snapshot.phases
-      : snapshot.phases.filter((phase) => phaseScope.has(extractLeadingPhaseNumber(phase.id)));
+      ? snapshot.phases.filter((phase) =>
+          roadmapPhaseNumbers.has(extractLeadingPhaseNumber(phase.id)),
+        )
+      : snapshot.phases.filter(
+          (phase) =>
+            phaseScope.has(extractLeadingPhaseNumber(phase.id)) &&
+            roadmapPhaseNumbers.has(extractLeadingPhaseNumber(phase.id)),
+        );
   const scopedRoadmapPhases =
     phaseScope === undefined
       ? roadmapPhases

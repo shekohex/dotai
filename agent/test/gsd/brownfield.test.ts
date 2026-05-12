@@ -106,6 +106,53 @@ Plans:
     expect(result.percent).toBe(100);
   });
 
+  it("prefers earliest incomplete phase when STATE.md drifted ahead", () => {
+    const root = createTempDirSync("agent-gsd-progress-drifted-phase-");
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+**Goal**: Setup
+
+Plans:
+- [ ] 01-01: Create config
+- [ ] 01-02: Add docs
+
+### Phase 2: Build
+**Goal**: Build
+
+Plans:
+- [ ] 02-01: Ship feature
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "current_phase: 2\ncurrent_phase_name: Build\ncurrent_plan: 02-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      "---\nphase: 01\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/a.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+    writeFileSync(join(root, ".planning", "phases", "1-setup", "01-02-SUMMARY.md"), "done\n");
+    writeFileSync(
+      join(root, ".planning", "phases", "2-build", "02-01-PLAN.md"),
+      "---\nphase: 02\nplan: 01\ntype: implementation\nwave: 1\ndepends_on: []\nfiles_modified: [src/b.ts]\nautonomous: true\nmust_haves: [done]\n---\n",
+    );
+
+    const result = computeProgress(root);
+    expect(result.currentPhase).toBe("1");
+    expect(result.currentPhaseName).toBe("Setup");
+    expect(result.currentPlan).toBe("01-01");
+    expect(result.totalPlansInPhase).toBe(2);
+  });
+
   it("treats padded snapshot phase ids and unpadded roadmap phase numbers as same phase", () => {
     const root = createTempDirSync("agent-gsd-progress-padded-phase-");
     mkdirSync(join(root, ".planning", "phases", "01-setup"), { recursive: true });

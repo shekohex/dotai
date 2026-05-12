@@ -1711,7 +1711,7 @@ test("gsd dashboard fallback reports pending todo count", async () => {
   await command?.handler("on", createCommandContext(cwd, notifications));
   await command?.handler("", createCommandContext(cwd, notifications));
   expect(notifications.at(-1)).toEqual({
-    message: "GSD enabled=true progress=50% phase=1 goals=2 milestones=1 todos=1",
+    message: "GSD enabled=true progress=50% phase=2 goals=2 milestones=1 todos=1",
     level: "info",
   });
 });

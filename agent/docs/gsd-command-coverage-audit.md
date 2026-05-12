@@ -456,7 +456,7 @@ Differences:
 
 ### `progress`
 
-Coverage: 60/100
+Coverage: 62/100
 
 Upstream behavior:
 
@@ -469,6 +469,7 @@ Upstream behavior:
 - parses routed flags explicitly, supports local `progress --next`, and rejects unsupported `--do`, `--forensic`, malformed `--phase`, and unsupported standalone phase overrides instead of silently degrading. `src/extensions/gsd/args.ts`, `src/extensions/gsd/progress-args.ts`
 - `progress --next` now routes into supported lifecycle actions with earliest-incomplete-phase semantics, and requires authoritative local `*-UAT.md` `status: complete` before dispatching `/gsd complete-milestone`; legacy verification-only state stays on `/gsd verify-work`. `src/extensions/gsd/instant/next.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/commands.test.ts`
 - progress math now unions completed plan IDs across roadmap and snapshot sources under normalized phase keys, avoiding mixed brownfield undercounting from roadmap-only or padded-phase layouts. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
+- local progress model now also ignores drifted-ahead `STATE.md current_phase/current_plan` when earlier roadmap phases still contain incomplete work, keeping progress summaries aligned with earliest incomplete execution state instead of stale pointers. `src/extensions/gsd/state/progress.ts`, `test/gsd/brownfield.test.ts`
 - focused tests now cover default workflow launch, supported `progress --next`, rejected `--do` / `--forensic`, malformed phase overrides, flag-like phase values, unknown phase overrides that must not mutate state, UAT-gated milestone completion, and mixed-source progress percentage regressions. `test/gsd/commands.test.ts`, `test/gsd/roadmap.test.ts`, `test/gsd/instant.test.ts`, `test/gsd/brownfield.test.ts`, `test/gsd/resources.test.ts`
 
 Differences:

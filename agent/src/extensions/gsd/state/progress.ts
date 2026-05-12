@@ -65,28 +65,76 @@ export function computeProgress(cwd: string): ProgressOutput {
     (sum, completedPlanIds) => sum + completedPlanIds.size,
     0,
   );
-  const current = resolveCurrentPhase(cwd);
-  const currentPhase =
-    toOptionalString(snapshot.state?.current_phase) ??
-    current?.phase.number ??
-    phaseSnapshots[0]?.id;
-  const activePhase =
-    phaseSnapshots.find((phase) => phase.id === current?.phaseDir.split("/").at(-1)) ??
-    phaseSnapshots.find((phase) => phase.id === currentPhase);
-  const totalPlansInPhase = activePhase?.plans.length ?? current?.phase.plans.length ?? 0;
+  const activePhase = resolveActiveProgressPhase({
+    cwd,
+    snapshot,
+    roadmapPhases,
+    phasePlanTotals,
+    completedPlanIdsByPhase,
+  });
   const percent = totalPlans === 0 ? 0 : Math.round((completedPlans / totalPlans) * 100);
 
   return {
     milestone: snapshot.state?.milestone,
-    currentPhase,
-    currentPhaseName: snapshot.state?.current_phase_name ?? activePhase?.name,
-    currentPlan: snapshot.state?.current_plan,
+    currentPhase: activePhase?.number,
+    currentPhaseName: activePhase?.name,
+    currentPlan: activePhase?.currentPlan,
     totalPhases: Math.max(phaseSnapshots.length, roadmapPhases.length),
-    totalPlansInPhase,
+    totalPlansInPhase: activePhase?.totalPlansInPhase ?? 0,
     completedPlans,
     percent,
     status: snapshot.state?.status ?? (totalPlans === 0 ? "Not started" : "In progress"),
     bar: buildBar(percent),
+  };
+}
+
+function resolveActiveProgressPhase(input: {
+  cwd: string;
+  snapshot: ReturnType<typeof readPlanningSnapshot>;
+  roadmapPhases: ReturnType<typeof readRoadmapPhases>;
+  phasePlanTotals: Map<string, number>;
+  completedPlanIdsByPhase: Map<string, Set<string>>;
+}):
+  | {
+      number?: string;
+      name?: string;
+      currentPlan?: string;
+      totalPlansInPhase: number;
+    }
+  | undefined {
+  for (const roadmapPhase of input.roadmapPhases) {
+    const phaseNumber = normalizePhaseNumber(roadmapPhase.number);
+    const totalPlans = input.phasePlanTotals.get(phaseNumber) ?? roadmapPhase.plans.length;
+    const completedPlans = input.completedPlanIdsByPhase.get(phaseNumber)?.size ?? 0;
+    if (totalPlans === 0 || completedPlans >= totalPlans) {
+      continue;
+    }
+    const currentPlan = roadmapPhase.plans.find(
+      (plan) => !(input.completedPlanIdsByPhase.get(phaseNumber)?.has(plan.id) ?? false),
+    )?.id;
+    return {
+      number: roadmapPhase.number,
+      name: roadmapPhase.name,
+      currentPlan,
+      totalPlansInPhase: totalPlans,
+    };
+  }
+
+  const current = resolveCurrentPhase(input.cwd);
+  const currentPhase =
+    toOptionalString(input.snapshot.state?.current_phase) ??
+    current?.phase.number ??
+    input.snapshot.phases[0]?.id;
+  const activeSnapshot = input.snapshot.phases.find(
+    (phase) => phase.id === current?.phaseDir.split("/").at(-1),
+  );
+  const fallbackSnapshot =
+    activeSnapshot ?? input.snapshot.phases.find((phase) => phase.id === currentPhase);
+  return {
+    number: currentPhase,
+    name: input.snapshot.state?.current_phase_name ?? fallbackSnapshot?.name ?? current?.phase.name,
+    currentPlan: input.snapshot.state?.current_plan,
+    totalPlansInPhase: fallbackSnapshot?.plans.length ?? current?.phase.plans.length ?? 0,
   };
 }
 

@@ -35,8 +35,9 @@ function formatStatusLabel(subagent: RuntimeSubagent): string {
   if (subagent.status === "completed") {
     return "done";
   }
-  if (subagent.activity?.label !== undefined && subagent.activity.label.length > 0) {
-    return subagent.activity.label;
+  const activityLabel = subagent.activity?.label?.trim();
+  if (activityLabel !== undefined && activityLabel.length > 0) {
+    return activityLabel;
   }
   return subagent.status;
 }

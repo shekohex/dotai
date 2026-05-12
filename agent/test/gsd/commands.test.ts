@@ -479,6 +479,38 @@ test("gsd status headless output shows cancelled label and truncates long detail
   expect(notifications.at(-1)?.message).toContain("…");
 });
 
+test("gsd status headless output ignores blank activity labels and details", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  setGsdSubagentSdkFactoryForTests(
+    () =>
+      ({
+        list: () => [
+          {
+            sessionId: "child-1",
+            sessionPath: "/tmp/child-1.jsonl",
+            name: "gsd-worker",
+            task: "work phase",
+            status: "running",
+            startedAt: Date.now() - 4_000,
+            activity: { label: "   ", detail: "   " },
+          },
+        ],
+      }) as never,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  expect(command).toBeTruthy();
+  await command?.handler("on", createCommandContext(cwd, notifications));
+  await command?.handler("status", createCommandContext(cwd, notifications));
+
+  expect(notifications.at(-1)).toEqual({
+    message: "1 total · 1 running\n\ngsd-worker: running · 0:04",
+    level: "info",
+  });
+});
+
 test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
   expect(parseGsdCommandArgs("plan-phase 2")).toEqual({ subcommand: "plan-phase", phase: "2" });
   expect(parseGsdCommandArgs("plan-phase")).toEqual({ subcommand: "plan-phase" });

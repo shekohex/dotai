@@ -53,7 +53,7 @@ Implemented locally:
 | `execute-phase`      | upstream-adapted orchestrator path | `execute-phase`                |       91 |
 | `secure-phase`       | workflow-launch shim               | `secure-phase`                 |       89 |
 | `verify-work`        | workflow-launch + helper runtime   | `verify-work`                  |       90 |
-| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       79 |
+| `validate-phase`     | workflow-launch + helper preflight | `validate-phase`               |       80 |
 | `progress`           | workflow-launch + local next path  | `progress`                     |       74 |
 | `next`               | local-only instant command         | derived from `progress --next` |       74 |
 | `stats`              | TS-native instant command          | `stats`                        |       74 |
@@ -430,7 +430,7 @@ Differences:
 
 ### `validate-phase`
 
-Coverage: 79/100
+Coverage: 80/100
 
 Upstream behavior:
 
@@ -448,6 +448,7 @@ Local behavior:
 - helper-reported validation target paths are now revalidated locally against the exact canonical phase target path before draft seeding or workflow launch, so broken helper output cannot redirect writes outside the authoritative phase file or into nested subpaths. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 - helper-ready selection and explicit target validation now preserve real padded local snapshot phase directories (`02-build`) when present instead of recomputing only roadmap slugs (`2-build`), so omitted or explicit validate-phase resolution no longer fails closed against otherwise canonical padded local artifacts. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 - explicit phase lookup now also normalizes padded/unpadded requested values (`2` vs `02`), so `/gsd validate-phase --phase 02` no longer false-rejects a valid roadmap phase before workflow launch. `src/extensions/gsd/state/validate-phase.ts`, `test/gsd/lifecycle.test.ts`, `src/resources/gsd/docs/command-reference.md`
+- roadmap completeness and helper preflight now also normalize padded/unpadded local `*-SUMMARY.md` plan ids (`02-01` vs `2-01`), so explicit validate-phase no longer false-rejects canonical brownfield execution evidence as incomplete or malformed. `src/extensions/gsd/state/validate-phase.ts`, `src/resources/gsd/bin/lib/init.cjs`, `test/gsd/lifecycle.test.ts`, `test/gsd/validate-phase-workflow.test.ts`, `src/resources/gsd/docs/command-reference.md`
 - helper-approved create path now pre-seeds canonical `*-VALIDATION.md` draft artifact before workflow launch, with deterministic phase metadata, basic test-infrastructure detection, and per-plan verification rows grounded in actual local plan `wave`, `requirements`, and summary presence instead of placeholders. Existing canonical validation artifacts remain untouched on update path. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`
 - draft seeding now also imports existing unresolved verification/UAT debt through helper-backed `audit-uat`, populating `Manual-Only Verifications` rows from real local artifacts instead of placeholder “None yet” output when human follow-up already exists. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`, `test/gsd/uat.test.ts`
 - missing automation is now classified more honestly: completed tasks without a detected test runner seed `MISSING` validation rows and concrete Wave 0 work, while runner-present phases with no verification evidence stay `PARTIAL`. `src/extensions/gsd/lifecycle/validate-phase.ts`, `test/gsd/lifecycle.test.ts`

@@ -163,6 +163,15 @@ function normalizeSummaryPlanId(fileName) {
   return String(fileName).replace(/-SUMMARY\.md$/i, "");
 }
 
+function normalizePlanArtifactId(value) {
+  const match = String(value).match(/^(\d+(?:\.\d+)?)-(\d+)$/i);
+  if (!match?.[1] || !match[2]) {
+    return String(value);
+  }
+
+  return `${normalizePhaseName(match[1])}-${String(Number.parseInt(match[2], 10)).padStart(2, "0")}`;
+}
+
 function resolveValidatePhaseState(phaseInfo, validationPaths) {
   const summaryCount = Array.isArray(phaseInfo?.summaries) ? phaseInfo.summaries.length : 0;
   const validationCount = Array.isArray(validationPaths) ? validationPaths.length : 0;
@@ -258,8 +267,12 @@ function createValidatePhaseInfoFromDirectory(
   }
   const files = fs.readdirSync(absoluteDirectory).sort();
   const summaries = files.filter((file) => file.endsWith("-SUMMARY.md"));
-  const summaryIds = summaries.map(normalizeSummaryPlanId);
-  const expectedPlanIds = Array.isArray(roadmapPlanIds) ? roadmapPlanIds : [];
+  const summaryIds = summaries.map((summary) =>
+    normalizePlanArtifactId(normalizeSummaryPlanId(summary)),
+  );
+  const expectedPlanIds = Array.isArray(roadmapPlanIds)
+    ? roadmapPlanIds.map((planId) => normalizePlanArtifactId(planId))
+    : [];
   const expectedSet = new Set(expectedPlanIds);
   return {
     directory: relativeDirectory,

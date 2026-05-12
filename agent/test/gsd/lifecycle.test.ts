@@ -5677,6 +5677,31 @@ Plans:
     );
   });
 
+  it("validate-phase accepts unpadded local summary ids for padded roadmap-complete explicit phase", async () => {
+    const root = createPlanningRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 2: Build
+**Goal**: Ship feature
+
+Plans:
+- [ ] 02-01: Implement feature
+`,
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "2-01-SUMMARY.md"), "done\n");
+    const pi = createPi();
+    const ctx = createContext(root, pi);
+
+    await handleGsdValidatePhase(pi, ctx, { phase: "2" }, "validate-phase 2");
+
+    expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
+      'Launch native GSD workflow for "/gsd validate-phase 2"',
+    );
+  });
+
   it("validate-phase accepts zero-padded explicit requested phase override", async () => {
     const root = createPlanningRoot();
     mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });

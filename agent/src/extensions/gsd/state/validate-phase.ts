@@ -61,6 +61,15 @@ function normalizeSummaryId(fileName: string): string {
   return fileName.replace(/-SUMMARY\.md$/u, "");
 }
 
+function normalizePlanArtifactId(value: string): string {
+  const match = value.match(/^(\d+(?:\.\d+)?)-(\d+)$/u);
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return value;
+  }
+
+  return `${canonicalizePhaseNumber(match[1])}-${String(Number.parseInt(match[2], 10))}`;
+}
+
 function isPhaseCompletedLocally(
   roadmapPhase: RoadmapPhase,
   phaseSnapshot: ReturnType<typeof readPlanningSnapshot>["phases"][number] | undefined,
@@ -72,12 +81,16 @@ function isPhaseCompletedLocally(
   const completedPlanIds = new Set([
     ...phaseSnapshot.plans
       .filter((plan) => plan.completed)
-      .map((plan) => plan.fileName.replace(/-PLAN\.md$/u, "")),
-    ...phaseSnapshot.summaries.map(normalizeSummaryId),
+      .map((plan) => normalizePlanArtifactId(plan.fileName.replace(/-PLAN\.md$/u, ""))),
+    ...phaseSnapshot.summaries.map((summary) =>
+      normalizePlanArtifactId(normalizeSummaryId(summary)),
+    ),
   ]);
 
   if (roadmapPhase.plans.length > 0) {
-    return roadmapPhase.plans.every((plan) => completedPlanIds.has(plan.id));
+    return roadmapPhase.plans.every((plan) =>
+      completedPlanIds.has(normalizePlanArtifactId(plan.id)),
+    );
   }
 
   return phaseSnapshot.plans.length > 0 && phaseSnapshot.plans.every((plan) => plan.completed);
@@ -91,9 +104,11 @@ function hasUnexpectedSummaryIds(
     return false;
   }
 
-  const roadmapPlanIds = new Set(roadmapPhase.plans.map((plan) => plan.id));
+  const roadmapPlanIds = new Set(
+    roadmapPhase.plans.map((plan) => normalizePlanArtifactId(plan.id)),
+  );
   return phaseSnapshot.summaries
-    .map(normalizeSummaryId)
+    .map((summary) => normalizePlanArtifactId(normalizeSummaryId(summary)))
     .some((summaryId) => !roadmapPlanIds.has(summaryId));
 }
 

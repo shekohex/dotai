@@ -324,4 +324,36 @@ describe("validate-phase workflow contracts", () => {
     expect(result.incomplete_plan_count).toBe(1);
     expect(result.unexpected_summary_ids).toEqual(["02-99"]);
   });
+
+  it("init validate-phase accepts unpadded local summary ids for padded roadmap plans", () => {
+    const root = createRoot();
+    mkdirSync(join(root, ".planning", "phases", "2-build"), { recursive: true });
+    writeFileSync(join(root, ".planning", "config.json"), "{}\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      [
+        "### Phase 2: Build",
+        "",
+        "**Goal**: Ship feature",
+        "",
+        "Plans:",
+        "- [ ] 02-01: Implement feature",
+      ].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "phases", "2-build", "2-01-SUMMARY.md"), "done\n");
+
+    const result = runTool(root, "init", "validate-phase", "2") as {
+      ready: boolean;
+      failure_reason: string | null;
+      summary_count: number;
+      incomplete_plan_count: number;
+      unexpected_summary_ids: string[];
+    };
+
+    expect(result.ready).toBe(true);
+    expect(result.failure_reason).toBeNull();
+    expect(result.summary_count).toBe(1);
+    expect(result.incomplete_plan_count).toBe(0);
+    expect(result.unexpected_summary_ids).toEqual([]);
+  });
 });

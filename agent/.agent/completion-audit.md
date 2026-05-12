@@ -38,7 +38,7 @@ Implemented locally:
 | `execute-phase`      |            91 | `src/extensions/gsd/lifecycle/execute-phase.ts`              | strong              | completion audit still needed                                |
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
-| `validate-phase`     |            79 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
+| `validate-phase`     |            80 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
 | `progress`           |            74 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
 | `next`               |            74 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
 | `stats`              |            74 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
@@ -263,7 +263,7 @@ Implemented locally:
 - weakest remaining areas:
   - hand-maintained reference breadth still lower than upstream help universe
 
-### `validate-phase` (`79`)
+### `validate-phase` (`80`)
 
 - runtime:
   - `src/extensions/gsd/state/validate-phase.ts`
@@ -278,10 +278,11 @@ Implemented locally:
   - config gating
   - canonical target resolution
   - malformed helper payload rejection
-  - thrown helper failure rejection
+- thrown helper failure rejection
 - exact canonical target-path revalidation
 - padded local snapshot phase dirs preserved during helper-ready selection/target validation
 - padded/unpadded explicit requested phase overrides normalized before roadmap lookup
+- padded/unpadded local summary ids normalized across local completeness and helper preflight
 - omitted-phase fallback across helper-unready higher completed phases
   - deterministic draft scaffolding
   - manual verification debt import

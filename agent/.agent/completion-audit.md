@@ -39,9 +39,9 @@ Implemented locally:
 | `secure-phase`       |            88 | workflow launch                                              | medium-strong       | verify remaining docs/runtime gaps                           |
 | `verify-work`        |            90 | workflow + helper runtime                                    | strong              | completion audit still needed                                |
 | `validate-phase`     |            76 | workflow + helper preflight                                  | medium              | biggest remaining workflow-native parity gap                 |
-| `progress`           |            68 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
-| `next`               |            67 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
-| `stats`              |            67 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
+| `progress`           |            70 | workflow + local next route                                  | medium              | unsupported upstream modes; report-branch breadth still thin |
+| `next`               |            68 | `src/extensions/gsd/instant/next.ts`                         | medium              | local adaptation; route graph still partial                  |
+| `stats`              |            69 | `src/extensions/gsd/instant/stats.ts` + state backend        | medium              | local metrics breadth still reduced                          |
 | `health`             |            74 | `src/extensions/gsd/state/health.ts`                         | medium              | richer repair/context parity still partial                   |
 | `status`             |            48 | `src/extensions/gsd/instant/status.ts`                       | medium-weak         | local-only contract still narrow                             |
 | `help`               |            69 | `src/extensions/gsd/help.ts` + docs                          | medium              | hand-maintained reference breadth                            |
@@ -105,7 +105,7 @@ Implemented locally:
     - `npm run lint`
     - `npm run format:check`
 - current state:
-  - green at 772 tests after latest `validate-phase` slice
+  - green at 779 tests after latest `next` / `progress` slice
 - remaining work:
   - must rerun full gates again before any future completion claim
 
@@ -128,7 +128,7 @@ Implemented locally:
   - purely local command, no upstream parity target
   - no richer lifecycle integration beyond subagent list display
 
-### `next` (`67`)
+### `next` (`68`)
 
 - runtime:
   - `src/extensions/gsd/instant/next.ts`
@@ -141,6 +141,7 @@ Implemented locally:
   - paused state
   - `.continue-here.md`
   - discuss checkpoint
+  - command-level forced discuss-checkpoint blocking proof
   - verification fail
   - no-session workflow-route fail-closed boundaries
   - local no-session discuss/plan routing
@@ -149,7 +150,7 @@ Implemented locally:
   - route graph still local adaptation, not full upstream `progress --next`
   - need explicit review of any remaining upstream branch claims in audit prose
 
-### `progress` (`68`)
+### `progress` (`70`)
 
 - runtime:
   - `src/extensions/gsd/lifecycle/progress.ts`
@@ -165,6 +166,8 @@ Implemented locally:
   - no-session guard
   - routed `--next`
   - `progress --next --force` inherits `next` safety gates at command level
+  - `progress --next` preserves no-session local discuss/plan routing semantics
+  - `progress --next --force` preserves discuss-checkpoint blocking
   - malformed `--phase`
   - explicit unsupported `--do`, `--forensic`
   - brownfield progress math fixes
@@ -172,7 +175,7 @@ Implemented locally:
   - richer upstream report branches still absent
   - likely best next non-local lifecycle target after audit sweep
 
-### `stats` (`67`)
+### `stats` (`69`)
 
 - runtime:
   - `src/extensions/gsd/instant/stats.ts`
@@ -187,6 +190,8 @@ Implemented locally:
   - requirement parsing
   - conservative phase status
   - git/activity enrichment
+  - invalid `last_activity` fallback
+  - ignores stale non-roadmap snapshot phases
   - truthful `verification_count`, `decisions_count`, `open_blockers`
 - weakest remaining areas:
   - still reduced local metric set compared with upstream workflow mode
@@ -240,14 +245,14 @@ Implemented locally:
 Best next runtime slice after audit prep:
 
 1. `stats`
-2. `progress`
+2. `help`
 3. `health`
 
 Reason:
 
 - `status` now mostly local-only UX proof work
 - `next`, `stats`, and `help` have meaningful guardrails already, but remaining gaps are more about breadth than hidden safety failures
-- `validate-phase` helper-boundary risk is lower than before; `stats` and `progress` now look like better ROI among weaker scores
+- `validate-phase`, `next`, and `progress` safety-boundary risk is lower than before; `stats` and `help` now look like better ROI among weaker scores
 
 ## Not Completion Yet
 

@@ -1,7 +1,7 @@
 import { Type, type Static } from "typebox";
+import { resolveCurrentMilestone } from "./milestones.js";
 import { readPlanningSnapshot } from "./read.js";
 import { readRoadmapPhases } from "./roadmap.js";
-import { resolveCurrentMilestone } from "./milestones.js";
 import {
   canonicalizePhaseNumber,
   deriveStatsPhaseStatus,
@@ -87,6 +87,10 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
   const snapshot = readPlanningSnapshot(cwd);
   const roadmapPhases = readRoadmapPhases(cwd);
   const milestone = resolveCurrentMilestone(cwd);
+  const milestoneName =
+    milestone === undefined
+      ? undefined
+      : (resolveMilestoneName(snapshot.roadmap, milestone.version) ?? milestone.name);
   const phaseScope = resolveMilestonePhaseNumbers(snapshot.roadmap, milestone?.version);
   const scopedSnapshotPhases =
     phaseScope === undefined
@@ -156,7 +160,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
 
   return {
     milestone_version: milestone?.version ?? "current",
-    milestone_name: milestone?.name ?? milestone?.version ?? "Current",
+    milestone_name: milestoneName ?? milestone?.version ?? "Current",
     phases: sortedPhases,
     phases_completed: completedPhases,
     phases_total: sortedPhases.length,
@@ -173,6 +177,53 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     open_blockers: blockers,
     decisions_count: Math.max(0, decisions - 2),
   };
+}
+
+function resolveMilestoneName(
+  roadmap: string | undefined,
+  milestoneVersion: string | undefined,
+): string | undefined {
+  if (roadmap === undefined || milestoneVersion === undefined) {
+    return undefined;
+  }
+
+  for (const line of roadmap.split("\n")) {
+    if (!line.includes(milestoneVersion) || !lineHasExactMilestoneVersion(line, milestoneVersion)) {
+      continue;
+    }
+    const derivedName = extractMilestoneNameFromLine(line, milestoneVersion);
+    if (derivedName !== undefined) {
+      return derivedName;
+    }
+  }
+
+  return undefined;
+}
+
+function lineHasExactMilestoneVersion(line: string, milestoneVersion: string): boolean {
+  const pattern = new RegExp(buildExactMilestoneLabelPattern(milestoneVersion), "u");
+  return pattern.test(line);
+}
+
+function extractMilestoneNameFromLine(line: string, milestoneVersion: string): string | undefined {
+  const summaryLine = line.replaceAll(/<\/?summary>/giu, "").trim();
+  const headingLine = summaryLine.replace(/^#{2,4}\s+/u, "").trim();
+  const milestoneIndex = headingLine.indexOf(milestoneVersion);
+  if (milestoneIndex < 0) {
+    return undefined;
+  }
+
+  const trailing = headingLine.slice(milestoneIndex + milestoneVersion.length).trim();
+  if (trailing.length === 0) {
+    return undefined;
+  }
+
+  const cleaned = trailing
+    .replace(/^[-:–—]\s*/u, "")
+    .replaceAll(/\(.*?\)/gu, "")
+    .replace(/[-:–—]\s*(shipped|in progress|planned).*$/iu, "")
+    .trim();
+  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 function resolveMilestonePhaseNumbers(

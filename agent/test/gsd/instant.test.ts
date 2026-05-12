@@ -231,6 +231,75 @@ Plans:
     expect(computeStructuredStats(root).phases.map((phase) => phase.number)).toEqual(["1", "2"]);
   });
 
+  it("stats derives milestone name from roadmap heading when state milestone_name is absent", () => {
+    const root = createTempDirSync("agent-gsd-stats-milestone-name-heading-");
+    mkdirSync(join(root, ".planning", "phases", "5-security"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### 🚧 v1.1 Security (In Progress)
+
+#### Phase 5: Security
+**Goal**: Secure auth
+
+Plans:
+- [ ] 05-01: Lock auth
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "milestone: v1.1\ncurrent_phase: 5\ncurrent_phase_name: Security\ncurrent_plan: 05-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      milestone_version: "v1.1",
+      milestone_name: "Security",
+    });
+  });
+
+  it("stats derives milestone name from roadmap details summary when state milestone_name is absent", () => {
+    const root = createTempDirSync("agent-gsd-stats-milestone-name-details-");
+    mkdirSync(join(root, ".planning", "phases", "5-security"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+<details>
+<summary>🚧 v1.1 Security (Phases 5-6) - IN PROGRESS</summary>
+
+#### Phase 5: Security
+**Goal**: Secure auth
+
+Plans:
+- [ ] 05-01: Lock auth
+
+</details>
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      "milestone: v1.1\ncurrent_phase: 5\ncurrent_phase_name: Security\ncurrent_plan: 05-01\nstatus: Ready to execute\n",
+    );
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+
+    expect(computeStructuredStats(root)).toMatchObject({
+      milestone_version: "v1.1",
+      milestone_name: "Security",
+    });
+  });
+
   it("stats json emits structured output", () => {
     const { notifications, ctx } = createNotifications();
     handleGsdStats({} as never, ctx as never, { outputMode: "json" });

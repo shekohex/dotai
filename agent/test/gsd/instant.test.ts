@@ -466,6 +466,33 @@ Plans:
     expect(notifications.at(-1)?.message).toContain("Last activity: ");
   });
 
+  it("stats decisions count excludes unrelated project tables", () => {
+    const root = createTempDirSync("agent-gsd-stats-decisions-table-");
+    mkdirSync(join(root, ".planning", "phases"), { recursive: true });
+    writeFileSync(
+      join(root, ".planning", "config.json"),
+      '{"model_profile":"balanced","commit_docs":true,"parallelization":true,"search_gitignored":false,"brave_search":false,"firecrawl":false,"exa_search":false}\n',
+    );
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n");
+    writeFileSync(
+      join(root, ".planning", "PROJECT.md"),
+      [
+        "# Demo",
+        "",
+        "## Summary Table",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+        "| Name | Demo |",
+        "| Type | Brownfield |",
+      ].join("\n"),
+    );
+    writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+    writeFileSync(join(root, ".planning", "STATE.md"), "status: Ready to execute\n");
+
+    expect(computeStructuredStats(root).decisions_count).toBe(0);
+  });
+
   it("stats structured output includes git history and state last_activity when repo exists", () => {
     const root = createTempDirSync("agent-gsd-stats-git-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });

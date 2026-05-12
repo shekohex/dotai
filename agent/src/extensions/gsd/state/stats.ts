@@ -101,7 +101,7 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
       ? roadmapPhases
       : roadmapPhases.filter((phase) => phaseScope.has(canonicalizePhaseNumber(phase.number)));
   const blockers = snapshot.stateBody?.match(/blocker/gi)?.length ?? 0;
-  const decisions = snapshot.project?.match(/^\|/gm)?.length ?? 0;
+  const decisions = countProjectDecisionRows(snapshot.project);
   const requirements = parseRequirementsProgress(snapshot.requirements);
   const gitCommitCount = readGitCommitCount(cwd);
   const gitFirstCommitDate = readGitFirstCommitDate(cwd);
@@ -175,8 +175,63 @@ export function computeStructuredStats(cwd: string): StructuredStatsOutput {
     last_activity: lastActivity,
     verification_count: verificationCount,
     open_blockers: blockers,
-    decisions_count: Math.max(0, decisions - 2),
+    decisions_count: decisions,
   };
+}
+
+function countProjectDecisionRows(project: string | undefined): number {
+  if (project === undefined) {
+    return 0;
+  }
+
+  const lines = project.split("\n");
+  let insideKeyDecisions = false;
+  let rowCount = 0;
+  let currentTableIsDecisionTable = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^##\s+Key Decisions\s*$/u.test(line.trim())) {
+      insideKeyDecisions = true;
+      currentTableIsDecisionTable = false;
+      continue;
+    }
+
+    if (insideKeyDecisions && /^##\s+/u.test(trimmed)) {
+      break;
+    }
+
+    if (!trimmed.startsWith("|")) {
+      currentTableIsDecisionTable = false;
+      continue;
+    }
+
+    if (!currentTableIsDecisionTable && isDecisionTableHeader(trimmed)) {
+      currentTableIsDecisionTable = true;
+      continue;
+    }
+
+    if (!currentTableIsDecisionTable && !insideKeyDecisions) {
+      continue;
+    }
+
+    if (/^\|(?:\s*:?-+:?\s*\|)+$/u.test(trimmed)) {
+      continue;
+    }
+
+    rowCount += 1;
+  }
+
+  return rowCount;
+}
+
+function isDecisionTableHeader(line: string): boolean {
+  const columns = line
+    .split("|")
+    .map((column) => column.trim())
+    .filter((column) => column.length > 0);
+  return columns.some((column) => column.toLowerCase() === "decision");
 }
 
 function resolveMilestoneName(

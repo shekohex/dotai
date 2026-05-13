@@ -101,6 +101,10 @@ function toNtfyBoolean(
   return value ? trueValue : falseValue;
 }
 
+function toNtfyPriority(priority: NotifyPublishPayload["priority"]): 1 | 2 | 3 | 4 | 5 | undefined {
+  return priority;
+}
+
 function toNtfyAction(action: NotifyAction): Record<string, unknown> {
   if (action.action === "view") {
     return { action: "view", label: action.label, url: action.url, clear: action.clear };
@@ -146,7 +150,7 @@ export function buildPublishBody(
     topic,
     message: payload.message,
     title: payload.title,
-    priority: payload.priority,
+    priority: toNtfyPriority(payload.priority),
     tags: payload.tags,
     markdown: payload.markdown,
     click: payload.click,

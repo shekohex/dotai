@@ -17,12 +17,6 @@ export const NotifyPrioritySchema = Type.Union([
   Type.Literal(3),
   Type.Literal(4),
   Type.Literal(5),
-  Type.Literal("min"),
-  Type.Literal("low"),
-  Type.Literal("default"),
-  Type.Literal("high"),
-  Type.Literal("max"),
-  Type.Literal("urgent"),
 ]);
 
 export const NotifyCallbackConfigSchema = Type.Object(

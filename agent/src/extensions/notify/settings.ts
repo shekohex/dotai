@@ -25,7 +25,7 @@ export function resolveNotifySettings(): ResolvedNotifySettings {
     publishTimeoutMs: NOTIFY_DEFAULT_PUBLISH_TIMEOUT_MS,
     debugEvents: false,
     defaultTags: ["pi"],
-    defaultPriority: "default",
+    defaultPriority: 3,
     retryMaxAttempts: NOTIFY_DEFAULT_RETRY_MAX_ATTEMPTS,
     retryBaseDelayMs: NOTIFY_DEFAULT_RETRY_BASE_DELAY_MS,
     subscribe: {

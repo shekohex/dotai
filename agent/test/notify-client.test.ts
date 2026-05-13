@@ -17,7 +17,7 @@ const settings: ResolvedNotifySettings = {
   publishTimeoutMs: 5_000,
   debugEvents: false,
   defaultTags: ["pi"],
-  defaultPriority: "default",
+  defaultPriority: 3,
   retryMaxAttempts: 2,
   retryBaseDelayMs: 1,
 };
@@ -37,7 +37,7 @@ describe("notify client", () => {
     const normalized = normalizePublishPayload(payload, settings);
     expect(normalized.topic).toEqual(["one", "two"]);
     expect(normalized.tags).toEqual(["pi", "custom"]);
-    expect(normalized.priority).toBe("default");
+    expect(normalized.priority).toBe(3);
   });
 
   test("builds ntfy JSON body", () => {
@@ -52,6 +52,17 @@ describe("notify client", () => {
     expect(body.actions).toEqual([
       { action: "copy", label: "Copy", value: "123", clear: undefined },
     ]);
+  });
+
+  test("preserves numeric priority in ntfy JSON body", () => {
+    const payload: NotifyPublishPayload = {
+      topic: "topic",
+      message: "body",
+      priority: 3,
+      meta: { sourceExtension: "test" },
+    };
+    const body = buildPublishBody(payload, "topic");
+    expect(body).toMatchObject({ priority: 3 });
   });
 
   test("retries transient failures then succeeds", async () => {

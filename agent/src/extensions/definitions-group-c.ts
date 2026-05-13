@@ -3,6 +3,7 @@ import goalExtension from "./goal/index.js";
 import gsdExtension from "./gsd/index.js";
 import interviewExtension from "./interview/index.js";
 import mermaidExtension from "./mermaid.js";
+import notifyExtension from "./notify/index.js";
 import plannotatorExtension from "./plannotator.js";
 import promptStashExtension from "./prompt-stash.js";
 import terminalNotifyExtension from "./terminal-notify.js";
@@ -11,6 +12,7 @@ import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "mermaid", factory: mermaidExtension },
+  { id: "notify", factory: notifyExtension },
   { id: "goal", factory: goalExtension },
   { id: "prompt-stash", factory: promptStashExtension },
   { id: "interview", factory: interviewExtension },

@@ -1,3 +1,4 @@
+import agentAlertsExtension from "./agent-alerts/index.js";
 import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
 import gsdExtension from "./gsd/index.js";
@@ -11,6 +12,7 @@ import terminalTmuxUiExtension from "./terminal-tmux-ui.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsC: GroupedExtensionDefinition[] = [
+  { id: "agent-alerts", factory: agentAlertsExtension },
   { id: "mermaid", factory: mermaidExtension },
   { id: "notify", factory: notifyExtension },
   { id: "goal", factory: goalExtension },

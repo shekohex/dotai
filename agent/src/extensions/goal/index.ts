@@ -1,8 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { emitNotifyPublish } from "../notify/index.js";
+import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { registerGoalCommand } from "./commands.js";
-import { formatFooterStatus } from "./format.js";
+import { completionBudgetReport, formatFooterStatus } from "./format.js";
 import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
 import {
   applyUsage,
@@ -136,6 +138,71 @@ function staleGoalContinuationMessage(
     currentState,
     "Do not perform task work. Do not call tools. Reply briefly that queued goal continuation is no longer active.",
   ].join("\n");
+}
+
+function isSessionMessageEntryLike(
+  value: unknown,
+): value is { type: "message"; message: { role: string; content?: unknown } } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "message" &&
+    "message" in value &&
+    typeof value.message === "object" &&
+    value.message !== null &&
+    "role" in value.message &&
+    typeof value.message.role === "string"
+  );
+}
+
+function isTextContentLike(value: unknown): value is { type: "text"; text: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "text" &&
+    "text" in value &&
+    typeof value.text === "string"
+  );
+}
+
+function lastAssistantMessageText(ctx: ExtensionContext): string | null {
+  const branch = ctx.sessionManager.getBranch() as Array<unknown>;
+  for (let index = branch.length - 1; index >= 0; index -= 1) {
+    const entry = branch[index];
+    if (!isSessionMessageEntryLike(entry)) {
+      continue;
+    }
+    if (entry.message.role !== "assistant") {
+      continue;
+    }
+    const content = entry.message.content;
+    if (typeof content === "string" && content.length > 0) {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      const text = content
+        .filter((item) => isTextContentLike(item))
+        .map((item) => item.text.trim())
+        .filter((item) => item.length > 0)
+        .join("\n")
+        .trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
+  }
+  return null;
+}
+
+function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
+  const parts = [lastAssistantMessageText(ctx) ?? "Goal complete"];
+  const budgetReport = completionBudgetReport(goal);
+  if (budgetReport !== null) {
+    parts.push(budgetReport);
+  }
+  return parts.join("\n\n");
 }
 
 function queuedGoalWorkMessageId(message: GoalCustomMessageLike): string | null {
@@ -406,6 +473,17 @@ class GoalRuntime {
     }
 
     this.persistGoal(result.goal, source);
+    emitNotifyPublish(this.pi, {
+      topic: NOTIFY_DEFAULT_TOPIC,
+      title: "Goal complete",
+      message: goalCompletionNotificationMessage(result.goal, ctx),
+      tags: ["goal", "complete"],
+      meta: {
+        sourceExtension: "goal",
+        eventName: "goal:complete",
+        correlationId: result.goal.goalId,
+      },
+    });
     this.refreshUi(ctx);
     return result;
   }

@@ -29,6 +29,7 @@ function createGoalHarness(
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, GoalEventHandler[]>();
   const sentMessages: SentGoalMessage[] = [];
+  const emittedEvents: Array<{ eventName: string; data: unknown }> = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const runtime = {
     abortCount: 0,
@@ -69,7 +70,9 @@ function createGoalHarness(
       });
     },
     events: {
-      emit() {},
+      emit(eventName, data) {
+        emittedEvents.push({ eventName, data });
+      },
       on() {
         return () => {};
       },
@@ -235,6 +238,7 @@ function createGoalHarness(
       return runtime.abortCount;
     },
     snapshot: () => reconstructGoal(entries),
+    emittedEvents,
   };
 }
 
@@ -310,6 +314,35 @@ describe("goal extension", () => {
     })) as { details: Record<string, unknown> };
 
     expect((created.details.goal as { objective?: string }).objective).toBe("second goal");
+  });
+
+  test("completing goal emits notify publish event", async () => {
+    const harness = createGoalHarness();
+
+    await harness.runTool({ action: "create", objective: "ship it", token_budget: 10 });
+    harness.entries.push({
+      type: "message",
+      id: "assistant-1",
+      parentId: null,
+      timestamp: new Date(0).toISOString(),
+      message: assistantMessage("stop", { input: 5, output: 7 }),
+    } as never);
+    (
+      harness.entries[harness.entries.length - 1] as { message: { content: string } }
+    ).message.content = "Final shipped summary";
+    await harness.runTool({ action: "update", status: "complete" });
+
+    expect(
+      harness.emittedEvents.find((event) => event.eventName === "notify:publish")?.data,
+    ).toMatchObject({
+      title: "Goal complete",
+      message:
+        "Final shipped summary\n\nGoal achieved. Report final budget usage to the user: tokens used: 0 of 10.",
+      meta: {
+        sourceExtension: "goal",
+        eventName: "goal:complete",
+      },
+    });
   });
 
   test("command start queues continuation and persists entry", async () => {

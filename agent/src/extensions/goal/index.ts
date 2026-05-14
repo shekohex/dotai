@@ -4,7 +4,12 @@ import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { registerGoalCommand } from "./commands.js";
-import { completionBudgetReport, formatFooterStatus } from "./format.js";
+import {
+  completionBudgetReport,
+  formatDuration,
+  formatFooterStatus,
+  formatInteger,
+} from "./format.js";
 import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
 import {
   applyUsage,
@@ -201,6 +206,25 @@ function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionConte
   const budgetReport = completionBudgetReport(goal);
   if (budgetReport !== null) {
     parts.push(budgetReport);
+  }
+  return parts.join("\n\n");
+}
+
+function goalUnmetNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
+  const parts = [lastAssistantMessageText(ctx) ?? "Goal budget exhausted"];
+  const usageParts: string[] = [];
+  if (goal.usage.activeSeconds > 0) {
+    usageParts.push(`time used: ${formatDuration(goal.usage.activeSeconds)}.`);
+  }
+  if (goal.tokenBudget !== null) {
+    usageParts.push(
+      `tokens used: ${formatInteger(goal.usage.tokensUsed)} of ${formatInteger(goal.tokenBudget)}.`,
+    );
+  } else if (goal.usage.tokensUsed > 0) {
+    usageParts.push(`tokens used: ${formatInteger(goal.usage.tokensUsed)}.`);
+  }
+  if (usageParts.length > 0) {
+    parts.push(`Goal unmet. ${usageParts.join(" ")}`);
   }
   return parts.join("\n\n");
 }
@@ -453,6 +477,17 @@ class GoalRuntime {
       this.accounting.budgetWarningSentFor !== result.goal.goalId
     ) {
       this.accounting.budgetWarningSentFor = result.goal.goalId;
+      emitNotifyPublish(this.pi, {
+        topic: NOTIFY_DEFAULT_TOPIC,
+        title: "Goal unmet",
+        message: goalUnmetNotificationMessage(result.goal, ctx),
+        tags: ["goal", "unmet", "budget"],
+        meta: {
+          sourceExtension: "goal",
+          eventName: "goal:budget_exhausted",
+          correlationId: result.goal.goalId,
+        },
+      });
       this.pi.sendMessage(
         {
           customType: GOAL_EXTENSION_ENTRY_TYPE,

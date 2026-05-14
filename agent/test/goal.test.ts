@@ -414,6 +414,17 @@ describe("goal extension", () => {
       kind: "budget_limit",
       goalId: harness.snapshot().goal?.goalId,
     });
+    expect(
+      harness.emittedEvents.find((event) => event.eventName === "notify:publish")?.data,
+    ).toMatchObject({
+      title: "Goal unmet",
+      message: "Goal budget exhausted\n\nGoal unmet. tokens used: 11 of 10.",
+      tags: ["goal", "unmet", "budget"],
+      meta: {
+        sourceExtension: "goal",
+        eventName: "goal:budget_exhausted",
+      },
+    });
 
     await harness.emit("tool_execution_end", {
       type: "tool_execution_end",

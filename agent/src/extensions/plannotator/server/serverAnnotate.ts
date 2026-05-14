@@ -240,7 +240,7 @@ function createAnnotateRequestHandler(options: {
         }
       }
 
-      html(res, options.htmlContent);
+      html(res, options.htmlContent, req);
     })();
   };
 }

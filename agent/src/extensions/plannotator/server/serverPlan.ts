@@ -179,7 +179,7 @@ export async function startPlanReviewServer(options: {
           json(res, { error: "Invalid request" }, 400);
         }
       } else {
-        html(res, options.htmlContent);
+        html(res, options.htmlContent, req);
       }
     })();
   });

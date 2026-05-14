@@ -27,8 +27,9 @@ function runNpmInstall(cwd: string): void {
 }
 
 function runNpmBuild(cwd: string): void {
-  execFileSync("npm", ["run", "build"], {
+  execFileSync("npx", ["vite", "build", "--mode", "production"], {
     cwd,
+    env: { ...process.env, NODE_ENV: "production" },
     stdio: "inherit",
   });
 }

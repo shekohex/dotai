@@ -2,6 +2,8 @@
 
 This vendor copy contains local changes that were previously captured in `patches/plannotator-ui-v0.19.12-local.patch` and `patches/plannotator-ui-v0.19.14-local.patch`.
 
+Current upstream vendor base: `v0.19.16`.
+
 Those patch files have been removed. Future upgrades should diff this vendor tree against upstream and explicitly review the items below.
 
 ## Why this exists
@@ -24,10 +26,12 @@ What changed:
 - Removed workspace assumptions from upstream package setup.
 - Repointed internal package dependencies from `workspace:*` to local `file:` paths.
 - Added direct app dependencies needed when building inside this repo instead of upstream monorepo.
+- Added direct package dependencies needed when isolated vendored apps import transitive upstream packages directly.
 
 Why it matters on upgrade:
 - Upstream may keep monorepo-only dependency declarations.
 - Our vendored copy must remain buildable in isolation inside `vendor/plannotator-ui/`.
+- Example: `packages/review-editor/package.json` carries `sonner` because upstream review-editor imports it while the upstream workspace can otherwise resolve it transitively.
 
 ### 2. Vite/react dedupe and local aliasing for vendored builds
 

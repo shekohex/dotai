@@ -109,6 +109,8 @@ export function createReviewDispatchContext(args: {
     editorAnnotations: args.editorAnnotations,
     externalAnnotations: args.externalAnnotations,
     aiEndpoints: args.aiEndpoints,
+    resolveAgentCwd: args.session.resolveAgentCwd,
+    getCurrentPatch: () => args.localState.currentPatch,
     currentDiffType: args.localState.currentDiffType,
     draftKey: args.localState.draftKey,
     deleteDraft: () => {

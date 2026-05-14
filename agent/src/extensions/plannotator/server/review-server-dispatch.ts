@@ -18,6 +18,7 @@ import {
   handleReviewPrAction,
   handleReviewPrViewed,
 } from "./review-route-helpers.js";
+import { handleCodeNavFile, handleCodeNavResolve } from "./review-code-nav.js";
 import { html, json, parseBody } from "./helpers.js";
 import {
   handleDraftRequest,
@@ -206,6 +207,36 @@ async function handleMiscRoutes(context: ReviewDispatchContext): Promise<boolean
   return false;
 }
 
+async function handleCodeNavRoutes(context: ReviewDispatchContext): Promise<boolean> {
+  const { req, res, url } = context;
+  const hasCodeNavAccess =
+    context.options.gitContext !== undefined ||
+    context.options.agentCwd !== undefined ||
+    context.options.worktreePool !== undefined;
+  if (url.pathname === "/api/code-nav/resolve" && req.method === "POST") {
+    if (!hasCodeNavAccess) {
+      json(res, { error: "Code navigation requires local access" }, 400);
+      return true;
+    }
+    await handleCodeNavResolve({
+      req,
+      res,
+      cwd: context.resolveAgentCwd(),
+      currentPatch: context.getCurrentPatch(),
+    });
+    return true;
+  }
+  if (url.pathname === "/api/code-nav/file" && req.method === "GET") {
+    if (!hasCodeNavAccess) {
+      json(res, { error: "Code navigation requires local access" }, 400);
+      return true;
+    }
+    await handleCodeNavFile({ res, url, cwd: context.resolveAgentCwd() });
+    return true;
+  }
+  return false;
+}
+
 export interface ReviewDispatchContext extends Omit<ReviewRouteContext, "req" | "res"> {
   url: URL;
   req: IncomingMessage;
@@ -234,6 +265,8 @@ export interface ReviewDispatchContext extends Omit<ReviewRouteContext, "req" | 
     handle: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
   };
   aiEndpoints: Record<string, (req: Request) => Promise<Response>> | null;
+  resolveAgentCwd: () => string;
+  getCurrentPatch: () => string;
   currentDiffType: ReviewMutableState["currentDiffType"];
   draftKey: string;
   deleteDraft: () => void;
@@ -267,6 +300,7 @@ export async function dispatchReviewServerRequest(context: ReviewDispatchContext
     context.syncLocalsFromState();
     return;
   }
+  if (await handleCodeNavRoutes(context)) return;
   if (await handleMiscRoutes(context)) return;
   if (await context.editorAnnotations.handle(req, res, url)) {
     return;

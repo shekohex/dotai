@@ -139,7 +139,24 @@ What changed:
 Why it matters on upgrade:
 - Without this wiring, Ask AI appears in the sidebar or focused single-file diff but not when selecting lines in the all-files editor.
 
-### 9. Version/plugin metadata drift in vendored app assets
+### 9. Ask AI server is backed by Pi subagents
+
+Files:
+- `src/extensions/plannotator/server/review-ai-endpoints.ts`
+- `src/subagent-sdk/*`
+
+What changed:
+- The local Plannotator review server does not use upstream provider SDK endpoints directly.
+- Ask AI capabilities, sessions, queries, aborts, and session listing are served by the first-party Pi Subagent SDK bridge.
+- Query responses stream through Subagent SDK child Pi events (`message_update`, `message_end`, `agent_end`) and map to Plannotator SSE messages.
+- Follow-up messages register streaming listeners before sending the `followUp` message so fast deltas are not missed.
+
+Why it matters on upgrade:
+- Keep AI review jobs and Ask AI on local Pi subagent infrastructure.
+- Do not replace this path with upstream provider-specific SDK imports unless intentionally redesigning local AI runtime.
+- If upstream changes Ask AI client event names, update the local SSE mapping rather than bypassing the Subagent SDK.
+
+### 10. Version/plugin metadata drift in vendored app assets
 
 Files:
 - `apps/hook/.claude-plugin/plugin.json`
@@ -151,7 +168,7 @@ What changed:
 Why it matters on upgrade:
 - Reconcile intentionally. Do not blindly overwrite without checking build/runtime assumptions.
 
-### 10. Local lockfile artifacts existed in patch history
+### 11. Local lockfile artifacts existed in patch history
 
 File:
 - `packages/editor/package-lock.json`
@@ -174,7 +191,8 @@ When upgrading `vendor/plannotator-ui`:
 6. Verify `annotate-last` does not open editor-annotation transport.
 7. Verify update-check behavior remains intentionally disabled or re-decide it explicitly.
 8. Verify line-selection Ask AI appears in both focused file diff and all-files diff.
-9. Run repo validation after merge.
+9. Verify Ask AI initial and follow-up responses stream via Pi subagent events.
+10. Run repo validation after merge.
 
 ## Validation paths most likely to catch regressions
 
@@ -182,6 +200,7 @@ When upgrading `vendor/plannotator-ui`:
 - Open plan/file annotation session and confirm editor annotations appear live.
 - Open review session and confirm editor annotations can be selected from sidebar and diff panels.
 - Open review all-files diff, select lines, and confirm Ask AI appears in the toolbar.
+- Ask AI twice in the same review session and confirm both initial and follow-up responses stream into the UI.
 - Run `npm run typecheck`
 - Run `npm test`
 - Run `npm run lint`

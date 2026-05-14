@@ -6,7 +6,9 @@ import { Value } from "typebox/value";
 import { getCurrentPiSessionContext } from "../current-pi-session.js";
 import { buildLaunchCommand, createSubagentSDK, TmuxAdapter } from "../../../subagent-sdk/index.js";
 import type { SubagentHandle, SubagentSDK } from "../../../subagent-sdk/sdk-types.js";
+import type { SubagentChildIpcEvent } from "../../../subagent-sdk/ipc.js";
 import { errorMessage } from "../../../utils/error-message.js";
+import { isRecord } from "../../../utils/unknown-data.js";
 
 const CreateSessionSchema = Type.Object({
   context: Type.Object(
@@ -52,16 +54,55 @@ function jsonResponse(value: unknown, status = 200): Response {
   return Response.json(value, { status });
 }
 
-function createSseResponse(messages: unknown[]): Response {
-  const encoder = new TextEncoder();
-  const chunks = messages.map((message) => `data: ${JSON.stringify(message)}\n\n`).join("");
-  return new Response(encoder.encode(`${chunks}data: [DONE]\n\n`), {
+function sseData(value: unknown): Uint8Array {
+  return new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`);
+}
+
+function sseDone(): Uint8Array {
+  return new TextEncoder().encode("data: [DONE]\n\n");
+}
+
+function createCompletedSseResponse(message: unknown): Response {
+  return new Response(Buffer.concat([Buffer.from(sseData(message)), Buffer.from(sseDone())]), {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     },
   });
+}
+
+function extractTextFromMessage(value: unknown): string {
+  if (!isRecord(value) || value.role !== "assistant" || !Array.isArray(value.content)) {
+    return "";
+  }
+  return value.content
+    .map((item) => {
+      if (!isRecord(item) || item.type !== "text" || typeof item.text !== "string") {
+        return "";
+      }
+      return item.text;
+    })
+    .join("");
+}
+
+function extractTextDelta(event: SubagentChildIpcEvent): string | null {
+  if (event.type !== "message_update") {
+    return null;
+  }
+  const assistantEvent = event.assistantMessageEvent;
+  if (!isRecord(assistantEvent) || assistantEvent.type !== "text_delta") {
+    return null;
+  }
+  return typeof assistantEvent.delta === "string" ? assistantEvent.delta : null;
+}
+
+function extractMessageEndText(event: SubagentChildIpcEvent): string | null {
+  if (event.type !== "message_end") {
+    return null;
+  }
+  const text = extractTextFromMessage(event.message);
+  return text.length > 0 ? text : null;
 }
 
 function createSdk() {
@@ -87,15 +128,7 @@ function buildTask(session: AIReviewSession, prompt: string): string {
   return `${context}${prompt}`;
 }
 
-async function ensureHandle(session: AIReviewSession, prompt: string, cwd: string): Promise<void> {
-  if (session.handle !== undefined) {
-    const currentSession = getCurrentPiSessionContext();
-    if (currentSession === undefined) {
-      throw new Error("No active Pi session available for Ask AI.");
-    }
-    await session.handle.sendMessage({ message: prompt, delivery: "followUp" }, currentSession.ctx);
-    return;
-  }
+async function startHandle(session: AIReviewSession, prompt: string, cwd: string): Promise<void> {
   const { sdk, ctx } = createSdk();
   session.sdk = sdk;
   const started = await sdk.start(
@@ -113,6 +146,106 @@ async function ensureHandle(session: AIReviewSession, prompt: string, cwd: strin
   session.handle = started.handle;
 }
 
+async function sendFollowUp(handle: SubagentHandle, prompt: string): Promise<void> {
+  const currentSession = getCurrentPiSessionContext();
+  if (currentSession === undefined) {
+    throw new Error("No active Pi session available for Ask AI.");
+  }
+  await handle.sendMessage({ message: prompt, delivery: "followUp" }, currentSession.ctx);
+}
+
+function createStreamingQueryResponse(args: {
+  session: AIReviewSession;
+  prompt: string;
+  cwd: string;
+}): Response {
+  let removeTextDeltaListener: (() => void) | undefined;
+  let removeMessageEndListener: (() => void) | undefined;
+  let removeAgentEndListener: (() => void) | undefined;
+  let streamedText = "";
+  let closed = false;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const closeStream = () => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        removeTextDeltaListener?.();
+        removeMessageEndListener?.();
+        removeAgentEndListener?.();
+        controller.enqueue(sseDone());
+        controller.close();
+      };
+      try {
+        if (args.session.handle === undefined) {
+          await startHandle(args.session, args.prompt, args.cwd);
+        }
+        const handle = args.session.handle;
+        if (handle === undefined) throw new Error("Ask AI subagent did not start.");
+        removeTextDeltaListener = handle.on("message_update", (event) => {
+          const delta = extractTextDelta(event);
+          if (delta === null || delta.length === 0) {
+            return;
+          }
+          streamedText += delta;
+          controller.enqueue(sseData({ type: "text_delta", delta }));
+        });
+        removeMessageEndListener = handle.on("message_end", (event) => {
+          if (streamedText.length > 0) {
+            return;
+          }
+          const text = extractMessageEndText(event);
+          if (text === null) {
+            return;
+          }
+          streamedText = text;
+          controller.enqueue(sseData({ type: "text", text }));
+        });
+        removeAgentEndListener = handle.on("agent_end", () => {
+          closeStream();
+        });
+        if (handle.getState().status !== "running") {
+          await sendFollowUp(handle, args.prompt);
+        }
+        const terminal = await handle.waitForCompletion();
+        if (!closed && streamedText.length === 0) {
+          const text = terminal.summary ?? (await handle.captureOutput(2000)).text;
+          if (text.length > 0) {
+            controller.enqueue(sseData({ type: "result", result: text }));
+          }
+        }
+        closeStream();
+      } catch (error) {
+        removeTextDeltaListener?.();
+        removeMessageEndListener?.();
+        removeAgentEndListener?.();
+        if (closed) {
+          return;
+        }
+        closed = true;
+        controller.enqueue(
+          sseData({ type: "error", error: errorMessage(error), code: "query_error" }),
+        );
+        controller.enqueue(sseDone());
+        controller.close();
+      }
+    },
+    cancel() {
+      removeTextDeltaListener?.();
+      removeMessageEndListener?.();
+      removeAgentEndListener?.();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 export function createReviewAIEndpoints(args: { resolveAgentCwd: () => string }) {
   const sessions = new Map<string, AIReviewSession>();
   const endpoints = {
@@ -124,7 +257,7 @@ export function createReviewAIEndpoints(args: { resolveAgentCwd: () => string })
             {
               id: "pi-subagent",
               name: "Pi Subagent",
-              capabilities: { streaming: false, tools: true, fork: false, permissions: false },
+              capabilities: { streaming: true, tools: true, fork: false, permissions: false },
               models: [],
             },
           ],
@@ -162,14 +295,13 @@ export function createReviewAIEndpoints(args: { resolveAgentCwd: () => string })
           payload.contextUpdate !== undefined && payload.contextUpdate.length > 0
             ? `[Context update: the user has made changes since this conversation started]\n${payload.contextUpdate}\n\n${payload.prompt}`
             : payload.prompt;
-        await ensureHandle(session, prompt, args.resolveAgentCwd());
-        const terminal = await session.handle?.waitForCompletion();
-        const text = terminal?.summary ?? (await session.handle?.captureOutput(2000))?.text ?? "";
-        return createSseResponse([{ type: "result", result: text }]);
+        return createStreamingQueryResponse({ session, prompt, cwd: args.resolveAgentCwd() });
       } catch (error) {
-        return createSseResponse([
-          { type: "error", error: errorMessage(error), code: "query_error" },
-        ]);
+        return createCompletedSseResponse({
+          type: "error",
+          error: errorMessage(error),
+          code: "query_error",
+        });
       }
     },
     "/api/ai/abort": async (req: Request) => {

@@ -7,6 +7,7 @@ The SDK was developed through an iterative refactoring of the original `subagent
 - **Decoupling**: Separated the runtime from CLI commands to allow direct SDK consumption by extensions
 - **State Protection**: Implemented cloned snapshots to prevent external mutation of internal state
 - **Event Deduplication**: Added signature-based deduplication to prevent noisy UI churn from poll-only `updatedAt` changes
+- **Child Event Streaming**: Added IPC streaming so child Pi events reach SDK consumers live without tmux scraping, polling, file watching, or JSONL tailing
 - **Review Integration**: The `/review` extension served as the primary production-grade validation of the SDK
 
 ## Table of Contents
@@ -30,6 +31,7 @@ The public-facing API that extensions interact with. Key responsibilities:
 - **State Protection**: Returns cloned snapshots of internal state to prevent external mutation. This was a critical design decision made during SDK refactoring to prevent extensions from accidentally corrupting runtime state.
 - **Event Deduplication**: Uses `SubagentRuntimeEventBus` to emit events only when state actually changes. Signatures are computed from `{event, status, paneId, completedAt, autoExitDeadlineAt, autoExitTimeoutActive, activity, summary, structured, structuredError, exitCode}` to filter out poll-only `updatedAt` churn.
 - **Live Activity Snapshots**: Child sessions persist precise activity updates such as `thinking`, `reading`, `running bash`, `web searching`, and `waiting`, which are restored into parent-side runtime state for widgets and orchestration UIs.
+- **Child Event IPC**: Starts one SDK-owned IPC server and forwards live child Pi events to `handle.on(...)` and `sdk.onChildEvent(...)`. Transport details are hidden behind a shared module that uses Unix sockets on Unix-like systems and named pipes on Windows.
 - **Handle Abstraction**: Provides `SubagentHandle` instances for ergonomic interaction with specific subagents, eliminating the need to pass `sessionId` manually for every operation
 
 ```
@@ -42,6 +44,7 @@ Extension Code
       +-- message() -> SubagentHandle
       +-- cancel() -> RuntimeSubagent
       +-- onEvent() -> unsubscribe
+      +-- onChildEvent(sessionId, eventType, listener) -> unsubscribe
 ```
 
 ### 2. Runtime Layer (`runtime.ts`)
@@ -74,6 +77,12 @@ buildLaunchCommand() -> shell command with env payload (`--session <path>` or `-
     |
     v
 adapter.createPane() -> tmux pane with child pi process
+    |
+    v
+child ipc.ts -> forwards Pi events over SDK IPC server
+    |
+    v
+handle.on() / sdk.onChildEvent() -> live child event subscribers
     |
     v
 SubagentRuntime.poll() -> monitors pane, syncs status
@@ -267,7 +276,7 @@ type SubagentActivityEntry = {
 };
 ```
 
-Activity snapshots are best-effort for parent UIs, but tool transitions are emitted from child-session events rather than tmux output scraping.
+Activity snapshots are best-effort for parent UIs. For exact live child turns, messages, and tools, subscribe to child events through IPC.
 
 #### `get(sessionId)`
 
@@ -305,11 +314,20 @@ const capture = await handle.captureOutput(100); // last 100 lines
 const unsubscribe = handle.onEvent((event) => {
   console.log(event.type, event.state.status);
 });
+
+// Subscribe to live Pi events from this child session
+const stopText = handle.on("message_update", (event) => {
+  console.log(event.assistantMessageEvent.type);
+});
+
+const stopTools = handle.on("tool_execution_start", (event) => {
+  console.log(event.toolName);
+});
 ```
 
 ### Event Subscription
 
-Global event stream for all subagents:
+Global state event stream for all subagents:
 
 ```typescript
 const unsubscribe = sdk.onEvent((event) => {
@@ -322,6 +340,27 @@ const unsubscribe = sdk.onEvent((event) => {
 unsubscribe();
 sdk.dispose(); // Stops polling, clears timers
 ```
+
+Live child Pi event stream for one subagent:
+
+```typescript
+const stopChildEvents = sdk.onChildEvent(sessionId, "message_end", (event) => {
+  if (event.message.role === "assistant") {
+    console.log(event.message.content);
+  }
+});
+
+stopChildEvents();
+```
+
+Child event payloads are forwarded as-is from the child process. The SDK only validates the IPC envelope and routes by `sessionId`; it does not synthesize deltas, rename fields, filter tool events, or map session JSONL entries back into events.
+
+IPC lifecycle:
+
+- One IPC server is created per `SubagentSDK` instance.
+- Unix-like platforms use Unix domain sockets; Windows uses named pipes.
+- Persisted child session routes stay registered across terminal states so resumed sessions reconnect to the same SDK route.
+- All IPC routes and sockets close when `sdk.dispose()` runs.
 
 ---
 

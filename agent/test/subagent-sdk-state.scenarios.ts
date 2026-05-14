@@ -23,6 +23,7 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
 
 afterEach(() => {
+  vi.useRealTimers();
   unregisterBuiltInModes(TEST_MODE_SOURCE);
 });
 

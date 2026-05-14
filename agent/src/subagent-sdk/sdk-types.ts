@@ -2,6 +2,7 @@ import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/
 import type { Static } from "typebox";
 
 import type { SubagentRuntimeEvent } from "./events.js";
+import type { SubagentChildIpcEvent } from "./ipc.js";
 import type { PaneCapture } from "./mux.js";
 import type {
   CancelSubagentParams,
@@ -30,6 +31,10 @@ export interface SubagentHandle {
   waitForCompletion(options?: { signal?: AbortSignal }): Promise<RuntimeSubagent>;
   captureOutput(lines?: number): Promise<PaneCapture>;
   onEvent(listener: (event: SubagentSDKEvent) => void): () => void;
+  on(
+    eventType: SubagentChildIpcEvent["type"],
+    listener: (event: SubagentChildIpcEvent) => void,
+  ): () => void;
 }
 
 export type StartSubagentSpawnValue = {
@@ -100,5 +105,10 @@ export interface SubagentSDK {
   list(): RuntimeSubagent[];
   captureOutput(params: { sessionId: string; lines?: number }): Promise<PaneCapture>;
   onEvent(listener: (event: SubagentSDKEvent) => void): () => void;
+  onChildEvent(
+    sessionId: string,
+    eventType: SubagentChildIpcEvent["type"],
+    listener: (event: SubagentChildIpcEvent) => void,
+  ): () => void;
   dispose(): void;
 }

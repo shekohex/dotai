@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { SubagentRuntimeEventBus } from "./events.js";
 import type { MuxAdapter } from "./mux.js";
 import type { LaunchCommandBuilder } from "./launch.js";
+import { createSubagentIpcServer, type SubagentIpcServer } from "./ipc.js";
 import { SubagentRuntime } from "./runtime.js";
 import { SDKSubagentHandle } from "./sdk-handle.js";
 import { createSpawnFunction } from "./sdk-spawn.js";
@@ -47,6 +48,7 @@ type SubagentSdkObjectInput = {
   runtime: SubagentRuntime;
   adapter: MuxAdapter;
   eventBus: SubagentRuntimeEventBus;
+  ipcServer: SubagentIpcServer;
   timer: ReturnType<typeof setInterval>;
   emitChangedStates: () => void;
   toHandle: (sessionId: string) => SubagentHandle;
@@ -93,8 +95,17 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
     onEvent(listener) {
       return input.eventBus.subscribe(listener);
     },
+    onChildEvent(sessionId, eventType, listener) {
+      return input.eventBus.subscribeChildEvent((event, eventSessionId) => {
+        if (eventSessionId !== sessionId || event.type !== eventType) {
+          return;
+        }
+        listener(event);
+      });
+    },
     dispose() {
       clearInterval(input.timer);
+      input.ipcServer.dispose();
       input.runtime.dispose();
     },
   };
@@ -104,13 +115,16 @@ export function createSubagentSDK(
   pi: ExtensionAPI,
   options: CreateSubagentSDKOptions,
 ): SubagentSDK {
-  const runtime = new SubagentRuntime(
-    pi,
-    options.adapter,
-    options.buildLaunchCommand,
-    options.hooks,
-  );
+  const ipcServer = createSubagentIpcServer();
+  const buildLaunchCommand: LaunchCommandBuilder = (state, childState, prompt, launchOptions) => {
+    const ipc = ipcServer.createRoute(state.sessionId);
+    return options.buildLaunchCommand(state, { ...childState, ipc }, prompt, launchOptions);
+  };
+  const runtime = new SubagentRuntime(pi, options.adapter, buildLaunchCommand, options.hooks);
   const eventBus = new SubagentRuntimeEventBus();
+  ipcServer.onChildEvent(({ sessionId, event }) => {
+    eventBus.emitChildEvent(sessionId, event);
+  });
   const emitChangedStates = (): void => {
     eventBus.emitChangedStates(runtime.listStates());
   };
@@ -152,6 +166,7 @@ export function createSubagentSDK(
     runtime,
     adapter: options.adapter,
     eventBus,
+    ipcServer,
     timer,
     emitChangedStates,
     toHandle,

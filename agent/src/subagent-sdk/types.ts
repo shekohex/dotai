@@ -13,6 +13,7 @@ import {
   SubagentActivityKindSchema,
   SubagentActionSchema,
   SubagentDeliverySchema,
+  SubagentIpcConfigSchema,
   SubagentMessageEntrySchema,
   SubagentStateEntrySchema,
   SubagentStateEventSchema,
@@ -42,6 +43,7 @@ export {
   SubagentActivityKindSchema,
   SubagentActionSchema,
   SubagentDeliverySchema,
+  SubagentIpcConfigSchema,
   SubagentMessageEntrySchema,
   SubagentStateEntrySchema,
   SubagentStateEventSchema,
@@ -65,6 +67,7 @@ export type StructuredOutputErrorCode = Static<typeof StructuredOutputErrorCodeS
 export type StructuredOutputError = Static<typeof StructuredOutputErrorSchema>;
 export type SubagentActivityKind = Static<typeof SubagentActivityKindSchema>;
 export type SubagentActivityEntry = Static<typeof SubagentActivityEntrySchema>;
+export type SubagentIpcConfig = Static<typeof SubagentIpcConfigSchema>;
 export type SubagentToolParams = Static<typeof SubagentToolParamsSchema>;
 export type SubagentStateEntry = Static<typeof SubagentStateEntrySchema>;
 export type SubagentMessageEntry = Static<typeof SubagentMessageEntrySchema>;

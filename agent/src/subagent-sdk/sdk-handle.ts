@@ -3,6 +3,7 @@ import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/
 import { cloneRuntimeSubagent } from "./types.js";
 import type { MessageSubagentParams, RuntimeSubagent } from "./types.js";
 import type { SubagentHandle, SubagentSDK, SubagentSDKEvent } from "./sdk-types.js";
+import type { SubagentChildIpcEvent } from "./ipc.js";
 
 const noop = () => {};
 
@@ -85,5 +86,12 @@ export class SDKSubagentHandle implements SubagentHandle {
       }
       listener(event);
     });
+  }
+
+  on(
+    eventType: SubagentChildIpcEvent["type"],
+    listener: (event: SubagentChildIpcEvent) => void,
+  ): () => void {
+    return this.sdk.onChildEvent(this.sessionId, eventType, listener);
   }
 }

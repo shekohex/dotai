@@ -104,6 +104,14 @@ export const OutputFormatSchema = Type.Union([
   OutputFormatJsonSchemaSchema,
 ]);
 
+export const SubagentIpcConfigSchema = Type.Object(
+  {
+    endpoint: Type.String(),
+    token: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
 export const StructuredOutputErrorCodeSchema = Type.Union([
   Type.Literal("retry_exhausted"),
   Type.Literal("missing_tool_call"),
@@ -270,6 +278,7 @@ export const ChildBootstrapStateSchema = Type.Object(
     handoff: Type.Boolean(),
     tools: Type.Array(Type.String()),
     outputFormat: Type.Optional(OutputFormatSchema),
+    ipc: Type.Optional(SubagentIpcConfigSchema),
     startedAt: Type.Number(),
   },
   { additionalProperties: true },

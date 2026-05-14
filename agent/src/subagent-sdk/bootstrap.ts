@@ -10,6 +10,7 @@ import {
   isTypeboxSchema,
 } from "./bootstrap-core.js";
 import { registerChildBootstrapHandlers } from "./bootstrap-handlers.js";
+import { registerChildIpcBridge } from "./bootstrap-ipc.js";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { createTextComponent } from "../extensions/coreui/tools-render.js";
 import { renderChildSessionWidget } from "./ui.js";
@@ -179,5 +180,6 @@ export function installChildBootstrap(pi: ExtensionAPI): void {
     });
   });
   registerStructuredOutputTool(pi, childState, state);
+  registerChildIpcBridge(pi, childState);
   registerChildBootstrapHandlers(pi, childState, state, STRUCTURED_OUTPUT_SYSTEM_PROMPT);
 }

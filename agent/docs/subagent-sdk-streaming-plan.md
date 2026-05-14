@@ -1,15 +1,18 @@
+<!-- markdownlint-disable MD013 -->
+
 # Subagent SDK Streaming Plan
 
 ## Goal
 
-Expose child Pi session activity and assistant updates through the Subagent SDK using Pi-style events, backed by the child session JSONL file that Pi already writes.
+Expose child Pi session activity and assistant updates through the Subagent SDK using Pi-style events forwarded live through child-to-parent IPC.
 
 ## Constraints
 
-- Use persisted child session files as the source of truth.
+- Use live child Pi events forwarded over IPC as the streaming source of truth.
 - Do not scrape tmux pane output.
-- Do not add a second stream JSONL side channel for persisted subagents.
-- Reuse Pi session entry types and Pi agent event semantics where possible.
+- Do not add JSONL tailing, file watchers, polling, or side-channel transcript files for streaming.
+- Reuse Pi agent event semantics and payloads directly.
+- Do not invent browser permission/control semantics for downstream UIs; forward events and let consumers decide what to render.
 - Let downstream SDK users map events to their own protocol, such as Plannotator Server-Sent Events.
 
 ## Current State
@@ -19,8 +22,9 @@ Expose child Pi session activity and assistant updates through the Subagent SDK 
 - Child Pi writes session entries through `SessionManager`.
 - Parent SDK currently reads child session files for final outcome and activity snapshots.
 - Parent SDK currently exposes lifecycle events through `sdk.onEvent(...)`.
-- Upstream in-process `AgentSession.subscribe(...)` emits Pi `AgentEvent` values such as `message_start`, `message_update`, `message_end`, tool events, and `agent_end`.
-- Cross-process subagents cannot directly subscribe to the child `AgentSession`; parent must observe the child session file.
+- Upstream Pi live event streams emit `AgentEvent` values such as `message_start`, `message_update`, `message_end`, tool events, and `agent_end`.
+- Cross-process subagents need a child bootstrap IPC bridge to forward those live events to the parent process.
+- Upstream Pi RPC mode and `--mode json` both forward live event objects as newline-delimited JSON, which shows the event payloads can be transported as-is instead of reconstructed from persisted state.
 
 ## Proposed API
 
@@ -55,42 +59,85 @@ Event names should follow Pi event names rather than Subagent-specific names whe
 
 Subagent-only lifecycle events stay on existing `sdk.onEvent(...)`.
 
-## Session File Watcher
+## Preferred IPC Streaming Design
 
-Create a child session stream watcher owned by the Subagent runtime.
+Create a parent-owned IPC endpoint per SDK instance, pass its address to each child through bootstrap environment, and install a child-side extension module such as `ipc.ts`.
 
-Responsibilities:
+Put transport details behind a shared IPC module so subagent runtime code does not care whether the platform uses Unix domain sockets or Windows named pipes.
 
-- Watch the child session file path for append changes.
-- Track byte offset and seen entry IDs.
-- Read only appended bytes after each change.
-- Parse complete JSONL records.
-- Convert new session entries into Pi-style event payloads.
-- Emit events through handle-level and SDK-level subscribers.
-- Close watcher when child reaches terminal state or SDK is disposed.
+Shared IPC module responsibilities:
 
-Implementation notes:
+- Export platform-neutral parent server and child client constructors.
+- Use Unix domain sockets on Unix-like systems and named pipes on Windows internally.
+- Own endpoint naming, temp directory placement, cleanup, and permissions.
+- Provide newline-delimited JSON framing helpers matching upstream RPC/json mode style.
+- Validate frame envelopes with TypeBox at process boundaries.
+- Surface connection, disconnect, frame, and error events through typed callbacks.
+- Keep transport retry and reconnection behavior out of `SubagentSDK` business logic.
 
-- Use `fs.watch` through Pi's existing `watchWithErrorHandler` pattern.
-- Debounce/coalesce rapid change notifications before reading.
-- Keep a small incomplete-line buffer for partial JSONL writes.
-- Reopen `SessionManager` only for cases that need branch/tree interpretation, not for every append chunk.
-- Use entry IDs for dedupe because session files are append-only and entries are immutable.
+Parent responsibilities:
 
-## Entry Mapping
+- Start one IPC server from the shared IPC module when `SubagentSDK` is created.
+- Generate a private endpoint path/name under a temp directory with restrictive permissions.
+- Pass endpoint address and child session ID in the child launch environment.
+- Accept child connections, authenticate the expected session ID/token, and route events to that session's `SubagentHandle`.
+- Keep IPC server and session routes alive until the SDK is disposed.
+- Keep persisted child session IPC route state after terminal state or cancellation because the same child session can be resumed later.
+- Replace or reconnect a session connection when a persisted child resumes.
+- Remove all IPC routes and close all connections only when the SDK is disposed.
 
-Session entries can map to events at different fidelity levels.
+Child responsibilities:
 
-Initial useful mapping:
+- During bootstrap, connect to the parent IPC endpoint when IPC env is present.
+- Subscribe to all Pi events exposed through extension APIs.
+- Forward every event without filtering:
 
-- `message` with `role: "user"` → `message_start`, `message_end`
-- `message` with `role: "assistant"` → `message_start`, `message_end`
-- custom subagent activity entries → tool/status events where possible
-- terminal assistant message or child completion outcome → `agent_end`
+```ts
+pi.on("message_update", (_ctx, event) => {
+  ipc.emit("message_update", JSON.stringify(event));
+});
+```
 
-Streaming text deltas require persisted in-progress assistant updates. If Pi's session file only receives final assistant messages, the SDK can still stream completed messages and tool/status events, but not token deltas.
+- Use newline-delimited framed JSON messages over the socket/pipe.
+- Include `sessionId`, event `type`, and original event payload in each frame.
+- Treat IPC failures as non-fatal for the child session.
 
-For token-level or chunk-level `message_update`, child Pi must persist update entries while streaming. Best path is to add a Pi-native session entry for assistant update events, or have `AgentSession` persist existing `AgentEvent` update payloads in a compact custom entry during child runs.
+Advantages:
+
+- No polling.
+- No file watching.
+- No JSONL tailing.
+- Preserves exact upstream event order and payload shape.
+- Streams `message_update` and `tool_execution_update` directly from live Pi events.
+- Works for persisted and ephemeral children.
+- Keeps the parent-side route stable across persisted child resume cycles.
+
+Research tasks before implementation:
+
+- Confirm exact child bootstrap hook point where `ipc.ts` can register `pi.on(...)` handlers before the child starts work.
+- Confirm extension `pi.on(...)` exposes every event needed by SDK consumers.
+- Define shared IPC framing schema with TypeBox and validate inbound parent frames at boundary.
+- Validate socket lifecycle under tmux panes, auto-resume, child restart, and SDK disposal.
+- Add Windows named-pipe path tests or platform-gated tests.
+
+## Event Forwarding
+
+Forward child Pi events from IPC to SDK consumers as-is.
+
+No entry mapping layer is needed. No JSONL reconstruction is needed. The parent only validates the IPC frame envelope, extracts the event payload, and emits that payload unchanged to `handle.on(...)` and `sdk.onChildEvent(...)` subscribers.
+
+The event envelope should contain routing metadata outside the original event payload:
+
+```ts
+type ChildEventFrame = {
+  kind: "child_event";
+  sessionId: string;
+  token: string;
+  event: AgentEvent;
+};
+```
+
+The SDK must not mutate `event`, rename event fields, synthesize missing deltas, or hide tool/permission events.
 
 ## Plannotator Ask AI Use
 
@@ -114,16 +161,17 @@ Ask AI sessions should use persisted children so follow-up messages can auto-res
 
 ## Open Questions
 
-- Whether upstream Pi should persist `message_update` entries by default, or whether subagent child bootstrap should opt into recording them.
 - Exact type export path for Pi `AgentEvent` in this repo's public API.
-- Whether `handle.on(...)` should expose all child events or only a safe subset by default.
-- How to represent permission/tool events in downstream browser UIs without leaking unsupported controls.
+- Exact child bootstrap hook point for installing the IPC bridge.
+- Exact extension event coverage from `pi.on(...)` compared to upstream RPC/json mode output.
 
 ## Suggested Implementation Order
 
-1. Add typed child event emitter to `SubagentHandle` and `SubagentSDK`.
-2. Add session file watcher with byte-offset JSONL parsing.
-3. Map completed session entries to Pi-style events.
-4. Add tests with synthetic child session files.
-5. Add child bootstrap persistence for `message_update` if session files do not currently contain enough streaming detail.
-6. Wire Plannotator Ask AI SSE to the new event API.
+1. Add shared IPC transport module with Unix socket and Windows named-pipe implementations behind one API.
+2. Add TypeBox schemas for IPC frame envelopes and newline-delimited framing helpers based on upstream RPC/json mode patterns.
+3. Add SDK-owned IPC server lifecycle: create on SDK init, keep session routes across persisted child resumes, dispose only with SDK.
+4. Add typed child event emitter to `SubagentHandle` and `SubagentSDK` that exposes all child Pi events.
+5. Add child `ipc.ts` bootstrap bridge that registers `pi.on(...)` handlers and forwards live event payloads unchanged.
+6. Wire child launch/resume env with endpoint address, session ID, and auth token.
+7. Add IPC tests for framing, auth rejection, session routing, reconnect/resume, disposal cleanup, and platform endpoint selection.
+8. Wire Plannotator Ask AI SSE to the new event API without adding unsupported browser controls.

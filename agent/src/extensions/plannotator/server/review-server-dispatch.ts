@@ -170,6 +170,14 @@ async function handleMiscRoutes(context: ReviewDispatchContext): Promise<boolean
     json(res, { agents: [] });
     return true;
   }
+  if (
+    context.aiEndpoints === null &&
+    url.pathname === "/api/ai/capabilities" &&
+    req.method === "GET"
+  ) {
+    json(res, { available: false, providers: [] });
+    return true;
+  }
   if (url.pathname === "/api/git-add" && req.method === "POST") {
     const stageCwd = resolveVcsCwd(context.currentDiffType, context.options.gitContext?.cwd);
     await handleReviewGitAdd({
@@ -320,5 +328,5 @@ export async function dispatchReviewServerRequest(context: ReviewDispatchContext
     json(res, { error: "Not found" }, 404);
     return;
   }
-  html(res, getHtmlContent(context.diffPayload));
+  html(res, getHtmlContent(context.diffPayload), req);
 }

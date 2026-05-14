@@ -543,6 +543,11 @@ export const AllFilesDiffView: React.FC<AllFilesDiffViewProps> = ({
         onLineSelection={onLineSelection}
         onAddAnnotation={handleAddAnnotation}
         onEditAnnotation={onEditAnnotation}
+        aiAvailable={aiAvailable}
+        onAskAI={onAskAI}
+        isAILoading={isAILoading}
+        onViewAIResponse={onViewAIResponse}
+        aiHistoryMessages={aiHistoryForSelection}
       />
 
       {fileCommentAnchor && onAddFileComment && (

@@ -69,7 +69,7 @@ export function startReviewRuntime(args: {
         res,
         url,
         session,
-        aiEndpoints: null,
+        aiEndpoints: session.aiEndpoints,
       }),
     getServerUrl: () => serverUrl,
     setServerUrl: (url) => {

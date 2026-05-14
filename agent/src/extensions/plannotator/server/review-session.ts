@@ -10,6 +10,7 @@ import type {
   WorktreePool,
 } from "./review-generated-deps.js";
 import type { EditorAnnotationInput } from "./annotations.js";
+import { createReviewAIEndpoints } from "./review-ai-endpoints.js";
 
 function canLaunchReviewAgent(args: {
   getPrMeta: () => PRMetadata | undefined;
@@ -72,6 +73,8 @@ export function createReviewSession(args: {
     addAnnotations: args.addAnnotations,
   });
 
+  const ai = createReviewAIEndpoints({ resolveAgentCwd });
+
   let resolveDecision!: (result: {
     approved: boolean;
     feedback: string;
@@ -95,10 +98,12 @@ export function createReviewSession(args: {
     resolveAgentCwd,
     tour,
     agentJobs,
+    aiEndpoints: ai.endpoints,
     decisionPromise,
     resolveDecision,
     dispose: () => {
       agentJobs.dispose();
+      ai.dispose();
     },
   };
 }

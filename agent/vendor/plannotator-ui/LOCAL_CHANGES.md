@@ -128,7 +128,18 @@ What changed:
 Why it matters on upgrade:
 - Prevents outbound update-check traffic in this environment.
 
-### 8. Version/plugin metadata drift in vendored app assets
+### 8. Ask AI support in all-files review toolbar
+
+File:
+- `packages/review-editor/components/AllFilesDiffView.tsx`
+
+What changed:
+- Threaded AI toolbar props through the all-files diff `ToolbarHost`.
+
+Why it matters on upgrade:
+- Without this wiring, Ask AI appears in the sidebar or focused single-file diff but not when selecting lines in the all-files editor.
+
+### 9. Version/plugin metadata drift in vendored app assets
 
 Files:
 - `apps/hook/.claude-plugin/plugin.json`
@@ -140,7 +151,7 @@ What changed:
 Why it matters on upgrade:
 - Reconcile intentionally. Do not blindly overwrite without checking build/runtime assumptions.
 
-### 9. Local lockfile artifacts existed in patch history
+### 10. Local lockfile artifacts existed in patch history
 
 File:
 - `packages/editor/package-lock.json`
@@ -162,13 +173,15 @@ When upgrading `vendor/plannotator-ui`:
 5. Re-check `packages/ui/hooks/useEditorAnnotations.ts` and `packages/server/editor-annotations.ts` together.
 6. Verify `annotate-last` does not open editor-annotation transport.
 7. Verify update-check behavior remains intentionally disabled or re-decide it explicitly.
-8. Run repo validation after merge.
+8. Verify line-selection Ask AI appears in both focused file diff and all-files diff.
+9. Run repo validation after merge.
 
 ## Validation paths most likely to catch regressions
 
 - Open `/plannotator last` and confirm no repeated `GET /api/editor-annotations` loop.
 - Open plan/file annotation session and confirm editor annotations appear live.
 - Open review session and confirm editor annotations can be selected from sidebar and diff panels.
+- Open review all-files diff, select lines, and confirm Ask AI appears in the toolbar.
 - Run `npm run typecheck`
 - Run `npm test`
 - Run `npm run lint`

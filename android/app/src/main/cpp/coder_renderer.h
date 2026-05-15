@@ -16,6 +16,7 @@ public:
 
     bool init();
     void setFontData(const uint8_t* data, size_t length);
+    void setTheme(uint32_t background, uint32_t cursor, uint32_t cursorText);
     void setTargetRefreshRate(float refreshRate);
     void setCellSize(int width, int height);
     void resize(int width, int height);
@@ -38,6 +39,11 @@ private:
     int cachedRows_ = 0;
     int cachedCursorCol_ = -1;
     int cachedCursorRow_ = -1;
+    GLsizei cachedGlyphVertexCount_ = 0;
+    GLsizei cachedSolidVertexCount_ = 0;
+    uint32_t clearColor_ = 0x101014;
+    uint32_t cursorColor_ = 0xe5e5e5;
+    uint32_t cursorTextColor_ = 0x101014;
     float targetRefreshRate_ = 60.0f;
     std::vector<CoderCell> cachedCells_;
     CoderFont font_;

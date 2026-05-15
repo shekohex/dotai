@@ -42,6 +42,16 @@ Java_com_coder_pi_CoderNative_nativeSetFont(JNIEnv* env, jobject, jlong handle, 
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeSetTheme(JNIEnv* env, jobject, jlong handle, jint foreground, jint background, jint cursor, jint cursorText, jintArray palette) {
+    auto* session = reinterpret_cast<CoderSession*>(handle);
+    jsize length = env->GetArrayLength(palette);
+    jint* data = env->GetIntArrayElements(palette, nullptr);
+    session->terminal.setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
+    session->renderer.setTheme(static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), static_cast<uint32_t>(cursorText));
+    env->ReleaseIntArrayElements(palette, data, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeSetRefreshRate(JNIEnv*, jobject, jlong handle, jfloat refreshRate) {
     reinterpret_cast<CoderSession*>(handle)->renderer.setTargetRefreshRate(refreshRate);
 }

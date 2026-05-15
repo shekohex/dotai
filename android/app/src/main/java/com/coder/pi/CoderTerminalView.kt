@@ -40,7 +40,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
         handle = native.nativeInit(80, 24, cellWidth, cellHeight, nativeToolPath("libbash.so"), nativeToolPath("libbusybox.so"), File(context.filesDir, "bin").absolutePath)
-        native.nativeSetFont(handle, loadConfiguredFont())
+        native.nativeSetFont(handle, CoderFonts.bytes(context))
+        applyTheme(CoderThemes.current(context))
         native.nativeSetRefreshRate(handle, display?.refreshRate ?: 60f)
         native.nativeSurfaceCreated(handle)
     }
@@ -93,7 +94,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         requestFocus()
-        context.getSystemService<InputMethodManager>()?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchY = event.y
@@ -212,18 +212,34 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
+    fun fontSizePoints(): Int {
+        return (cellHeight / 2).coerceIn(8, 32)
+    }
+
+    fun setFontSizePoints(points: Int) {
+        val nextHeight = (points * 2).coerceIn(16, 64)
+        val nextWidth = points.coerceIn(8, 40)
+        cellHeight = nextHeight
+        cellWidth = nextWidth
+        preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
+        if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
+            queueEvent { native.nativeSurfaceChanged(handle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+        }
+    }
+
+    fun setFontFamily(key: String) {
+        CoderFonts.setSelected(context, key)
+        val bytes = CoderFonts.bytes(context, key)
+        if (handle != 0L) queueEvent { native.nativeSetFont(handle, bytes) }
+    }
+
     fun dispose() {
         if (handle != 0L) native.nativeDispose(handle)
         handle = 0L
     }
 
-    private fun loadConfiguredFont(): ByteArray {
-        val fontResource = when (preferences.getString("fontFamily", "jetbrains")) {
-            "geist" -> R.font.geist_mono_geist_mono_nerd_font_mono_regular
-            "maple" -> R.font.maple_mono_normal_maple_mono_normal_regular
-            else -> R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular
-        }
-        return resources.openRawResource(fontResource).use { it.readBytes() }
+    fun applyTheme(theme: CoderTheme) {
+        if (handle != 0L) native.nativeSetTheme(handle, theme.foreground, theme.background, theme.cursor, theme.cursorText, theme.palette)
     }
 
     private fun nativeToolPath(name: String): String {

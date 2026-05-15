@@ -144,6 +144,32 @@ void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
     if (result == GHOSTTY_SUCCESS && written > 0) writePty(reinterpret_cast<const uint8_t*>(output.data()), written);
 }
 
+void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_ || !renderState_) return;
+    auto makeColor = [](uint32_t color) -> GhosttyColorRgb {
+        return GhosttyColorRgb{
+            static_cast<uint8_t>((color >> 16u) & 0xffu),
+            static_cast<uint8_t>((color >> 8u) & 0xffu),
+            static_cast<uint8_t>(color & 0xffu),
+        };
+    };
+    GhosttyColorRgb foregroundColor = makeColor(foreground);
+    GhosttyColorRgb backgroundColor = makeColor(background);
+    GhosttyColorRgb cursorColor = makeColor(cursor);
+    std::array<GhosttyColorRgb, 256> ghosttyPalette{};
+    for (size_t index = 0; index < ghosttyPalette.size(); index++) {
+        uint32_t color = index < paletteLength ? palette[index] : 0;
+        ghosttyPalette[index] = makeColor(color);
+    }
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &foregroundColor);
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, &backgroundColor);
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_COLOR_CURSOR, &cursorColor);
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_COLOR_PALETTE, ghosttyPalette.data());
+    GhosttyRenderStateDirty dirty = GHOSTTY_RENDER_STATE_DIRTY_FULL;
+    ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &dirty);
+}
+
 void CoderTerminal::scroll(int rowDelta) {
     std::lock_guard lock(mutex_);
     if (!terminal_ || rowDelta == 0) return;

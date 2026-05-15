@@ -29,6 +29,7 @@ public:
     void pump();
     void writeUtf8(const char* data, int length);
     void key(int keyCode, int unicodeChar, int metaState);
+    void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
 

@@ -67,6 +67,13 @@ void CoderRenderer::setFontData(const uint8_t* data, size_t length) {
     font_.setFontData(data, length);
 }
 
+void CoderRenderer::setTheme(uint32_t background, uint32_t cursor, uint32_t cursorText) {
+    clearColor_ = background;
+    cursorColor_ = cursor;
+    cursorTextColor_ = ((cursorText >> 16u) & 0xffu) | (cursorText & 0x00ff00u) | ((cursorText & 0xffu) << 16u);
+    cachedCells_.clear();
+}
+
 void CoderRenderer::setTargetRefreshRate(float refreshRate) {
     targetRefreshRate_ = refreshRate > 1.0f ? refreshRate : 60.0f;
 }
@@ -113,16 +120,17 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     int cols, rows, cursorCol, cursorRow;
     auto cells = terminal.snapshot(cols, rows, cursorCol, cursorRow);
     bool shouldUploadBuffers = updateCachedCells(cells, cols, rows, cursorCol, cursorRow);
-    glClearColor(0.06f, 0.06f, 0.08f, 1.0f);
+    glClearColor(((clearColor_ >> 16u) & 255u) / 255.0f, ((clearColor_ >> 8u) & 255u) / 255.0f, (clearColor_ & 255u) / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     std::vector<Vertex> vertices;
     std::vector<SolidVertex> solidVertices;
-    vertices.reserve(cells.size() * 6);
-    solidVertices.reserve((cells.size() + 1) * 6);
     float cw = 2.0f * font_.glyphWidth() / width_;
     float ch = 2.0f * font_.glyphHeight() / height_;
-    for (int row = 0; row < rows; row++) {
-        for (int col = 0; col < cols; col++) {
+    if (shouldUploadBuffers) {
+        vertices.reserve(cells.size() * 6);
+        solidVertices.reserve((cells.size() + 1) * 6);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
             const auto& cell = cells[row * cols + col];
             float x0 = -1.0f + col * cw;
             float y0 = 1.0f - (row + 1) * ch;
@@ -134,9 +142,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             solidVertices.insert(solidVertices.end(), {{x0,y0,br,bg,bb,1.0f},{x1,y0,br,bg,bb,1.0f},{x1,y1,br,bg,bb,1.0f},{x0,y0,br,bg,bb,1.0f},{x1,y1,br,bg,bb,1.0f},{x0,y1,br,bg,bb,1.0f}});
             if (cell.codepointCount == 0) continue;
             float glyphCursorX = x0;
-            float r = ((cell.foreground >> 0) & 255) / 255.0f;
-            float g = ((cell.foreground >> 8) & 255) / 255.0f;
-            float b = ((cell.foreground >> 16) & 255) / 255.0f;
+            uint32_t glyphColor = row == cursorRow && col == cursorCol ? cursorTextColor_ : cell.foreground;
+            float r = ((glyphColor >> 0) & 255) / 255.0f;
+            float g = ((glyphColor >> 8) & 255) / 255.0f;
+            float b = ((glyphColor >> 16) & 255) / 255.0f;
             auto shapedGlyphs = font_.shape(cell.codepoints.data(), cell.codepointCount);
             if (shapedGlyphs.empty()) {
                 for (uint32_t codepointIndex = 0; codepointIndex < cell.codepointCount; codepointIndex++) {
@@ -167,14 +176,20 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 }
                 glyphCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
             }
+            }
         }
-    }
-    if (cursorCol >= 0 && cursorRow >= 0 && cursorCol < cols && cursorRow < rows) {
-        float x0 = -1.0f + cursorCol * cw;
-        float y0 = 1.0f - (cursorRow + 1) * ch;
-        float x1 = x0 + cw;
-        float y1 = y0 + ch;
-        solidVertices.insert(solidVertices.end(), {{x0,y0,0.9f,0.9f,0.9f,0.35f},{x1,y0,0.9f,0.9f,0.9f,0.35f},{x1,y1,0.9f,0.9f,0.9f,0.35f},{x0,y0,0.9f,0.9f,0.9f,0.35f},{x1,y1,0.9f,0.9f,0.9f,0.35f},{x0,y1,0.9f,0.9f,0.9f,0.35f}});
+        if (cursorCol >= 0 && cursorRow >= 0 && cursorCol < cols && cursorRow < rows) {
+            float x0 = -1.0f + cursorCol * cw;
+            float y0 = 1.0f - (cursorRow + 1) * ch;
+            float x1 = x0 + cw;
+            float y1 = y0 + ch;
+            float cr = ((cursorColor_ >> 16u) & 255u) / 255.0f;
+            float cg = ((cursorColor_ >> 8u) & 255u) / 255.0f;
+            float cb = (cursorColor_ & 255u) / 255.0f;
+            solidVertices.insert(solidVertices.end(), {{x0,y0,cr,cg,cb,0.55f},{x1,y0,cr,cg,cb,0.55f},{x1,y1,cr,cg,cb,0.55f},{x0,y0,cr,cg,cb,0.55f},{x1,y1,cr,cg,cb,0.55f},{x0,y1,cr,cg,cb,0.55f}});
+        }
+        cachedGlyphVertexCount_ = static_cast<GLsizei>(vertices.size());
+        cachedSolidVertexCount_ = static_cast<GLsizei>(solidVertices.size());
     }
     glUseProgram(solidProgram_);
     glBindVertexArray(solidVao_);
@@ -182,7 +197,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     if (shouldUploadBuffers) {
         glBufferData(GL_ARRAY_BUFFER, solidVertices.size() * sizeof(SolidVertex), solidVertices.data(), GL_DYNAMIC_DRAW);
     }
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(solidVertices.size()));
+    glDrawArrays(GL_TRIANGLES, 0, cachedSolidVertexCount_);
     glUseProgram(program_);
     glBindVertexArray(vao_);
     glActiveTexture(GL_TEXTURE0);
@@ -191,14 +206,14 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     if (shouldUploadBuffers) {
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_DYNAMIC_DRAW);
     }
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
+    glDrawArrays(GL_TRIANGLES, 0, cachedGlyphVertexCount_);
     static auto lastReport = std::chrono::steady_clock::now();
     static int frameCount = 0;
     frameCount++;
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration<double>(now - lastReport).count();
     if (elapsed >= 2.0) {
-        __android_log_print(ANDROID_LOG_INFO, "CoderRenderer", "fps=%.1f target_hz=%.1f cols=%d rows=%d glyph_vertices=%zu solid_vertices=%zu", frameCount / elapsed, targetRefreshRate_, cols, rows, vertices.size(), solidVertices.size());
+        __android_log_print(ANDROID_LOG_INFO, "CoderRenderer", "fps=%.1f target_hz=%.1f cols=%d rows=%d glyph_vertices=%d solid_vertices=%d", frameCount / elapsed, targetRefreshRate_, cols, rows, cachedGlyphVertexCount_, cachedSolidVertexCount_);
         frameCount = 0;
         lastReport = now;
     }

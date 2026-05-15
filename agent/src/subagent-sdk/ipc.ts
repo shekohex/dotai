@@ -1,8 +1,7 @@
 import net, { type Server, type Socket } from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import type { ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -79,9 +78,8 @@ function createEndpoint(): { endpoint: string; cleanupPath?: string } {
   if (process.platform === "win32") {
     return { endpoint: `\\\\.\\pipe\\pi-subagent-${process.pid}-${randomUUID()}` };
   }
-  const directory = path.join(os.tmpdir(), `pi-subagent-${process.pid}-${randomUUID()}`);
-  mkdirSync(directory, { mode: 0o700, recursive: true });
-  return { endpoint: path.join(directory, "ipc.sock"), cleanupPath: directory };
+  const directory = mkdtempSync(path.join("/tmp", "pi-sg-"));
+  return { endpoint: path.join(directory, "s.sock"), cleanupPath: directory };
 }
 
 export function createSubagentIpcServer(): SubagentIpcServer {
@@ -114,6 +112,7 @@ export function createSubagentIpcServer(): SubagentIpcServer {
       }),
     );
   });
+  server.on("error", () => {});
   server.listen(endpoint);
   server.unref();
   return {

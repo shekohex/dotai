@@ -367,6 +367,40 @@ timedTest("Subagent IPC server rejects frames with invalid route tokens", async 
   }
 });
 
+timedTest("Subagent IPC server uses short Unix socket paths", async () => {
+  const ipcServer = createSubagentIpcServer();
+  try {
+    if (process.platform === "win32") {
+      expect(ipcServer.endpoint).toMatch(/^\\\\\.\\pipe\\pi-subagent-/);
+      return;
+    }
+
+    expect(ipcServer.endpoint).toMatch(/^\/tmp\/pi-sg-/);
+    expect(ipcServer.endpoint.length).toBeLessThan(100);
+  } finally {
+    ipcServer.dispose();
+  }
+});
+
+timedTest("regression: Subagent IPC avoids macOS long os.tmpdir socket paths", async () => {
+  const ipcServer = createSubagentIpcServer();
+  try {
+    if (process.platform === "win32") {
+      expect(ipcServer.endpoint).toMatch(/^\\\\\.\\pipe\\pi-subagent-/);
+      return;
+    }
+
+    const macosLongTmpdirExample =
+      "/var/folders/4j/_07w_xfn3574_0577sbznr3m0000gn/T/pi-subagent-40171-402b5a83-437a-4a58-bca8-76be7bfc302f/s.sock";
+
+    expect(macosLongTmpdirExample.length).toBeGreaterThanOrEqual(100);
+    expect(ipcServer.endpoint).toMatch(/^\/tmp\/pi-sg-[^/]+\/s\.sock$/);
+    expect(ipcServer.endpoint.length).toBeLessThan(100);
+  } finally {
+    ipcServer.dispose();
+  }
+});
+
 timedTest("child IPC bridge forwards all supported extension events", async () => {
   const ipcServer = createSubagentIpcServer();
   const sessionId = "child-session-id";

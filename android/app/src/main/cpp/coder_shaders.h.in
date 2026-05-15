@@ -1,0 +1,9 @@
+#pragma once
+
+static constexpr const char* CoderTerminalVertexShader = R"coder_glsl(@TERMINAL_VERTEX_SHADER@)coder_glsl";
+
+static constexpr const char* CoderTerminalFragmentShader = R"coder_glsl(@TERMINAL_FRAGMENT_SHADER@)coder_glsl";
+
+static constexpr const char* CoderSolidVertexShader = R"coder_glsl(@SOLID_VERTEX_SHADER@)coder_glsl";
+
+static constexpr const char* CoderSolidFragmentShader = R"coder_glsl(@SOLID_FRAGMENT_SHADER@)coder_glsl";

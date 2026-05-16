@@ -102,6 +102,17 @@ fun terminalRemoteKeyBytes(keyCode: Int, unicodeChar: Int): ByteArray? {
     }
 }
 
+fun terminalModifiedKeyBytes(keyCode: Int, unicodeChar: Int, metaState: Int): ByteArray? {
+    if ((metaState and KeyEvent.META_CTRL_ON) != 0) {
+        terminalControlByte(keyCode)?.let {
+            return (if ((metaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + byteArrayOf(it)
+        }
+    }
+    val nextUnicodeChar = if ((metaState and KeyEvent.META_SHIFT_ON) != 0 && unicodeChar > 0) unicodeChar.toChar().uppercaseChar().code else unicodeChar
+    val bytes = terminalRemoteKeyBytes(keyCode, nextUnicodeChar) ?: return null
+    return (if ((metaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + bytes
+}
+
 fun terminalControlByte(char: Char): Byte? {
     return when (char) {
         in 'a'..'z' -> ((char.uppercaseChar().code - '@'.code) and 0x1f).toByte()

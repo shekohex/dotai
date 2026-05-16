@@ -175,20 +175,18 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (shiftLatch) nextMetaState = nextMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
         if (ctrlLatch) nextMetaState = nextMetaState or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
         if (altLatch) nextMetaState = nextMetaState or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
-        if ((nextMetaState and KeyEvent.META_CTRL_ON) != 0) {
-            terminalControlByte(keyCode)?.let {
-                writeInput((if ((nextMetaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + byteArrayOf(it))
-                shiftLatch = false
-                ctrlLatch = false
-                altLatch = false
-                notifyModifierLatchChanged()
-                return
-            }
+        terminalModifiedKeyBytes(keyCode, unicodeChar, nextMetaState)?.takeIf { (nextMetaState and KeyEvent.META_CTRL_ON) != 0 }?.let {
+            writeInput(it)
+            shiftLatch = false
+            ctrlLatch = false
+            altLatch = false
+            notifyModifierLatchChanged()
+            return
         }
         remoteInput?.let {
-            val bytes = terminalRemoteKeyBytes(keyCode, if ((nextMetaState and KeyEvent.META_SHIFT_ON) != 0 && unicodeChar > 0) unicodeChar.toChar().uppercaseChar().code else unicodeChar)
+            val bytes = terminalModifiedKeyBytes(keyCode, unicodeChar, nextMetaState)
             if (bytes != null) {
-                it((if ((nextMetaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + bytes)
+                it(bytes)
                 shiftLatch = false
                 ctrlLatch = false
                 altLatch = false

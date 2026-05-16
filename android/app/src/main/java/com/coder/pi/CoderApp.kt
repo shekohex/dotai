@@ -867,23 +867,26 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
         Canvas(
             Modifier
                 .fillMaxSize()
-                .pointerInput(terminalView, enabled) {
+                .pointerInput(terminalView, enabled, terminalView.copyOnSelectEnabled()) {
                     if (!enabled) return@pointerInput
                     var dragStart: TerminalCellPosition? = null
+                    var dragged = false
                     detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
                             val position = terminalView.cellAt(offset.x, offset.y)
                             dragStart = position
+                            dragged = false
                             onSelectionChange(terminalView.wordRangeAt(position))
                             hapticClick()
                         },
                         onDrag = { change, _ ->
                             val start = dragStart ?: terminalView.cellAt(change.position.x, change.position.y)
+                            dragged = true
                             onSelectionChange(TerminalSelectionRange(start, terminalView.cellAt(change.position.x, change.position.y)))
                             change.consume()
                         },
                         onDragCancel = { dragStart = null },
-                        onDragEnd = { dragStart = null },
+                        onDragEnd = { dragStart = null; if (dragged && terminalView.copyOnSelectEnabled()) onCopy() },
                     )
                 },
         ) {
@@ -1559,6 +1562,7 @@ private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
     var swipeSessionSwitch by remember { mutableStateOf(terminalView.gestureEnabled("swipe_session_switch")) }
     var pinchFontSize by remember { mutableStateOf(terminalView.gestureEnabled("pinch_font_size")) }
     var longPressSelection by remember { mutableStateOf(terminalView.gestureEnabled("long_press_selection")) }
+    var copyOnSelect by remember { mutableStateOf(terminalView.copyOnSelectEnabled()) }
     var dragScroll by remember { mutableStateOf(terminalView.gestureEnabled("drag_scroll")) }
     var holdToClose by remember { mutableStateOf(terminalView.gestureEnabled("hold_to_close")) }
     SettingsScaffold("Gestures", tokens, onBack) {
@@ -1566,6 +1570,7 @@ private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
             SettingsToggleRow(R.drawable.ic_feather_hand, "Swipe Session Switch", swipeSessionSwitch, tokens) { swipeSessionSwitch = it; terminalView.setGestureEnabled("swipe_session_switch", it) }
             SettingsToggleRow(R.drawable.ic_feather_type, "Pinch Font Size", pinchFontSize, tokens) { pinchFontSize = it; terminalView.setGestureEnabled("pinch_font_size", it) }
             SettingsToggleRow(R.drawable.ic_feather_edit_3, "Long-press Selection", longPressSelection, tokens) { longPressSelection = it; terminalView.setGestureEnabled("long_press_selection", it) }
+            SettingsToggleRow(R.drawable.ic_feather_edit_3, "Copy on Select", copyOnSelect, tokens) { copyOnSelect = it; terminalView.setCopyOnSelectEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Drag Scroll", dragScroll, tokens) { dragScroll = it; terminalView.setGestureEnabled("drag_scroll", it) }
             SettingsToggleRow(R.drawable.ic_feather_power, "Hold to Close", holdToClose, tokens) { holdToClose = it; terminalView.setGestureEnabled("hold_to_close", it) }
         }

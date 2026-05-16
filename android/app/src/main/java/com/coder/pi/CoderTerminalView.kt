@@ -373,6 +373,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun autoSendEnabled(): Boolean = preferences.getBoolean("auto_send", false)
 
+    fun setCopyOnSelectEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("copy_on_select", enabled) }
+    }
+
+    fun copyOnSelectEnabled(): Boolean = preferences.getBoolean("copy_on_select", false)
+
     fun setKeyboardPasteEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("keyboard_paste", enabled) }
     }

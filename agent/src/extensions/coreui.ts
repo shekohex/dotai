@@ -5,6 +5,7 @@ import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
 import { applyGitStateUpdatedEvent, GIT_STATE_UPDATED_EVENT } from "./git-state.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
+import { OPENAI_BETTER_UPDATED_EVENT } from "./openai-better/types.js";
 import {
   applyCoreUIWorkingIndicator,
   bindCoreUI,
@@ -203,10 +204,15 @@ function createCoreUISubscriptions(input: {
     }
   });
 
+  const unsubscribeOpenAIBetterEvents = input.pi.events.on(OPENAI_BETTER_UPDATED_EVENT, () => {
+    requestRenderSafely(input.getRequestRender());
+  });
+
   return () => {
     unsubscribeOpenUsageEvents();
     unsubscribeGitStateEvents();
     unsubscribeModeEvents();
+    unsubscribeOpenAIBetterEvents();
   };
 }
 

@@ -3,6 +3,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { GOAL_STATUS_KEY } from "../goal/types.js";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
+import { OPENAI_BETTER_STATUS_KEY } from "../openai-better/types.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { appendGoalRuntimeStatus } from "./goal-status.js";
 import { shortenHome } from "./path.js";
@@ -54,7 +55,13 @@ export function bindCoreUI(
             buildTPSStatus(theme, state),
             footerData.getExtensionStatuses().get(GOAL_STATUS_KEY),
           );
-          const rightTop = buildModelStatus(theme, ctx, pi, state);
+          const rightTop = buildModelStatus(
+            theme,
+            ctx,
+            pi,
+            state,
+            footerData.getExtensionStatuses().get(OPENAI_BETTER_STATUS_KEY),
+          );
           const rightBottom = buildUsageStatus(
             theme,
             ctx,
@@ -144,6 +151,7 @@ function buildModelStatus(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
   state: CoreUIState,
+  fastStatus: string | undefined,
 ): string {
   const modeName = state.activeMode;
   const modePrefix =
@@ -155,10 +163,16 @@ function buildModelStatus(
   const thinkingLevel: ThinkingLevel =
     ctx.model?.reasoning === true ? pi.getThinkingLevel() : "off";
 
+  const suffix =
+    fastStatus !== undefined && fastStatus.length > 0
+      ? `${theme.fg("dim", " · ")}${fastStatus}`
+      : "";
+
   return (
     modePrefix +
     theme.fg("dim", `${providerName}/${modelName}:`) +
-    colorThinkingLevel(theme, thinkingLevel)
+    colorThinkingLevel(theme, thinkingLevel) +
+    suffix
   );
 }
 

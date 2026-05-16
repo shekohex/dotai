@@ -6,6 +6,7 @@ import { Value } from "typebox/value";
 
 import { defaultModes, defaultModesSchema, type DefaultModes } from "./default-modes.js";
 import { defaultInterviewSettings } from "./extensions/interview/settings.js";
+import { defaultOpenAIBetterSettings } from "./extensions/openai-better/settings.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 const PackageJsonSchema = Type.Object({
@@ -24,6 +25,7 @@ export type DefaultModesSettings = { current: AvailableModes };
 export type DefaultSettings = AgentSettings & {
   interview: typeof defaultInterviewSettings;
   modes: DefaultModesSettings;
+  openaiBetter: typeof defaultOpenAIBetterSettings;
 };
 
 export const defaultMode = "build" as const satisfies AvailableModes;
@@ -50,6 +52,7 @@ export const defaultSettings = {
     showTerminalProgress: true,
   },
   interview: defaultInterviewSettings,
+  openaiBetter: defaultOpenAIBetterSettings,
   modes: {
     current: defaultMode,
   },

@@ -5,6 +5,7 @@ import gitStateExtension from "./git-state.js";
 import litellmGatewayExtension from "./litellm.js";
 import modesExtension from "./modes.js";
 import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
+import openAIBetterExtension from "./openai-better/index.js";
 import openUsageExtension from "./openusage/index.js";
 import patchExtension from "./patch.js";
 import webSearchExtension from "./websearch.js";
@@ -19,6 +20,7 @@ export const groupedExtensionsA: GroupedExtensionDefinition[] = [
   { id: "git-state", factory: gitStateExtension },
   { id: "coreui", factory: coreUIExtension },
   { id: "litellm", factory: litellmGatewayExtension },
+  { id: "openai-better", factory: openAIBetterExtension },
   { id: "openusage", factory: openUsageExtension },
   { id: "patch", factory: patchExtension },
   { id: "websearch", factory: webSearchExtension },

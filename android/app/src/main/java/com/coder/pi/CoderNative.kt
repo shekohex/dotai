@@ -1,7 +1,7 @@
 package com.coder.pi
 
 class CoderNative {
-    external fun nativeInit(cols: Int, rows: Int, cellWidth: Int, cellHeight: Int, bashPath: String, busyBoxPath: String, toolsDir: String): Long
+    external fun nativeInit(cols: Int, rows: Int, cellWidth: Int, cellHeight: Int): Long
     external fun nativeDispose(handle: Long)
     external fun nativeSurfaceCreated(handle: Long)
     external fun nativeSetFont(handle: Long, bytes: ByteArray)

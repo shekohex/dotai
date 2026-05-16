@@ -24,7 +24,7 @@ public:
     CoderTerminal();
     ~CoderTerminal();
 
-    bool start(int cols, int rows, int cellWidth, int cellHeight, const char* bashPath, const char* busyBoxPath, const char* toolsDir);
+    bool start(int cols, int rows, int cellWidth, int cellHeight);
     void resize(int cols, int rows, int cellWidth, int cellHeight);
     void pump();
     void writeUtf8(const char* data, int length);
@@ -69,8 +69,6 @@ private:
     std::mutex mutex_;
     int ptyFd_ = -1;
     int childPid_ = -1;
-    std::string bashPath_;
-    std::string busyBoxPath_;
     int cols_ = 80;
     int rows_ = 24;
     int cellWidth_ = 0;

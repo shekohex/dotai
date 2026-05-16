@@ -11,7 +11,6 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.InputConnection
-import java.io.File
 import kotlin.math.roundToInt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
@@ -43,7 +42,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
-        handle = native.nativeInit(80, 24, cellWidth, cellHeight, nativeToolPath("libbash.so"), nativeToolPath("libbusybox.so"), File(context.filesDir, "bin").absolutePath)
+        handle = native.nativeInit(80, 24, cellWidth, cellHeight)
         native.nativeSetFont(handle, CoderFonts.bytes(context))
         applyTextOptions()
         applyTheme(CoderThemes.current(context))
@@ -409,10 +408,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (bytes.isEmpty()) return
         remoteInput?.let { it(bytes); return }
         native.nativeWrite(handle, bytes)
-    }
-
-    private fun nativeToolPath(name: String): String {
-        return File(context.applicationInfo.nativeLibraryDir, name).absolutePath
     }
 
     private fun notifyModifierLatchChanged() {

@@ -38,10 +38,8 @@ CoderTerminal::~CoderTerminal() {
     }
 }
 
-bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight, const char* bashPath, const char* busyBoxPath, const char* toolsDir) {
+bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
     std::lock_guard lock(mutex_);
-    bashPath_ = bashPath ? bashPath : "";
-    busyBoxPath_ = busyBoxPath ? busyBoxPath : "";
     cols_ = std::max(1, cols);
     rows_ = std::max(1, rows);
     cellWidth_ = cellWidth;

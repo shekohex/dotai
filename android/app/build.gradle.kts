@@ -9,11 +9,6 @@ plugins {
 
 val downloadedFontArchives = layout.projectDirectory.dir("src/main/fontArchives")
 val generatedFontResources = layout.buildDirectory.dir("generated/res/vendorFonts")
-val downloadedBusyBox = layout.projectDirectory.dir("src/main/busybox")
-val generatedBusyBoxAssets = layout.buildDirectory.dir("generated/assets/busybox")
-val generatedBusyBoxJniLibs = layout.buildDirectory.dir("generated/jniLibs/busybox")
-val downloadedBash = layout.projectDirectory.dir("src/main/bash")
-val generatedBashJniLibs = layout.buildDirectory.dir("generated/jniLibs/bash")
 
 data class TerminalFontArchive(val family: String, val url: String, val files: List<String>)
 
@@ -72,78 +67,6 @@ val vendorTerminalFonts by tasks.registering {
     }
 }
 
-val busyBoxBinaries = listOf(
-    "arm64-v8a" to "https://dl-cdn.alpinelinux.org/alpine/v3.18/main/aarch64/busybox-static-1.36.1-r7.apk",
-    "x86_64" to "https://dl-cdn.alpinelinux.org/alpine/v3.18/main/x86_64/busybox-static-1.36.1-r7.apk",
-)
-
-val vendorBusyBox by tasks.registering {
-    outputs.dir(generatedBusyBoxAssets)
-    outputs.dir(generatedBusyBoxJniLibs)
-    doLast {
-        val cacheDir = downloadedBusyBox.asFile
-        val outputDir = generatedBusyBoxAssets.get().asFile
-        val jniOutputDir = generatedBusyBoxJniLibs.get().asFile
-        cacheDir.mkdirs()
-        outputDir.deleteRecursively()
-        jniOutputDir.deleteRecursively()
-        busyBoxBinaries.forEach { (abi, url) ->
-            val cachedArchive = cacheDir.resolve("$abi/busybox-static.apk")
-            val cachedBinary = cacheDir.resolve("$abi/busybox")
-            cachedArchive.parentFile.mkdirs()
-            if (!cachedArchive.exists()) {
-                URI(url).toURL().openStream().use { input ->
-                    cachedArchive.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-            if (!cachedBinary.exists()) {
-                copy {
-                    from(tarTree(resources.gzip(cachedArchive)))
-                    into(cachedBinary.parentFile)
-                    include("bin/busybox.static")
-                    eachFile {
-                        path = "busybox"
-                    }
-                    includeEmptyDirs = false
-                }
-            }
-            val outputBinary = outputDir.resolve("busybox/$abi/busybox")
-            outputBinary.parentFile.mkdirs()
-            cachedBinary.copyTo(outputBinary, overwrite = true)
-            val outputJniBinary = jniOutputDir.resolve("$abi/libbusybox.so")
-            outputJniBinary.parentFile.mkdirs()
-            cachedBinary.copyTo(outputJniBinary, overwrite = true)
-        }
-    }
-}
-
-val bashBinaries = listOf(
-    "arm64-v8a" to "https://github.com/robxu9/bash-static/releases/download/5.2.015-1.2.3-2/bash-linux-aarch64",
-    "x86_64" to "https://github.com/robxu9/bash-static/releases/download/5.2.015-1.2.3-2/bash-linux-x86_64",
-)
-
-val vendorBash by tasks.registering {
-    outputs.dir(generatedBashJniLibs)
-    doLast {
-        val cacheDir = downloadedBash.asFile
-        val outputDir = generatedBashJniLibs.get().asFile
-        cacheDir.mkdirs()
-        outputDir.deleteRecursively()
-        bashBinaries.forEach { (abi, url) ->
-            val cachedBinary = cacheDir.resolve("$abi/bash")
-            if (!cachedBinary.exists()) {
-                cachedBinary.parentFile.mkdirs()
-                URI(url).toURL().openStream().use { input ->
-                    cachedBinary.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-            val outputBinary = outputDir.resolve("$abi/libbash.so")
-            outputBinary.parentFile.mkdirs()
-            cachedBinary.copyTo(outputBinary, overwrite = true)
-        }
-    }
-}
-
 android {
     namespace = "com.coder.pi"
     compileSdk {
@@ -195,16 +118,11 @@ android {
     }
     sourceSets {
         getByName("main").res.srcDir(layout.buildDirectory.dir("generated/res/vendorFonts").get().asFile)
-        getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/assets/busybox").get().asFile)
-        getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/jniLibs/busybox").get().asFile)
-        getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/jniLibs/bash").get().asFile)
     }
 }
 
 tasks.named("preBuild") {
     dependsOn(vendorTerminalFonts)
-    dependsOn(vendorBusyBox)
-    dependsOn(vendorBash)
 }
 
 dependencies {

@@ -11,15 +11,9 @@ struct CoderSession {
 };
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_coder_pi_CoderNative_nativeInit(JNIEnv* env, jobject, jint cols, jint rows, jint cellWidth, jint cellHeight, jstring bashPath, jstring busyBoxPath, jstring toolsDir) {
+Java_com_coder_pi_CoderNative_nativeInit(JNIEnv*, jobject, jint cols, jint rows, jint cellWidth, jint cellHeight) {
     auto session = std::make_unique<CoderSession>();
-    const char* bashPathChars = env->GetStringUTFChars(bashPath, nullptr);
-    const char* busyBoxPathChars = env->GetStringUTFChars(busyBoxPath, nullptr);
-    const char* toolsDirChars = env->GetStringUTFChars(toolsDir, nullptr);
-    session->terminal.start(cols, rows, cellWidth, cellHeight, bashPathChars, busyBoxPathChars, toolsDirChars);
-    env->ReleaseStringUTFChars(bashPath, bashPathChars);
-    env->ReleaseStringUTFChars(busyBoxPath, busyBoxPathChars);
-    env->ReleaseStringUTFChars(toolsDir, toolsDirChars);
+    session->terminal.start(cols, rows, cellWidth, cellHeight);
     return reinterpret_cast<jlong>(session.release());
 }
 

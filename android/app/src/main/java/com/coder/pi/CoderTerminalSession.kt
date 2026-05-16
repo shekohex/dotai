@@ -13,6 +13,7 @@ class CoderTerminalSession(
     private val reconnectId: String,
     private val command: String,
     private val onStatusChanged: (String) -> Unit = {},
+    private val onErrorChanged: (String?) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -25,9 +26,14 @@ class CoderTerminalSession(
         mainScope.launch { onStatusChanged(status) }
     }
 
+    private fun updateError(error: String?) {
+        mainScope.launch { onErrorChanged(error) }
+    }
+
     fun start() {
         stopped = false
         reconnectAttempts = 0
+        updateError(null)
         updateStatus(TerminalConnectionStatus.Connecting.wireName)
         terminalView.feedRemoteOutput("\u001bcconnecting to coder workspace\r\n".toByteArray())
         connect(false)
@@ -49,14 +55,17 @@ class CoderTerminalSession(
                 terminalSocket.resize(initialWidth, initialHeight)
                 reconnectAttempts = 0
                 reconnectScheduled = false
+                updateError(null)
                 updateStatus(TerminalConnectionStatus.Connected.wireName)
                 terminalView.feedRemoteOutput((if (reconnecting) "\r\nreconnected to coder workspace\r\n" else "\u001bcconnected to coder workspace\r\n").toByteArray())
             }.onFailure {
                 if (reconnecting && reconnectAttempts < 3 && !stopped) {
                     scheduleReconnect()
                 } else {
+                    val safeError = safeTerminalError(it)
+                    updateError(safeError)
                     updateStatus(TerminalConnectionStatus.Failed.wireName)
-                    terminalView.feedRemoteOutput("\r\nconnection failed: ${safeTerminalError(it)}\r\n".toByteArray())
+                    terminalView.feedRemoteOutput("\r\nconnection failed: $safeError\r\n".toByteArray())
                 }
             }
         }
@@ -78,6 +87,7 @@ class CoderTerminalSession(
         reconnectAttempts += 1
         if (reconnectAttempts > 3) {
             reconnectScheduled = false
+            updateError("Connection closed after reconnect attempts")
             updateStatus(TerminalConnectionStatus.Disconnected.wireName)
             terminalView.feedRemoteOutput("\r\nconnection disconnected\r\n".toByteArray())
             return
@@ -97,6 +107,7 @@ class CoderTerminalSession(
         terminalView.detachRemote()
         terminalView.onTerminalSizeChanged = null
         scope.launch { socket?.close() }
+        updateError(null)
         updateStatus(TerminalConnectionStatus.Disconnected.wireName)
         socket = null
     }

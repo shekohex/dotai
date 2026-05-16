@@ -181,13 +181,17 @@ fun CoderApp(
                     it.setFontFamily(CoderFonts.selectedKey(context))
                     it.applyTheme(theme)
                 }
-                val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis)
+                val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, null)
                 terminalSessions.add(managed)
-                val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command) { status ->
+                val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
                     sessionStore.appendDebugLog("terminal ${launch.title} $status")
                     val index = terminalSessions.indexOfFirst { it.id == id }
                     if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
-                }
+                }, { safeError ->
+                    val index = terminalSessions.indexOfFirst { it.id == id }
+                    if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(errorDetail = safeError)
+                    safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
+                })
                 val index = terminalSessions.indexOfFirst { it.id == id }
                 if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
                 terminalSession.start()
@@ -261,13 +265,17 @@ fun CoderApp(
                                 it.applyTheme(theme)
                             }
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis()))
-                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis())
+                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis(), null)
                             terminalSessions.add(managed)
-                            val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command) { status ->
+                            val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
                                 sessionStore.appendDebugLog("terminal ${launch.title} $status")
                                 val index = terminalSessions.indexOfFirst { it.id == id }
                                 if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
-                            }
+                            }, { safeError ->
+                                val index = terminalSessions.indexOfFirst { it.id == id }
+                                if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(errorDetail = safeError)
+                                safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
+                            })
                             val index = terminalSessions.indexOfFirst { it.id == id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
                             terminalSession.start()
@@ -293,6 +301,7 @@ fun CoderApp(
                     badge = managed.sheet.badge,
                     sessionLabel = tmuxSessionLabel(managed.identity.command),
                     status = managed.sheet.status,
+                    errorDetail = managed.errorDetail,
                     sessionCount = terminalSessions.size,
                     selectedSessionIndex = selectedIndex,
                     onSelectSession = { index -> terminalSessions.getOrNull(index)?.let {
@@ -306,12 +315,16 @@ fun CoderApp(
                         managed.session?.stop()
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis()))
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
-                        if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName))
-                        val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), managed.terminalView, launch.agentId, launch.reconnectId, launch.command) { status ->
+                        if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
+                        val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), managed.terminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
                             sessionStore.appendDebugLog("terminal ${launch.title} $status")
                             val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
                             if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
-                        }
+                        }, { safeError ->
+                            val errorIndex = terminalSessions.indexOfFirst { it.id == managed.id }
+                            if (errorIndex >= 0) terminalSessions[errorIndex] = terminalSessions[errorIndex].copy(errorDetail = safeError)
+                            safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
+                        })
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
                         terminalSession.start()
                     },
@@ -348,7 +361,7 @@ data class TerminalLaunchRequest(val baseUrl: String, val token: String, val age
 
 data class TerminalIdentity(val baseUrl: String, val userId: String, val workspaceId: String, val agentId: String, val command: String)
 
-private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val terminalView: CoderTerminalView, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long)
+private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val terminalView: CoderTerminalView, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val errorDetail: String?)
 
 private const val MaxActiveTerminalSessions = 10
 
@@ -950,6 +963,7 @@ private fun CoderTerminalBottomSheet(
     badge: String,
     sessionLabel: String?,
     status: String,
+    errorDetail: String?,
     sessionCount: Int,
     selectedSessionIndex: Int,
     onSelectSession: (Int) -> Unit,
@@ -997,6 +1011,10 @@ private fun CoderTerminalBottomSheet(
                 if (terminalStatusIsRecoverable(status)) {
                     Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(tokens.background.copy(alpha = 0.92f)).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (terminalStatusFromWireName(status) == TerminalConnectionStatus.Failed) "Terminal failed" else "Terminal disconnected", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
+                        if (!errorDetail.isNullOrBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(errorDetail, color = tokens.secondary, fontSize = captionSize(), lineHeight = 17.sp)
+                        }
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("Retry", color = tokens.background, fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(tokens.accent).clickable { hapticClick(); onRetry() }.padding(horizontal = 14.dp, vertical = 8.dp))

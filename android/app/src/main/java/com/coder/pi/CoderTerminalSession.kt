@@ -19,6 +19,7 @@ class CoderTerminalSession(
     private var socket: CoderTerminalSocket? = null
     private var stopped = false
     private var reconnectAttempts = 0
+    private var reconnectScheduled = false
 
     private fun updateStatus(status: String) {
         mainScope.launch { onStatusChanged(status) }
@@ -47,6 +48,7 @@ class CoderTerminalSession(
                 terminalSocket.start()
                 terminalSocket.resize(initialWidth, initialHeight)
                 reconnectAttempts = 0
+                reconnectScheduled = false
                 updateStatus(TerminalConnectionStatus.Connected.wireName)
                 terminalView.feedRemoteOutput((if (reconnecting) "\r\nreconnected to coder workspace\r\n" else "\u001bcconnected to coder workspace\r\n").toByteArray())
             }.onFailure {
@@ -71,8 +73,11 @@ class CoderTerminalSession(
     }
 
     private fun scheduleReconnect() {
+        if (reconnectScheduled) return
+        reconnectScheduled = true
         reconnectAttempts += 1
         if (reconnectAttempts > 3) {
+            reconnectScheduled = false
             updateStatus(TerminalConnectionStatus.Disconnected.wireName)
             terminalView.feedRemoteOutput("\r\nconnection disconnected\r\n".toByteArray())
             return
@@ -81,12 +86,14 @@ class CoderTerminalSession(
         terminalView.feedRemoteOutput("\r\nreconnecting to coder workspace\r\n".toByteArray())
         scope.launch {
             delay((reconnectAttempts * 750L).coerceAtMost(2500L))
+            reconnectScheduled = false
             if (!stopped) connect(true)
         }
     }
 
     fun stop() {
         stopped = true
+        reconnectScheduled = false
         terminalView.detachRemote()
         terminalView.onTerminalSizeChanged = null
         scope.launch { socket?.close() }

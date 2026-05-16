@@ -28,7 +28,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var lastTouchY = 0f
     private var accumulatedScrollY = 0f
     private var smoothScrollAnimator: ValueAnimator? = null
-    private var smoothScrollPosition = 0f
+    private var smoothScrollPendingPixels = 0f
+    private var smoothScrollGesturePixels = 0f
+    private var smoothScrollVelocityPixelsPerMillis = 0f
+    private var smoothScrollLastEventMillis = 0L
     private var shiftLatch = false
     private var ctrlLatch = false
     private var altLatch = false
@@ -116,16 +119,26 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             MotionEvent.ACTION_DOWN -> {
                 lastTouchY = event.y
                 accumulatedScrollY = 0f
+                beginSmoothScrollGesture()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                accumulatedScrollY += event.y - lastTouchY
+                val deltaY = event.y - lastTouchY
                 lastTouchY = event.y
+                if (smoothScrollEnabled()) {
+                    scrollPixels(deltaY)
+                    return true
+                }
+                accumulatedScrollY += deltaY
                 val rows = (accumulatedScrollY / cellHeight).toInt()
                 if (rows != 0) {
-                    scrollRows(-rows, smooth = smoothScrollEnabled())
+                    scrollRows(-rows)
                     accumulatedScrollY -= rows * cellHeight
                 }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                endSmoothScrollGesture()
                 return true
             }
         }
@@ -231,10 +244,50 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun scrollRows(rowDelta: Int, smooth: Boolean = false) {
-        if (smooth && smoothScrollEnabled()) smoothScrollRows(rowDelta) else scrollTerminal(rowDelta)
+        if (smooth && smoothScrollEnabled()) scrollPixels(-rowDelta * cellHeight.toFloat()) else scrollTerminal(rowDelta)
     }
 
     fun scrollRowHeight(): Int = cellHeight.coerceAtLeast(1)
+
+    fun beginSmoothScrollGesture() {
+        smoothScrollAnimator?.cancel()
+        smoothScrollAnimator = null
+        smoothScrollGesturePixels = 0f
+        smoothScrollVelocityPixelsPerMillis = 0f
+        smoothScrollLastEventMillis = android.os.SystemClock.uptimeMillis()
+    }
+
+    fun scrollPixels(pixelDelta: Float) {
+        if (pixelDelta == 0f) return
+        val now = android.os.SystemClock.uptimeMillis()
+        val elapsed = (now - smoothScrollLastEventMillis).coerceAtLeast(1L).toFloat()
+        smoothScrollLastEventMillis = now
+        smoothScrollGesturePixels += kotlin.math.abs(pixelDelta)
+        val instantVelocity = pixelDelta / elapsed
+        smoothScrollVelocityPixelsPerMillis = smoothScrollVelocityPixelsPerMillis * 0.72f + instantVelocity * 0.28f
+        val acceleration = 1f + (smoothScrollGesturePixels / (cellHeight * 8f)).coerceIn(0f, 2.4f)
+        applyScrollPixels(pixelDelta * scrollSpeedMultiplier() * acceleration)
+    }
+
+    fun endSmoothScrollGesture() {
+        if (!smoothScrollEnabled()) return
+        val initialVelocity = smoothScrollVelocityPixelsPerMillis * scrollSpeedMultiplier()
+        if (kotlin.math.abs(initialVelocity) < 0.08f) return
+        smoothScrollAnimator?.cancel()
+        var lastTime = 0L
+        smoothScrollAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = (320L + kotlin.math.abs(initialVelocity * 420f).toLong()).coerceIn(360L, 900L)
+            addUpdateListener { animator ->
+                val currentTime = animator.currentPlayTime
+                val elapsed = (currentTime - lastTime).coerceAtLeast(0L).toFloat()
+                lastTime = currentTime
+                val progress = animator.animatedFraction
+                val decay = (1f - progress) * (1f - progress)
+                applyScrollPixels(initialVelocity * elapsed * decay)
+            }
+            start()
+        }
+    }
 
     fun setSmoothScrollEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("smooth_scroll", enabled) }
@@ -242,26 +295,20 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun smoothScrollEnabled(): Boolean = preferences.getBoolean("smooth_scroll", true)
 
-    private fun smoothScrollRows(rowDelta: Int) {
-        if (rowDelta == 0) return
-        smoothScrollAnimator?.cancel()
-        val startPosition = smoothScrollPosition
-        val endPosition = startPosition + rowDelta
-        var lastWholeRow = startPosition.toInt()
-        smoothScrollAnimator = ValueAnimator.ofFloat(startPosition, endPosition).apply {
-            duration = (90L + kotlin.math.abs(rowDelta) * 18L).coerceAtMost(240L)
-            addUpdateListener { animator ->
-                val currentPosition = animator.animatedValue as Float
-                val currentWholeRow = currentPosition.toInt()
-                val deltaRows = currentWholeRow - lastWholeRow
-                if (deltaRows != 0) {
-                    scrollTerminal(deltaRows)
-                    lastWholeRow = currentWholeRow
-                }
-                smoothScrollPosition = currentPosition
-            }
-            start()
-        }
+    fun setScrollSpeedPercent(value: Int) {
+        preferences.edit { putInt("scroll_speed_percent", value.coerceIn(50, 300)) }
+    }
+
+    fun scrollSpeedPercent(): Int = preferences.getInt("scroll_speed_percent", 100).coerceIn(50, 300)
+
+    private fun scrollSpeedMultiplier(): Float = scrollSpeedPercent() / 100f
+
+    private fun applyScrollPixels(pixelDelta: Float) {
+        smoothScrollPendingPixels += pixelDelta
+        val rows = (smoothScrollPendingPixels / cellHeight).toInt()
+        if (rows == 0) return
+        scrollTerminal(-rows)
+        smoothScrollPendingPixels -= rows * cellHeight
     }
 
     private fun scrollTerminal(rowDelta: Int) {

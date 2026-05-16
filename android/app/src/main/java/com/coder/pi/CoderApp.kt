@@ -1021,15 +1021,25 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                                     var lastY = event.changes.first().position.y
                                     var accumulatedScrollY = 0f
                                     val rowHeight = terminalView.scrollRowHeight().toFloat()
+                                    terminalView.beginSmoothScrollGesture()
                                     while (true) {
                                         val scrollEvent = awaitPointerEvent()
                                         val change = scrollEvent.changes.firstOrNull() ?: break
-                                        if (scrollEvent.changes.all { it.changedToUpIgnoreConsumed() }) break
-                                        accumulatedScrollY += change.position.y - lastY
+                                        if (scrollEvent.changes.all { it.changedToUpIgnoreConsumed() }) {
+                                            terminalView.endSmoothScrollGesture()
+                                            break
+                                        }
+                                        val deltaY = change.position.y - lastY
                                         lastY = change.position.y
+                                        if (terminalView.smoothScrollEnabled()) {
+                                            terminalView.scrollPixels(deltaY)
+                                            change.consume()
+                                            continue
+                                        }
+                                        accumulatedScrollY += deltaY
                                         val rows = (accumulatedScrollY / rowHeight).toInt()
                                         if (rows != 0) {
-                                            terminalView.scrollRows(-rows, smooth = terminalView.smoothScrollEnabled())
+                                            terminalView.scrollRows(-rows)
                                             accumulatedScrollY -= rows * rowHeight
                                             change.consume()
                                         }
@@ -1960,6 +1970,7 @@ private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
     var copyOnSelect by remember { mutableStateOf(terminalView.copyOnSelectEnabled()) }
     var dragScroll by remember { mutableStateOf(terminalView.gestureEnabled("drag_scroll")) }
     var smoothScroll by remember { mutableStateOf(terminalView.smoothScrollEnabled()) }
+    var scrollSpeedPercent by remember { mutableIntStateOf(terminalView.scrollSpeedPercent()) }
     var holdToClose by remember { mutableStateOf(terminalView.gestureEnabled("hold_to_close")) }
     SettingsScaffold("Gestures", tokens, onBack) {
         SettingsSection("TERMINAL", tokens) {
@@ -1969,6 +1980,19 @@ private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
             SettingsToggleRow(R.drawable.ic_feather_edit_3, "Copy on Select", copyOnSelect, tokens) { copyOnSelect = it; terminalView.setCopyOnSelectEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Drag Scroll", dragScroll, tokens) { dragScroll = it; terminalView.setGestureEnabled("drag_scroll", it) }
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Smooth Scroll", smoothScroll, tokens) { smoothScroll = it; terminalView.setSmoothScrollEnabled(it) }
+            SettingsValueRow(R.drawable.ic_feather_sliders, "Scroll Speed", "Affects smooth drag acceleration and inertia", "$scrollSpeedPercent%", tokens) {
+                scrollSpeedPercent = when (scrollSpeedPercent) {
+                    50 -> 75
+                    75 -> 100
+                    100 -> 125
+                    125 -> 150
+                    150 -> 200
+                    200 -> 250
+                    250 -> 300
+                    else -> 50
+                }
+                terminalView.setScrollSpeedPercent(scrollSpeedPercent)
+            }
             SettingsToggleRow(R.drawable.ic_feather_power, "Hold to Close", holdToClose, tokens) { holdToClose = it; terminalView.setGestureEnabled("hold_to_close", it) }
         }
         item { Text("Gesture changes apply to new terminal interactions immediately.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }

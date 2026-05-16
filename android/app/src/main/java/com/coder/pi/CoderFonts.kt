@@ -2,6 +2,8 @@ package com.coder.pi
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import java.io.File
 
 data class CoderFontOption(
@@ -15,18 +17,20 @@ data class CoderFontOption(
 
 object CoderFonts {
     private const val defaultFontKey = "jetbrains"
+    private const val defaultUiFontKey = "jetbrains"
 
     fun builtInOptions(): List<CoderFontOption> {
         return listOf(
             CoderFontOption("jetbrains", "JetBrains Mono", "Ghostty embedded default", resourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular),
             CoderFontOption("geist", "Geist Mono", "Nerd Font Mono", resourceId = R.font.geist_mono_geist_mono_nerd_font_mono_regular),
+            CoderFontOption("ibm_plex", "IBM Plex Mono", "Blex Nerd Font Mono", resourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_regular),
+            CoderFontOption("iosevka", "Iosevka", "Nerd Font Mono", resourceId = R.font.iosevka_iosevka_nerd_font_mono_regular),
             CoderFontOption("maple", "Maple Mono", "Normal TTF", resourceId = R.font.maple_mono_normal_maple_mono_normal_regular),
         )
     }
 
     fun curatedOptions(): List<CoderFontOption> {
         return listOf(
-            CoderFontOption("iosevka", "Iosevka", "Curated font · v34.2.1", pro = true),
             CoderFontOption("ioskeley", "Ioskeley", "Curated font · v2.0.0-beta.1", pro = true),
             CoderFontOption("dejavu", "DejaVu Sans Mono", "Curated font · v2.37", pro = true),
             CoderFontOption("noto_jp", "Noto Sans JP", "CJK fallback · v2.004", pro = true),
@@ -59,6 +63,32 @@ object CoderFonts {
 
     fun setSelected(context: Context, key: String) {
         context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putString("fontFamily", key).apply()
+        if (uiMatchesTerminal(context)) setSelectedUi(context, key)
+    }
+
+    fun selectedUiKey(context: Context): String {
+        return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("uiFontFamily", defaultUiFontKey) ?: defaultUiFontKey
+    }
+
+    fun selectedUiName(context: Context): String {
+        val key = selectedUiKey(context)
+        return builtInOptions().firstOrNull { it.key == key }?.name ?: "JetBrains Mono"
+    }
+
+    fun setSelectedUi(context: Context, key: String) {
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putString("uiFontFamily", key).apply()
+    }
+
+    fun uiMatchesTerminal(context: Context): Boolean = context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("matchUiTerminalFont", true)
+
+    fun setUiMatchesTerminal(context: Context, enabled: Boolean) {
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putBoolean("matchUiTerminalFont", enabled).apply()
+        if (enabled) setSelectedUi(context, selectedKey(context))
+    }
+
+    fun uiFontFamily(context: Context): FontFamily {
+        val option = builtInOptions().firstOrNull { it.key == selectedUiKey(context) } ?: builtInOptions().first()
+        return option.resourceId?.let { FontFamily(Font(it)) } ?: FontFamily.Monospace
     }
 
     fun bytes(context: Context, key: String = selectedKey(context)): ByteArray {

@@ -10,23 +10,33 @@ plugins {
 val downloadedFontArchives = layout.projectDirectory.dir("src/main/fontArchives")
 val generatedFontResources = layout.buildDirectory.dir("generated/res/vendorFonts")
 
-data class TerminalFontArchive(val family: String, val url: String, val files: List<String>)
+data class TerminalFontArchive(val family: String, val url: String, val includes: List<String>)
 
 val terminalFonts = listOf(
     TerminalFontArchive(
         "GeistMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/GeistMono.zip",
-        listOf("GeistMonoNerdFontMono-Regular.otf"),
+        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
+    ),
+    TerminalFontArchive(
+        "IBMPlexMono",
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/IBMPlexMono.zip",
+        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
+    ),
+    TerminalFontArchive(
+        "Iosevka",
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Iosevka.zip",
+        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
     ),
     TerminalFontArchive(
         "JetBrainsMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/JetBrainsMono.zip",
-        listOf("JetBrainsMonoNerdFontMono-Regular.ttf"),
+        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
     ),
     TerminalFontArchive(
         "MapleMonoNormal",
         "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMonoNormal-TTF.zip",
-        listOf("MapleMonoNormal-Regular.ttf"),
+        listOf("**/*.ttf", "**/*.otf"),
     ),
 )
 
@@ -54,7 +64,7 @@ val vendorTerminalFonts by tasks.registering {
             copy {
                 from(zipTree(archive))
                 into(outputDir)
-                include(font.files.map { "**/$it" })
+                include(font.includes)
                 eachFile {
                     val extension = name.substringAfterLast('.', "ttf").lowercase(Locale.US)
                     val baseName = name.substringBeforeLast('.')

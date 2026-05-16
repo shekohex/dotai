@@ -270,7 +270,11 @@ fun CoderApp(
                     )
                 }
                 AppDestination.TERMINAL -> TerminalPane(terminalView, theme, onShowKeyboard, onHideKeyboard)
-                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, terminalView, theme, tokens, uiRevision, onThemeChanged, onFontChanged) { destination = AppDestination.HOME }
+                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, terminalView, theme, tokens, uiRevision, onThemeChanged, { key ->
+                    terminalView.setFontFamily(key)
+                    terminalSessions.forEach { it.terminalView.setFontFamily(key) }
+                    onFontChanged()
+                }, onFontChanged) { destination = AppDestination.HOME }
             }
             terminalSessions.firstOrNull { it.id == selectedTerminalId }?.let { managed ->
                 val selectedIndex = terminalSessions.indexOfFirst { it.id == managed.id }.coerceAtLeast(0)
@@ -1095,7 +1099,7 @@ private fun RowScope.EmptyToolbarSlot(background: Color) {
 }
 
 @Composable
-private fun SettingsNavigator(session: CoderSession?, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
+private fun SettingsNavigator(session: CoderSession?, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
@@ -1107,7 +1111,7 @@ private fun SettingsNavigator(session: CoderSession?, terminalView: CoderTermina
             }
         }
         SettingsPage.THEME -> ThemePickerScreen(tokens, { page = SettingsPage.ROOT }, onThemeChanged)
-        SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onFontChanged, { page = SettingsPage.TEXT }) { page = SettingsPage.ROOT }
+        SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onFontChanged, { page = SettingsPage.TEXT }) { page = SettingsPage.ROOT }
         SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens) { page = SettingsPage.FONTS }
         SettingsPage.TOOLBAR -> ToolbarSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }) { page = SettingsPage.ROOT }
         SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }) { page = SettingsPage.ROOT }
@@ -1195,22 +1199,26 @@ private fun LazyListScope.ThemeSection(title: String, options: List<CoderThemeOp
 }
 
 @Composable
-private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onFontChanged: () -> Unit, onCustomizeText: () -> Unit, onBack: () -> Unit) {
+private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTerminalFontSelected: (String) -> Unit, onFontChanged: () -> Unit, onCustomizeText: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var fontSize by remember { mutableIntStateOf(terminalView.fontSizePoints()) }
     var selectedFontKey by remember { mutableStateOf(CoderFonts.selectedKey(context)) }
+    var selectedUiFontKey by remember { mutableStateOf(CoderFonts.selectedUiKey(context)) }
+    var matchFonts by remember { mutableStateOf(CoderFonts.uiMatchesTerminal(context)) }
     var importedFonts by remember { mutableStateOf(CoderFonts.importedOptions(context)) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             CoderFonts.importFont(context, uri)?.let { option ->
                 importedFonts = CoderFonts.importedOptions(context)
                 selectedFontKey = option.key
-                terminalView.setFontFamily(option.key)
+                if (matchFonts) selectedUiFontKey = option.key
+                onTerminalFontSelected(option.key)
                 onFontChanged()
             }
         }
     }
     SettingsScaffold("Fonts & Size", tokens, onBack) {
+        item { FontSettingsPreview(tokens, fontSize, CoderFonts.uiFontFamily(context)) }
         SettingsSection("TERMINAL TEXT", tokens) {
             SettingsStepperRow(
                 R.drawable.ic_feather_type,
@@ -1236,7 +1244,25 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onFon
             CoderFonts.builtInOptions().forEach { option ->
                 FontOptionRow(option, selectedFontKey, tokens) {
                     selectedFontKey = option.key
-                    terminalView.setFontFamily(option.key)
+                    if (matchFonts) selectedUiFontKey = option.key
+                    onTerminalFontSelected(option.key)
+                    onFontChanged()
+                }
+            }
+        }
+        SettingsSection("UI MONOSPACE FONT", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_type, "Match Terminal Font", matchFonts, tokens) {
+                matchFonts = it
+                CoderFonts.setUiMatchesTerminal(context, it)
+                if (it) selectedUiFontKey = selectedFontKey
+                onFontChanged()
+            }
+            CoderFonts.builtInOptions().forEach { option ->
+                FontOptionRow(option, selectedUiFontKey, tokens) {
+                    selectedUiFontKey = option.key
+                    matchFonts = false
+                    CoderFonts.setUiMatchesTerminal(context, false)
+                    CoderFonts.setSelectedUi(context, option.key)
                     onFontChanged()
                 }
             }
@@ -1245,7 +1271,8 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onFon
             importedFonts.forEach { option ->
                 FontOptionRow(option, selectedFontKey, tokens) {
                     selectedFontKey = option.key
-                    terminalView.setFontFamily(option.key)
+                    if (matchFonts) selectedUiFontKey = option.key
+                    onTerminalFontSelected(option.key)
                     onFontChanged()
                 }
             }
@@ -1549,6 +1576,29 @@ private fun ConnectionSettingsScreen(session: CoderSession?, tokens: UiTokens, o
             SettingsValueRow(R.drawable.ic_feather_shield, "Token", "Stored in encrypted app storage", "Hidden", tokens) {}
         }
         item { Text("Connection details live here instead of the home screen. Tokens are never displayed or copied into logs.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+    }
+}
+
+@Composable
+private fun FontSettingsPreview(tokens: UiTokens, fontSize: Int, uiFontFamily: FontFamily) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 10.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(16.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Font Preview", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), fontFamily = uiFontFamily)
+            Text("${fontSize}pt", color = tokens.secondary, fontSize = captionSize(), fontFamily = uiFontFamily)
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xff101014)).padding(12.dp)) {
+            Column {
+                Text("› echo \$PATH", color = Color(0xffd8d8ea), fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, maxLines = 1)
+                Text("λ main 󰘧 󰌘 0123456789", color = tokens.accent, fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, maxLines = 1)
+                Text("Bold Italic Regular", color = Color(0xffa7f3d0), fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("Ligatures: -> => != <= >=", color = Color(0xffffcc00), fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(tokens.accent, tokens.success, Color(0xffffcc00), Color(0xffff5c7a), tokens.secondary).forEach { color -> Box(Modifier.size(22.dp).clip(CircleShape).background(color)) }
+        }
     }
 }
 

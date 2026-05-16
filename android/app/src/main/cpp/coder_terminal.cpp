@@ -308,19 +308,6 @@ bool CoderTerminal::spawnPty(int cellWidth, int cellHeight) {
         setenv("HOME", "/", 1);
         setenv("PATH", "/system/bin:/system/xbin", 1);
         setenv("PS1", "$ ", 1);
-        const uint8_t demoOutput[] =
-            "\033[0mNC (No color)\n"
-            "\033[1;37mWHITE\t\033[0;30mBLACK\n"
-            "\033[0;34mBLUE\t\033[1;34mLIGHT_BLUE\n"
-            "\033[0;32mGREEN\t\033[1;32mLIGHT_GREEN\n"
-            "\033[0;36mCYAN\t\033[1;36mLIGHT_CYAN\n"
-            "\033[0;31mRED\t\033[1;31mLIGHT_RED\n"
-            "\033[0;35mPURPLE\t\033[1;35mLIGHT_PURPLE\n"
-            "\033[0;33mYELLOW\t\033[1;33mLIGHT_YELLOW\n"
-            "\033[1;30mGRAY\t\033[0;37mLIGHT_GRAY\n"
-            "\033[11;1H\033[1;32mCURSOR_MOVED\033[0m\n"
-            "\033[0m";
-        write(STDOUT_FILENO, demoOutput, sizeof(demoOutput) - 1);
         execl("/system/bin/sh", "sh", "-i", NULL);
         _exit(127);
     }

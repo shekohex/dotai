@@ -3,6 +3,7 @@
 
 #include <jni.h>
 #include <memory>
+#include <string>
 
 struct CoderSession {
     CoderTerminal terminal;
@@ -52,6 +53,11 @@ Java_com_coder_pi_CoderNative_nativeSetTheme(JNIEnv* env, jobject, jlong handle,
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeSetTextOptions(JNIEnv*, jobject, jlong handle, jboolean ligatures, jboolean cursorBlink, jint cursorMode) {
+    reinterpret_cast<CoderSession*>(handle)->renderer.setTextOptions(ligatures == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeSetRefreshRate(JNIEnv*, jobject, jlong handle, jfloat refreshRate) {
     reinterpret_cast<CoderSession*>(handle)->renderer.setTargetRefreshRate(refreshRate);
 }
@@ -80,6 +86,15 @@ Java_com_coder_pi_CoderNative_nativeWrite(JNIEnv* env, jobject, jlong handle, jb
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeFeed(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
+    auto* session = reinterpret_cast<CoderSession*>(handle);
+    jsize length = env->GetArrayLength(bytes);
+    jbyte* data = env->GetByteArrayElements(bytes, nullptr);
+    session->terminal.feed(reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(length));
+    env->ReleaseByteArrayElements(bytes, data, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeTextInput(JNIEnv* env, jobject, jlong handle, jstring text) {
     auto* session = reinterpret_cast<CoderSession*>(handle);
     const char* chars = env->GetStringUTFChars(text, nullptr);
@@ -99,4 +114,51 @@ Java_com_coder_pi_CoderNative_nativeKeyEvent(JNIEnv*, jobject, jlong handle, jin
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeScroll(JNIEnv*, jobject, jlong handle, jint rowDelta) {
     reinterpret_cast<CoderSession*>(handle)->terminal.scroll(rowDelta);
+}
+
+static void appendUtf8(std::string& output, uint32_t codepoint) {
+    if (codepoint <= 0x7f) {
+        output.push_back(static_cast<char>(codepoint));
+    } else if (codepoint <= 0x7ff) {
+        output.push_back(static_cast<char>(0xc0 | (codepoint >> 6)));
+        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+    } else if (codepoint <= 0xffff) {
+        output.push_back(static_cast<char>(0xe0 | (codepoint >> 12)));
+        output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+    } else {
+        output.push_back(static_cast<char>(0xf0 | (codepoint >> 18)));
+        output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3f)));
+        output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+    }
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_coder_pi_CoderNative_nativeSnapshotText(JNIEnv* env, jobject, jlong handle) {
+    auto* session = reinterpret_cast<CoderSession*>(handle);
+    int cols = 0;
+    int rows = 0;
+    int cursorCol = 0;
+    int cursorRow = 0;
+    auto cells = session->terminal.snapshot(cols, rows, cursorCol, cursorRow);
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray result = env->NewObjectArray(rows, stringClass, env->NewStringUTF(""));
+    for (int row = 0; row < rows; row++) {
+        std::string text;
+        text.reserve(static_cast<size_t>(cols));
+        for (int col = 0; col < cols; col++) {
+            const auto& cell = cells[static_cast<size_t>(row * cols + col)];
+            if (cell.codepointCount == 0) {
+                text.push_back(' ');
+                continue;
+            }
+            for (uint32_t index = 0; index < cell.codepointCount; index++) appendUtf8(text, cell.codepoints[index]);
+        }
+        while (!text.empty() && text.back() == ' ') text.pop_back();
+        jstring line = env->NewStringUTF(text.c_str());
+        env->SetObjectArrayElement(result, row, line);
+        env->DeleteLocalRef(line);
+    }
+    return result;
 }

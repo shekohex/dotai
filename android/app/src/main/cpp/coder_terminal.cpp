@@ -125,6 +125,12 @@ void CoderTerminal::writeUtf8(const char* data, int length) {
     writePty(reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(std::max(0, length)));
 }
 
+void CoderTerminal::feed(const uint8_t* data, size_t length) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_ || data == nullptr || length == 0) return;
+    ghostty_terminal_vt_write(terminal_.get(), data, length);
+}
+
 void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
     std::lock_guard lock(mutex_);
     ghostty_key_encoder_setopt_from_terminal(keyEncoder_.get(), terminal_.get());

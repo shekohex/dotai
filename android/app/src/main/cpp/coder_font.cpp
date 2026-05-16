@@ -28,6 +28,10 @@ void CoderFont::setCellSize(int width, int height) {
     if (texture_ != 0) rebuildAtlas();
 }
 
+void CoderFont::setLigaturesEnabled(bool enabled) {
+    ligaturesEnabled_ = enabled;
+}
+
 bool CoderFont::glyph(uint32_t codepoint, Glyph& outGlyph) {
     uint64_t key = codepoint;
     auto existing = glyphs_.find(key);
@@ -53,6 +57,7 @@ bool CoderFont::glyphByIndex(uint32_t glyphIndex, Glyph& outGlyph) {
 
 std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, uint32_t codepointCount) {
     std::vector<ShapedGlyph> shaped;
+    if (!ligaturesEnabled_) return shaped;
     if (!loadFace() || !harfbuzzFont_ || codepointCount == 0) return shaped;
     hb_buffer_t* buffer = hb_buffer_create();
     hb_buffer_add_codepoints(buffer, codepoints, codepointCount, 0, codepointCount);

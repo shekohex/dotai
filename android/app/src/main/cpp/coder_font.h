@@ -38,6 +38,7 @@ public:
     bool init();
     void setFontData(const uint8_t* data, size_t length);
     void setCellSize(int width, int height);
+    void setLigaturesEnabled(bool enabled);
     bool glyph(uint32_t codepoint, Glyph& outGlyph);
     bool glyphByIndex(uint32_t glyphIndex, Glyph& outGlyph);
     std::vector<ShapedGlyph> shape(const uint32_t* codepoints, uint32_t codepointCount);
@@ -58,8 +59,9 @@ private:
     int glyphWidth_ = 18;
     int glyphHeight_ = 36;
     int baseline_ = 28;
-    int atlasWidth_ = 2048;
-    int atlasHeight_ = 2048;
+    bool ligaturesEnabled_ = true;
+    int atlasWidth_ = 4096;
+    int atlasHeight_ = 4096;
     int shelfX_ = 1;
     int shelfY_ = 1;
     int shelfHeight_ = 0;

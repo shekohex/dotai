@@ -1,6 +1,7 @@
 package com.coder.pi
 
 import android.content.Context
+import android.content.ClipboardManager
 import android.opengl.GLSurfaceView
 import android.util.AttributeSet
 import android.text.InputType
@@ -28,7 +29,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var shiftLatch = false
     private var ctrlLatch = false
     private var altLatch = false
+    private var remoteInput: ((ByteArray) -> Unit)? = null
+    var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
+    var onToolbarActionsChanged: (() -> Unit)? = null
 
     init {
         setEGLContextClientVersion(3)
@@ -41,6 +45,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
         handle = native.nativeInit(80, 24, cellWidth, cellHeight, nativeToolPath("libbash.so"), nativeToolPath("libbusybox.so"), File(context.filesDir, "bin").absolutePath)
         native.nativeSetFont(handle, CoderFonts.bytes(context))
+        applyTextOptions()
         applyTheme(CoderThemes.current(context))
         native.nativeSetRefreshRate(handle, display?.refreshRate ?: 60f)
         native.nativeSurfaceCreated(handle)
@@ -50,6 +55,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         surfaceWidth = width
         surfaceHeight = height
         native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight)
+        notifyTerminalSizeChanged()
     }
 
     override fun onDrawFrame(gl: javax.microedition.khronos.opengles.GL10?) {
@@ -84,6 +90,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (!gestureEnabled("drag_scroll")) return super.onGenericMotionEvent(event)
         if (event.action == MotionEvent.ACTION_SCROLL) {
             val rows = event.getAxisValue(MotionEvent.AXIS_VSCROLL).toInt()
             if (rows != 0) native.nativeScroll(handle, -rows * 3)
@@ -94,6 +101,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         requestFocus()
+        if (!gestureEnabled("drag_scroll")) return super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchY = event.y
@@ -115,12 +123,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+        if (volumeFontSizeEnabled() && keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             adjustFontSize(1)
             return true
         }
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+        if (volumeFontSizeEnabled() && keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             adjustFontSize(-1)
+            return true
+        }
+        if (keyboardPasteEnabled() && keyCode == KeyEvent.KEYCODE_V && ((event.metaState and KeyEvent.META_META_ON) != 0 || ((event.metaState and KeyEvent.META_CTRL_ON) != 0 && (event.metaState and KeyEvent.META_SHIFT_ON) != 0))) {
+            pasteFromClipboard()
             return true
         }
         sendKey(keyCode, event.metaState, event.unicodeChar)
@@ -130,23 +142,32 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     fun sendText(text: String) {
         if (handle == 0L || text.isEmpty()) return
         if (ctrlLatch && text.length == 1) {
-            if (altLatch) native.nativeWrite(handle, byteArrayOf(0x1b))
-            controlByte(text.first())?.let { native.nativeWrite(handle, byteArrayOf(it)) }
+            val output = buildList {
+                if (altLatch) add(0x1b.toByte())
+                terminalControlByte(text.first())?.let { add(it) }
+            }.toByteArray()
+            if (output.isNotEmpty()) writeInput(output)
             shiftLatch = false
             ctrlLatch = false
             altLatch = false
             notifyModifierLatchChanged()
             return
         }
-        if (altLatch) {
-            native.nativeWrite(handle, byteArrayOf(0x1b))
-        }
-        val output = if (shiftLatch && text.length == 1) shiftedText(text.first()).toString() else text
-        if (output.length == 1) native.nativeTextInput(handle, output)
-        else native.nativeWrite(handle, output.toByteArray(Charsets.UTF_8))
+        val prefix = if (altLatch) byteArrayOf(0x1b) else byteArrayOf()
+        val output = if (shiftLatch && text.length == 1) terminalShiftedChar(text.first()).toString() else text
+        if (prefix.isNotEmpty() || remoteInput != null || output.length != 1) writeInput(prefix + output.toByteArray(Charsets.UTF_8))
+        else native.nativeTextInput(handle, output)
         shiftLatch = false
         altLatch = false
         notifyModifierLatchChanged()
+    }
+
+    fun pasteFromClipboard(): Boolean {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+        if (text.isBlank()) return false
+        sendText(text)
+        return true
     }
 
     fun sendKey(keyCode: Int, metaState: Int = 0, unicodeChar: Int = 0) {
@@ -156,9 +177,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (ctrlLatch) nextMetaState = nextMetaState or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
         if (altLatch) nextMetaState = nextMetaState or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
         if ((nextMetaState and KeyEvent.META_CTRL_ON) != 0) {
-            controlByte(keyCode)?.let {
-                if ((nextMetaState and KeyEvent.META_ALT_ON) != 0) native.nativeWrite(handle, byteArrayOf(0x1b))
-                native.nativeWrite(handle, byteArrayOf(it))
+            terminalControlByte(keyCode)?.let {
+                writeInput((if ((nextMetaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + byteArrayOf(it))
+                shiftLatch = false
+                ctrlLatch = false
+                altLatch = false
+                notifyModifierLatchChanged()
+                return
+            }
+        }
+        remoteInput?.let {
+            val bytes = terminalRemoteKeyBytes(keyCode, if ((nextMetaState and KeyEvent.META_SHIFT_ON) != 0 && unicodeChar > 0) unicodeChar.toChar().uppercaseChar().code else unicodeChar)
+            if (bytes != null) {
+                it((if ((nextMetaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + bytes)
                 shiftLatch = false
                 ctrlLatch = false
                 altLatch = false
@@ -195,6 +226,33 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle != 0L) native.nativeScroll(handle, rowDelta)
     }
 
+    fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0
+
+    fun terminalRows(): Int = if (cellHeight > 0) surfaceHeight / cellHeight else 0
+
+    fun cellAt(x: Float, y: Float): TerminalCellPosition {
+        val col = if (cellWidth > 0) (x / cellWidth).toInt().coerceIn(0, (terminalColumns() - 1).coerceAtLeast(0)) else 0
+        val row = if (cellHeight > 0) (y / cellHeight).toInt().coerceIn(0, (terminalRows() - 1).coerceAtLeast(0)) else 0
+        return TerminalCellPosition(row, col)
+    }
+
+    fun selectedText(start: TerminalCellPosition, end: TerminalCellPosition): String {
+        if (handle == 0L) return ""
+        val lines = native.nativeSnapshotText(handle)
+        val range = TerminalSelectionRange(start, end).normalized()
+        return (range.start.row..range.end.row).joinToString("\n") { row ->
+            val line = lines.getOrNull(row).orEmpty()
+            val startCol = if (row == range.start.row) range.start.col else 0
+            val endCol = if (row == range.end.row) range.end.col + 1 else line.length
+            line.substring(startCol.coerceIn(0, line.length), endCol.coerceIn(0, line.length))
+        }.trimEnd()
+    }
+
+    fun snapshotText(): List<String> {
+        if (handle == 0L) return emptyList()
+        return native.nativeSnapshotText(handle).toList()
+    }
+
     fun setKeyboardAvoidanceOffset(offset: Int) {
         translationY = -offset.toFloat()
     }
@@ -209,6 +267,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
             queueEvent { native.nativeSurfaceChanged(handle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+            notifyTerminalSizeChanged()
         }
     }
 
@@ -224,6 +283,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
             queueEvent { native.nativeSurfaceChanged(handle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+            notifyTerminalSizeChanged()
         }
     }
 
@@ -242,68 +302,134 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle != 0L) native.nativeSetTheme(handle, theme.foreground, theme.background, theme.cursor, theme.cursorText, theme.palette)
     }
 
+    fun setLigaturesEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("ligatures", enabled) }
+        applyTextOptions()
+    }
+
+    fun ligaturesEnabled(): Boolean = preferences.getBoolean("ligatures", true)
+
+    fun setCursorBlinkEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("cursorBlink", enabled) }
+        applyTextOptions()
+    }
+
+    fun cursorBlinkEnabled(): Boolean = preferences.getBoolean("cursorBlink", true)
+
+    fun setCursorMode(mode: Int) {
+        preferences.edit { putInt("cursorMode", mode.coerceIn(0, 2)) }
+        applyTextOptions()
+    }
+
+    fun cursorMode(): Int = preferences.getInt("cursorMode", 0).coerceIn(0, 2)
+
+    fun setToolbarActionVisible(action: String, visible: Boolean) {
+        preferences.edit { putBoolean("toolbar.$action", visible) }
+        onToolbarActionsChanged?.invoke()
+    }
+
+    fun toolbarActionVisible(action: String): Boolean = preferences.getBoolean("toolbar.$action", true)
+
+    fun toolbarOrder(): List<String> = normalizeToolbarOrder(preferences.getString("toolbar.order", null))
+
+    fun setToolbarOrder(order: List<String>) {
+        preferences.edit { putString("toolbar.order", order.joinToString(",")) }
+        onToolbarActionsChanged?.invoke()
+    }
+
+    fun setGestureEnabled(gesture: String, enabled: Boolean) {
+        preferences.edit { putBoolean("gesture.$gesture", enabled) }
+        onToolbarActionsChanged?.invoke()
+    }
+
+    fun gestureEnabled(gesture: String): Boolean = preferences.getBoolean("gesture.$gesture", true)
+
+    fun setChatModeEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("chat_mode", enabled) }
+        setToolbarActionVisible("chat", enabled)
+    }
+
+    fun chatModeEnabled(): Boolean = preferences.getBoolean("chat_mode", true)
+
+    fun setAutoSendEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("auto_send", enabled) }
+        onToolbarActionsChanged?.invoke()
+    }
+
+    fun autoSendEnabled(): Boolean = preferences.getBoolean("auto_send", false)
+
+    fun setKeyboardPasteEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("keyboard_paste", enabled) }
+    }
+
+    fun keyboardPasteEnabled(): Boolean = preferences.getBoolean("keyboard_paste", true)
+
+    fun setVolumeFontSizeEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("volume_font_size", enabled) }
+    }
+
+    fun volumeFontSizeEnabled(): Boolean = preferences.getBoolean("volume_font_size", true)
+
+    fun customShortcuts(): List<TerminalShortcut> {
+        return preferences.getString("toolbar.shortcuts", "").orEmpty().split("\n").mapNotNull { line ->
+            val parts = line.split("\t")
+            if (parts.size < 2 || parts[0].isBlank() || parts[1].isBlank()) null else TerminalShortcut(parts[0], parts[1])
+        }
+    }
+
+    fun addCustomShortcut(shortcut: TerminalShortcut) {
+        val next = (customShortcuts() + shortcut).takeLast(8).joinToString("\n") { "${it.label}\t${it.sequence}" }
+        preferences.edit { putString("toolbar.shortcuts", next) }
+        onToolbarActionsChanged?.invoke()
+    }
+
+    fun removeCustomShortcut(index: Int) {
+        val next = customShortcuts().filterIndexed { itemIndex, _ -> itemIndex != index }.joinToString("\n") { "${it.label}\t${it.sequence}" }
+        preferences.edit { putString("toolbar.shortcuts", next) }
+        onToolbarActionsChanged?.invoke()
+    }
+
+    private fun applyTextOptions() {
+        if (handle != 0L) native.nativeSetTextOptions(handle, ligaturesEnabled(), cursorBlinkEnabled(), cursorMode())
+    }
+
+    fun attachRemote(input: (ByteArray) -> Unit) {
+        remoteInput = input
+    }
+
+    fun detachRemote() {
+        remoteInput = null
+    }
+
+    fun feedRemoteOutput(bytes: ByteArray) {
+        if (handle != 0L && bytes.isNotEmpty()) queueEvent { native.nativeFeed(handle, bytes) }
+    }
+
+    private fun writeInput(bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        remoteInput?.let { it(bytes); return }
+        native.nativeWrite(handle, bytes)
+    }
+
     private fun nativeToolPath(name: String): String {
         return File(context.applicationInfo.nativeLibraryDir, name).absolutePath
     }
 
-    private fun controlByte(char: Char): Byte? {
-        return when (char) {
-            in 'a'..'z' -> ((char.uppercaseChar().code - '@'.code) and 0x1f).toByte()
-            in 'A'..'Z' -> ((char.code - '@'.code) and 0x1f).toByte()
-            '@', ' ' -> 0x00
-            '[' -> 0x1b
-            '\\' -> 0x1c
-            ']' -> 0x1d
-            '^' -> 0x1e
-            '_', '/' -> 0x1f
-            '?' -> 0x7f.toByte()
-            else -> null
-        }
-    }
-
-    private fun controlByte(keyCode: Int): Byte? {
-        return when (keyCode) {
-            in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> ((keyCode - KeyEvent.KEYCODE_A + 1) and 0x1f).toByte()
-            KeyEvent.KEYCODE_SPACE -> 0x00
-            KeyEvent.KEYCODE_LEFT_BRACKET -> 0x1b
-            KeyEvent.KEYCODE_BACKSLASH -> 0x1c
-            KeyEvent.KEYCODE_RIGHT_BRACKET -> 0x1d
-            KeyEvent.KEYCODE_6 -> 0x1e
-            KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_SLASH -> 0x1f
-            KeyEvent.KEYCODE_DEL -> 0x7f.toByte()
-            else -> null
-        }
-    }
-
-    private fun shiftedText(char: Char): Char {
-        return when (char) {
-            in 'a'..'z' -> char.uppercaseChar()
-            '1' -> '!'
-            '2' -> '@'
-            '3' -> '#'
-            '4' -> '$'
-            '5' -> '%'
-            '6' -> '^'
-            '7' -> '&'
-            '8' -> '*'
-            '9' -> '('
-            '0' -> ')'
-            '`' -> '~'
-            '-' -> '_'
-            '=' -> '+'
-            '[' -> '{'
-            ']' -> '}'
-            '\\' -> '|'
-            ';' -> ':'
-            '\'' -> '"'
-            ',' -> '<'
-            '.' -> '>'
-            '/' -> '?'
-            else -> char
-        }
-    }
-
     private fun notifyModifierLatchChanged() {
         onModifierLatchChanged?.invoke(shiftLatch, ctrlLatch, altLatch)
+    }
+
+    private fun notifyTerminalSizeChanged() {
+        val columns = terminalColumns()
+        val rows = terminalRows()
+        if (columns > 0 && rows > 0) onTerminalSizeChanged?.invoke(columns, rows)
+    }
+}
+
+data class TerminalCellPosition(val row: Int, val col: Int)
+
+data class TerminalSelectionRange(val start: TerminalCellPosition, val end: TerminalCellPosition) {
+    fun normalized(): TerminalSelectionRange {
+        return if (start.row < end.row || (start.row == end.row && start.col <= end.col)) this else TerminalSelectionRange(end, start)
     }
 }

@@ -74,6 +74,13 @@ void CoderRenderer::setTheme(uint32_t background, uint32_t cursor, uint32_t curs
     cachedCells_.clear();
 }
 
+void CoderRenderer::setTextOptions(bool ligatures, bool cursorBlink, int cursorMode) {
+    font_.setLigaturesEnabled(ligatures);
+    cursorBlink_ = cursorBlink;
+    cursorMode_ = cursorMode < 0 ? 0 : cursorMode > 2 ? 2 : cursorMode;
+    cachedCells_.clear();
+}
+
 void CoderRenderer::setTargetRefreshRate(float refreshRate) {
     targetRefreshRate_ = refreshRate > 1.0f ? refreshRate : 60.0f;
 }
@@ -119,7 +126,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     terminal.pump();
     int cols, rows, cursorCol, cursorRow;
     auto cells = terminal.snapshot(cols, rows, cursorCol, cursorRow);
-    bool shouldUploadBuffers = updateCachedCells(cells, cols, rows, cursorCol, cursorRow);
+    auto now = std::chrono::steady_clock::now();
+    bool cursorVisible = !cursorBlink_ || (std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 550) % 2 == 0;
+    bool shouldUploadBuffers = updateCachedCells(cells, cols, rows, cursorCol, cursorRow) || cachedCursorVisible_ != cursorVisible;
+    cachedCursorVisible_ = cursorVisible;
     glClearColor(((clearColor_ >> 16u) & 255u) / 255.0f, ((clearColor_ >> 8u) & 255u) / 255.0f, (clearColor_ & 255u) / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     std::vector<Vertex> vertices;
@@ -146,8 +156,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float r = ((glyphColor >> 0) & 255) / 255.0f;
             float g = ((glyphColor >> 8) & 255) / 255.0f;
             float b = ((glyphColor >> 16) & 255) / 255.0f;
-            auto shapedGlyphs = font_.shape(cell.codepoints.data(), cell.codepointCount);
-            if (shapedGlyphs.empty()) {
+            auto drawCodepoints = [&]() {
                 for (uint32_t codepointIndex = 0; codepointIndex < cell.codepointCount; codepointIndex++) {
                     uint32_t codepoint = cell.codepoints[codepointIndex];
                     if (codepoint <= ' ') continue;
@@ -160,6 +169,22 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b}});
                     glyphCursorX += 2.0f * static_cast<float>(glyph.advance) / static_cast<float>(width_);
                 }
+            };
+            auto shapedGlyphs = font_.shape(cell.codepoints.data(), cell.codepointCount);
+            if (shapedGlyphs.empty()) {
+                drawCodepoints();
+                continue;
+            }
+            bool shapedGlyphsRenderable = true;
+            for (const auto& shapedGlyph : shapedGlyphs) {
+                CoderFont::Glyph glyph;
+                if (shapedGlyph.glyphId == 0 || !font_.glyphByIndex(shapedGlyph.glyphId, glyph)) {
+                    shapedGlyphsRenderable = false;
+                    break;
+                }
+            }
+            if (!shapedGlyphsRenderable) {
+                drawCodepoints();
                 continue;
             }
             for (const auto& shapedGlyph : shapedGlyphs) {
@@ -178,11 +203,16 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             }
             }
         }
-        if (cursorCol >= 0 && cursorRow >= 0 && cursorCol < cols && cursorRow < rows) {
+        if (cursorVisible && cursorCol >= 0 && cursorRow >= 0 && cursorCol < cols && cursorRow < rows) {
             float x0 = -1.0f + cursorCol * cw;
             float y0 = 1.0f - (cursorRow + 1) * ch;
             float x1 = x0 + cw;
             float y1 = y0 + ch;
+            if (cursorMode_ == 1) {
+                y1 = y0 + ch * 0.16f;
+            } else if (cursorMode_ == 2) {
+                x1 = x0 + cw * 0.16f;
+            }
             float cr = ((cursorColor_ >> 16u) & 255u) / 255.0f;
             float cg = ((cursorColor_ >> 8u) & 255u) / 255.0f;
             float cb = (cursorColor_ & 255u) / 255.0f;
@@ -210,7 +240,6 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     static auto lastReport = std::chrono::steady_clock::now();
     static int frameCount = 0;
     frameCount++;
-    auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration<double>(now - lastReport).count();
     if (elapsed >= 2.0) {
         __android_log_print(ANDROID_LOG_INFO, "CoderRenderer", "fps=%.1f target_hz=%.1f cols=%d rows=%d glyph_vertices=%d solid_vertices=%d", frameCount / elapsed, targetRefreshRate_, cols, rows, cachedGlyphVertexCount_, cachedSolidVertexCount_);

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import io.ktor.client.plugins.ClientRequestException
@@ -910,6 +911,7 @@ private fun CoderTerminalBottomSheet(
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
+    BackHandler { onDismiss() }
     var expanded by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf<TerminalSelectionRange?>(null) }
     val swipeSessionSwitch = terminalView.gestureEnabled("swipe_session_switch")

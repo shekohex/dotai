@@ -74,6 +74,18 @@ class CoderSessionStore(context: Context) {
         localPreferences.edit { putLong("workspace_refresh_interval", value) }
     }
 
+    fun appendDebugLog(message: String, nowMillis: Long = System.currentTimeMillis()) {
+        val safeMessage = safeDebugLogMessage(message)
+        val next = (debugLogs() + "${nowMillis}|$safeMessage").takeLast(160)
+        localPreferences.edit { putString("debug_logs", next.joinToString("\n")) }
+    }
+
+    fun debugLogs(): List<String> = localPreferences.getString("debug_logs", "").orEmpty().lines().filter { it.isNotBlank() }
+
+    fun clearDebugLogs() {
+        localPreferences.edit { remove("debug_logs") }
+    }
+
     fun saveActiveTerminal(metadata: CoderActiveTerminalMetadata) {
         val prefix = activeTerminalStorageKey(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
         val keys = activeTerminalKeys().toMutableSet()
@@ -145,6 +157,15 @@ class CoderSessionStore(context: Context) {
 
     companion object {
         fun activeTerminalKey(stateKey: String, agentId: String, command: String) = "$stateKey.$agentId.${command.hashCode()}.active"
+
+        fun safeDebugLogMessage(value: String): String {
+            return value
+                .replace(Regex("Coder-Session-Token=[^\\s&]+", RegexOption.IGNORE_CASE), "Coder-Session-Token=<hidden>")
+                .replace(Regex("(token|password|secret|reconnect|command)=([^\\s&]+)", RegexOption.IGNORE_CASE), "$1=<hidden>")
+                .replace(Regex("https?://[^\\s]+"), "<url>")
+                .replace(Regex("wss?://[^\\s]+"), "<url>")
+                .take(220)
+        }
 
         fun safePreviewText(value: String): String {
             return value

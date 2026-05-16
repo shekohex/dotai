@@ -37,4 +37,11 @@ class CoderSessionStoreTest {
 
         assertEquals("token=<hidden> password=<hidden> <url> Coder-Session-Token=<hidden>", preview)
     }
+
+    @Test
+    fun safeDebugLogMessageRedactsSensitiveFragments() {
+        val log = CoderSessionStore.safeDebugLogMessage("failed wss://coder.example/path?reconnect=abc command=sh token=secret")
+
+        assertEquals("failed <url> command=<hidden> token=<hidden>", log)
+    }
 }

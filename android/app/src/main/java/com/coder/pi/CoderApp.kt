@@ -108,7 +108,7 @@ import java.util.UUID
 import kotlin.math.abs
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, CONNECTION, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -184,6 +184,7 @@ fun CoderApp(
                 val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis)
                 terminalSessions.add(managed)
                 val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command) { status ->
+                    sessionStore.appendDebugLog("terminal ${launch.title} $status")
                     val index = terminalSessions.indexOfFirst { it.id == id }
                     if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
                 }
@@ -263,6 +264,7 @@ fun CoderApp(
                             val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis())
                             terminalSessions.add(managed)
                             val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command) { status ->
+                                sessionStore.appendDebugLog("terminal ${launch.title} $status")
                                 val index = terminalSessions.indexOfFirst { it.id == id }
                                 if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
                             }
@@ -306,6 +308,7 @@ fun CoderApp(
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName))
                         val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), managed.terminalView, launch.agentId, launch.reconnectId, launch.command) { status ->
+                            sessionStore.appendDebugLog("terminal ${launch.title} $status")
                             val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
                             if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
                         }
@@ -458,9 +461,10 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
         scope.launch {
             refreshInFlight = true
             loadingWorkspaces = true
+            sessionStore.appendDebugLog("workspace refresh started")
             runCatching { api.workspaces() }
-                .onSuccess { workspaces = it; error = null; lastRefreshedAt = System.currentTimeMillis() }
-                .onFailure { failure -> if (failure.isUnauthorized()) onSessionExpired() else error = safeUserError(failure, "Could not load workspaces") }
+                .onSuccess { workspaces = it; error = null; lastRefreshedAt = System.currentTimeMillis(); sessionStore.appendDebugLog("workspace refresh ok ${it.size} workspaces") }
+                .onFailure { failure -> if (failure.isUnauthorized()) onSessionExpired() else { error = safeUserError(failure, "Could not load workspaces"); sessionStore.appendDebugLog("workspace refresh failed ${error ?: "unknown"}") } }
             loadingWorkspaces = false
             refreshInFlight = false
         }
@@ -1155,7 +1159,8 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
         SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
-        SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens) { page = SettingsPage.ROOT }
+        SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens, { page = SettingsPage.DEBUG_LOGS }) { page = SettingsPage.ROOT }
+        SettingsPage.DEBUG_LOGS -> DebugLogsScreen(sessionStore, tokens) { page = SettingsPage.CONNECTION }
         SettingsPage.PLACEHOLDER -> PlaceholderSettingsScreen(placeholderTitle, tokens) { page = SettingsPage.ROOT }
     }
 }
@@ -1627,7 +1632,7 @@ private fun ShortcutKeyGrid(tokens: UiTokens, selectedKey: String, onSelected: (
 }
 
 @Composable
-private fun ConnectionSettingsScreen(session: CoderSession?, sessionStore: CoderSessionStore, tokens: UiTokens, onBack: () -> Unit) {
+private fun ConnectionSettingsScreen(session: CoderSession?, sessionStore: CoderSessionStore, tokens: UiTokens, onDebugLogs: () -> Unit, onBack: () -> Unit) {
     var refreshInterval by remember { mutableStateOf(sessionStore.workspaceRefreshIntervalMillis()) }
     SettingsScaffold("Coder Connection", tokens, onBack) {
         SettingsSection("SAVED CONNECTIONS", tokens) {
@@ -1653,7 +1658,32 @@ private fun ConnectionSettingsScreen(session: CoderSession?, sessionStore: Coder
         SettingsSection("SECURITY", tokens) {
             SettingsValueRow(R.drawable.ic_feather_shield, "Token", "Stored in encrypted app storage", "Hidden", tokens) {}
         }
+        SettingsSection("DIAGNOSTICS", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_terminal, "Debug Logs", "Sanitized connection and terminal events", "Open", tokens, chevron = true) { onDebugLogs() }
+        }
         item { Text("Connection details live here instead of the home screen. Tokens are never displayed or copied into logs.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+    }
+}
+
+@Composable
+private fun DebugLogsScreen(sessionStore: CoderSessionStore, tokens: UiTokens, onBack: () -> Unit) {
+    var logs by remember { mutableStateOf(sessionStore.debugLogs()) }
+    SettingsScaffold("Debug Logs", tokens, onBack) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Sanitized app diagnostics", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.weight(1f))
+                Text("Clear", color = tokens.accent, fontSize = bodySize(), modifier = Modifier.clickable { hapticClick(); sessionStore.clearDebugLogs(); logs = emptyList() })
+            }
+        }
+        SettingsSection("EVENTS · ${logs.size}", tokens) {
+            if (logs.isEmpty()) SettingsValueRow(R.drawable.ic_feather_terminal, "No events yet", "Connection diagnostics will appear here", null, tokens) {}
+            logs.takeLast(80).asReversed().forEach { entry ->
+                val timestamp = entry.substringBefore('|').toLongOrNull() ?: 0L
+                val message = entry.substringAfter('|', entry)
+                SettingsValueRow(R.drawable.ic_feather_terminal, message, relativeSessionTime(timestamp), null, tokens) {}
+            }
+        }
+        item { Text("Logs are bounded and sanitized before storage. Tokens, secret query values, URLs, reconnect IDs, commands, and clipboard contents are not recorded.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
     }
 }
 

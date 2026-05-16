@@ -604,7 +604,18 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Always hide inactive", color = tokens.text, fontSize = bodySize(), modifier = Modifier.weight(1f))
-                    Switch(checked = hideInactive, onCheckedChange = { hideInactive = it; inactiveCollapsed = it; sessionStore.saveHideInactive(it) }, colors = SwitchDefaults.colors(checkedThumbColor = tokens.accent))
+                    Switch(
+                        checked = hideInactive,
+                        onCheckedChange = { hideInactive = it; inactiveCollapsed = it; sessionStore.saveHideInactive(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = tokens.background,
+                            checkedTrackColor = tokens.accent,
+                            checkedBorderColor = tokens.accent,
+                            uncheckedThumbColor = tokens.secondary,
+                            uncheckedTrackColor = tokens.surfaceHigh,
+                            uncheckedBorderColor = tokens.separator,
+                        ),
+                    )
                 }
             }
         }

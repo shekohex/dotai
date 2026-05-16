@@ -294,13 +294,16 @@ fun CoderApp(
                         authState = AuthState.TokenInput(baseUrl)
                         CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(baseUrl.trimEnd('/') + "/cli-auth"))
                     }
-                    is AuthState.TokenInput -> TokenScreen(tokens, state.baseUrl, { baseUrl ->
-                        CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(baseUrl.trimEnd('/') + "/cli-auth"))
-                    }) { baseUrl, token ->
-                        val api = CoderApi(baseUrl, token)
-                        runCatching { api.me() }.onSuccess { user ->
-                            sessionStore.saveSession(baseUrl, token)
-                            authState = AuthState.LoggedIn(CoderSession(baseUrl, token, user))
+                    is AuthState.TokenInput -> {
+                        BackHandler { authState = AuthState.LoggedOut }
+                        TokenScreen(tokens, state.baseUrl, { baseUrl ->
+                            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(baseUrl.trimEnd('/') + "/cli-auth"))
+                        }) { baseUrl, token ->
+                            val api = CoderApi(baseUrl, token)
+                            runCatching { api.me() }.onSuccess { user ->
+                                sessionStore.saveSession(baseUrl, token)
+                                authState = AuthState.LoggedIn(CoderSession(baseUrl, token, user))
+                            }
                         }
                     }
                     is AuthState.LoggedIn -> CoderHomeScreen(
@@ -574,6 +577,14 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     var tmuxLoading by remember { mutableStateOf<CoderWorkspaceAgent?>(null) }
     var tmuxPicker by remember { mutableStateOf<Triple<CoderWorkspace, CoderWorkspaceAgent, List<TmuxSession>>?>(null) }
     val metrics = rememberCoderUiMetrics()
+    BackHandler(enabled = tmuxPicker != null || tmuxLoading != null || selectedAgentPicker != null || selectedWorkspace != null) {
+        when {
+            tmuxPicker != null -> tmuxPicker = null
+            tmuxLoading != null -> tmuxLoading = null
+            selectedAgentPicker != null -> selectedAgentPicker = null
+            selectedWorkspace != null -> selectedWorkspace = null
+        }
+    }
     val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val workspace = selectedWorkspace ?: return@rememberLauncherForActivityResult
         uri?.let {
@@ -1548,25 +1559,38 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
+    fun navigateBack() {
+        page = when (page) {
+            SettingsPage.ROOT -> {
+                onBackToHome()
+                SettingsPage.ROOT
+            }
+            SettingsPage.TEXT -> SettingsPage.FONTS
+            SettingsPage.SHORTCUT -> shortcutBackPage
+            SettingsPage.DEBUG_LOGS -> SettingsPage.CONNECTION
+            else -> SettingsPage.ROOT
+        }
+    }
+    BackHandler { navigateBack() }
     when (page) {
-        SettingsPage.ROOT -> SettingsRootScreen(session, terminalView, theme, tokens, uiRevision, onBackToHome, { page = SettingsPage.THEME }, { page = SettingsPage.FONTS }) {
+        SettingsPage.ROOT -> SettingsRootScreen(session, terminalView, theme, tokens, uiRevision, ::navigateBack, { page = SettingsPage.THEME }, { page = SettingsPage.FONTS }) {
             if (it == "Toolbar") page = SettingsPage.TOOLBAR else if (it == "Shortcuts") page = SettingsPage.SHORTCUTS else if (it == "Keyboard") page = SettingsPage.KEYBOARD else if (it == "Gestures") page = SettingsPage.GESTURES else if (it == "Speech") page = SettingsPage.SPEECH else if (it == "Coder Connection") page = SettingsPage.CONNECTION else {
                 placeholderTitle = it
                 page = SettingsPage.PLACEHOLDER
             }
         }
-        SettingsPage.THEME -> ThemePickerScreen(tokens, { page = SettingsPage.ROOT }, onThemeChanged)
-        SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onTerminalFontSizeSelected, onFontChanged, { page = SettingsPage.TEXT }) { page = SettingsPage.ROOT }
-        SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens) { page = SettingsPage.FONTS }
-        SettingsPage.TOOLBAR -> ToolbarSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }) { page = SettingsPage.ROOT }
-        SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }) { page = SettingsPage.ROOT }
-        SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens) { page = shortcutBackPage }
-        SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
-        SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
-        SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
-        SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens, { page = SettingsPage.DEBUG_LOGS }) { page = SettingsPage.ROOT }
-        SettingsPage.DEBUG_LOGS -> DebugLogsScreen(sessionStore, tokens) { page = SettingsPage.CONNECTION }
-        SettingsPage.PLACEHOLDER -> PlaceholderSettingsScreen(placeholderTitle, tokens) { page = SettingsPage.ROOT }
+        SettingsPage.THEME -> ThemePickerScreen(tokens, ::navigateBack, onThemeChanged)
+        SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onTerminalFontSizeSelected, onFontChanged, { page = SettingsPage.TEXT }, ::navigateBack)
+        SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.TOOLBAR -> ToolbarSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens, { page = SettingsPage.DEBUG_LOGS }, ::navigateBack)
+        SettingsPage.DEBUG_LOGS -> DebugLogsScreen(sessionStore, tokens, ::navigateBack)
+        SettingsPage.PLACEHOLDER -> PlaceholderSettingsScreen(placeholderTitle, tokens, ::navigateBack)
     }
 }
 

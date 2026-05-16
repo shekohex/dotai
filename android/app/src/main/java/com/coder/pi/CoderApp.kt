@@ -8,6 +8,11 @@ import android.view.KeyEvent
 import android.net.Uri
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1301,6 +1306,7 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
             SettingsValueRow(R.drawable.ic_feather_sliders, "Feature Tags", "liga, calt, kern", "Auto", tokens) {}
         }
         SettingsSection("CURSOR", tokens) {
+            CursorSettingsPreview(tokens, cursorMode, cursorBlink)
             SettingsSegmentedControlRow(R.drawable.ic_feather_type, "Cursor Mode", tokens, cursorMode) {
                 cursorMode = it
                 terminalView.setCursorMode(it)
@@ -1315,6 +1321,33 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
             SettingsValueRow(R.drawable.ic_feather_type, "Emoji Fallback", "Color emoji atlas", "Planned", tokens) {}
         }
         item { Text("Ligatures, cursor mode, and cursor blink apply immediately to the native terminal renderer. CJK and emoji fallback are tracked here until fallback font stacks land.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+    }
+}
+
+@Composable
+private fun CursorSettingsPreview(tokens: UiTokens, cursorMode: Int, cursorBlink: Boolean) {
+    val transition = rememberInfiniteTransition(label = "cursor-preview")
+    val blinkAlpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (cursorBlink) 0.18f else 1f,
+        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse),
+        label = "cursor-preview-alpha",
+    )
+    val modeLabels = listOf("Block", "Underline", "Bar")
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        modeLabels.forEachIndexed { index, label ->
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(if (cursorMode == index) tokens.accent.copy(alpha = 0.22f) else tokens.surface).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.height(42.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("A", color = tokens.text, fontSize = 24.sp, fontFamily = FontFamily.Monospace)
+                    when (index) {
+                        0 -> Text("█", color = tokens.accent.copy(alpha = if (cursorMode == index) blinkAlpha else 0.35f), fontSize = 25.sp, fontFamily = FontFamily.Monospace)
+                        1 -> Text("▁", color = tokens.accent.copy(alpha = if (cursorMode == index) blinkAlpha else 0.35f), fontSize = 28.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 18.dp))
+                        else -> Text("▏", color = tokens.accent.copy(alpha = if (cursorMode == index) blinkAlpha else 0.35f), fontSize = 30.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 18.dp))
+                    }
+                }
+                Text(label, color = if (cursorMode == index) tokens.text else tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+            }
+        }
     }
 }
 

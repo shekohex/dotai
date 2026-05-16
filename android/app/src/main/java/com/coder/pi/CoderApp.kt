@@ -16,9 +16,12 @@ import android.net.Uri
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
@@ -35,6 +38,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +77,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +97,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -119,6 +126,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.util.UUID
 import kotlin.math.abs
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
@@ -147,6 +155,27 @@ data class UiTokens(
 )
 
 fun Int.toComposeColor(): Color = Color(0xff000000.toInt() or this)
+
+private fun appTypography(fontFamily: FontFamily): Typography {
+    val base = Typography()
+    return Typography(
+        displayLarge = base.displayLarge.copy(fontFamily = fontFamily),
+        displayMedium = base.displayMedium.copy(fontFamily = fontFamily),
+        displaySmall = base.displaySmall.copy(fontFamily = fontFamily),
+        headlineLarge = base.headlineLarge.copy(fontFamily = fontFamily),
+        headlineMedium = base.headlineMedium.copy(fontFamily = fontFamily),
+        headlineSmall = base.headlineSmall.copy(fontFamily = fontFamily),
+        titleLarge = base.titleLarge.copy(fontFamily = fontFamily),
+        titleMedium = base.titleMedium.copy(fontFamily = fontFamily),
+        titleSmall = base.titleSmall.copy(fontFamily = fontFamily),
+        bodyLarge = base.bodyLarge.copy(fontFamily = fontFamily),
+        bodyMedium = base.bodyMedium.copy(fontFamily = fontFamily),
+        bodySmall = base.bodySmall.copy(fontFamily = fontFamily),
+        labelLarge = base.labelLarge.copy(fontFamily = fontFamily),
+        labelMedium = base.labelMedium.copy(fontFamily = fontFamily),
+        labelSmall = base.labelSmall.copy(fontFamily = fontFamily),
+    )
+}
 
 private fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
     (parent as? ViewGroup)?.removeView(this)
@@ -255,7 +284,8 @@ fun CoderApp(
     }
     HapticTarget.view = LocalContext.current.findActivityView()
     HapticTarget.enabled = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true) }
-    MaterialTheme {
+    val appTypography = remember(uiRevision) { appTypography(CoderFonts.uiFontFamily(context)) }
+    MaterialTheme(typography = appTypography) {
         Box(Modifier.fillMaxSize().background(tokens.background)) {
             when (destination) {
                 AppDestination.HOME -> when (val state = authState) {
@@ -344,6 +374,10 @@ fun CoderApp(
                 AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
                     terminalSessions.forEach { it.terminalView.setFontFamily(key) }
+                    onFontChanged()
+                }, { points ->
+                    terminalView.setFontSizePoints(points)
+                    terminalSessions.forEach { it.terminalView.setFontSizePoints(points) }
                     onFontChanged()
                 }, onFontChanged) { destination = AppDestination.HOME }
             }
@@ -903,7 +937,7 @@ private fun CoderSecondaryButton(label: String, tokens: UiTokens, onClick: () ->
 
 private fun normalizeBaseUrl(value: String) = value.trim().trimEnd('/').let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
 
-private fun defaultShellCommand() = "sh -lc 'exec ${'$'}{SHELL:-/bin/sh}'"
+private fun defaultShellCommand() = "bash -lc 'exec ${'$'}{SHELL:-bash}'"
 
 private fun shellSingleQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 
@@ -971,25 +1005,55 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                 .fillMaxSize()
                 .pointerInput(terminalView, enabled, terminalView.copyOnSelectEnabled()) {
                     if (!enabled) return@pointerInput
-                    var dragStart: TerminalCellPosition? = null
-                    var dragged = false
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { offset ->
-                            val position = terminalView.cellAt(offset.x, offset.y)
-                            dragStart = position
-                            dragged = false
-                            onSelectionChange(terminalView.wordRangeAt(position))
-                            hapticClick()
-                        },
-                        onDrag = { change, _ ->
-                            val start = dragStart ?: terminalView.cellAt(change.position.x, change.position.y)
-                            dragged = true
-                            onSelectionChange(TerminalSelectionRange(start, terminalView.cellAt(change.position.x, change.position.y)))
-                            change.consume()
-                        },
-                        onDragCancel = { dragStart = null },
-                        onDragEnd = { dragStart = null; if (dragged && terminalView.copyOnSelectEnabled()) onCopy() },
-                    )
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startOffset = down.position
+                        var cancelled = false
+                        withTimeoutOrNull(850L) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
+                                    cancelled = true
+                                    return@withTimeoutOrNull
+                                }
+                                if (event.changes.any { (it.position - startOffset).getDistance() > viewConfiguration.touchSlop }) {
+                                    cancelled = true
+                                    var lastY = event.changes.first().position.y
+                                    var accumulatedScrollY = 0f
+                                    val rowHeight = terminalView.scrollRowHeight().toFloat()
+                                    while (true) {
+                                        val scrollEvent = awaitPointerEvent()
+                                        val change = scrollEvent.changes.firstOrNull() ?: break
+                                        if (scrollEvent.changes.all { it.changedToUpIgnoreConsumed() }) break
+                                        accumulatedScrollY += change.position.y - lastY
+                                        lastY = change.position.y
+                                        val rows = (accumulatedScrollY / rowHeight).toInt()
+                                        if (rows != 0) {
+                                            terminalView.scrollRows(-rows, smooth = terminalView.smoothScrollEnabled())
+                                            accumulatedScrollY -= rows * rowHeight
+                                            change.consume()
+                                        }
+                                    }
+                                    return@withTimeoutOrNull
+                                }
+                            }
+                        }
+                        if (cancelled) return@awaitEachGesture
+                        val start = terminalView.cellAt(startOffset.x, startOffset.y)
+                        var dragged = false
+                        onSelectionChange(terminalView.wordRangeAt(start))
+                        hapticClick()
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.changes.all { it.changedToUpIgnoreConsumed() }) break
+                            event.changes.forEach { change ->
+                                dragged = true
+                                onSelectionChange(TerminalSelectionRange(start, terminalView.cellAt(change.position.x, change.position.y)))
+                                change.consume()
+                            }
+                        }
+                        if (dragged && terminalView.copyOnSelectEnabled()) onCopy()
+                    }
                 },
         ) {
             val range = selection?.normalized() ?: return@Canvas
@@ -1063,25 +1127,68 @@ private fun CoderTerminalBottomSheet(
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
-    BackHandler { onDismiss() }
     var expanded by remember { mutableStateOf(false) }
+    var sheetHeightFraction by remember { mutableFloatStateOf(0f) }
+    var sheetClosing by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf<TerminalSelectionRange?>(null) }
+    val scope = rememberCoroutineScope()
     val swipeSessionSwitch = terminalView.gestureEnabled("swipe_session_switch")
     val context = LocalContext.current
     val sessionSwipeModifier = if (swipeSessionSwitch) Modifier.pointerInput(sessionCount, selectedSessionIndex) { detectManagedSessionSwipe(sessionCount, selectedSessionIndex, onSelectSession) } else Modifier
+    val density = LocalDensity.current.density
+    val animatedSheetHeightFraction by animateFloatAsState(if (sheetClosing) 0f else if (expanded) 1f else sheetHeightFraction, animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f), label = "terminal-sheet-height")
+    val scrimAlpha by animateFloatAsState(if (sheetClosing) 0f else if (sheetHeightFraction == 0f) 0f else 0.34f, animationSpec = tween(220), label = "terminal-sheet-scrim")
+    val sheetOffsetY by animateDpAsState(if (sheetClosing) 48.dp else 0.dp, animationSpec = tween(180), label = "terminal-sheet-offset")
+    fun closeSheet() {
+        if (sheetClosing) return
+        sheetClosing = true
+        scope.launch {
+            delay(180)
+            onDismiss()
+        }
+    }
+    BackHandler { closeSheet() }
+    val sheetDragModifier = Modifier.pointerInput(Unit) {
+        var totalDownDrag = 0f
+        detectVerticalDragGestures(
+            onDragStart = { totalDownDrag = 0f },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                totalDownDrag += dragAmount.coerceAtLeast(0f)
+                val next = sheetHeightFraction - (dragAmount / density / 700f)
+                sheetHeightFraction = next.coerceIn(0.28f, 1f)
+                expanded = sheetHeightFraction > 0.96f
+            },
+            onDragEnd = {
+                when {
+                    totalDownDrag > 96f || sheetHeightFraction < 0.38f -> closeSheet()
+                    sheetHeightFraction > 0.82f -> sheetHeightFraction = 0.92f
+                    sheetHeightFraction > 0.62f -> sheetHeightFraction = 0.68f
+                    else -> sheetHeightFraction = 0.44f
+                }
+                expanded = false
+            },
+        )
+    }
+    LaunchedEffect(Unit) {
+        sheetHeightFraction = 0.92f
+        delay(80)
+        terminalView.refreshSurface()
+    }
     Box(Modifier.fillMaxSize()) {
-        SheetScrim(onDismiss)
+        SheetScrim({ closeSheet() }, scrimAlpha)
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
+                .offset(y = sheetOffsetY)
                 .fillMaxWidth()
-                .fillMaxHeight(if (expanded) 1f else 0.92f)
-                .alignBottomSheet(tokens, expanded)
+                .fillMaxHeight(animatedSheetHeightFraction.coerceIn(0.01f, 1f))
+                .alignBottomSheet(tokens, expanded || sheetHeightFraction >= 0.99f)
                 .imePadding(),
         ) {
-            SheetHandle(tokens, onDismiss)
+            SheetHandle(tokens, { closeSheet() }, sheetDragModifier)
             Row(Modifier.fillMaxWidth().height(38.dp).then(sessionSwipeModifier).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xffffcc00)).clickable { hapticClick(); onDismiss() })
+                Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xffffcc00)).clickable { hapticClick(); closeSheet() })
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.size(18.dp).clip(CircleShape).background(tokens.accent).clickable { hapticClick(); expanded = !expanded })
                 Spacer(Modifier.width(14.dp))
@@ -1090,15 +1197,22 @@ private fun CoderTerminalBottomSheet(
                     Text(sessionLabel, color = tokens.accent, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 10.dp, vertical = 4.dp))
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(status, color = if (terminalStatusFromWireName(status) == TerminalConnectionStatus.Connected) tokens.success else tokens.secondary, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
                 if (!networkAvailable) {
                     Spacer(Modifier.width(8.dp))
                     Text("offline", color = Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                AndroidView(factory = { terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme) })
+                AndroidView(factory = { terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme); it.post { it.refreshSurface() } })
                 TerminalPinchFontOverlay(terminalView)
+                TerminalSelectionOverlay(terminalView, theme, terminalView.gestureEnabled("long_press_selection") && !terminalStatusIsRecoverable(status), selection, { selection = it }) {
+                    val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
+                    if (selectedText.isNotBlank()) {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
+                        selection = null
+                    }
+                }
                 if (terminalStatusIsRecoverable(status)) {
                     Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(tokens.background.copy(alpha = 0.92f)).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (terminalStatusFromWireName(status) == TerminalConnectionStatus.Failed) "Terminal failed" else "Terminal disconnected", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
@@ -1111,14 +1225,6 @@ private fun CoderTerminalBottomSheet(
                             Text("Retry", color = tokens.background, fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(tokens.accent).clickable { hapticClick(); onRetry() }.padding(horizontal = 14.dp, vertical = 8.dp))
                             Text("Close", color = tokens.text, fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(tokens.surface).clickable { hapticClick(); onDismiss() }.padding(horizontal = 14.dp, vertical = 8.dp))
                         }
-                    }
-                }
-                TerminalSelectionOverlay(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), selection, { selection = it }) {
-                    val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
-                    if (selectedText.isNotBlank()) {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
-                        selection = null
                     }
                 }
             }
@@ -1383,10 +1489,21 @@ private fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView
                         "chat" -> if (showChat) ToolbarIconButton(R.drawable.ic_feather_message_circle, text, Color.Transparent) { chatMode = true }
                     }
                 }
+                if (!selectionActive) shortcuts.forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.sendText(shortcut.sequence) } }
             }
-            shortcuts.take(2).forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.sendText(shortcut.sequence) } }
+            DPadToolbarButton(text, uiTokens(theme).surface, terminalView)
             ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
         }
+    }
+}
+
+@Composable
+private fun RowScope.DPadToolbarButton(color: Color, background: Color, terminalView: CoderTerminalView) {
+    Box(Modifier.padding(end = 6.dp).size(width = 68.dp, height = 44.dp).clip(RoundedCornerShape(16.dp)).background(background), contentAlignment = Alignment.Center) {
+        Box(Modifier.align(Alignment.TopCenter).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_UP) }, contentAlignment = Alignment.Center) { Text("↑", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
+        Box(Modifier.align(Alignment.BottomCenter).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_DOWN) }, contentAlignment = Alignment.Center) { Text("↓", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
+        Box(Modifier.align(Alignment.CenterStart).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_LEFT) }, contentAlignment = Alignment.Center) { Text("←", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
+        Box(Modifier.align(Alignment.CenterEnd).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_RIGHT) }, contentAlignment = Alignment.Center) { Text("→", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
     }
 }
 
@@ -1417,7 +1534,7 @@ private fun RowScope.EmptyToolbarSlot(background: Color) {
 }
 
 @Composable
-private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSessionStore, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
+private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSessionStore, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onTerminalFontSizeSelected: (Int) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
@@ -1429,7 +1546,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
             }
         }
         SettingsPage.THEME -> ThemePickerScreen(tokens, { page = SettingsPage.ROOT }, onThemeChanged)
-        SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onFontChanged, { page = SettingsPage.TEXT }) { page = SettingsPage.ROOT }
+        SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onTerminalFontSizeSelected, onFontChanged, { page = SettingsPage.TEXT }) { page = SettingsPage.ROOT }
         SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens) { page = SettingsPage.FONTS }
         SettingsPage.TOOLBAR -> ToolbarSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }) { page = SettingsPage.ROOT }
         SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }) { page = SettingsPage.ROOT }
@@ -1518,7 +1635,7 @@ private fun LazyListScope.ThemeSection(title: String, options: List<CoderThemeOp
 }
 
 @Composable
-private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTerminalFontSelected: (String) -> Unit, onFontChanged: () -> Unit, onCustomizeText: () -> Unit, onBack: () -> Unit) {
+private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTerminalFontSelected: (String) -> Unit, onTerminalFontSizeSelected: (Int) -> Unit, onFontChanged: () -> Unit, onCustomizeText: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var fontSize by remember { mutableIntStateOf(terminalView.fontSizePoints()) }
     var selectedFontKey by remember { mutableStateOf(CoderFonts.selectedKey(context)) }
@@ -1537,7 +1654,7 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTer
         }
     }
     SettingsScaffold("Fonts & Size", tokens, onBack) {
-        item { FontSettingsPreview(tokens, fontSize, CoderFonts.uiFontFamily(context)) }
+        item { FontSettingsPreview(tokens, fontSize, CoderFonts.uiFontFamily(context, selectedUiFontKey)) }
         SettingsSection("TERMINAL TEXT", tokens) {
             SettingsStepperRow(
                 R.drawable.ic_feather_type,
@@ -1547,13 +1664,13 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTer
                 {
                     if (fontSize > 8) {
                         fontSize--
-                        terminalView.setFontSizePoints(fontSize)
+                        onTerminalFontSizeSelected(fontSize)
                     }
                 },
                 {
                     if (fontSize < 32) {
                         fontSize++
-                        terminalView.setFontSizePoints(fontSize)
+                        onTerminalFontSizeSelected(fontSize)
                     }
                 },
             )
@@ -1573,7 +1690,10 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTer
             SettingsToggleRow(R.drawable.ic_feather_type, "Match Terminal Font", matchFonts, tokens) {
                 matchFonts = it
                 CoderFonts.setUiMatchesTerminal(context, it)
-                if (it) selectedUiFontKey = selectedFontKey
+                if (it) {
+                    selectedUiFontKey = selectedFontKey
+                    onTerminalFontSelected(selectedFontKey)
+                }
                 onFontChanged()
             }
             CoderFonts.builtInOptions().forEach { option ->
@@ -1839,6 +1959,7 @@ private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
     var longPressSelection by remember { mutableStateOf(terminalView.gestureEnabled("long_press_selection")) }
     var copyOnSelect by remember { mutableStateOf(terminalView.copyOnSelectEnabled()) }
     var dragScroll by remember { mutableStateOf(terminalView.gestureEnabled("drag_scroll")) }
+    var smoothScroll by remember { mutableStateOf(terminalView.smoothScrollEnabled()) }
     var holdToClose by remember { mutableStateOf(terminalView.gestureEnabled("hold_to_close")) }
     SettingsScaffold("Gestures", tokens, onBack) {
         SettingsSection("TERMINAL", tokens) {
@@ -1847,6 +1968,7 @@ private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
             SettingsToggleRow(R.drawable.ic_feather_edit_3, "Long-press Selection", longPressSelection, tokens) { longPressSelection = it; terminalView.setGestureEnabled("long_press_selection", it) }
             SettingsToggleRow(R.drawable.ic_feather_edit_3, "Copy on Select", copyOnSelect, tokens) { copyOnSelect = it; terminalView.setCopyOnSelectEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Drag Scroll", dragScroll, tokens) { dragScroll = it; terminalView.setGestureEnabled("drag_scroll", it) }
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "Smooth Scroll", smoothScroll, tokens) { smoothScroll = it; terminalView.setSmoothScrollEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_power, "Hold to Close", holdToClose, tokens) { holdToClose = it; terminalView.setGestureEnabled("hold_to_close", it) }
         }
         item { Text("Gesture changes apply to new terminal interactions immediately.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }

@@ -20,6 +20,6 @@ class CoderActiveSessionUiTest {
     fun tmuxSessionLabelExtractsNameAndAcronym() {
         assertEquals("main", tmuxSessionLabel("tmux attach-session -t 'main'"))
         assertEquals("PS", tmuxSessionLabel("tmux attach -t 'production-shell'"))
-        assertNull(tmuxSessionLabel("sh"))
+        assertNull(tmuxSessionLabel("bash"))
     }
 }

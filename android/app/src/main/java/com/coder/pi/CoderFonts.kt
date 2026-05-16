@@ -92,8 +92,8 @@ object CoderFonts {
         if (enabled) setSelectedUi(context, selectedKey(context))
     }
 
-    fun uiFontFamily(context: Context): FontFamily {
-        val option = builtInOptions().firstOrNull { it.key == selectedUiKey(context) } ?: builtInOptions().first()
+    fun uiFontFamily(context: Context, key: String = selectedUiKey(context)): FontFamily {
+        val option = builtInOptions().firstOrNull { it.key == key } ?: builtInOptions().first()
         return fontFamily(option)
     }
 

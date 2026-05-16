@@ -1,5 +1,6 @@
 package com.coder.pi
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.ClipboardManager
 import android.opengl.GLSurfaceView
@@ -14,6 +15,7 @@ import android.view.inputmethod.InputConnection
 import kotlin.math.roundToInt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
+import java.lang.ref.WeakReference
 
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
     private val native = CoderNative()
@@ -25,6 +27,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var surfaceHeight = 0
     private var lastTouchY = 0f
     private var accumulatedScrollY = 0f
+    private var smoothScrollAnimator: ValueAnimator? = null
+    private var smoothScrollPosition = 0f
     private var shiftLatch = false
     private var ctrlLatch = false
     private var altLatch = false
@@ -35,6 +39,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onToolbarActionsChanged: (() -> Unit)? = null
 
     init {
+        registerTerminalView(this)
         setEGLContextClientVersion(3)
         setRenderer(this)
         renderMode = RENDERMODE_CONTINUOUSLY
@@ -98,7 +103,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (!gestureEnabled("drag_scroll")) return super.onGenericMotionEvent(event)
         if (event.action == MotionEvent.ACTION_SCROLL) {
             val rows = event.getAxisValue(MotionEvent.AXIS_VSCROLL).toInt()
-            if (rows != 0) native.nativeScroll(handle, -rows * 3)
+            if (rows != 0) scrollTerminal(-rows * 3)
             return true
         }
         return super.onGenericMotionEvent(event)
@@ -118,7 +123,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 lastTouchY = event.y
                 val rows = (accumulatedScrollY / cellHeight).toInt()
                 if (rows != 0) {
-                    native.nativeScroll(handle, -rows)
+                    scrollRows(-rows, smooth = smoothScrollEnabled())
                     accumulatedScrollY -= rows * cellHeight
                 }
                 return true
@@ -225,8 +230,50 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return altLatch
     }
 
-    fun scrollRows(rowDelta: Int) {
-        if (handle != 0L) native.nativeScroll(handle, rowDelta)
+    fun scrollRows(rowDelta: Int, smooth: Boolean = false) {
+        if (smooth && smoothScrollEnabled()) smoothScrollRows(rowDelta) else scrollTerminal(rowDelta)
+    }
+
+    fun scrollRowHeight(): Int = cellHeight.coerceAtLeast(1)
+
+    fun setSmoothScrollEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("smooth_scroll", enabled) }
+    }
+
+    fun smoothScrollEnabled(): Boolean = preferences.getBoolean("smooth_scroll", true)
+
+    private fun smoothScrollRows(rowDelta: Int) {
+        if (rowDelta == 0) return
+        smoothScrollAnimator?.cancel()
+        val startPosition = smoothScrollPosition
+        val endPosition = startPosition + rowDelta
+        var lastWholeRow = startPosition.toInt()
+        smoothScrollAnimator = ValueAnimator.ofFloat(startPosition, endPosition).apply {
+            duration = (90L + kotlin.math.abs(rowDelta) * 18L).coerceAtMost(240L)
+            addUpdateListener { animator ->
+                val currentPosition = animator.animatedValue as Float
+                val currentWholeRow = currentPosition.toInt()
+                val deltaRows = currentWholeRow - lastWholeRow
+                if (deltaRows != 0) {
+                    scrollTerminal(deltaRows)
+                    lastWholeRow = currentWholeRow
+                }
+                smoothScrollPosition = currentPosition
+            }
+            start()
+        }
+    }
+
+    private fun scrollTerminal(rowDelta: Int) {
+        if (handle == 0L || rowDelta == 0) return
+        val mouseTracking = remoteInput != null && native.nativeMouseTracking(handle)
+        if (!mouseTracking) native.nativeScroll(handle, rowDelta)
+        remoteInput?.takeIf { mouseTracking }?.let { input ->
+            val button = if (rowDelta < 0) 64 else 65
+            repeat(kotlin.math.abs(rowDelta).coerceAtMost(12)) {
+                input("\u001b[<${button};1;1M\u001b[<${button};1;1m".toByteArray(Charsets.UTF_8))
+            }
+        }
     }
 
     fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0
@@ -278,6 +325,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         translationY = -offset.toFloat()
     }
 
+    fun refreshSurface() {
+        if (handle != 0L && width > 0 && height > 0) {
+            surfaceWidth = width
+            surfaceHeight = height
+            queueEvent { native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight) }
+            notifyTerminalSizeChanged()
+            requestRender()
+        }
+    }
+
     fun adjustFontSize(delta: Int) {
         val maxHeight = if (surfaceHeight > 0) (surfaceHeight / 8).coerceAtLeast(16) else 48
         val maxWidth = if (surfaceWidth > 0) (surfaceWidth / 20).coerceAtLeast(8) else 28
@@ -315,6 +372,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun dispose() {
+        unregisterTerminalView(this)
         if (handle != 0L) native.nativeDispose(handle)
         handle = 0L
     }
@@ -346,7 +404,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun setToolbarActionVisible(action: String, visible: Boolean) {
         preferences.edit { putBoolean("toolbar.$action", visible) }
-        onToolbarActionsChanged?.invoke()
+        notifyToolbarActionsChanged()
     }
 
     fun toolbarActionVisible(action: String): Boolean = preferences.getBoolean("toolbar.$action", true)
@@ -355,12 +413,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun setToolbarOrder(order: List<String>) {
         preferences.edit { putString("toolbar.order", order.joinToString(",")) }
-        onToolbarActionsChanged?.invoke()
+        notifyToolbarActionsChanged()
     }
 
     fun setGestureEnabled(gesture: String, enabled: Boolean) {
         preferences.edit { putBoolean("gesture.$gesture", enabled) }
-        onToolbarActionsChanged?.invoke()
+        notifyToolbarActionsChanged()
     }
 
     fun gestureEnabled(gesture: String): Boolean = preferences.getBoolean("gesture.$gesture", true)
@@ -374,7 +432,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun setAutoSendEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("auto_send", enabled) }
-        onToolbarActionsChanged?.invoke()
+        notifyToolbarActionsChanged()
     }
 
     fun autoSendEnabled(): Boolean = preferences.getBoolean("auto_send", false)
@@ -407,13 +465,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     fun addCustomShortcut(shortcut: TerminalShortcut) {
         val next = (customShortcuts() + shortcut).takeLast(8).joinToString("\n") { "${it.label}\t${it.sequence}" }
         preferences.edit { putString("toolbar.shortcuts", next) }
-        onToolbarActionsChanged?.invoke()
+        notifyToolbarActionsChanged()
     }
 
     fun removeCustomShortcut(index: Int) {
         val next = customShortcuts().filterIndexed { itemIndex, _ -> itemIndex != index }.joinToString("\n") { "${it.label}\t${it.sequence}" }
         preferences.edit { putString("toolbar.shortcuts", next) }
-        onToolbarActionsChanged?.invoke()
+        notifyToolbarActionsChanged()
+    }
+
+    fun notifyToolbarActionsChanged() {
+        notifyAllTerminalToolbarsChanged()
     }
 
     private fun applyTextOptions() {
@@ -446,6 +508,24 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val columns = terminalColumns()
         val rows = terminalRows()
         if (columns > 0 && rows > 0) onTerminalSizeChanged?.invoke(columns, rows)
+    }
+
+    companion object {
+        private val terminalViews = mutableListOf<WeakReference<CoderTerminalView>>()
+
+        private fun registerTerminalView(view: CoderTerminalView) {
+            terminalViews.removeAll { it.get() == null || it.get() == view }
+            terminalViews.add(WeakReference(view))
+        }
+
+        private fun unregisterTerminalView(view: CoderTerminalView) {
+            terminalViews.removeAll { it.get() == null || it.get() == view }
+        }
+
+        private fun notifyAllTerminalToolbarsChanged() {
+            terminalViews.removeAll { it.get() == null }
+            terminalViews.mapNotNull { it.get() }.forEach { it.onToolbarActionsChanged?.invoke() }
+        }
     }
 }
 

@@ -70,7 +70,7 @@ class CoderApi(private val baseUrl: String, private val token: String) {
     suspend fun runProcess(agentId: String, reconnectId: String, command: String, timeoutMillis: Long): String = withContext(Dispatchers.IO) {
         val output = StringBuilder()
         val latch = CountDownLatch(1)
-        val terminal = CoderTerminalSocket(connectTerminal(agentId, reconnectId, "sh -lc ${shellQuote(command)}", 100, 24))
+        val terminal = CoderTerminalSocket(connectTerminal(agentId, reconnectId, "bash -lc ${shellQuote(command)}", 100, 24))
         terminal.onBytes = { output.append(it.toString(Charsets.UTF_8)) }
         terminal.onClosed = { latch.countDown() }
         terminal.start()

@@ -75,8 +75,6 @@ bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES, reinterpret_cast<const void*>(deviceAttributesEffect));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_XTVERSION, reinterpret_cast<const void*>(xtversionEffect));
 
-    if (!spawnPty(cellWidth, cellHeight)) return false;
-
     return true;
 }
 
@@ -185,6 +183,13 @@ void CoderTerminal::scroll(int rowDelta) {
     ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &dirty);
 }
 
+bool CoderTerminal::mouseTracking() const {
+    if (!terminal_) return false;
+    bool enabled = false;
+    ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING, &enabled);
+    return enabled;
+}
+
 std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow) {
     std::lock_guard lock(mutex_);
     if (terminal_ && renderState_) {
@@ -273,50 +278,6 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursor
 
 uint32_t CoderTerminal::rgb(GhosttyColorRgb color) const {
     return 0xff000000u | static_cast<uint32_t>(color.r) | (static_cast<uint32_t>(color.g) << 8u) | (static_cast<uint32_t>(color.b) << 16u);
-}
-
-bool CoderTerminal::spawnPty(int cellWidth, int cellHeight) {
-    int master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
-    if (master < 0) return false;
-    if (grantpt(master) != 0 || unlockpt(master) != 0) {
-        close(master);
-        return false;
-    }
-    char slaveName[128]{};
-    if (ptsname_r(master, slaveName, sizeof(slaveName)) != 0) {
-        close(master);
-        return false;
-    }
-    winsize size{static_cast<unsigned short>(rows_), static_cast<unsigned short>(cols_), static_cast<unsigned short>(cols_ * cellWidth), static_cast<unsigned short>(rows_ * cellHeight)};
-    pid_t child = fork();
-    if (child < 0) {
-        close(master);
-        return false;
-    }
-    if (child == 0) {
-        setsid();
-        int slave = open(slaveName, O_RDWR);
-        if (slave < 0) _exit(127);
-        ioctl(slave, TIOCSCTTY, 0);
-        ioctl(slave, TIOCSWINSZ, &size);
-        dup2(slave, STDIN_FILENO);
-        dup2(slave, STDOUT_FILENO);
-        dup2(slave, STDERR_FILENO);
-        if (slave > STDERR_FILENO) close(slave);
-        close(master);
-        setenv("TERM", "xterm-256color", 1);
-        setenv("HOME", "/", 1);
-        setenv("PATH", "/system/bin:/system/xbin", 1);
-        setenv("PS1", "$ ", 1);
-        execl("/system/bin/sh", "sh", "-i", NULL);
-        _exit(127);
-    }
-    int flags = fcntl(master, F_GETFL, 0);
-    fcntl(master, F_SETFL, flags | O_NONBLOCK);
-    ioctl(master, TIOCSWINSZ, &size);
-    ptyFd_ = master;
-    childPid_ = child;
-    return true;
 }
 
 void CoderTerminal::writePty(const uint8_t* data, size_t length) {

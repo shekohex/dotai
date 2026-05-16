@@ -47,18 +47,7 @@ class MainActivity : AppCompatActivity() {
                     keyboardTerminalView?.setSoftwareKeyboardAllowed(false)
                     keyboardTerminalView = targetTerminalView
                     targetTerminalView.setSoftwareKeyboardAllowed(true)
-                    targetTerminalView.requestFocus()
-                    targetTerminalView.post {
-                        targetTerminalView.requestFocusFromTouch()
-                        WindowInsetsControllerCompat(window, targetTerminalView).show(WindowInsetsCompat.Type.ime())
-                        getSystemService<InputMethodManager>()?.showSoftInput(targetTerminalView, InputMethodManager.SHOW_IMPLICIT)
-                        targetTerminalView.postDelayed({
-                            targetTerminalView.requestFocusFromTouch()
-                            @Suppress("DEPRECATION")
-                            getSystemService<InputMethodManager>()?.showSoftInput(targetTerminalView, InputMethodManager.SHOW_FORCED)
-                            WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
-                        }, 80)
-                    }
+                    showTerminalKeyboard(targetTerminalView)
                 },
                 onHideKeyboard = {
                     val targetTerminalView = keyboardTerminalView ?: terminalView
@@ -69,6 +58,27 @@ class MainActivity : AppCompatActivity() {
                     WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
                 },
             )
+        }
+    }
+
+    private fun showTerminalKeyboard(targetTerminalView: CoderTerminalView) {
+        val inputMethodManager = getSystemService<InputMethodManager>() ?: return
+        fun requestKeyboard() {
+            targetTerminalView.requestFocus()
+            targetTerminalView.requestFocusFromTouch()
+            inputMethodManager.restartInput(targetTerminalView)
+            WindowInsetsControllerCompat(window, targetTerminalView).show(WindowInsetsCompat.Type.ime())
+            inputMethodManager.showSoftInput(targetTerminalView, InputMethodManager.SHOW_IMPLICIT)
+        }
+        requestKeyboard()
+        targetTerminalView.post {
+            requestKeyboard()
+            targetTerminalView.postDelayed({
+                requestKeyboard()
+                @Suppress("DEPRECATION")
+                inputMethodManager.showSoftInput(targetTerminalView, InputMethodManager.SHOW_FORCED)
+                WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
+            }, 120)
         }
     }
 

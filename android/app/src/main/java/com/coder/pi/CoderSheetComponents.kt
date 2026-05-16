@@ -57,13 +57,13 @@ fun ChatInputBar(tokens: UiTokens, autoSend: Boolean = false, onSubmit: (String)
 }
 
 @Composable
-fun SheetScrim(onDismiss: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f)).clickable { hapticClick(); onDismiss() })
+fun SheetScrim(onDismiss: () -> Unit, alpha: Float = 0.34f) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = alpha)).clickable { hapticClick(); onDismiss() })
 }
 
 @Composable
-fun ColumnScope.SheetHandle(tokens: UiTokens, onClick: (() -> Unit)? = null) {
-    val modifier = if (onClick == null) Modifier.fillMaxWidth().height(18.dp) else Modifier.fillMaxWidth().height(28.dp).clickable { hapticClick(); onClick() }
+fun ColumnScope.SheetHandle(tokens: UiTokens, onClick: (() -> Unit)? = null, dragModifier: Modifier = Modifier) {
+    val modifier = if (onClick == null) Modifier.fillMaxWidth().height(18.dp) else Modifier.fillMaxWidth().height(28.dp).then(dragModifier).clickable { hapticClick(); onClick() }
     Box(modifier, contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
 }
 

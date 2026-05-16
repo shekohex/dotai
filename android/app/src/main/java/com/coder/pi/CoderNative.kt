@@ -15,6 +15,7 @@ class CoderNative {
     external fun nativeTextInput(handle: Long, text: String)
     external fun nativeKeyEvent(handle: Long, keyCode: Int, unicodeChar: Int, metaState: Int)
     external fun nativeScroll(handle: Long, rowDelta: Int)
+    external fun nativeMouseTracking(handle: Long): Boolean
     external fun nativeSnapshotText(handle: Long): Array<String>
 
     companion object {

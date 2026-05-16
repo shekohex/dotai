@@ -32,10 +32,10 @@ public:
     void key(int keyCode, int unicodeChar, int metaState);
     void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
+    bool mouseTracking() const;
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
 
 private:
-    bool spawnPty(int cellWidth, int cellHeight);
     void writePty(const uint8_t* data, size_t length);
     uint32_t rgb(GhosttyColorRgb color) const;
     GhosttyKey mapAndroidKey(int keyCode) const;

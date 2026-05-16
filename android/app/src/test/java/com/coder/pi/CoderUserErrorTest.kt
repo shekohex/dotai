@@ -8,7 +8,7 @@ import org.junit.Test
 class CoderUserErrorTest {
     @Test
     fun safeUserErrorHidesSensitiveValues() {
-        val error = safeUserError(IllegalStateException("failed https://coder.example?token=abc&command=sh Coder-Session-Token=secret"), "fallback")
+        val error = safeUserError(IllegalStateException("failed https://coder.example?token=abc&command=bash Coder-Session-Token=secret"), "fallback")
 
         assertFalse(error.contains("abc"))
         assertFalse(error.contains("secret"))

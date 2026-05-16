@@ -23,7 +23,7 @@ class CoderTerminalSession(
     private var reconnectScheduled = false
     private var networkUnavailable = false
 
-    private val maxReconnectAttempts = 8
+    private val maxReconnectAttempts = Int.MAX_VALUE
 
     private fun updateStatus(status: String) {
         mainScope.launch { onStatusChanged(status) }
@@ -60,7 +60,7 @@ class CoderTerminalSession(
                 updateError(null)
                 updateStatus(TerminalConnectionStatus.Connected.wireName)
             }.onFailure {
-                if (!stopped && reconnectAttempts < maxReconnectAttempts && (reconnecting || networkUnavailable)) {
+                if (!stopped) {
                     scheduleReconnect()
                 } else {
                     val safeError = safeTerminalError(it)
@@ -93,7 +93,7 @@ class CoderTerminalSession(
         }
         updateStatus(TerminalConnectionStatus.Reconnecting.wireName)
         val delayMillis = (500L shl (reconnectAttempts - 1).coerceAtMost(4)).coerceAtMost(8000L)
-        updateError("${if (networkUnavailable) "Network unavailable · " else ""}reconnecting in ${delayMillis / 1000.0}s · attempt $reconnectAttempts/$maxReconnectAttempts")
+        updateError("${if (networkUnavailable) "Network unavailable · " else ""}reconnecting in ${delayMillis / 1000.0}s · attempt $reconnectAttempts")
         scope.launch {
             delay(delayMillis)
             reconnectScheduled = false

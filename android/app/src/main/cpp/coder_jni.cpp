@@ -110,6 +110,11 @@ Java_com_coder_pi_CoderNative_nativeScroll(JNIEnv*, jobject, jlong handle, jint 
     reinterpret_cast<CoderSession*>(handle)->terminal.scroll(rowDelta);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_coder_pi_CoderNative_nativeMouseTracking(JNIEnv*, jobject, jlong handle) {
+    return reinterpret_cast<CoderSession*>(handle)->terminal.mouseTracking() ? JNI_TRUE : JNI_FALSE;
+}
+
 static void appendUtf8(std::string& output, uint32_t codepoint) {
     if (codepoint <= 0x7f) {
         output.push_back(static_cast<char>(codepoint));

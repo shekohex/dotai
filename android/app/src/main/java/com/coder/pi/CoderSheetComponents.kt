@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -38,9 +39,12 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun ChatInputBar(tokens: UiTokens, autoSend: Boolean = false, onSubmit: (String) -> Unit, onClose: () -> Unit) {
     var text by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxWidth().height(96.dp).background(tokens.background).padding(horizontal = 18.dp, vertical = 10.dp), verticalArrangement = Arrangement.Center) {
-        Column(Modifier.fillMaxWidth().height(74.dp).clip(RoundedCornerShape(22.dp)).background(tokens.surfaceHigh).padding(horizontal = 16.dp, vertical = 10.dp)) {
-            BasicTextField(value = text, onValueChange = { value -> if (autoSend && value.endsWith("\n")) { value.trimEnd().takeIf { it.isNotBlank() }?.let(onSubmit); text = "" } else text = value }, textStyle = androidx.compose.ui.text.TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth().weight(1f), decorationBox = { inner -> if (text.isEmpty()) Text("Chat via Moshi...", color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace); inner() })
+    Column(Modifier.fillMaxWidth().height(148.dp).background(tokens.background).padding(horizontal = 18.dp, vertical = 10.dp), verticalArrangement = Arrangement.Center) {
+        Column(Modifier.fillMaxWidth().height(126.dp).clip(RoundedCornerShape(22.dp)).background(tokens.surfaceHigh).padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Box(Modifier.fillMaxWidth().height(56.dp)) {
+                BasicTextField(value = text, onValueChange = { value -> if (autoSend && value.endsWith("\n")) { value.trimEnd().takeIf { it.isNotBlank() }?.let(onSubmit); text = "" } else text = value }, textStyle = androidx.compose.ui.text.TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 20.sp), modifier = Modifier.fillMaxSize(), decorationBox = { inner -> if (text.isEmpty()) Text(if (autoSend) "Enter sends" else "Enter newline, ↑ sends", color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 20.sp); inner() })
+            }
+            Text(if (autoSend) "Auto Send" else "Multiline", color = tokens.secondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("+", color = tokens.text, fontSize = 24.sp, modifier = Modifier.width(32.dp).clickable { hapticClick() })
                 Text("×", color = tokens.text, fontSize = 24.sp, modifier = Modifier.width(32.dp).clickable { hapticClick(); onClose() })

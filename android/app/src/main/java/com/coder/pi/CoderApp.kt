@@ -1605,6 +1605,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         SettingsSection("DICTATION INPUT", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_message_circle, "Chat Input Mode", chatMode, tokens) { chatMode = it; terminalView.setChatModeEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_send, "Auto Send", autoSend, tokens) { autoSend = it; terminalView.setAutoSendEnabled(it) }
+            SettingsValueRow(R.drawable.ic_feather_keyboard, "Enter Behavior", if (autoSend) "Enter submits chat input" else "Enter inserts newline; send button submits", null, tokens) {}
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
         }
         SettingsSection("BEHAVIOR", tokens) {

@@ -830,7 +830,7 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                         onDragStart = { offset ->
                             val position = terminalView.cellAt(offset.x, offset.y)
                             dragStart = position
-                            onSelectionChange(TerminalSelectionRange(position, position))
+                            onSelectionChange(terminalView.wordRangeAt(position))
                             hapticClick()
                         },
                         onDrag = { change, _ ->

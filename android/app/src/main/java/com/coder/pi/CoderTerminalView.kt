@@ -245,6 +245,24 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }.trimEnd()
     }
 
+    fun wordRangeAt(position: TerminalCellPosition): TerminalSelectionRange {
+        if (handle == 0L) return TerminalSelectionRange(position, position)
+        val line = native.nativeSnapshotText(handle).getOrNull(position.row).orEmpty()
+        if (line.isBlank()) return TerminalSelectionRange(position, position)
+        val col = position.col.coerceIn(0, (line.length - 1).coerceAtLeast(0))
+        val targetCol = when {
+            line.getOrNull(col)?.isTerminalWordChar() == true -> col
+            col > 0 && line.getOrNull(col - 1)?.isTerminalWordChar() == true -> col - 1
+            else -> col
+        }
+        if (line.getOrNull(targetCol)?.isTerminalWordChar() != true) return TerminalSelectionRange(position, position)
+        var start = targetCol
+        while (start > 0 && line[start - 1].isTerminalWordChar()) start--
+        var end = targetCol
+        while (end + 1 < line.length && line[end + 1].isTerminalWordChar()) end++
+        return TerminalSelectionRange(TerminalCellPosition(position.row, start), TerminalCellPosition(position.row, end))
+    }
+
     fun snapshotText(): List<String> {
         if (handle == 0L) return emptyList()
         return native.nativeSnapshotText(handle).toList()
@@ -418,6 +436,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (columns > 0 && rows > 0) onTerminalSizeChanged?.invoke(columns, rows)
     }
 }
+
+private fun Char.isTerminalWordChar(): Boolean = isLetterOrDigit() || this in setOf('_', '-', '.', '/', ':', '@')
 
 data class TerminalCellPosition(val row: Int, val col: Int)
 

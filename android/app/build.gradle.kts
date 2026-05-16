@@ -1,5 +1,6 @@
 import java.net.URI
 import java.util.Locale
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -9,6 +10,10 @@ plugins {
 
 val downloadedFontArchives = layout.projectDirectory.dir("src/main/fontArchives")
 val generatedFontResources = layout.buildDirectory.dir("generated/res/vendorFonts")
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
 
 data class TerminalFontArchive(val family: String, val url: String, val includes: List<String>)
 
@@ -16,27 +21,27 @@ val terminalFonts = listOf(
     TerminalFontArchive(
         "GeistMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/GeistMono.zip",
-        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
+        listOf("GeistMonoNerdFontMono-Regular.otf", "GeistMonoNerdFontMono-Bold.otf", "GeistMonoNerdFontMono-SemiBold.otf"),
     ),
     TerminalFontArchive(
         "IBMPlexMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/IBMPlexMono.zip",
-        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
+        listOf("BlexMonoNerdFontMono-Regular.ttf", "BlexMonoNerdFontMono-Bold.ttf", "BlexMonoNerdFontMono-SemiBold.ttf", "BlexMonoNerdFontMono-Italic.ttf", "BlexMonoNerdFontMono-BoldItalic.ttf"),
     ),
     TerminalFontArchive(
         "Iosevka",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Iosevka.zip",
-        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
+        listOf("IosevkaNerdFontMono-Regular.ttf", "IosevkaNerdFontMono-Bold.ttf", "IosevkaNerdFontMono-SemiBold.ttf", "IosevkaNerdFontMono-Italic.ttf", "IosevkaNerdFontMono-BoldItalic.ttf"),
     ),
     TerminalFontArchive(
         "JetBrainsMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/JetBrainsMono.zip",
-        listOf("**/*NerdFontMono*.otf", "**/*NerdFontMono*.ttf"),
+        listOf("JetBrainsMonoNerdFontMono-Regular.ttf", "JetBrainsMonoNerdFontMono-Bold.ttf", "JetBrainsMonoNerdFontMono-SemiBold.ttf", "JetBrainsMonoNerdFontMono-Italic.ttf", "JetBrainsMonoNerdFontMono-BoldItalic.ttf"),
     ),
     TerminalFontArchive(
         "MapleMonoNormal",
         "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMonoNormal-TTF.zip",
-        listOf("**/*.ttf", "**/*.otf"),
+        listOf("MapleMonoNormal-Regular.ttf", "MapleMonoNormal-Bold.ttf", "MapleMonoNormal-SemiBold.ttf", "MapleMonoNormal-Italic.ttf", "MapleMonoNormal-BoldItalic.ttf"),
     ),
 )
 
@@ -93,14 +98,30 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(localProperties.getProperty("releaseStoreFile", "${System.getProperty("user.home")}/.config/android/keystore.jks"))
+            storePassword = localProperties.getProperty("releaseStorePassword")
+            keyAlias = localProperties.getProperty("releaseKeyAlias", "upload")
+            keyPassword = localProperties.getProperty("releaseKeyPassword", localProperties.getProperty("releaseStorePassword"))
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -127,7 +148,7 @@ android {
         }
     }
     sourceSets {
-        getByName("main").res.srcDir(layout.buildDirectory.dir("generated/res/vendorFonts").get().asFile)
+        getByName("main").res.directories.add(generatedFontResources.get().asFile.absolutePath)
     }
 }
 

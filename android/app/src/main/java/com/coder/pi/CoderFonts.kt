@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import java.io.File
 
 data class CoderFontOption(
@@ -12,6 +14,10 @@ data class CoderFontOption(
     val subtitle: String,
     val pro: Boolean = false,
     val resourceId: Int? = null,
+    val boldResourceId: Int? = null,
+    val semiBoldResourceId: Int? = null,
+    val italicResourceId: Int? = null,
+    val boldItalicResourceId: Int? = null,
     val file: File? = null,
 )
 
@@ -21,11 +27,11 @@ object CoderFonts {
 
     fun builtInOptions(): List<CoderFontOption> {
         return listOf(
-            CoderFontOption("jetbrains", "JetBrains Mono", "Ghostty embedded default", resourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular),
-            CoderFontOption("geist", "Geist Mono", "Nerd Font Mono", resourceId = R.font.geist_mono_geist_mono_nerd_font_mono_regular),
-            CoderFontOption("ibm_plex", "IBM Plex Mono", "Blex Nerd Font Mono", resourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_regular),
-            CoderFontOption("iosevka", "Iosevka", "Nerd Font Mono", resourceId = R.font.iosevka_iosevka_nerd_font_mono_regular),
-            CoderFontOption("maple", "Maple Mono", "Normal TTF", resourceId = R.font.maple_mono_normal_maple_mono_normal_regular),
+            CoderFontOption("jetbrains", "JetBrains Mono", "Ghostty embedded default", resourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular, boldResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_semi_bold, italicResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_italic, boldItalicResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_bold_italic),
+            CoderFontOption("geist", "Geist Mono", "Nerd Font Mono", resourceId = R.font.geist_mono_geist_mono_nerd_font_mono_regular, boldResourceId = R.font.geist_mono_geist_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.geist_mono_geist_mono_nerd_font_mono_semi_bold),
+            CoderFontOption("ibm_plex", "IBM Plex Mono", "Blex Nerd Font Mono", resourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_regular, boldResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_semi_bold, italicResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_italic, boldItalicResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_bold_italic),
+            CoderFontOption("iosevka", "Iosevka", "Nerd Font Mono", resourceId = R.font.iosevka_iosevka_nerd_font_mono_regular, boldResourceId = R.font.iosevka_iosevka_nerd_font_mono_bold, semiBoldResourceId = R.font.iosevka_iosevka_nerd_font_mono_semi_bold, italicResourceId = R.font.iosevka_iosevka_nerd_font_mono_italic, boldItalicResourceId = R.font.iosevka_iosevka_nerd_font_mono_bold_italic),
+            CoderFontOption("maple", "Maple Mono", "Normal TTF", resourceId = R.font.maple_mono_normal_maple_mono_normal_regular, boldResourceId = R.font.maple_mono_normal_maple_mono_normal_bold, semiBoldResourceId = R.font.maple_mono_normal_maple_mono_normal_semi_bold, italicResourceId = R.font.maple_mono_normal_maple_mono_normal_italic, boldItalicResourceId = R.font.maple_mono_normal_maple_mono_normal_bold_italic),
         )
     }
 
@@ -88,7 +94,18 @@ object CoderFonts {
 
     fun uiFontFamily(context: Context): FontFamily {
         val option = builtInOptions().firstOrNull { it.key == selectedUiKey(context) } ?: builtInOptions().first()
-        return option.resourceId?.let { FontFamily(Font(it)) } ?: FontFamily.Monospace
+        return fontFamily(option)
+    }
+
+    private fun fontFamily(option: CoderFontOption): FontFamily {
+        val fonts = buildList {
+            option.resourceId?.let { add(Font(it, FontWeight.Normal, FontStyle.Normal)) }
+            option.boldResourceId?.let { add(Font(it, FontWeight.Bold, FontStyle.Normal)) }
+            option.semiBoldResourceId?.let { add(Font(it, FontWeight.SemiBold, FontStyle.Normal)) }
+            option.italicResourceId?.let { add(Font(it, FontWeight.Normal, FontStyle.Italic)) }
+            option.boldItalicResourceId?.let { add(Font(it, FontWeight.Bold, FontStyle.Italic)) }
+        }
+        return if (fonts.isEmpty()) FontFamily.Monospace else FontFamily(fonts)
     }
 
     fun bytes(context: Context, key: String = selectedKey(context)): ByteArray {

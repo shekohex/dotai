@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
+        @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         currentTheme = CoderThemes.current(this)
         terminalView = CoderTerminalView(this)
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
                         getSystemService<InputMethodManager>()?.showSoftInput(targetTerminalView, InputMethodManager.SHOW_IMPLICIT)
                         targetTerminalView.postDelayed({
                             targetTerminalView.requestFocusFromTouch()
+                            @Suppress("DEPRECATION")
                             getSystemService<InputMethodManager>()?.showSoftInput(targetTerminalView, InputMethodManager.SHOW_FORCED)
                             WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
                         }, 80)
@@ -71,7 +73,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySystemBars(theme: CoderTheme) {
+        @Suppress("DEPRECATION")
         window.statusBarColor = theme.background.toComposeColor().toArgb()
+        @Suppress("DEPRECATION")
         window.navigationBarColor = theme.background.toComposeColor().toArgb()
         val lightBars = luminance(theme.background) > 0.5
         val controller = WindowInsetsControllerCompat(window, window.decorView)

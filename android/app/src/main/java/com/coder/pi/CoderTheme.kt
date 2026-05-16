@@ -10,7 +10,7 @@ enum class CoderThemeMode { SYSTEM, LIGHT, DARK }
 data class CoderThemeOption(
     val name: String,
     val mode: CoderThemeMode,
-    @RawRes val resourceId: Int,
+    @param:RawRes val resourceId: Int,
     val palette: List<Int>,
 )
 

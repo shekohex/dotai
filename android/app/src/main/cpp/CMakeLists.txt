@@ -30,7 +30,10 @@ FetchContent_Declare(
     harfbuzz
     URL https://github.com/harfbuzz/harfbuzz/releases/download/8.5.0/harfbuzz-8.5.0.tar.xz
 )
+set(CODER_PREVIOUS_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
+set(CMAKE_MESSAGE_LOG_LEVEL ERROR)
 FetchContent_MakeAvailable(harfbuzz)
+set(CMAKE_MESSAGE_LOG_LEVEL ${CODER_PREVIOUS_CMAKE_MESSAGE_LOG_LEVEL})
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

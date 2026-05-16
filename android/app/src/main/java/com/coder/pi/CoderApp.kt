@@ -275,7 +275,7 @@ fun CoderApp(
                     )
                 }
                 AppDestination.TERMINAL -> TerminalPane(terminalView, theme, onShowKeyboard, onHideKeyboard)
-                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, terminalView, theme, tokens, uiRevision, onThemeChanged, { key ->
+                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
                     terminalSessions.forEach { it.terminalView.setFontFamily(key) }
                     onFontChanged()
@@ -435,6 +435,9 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     val context = LocalContext.current
     var workspaces by remember { mutableStateOf<List<CoderWorkspace>>(emptyList()) }
     var loadingWorkspaces by remember { mutableStateOf(true) }
+    var refreshInFlight by remember { mutableStateOf(false) }
+    var lastRefreshedAt by remember { mutableStateOf(0L) }
+    var pullDistance by remember { mutableStateOf(0f) }
     var error by remember { mutableStateOf<String?>(null) }
     var hideInactive by remember { mutableStateOf(sessionStore.hideInactive()) }
     var inactiveCollapsed by remember { mutableStateOf(hideInactive) }
@@ -451,15 +454,24 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
         }
     }
     fun refresh() {
+        if (refreshInFlight) return
         scope.launch {
+            refreshInFlight = true
             loadingWorkspaces = true
             runCatching { api.workspaces() }
-                .onSuccess { workspaces = it; error = null }
+                .onSuccess { workspaces = it; error = null; lastRefreshedAt = System.currentTimeMillis() }
                 .onFailure { failure -> if (failure.isUnauthorized()) onSessionExpired() else error = safeUserError(failure, "Could not load workspaces") }
             loadingWorkspaces = false
+            refreshInFlight = false
         }
     }
     LaunchedEffect(session) { refresh() }
+    LaunchedEffect(session, sessionStore.workspaceRefreshIntervalMillis()) {
+        while (true) {
+            delay(sessionStore.workspaceRefreshIntervalMillis())
+            refresh()
+        }
+    }
     val sorted = workspaces.sortedWith(compareByDescending<CoderWorkspace> {
         val local = sessionStore.workspaceState(session.baseUrl, session.user.id, it.id)
         it.favorite || local.pinned
@@ -467,8 +479,27 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     val running = sorted.filter { it.running }
     val inactive = sorted.filterNot { it.running }
     Box(Modifier.fillMaxSize().background(tokens.background).statusBarsPadding()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = WindowInsets.navigationBars.asPaddingValues()) {
-            item { CoderHeaderActions("Workspaces", tokens, metrics, { refresh() }, onOpenSettings) }
+        LazyColumn(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(refreshInFlight) {
+                    detectVerticalDragGestures(
+                        onDragEnd = {
+                            if (pullDistance > 130f) refresh()
+                            pullDistance = 0f
+                        },
+                        onDragCancel = { pullDistance = 0f },
+                    ) { change, dragAmount ->
+                        if (dragAmount > 0f) {
+                            pullDistance += dragAmount
+                            change.consume()
+                        }
+                    }
+                },
+            contentPadding = WindowInsets.navigationBars.asPaddingValues(),
+        ) {
+            item { CoderHeaderActions("Workspaces", tokens, metrics, onOpenSettings) }
+            if (lastRefreshedAt > 0L || refreshInFlight) item { Text(if (refreshInFlight) "Refreshing..." else "Updated ${relativeSessionTime(lastRefreshedAt)}", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 4.dp)) }
             item { ActiveCoderSessionSection(activeTerminals, sessionStore, tokens, metrics, onResumeTerminal, onCloseTerminal) }
             if (error != null) item { Text(error ?: "", color = tokens.accent, modifier = Modifier.padding(horizontal = spacingLarge())) }
             if (loadingWorkspaces && workspaces.isEmpty()) item { WorkspaceLoadingSection(tokens, metrics) }
@@ -1104,7 +1135,7 @@ private fun RowScope.EmptyToolbarSlot(background: Color) {
 }
 
 @Composable
-private fun SettingsNavigator(session: CoderSession?, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
+private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSessionStore, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
@@ -1124,7 +1155,7 @@ private fun SettingsNavigator(session: CoderSession?, terminalView: CoderTermina
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
         SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens) { page = SettingsPage.ROOT }
-        SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, tokens) { page = SettingsPage.ROOT }
+        SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens) { page = SettingsPage.ROOT }
         SettingsPage.PLACEHOLDER -> PlaceholderSettingsScreen(placeholderTitle, tokens) { page = SettingsPage.ROOT }
     }
 }
@@ -1596,10 +1627,24 @@ private fun ShortcutKeyGrid(tokens: UiTokens, selectedKey: String, onSelected: (
 }
 
 @Composable
-private fun ConnectionSettingsScreen(session: CoderSession?, tokens: UiTokens, onBack: () -> Unit) {
+private fun ConnectionSettingsScreen(session: CoderSession?, sessionStore: CoderSessionStore, tokens: UiTokens, onBack: () -> Unit) {
+    var refreshInterval by remember { mutableStateOf(sessionStore.workspaceRefreshIntervalMillis()) }
     SettingsScaffold("Coder Connection", tokens, onBack) {
         SettingsSection("SAVED CONNECTIONS", tokens) {
             SettingsValueRow(R.drawable.ic_feather_server, session?.baseUrl?.let { connectionHostLabel(it) } ?: "No saved connection", session?.user?.username, "Coder", tokens) {}
+        }
+        SettingsSection("REFRESH", tokens) {
+            listOf(
+                30_000L to "30s",
+                60_000L to "60s",
+                300_000L to "5min",
+                900_000L to "15min",
+            ).forEach { (value, label) ->
+                SettingsValueRow(R.drawable.ic_feather_rotate_ccw, "Refresh every $label", null, if (refreshInterval == value) "✓" else null, tokens) {
+                    refreshInterval = value
+                    sessionStore.saveWorkspaceRefreshIntervalMillis(value)
+                }
+            }
         }
         SettingsSection("CURRENT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_server, "Host", null, session?.baseUrl?.let { connectionHostLabel(it) } ?: "Not connected", tokens) {}

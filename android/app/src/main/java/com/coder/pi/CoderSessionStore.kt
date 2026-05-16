@@ -68,6 +68,12 @@ class CoderSessionStore(context: Context) {
         localPreferences.edit { putBoolean("hide_inactive", value) }
     }
 
+    fun workspaceRefreshIntervalMillis(): Long = localPreferences.getLong("workspace_refresh_interval", 60_000L)
+
+    fun saveWorkspaceRefreshIntervalMillis(value: Long) {
+        localPreferences.edit { putLong("workspace_refresh_interval", value) }
+    }
+
     fun saveActiveTerminal(metadata: CoderActiveTerminalMetadata) {
         val prefix = activeTerminalStorageKey(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
         val keys = activeTerminalKeys().toMutableSet()

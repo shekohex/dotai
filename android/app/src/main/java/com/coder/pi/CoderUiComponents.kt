@@ -126,11 +126,9 @@ fun CoderSectionHeader(title: String, trailing: String?, tokens: UiTokens, metri
 }
 
 @Composable
-fun CoderHeaderActions(title: String, tokens: UiTokens, metrics: CoderUiMetrics, onRefresh: () -> Unit, onOpenSettings: () -> Unit) {
+fun CoderHeaderActions(title: String, tokens: UiTokens, metrics: CoderUiMetrics, onOpenSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(metrics.headerHeight).padding(horizontal = metrics.screenPadding), verticalAlignment = Alignment.CenterVertically) {
         Text(title.uppercase(), color = tokens.text, fontSize = metrics.titleSize, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, modifier = Modifier.weight(1f))
-        CoderIconButton(R.drawable.ic_feather_rotate_ccw, tokens, metrics, onRefresh)
-        Spacer(Modifier.width(metrics.iconGap))
         CoderIconButton(R.drawable.ic_feather_settings, tokens, metrics, onOpenSettings)
     }
 }

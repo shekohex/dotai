@@ -3,6 +3,7 @@
 
 #include <android/log.h>
 #include <chrono>
+#include <cmath>
 #include <vector>
 
 struct Vertex { float x, y, u, v, r, g, b; };
@@ -136,16 +137,18 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     std::vector<SolidVertex> solidVertices;
     float cw = 2.0f * font_.glyphWidth() / width_;
     float ch = 2.0f * font_.glyphHeight() / height_;
+    auto snapX = [&](float x) { return -1.0f + std::round(((x + 1.0f) * 0.5f) * static_cast<float>(width_)) * 2.0f / static_cast<float>(width_); };
+    auto snapY = [&](float y) { return -1.0f + std::round(((y + 1.0f) * 0.5f) * static_cast<float>(height_)) * 2.0f / static_cast<float>(height_); };
     if (shouldUploadBuffers) {
         vertices.reserve(cells.size() * 6);
         solidVertices.reserve((cells.size() + 1) * 6);
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
             const auto& cell = cells[row * cols + col];
-            float x0 = -1.0f + col * cw;
-            float y0 = 1.0f - (row + 1) * ch;
-            float x1 = x0 + cw;
-            float y1 = y0 + ch;
+            float x0 = snapX(-1.0f + col * cw);
+            float y0 = snapY(1.0f - (row + 1) * ch);
+            float x1 = snapX(-1.0f + (col + 1) * cw);
+            float y1 = snapY(1.0f - row * ch);
             float br = ((cell.background >> 0) & 255) / 255.0f;
             float bg = ((cell.background >> 8) & 255) / 255.0f;
             float bb = ((cell.background >> 16) & 255) / 255.0f;
@@ -162,10 +165,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     if (codepoint <= ' ') continue;
                     CoderFont::Glyph glyph;
                     if (!font_.glyph(codepoint, glyph) || glyph.width <= 0 || glyph.height <= 0) continue;
-                    float glyphX0 = glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft) / static_cast<float>(width_);
-                    float glyphY1 = y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop) / static_cast<float>(height_);
-                    float glyphX1 = glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_);
-                    float glyphY0 = glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_);
+                    float glyphX0 = snapX(glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft) / static_cast<float>(width_));
+                    float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop) / static_cast<float>(height_));
+                    float glyphX1 = snapX(glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_));
+                    float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                     vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b}});
                     glyphCursorX += 2.0f * static_cast<float>(glyph.advance) / static_cast<float>(width_);
                 }
@@ -190,10 +193,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             for (const auto& shapedGlyph : shapedGlyphs) {
                 CoderFont::Glyph glyph;
                 if (!font_.glyphByIndex(shapedGlyph.glyphId, glyph) || glyph.width <= 0 || glyph.height <= 0) continue;
-                float glyphX0 = glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft + shapedGlyph.xOffset) / static_cast<float>(width_);
-                float glyphY1 = y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_);
-                float glyphX1 = glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_);
-                float glyphY0 = glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_);
+                float glyphX0 = snapX(glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft + shapedGlyph.xOffset) / static_cast<float>(width_));
+                float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
+                float glyphX1 = snapX(glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_));
+                float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                 vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b}});
                 if ((cell.flags & 1u) != 0u) {
                     float boldOffset = 2.0f / static_cast<float>(width_);

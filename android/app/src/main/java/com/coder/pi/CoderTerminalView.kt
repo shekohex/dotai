@@ -28,6 +28,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var shiftLatch = false
     private var ctrlLatch = false
     private var altLatch = false
+    private var softwareKeyboardAllowed = false
     private var remoteInput: ((ByteArray) -> Unit)? = null
     var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
@@ -61,7 +62,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         native.nativeDrawFrame(handle)
     }
 
-    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        if (!softwareKeyboardAllowed) return null
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
         outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE
         return object : BaseInputConnection(this, false) {
@@ -85,7 +87,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onCheckIsTextEditor(): Boolean {
-        return true
+        return softwareKeyboardAllowed
+    }
+
+    fun setSoftwareKeyboardAllowed(allowed: Boolean) {
+        softwareKeyboardAllowed = allowed
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {

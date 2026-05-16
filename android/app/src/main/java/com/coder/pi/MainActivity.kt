@@ -14,12 +14,14 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.getSystemService
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : AppCompatActivity() {
     private lateinit var terminalView: CoderTerminalView
     private var currentTheme by mutableStateOf<CoderTheme?>(null)
     private var uiRevision by mutableIntStateOf(0)
+    private var keyboardTerminalView: CoderTerminalView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,15 +42,29 @@ class MainActivity : AppCompatActivity() {
                     applySystemBars(currentTheme ?: CoderThemes.current(this))
                 },
                 onFontChanged = { uiRevision++ },
-                onShowKeyboard = {
-                    terminalView.requestFocus()
-                    terminalView.post {
-                        getSystemService<InputMethodManager>()?.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+                onShowKeyboard = { targetTerminalView ->
+                    keyboardTerminalView?.setSoftwareKeyboardAllowed(false)
+                    keyboardTerminalView = targetTerminalView
+                    targetTerminalView.setSoftwareKeyboardAllowed(true)
+                    targetTerminalView.requestFocus()
+                    targetTerminalView.post {
+                        targetTerminalView.requestFocusFromTouch()
+                        WindowInsetsControllerCompat(window, targetTerminalView).show(WindowInsetsCompat.Type.ime())
+                        getSystemService<InputMethodManager>()?.showSoftInput(targetTerminalView, InputMethodManager.SHOW_IMPLICIT)
+                        targetTerminalView.postDelayed({
+                            targetTerminalView.requestFocusFromTouch()
+                            getSystemService<InputMethodManager>()?.showSoftInput(targetTerminalView, InputMethodManager.SHOW_FORCED)
+                            WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
+                        }, 80)
                     }
                 },
                 onHideKeyboard = {
-                    WindowInsetsControllerCompat(window, terminalView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
-                    getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(terminalView.windowToken, 0)
+                    val targetTerminalView = keyboardTerminalView ?: terminalView
+                    targetTerminalView.setSoftwareKeyboardAllowed(false)
+                    keyboardTerminalView = null
+                    WindowInsetsControllerCompat(window, targetTerminalView).hide(WindowInsetsCompat.Type.ime())
+                    getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(targetTerminalView.windowToken, 0)
+                    WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
                 },
             )
         }
@@ -58,8 +74,16 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = theme.background.toComposeColor().toArgb()
         window.navigationBarColor = theme.background.toComposeColor().toArgb()
         val lightBars = luminance(theme.background) > 0.5
-        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = lightBars
-        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightNavigationBars = lightBars
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.isAppearanceLightStatusBars = lightBars
+        controller.isAppearanceLightNavigationBars = lightBars
+        controller.hide(WindowInsetsCompat.Type.navigationBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
     }
 
     private fun luminance(rgb: Int): Double {

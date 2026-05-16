@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -63,8 +62,9 @@ fun SheetScrim(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun ColumnScope.SheetHandle(tokens: UiTokens) {
-    Box(Modifier.fillMaxWidth().height(18.dp), contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
+fun ColumnScope.SheetHandle(tokens: UiTokens, onClick: (() -> Unit)? = null) {
+    val modifier = if (onClick == null) Modifier.fillMaxWidth().height(18.dp) else Modifier.fillMaxWidth().height(28.dp).clickable { hapticClick(); onClick() }
+    Box(modifier, contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
 }
 
 fun Modifier.alignBottomSheet(tokens: UiTokens, expanded: Boolean = false): Modifier {

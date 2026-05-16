@@ -3,8 +3,15 @@ package com.coder.pi
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.Handler
+import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
+import android.view.ViewGroup
 import android.net.Uri
 import android.content.Intent
 import android.widget.Toast
@@ -24,6 +31,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -44,6 +52,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -64,10 +73,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +104,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -101,6 +113,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -109,6 +122,7 @@ import kotlin.math.abs
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+private enum class TerminalUiMode { SHEET, CAROUSEL }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -134,6 +148,11 @@ data class UiTokens(
 
 fun Int.toComposeColor(): Color = Color(0xff000000.toInt() or this)
 
+private fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
+    (parent as? ViewGroup)?.removeView(this)
+    return this
+}
+
 @Composable
 fun CoderApp(
     terminalView: CoderTerminalView,
@@ -141,18 +160,54 @@ fun CoderApp(
     uiRevision: Int,
     onThemeChanged: () -> Unit,
     onFontChanged: () -> Unit,
-    onShowKeyboard: () -> Unit,
+    onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     var authState by remember { mutableStateOf<AuthState>(AuthState.Loading) }
     val terminalSessions = remember { mutableStateListOf<ManagedTerminalSession>() }
     var selectedTerminalId by remember { mutableStateOf<String?>(null) }
+    var terminalUiMode by remember { mutableStateOf(TerminalUiMode.SHEET) }
     var confirmCloseTerminalId by remember { mutableStateOf<String?>(null) }
     var hydratedSessionKey by remember { mutableStateOf<String?>(null) }
     val tokens = remember(theme) { uiTokens(theme) }
     val context = LocalContext.current
     val sessionStore = remember(context) { CoderSessionStore(context) }
+    var networkAvailable by remember { mutableStateOf(true) }
+    DisposableEffect(context) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val mainHandler = Handler(Looper.getMainLooper())
+        fun hasValidatedNetwork(): Boolean {
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+        networkAvailable = hasValidatedNetwork()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                mainHandler.post {
+                    networkAvailable = true
+                    sessionStore.appendDebugLog("network available")
+                    terminalSessions.forEach { it.session?.networkAvailable() }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                mainHandler.post {
+                    networkAvailable = hasValidatedNetwork()
+                    if (!networkAvailable) {
+                        sessionStore.appendDebugLog("network lost")
+                        terminalSessions.forEachIndexed { index, managed ->
+                            managed.session?.networkLost()
+                            terminalSessions[index] = managed.copy(sheet = managed.sheet.copy(status = TerminalConnectionStatus.Reconnecting.wireName), errorDetail = "Network unavailable")
+                        }
+                    }
+                }
+            }
+        }
+        connectivityManager.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), callback)
+        onDispose { connectivityManager.unregisterNetworkCallback(callback) }
+    }
     LaunchedEffect(Unit) {
         val saved = sessionStore.loadSession()
         if (saved == null) {
@@ -230,6 +285,7 @@ fun CoderApp(
                         terminalSessions.forEach { it.session?.stop() }
                             terminalSessions.clear()
                             selectedTerminalId = null
+                            terminalUiMode = TerminalUiMode.SHEET
                             authState = AuthState.LoggedOut
                             destination = AppDestination.HOME
                         },
@@ -241,7 +297,7 @@ fun CoderApp(
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(updatedAtMillis = now)
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n")))
                             selectedTerminalId = it.id
-                            onShowKeyboard()
+                            terminalUiMode = TerminalUiMode.SHEET
                         },
                         onCloseTerminal = {
                             confirmCloseTerminalId = it.id
@@ -253,7 +309,7 @@ fun CoderApp(
                             val id = terminalSessionKey(identity)
                             terminalSessions.firstOrNull { it.id == id }?.let {
                                 selectedTerminalId = it.id
-                                onShowKeyboard()
+                                terminalUiMode = TerminalUiMode.SHEET
                                 return@CoderHomeScreen
                             }
                             if (terminalSessions.size >= MaxActiveTerminalSessions) {
@@ -280,7 +336,7 @@ fun CoderApp(
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
                             terminalSession.start()
                             selectedTerminalId = id
-                            onShowKeyboard()
+                            terminalUiMode = TerminalUiMode.SHEET
                         },
                     )
                 }
@@ -293,24 +349,13 @@ fun CoderApp(
             }
             terminalSessions.firstOrNull { it.id == selectedTerminalId }?.let { managed ->
                 val selectedIndex = terminalSessions.indexOfFirst { it.id == managed.id }.coerceAtLeast(0)
-                CoderTerminalBottomSheet(
-                    terminalView = managed.terminalView,
-                    theme = theme,
-                    tokens = tokens,
-                    title = managed.sheet.title,
-                    badge = managed.sheet.badge,
-                    sessionLabel = tmuxSessionLabel(managed.identity.command),
-                    status = managed.sheet.status,
-                    errorDetail = managed.errorDetail,
-                    sessionCount = terminalSessions.size,
-                    selectedSessionIndex = selectedIndex,
-                    onSelectSession = { index -> terminalSessions.getOrNull(index)?.let {
+                val selectSession: (Int) -> Unit = { index -> terminalSessions.getOrNull(index)?.let {
                         val now = System.currentTimeMillis()
                         terminalSessions[index] = it.copy(updatedAtMillis = now)
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n")))
                         selectedTerminalId = it.id
-                    } },
-                    onRetry = {
+                    } }
+                val retry: () -> Unit = {
                         val launch = managed.launch
                         managed.session?.stop()
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis()))
@@ -327,14 +372,47 @@ fun CoderApp(
                         })
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
                         terminalSession.start()
-                    },
-                    onDismiss = {
-                        onHideKeyboard()
-                        selectedTerminalId = null
-                    },
-                    onShowKeyboard = onShowKeyboard,
-                    onHideKeyboard = onHideKeyboard,
-                )
+                    }
+                val dismiss: () -> Unit = {
+                    onHideKeyboard()
+                    managed.terminalView.setSoftwareKeyboardAllowed(false)
+                    selectedTerminalId = null
+                    terminalUiMode = TerminalUiMode.SHEET
+                }
+                if (terminalUiMode == TerminalUiMode.CAROUSEL && terminalSessions.size > 1) {
+                    CoderTerminalCarousel(
+                        sessions = terminalSessions,
+                        selectedIndex = selectedIndex,
+                        theme = theme,
+                        tokens = tokens,
+                        networkAvailable = networkAvailable,
+                        onSelectSession = selectSession,
+                        onOpenSelected = { terminalUiMode = TerminalUiMode.SHEET },
+                        onCreateTerminal = dismiss,
+                        onShowKeyboard = { onShowKeyboard(managed.terminalView) },
+                        onHideKeyboard = onHideKeyboard,
+                    )
+                } else {
+                    CoderTerminalBottomSheet(
+                        terminalView = managed.terminalView,
+                        theme = theme,
+                        tokens = tokens,
+                        title = managed.sheet.title,
+                        badge = managed.sheet.badge,
+                        sessionLabel = tmuxSessionLabel(managed.identity.command),
+                        status = managed.sheet.status,
+                        errorDetail = managed.errorDetail,
+                        networkAvailable = networkAvailable,
+                        sessionCount = terminalSessions.size,
+                        selectedSessionIndex = selectedIndex,
+                        onSelectSession = selectSession,
+                        onEnterCarousel = { if (terminalSessions.size > 1) { onHideKeyboard(); terminalUiMode = TerminalUiMode.CAROUSEL } },
+                        onRetry = retry,
+                        onDismiss = dismiss,
+                        onShowKeyboard = { onShowKeyboard(managed.terminalView) },
+                        onHideKeyboard = onHideKeyboard,
+                    )
+                }
             }
             confirmCloseTerminalId?.let { terminalId ->
                 ConfirmCloseTerminalDialog(
@@ -841,7 +919,7 @@ private fun HostSheetRow(title: String, subtitle: String, tokens: UiTokens, onCl
 private fun TerminalPane(
     terminalView: CoderTerminalView,
     theme: CoderTheme,
-    onShowKeyboard: () -> Unit,
+    onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
     var selection by remember { mutableStateOf<TerminalSelectionRange?>(null) }
@@ -849,7 +927,7 @@ private fun TerminalPane(
     Column(Modifier.fillMaxSize().background(theme.background.toComposeColor()).imePadding()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(
-                factory = { terminalView },
+                factory = { terminalView.detachFromCurrentParent() },
                 modifier = Modifier.fillMaxSize(),
                 update = { it.applyTheme(theme) },
             )
@@ -863,14 +941,14 @@ private fun TerminalPane(
                 }
             }
         }
-        TerminalAccessory(theme, terminalView, selection != null, {
+        TerminalAccessory(theme, terminalView, selection != null, false, {}, {
             val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
             if (selectedText.isNotBlank()) {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
                 selection = null
             }
-        }, { selection = null }, onShowKeyboard, onHideKeyboard)
+        }, { selection = null }, { onShowKeyboard(terminalView) }, onHideKeyboard)
     }
 }
 
@@ -964,9 +1042,11 @@ private fun CoderTerminalBottomSheet(
     sessionLabel: String?,
     status: String,
     errorDetail: String?,
+    networkAvailable: Boolean,
     sessionCount: Int,
     selectedSessionIndex: Int,
     onSelectSession: (Int) -> Unit,
+    onEnterCarousel: () -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     onShowKeyboard: () -> Unit,
@@ -986,27 +1066,27 @@ private fun CoderTerminalBottomSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(if (expanded) 1f else 0.92f)
                 .alignBottomSheet(tokens, expanded)
-                .pointerInput(sessionCount, selectedSessionIndex, swipeSessionSwitch) { if (swipeSessionSwitch) detectManagedSessionSwipe(sessionCount, selectedSessionIndex, onSelectSession) }
                 .imePadding(),
         ) {
-            SheetHandle(tokens)
+            SheetHandle(tokens, onDismiss)
             Row(Modifier.fillMaxWidth().height(38.dp).then(sessionSwipeModifier).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xffffcc00)))
+                Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xffffcc00)).clickable { hapticClick(); onDismiss() })
                 Spacer(Modifier.width(8.dp))
-                Box(Modifier.size(18.dp).clip(CircleShape).background(tokens.accent))
+                Box(Modifier.size(18.dp).clip(CircleShape).background(tokens.accent).clickable { hapticClick(); expanded = !expanded })
                 Spacer(Modifier.width(14.dp))
-                Text(title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                Text(title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f).clickable(enabled = sessionCount > 1) { hapticClick(); onEnterCarousel() })
                 if (sessionLabel != null) {
                     Text(sessionLabel, color = tokens.accent, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 10.dp, vertical = 4.dp))
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(status, color = if (terminalStatusFromWireName(status) == TerminalConnectionStatus.Connected) tokens.success else tokens.secondary, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(if (expanded) "⌄" else "⌃", color = tokens.secondary, fontSize = 22.sp, modifier = Modifier.clip(CircleShape).clickable { hapticClick(); expanded = !expanded }.padding(horizontal = 10.dp, vertical = 2.dp))
+                if (!networkAvailable) {
+                    Spacer(Modifier.width(8.dp))
+                    Text("offline", color = Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
+                }
             }
-            if (sessionCount > 1) SessionPageDots(sessionCount, selectedSessionIndex, tokens, sessionSwipeModifier)
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                AndroidView(factory = { terminalView }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme) })
+                AndroidView(factory = { terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme) })
                 TerminalPinchFontOverlay(terminalView)
                 if (terminalStatusIsRecoverable(status)) {
                     Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(tokens.background.copy(alpha = 0.92f)).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1031,7 +1111,7 @@ private fun CoderTerminalBottomSheet(
                     }
                 }
             }
-            TerminalAccessory(theme, terminalView, selection != null, {
+            TerminalAccessory(theme, terminalView, selection != null, sessionCount > 1, onEnterCarousel, {
                 val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
                 if (selectedText.isNotBlank()) {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -1067,16 +1147,164 @@ private suspend fun PointerInputScope.detectManagedSessionSwipe(sessionCount: In
 }
 
 @Composable
-private fun SessionPageDots(count: Int, selectedIndex: Int, tokens: UiTokens, modifier: Modifier = Modifier) {
-    Row(Modifier.fillMaxWidth().height(18.dp).then(modifier), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        repeat(count) { index ->
-            Box(Modifier.padding(horizontal = 3.dp).size(if (index == selectedIndex) 7.dp else 5.dp).clip(CircleShape).background(if (index == selectedIndex) tokens.accent else tokens.separator))
+private fun CoderTerminalCarousel(
+    sessions: List<ManagedTerminalSession>,
+    selectedIndex: Int,
+    theme: CoderTheme,
+    tokens: UiTokens,
+    networkAvailable: Boolean,
+    onSelectSession: (Int) -> Unit,
+    onOpenSelected: () -> Unit,
+    onCreateTerminal: () -> Unit,
+    onShowKeyboard: () -> Unit,
+    onHideKeyboard: () -> Unit,
+) {
+    BackHandler { onOpenSelected() }
+    val selectedSession = sessions.getOrNull(selectedIndex) ?: return
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current.density
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.82f))
+            .pointerInput(sessions.size, selectedIndex) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragOffset = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        dragOffset = (dragOffset + dragAmount).coerceIn(-360f, 360f)
+                    },
+                    onDragCancel = { dragOffset = 0f },
+                    onDragEnd = {
+                        when {
+                            dragOffset < -96f -> onSelectSession((selectedIndex + 1).coerceAtMost(sessions.lastIndex))
+                            dragOffset > 96f -> onSelectSession((selectedIndex - 1).coerceAtLeast(0))
+                        }
+                        dragOffset = 0f
+                    },
+                )
+            },
+    ) {
+        (selectedIndex - 1..selectedIndex + 1).forEach { index ->
+            val offsetFromSelected = index - selectedIndex
+            val session = sessions.getOrNull(index)
+            val widthFraction = if (offsetFromSelected == 0) 0.74f else 0.42f
+            val xOffset = when {
+                offsetFromSelected < 0 -> (-230).dp
+                offsetFromSelected > 0 -> 230.dp
+                else -> 80.dp
+            }
+            val alpha = if (offsetFromSelected == 0) 1f else 0.48f
+            val cardBackground = if (session == null) tokens.surfaceHigh.copy(alpha = 0.08f) else tokens.background.copy(alpha = alpha)
+            val cardBorder = if (session == null) tokens.text.copy(alpha = 0.16f) else Color.Transparent
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .offset(x = xOffset + (dragOffset / density).dp, y = (-8).dp)
+                    .zIndex(if (offsetFromSelected == 0) 2f else 1f)
+                    .fillMaxWidth(widthFraction)
+                    .fillMaxHeight(0.84f)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(cardBackground)
+                    .border(BorderStroke(1.dp, cardBorder), RoundedCornerShape(26.dp))
+                    .clickable {
+                        hapticClick()
+                        if (session == null) onCreateTerminal() else {
+                            onSelectSession(index)
+                            onOpenSelected()
+                        }
+                    },
+            ) {
+                if (session == null) {
+                    CarouselCreateTerminalCard(tokens)
+                } else if (offsetFromSelected == 0) {
+                    CarouselActiveTerminalCard(session, theme, tokens, networkAvailable, onShowKeyboard, onHideKeyboard)
+                    Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { hapticClick(); onOpenSelected() }) })
+                } else {
+                    CarouselPreviewTerminalCard(session, tokens)
+                }
+            }
+        }
+        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 54.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            sessions.indices.forEach { index ->
+                Box(Modifier.padding(horizontal = 5.dp).size(if (index == selectedIndex) 8.dp else 6.dp).clip(CircleShape).background(if (index == selectedIndex) Color.White.copy(alpha = 0.86f) else Color.White.copy(alpha = 0.38f)))
+            }
         }
     }
 }
 
 @Composable
-private fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
+private fun CarouselActiveTerminalCard(session: ManagedTerminalSession, theme: CoderTheme, tokens: UiTokens, networkAvailable: Boolean, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
+        Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(14.dp).clip(CircleShape).background(Color(0xffffcc00)))
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.size(14.dp).clip(CircleShape).background(tokens.accent))
+            Spacer(Modifier.width(14.dp))
+            Text(session.sheet.title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (networkAvailable) session.sheet.status else "offline", color = if (networkAvailable && terminalStatusFromWireName(session.sheet.status) == TerminalConnectionStatus.Connected) tokens.success else Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
+        }
+        Box(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+            AndroidView(factory = { session.terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme) })
+        }
+        TerminalAccessory(theme, session.terminalView, false, false, {}, {}, {}, onShowKeyboard, onHideKeyboard)
+    }
+}
+
+@Composable
+private fun CarouselPreviewTerminalCard(session: ManagedTerminalSession, tokens: UiTokens) {
+    Column(Modifier.fillMaxSize().padding(18.dp)) {
+        Spacer(Modifier.height(36.dp))
+        Text(session.sheet.title, color = tokens.text.copy(alpha = 0.62f), fontSize = bodySize(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(10.dp))
+        session.previewLines.takeLast(5).forEach { line -> Text(line, color = tokens.secondary.copy(alpha = 0.52f), fontSize = smallCaptionSize(), fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
+@Composable
+private fun CarouselCreateTerminalCard(tokens: UiTokens) {
+    Column(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.025f)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Box(Modifier.size(70.dp).clip(CircleShape).background(tokens.surfaceHigh.copy(alpha = 0.22f)).border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), CircleShape), contentAlignment = Alignment.Center) {
+            Text("+", color = tokens.accent.copy(alpha = 0.58f), fontSize = 38.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("Create new terminal", color = tokens.text.copy(alpha = 0.34f), fontSize = bodySize(), textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun NativeSessionSwitcher(titles: List<String>, selectedIndex: Int, tokens: UiTokens, modifier: Modifier = Modifier, onSelectSession: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth().height(54.dp).then(modifier), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            titles.forEachIndexed { index, title ->
+                val selected = index == selectedIndex
+                Box(
+                    Modifier
+                        .padding(horizontal = if (selected) 5.dp else 2.dp)
+                        .width(if (selected) 146.dp else 44.dp)
+                        .height(if (selected) 32.dp else 26.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) tokens.surfaceHigh else tokens.surface.copy(alpha = 0.62f))
+                        .border(BorderStroke(1.dp, if (selected) tokens.separator else tokens.separator.copy(alpha = 0.45f)), RoundedCornerShape(12.dp))
+                        .clickable { hapticClick(); onSelectSession(index) }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(if (selected) title else "", color = if (selected) tokens.text else tokens.secondary, fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        Row(Modifier.height(14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            titles.indices.forEach { index ->
+                Box(Modifier.padding(horizontal = 3.dp).size(if (index == selectedIndex) 7.dp else 5.dp).clip(CircleShape).background(if (index == selectedIndex) tokens.text else tokens.separator))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, carouselSwipeEnabled: Boolean, onCarouselSwipe: () -> Unit, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
     var chatMode by remember { mutableStateOf(false) }
     var themeLabel by remember(theme.name) { mutableStateOf(CoderThemes.modeLabel(terminalView.context)) }
     var shiftActive by remember { mutableStateOf(false) }
@@ -1109,26 +1337,44 @@ private fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView
         ChatInputBar(uiTokens(theme), autoSend, { terminalView.sendText(it + "\n") }) { chatMode = false }
         return
     }
-    Box(Modifier.fillMaxWidth().height(74.dp).background(theme.background.toComposeColor()).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-        Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(22.dp)).background(uiTokens(theme).surfaceHigh).horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (selectionActive) {
-                ToolbarTextButton("Copy", text, uiTokens(theme).surface, onCopySelection)
-                ToolbarTextButton("Clear", text, uiTokens(theme).surface, onClearSelection)
-            } else toolbarOrder.forEach { slot ->
-                when (slot) {
-                    "ctrl" -> ToolbarTextButton("Ctrl", text, if (ctrlActive) active else uiTokens(theme).surface) { terminalView.toggleCtrlLatch() }
-                    "shift" -> ToolbarTextButton("Shift", text, if (shiftActive) active else uiTokens(theme).surface) { terminalView.toggleShiftLatch() }
-                    "alt" -> ToolbarTextButton("Alt", text, if (altActive) active else uiTokens(theme).surface) { terminalView.toggleAltLatch() }
-                    "esc" -> ToolbarTextButton("Esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
-                    "tab" -> ToolbarTextButton("Tab", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_TAB) }
-                    "empty" -> EmptyToolbarSlot(uiTokens(theme).surface)
-                    "paste" -> if (showPaste) ToolbarIconButton(R.drawable.ic_feather_upload, text, uiTokens(theme).surface) { terminalView.pasteFromClipboard() } else EmptyToolbarSlot(uiTokens(theme).surface)
-                    "theme" -> if (showTheme) ToolbarIconButton(R.drawable.ic_feather_rotate_ccw, text, uiTokens(theme).surface) { CoderThemes.nextMode(terminalView.context); themeLabel = CoderThemes.modeLabel(terminalView.context); terminalView.applyTheme(CoderThemes.current(terminalView.context)) }
-                    "chat" -> if (showChat) ToolbarIconButton(R.drawable.ic_feather_message_circle, text, Color.Transparent) { chatMode = true }
-                    "keyboard" -> ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onHideKeyboard(); onShowKeyboard() }
+    val carouselSwipeModifier = if (carouselSwipeEnabled) Modifier.pointerInput(Unit) {
+        var totalDrag = 0f
+        var fired = false
+        detectVerticalDragGestures(
+            onDragStart = { totalDrag = 0f; fired = false },
+            onVerticalDrag = { change, dragAmount ->
+                totalDrag += dragAmount
+                if (!fired && totalDrag < -48f) {
+                    fired = true
+                    change.consume()
+                    hapticClick()
+                    onCarouselSwipe()
+                }
+            },
+        )
+    } else Modifier
+    Box(Modifier.fillMaxWidth().height(74.dp).background(theme.background.toComposeColor()).then(carouselSwipeModifier).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+        Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(22.dp)).background(uiTokens(theme).surfaceHigh).padding(start = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                if (selectionActive) {
+                    ToolbarTextButton("Copy", text, uiTokens(theme).surface, onCopySelection)
+                    ToolbarTextButton("Clear", text, uiTokens(theme).surface, onClearSelection)
+                } else toolbarOrder.filterNot { it == "keyboard" }.forEach { slot ->
+                    when (slot) {
+                        "ctrl" -> ToolbarTextButton("Ctrl", text, if (ctrlActive) active else uiTokens(theme).surface) { terminalView.toggleCtrlLatch() }
+                        "shift" -> ToolbarTextButton("Shift", text, if (shiftActive) active else uiTokens(theme).surface) { terminalView.toggleShiftLatch() }
+                        "alt" -> ToolbarTextButton("Alt", text, if (altActive) active else uiTokens(theme).surface) { terminalView.toggleAltLatch() }
+                        "esc" -> ToolbarTextButton("Esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
+                        "tab" -> ToolbarTextButton("Tab", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_TAB) }
+                        "empty" -> EmptyToolbarSlot(uiTokens(theme).surface)
+                        "paste" -> if (showPaste) ToolbarIconButton(R.drawable.ic_feather_upload, text, uiTokens(theme).surface) { terminalView.pasteFromClipboard() } else EmptyToolbarSlot(uiTokens(theme).surface)
+                        "theme" -> if (showTheme) ToolbarIconButton(R.drawable.ic_feather_rotate_ccw, text, uiTokens(theme).surface) { CoderThemes.nextMode(terminalView.context); themeLabel = CoderThemes.modeLabel(terminalView.context); terminalView.applyTheme(CoderThemes.current(terminalView.context)) }
+                        "chat" -> if (showChat) ToolbarIconButton(R.drawable.ic_feather_message_circle, text, Color.Transparent) { chatMode = true }
+                    }
                 }
             }
             shortcuts.take(2).forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.sendText(shortcut.sequence) } }
+            ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
         }
     }
 }

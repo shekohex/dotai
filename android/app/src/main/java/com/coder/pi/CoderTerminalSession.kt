@@ -21,6 +21,9 @@ class CoderTerminalSession(
     private var stopped = false
     private var reconnectAttempts = 0
     private var reconnectScheduled = false
+    private var networkUnavailable = false
+
+    private val maxReconnectAttempts = 8
 
     private fun updateStatus(status: String) {
         mainScope.launch { onStatusChanged(status) }
@@ -35,7 +38,6 @@ class CoderTerminalSession(
         reconnectAttempts = 0
         updateError(null)
         updateStatus(TerminalConnectionStatus.Connecting.wireName)
-        terminalView.feedRemoteOutput("\u001bcconnecting to coder workspace\r\n".toByteArray())
         connect(false)
     }
 
@@ -57,15 +59,13 @@ class CoderTerminalSession(
                 reconnectScheduled = false
                 updateError(null)
                 updateStatus(TerminalConnectionStatus.Connected.wireName)
-                terminalView.feedRemoteOutput((if (reconnecting) "\r\nreconnected to coder workspace\r\n" else "\u001bcconnected to coder workspace\r\n").toByteArray())
             }.onFailure {
-                if (reconnecting && reconnectAttempts < 3 && !stopped) {
+                if (!stopped && reconnectAttempts < maxReconnectAttempts && (reconnecting || networkUnavailable)) {
                     scheduleReconnect()
                 } else {
                     val safeError = safeTerminalError(it)
                     updateError(safeError)
                     updateStatus(TerminalConnectionStatus.Failed.wireName)
-                    terminalView.feedRemoteOutput("\r\nconnection failed: $safeError\r\n".toByteArray())
                 }
             }
         }
@@ -85,24 +85,41 @@ class CoderTerminalSession(
         if (reconnectScheduled) return
         reconnectScheduled = true
         reconnectAttempts += 1
-        if (reconnectAttempts > 3) {
+        if (reconnectAttempts > maxReconnectAttempts) {
             reconnectScheduled = false
             updateError("Connection closed after reconnect attempts")
             updateStatus(TerminalConnectionStatus.Disconnected.wireName)
-            terminalView.feedRemoteOutput("\r\nconnection disconnected\r\n".toByteArray())
             return
         }
         updateStatus(TerminalConnectionStatus.Reconnecting.wireName)
-        terminalView.feedRemoteOutput("\r\nreconnecting to coder workspace\r\n".toByteArray())
+        val delayMillis = (500L shl (reconnectAttempts - 1).coerceAtMost(4)).coerceAtMost(8000L)
+        updateError("${if (networkUnavailable) "Network unavailable · " else ""}reconnecting in ${delayMillis / 1000.0}s · attempt $reconnectAttempts/$maxReconnectAttempts")
         scope.launch {
-            delay((reconnectAttempts * 750L).coerceAtMost(2500L))
+            delay(delayMillis)
             reconnectScheduled = false
-            if (!stopped) connect(true)
+            if (!stopped && !networkUnavailable) connect(true)
         }
+    }
+
+    fun networkLost() {
+        if (stopped) return
+        networkUnavailable = true
+        updateError("Network unavailable")
+        updateStatus(TerminalConnectionStatus.Reconnecting.wireName)
+        scope.launch { socket?.close() }
+    }
+
+    fun networkAvailable() {
+        if (stopped || socket != null) return
+        networkUnavailable = false
+        updateError("Network available, reconnecting")
+        reconnectScheduled = false
+        if (!reconnectScheduled) connect(true)
     }
 
     fun stop() {
         stopped = true
+        networkUnavailable = false
         reconnectScheduled = false
         terminalView.detachRemote()
         terminalView.onTerminalSizeChanged = null

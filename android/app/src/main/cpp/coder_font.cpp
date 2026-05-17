@@ -588,10 +588,6 @@ bool CoderFont::rebuildAtlas() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasWidth_, atlasHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    for (uint32_t codepoint = 33; codepoint < 127; codepoint++) {
-        Glyph ignored;
-        glyph(codepoint, 0, ignored);
-    }
     return texture_ != 0;
 }
 

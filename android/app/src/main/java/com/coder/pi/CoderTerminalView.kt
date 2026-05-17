@@ -20,6 +20,7 @@ import java.lang.ref.WeakReference
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
     private val native = CoderNative()
     private var handle = 0L
+    private var nativeFontKey: String? = null
     private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
     private var cellWidth = preferences.getInt("cellWidth", 18)
     private var cellHeight = preferences.getInt("cellHeight", 36)
@@ -54,7 +55,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
         handle = native.nativeInit(80, 24, cellWidth, cellHeight)
         native.nativeSetShaderCacheDir(handle, context.cacheDir.resolve("shader-cache").apply { mkdirs() }.absolutePath)
-        CoderFonts.styleBytes(context).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic) }
+        val selectedFontKey = CoderFonts.selectedKey(context)
+        CoderFonts.styleBytes(context, selectedFontKey).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic) }
+        nativeFontKey = selectedFontKey
         applyTextOptions()
         applyTheme(CoderThemes.current(context))
         native.nativeSetRefreshRate(handle, display?.refreshRate ?: 60f)
@@ -425,14 +428,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun setNativeFont(key: String) {
+        if (nativeFontKey == key) return
         val bytes = CoderFonts.styleBytes(context, key)
-        if (handle != 0L) queueEvent { native.nativeSetFontStyles(handle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic) }
+        if (handle != 0L) {
+            nativeFontKey = key
+            queueEvent { native.nativeSetFontStyles(handle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic) }
+        }
     }
 
     fun dispose() {
         unregisterTerminalView(this)
         if (handle != 0L) native.nativeDispose(handle)
         handle = 0L
+        nativeFontKey = null
     }
 
     fun applyTheme(theme: CoderTheme) {

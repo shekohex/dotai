@@ -28,6 +28,19 @@ static bool isNarrowPrintableAsciiCell(const CoderCell& cell) {
     return cell.wide == GHOSTTY_CELL_WIDE_NARROW && cell.codepointCount == 1 && cell.codepoints[0] > ' ' && cell.codepoints[0] < 0x7fu;
 }
 
+static bool isArabicCodepoint(uint32_t codepoint) {
+    return (codepoint >= 0x0600 && codepoint <= 0x06ff) ||
+        (codepoint >= 0x0750 && codepoint <= 0x077f) ||
+        (codepoint >= 0x08a0 && codepoint <= 0x08ff) ||
+        (codepoint >= 0xfb50 && codepoint <= 0xfdff) ||
+        (codepoint >= 0xfe70 && codepoint <= 0xfeff);
+}
+
+static bool isArabicRunCell(const CoderCell& cell) {
+    if (cell.wide != GHOSTTY_CELL_WIDE_NARROW || cell.codepointCount != 1) return false;
+    return isArabicCodepoint(cell.codepoints[0]) || cell.codepoints[0] == ' ';
+}
+
 static bool isEmojiClusterContinuation(const CoderCell& cell) {
     if (cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) return true;
     if (cell.codepointCount == 0) return false;
@@ -252,6 +265,53 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     if (row == cursor.row && cursor.col >= col && cursor.col <= runEndCol) break;
                     runEndCol++;
                 }
+                if (runEndCol - col > 1) {
+                    std::array<uint32_t, 64> runCodepoints{};
+                    uint32_t runCodepointCount = 0;
+                    for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = cells[row * cols + runCol].codepoints[0];
+                    auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags);
+                    bool runRenderable = !runGlyphs.empty();
+                    for (const auto& shapedGlyph : runGlyphs) {
+                        CoderFont::Glyph glyph;
+                        bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
+                        if (shapedGlyph.glyphId == 0 || !loaded) {
+                            runRenderable = false;
+                            break;
+                        }
+                    }
+                    if (runRenderable) {
+                        for (int skippedCol = col + 1; skippedCol < runEndCol; skippedCol++) skipText[static_cast<size_t>(row * cols + skippedCol)] = 1;
+                        float runCursorX = x0;
+                        for (const auto& shapedGlyph : runGlyphs) {
+                            CoderFont::Glyph glyph;
+                            bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
+                            if (!loaded || glyph.width <= 0 || glyph.height <= 0) {
+                                runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
+                                continue;
+                            }
+                            auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((runCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                            float glyphX0 = glyphX[0];
+                            float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
+                            float glyphX1 = glyphX[1];
+                            float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
+                            float colorGlyph = glyph.color ? 1.0f : 0.0f;
+                            vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                            runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (cell.codepointCount == 1 && isArabicCodepoint(cell.codepoints[0])) {
+                int runEndCol = col + 1;
+                while (runEndCol < cols) {
+                    const auto& runCell = cells[row * cols + runEndCol];
+                    if (!isArabicRunCell(runCell)) break;
+                    if (runCell.flags != cell.flags || runCell.foreground != cell.foreground) break;
+                    if (row == cursor.row && cursor.col >= col && cursor.col <= runEndCol) break;
+                    runEndCol++;
+                }
+                while (runEndCol > col && cells[row * cols + runEndCol - 1].codepointCount == 1 && cells[row * cols + runEndCol - 1].codepoints[0] == ' ') runEndCol--;
                 if (runEndCol - col > 1) {
                     std::array<uint32_t, 64> runCodepoints{};
                     uint32_t runCodepointCount = 0;

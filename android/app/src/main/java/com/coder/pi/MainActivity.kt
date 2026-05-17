@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
         if (uri.host != "settings") return
         deepLinkSettingsPage = when (uri.path?.trim('/')) {
             "fonts", "font", "size" -> SettingsPage.FONTS
-            "text" -> SettingsPage.TEXT
+            "text", "customize-text", "opentype", "open-type", "font-features" -> SettingsPage.TEXT
             "theme" -> SettingsPage.THEME
             "toolbar" -> SettingsPage.TOOLBAR
             "shortcuts" -> SettingsPage.SHORTCUTS

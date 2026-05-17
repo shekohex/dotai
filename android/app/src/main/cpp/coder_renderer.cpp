@@ -98,10 +98,12 @@ bool CoderRenderer::init() {
 
 void CoderRenderer::setFontData(const uint8_t* data, size_t length) {
     font_.setFontData(data, length);
+    cachedCells_.clear();
 }
 
 void CoderRenderer::setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength) {
     font_.setFontData(regularData, regularLength, boldData, boldLength, italicData, italicLength, boldItalicData, boldItalicLength);
+    cachedCells_.clear();
 }
 
 void CoderRenderer::setShaderCacheDir(std::string path) {
@@ -134,6 +136,7 @@ void CoderRenderer::resize(int width, int height) {
 
 void CoderRenderer::setCellSize(int width, int height) {
     font_.setCellSize(width, height);
+    cachedCells_.clear();
 }
 
 int CoderRenderer::cellWidth() const {

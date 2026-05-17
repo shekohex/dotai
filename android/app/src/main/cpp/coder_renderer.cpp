@@ -461,9 +461,12 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             }
         }
         if (cursorVisible && cursor.col >= 0 && cursor.row >= 0 && cursor.col < cols && cursor.row < rows) {
-            float x0 = -1.0f + cursor.col * cw;
+            int cursorCol = cursor.wideTail && cursor.col > 0 ? cursor.col - 1 : cursor.col;
+            const auto& cursorCell = cells[cursor.row * cols + cursorCol];
+            bool cursorWide = cursor.wideTail || cursorCell.wide == GHOSTTY_CELL_WIDE_WIDE;
+            float x0 = -1.0f + cursorCol * cw;
             float y0 = 1.0f - (cursor.row + 1) * ch;
-            float x1 = x0 + cw;
+            float x1 = x0 + cw * (cursorWide ? 2.0f : 1.0f);
             float y1 = y0 + ch;
             GhosttyRenderStateCursorVisualStyle visualStyle = cursor.visualStyle;
             if (cursorMode_ == 1) visualStyle = GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE;

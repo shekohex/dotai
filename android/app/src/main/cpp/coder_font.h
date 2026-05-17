@@ -66,6 +66,7 @@ private:
     };
 
     bool rebuildAtlas();
+    bool growAtlas();
     bool loadPrimaryFace(size_t index);
     bool loadFallbackFaces();
     bool configureFaceSize(FT_Face face);
@@ -83,7 +84,10 @@ private:
     bool ligaturesEnabled_ = true;
     int atlasWidth_ = 4096;
     int atlasHeight_ = 4096;
+    int atlasTargetSize_ = 4096;
+    int atlasMaxSize_ = 4096;
     bool atlasFullReported_ = false;
+    bool atlasGrowing_ = false;
     int shelfX_ = 1;
     int shelfY_ = 1;
     int shelfHeight_ = 0;

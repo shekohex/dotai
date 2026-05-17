@@ -1072,6 +1072,7 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡️\r\n\r\n")
         append("CJK: こんにちは 世界 你好 世界 안녕하세요\r\n")
         append("Arabic: مرحبا بالعالم\r\n")
+        append("Bidi: ABC مرحبا DEF 123\r\n")
         append("Combining: café  ZWJ: 👩🏽‍🚀\r\n")
         append("Wide: 表表表  Narrow: iii  Mixed: A表B😀C\r\n")
         append("${esc}]12;#ffcc00${'\u0007'}")

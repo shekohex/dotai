@@ -24,6 +24,7 @@ import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import { syncModeTools } from "../src/extensions/modes/tools.ts";
 import { formatAvailableModesXml } from "../src/extensions/available-modes.ts";
 import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes.ts";
+import { FallbackMuxAdapter } from "../src/subagent-sdk/fallback-mux.ts";
 import { TmuxAdapter } from "../src/subagent-sdk/tmux.ts";
 import {
   activateAutoExitTimeoutMode,
@@ -120,6 +121,29 @@ class FakeMuxAdapter implements MuxAdapter {
 
   async capturePane(): Promise<{ text: string }> {
     return { text: "" };
+  }
+}
+
+class NamedFakeMuxAdapter extends FakeMuxAdapter {
+  constructor(
+    readonly backend: string,
+    private readonly available: boolean,
+  ) {
+    super();
+  }
+
+  override async isAvailable(): Promise<boolean> {
+    return this.available;
+  }
+
+  override async createPane(options: {
+    cwd: string;
+    title: string;
+    command: string;
+    target: "pane" | "window";
+  }): Promise<{ paneId: string; backend: string }> {
+    const pane = await super.createPane(options);
+    return { ...pane, backend: this.backend };
   }
 }
 
@@ -1698,7 +1722,40 @@ timedTest("TmuxAdapter sendText preserves special characters like tabs", async (
   expect(calls[2]?.args).toEqual(["send-keys", "-t", "%1", "Enter"]);
 });
 
-timedTest("subagent tool metadata explains tmux inspection and wait-for-summary flow", () => {
+timedTest("FallbackMuxAdapter uses first available backend and records pane backend", async () => {
+  const tmux = new NamedFakeMuxAdapter("tmux", false);
+  const pty = new NamedFakeMuxAdapter("pty", true);
+  const adapter = new FallbackMuxAdapter([tmux, pty]);
+
+  const created = await adapter.createPane({
+    cwd: "/tmp/project",
+    title: "worker",
+    command: "pi --session fake",
+    target: "window",
+  });
+
+  expect(created.backend).toBe("pty");
+  expect(tmux.created).toHaveLength(0);
+  expect(pty.created).toHaveLength(1);
+
+  await adapter.sendText(created.paneId, "hello", "steer", created.backend);
+
+  expect(pty.sent).toEqual([{ paneId: created.paneId, text: "hello", submitMode: "steer" }]);
+});
+
+timedTest("FallbackMuxAdapter routes legacy tmux pane ids without persisted backend", async () => {
+  const tmux = new NamedFakeMuxAdapter("tmux", true);
+  const pty = new NamedFakeMuxAdapter("pty", true);
+  const adapter = new FallbackMuxAdapter([tmux, pty]);
+
+  tmux.existingPanes.add("%42");
+  await adapter.sendText("%42", "legacy", "followUp");
+
+  expect(tmux.sent).toEqual([{ paneId: "%42", text: "legacy", submitMode: "followUp" }]);
+  expect(pty.sent).toHaveLength(0);
+});
+
+timedTest("subagent tool metadata explains terminal inspection and wait-for-summary flow", () => {
   const fakePi = new FakePi();
   createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
     fakePi as unknown as ExtensionAPI,
@@ -1712,7 +1769,7 @@ timedTest("subagent tool metadata explains tmux inspection and wait-for-summary 
   expect(tool.promptSnippet ?? "").toMatch(/automatic completion summary/i);
   expect(
     tool.promptGuidelines?.some((guideline) =>
-      /tmux pane\/window output directly/i.test(guideline),
+      /backend terminal output when available/i.test(guideline),
     ),
   ).toBe(true);
   expect(
@@ -1725,14 +1782,14 @@ timedTest("subagent tool metadata explains tmux inspection and wait-for-summary 
     (tool.parameters as { properties?: Record<string, { description?: string }> }).properties ?? {};
   expect(parameterDescriptions.action?.description ?? "").toMatch(/no subagent read action/i);
   expect(parameterDescriptions.name?.description ?? "").toMatch(
-    /title shown immediately on launch/i,
+    /terminal title shown immediately on launch/i,
   );
   expect(parameterDescriptions.task?.description ?? "").toMatch(
-    /inspect tmux pane\/window output directly/i,
+    /rely on completion summaries or terminal output/i,
   );
   expect(parameterDescriptions.sessionId?.description ?? "").toMatch(/UUID v4/i);
   expect(parameterDescriptions.message?.description ?? "").toMatch(
-    /inspect the reply, read the tmux output directly/i,
+    /use backend terminal output when available/i,
   );
 });
 

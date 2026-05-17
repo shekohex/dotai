@@ -93,7 +93,7 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
 
     try {
       await this.markParentInjectedInput(state.sessionId);
-      await this.adapter.sendText(state.paneId, params.message, params.delivery);
+      await this.adapter.sendText(state.paneId, params.message, params.delivery, state.muxBackend);
       emitProgressUpdate(onUpdate, {
         action: "message",
         phase: "message",
@@ -151,7 +151,7 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
       );
     }
 
-    await this.adapter.killPane(state.paneId);
+    await this.adapter.killPane(state.paneId, state.muxBackend);
     const cancelled: RuntimeSubagent = {
       ...state,
       event: "cancelled",

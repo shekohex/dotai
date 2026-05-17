@@ -24,9 +24,9 @@ import {
 } from "./shared.js";
 
 const SUBAGENT_BASE_PROMPT_GUIDELINES = [
-  "Use `subagent` when the user wants parallel or delegated work in another tmux-backed pi session.",
+  "Use `subagent` when the user wants parallel or delegated work in another mux-backed pi session.",
   "Use `start` to launch a child session, `message` for follow-up or to auto-resume a dead child session before delivery, `cancel` to stop it, and `list` to inspect child status.",
-  "There is no subagent read tool. To inspect a child session, look at its tmux pane/window output directly from the parent session.",
+  "There is no subagent read tool. To inspect a child session, use backend terminal output when available or wait for the completion summary.",
   "Do not poll with `list` just to get the final result. By default, wait for the automatic completion summary and only use `message` or `cancel` when you need to steer or stop the child.",
   "Use `persisted` (default true) for subagents you may message again after they finish. Set `persisted: false` for ephemeral one-off tasks (exploration, git commits, quick lookups) — these can be messaged while running but cannot be resumed after the child session exits.",
   "Use `outputFormat` with `type: json_schema` and a `schema` (JSON Schema) to get structured results back from the subagent. The tool blocks until the child completes and returns validated data. Good for extracting structured data like summary, risk level, or file list instead of free-text.",

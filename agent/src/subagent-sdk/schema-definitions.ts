@@ -37,7 +37,7 @@ export const SubagentActionSchema = Type.Union(
   [Type.Literal("start"), Type.Literal("message"), Type.Literal("cancel"), Type.Literal("list")],
   {
     description:
-      "The subagent action to run. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect tmux pane/window output directly from the parent session.",
+      "The subagent action to run. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect terminal output from the parent session when available.",
   },
 );
 export const SubagentDeliverySchema = Type.Union(
@@ -153,13 +153,13 @@ export const SubagentToolParamsSchema = Type.Object({
   name: Type.Optional(
     Type.String({
       description:
-        "Required for start. Display name for the child session and the tmux pane/window title shown immediately on launch.",
+        "Required for start. Display name for the child session and terminal title shown immediately on launch when the backend supports it.",
     }),
   ),
   task: Type.Optional(
     Type.String({
       description:
-        "Required for start. Initial instruction for the child session. There is no subagent read action later, so inspect tmux pane/window output directly from the parent session for progress.",
+        "Required for start. Initial instruction for the child session. There is no subagent read action later, so provide delegated work up front and rely on completion summaries or terminal output.",
     }),
   ),
   mode: Type.Optional(Type.String({ description: "Optional mode name for the child session." })),
@@ -208,7 +208,7 @@ export const SubagentToolParamsSchema = Type.Object({
   message: Type.Optional(
     Type.String({
       description:
-        "Required for message. Sends follow-up text into the child tmux pane/window, auto-resuming the child first when its pane/window is gone. To inspect the reply, read the tmux output directly from the parent session.",
+        "Required for message. Sends follow-up text into the child terminal, auto-resuming the child first when its terminal backend is gone. To inspect the reply, use backend terminal output when available or wait for the completion summary.",
     }),
   ),
   delivery: Type.Optional(SubagentDeliverySchema),
@@ -226,6 +226,7 @@ export const SubagentStateEntrySchema = Type.Object(
     mode: Type.Optional(Type.String()),
     cwd: Type.String(),
     paneId: Type.String(),
+    muxBackend: Type.Optional(Type.String()),
     task: Type.String(),
     handoff: Type.Boolean(),
     autoExit: Type.Boolean(),

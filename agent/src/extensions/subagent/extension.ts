@@ -3,6 +3,8 @@ import { isStaleSessionReplacementContextError } from "../session-replacement.js
 import { installChildBootstrap, isChildSession } from "../../subagent-sdk/bootstrap.js";
 import { buildLaunchCommand, readChildState } from "../../subagent-sdk/launch.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
+import { FallbackMuxAdapter } from "../../subagent-sdk/fallback-mux.js";
+import { PtyAdapter } from "../../subagent-sdk/pty.js";
 import { TmuxAdapter } from "../../subagent-sdk/tmux.js";
 import { buildSubagentPromptGuidelines } from "./execution.js";
 import {
@@ -19,10 +21,13 @@ function installEnabledSubagentExtension(
 ): void {
   const adapter =
     resolvedOptions.adapterFactory?.(pi) ??
-    new TmuxAdapter(
-      (command, args, execOptions) => pi.exec(command, args, execOptions),
-      process.cwd(),
-    );
+    new FallbackMuxAdapter([
+      new TmuxAdapter(
+        (command, args, execOptions) => pi.exec(command, args, execOptions),
+        process.cwd(),
+      ),
+      new PtyAdapter(),
+    ]);
   const sdk = createSubagentSDK(pi, { adapter, buildLaunchCommand });
   const runtimeState: SubagentRuntimeState = {};
   const subagentTool = createSubagentToolDefinition(sdk);

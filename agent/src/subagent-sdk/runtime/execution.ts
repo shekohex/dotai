@@ -287,7 +287,11 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
       command,
       target: input.mode.tmuxTarget,
     });
-    const state: RuntimeSubagent = { ...input.provisionalState, paneId: pane.paneId };
+    const state: RuntimeSubagent = {
+      ...input.provisionalState,
+      paneId: pane.paneId,
+      muxBackend: pane.backend ?? this.adapter.backend,
+    };
     this.states.set(state.sessionId, state);
     this.activeSessionIds.add(state.sessionId);
     await this.hooks.persistState(state);

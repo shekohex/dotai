@@ -24,9 +24,9 @@ function createSubagentToolDefinition(sdk: SubagentSDK) {
     label: "π",
     renderShell: "self",
     description:
-      "Manage tmux-backed child pi sessions. Actions: start, message, cancel, list. Session ids are UUID v4. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect the child tmux pane/window output directly from the parent session. For final results, usually wait for the automatic completion summary instead of polling. Use `persisted: false` for ephemeral tasks, `outputFormat` for structured results.",
+      "Manage mux-backed child pi sessions. Actions: start, message, cancel, list. Session ids are UUID v4. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect backend terminal output when available. For final results, usually wait for the automatic completion summary instead of polling. Use `persisted: false` for ephemeral tasks, `outputFormat` for structured results.",
     promptSnippet:
-      "use `subagent` to start, message, cancel, or list tmux-backed child pi sessions; session ids are UUID v4; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary; set `persisted: false` for ephemeral tasks; use `outputFormat` json_schema for structured results",
+      "use `subagent` to start, message, cancel, or list mux-backed child pi sessions; session ids are UUID v4; `message` auto-resumes a dead child session before delivery when needed; there is no subagent read action, and the default flow is to wait for the automatic completion summary; set `persisted: false` for ephemeral tasks; use `outputFormat` json_schema for structured results",
     promptGuidelines: [...SUBAGENT_BASE_PROMPT_GUIDELINES, SUBAGENT_AVAILABLE_MODES_HEADING],
     parameters: SubagentToolParamsSchema,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {

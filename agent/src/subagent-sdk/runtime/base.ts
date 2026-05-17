@@ -176,7 +176,7 @@ export abstract class SubagentRuntimeBase {
 
   protected hasLivePane(state: RuntimeSubagent): Promise<boolean> {
     return state.paneId.length > 0
-      ? this.adapter.paneExists(state.paneId).catch(() => false)
+      ? this.adapter.paneExists(state.paneId, state.muxBackend).catch(() => false)
       : Promise.resolve(false);
   }
 

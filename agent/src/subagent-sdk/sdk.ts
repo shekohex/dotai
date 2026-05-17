@@ -90,7 +90,7 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
     },
     captureOutput({ sessionId, lines }) {
       const state = getStateOrThrow(input.runtime, sessionId);
-      return input.adapter.capturePane(state.paneId, lines);
+      return input.adapter.capturePane(state.paneId, lines, state.muxBackend);
     },
     onEvent(listener) {
       return input.eventBus.subscribe(listener);
@@ -107,6 +107,7 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
       clearInterval(input.timer);
       input.ipcServer.dispose();
       input.runtime.dispose();
+      input.adapter.dispose?.();
     },
   };
 }

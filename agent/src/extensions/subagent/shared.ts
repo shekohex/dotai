@@ -52,12 +52,12 @@ function validateToolParams(params: SubagentToolParams): void {
   if (params.action === "start") {
     if ((params.name?.trim().length ?? 0) === 0) {
       throw new Error(
-        "Invalid subagent start params: `name` is required. It becomes the tmux pane/window title shown when the child launches.",
+        "Invalid subagent start params: `name` is required. It becomes the child terminal title when the backend supports titles.",
       );
     }
     if ((params.task?.trim().length ?? 0) === 0) {
       throw new Error(
-        "Invalid subagent start params: `task` is required. There is no subagent read action later, so provide the delegated work up front and inspect tmux output from the parent session only when needed.",
+        "Invalid subagent start params: `task` is required. There is no subagent read action later, so provide the delegated work up front and inspect backend terminal output only when available and needed.",
       );
     }
     if (params.outputFormat?.type === "json_schema" && params.outputFormat.schema === undefined) {
@@ -75,7 +75,7 @@ function validateToolParams(params: SubagentToolParams): void {
     }
     if ((params.message?.trim().length ?? 0) === 0) {
       throw new Error(
-        "Invalid subagent message params: `message` is required. This text is sent into the child tmux pane/window.",
+        "Invalid subagent message params: `message` is required. This text is sent into the child terminal.",
       );
     }
   }
@@ -99,7 +99,7 @@ function normalizeSubagentExecutionError(
 }
 
 function getStartGuidanceText(): string {
-  return "This is the prompt sent to the child session. The subagent will return with a summary automatically when it finishes, so usually continue doing your work that needs to be done or wait for completion instead of polling with list or checking repeatedly for the final result. Use message only to steer the work, cancel to stop it, and inspect the tmux pane/window directly from the parent session only when you need live output.";
+  return "This is the prompt sent to the child session. The subagent will return with a summary automatically when it finishes, so usually continue doing your work that needs to be done or wait for completion instead of polling with list or checking repeatedly for the final result. Use message only to steer the work, cancel to stop it, and inspect backend terminal output only when available and needed.";
 }
 
 function formatStartResultText(state: RuntimeSubagent): string {
@@ -107,7 +107,7 @@ function formatStartResultText(state: RuntimeSubagent): string {
     state.persisted === false
       ? " This subagent is ephemeral (persisted: false). You can message it while running, but once it finishes it cannot be resumed. Start a new subagent for follow-up work."
       : "";
-  return `Subagent ${state.name} started and is running in the background. sessionId: ${state.sessionId}. It will return with a summary automatically when it finishes, so continue your other work and wait for its completion summary. Do not poll with list or check repeatedly for results. Use subagent message only to steer the work while running, cancel to stop it, and inspect the tmux pane/window directly only when you need live output.${ephemeralHint}`;
+  return `Subagent ${state.name} started and is running in the background. sessionId: ${state.sessionId}. It will return with a summary automatically when it finishes, so continue your other work and wait for its completion summary. Do not poll with list or check repeatedly for results. Use subagent message only to steer the work while running, cancel to stop it, and inspect backend terminal output only when available and needed.${ephemeralHint}`;
 }
 
 function formatStructuredStartResultText(state: RuntimeSubagent): string {

@@ -11,6 +11,7 @@ function getStateSignature(state: RuntimeSubagent): string {
     event: state.event,
     status: state.status,
     paneId: state.paneId,
+    muxBackend: state.muxBackend,
     completedAt: state.completedAt,
     autoExitDeadlineAt: state.autoExitDeadlineAt,
     autoExitTimeoutActive: state.autoExitTimeoutActive,

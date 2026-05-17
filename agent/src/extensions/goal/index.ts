@@ -10,7 +10,18 @@ import {
   formatFooterStatus,
   formatInteger,
 } from "./format.js";
-import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import {
+  assistantTurnTokens,
+  isAbortedAssistantMessage,
+  isToolUseAssistantMessage,
+  type AssistantMessageLike,
+} from "./messages.js";
+import {
+  budgetLimitPrompt,
+  contextLimitPrompt,
+  continuationGoalIdFromPrompt,
+  continuationPrompt,
+} from "./prompts.js";
 import {
   applyUsage,
   clearEntry,
@@ -32,15 +43,11 @@ interface GoalAccountingState {
   activeGoalId: string | null;
   lastAccountedAt: number | null;
   budgetWarningSentFor: string | null;
+  contextLimitWarningSentFor: string | null;
 }
 
 interface GoalStatusContext {
   ui: Pick<ExtensionContext["ui"], "setStatus">;
-}
-
-interface AssistantUsage {
-  input: number;
-  output: number;
 }
 
 interface QueuedGoalMessageDetails {
@@ -49,6 +56,7 @@ interface QueuedGoalMessageDetails {
     | "command_start"
     | "command_resume"
     | "budget_limit"
+    | "context_limit"
     | "stale_continuation";
   goalId?: string;
   currentGoalId?: string | null;
@@ -71,6 +79,7 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
         Type.Literal("command_start"),
         Type.Literal("command_resume"),
         Type.Literal("budget_limit"),
+        Type.Literal("context_limit"),
         Type.Literal("stale_continuation"),
       ]),
     ),
@@ -90,35 +99,8 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
 );
 
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
+const CONTEXT_LIMIT_USAGE_PERCENT_LIMIT = 90;
 const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
-
-function usageChannelTokens(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.trunc(value));
-}
-
-function assistantTurnTokens(message: { role: string; usage?: AssistantUsage }): number {
-  if (message.role !== "assistant" || !message.usage) {
-    return 0;
-  }
-
-  return usageChannelTokens(message.usage.input) + usageChannelTokens(message.usage.output);
-}
-
-function isAbortedAssistantMessage(message: { role: string; stopReason?: string }): boolean {
-  return message.role === "assistant" && message.stopReason === "aborted";
-}
-
-function isToolUseAssistantMessage(message: { role: string; stopReason?: string }): boolean {
-  return message.role === "assistant" && message.stopReason === "toolUse";
-}
-
-function isQueuedGoalWorkKind(kind: QueuedGoalMessageDetails["kind"]): boolean {
-  return kind === "continuation" || kind === "command_start" || kind === "command_resume";
-}
 
 function parseQueuedGoalMessageDetails(
   details: GoalCustomMessageLike["details"],
@@ -236,7 +218,10 @@ function queuedGoalWorkMessageId(message: GoalCustomMessageLike): string | null 
 
   const details = parseQueuedGoalMessageDetails(message.details);
   const { kind, goalId } = details ?? {};
-  if (isQueuedGoalWorkKind(kind) && goalId !== undefined) {
+  if (
+    (kind === "continuation" || kind === "command_start" || kind === "command_resume") &&
+    goalId !== undefined
+  ) {
     return goalId;
   }
 
@@ -263,6 +248,7 @@ class GoalRuntime {
     activeGoalId: null,
     lastAccountedAt: null,
     budgetWarningSentFor: null,
+    contextLimitWarningSentFor: null,
   };
 
   constructor(private readonly pi: ExtensionAPI) {}
@@ -388,6 +374,7 @@ class GoalRuntime {
     this.goal = nextGoal;
     if (previousGoalId !== nextGoal.goalId) {
       this.accounting.budgetWarningSentFor = null;
+      this.accounting.contextLimitWarningSentFor = null;
       this.clearStoppedRuntimeState();
     }
 
@@ -559,12 +546,43 @@ class GoalRuntime {
     );
   }
 
-  private maybeContinue(ctx: ExtensionContext): void {
+  private maybeSteerForContextLimit(ctx: ExtensionContext): boolean {
+    if (this.goal === null || this.goal.status !== "active" || this.isCompacting) {
+      return false;
+    }
+
+    const percent = this.contextUsagePercent(ctx);
+    if (percent === null || percent < CONTEXT_LIMIT_USAGE_PERCENT_LIMIT) {
+      return false;
+    }
+
+    if (this.accounting.contextLimitWarningSentFor === this.goal.goalId) {
+      return true;
+    }
+
+    this.accounting.contextLimitWarningSentFor = this.goal.goalId;
+    this.pi.sendMessage(
+      {
+        customType: GOAL_EXTENSION_ENTRY_TYPE,
+        content: contextLimitPrompt(this.goal, percent),
+        display: false,
+        details: { kind: "context_limit", goalId: this.goal.goalId },
+      },
+      { triggerTurn: true, deliverAs: "steer" },
+    );
+    return true;
+  }
+
+  private maybeContinue(ctx: ExtensionContext, allowContextLimitSteering = true): void {
     if (
       this.goal === null ||
       this.goal.status !== "active" ||
       this.continuationQueuedFor === this.goal.goalId
     ) {
+      return;
+    }
+
+    if (allowContextLimitSteering && this.maybeSteerForContextLimit(ctx)) {
       return;
     }
 
@@ -597,13 +615,18 @@ class GoalRuntime {
   }
 
   private isContextNearLimit(ctx: ExtensionContext): boolean {
+    const percent = this.contextUsagePercent(ctx);
+    return percent !== null && percent >= CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT;
+  }
+
+  private contextUsagePercent(ctx: ExtensionContext): number | null {
     const usage = ctx.getContextUsage();
     const percent = usage?.percent;
     if (percent === null || percent === undefined || !Number.isFinite(percent)) {
-      return false;
+      return null;
     }
 
-    return percent >= CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT;
+    return percent;
   }
 
   private async handleSessionStart(
@@ -672,10 +695,7 @@ class GoalRuntime {
     this.accountProgress(ctx, true, 0, true);
   }
 
-  private handleTurnEnd(
-    event: { message: { role: string; usage?: AssistantUsage; stopReason?: string } },
-    ctx: ExtensionContext,
-  ): void {
+  private handleTurnEnd(event: { message: AssistantMessageLike }, ctx: ExtensionContext): void {
     const completedTurnTokens = assistantTurnTokens(event.message);
     this.accountProgress(ctx, true, completedTurnTokens);
     if (isAbortedAssistantMessage(event.message)) {
@@ -683,15 +703,16 @@ class GoalRuntime {
       return;
     }
 
+    if (this.maybeSteerForContextLimit(ctx)) {
+      return;
+    }
+
     if (!isToolUseAssistantMessage(event.message)) {
-      this.maybeContinue(ctx);
+      this.maybeContinue(ctx, false);
     }
   }
 
-  private handleAgentEnd(
-    event: { messages: Array<{ role: string; usage?: AssistantUsage; stopReason?: string }> },
-    ctx: ExtensionContext,
-  ): void {
+  private handleAgentEnd(event: { messages: AssistantMessageLike[] }, ctx: ExtensionContext): void {
     const abortedMessages = event.messages.filter(isAbortedAssistantMessage);
     const abortedTurnTokens = abortedMessages.reduce(
       (sum, message) => sum + assistantTurnTokens(message),
@@ -703,7 +724,11 @@ class GoalRuntime {
       return;
     }
 
-    this.maybeContinue(ctx);
+    if (this.maybeSteerForContextLimit(ctx)) {
+      return;
+    }
+
+    this.maybeContinue(ctx, false);
   }
 
   private handleSessionBeforeCompact(_event: object, ctx: ExtensionContext): void {
@@ -713,6 +738,7 @@ class GoalRuntime {
 
   private handleSessionCompact(_event: object, ctx: ExtensionContext): void {
     this.isCompacting = false;
+    this.accounting.contextLimitWarningSentFor = null;
     if (this.goal !== null) {
       this.persistGoal(this.goal, "runtime");
     }

@@ -520,7 +520,122 @@ describe("goal extension", () => {
     });
   });
 
-  test("does not continue while context usage is near limit", async () => {
+  test("near context limit sends one hidden steering message", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 90, contextUsageTokens: 900 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "context_limit",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+    expect(harness.sentMessages[0]?.message.content).toContain(
+      "Wrap up this turn soon to avoid context overflow.",
+    );
+    expect(harness.sentMessages[0]?.message.content).toContain("Budget:");
+    expect(harness.sentMessages[0]?.message.content).toContain("- Token budget: none");
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 1, output: 1 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+  });
+
+  test("session lifecycle sends context steering instead of continuation near limit", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 90, contextUsageTokens: 900 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("session_tree", { type: "session_tree" });
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "context_limit",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("scheduled continuation retry sends context steering near limit", async () => {
+    const harness = createGoalHarness({
+      idle: false,
+      pendingMessages: true,
+      contextUsagePercent: 80,
+      contextUsageTokens: 800,
+    });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 1, output: 1 })],
+    });
+
+    expect(harness.sentMessages).toHaveLength(0);
+    harness.setContextUsage(90, 900);
+    harness.setIdle(true);
+    harness.setPendingMessages(false);
+    await waitForContinuationRetry();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "context_limit",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("context limit steering can send again after compaction resets usage", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 90, contextUsageTokens: 900 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+
+    harness.setContextUsage(100, 1000);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+    harness.setContextUsage(90, 900);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 1, output: 1 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(2);
+    expect(harness.sentMessages[1]?.message.details).toEqual({
+      kind: "context_limit",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("does not continue while context usage is hard near limit", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
     await harness.runCommand("ship it");
     harness.sentMessages.length = 0;
@@ -533,7 +648,11 @@ describe("goal extension", () => {
       toolResults: [],
     });
 
-    expect(harness.sentMessages).toHaveLength(0);
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "context_limit",
+      goalId: harness.snapshot().goal?.goalId,
+    });
   });
 
   test("does not continue during compaction but resumes after compaction when usage is unknown", async () => {

@@ -437,13 +437,15 @@ bool CoderFont::fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex
 }
 
 std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags) {
-    if (!ligaturesEnabled_) return {};
     if (codepointCount < 2) return {};
+    bool asciiOnly = true;
     bool emojiCluster = false;
     for (uint32_t index = 0; index < codepointCount; index++) {
         uint32_t codepoint = codepoints[index];
+        if (codepoint >= 0x80) asciiOnly = false;
         if (codepoint == 0x200d || (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff) || (codepoint >= 0xfe00 && codepoint <= 0xfe0f)) emojiCluster = true;
     }
+    if (!ligaturesEnabled_ && asciiOnly) return {};
     uint32_t index = styleIndex(flags);
     if (!loadPrimaryFace(index)) index = 0;
     if (!primaryFaces_[index].harfbuzzFont) return {};
@@ -532,7 +534,12 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
     hb_buffer_t* buffer = hb_buffer_create();
     hb_buffer_add_codepoints(buffer, codepoints, codepointCount, 0, codepointCount);
     hb_buffer_guess_segment_properties(buffer);
-    hb_shape(font, buffer, nullptr, 0);
+    std::array<hb_feature_t, 3> disabledLigatureFeatures{{
+        {HB_TAG('l', 'i', 'g', 'a'), 0, 0, UINT_MAX},
+        {HB_TAG('c', 'a', 'l', 't'), 0, 0, UINT_MAX},
+        {HB_TAG('d', 'l', 'i', 'g'), 0, 0, UINT_MAX},
+    }};
+    hb_shape(font, buffer, ligaturesEnabled_ ? nullptr : disabledLigatureFeatures.data(), ligaturesEnabled_ ? 0 : static_cast<unsigned int>(disabledLigatureFeatures.size()));
     unsigned int glyphCount = 0;
     hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(buffer, &glyphCount);
     hb_glyph_position_t* positions = hb_buffer_get_glyph_positions(buffer, &glyphCount);

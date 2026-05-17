@@ -695,6 +695,152 @@ describe("goal extension", () => {
     expect(harness.compactCalls[0]?.customInstructions).toContain("ship it");
   });
 
+  test("continues again after post-compaction continuation stops below context limit", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 90, contextUsageTokens: 900 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 1, output: 1 }),
+      toolResults: [],
+    });
+
+    expect(harness.compactCalls).toHaveLength(1);
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "manual",
+      result: {},
+      aborted: false,
+      willRetry: false,
+    });
+
+    expect(harness.sentMessages).toHaveLength(2);
+    const queued = harness.sentMessages[1];
+    if (typeof queued?.message.content !== "string") {
+      throw new Error("expected queued continuation content");
+    }
+
+    await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: queued.message.content,
+      systemPrompt: "base prompt",
+      systemPromptOptions: {},
+    });
+    harness.setContextUsage(10, 100);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 2, timestamp: 3 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 2,
+      message: assistantMessage("stop", { input: 50, output: 20 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(3);
+    expect(harness.sentMessages[2]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("continues again if post-compaction queued continuation starts without before_agent_start", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 90, contextUsageTokens: 900 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 1, output: 1 }),
+      toolResults: [],
+    });
+
+    expect(harness.compactCalls).toHaveLength(1);
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "manual",
+      result: {},
+      aborted: false,
+      willRetry: false,
+    });
+
+    expect(harness.sentMessages).toHaveLength(2);
+    harness.setContextUsage(10, 100);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 2, timestamp: 3 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 2,
+      message: assistantMessage("stop", { input: 50, output: 20 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(3);
+    expect(harness.sentMessages[2]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("compaction end resumes goal when session compact could not queue continuation", async () => {
+    const harness = createGoalHarness({ idle: false, pendingMessages: true });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("compaction_start", { type: "compaction_start", reason: "manual" });
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+
+    expect(harness.sentMessages).toHaveLength(0);
+    harness.setIdle(true);
+    harness.setPendingMessages(false);
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "manual",
+      result: {},
+      aborted: false,
+      willRetry: false,
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
   test("does not continue while context usage is hard near limit", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
     await harness.runCommand("ship it");

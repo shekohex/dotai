@@ -733,6 +733,18 @@ class GoalRuntime {
       this.persistGoal(this.goal, "runtime");
     }
     this.refreshUi(ctx);
+  }
+
+  private handleCompactionEnd(
+    event: { aborted?: boolean; willRetry?: boolean; errorMessage?: string },
+    ctx: ExtensionContext,
+  ): void {
+    this.isCompacting = false;
+    if (event.aborted === true || event.willRetry === true || event.errorMessage !== undefined) {
+      return;
+    }
+
+    this.clearContinuationTimer();
     this.maybeContinue(ctx);
   }
 
@@ -811,8 +823,8 @@ class GoalRuntime {
     this.pi.on("compaction_start", () => {
       this.isCompacting = true;
     });
-    this.pi.on("compaction_end", () => {
-      this.isCompacting = false;
+    this.pi.on("compaction_end", (event, ctx) => {
+      this.handleCompactionEnd(event, ctx);
     });
     this.pi.on("session_shutdown", (event, ctx) => {
       this.handleSessionShutdown(event, ctx);

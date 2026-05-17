@@ -2,6 +2,7 @@
 #include "coder_shaders.h"
 
 #include <android/log.h>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -182,9 +183,21 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float bg = ((cell.background >> 8) & 255) / 255.0f;
             float bb = ((cell.background >> 16) & 255) / 255.0f;
             addSolidQuad(solidVertices, gridX0, y0, gridX1, y1, br, bg, bb, 1.0f);
+            int cellSpan = cell.wide == GHOSTTY_CELL_WIDE_WIDE ? 2 : 1;
             float x0 = snapX(-1.0f + (col - visualColumnShift) * cw);
-            float x1 = snapX(-1.0f + (col + 1 - visualColumnShift) * cw);
+            float x1 = snapX(-1.0f + (col + cellSpan - visualColumnShift) * cw);
             float glyphCursorX = x0;
+            auto glyphXBounds = [&](const CoderFont::Glyph& glyph, int xOffsetPixels) {
+                float rawX0 = x0 + 2.0f * static_cast<float>(xOffsetPixels) / static_cast<float>(width_);
+                float rawWidth = 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_);
+                if (cell.wide == GHOSTTY_CELL_WIDE_WIDE) {
+                    float availableWidth = x1 - x0;
+                    float drawWidth = std::min(rawWidth, availableWidth);
+                    float centeredX0 = x0 + std::max(0.0f, (availableWidth - drawWidth) * 0.5f);
+                    return std::array<float, 2>{snapX(centeredX0), snapX(centeredX0 + drawWidth)};
+                }
+                return std::array<float, 2>{snapX(rawX0), snapX(rawX0 + rawWidth)};
+            };
             uint32_t glyphColor = row == cursor.row && col == cursor.col && cursor.visualStyle == GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK ? cursorTextColor_ : cell.foreground;
             float r = ((glyphColor >> 0) & 255) / 255.0f;
             float g = ((glyphColor >> 8) & 255) / 255.0f;
@@ -266,9 +279,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                         CoderFont::Glyph glyph;
                         bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                         if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
-                        float glyphX0 = snapX(clusterCursorX + 2.0f * static_cast<float>(glyph.bearingLeft + shapedGlyph.xOffset) / static_cast<float>(width_));
+                        auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((clusterCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                        float glyphX0 = glyphX[0];
                         float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
-                        float glyphX1 = snapX(glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_));
+                        float glyphX1 = glyphX[1];
                         float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                         float colorGlyph = glyph.color ? 1.0f : 0.0f;
                         vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
@@ -286,9 +300,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     if (codepoint <= ' ' || isZeroWidthCodepoint(codepoint)) continue;
                     CoderFont::Glyph glyph;
                     if (!font_.glyph(codepoint, cell.flags, glyph) || glyph.width <= 0 || glyph.height <= 0) continue;
-                    float glyphX0 = snapX(glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft) / static_cast<float>(width_));
+                    auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + static_cast<int>(std::round((glyphCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                    float glyphX0 = glyphX[0];
                     float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop) / static_cast<float>(height_));
-                    float glyphX1 = snapX(glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_));
+                    float glyphX1 = glyphX[1];
                     float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                     float colorGlyph = glyph.color ? 1.0f : 0.0f;
                     vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
@@ -317,9 +332,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 CoderFont::Glyph glyph;
                 bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                 if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
-                float glyphX0 = snapX(glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft + shapedGlyph.xOffset) / static_cast<float>(width_));
+                auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((glyphCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                float glyphX0 = glyphX[0];
                 float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
-                float glyphX1 = snapX(glyphX0 + 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_));
+                float glyphX1 = glyphX[1];
                 float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                 float colorGlyph = glyph.color ? 1.0f : 0.0f;
                 vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});

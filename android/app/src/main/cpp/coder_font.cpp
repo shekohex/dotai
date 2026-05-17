@@ -624,8 +624,13 @@ bool CoderFont::loadFallbackFaces() {
         "/product/fonts/DroidSansFallback.ttf",
     };
     for (const char* path : paths) {
-        FontFace font;
-        if (FT_New_Face(library_, path, 0, &font.face) == 0) {
+        FT_Face probe = nullptr;
+        if (FT_New_Face(library_, path, 0, &probe) != 0) continue;
+        FT_Long faceCount = std::max<FT_Long>(1, probe->num_faces);
+        FT_Done_Face(probe);
+        for (FT_Long faceIndex = 0; faceIndex < faceCount; faceIndex++) {
+            FontFace font;
+            if (FT_New_Face(library_, path, faceIndex, &font.face) != 0) continue;
             FT_Select_Charmap(font.face, FT_ENCODING_UNICODE);
             configureFaceSize(font.face);
             font.harfbuzzFont = hb_ft_font_create_referenced(font.face);

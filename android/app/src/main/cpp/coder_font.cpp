@@ -554,9 +554,10 @@ bool CoderFont::rebuildAtlas() {
     if (!loadPrimaryFace(0)) return false;
     GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
-    int targetAtlasSize = std::min(maxTextureSize > 0 ? maxTextureSize : 4096, 8192);
-    atlasWidth_ = std::max(4096, targetAtlasSize);
-    atlasHeight_ = std::max(4096, targetAtlasSize);
+    int targetAtlasSize = maxTextureSize > 0 ? std::min(maxTextureSize, 8192) : 4096;
+    atlasWidth_ = std::max(1024, targetAtlasSize);
+    atlasHeight_ = std::max(1024, targetAtlasSize);
+    __android_log_print(ANDROID_LOG_INFO, "CoderFont", "glyph atlas size=%dx%d max_texture_size=%d", atlasWidth_, atlasHeight_, maxTextureSize);
     if (texture_ == 0) glGenTextures(1, &texture_);
     glBindTexture(GL_TEXTURE_2D, texture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -695,7 +696,13 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
                 shelfY_ += shelfHeight_ + 1;
                 shelfHeight_ = 0;
             }
-            if (shelfY_ + paddedHeight >= atlasHeight_) return false;
+            if (shelfY_ + paddedHeight >= atlasHeight_) {
+                if (!atlasFullReported_) {
+                    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu colr=1", atlasWidth_, atlasHeight_, glyphs_.size());
+                    atlasFullReported_ = true;
+                }
+                return false;
+            }
             int atlasX = shelfX_ + 1;
             int atlasY = shelfY_ + 1;
             shelfX_ += paddedWidth;

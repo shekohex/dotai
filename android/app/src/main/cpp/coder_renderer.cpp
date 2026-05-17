@@ -170,16 +170,19 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
         solidVertices.reserve((cells.size() + 1) * 6);
         std::vector<uint8_t> skipText(cells.size(), 0);
         for (int row = 0; row < rows; row++) {
+            int visualColumnShift = 0;
             for (int col = 0; col < cols; col++) {
             const auto& cell = cells[row * cols + col];
-            float x0 = snapX(-1.0f + col * cw);
+            float gridX0 = snapX(-1.0f + col * cw);
             float y0 = snapY(1.0f - (row + 1) * ch);
-            float x1 = snapX(-1.0f + (col + 1) * cw);
+            float gridX1 = snapX(-1.0f + (col + 1) * cw);
             float y1 = snapY(1.0f - row * ch);
             float br = ((cell.background >> 0) & 255) / 255.0f;
             float bg = ((cell.background >> 8) & 255) / 255.0f;
             float bb = ((cell.background >> 16) & 255) / 255.0f;
-            addSolidQuad(solidVertices, x0, y0, x1, y1, br, bg, bb, 1.0f);
+            addSolidQuad(solidVertices, gridX0, y0, gridX1, y1, br, bg, bb, 1.0f);
+            float x0 = snapX(-1.0f + (col - visualColumnShift) * cw);
+            float x1 = snapX(-1.0f + (col + 1 - visualColumnShift) * cw);
             float glyphCursorX = x0;
             uint32_t glyphColor = row == cursor.row && col == cursor.col && cursor.visualStyle == GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK ? cursorTextColor_ : cell.foreground;
             float r = ((glyphColor >> 0) & 255) / 255.0f;
@@ -269,6 +272,9 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                         vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
                         clusterCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                     }
+                    int clusterCellSpan = clusterEndCol - col + 1;
+                    int collapsedCellSpan = clusterHasEmoji ? 2 : clusterCellSpan;
+                    if (clusterCellSpan > collapsedCellSpan) visualColumnShift += clusterCellSpan - collapsedCellSpan;
                     continue;
                 }
             }

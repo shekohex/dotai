@@ -33,6 +33,7 @@ public:
         int xOffset = 0;
         int yOffset = 0;
         uint32_t fallbackIndex = UINT32_MAX;
+        uint32_t primaryIndex = UINT32_MAX;
     };
 
     CoderFont();
@@ -45,6 +46,7 @@ public:
     void setLigaturesEnabled(bool enabled);
     bool glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph);
     bool glyphByIndex(uint32_t glyphIndex, uint32_t flags, Glyph& outGlyph);
+    bool primaryGlyphByIndex(uint32_t glyphIndex, uint32_t primaryIndex, Glyph& outGlyph);
     bool fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex, Glyph& outGlyph);
     std::vector<ShapedGlyph> shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags);
     GLuint texture() const { return texture_; }
@@ -69,7 +71,7 @@ private:
     bool configureFaceSize(FT_Face face);
     void updateMetricsFromFace(FT_Face face);
     uint32_t styleIndex(uint32_t flags) const;
-    std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex);
+    std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex);
     bool allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph);
     const uint8_t* bitmapBuffer(const FT_Bitmap& bitmap, std::vector<uint8_t>& convertedBuffer, bool& color);
     void releaseFace();

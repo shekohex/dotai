@@ -411,7 +411,11 @@ bool CoderFont::glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph) {
 }
 
 bool CoderFont::glyphByIndex(uint32_t glyphIndex, uint32_t flags, Glyph& outGlyph) {
-    uint32_t index = styleIndex(flags);
+    return primaryGlyphByIndex(glyphIndex, styleIndex(flags), outGlyph);
+}
+
+bool CoderFont::primaryGlyphByIndex(uint32_t glyphIndex, uint32_t primaryIndex, Glyph& outGlyph) {
+    uint32_t index = primaryIndex < primaryFaces_.size() ? primaryIndex : 0;
     uint64_t key = (static_cast<uint64_t>(index + 16) << 56u) | glyphIndex;
     auto existing = glyphs_.find(key);
     if (existing != glyphs_.end()) {
@@ -443,7 +447,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     uint32_t index = styleIndex(flags);
     if (!loadPrimaryFace(index)) index = 0;
     if (!primaryFaces_[index].harfbuzzFont) return {};
-    auto shaped = shapeWithFont(primaryFaces_[index].harfbuzzFont, codepoints, codepointCount, UINT32_MAX);
+    auto shaped = shapeWithFont(primaryFaces_[index].harfbuzzFont, codepoints, codepointCount, UINT32_MAX, index);
     bool primaryRenderable = !shaped.empty();
     for (const auto& shapedGlyph : shaped) {
         Glyph glyph;
@@ -456,7 +460,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     if (!loadFallbackFaces()) return shaped;
     if (emojiCluster) {
         for (uint32_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
-            auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, codepointCount, fallbackIndex);
+            auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, codepointCount, fallbackIndex, UINT32_MAX);
             bool fallbackRenderable = !fallbackShaped.empty();
             for (const auto& shapedGlyph : fallbackShaped) {
                 Glyph glyph;
@@ -471,12 +475,13 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     struct RunFont {
         hb_font_t* harfbuzzFont = nullptr;
         uint32_t fallbackIndex = UINT32_MAX;
+        uint32_t primaryIndex = UINT32_MAX;
     };
     auto fontForCodepoint = [&](uint32_t codepoint) -> RunFont {
-        if (primaryFaces_[index].face && FT_Get_Char_Index(primaryFaces_[index].face, static_cast<FT_ULong>(codepoint)) != 0) return {primaryFaces_[index].harfbuzzFont, UINT32_MAX};
-        if (index != 0 && loadPrimaryFace(0) && primaryFaces_[0].face && FT_Get_Char_Index(primaryFaces_[0].face, static_cast<FT_ULong>(codepoint)) != 0) return {primaryFaces_[0].harfbuzzFont, UINT32_MAX};
+        if (primaryFaces_[index].face && FT_Get_Char_Index(primaryFaces_[index].face, static_cast<FT_ULong>(codepoint)) != 0) return {primaryFaces_[index].harfbuzzFont, UINT32_MAX, index};
+        if (index != 0 && loadPrimaryFace(0) && primaryFaces_[0].face && FT_Get_Char_Index(primaryFaces_[0].face, static_cast<FT_ULong>(codepoint)) != 0) return {primaryFaces_[0].harfbuzzFont, UINT32_MAX, 0};
         for (uint32_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
-            if (FT_Get_Char_Index(fallbackFaces_[fallbackIndex].face, static_cast<FT_ULong>(codepoint)) != 0) return {fallbackFaces_[fallbackIndex].harfbuzzFont, fallbackIndex};
+            if (FT_Get_Char_Index(fallbackFaces_[fallbackIndex].face, static_cast<FT_ULong>(codepoint)) != 0) return {fallbackFaces_[fallbackIndex].harfbuzzFont, fallbackIndex, UINT32_MAX};
         }
         return {};
     };
@@ -488,10 +493,10 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
         uint32_t runEnd = runStart + 1;
         while (runEnd < codepointCount) {
             RunFont nextFont = fontForCodepoint(codepoints[runEnd]);
-            if (nextFont.harfbuzzFont != runFont.harfbuzzFont || nextFont.fallbackIndex != runFont.fallbackIndex) break;
+            if (nextFont.harfbuzzFont != runFont.harfbuzzFont || nextFont.fallbackIndex != runFont.fallbackIndex || nextFont.primaryIndex != runFont.primaryIndex) break;
             runEnd++;
         }
-        auto runShaped = shapeWithFont(runFont.harfbuzzFont, codepoints + runStart, runEnd - runStart, runFont.fallbackIndex);
+        auto runShaped = shapeWithFont(runFont.harfbuzzFont, codepoints + runStart, runEnd - runStart, runFont.fallbackIndex, runFont.primaryIndex);
         if (runShaped.empty()) return shaped;
         mixedShaped.insert(mixedShaped.end(), runShaped.begin(), runShaped.end());
         runStart = runEnd;
@@ -499,7 +504,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     bool mixedRenderable = !mixedShaped.empty();
     for (const auto& shapedGlyph : mixedShaped) {
         Glyph glyph;
-        bool loaded = shapedGlyph.fallbackIndex == UINT32_MAX ? glyphByIndex(shapedGlyph.glyphId, flags, glyph) : fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph);
+        bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
         if (shapedGlyph.glyphId == 0 || !loaded) {
             mixedRenderable = false;
             break;
@@ -507,7 +512,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     }
     if (mixedRenderable) return mixedShaped;
     for (uint32_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
-        auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, codepointCount, fallbackIndex);
+        auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, codepointCount, fallbackIndex, UINT32_MAX);
         bool fallbackRenderable = !fallbackShaped.empty();
         for (const auto& shapedGlyph : fallbackShaped) {
             Glyph glyph;
@@ -521,7 +526,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     return shaped;
 }
 
-std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex) {
+std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex) {
     std::vector<ShapedGlyph> shaped;
     if (!font || codepointCount == 0) return shaped;
     hb_buffer_t* buffer = hb_buffer_create();
@@ -539,6 +544,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
             static_cast<int>(positions[index].x_offset >> 6),
             static_cast<int>(positions[index].y_offset >> 6),
             fallbackIndex,
+            primaryIndex,
         });
     }
     hb_buffer_destroy(buffer);

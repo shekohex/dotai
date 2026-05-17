@@ -251,7 +251,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 bool clusterRenderable = !clusterGlyphs.empty();
                 for (const auto& shapedGlyph : clusterGlyphs) {
                     CoderFont::Glyph glyph;
-                    bool loaded = shapedGlyph.fallbackIndex == UINT32_MAX ? font_.glyphByIndex(shapedGlyph.glyphId, cell.flags, glyph) : font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph);
+                    bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                     if (shapedGlyph.glyphId == 0 || !loaded) {
                         clusterRenderable = false;
                         break;
@@ -262,7 +262,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     for (int skippedCol = col + 1; skippedCol <= clusterEndCol; skippedCol++) skipText[static_cast<size_t>(row * cols + skippedCol)] = 1;
                     for (const auto& shapedGlyph : clusterGlyphs) {
                         CoderFont::Glyph glyph;
-                        bool loaded = shapedGlyph.fallbackIndex == UINT32_MAX ? font_.glyphByIndex(shapedGlyph.glyphId, cell.flags, glyph) : font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph);
+                        bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                         if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
                         float glyphX0 = snapX(clusterCursorX + 2.0f * static_cast<float>(glyph.bearingLeft + shapedGlyph.xOffset) / static_cast<float>(width_));
                         float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
@@ -301,7 +301,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             bool shapedGlyphsRenderable = true;
             for (const auto& shapedGlyph : shapedGlyphs) {
                 CoderFont::Glyph glyph;
-                bool loaded = shapedGlyph.fallbackIndex == UINT32_MAX ? font_.glyphByIndex(shapedGlyph.glyphId, cell.flags, glyph) : font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph);
+                bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                 if (shapedGlyph.glyphId == 0 || !loaded) {
                     shapedGlyphsRenderable = false;
                     break;
@@ -313,7 +313,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             }
             for (const auto& shapedGlyph : shapedGlyphs) {
                 CoderFont::Glyph glyph;
-                bool loaded = shapedGlyph.fallbackIndex == UINT32_MAX ? font_.glyphByIndex(shapedGlyph.glyphId, cell.flags, glyph) : font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph);
+                bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                 if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
                 float glyphX0 = snapX(glyphCursorX + 2.0f * static_cast<float>(glyph.bearingLeft + shapedGlyph.xOffset) / static_cast<float>(width_));
                 float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));

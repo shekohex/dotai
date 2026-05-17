@@ -1,6 +1,6 @@
 {
   "name": "@shekohex/agent",
-  "version": "0.74.0",
+  "version": "0.74.1",
   "private": false,
   "homepage": "https://github.com/shekohex/dotai#readme",
   "bugs": {
@@ -56,10 +56,10 @@
     "test:subagent": "vitest run ./test/commit.test.ts ./test/subagent.test.ts ./test/subagent-sdk.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "0.74.0",
-    "@earendil-works/pi-tui": "^0.74.0",
+    "@earendil-works/pi-agent-core": "^0.74.1",
+    "@earendil-works/pi-ai": "^0.74.1",
+    "@earendil-works/pi-coding-agent": "0.74.1",
+    "@earendil-works/pi-tui": "^0.74.1",
     "@joplin/turndown-plugin-gfm": "^1.0.64",
     "@mendable/firecrawl-js": "^4.18.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -81,6 +81,7 @@
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0",
     "oxlint-tsgolint": "^0.21.1",
+    "strip-ansi": "^7.2.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.10",

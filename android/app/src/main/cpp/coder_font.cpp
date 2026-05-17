@@ -436,6 +436,12 @@ bool CoderFont::fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex
     return loadFallbackFaces() && fallbackIndex < fallbackFaces_.size() && allocateGlyph(key, fallbackFaces_[fallbackIndex].face, glyphIndex, outGlyph);
 }
 
+bool CoderFont::shouldSynthesizeBold(uint32_t flags) const {
+    if ((flags & 1u) == 0u) return false;
+    uint32_t index = styleIndex(flags);
+    return index != 0 && primaryFaces_[index].data.empty();
+}
+
 std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags) {
     if (codepointCount < 2) return {};
     bool asciiOnly = true;

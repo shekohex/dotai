@@ -222,6 +222,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float r = ((glyphColor >> 0) & 255) / 255.0f;
             float g = ((glyphColor >> 8) & 255) / 255.0f;
             float b = ((glyphColor >> 16) & 255) / 255.0f;
+            bool synthesizeBold = font_.shouldSynthesizeBold(cell.flags);
             auto addDecorationColor = [&](float y, float thickness, float decorationR, float decorationG, float decorationB) {
                 float dy = thickness * ch;
                 addSolidQuad(solidVertices, x0, y, x1, y + dy, decorationR, decorationG, decorationB, 1.0f);
@@ -452,7 +453,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                 float colorGlyph = glyph.color ? 1.0f : 0.0f;
                 vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
-                if ((cell.flags & 1u) != 0u && !glyph.color) {
+                if (synthesizeBold && !glyph.color) {
                     float boldOffset = 2.0f / static_cast<float>(width_);
                     vertices.insert(vertices.end(), {{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1 + boldOffset,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0 + boldOffset,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
                 }

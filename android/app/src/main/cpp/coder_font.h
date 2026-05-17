@@ -49,6 +49,7 @@ public:
     bool primaryGlyphByIndex(uint32_t glyphIndex, uint32_t primaryIndex, Glyph& outGlyph);
     bool fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex, Glyph& outGlyph);
     std::vector<ShapedGlyph> shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags);
+    bool shouldSynthesizeBold(uint32_t flags) const;
     GLuint texture() const { return texture_; }
     int glyphWidth() const { return glyphWidth_; }
     int glyphHeight() const { return glyphHeight_; }

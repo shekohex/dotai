@@ -5,6 +5,7 @@ import {
   registerOpenAIImage,
 } from "../src/extensions/openai-better/image.js";
 import { defaultOpenAIBetterSettings } from "../src/extensions/openai-better/settings.js";
+import { createToolStateEntry, TOOL_STATE_ENTRY_TYPE } from "../src/utils/tool-state.js";
 
 describe("openai better image parsing", () => {
   it("does not register generate_image by default", () => {
@@ -31,6 +32,7 @@ describe("openai better image parsing", () => {
   it("registers imagen command with prompt usage and enables tool before generation", async () => {
     const registeredTools: string[] = [];
     let activeTools: string[] = [];
+    const entries: Array<{ customType: string; data: unknown; type: "custom" }> = [];
     let imagenCommand:
       | {
           description: string;
@@ -41,6 +43,9 @@ describe("openai better image parsing", () => {
       getActiveTools: () => activeTools,
       setActiveTools: (toolNames) => {
         activeTools = toolNames;
+      },
+      appendEntry: (customType, data) => {
+        entries.push({ type: "custom", customType, data });
       },
       registerCommand: (name, command) => {
         if (name === "imagen") {
@@ -60,6 +65,49 @@ describe("openai better image parsing", () => {
         modelRegistry: { authStorage: { getApiKey: async () => undefined } },
       } as unknown as ExtensionCommandContext),
     ).rejects.toThrow();
+    expect(registeredTools).toContain("generate_image");
+    expect(activeTools).toContain("generate_image");
+    expect(entries).toContainEqual({
+      type: "custom",
+      customType: TOOL_STATE_ENTRY_TYPE,
+      data: createToolStateEntry("generate_image", true),
+    });
+  });
+
+  it("restores generate_image active state from session entries", () => {
+    const registeredTools: string[] = [];
+    let activeTools: string[] = [];
+    let sessionStartHandler:
+      | ((event: object, ctx: { sessionManager: { getBranch: () => unknown[] } }) => void)
+      | undefined;
+    const pi = createFakePi(registeredTools, {
+      getActiveTools: () => activeTools,
+      setActiveTools: (toolNames) => {
+        activeTools = toolNames;
+      },
+      on: (event, handler) => {
+        if (event === "session_start") {
+          sessionStartHandler = handler as typeof sessionStartHandler;
+        }
+      },
+    });
+
+    registerOpenAIImage(pi, () => defaultOpenAIBetterSettings);
+    sessionStartHandler?.(
+      { type: "session_start", reason: "resume" },
+      {
+        sessionManager: {
+          getBranch: () => [
+            {
+              type: "custom",
+              customType: TOOL_STATE_ENTRY_TYPE,
+              data: createToolStateEntry("generate_image", true),
+            },
+          ],
+        },
+      },
+    );
+
     expect(registeredTools).toContain("generate_image");
     expect(activeTools).toContain("generate_image");
   });
@@ -102,6 +150,7 @@ function createFakePi(
 ): ExtensionAPI {
   return {
     getActiveTools: () => [],
+    appendEntry() {},
     on() {},
     registerCommand() {},
     registerMessageRenderer() {},

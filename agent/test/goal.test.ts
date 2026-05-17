@@ -26,9 +26,12 @@ function createGoalHarness(
     contextUsagePercent?: number | null;
     contextUsageTokens?: number | null;
     contextWindow?: number;
+    initialEntries?: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]>;
   } = {},
 ) {
-  const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
+  const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [
+    ...(options.initialEntries ?? []),
+  ];
   const handlers = new Map<string, GoalEventHandler[]>();
   const sentMessages: SentGoalMessage[] = [];
   const compactCalls: CompactCall[] = [];
@@ -319,6 +322,28 @@ describe("goal extension", () => {
     expect(harness.activeTools.includes("goal")).toBe(true);
   });
 
+  test("goal tool enabled state restores from session entries", async () => {
+    const firstHarness = createGoalHarness();
+    await firstHarness.runCommand("on");
+
+    const restoredHarness = createGoalHarness({ initialEntries: firstHarness.entries });
+    await restoredHarness.emit("session_start", { type: "session_start", reason: "resume" });
+
+    expect(restoredHarness.tools.has("goal")).toBe(true);
+    expect(restoredHarness.activeTools.includes("goal")).toBe(true);
+  });
+
+  test("goal tool disabled state restores from session entries", async () => {
+    const firstHarness = createGoalHarness();
+    await firstHarness.runCommand("on");
+    await firstHarness.runCommand("off");
+
+    const restoredHarness = createGoalHarness({ initialEntries: firstHarness.entries });
+    await restoredHarness.emit("session_start", { type: "session_start", reason: "resume" });
+
+    expect(restoredHarness.activeTools.includes("goal")).toBe(false);
+  });
+
   test("goal tool supports get create and update actions", async () => {
     const harness = createGoalHarness();
     await harness.runCommand("on");
@@ -398,7 +423,9 @@ describe("goal extension", () => {
       kind: "command_start",
       goalId: harness.snapshot().goal?.goalId,
     });
-    expect(parseGoalCustomEntry(harness.entries[0]?.data)?.kind).toBe("set");
+    expect(harness.entries.some((entry) => parseGoalCustomEntry(entry.data)?.kind === "set")).toBe(
+      true,
+    );
   });
 
   test("completed turns account tokens and continue active goals", async () => {

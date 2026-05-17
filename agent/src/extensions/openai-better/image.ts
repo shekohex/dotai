@@ -7,11 +7,15 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Box, Container, Image, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
+import {
+  createToolStateEntry,
+  readToolState,
+  TOOL_STATE_ENTRY_TYPE,
+} from "../../utils/tool-state.js";
 import {
   createTextComponent,
   formatDurationHuman,
@@ -22,8 +26,7 @@ import {
 import { formatToolStatus } from "../coreui/tools-status.js";
 import { LITELLM_API_KEY_ENV, resolveLiteLLMApiKey, resolveLiteLLMState } from "../litellm.js";
 import {
-  IMAGE_ACTIONS,
-  IMAGE_OUTPUT_FORMATS,
+  CodexImageResultSchema,
   ImageGenerationCallSchema,
   OPENAI_IMAGE_COMMAND,
   OPENAI_IMAGE_PROMPT_GUIDELINES,
@@ -556,42 +559,8 @@ function createImagePreviewComponent(
 }
 
 function parseRenderedResultDetails(value: unknown): CodexImageResult | undefined {
-  return Value.Check(
-    Type.Object(
-      {
-        id: Type.String(),
-        status: Type.String(),
-        prompt: Type.String(),
-        data: Type.String(),
-        mimeType: Type.String(),
-        model: Type.String(),
-        action: StringEnum(IMAGE_ACTIONS),
-        outputFormat: StringEnum(IMAGE_OUTPUT_FORMATS),
-        revisedPrompt: Type.Optional(Type.String()),
-        savedPath: Type.Optional(Type.String()),
-      },
-      { additionalProperties: true },
-    ),
-    value,
-  )
-    ? Value.Parse(
-        Type.Object(
-          {
-            id: Type.String(),
-            status: Type.String(),
-            prompt: Type.String(),
-            data: Type.String(),
-            mimeType: Type.String(),
-            model: Type.String(),
-            action: StringEnum(IMAGE_ACTIONS),
-            outputFormat: StringEnum(IMAGE_OUTPUT_FORMATS),
-            revisedPrompt: Type.Optional(Type.String()),
-            savedPath: Type.Optional(Type.String()),
-          },
-          { additionalProperties: true },
-        ),
-        value,
-      )
+  return Value.Check(CodexImageResultSchema, value)
+    ? Value.Parse(CodexImageResultSchema, value)
     : undefined;
 }
 
@@ -688,6 +657,26 @@ export function registerOpenAIImage(
     pi.setActiveTools(Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)));
   }
 
+  function deactivateImageTool(): void {
+    commandEnabled = false;
+    pi.setActiveTools(pi.getActiveTools().filter((toolName) => toolName !== OPENAI_IMAGE_TOOL));
+  }
+
+  function persistImageToolState(): void {
+    pi.appendEntry(TOOL_STATE_ENTRY_TYPE, createToolStateEntry(OPENAI_IMAGE_TOOL, commandEnabled));
+  }
+
+  function restoreImageToolState(ctx: ExtensionContext): void {
+    const restored = readToolState(ctx.sessionManager.getBranch(), OPENAI_IMAGE_TOOL);
+    if (restored === true) {
+      activateImageTool();
+      return;
+    }
+    if (restored === false && !getSettings().image.enabled) {
+      deactivateImageTool();
+    }
+  }
+
   async function generate(params: ToolParams, ctx: ExtensionContext, requestSignal?: AbortSignal) {
     try {
       lastStatus = "requesting";
@@ -736,6 +725,7 @@ export function registerOpenAIImage(
         return;
       }
       activateImageTool();
+      persistImageToolState();
       ctx.ui.notify("Requesting OpenAI image...", "info");
       const result = await generate({ prompt }, ctx);
       pi.sendMessage({
@@ -752,6 +742,12 @@ export function registerOpenAIImage(
   if (getEffectiveSettings().image.enabled) {
     registerImageTool();
   }
+  pi.on("session_start", (_event, ctx) => {
+    restoreImageToolState(ctx);
+  });
+  pi.on("session_tree", (_event, ctx) => {
+    restoreImageToolState(ctx);
+  });
   return { getDebug };
 }
 

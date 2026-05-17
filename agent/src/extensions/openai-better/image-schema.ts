@@ -64,5 +64,21 @@ export const ImageGenerationCallSchema = Type.Object(
   { additionalProperties: true },
 );
 
+export const CodexImageResultSchema = Type.Object(
+  {
+    id: Type.String(),
+    status: Type.String(),
+    prompt: Type.String(),
+    data: Type.String(),
+    mimeType: Type.String(),
+    model: Type.String(),
+    action: StringEnum(IMAGE_ACTIONS),
+    outputFormat: StringEnum(IMAGE_OUTPUT_FORMATS),
+    revisedPrompt: Type.Optional(Type.String()),
+    savedPath: Type.Optional(Type.String()),
+  },
+  { additionalProperties: true },
+);
+
 export type ToolParams = Static<typeof ToolParamsSchema>;
 export type ImageGenerationCall = Static<typeof ImageGenerationCallSchema>;

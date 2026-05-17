@@ -1,4 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  createToolStateEntry,
+  readToolState,
+  TOOL_STATE_ENTRY_TYPE,
+} from "../../utils/tool-state.js";
 import { emitNotifyPublish } from "../notify/index.js";
 import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { Type } from "typebox";
@@ -103,6 +108,7 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
 const CONTEXT_LIMIT_USAGE_PERCENT_LIMIT = 90;
 const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
+const GOAL_TOOL_NAME = "goal";
 
 function parseQueuedGoalMessageDetails(
   details: GoalCustomMessageLike["details"],
@@ -215,9 +221,11 @@ class GoalRuntime {
       },
       enableTool: () => {
         this.enableTool();
+        this.persistToolState();
       },
       disableTool: () => {
         this.disableTool();
+        this.persistToolState();
       },
     });
 
@@ -237,7 +245,7 @@ class GoalRuntime {
       this.toolRegistered = true;
     }
     this.toolEnabled = true;
-    const activeTools = new Set([...this.pi.getActiveTools(), "goal"]);
+    const activeTools = new Set([...this.pi.getActiveTools(), GOAL_TOOL_NAME]);
     this.pi.setActiveTools(
       Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)),
     );
@@ -245,7 +253,27 @@ class GoalRuntime {
 
   private disableTool(): void {
     this.toolEnabled = false;
-    this.pi.setActiveTools(this.pi.getActiveTools().filter((toolName) => toolName !== "goal"));
+    this.pi.setActiveTools(
+      this.pi.getActiveTools().filter((toolName) => toolName !== GOAL_TOOL_NAME),
+    );
+  }
+
+  private persistToolState(): void {
+    this.pi.appendEntry(
+      TOOL_STATE_ENTRY_TYPE,
+      createToolStateEntry(GOAL_TOOL_NAME, this.toolEnabled),
+    );
+  }
+
+  private restoreToolState(ctx: ExtensionContext): void {
+    const restored = readToolState(ctx.sessionManager.getBranch(), GOAL_TOOL_NAME);
+    if (restored === true) {
+      this.enableTool();
+      return;
+    }
+    if (restored === false) {
+      this.disableTool();
+    }
   }
 
   private goalForDisplay(): ThreadGoal | null {
@@ -749,9 +777,11 @@ class GoalRuntime {
       return changed ? { messages } : undefined;
     });
     this.pi.on("session_start", (event, ctx) => {
+      this.restoreToolState(ctx);
       return this.handleSessionStart(event, ctx);
     });
     this.pi.on("session_tree", (event, ctx) => {
+      this.restoreToolState(ctx);
       this.handleSessionTree(event, ctx);
     });
     this.pi.on("before_agent_start", (event, ctx) => {

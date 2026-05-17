@@ -1,10 +1,21 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 
+import {
+  createToolStateEntry,
+  readToolState,
+  TOOL_STATE_ENTRY_TYPE,
+} from "../../utils/tool-state.js";
 import { createTextComponent } from "../coreui/tools.js";
 import { executeInterviewTool } from "./execute.js";
 import { renderInterviewResult } from "./render.js";
+
+const INTERVIEW_TOOL_NAME = "interview";
 
 const InterviewParams = Type.Object({
   questions: Type.String({
@@ -59,7 +70,7 @@ function deactivateTool(pi: ExtensionAPI, toolName: string): void {
 
 function registerInterviewTool(pi: ExtensionAPI): void {
   pi.registerTool({
-    name: "interview",
+    name: INTERVIEW_TOOL_NAME,
     label: "Interview",
     renderShell: "self",
     description: INTERVIEW_DESCRIPTION,
@@ -88,14 +99,29 @@ export default function registerInterviewExtension(pi: ExtensionAPI): void {
       toolRegistered = true;
     }
     toolEnabled = true;
-    activateTool(pi, "interview");
+    activateTool(pi, INTERVIEW_TOOL_NAME);
     ctx?.ui.notify("Interview tool enabled.");
   };
 
   const disableTool = (ctx?: ExtensionCommandContext): void => {
     toolEnabled = false;
-    deactivateTool(pi, "interview");
+    deactivateTool(pi, INTERVIEW_TOOL_NAME);
     ctx?.ui.notify("Interview tool disabled.");
+  };
+
+  const persistToolState = (): void => {
+    pi.appendEntry(TOOL_STATE_ENTRY_TYPE, createToolStateEntry(INTERVIEW_TOOL_NAME, toolEnabled));
+  };
+
+  const restoreToolState = (ctx: ExtensionContext): void => {
+    const restored = readToolState(ctx.sessionManager.getBranch(), INTERVIEW_TOOL_NAME);
+    if (restored === true) {
+      enableTool();
+      return;
+    }
+    if (restored === false) {
+      disableTool();
+    }
   };
 
   pi.registerCommand("interview", {
@@ -110,10 +136,12 @@ export default function registerInterviewExtension(pi: ExtensionAPI): void {
       const trimmed = args.trim();
       if (trimmed === "off") {
         disableTool(ctx);
+        persistToolState();
         return Promise.resolve();
       }
       if (trimmed === "on") {
         enableTool(ctx);
+        persistToolState();
         return Promise.resolve();
       }
       if (trimmed === "") {
@@ -122,6 +150,7 @@ export default function registerInterviewExtension(pi: ExtensionAPI): void {
         } else {
           enableTool(ctx);
         }
+        persistToolState();
         return Promise.resolve();
       }
       ctx.ui.notify("Usage: /interview [on|off]", "error");
@@ -131,7 +160,13 @@ export default function registerInterviewExtension(pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", () => {
     if (!toolEnabled) {
-      deactivateTool(pi, "interview");
+      deactivateTool(pi, INTERVIEW_TOOL_NAME);
     }
+  });
+  pi.on("session_start", (_event, ctx) => {
+    restoreToolState(ctx);
+  });
+  pi.on("session_tree", (_event, ctx) => {
+    restoreToolState(ctx);
   });
 }

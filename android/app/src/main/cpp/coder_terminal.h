@@ -14,7 +14,19 @@ struct CoderCell {
     uint32_t codepointCount;
     uint32_t foreground;
     uint32_t background;
+    uint32_t underlineColor;
     uint32_t flags;
+};
+
+struct CoderCursor {
+    int col = -1;
+    int row = -1;
+    bool visible = true;
+    bool blinking = true;
+    bool wideTail = false;
+    bool colorHasValue = false;
+    uint32_t color = 0;
+    GhosttyRenderStateCursorVisualStyle visualStyle = GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK;
 };
 
 bool operator==(const CoderCell& lhs, const CoderCell& rhs);
@@ -34,6 +46,7 @@ public:
     void scroll(int rowDelta);
     bool mouseTracking() const;
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
+    std::vector<CoderCell> snapshot(int& cols, int& rows, CoderCursor& cursor);
 
 private:
     void writePty(const uint8_t* data, size_t length);
@@ -75,5 +88,6 @@ private:
     int cellHeight_ = 0;
     int cursorCol_ = 0;
     int cursorRow_ = 0;
+    CoderCursor cursor_;
     std::vector<CoderCell> cells_;
 };

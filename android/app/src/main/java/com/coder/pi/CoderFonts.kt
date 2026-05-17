@@ -115,6 +115,14 @@ object CoderFonts {
         return context.resources.openRawResource(resourceId).use { it.readBytes() }
     }
 
+    fun styleBytes(context: Context, key: String = selectedKey(context)): CoderFontBytes {
+        val option = allOptions(context).firstOrNull { it.key == key } ?: builtInOptions().first()
+        option.file?.let { bytes -> return CoderFontBytes(bytes.readBytes(), null, null, null) }
+        fun readResource(resourceId: Int?): ByteArray? = resourceId?.let { context.resources.openRawResource(it).use { input -> input.readBytes() } }
+        val regular = readResource(option.resourceId) ?: bytes(context, key)
+        return CoderFontBytes(regular, readResource(option.boldResourceId ?: option.semiBoldResourceId), readResource(option.italicResourceId), readResource(option.boldItalicResourceId))
+    }
+
     fun importFont(context: Context, uri: Uri): CoderFontOption? {
         val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
@@ -140,3 +148,5 @@ object CoderFonts {
         return ext in setOf("ttf", "otf", "ttc", "otc")
     }
 }
+
+data class CoderFontBytes(val regular: ByteArray, val bold: ByteArray?, val italic: ByteArray?, val boldItalic: ByteArray?)

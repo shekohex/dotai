@@ -5,6 +5,8 @@ class CoderNative {
     external fun nativeDispose(handle: Long)
     external fun nativeSurfaceCreated(handle: Long)
     external fun nativeSetFont(handle: Long, bytes: ByteArray)
+    external fun nativeSetFontStyles(handle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?)
+    external fun nativeSetShaderCacheDir(handle: Long, path: String)
     external fun nativeSetTheme(handle: Long, foreground: Int, background: Int, cursor: Int, cursorText: Int, palette: IntArray)
     external fun nativeSetTextOptions(handle: Long, ligatures: Boolean, cursorBlink: Boolean, cursorMode: Int)
     external fun nativeSetRefreshRate(handle: Long, refreshRate: Float)

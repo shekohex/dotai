@@ -25,6 +25,7 @@ bool operator==(const CoderCell& lhs, const CoderCell& rhs) {
         && lhs.codepoints == rhs.codepoints
         && lhs.foreground == rhs.foreground
         && lhs.background == rhs.background
+        && lhs.underlineColor == rhs.underlineColor
         && lhs.flags == rhs.flags;
 }
 
@@ -46,7 +47,8 @@ bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
     cellHeight_ = cellHeight;
     cursorCol_ = 0;
     cursorRow_ = 0;
-    cells_.assign(cols_ * rows_, CoderCell{{}, 0, 0xffd0d0d0, 0xff101014, 0});
+    cursor_ = CoderCursor{0, 0};
+    cells_.assign(cols_ * rows_, CoderCell{{}, 0, 0xffd0d0d0, 0xff101014, 0xffd0d0d0, 0});
 
     GhosttyTerminalOptions options = { .cols = static_cast<uint16_t>(cols_), .rows = static_cast<uint16_t>(rows_), .max_scrollback = 1000 };
     GhosttyTerminal terminal = nullptr;
@@ -84,7 +86,7 @@ void CoderTerminal::resize(int cols, int rows, int cellWidth, int cellHeight) {
     rows_ = std::max(1, rows);
     cellWidth_ = cellWidth;
     cellHeight_ = cellHeight;
-    cells_.assign(cols_ * rows_, CoderCell{{}, 0, 0xffd0d0d0, 0xff101014, 0});
+    cells_.assign(cols_ * rows_, CoderCell{{}, 0, 0xffd0d0d0, 0xff101014, 0xffd0d0d0, 0});
     cursorCol_ = 0;
     cursorRow_ = 0;
     ghostty_terminal_resize(terminal_.get(), static_cast<uint16_t>(cols_), static_cast<uint16_t>(rows_), static_cast<uint32_t>(cellWidth), static_cast<uint32_t>(cellHeight));
@@ -191,6 +193,14 @@ bool CoderTerminal::mouseTracking() const {
 }
 
 std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow) {
+    CoderCursor cursor;
+    auto result = snapshot(cols, rows, cursor);
+    cursorCol = cursor.col;
+    cursorRow = cursor.row;
+    return result;
+}
+
+std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor) {
     std::lock_guard lock(mutex_);
     if (terminal_ && renderState_) {
         ghostty_render_state_update(renderState_.get(), terminal_.get());
@@ -206,7 +216,7 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursor
         cols_ = renderCols;
         rows_ = renderRows;
         if (dimensionsChanged || dirtyState == GHOSTTY_RENDER_STATE_DIRTY_FULL) {
-            cells_.assign(cols_ * rows_, CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), 0});
+            cells_.assign(cols_ * rows_, CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0});
         }
         GhosttyRenderStateRowIterator rowIterator = rowIterator_.get();
         ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &rowIterator);
@@ -221,7 +231,7 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursor
                 continue;
             }
             for (int col = 0; col < cols_; col++) {
-                cells_[row * cols_ + col] = CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), 0};
+                cells_[row * cols_ + col] = CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0};
             }
             GhosttyRenderStateRowCells rowCells = rowCells_.get();
             ghostty_render_state_row_get(rowIterator, GHOSTTY_RENDER_STATE_ROW_DATA_CELLS, &rowCells);
@@ -240,16 +250,31 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursor
                 }
                 GhosttyColorRgb foregroundColor = colors.foreground;
                 GhosttyColorRgb backgroundColor = colors.background;
+                GhosttyColorRgb underlineColor = foregroundColor;
                 ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR, &foregroundColor);
                 ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR, &backgroundColor);
                 GhosttyStyle style = GHOSTTY_INIT_SIZED(GhosttyStyle);
                 ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_STYLE, &style);
+                if (style.underline_color.tag == GHOSTTY_STYLE_COLOR_RGB) underlineColor = style.underline_color.value.rgb;
+                if (style.underline_color.tag == GHOSTTY_STYLE_COLOR_PALETTE) underlineColor = colors.palette[style.underline_color.value.palette];
                 if (style.inverse) {
                     std::swap(foregroundColor, backgroundColor);
                 }
                 uint32_t flags = style.bold ? 1u : 0u;
                 if (style.italic) flags |= 2u;
-                cells_[row * cols_ + col] = CoderCell{codepoints, codepointCount, rgb(foregroundColor), rgb(backgroundColor), flags};
+                if (style.underline != 0) flags |= 4u;
+                if (style.strikethrough) flags |= 8u;
+                if (style.overline) flags |= 16u;
+                flags |= (static_cast<uint32_t>(style.underline) & 7u) << 5u;
+                if (style.invisible) codepointCount = 0;
+                if (codepointCount > 0 && codepoints[0] >= 0x1f000) {
+                    static int loggedEmojiCells = 0;
+                    if (loggedEmojiCells < 16) {
+                        __android_log_print(ANDROID_LOG_INFO, "CoderTerminal", "emoji cell row=%d col=%d count=%u cps=U+%04X U+%04X U+%04X U+%04X", row, col, codepointCount, codepoints[0], codepoints[1], codepoints[2], codepoints[3]);
+                        loggedEmojiCells++;
+                    }
+                }
+                cells_[row * cols_ + col] = CoderCell{codepoints, codepointCount, rgb(foregroundColor), rgb(backgroundColor), rgb(underlineColor), flags};
                 col++;
             }
             bool clean = false;
@@ -259,20 +284,34 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursor
         GhosttyRenderStateDirty cleanState = GHOSTTY_RENDER_STATE_DIRTY_FALSE;
         ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &cleanState);
         bool hasCursor = false;
+        cursor_ = CoderCursor{};
+        ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_VISIBLE, &cursor_.visible);
+        ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_BLINKING, &cursor_.blinking);
+        ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_VISUAL_STYLE, &cursor_.visualStyle);
+        ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_COLOR_CURSOR_HAS_VALUE, &cursor_.colorHasValue);
+        if (cursor_.colorHasValue) {
+            GhosttyColorRgb cursorColor{};
+            if (ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_COLOR_CURSOR, &cursorColor) == GHOSTTY_SUCCESS) cursor_.color = (static_cast<uint32_t>(cursorColor.r) << 16u) | (static_cast<uint32_t>(cursorColor.g) << 8u) | static_cast<uint32_t>(cursorColor.b);
+        }
         ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_HAS_VALUE, &hasCursor);
         if (hasCursor) {
             uint16_t cursorX = 0;
             uint16_t cursorY = 0;
             ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_X, &cursorX);
             ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_Y, &cursorY);
+            ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_WIDE_TAIL, &cursor_.wideTail);
             cursorCol_ = cursorX;
             cursorRow_ = cursorY;
+            cursor_.col = cursorCol_;
+            cursor_.row = cursorRow_;
+        } else {
+            cursorCol_ = -1;
+            cursorRow_ = -1;
         }
     }
     cols = cols_;
     rows = rows_;
-    cursorCol = cursorCol_;
-    cursorRow = cursorRow_;
+    cursor = cursor_;
     return cells_;
 }
 

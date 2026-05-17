@@ -1,6 +1,8 @@
 package com.coder.pi
 
 import android.graphics.Color
+import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -21,6 +23,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var terminalView: CoderTerminalView
     private var currentTheme by mutableStateOf<CoderTheme?>(null)
     private var uiRevision by mutableIntStateOf(0)
+    private var deepLinkSettingsPage by mutableStateOf<SettingsPage?>(null)
+    private var deepLinkRevision by mutableIntStateOf(0)
+    private var debugPlaygroundRevision by mutableIntStateOf(0)
     private var keyboardTerminalView: CoderTerminalView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,6 +34,7 @@ class MainActivity : AppCompatActivity() {
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         currentTheme = CoderThemes.current(this)
+        handleDeepLink(intent)
         terminalView = CoderTerminalView(this)
         applySystemBars(currentTheme ?: CoderThemes.current(this))
         setContent {
@@ -37,6 +43,9 @@ class MainActivity : AppCompatActivity() {
                 terminalView = terminalView,
                 theme = currentTheme ?: CoderThemes.current(context),
                 uiRevision = uiRevision,
+                deepLinkSettingsPage = deepLinkSettingsPage,
+                deepLinkRevision = deepLinkRevision,
+                debugPlaygroundRevision = debugPlaygroundRevision,
                 onThemeChanged = {
                     currentTheme = CoderThemes.current(this)
                     terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
@@ -59,6 +68,35 @@ class MainActivity : AppCompatActivity() {
                 },
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "pi") return
+        if (uri.host == "debug") {
+            if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 && uri.path?.trim('/') == "render") debugPlaygroundRevision++
+            return
+        }
+        if (uri.host != "settings") return
+        deepLinkSettingsPage = when (uri.path?.trim('/')) {
+            "fonts", "font", "size" -> SettingsPage.FONTS
+            "text" -> SettingsPage.TEXT
+            "theme" -> SettingsPage.THEME
+            "toolbar" -> SettingsPage.TOOLBAR
+            "shortcuts" -> SettingsPage.SHORTCUTS
+            "keyboard" -> SettingsPage.KEYBOARD
+            "gestures" -> SettingsPage.GESTURES
+            "speech" -> SettingsPage.SPEECH
+            "connection" -> SettingsPage.CONNECTION
+            else -> SettingsPage.ROOT
+        }
+        deepLinkRevision++
     }
 
     private fun showTerminalKeyboard(targetTerminalView: CoderTerminalView) {

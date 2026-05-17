@@ -37,6 +37,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var altLatch = false
     private var softwareKeyboardAllowed = false
     private var remoteInput: ((ByteArray) -> Unit)? = null
+    private val pendingRemoteOutput = mutableListOf<ByteArray>()
     var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
     var onToolbarActionsChanged: (() -> Unit)? = null
@@ -52,11 +53,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
         handle = native.nativeInit(80, 24, cellWidth, cellHeight)
-        native.nativeSetFont(handle, CoderFonts.bytes(context))
+        native.nativeSetShaderCacheDir(handle, context.cacheDir.resolve("shader-cache").apply { mkdirs() }.absolutePath)
+        CoderFonts.styleBytes(context).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic) }
         applyTextOptions()
         applyTheme(CoderThemes.current(context))
         native.nativeSetRefreshRate(handle, display?.refreshRate ?: 60f)
         native.nativeSurfaceCreated(handle)
+        flushPendingRemoteOutput()
     }
 
     override fun onSurfaceChanged(gl: javax.microedition.khronos.opengles.GL10?, width: Int, height: Int) {
@@ -414,8 +417,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun setFontFamily(key: String) {
         CoderFonts.setSelected(context, key)
-        val bytes = CoderFonts.bytes(context, key)
-        if (handle != 0L) queueEvent { native.nativeSetFont(handle, bytes) }
+        setNativeFont(key)
+    }
+
+    fun setPreviewFontFamily(key: String) {
+        setNativeFont(key)
+    }
+
+    private fun setNativeFont(key: String) {
+        val bytes = CoderFonts.styleBytes(context, key)
+        if (handle != 0L) queueEvent { native.nativeSetFontStyles(handle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic) }
     }
 
     fun dispose() {
@@ -538,7 +549,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun feedRemoteOutput(bytes: ByteArray) {
-        if (handle != 0L && bytes.isNotEmpty()) queueEvent { native.nativeFeed(handle, bytes) }
+        if (bytes.isEmpty()) return
+        if (handle == 0L) {
+            pendingRemoteOutput.add(bytes)
+            return
+        }
+        queueEvent { native.nativeFeed(handle, bytes) }
+    }
+
+    private fun flushPendingRemoteOutput() {
+        if (handle == 0L || pendingRemoteOutput.isEmpty()) return
+        val outputs = pendingRemoteOutput.toList()
+        pendingRemoteOutput.clear()
+        queueEvent { outputs.forEach { native.nativeFeed(handle, it) } }
     }
 
     private fun writeInput(bytes: ByteArray) {

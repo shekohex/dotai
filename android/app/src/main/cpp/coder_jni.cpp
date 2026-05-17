@@ -5,6 +5,26 @@
 #include <memory>
 #include <string>
 
+struct JniByteArrayView {
+    JNIEnv* env = nullptr;
+    jbyteArray array = nullptr;
+    jbyte* data = nullptr;
+    jsize length = 0;
+
+    JniByteArrayView(JNIEnv* env, jbyteArray array) : env(env), array(array) {
+        if (!array) return;
+        length = env->GetArrayLength(array);
+        data = env->GetByteArrayElements(array, nullptr);
+    }
+
+    ~JniByteArrayView() {
+        if (data) env->ReleaseByteArrayElements(array, data, JNI_ABORT);
+    }
+
+    const uint8_t* bytes() const { return reinterpret_cast<const uint8_t*>(data); }
+    size_t size() const { return static_cast<size_t>(length); }
+};
+
 struct CoderSession {
     CoderTerminal terminal;
     CoderRenderer renderer;
@@ -30,10 +50,27 @@ Java_com_coder_pi_CoderNative_nativeSurfaceCreated(JNIEnv*, jobject, jlong handl
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeSetFont(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
     auto* session = reinterpret_cast<CoderSession*>(handle);
-    jsize length = env->GetArrayLength(bytes);
-    jbyte* data = env->GetByteArrayElements(bytes, nullptr);
-    session->renderer.setFontData(reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(length));
-    env->ReleaseByteArrayElements(bytes, data, JNI_ABORT);
+    JniByteArrayView regular(env, bytes);
+    session->renderer.setFontData(regular.bytes(), regular.size());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeSetFontStyles(JNIEnv* env, jobject, jlong handle, jbyteArray regularBytes, jbyteArray boldBytes, jbyteArray italicBytes, jbyteArray boldItalicBytes) {
+    auto* session = reinterpret_cast<CoderSession*>(handle);
+    JniByteArrayView regular(env, regularBytes);
+    JniByteArrayView bold(env, boldBytes);
+    JniByteArrayView italic(env, italicBytes);
+    JniByteArrayView boldItalic(env, boldItalicBytes);
+    session->renderer.setFontData(regular.bytes(), regular.size(), bold.bytes(), bold.size(), italic.bytes(), italic.size(), boldItalic.bytes(), boldItalic.size());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeSetShaderCacheDir(JNIEnv* env, jobject, jlong handle, jstring path) {
+    auto* session = reinterpret_cast<CoderSession*>(handle);
+    const char* chars = env->GetStringUTFChars(path, nullptr);
+    if (!chars) return;
+    session->renderer.setShaderCacheDir(chars);
+    env->ReleaseStringUTFChars(path, chars);
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -1,0 +1,5 @@
+set(PNG_FOUND TRUE)
+set(PNG_LIBRARIES png_static)
+set(PNG_INCLUDE_DIRS "${libpng_BINARY_DIR};${libpng_SOURCE_DIR}")
+set(PNG_DEFINITIONS "")
+set(PNG_VERSION_STRING "1.6.43")

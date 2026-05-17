@@ -3,6 +3,7 @@ package com.coder.pi
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -128,7 +129,7 @@ import java.util.UUID
 import kotlin.math.abs
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class AppDestination { HOME, TERMINAL, SETTINGS }
+enum class AppDestination { HOME, TERMINAL, SETTINGS, DEBUG_RENDER }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 private enum class TerminalUiMode { SHEET, CAROUSEL }
 
@@ -187,6 +188,9 @@ fun CoderApp(
     terminalView: CoderTerminalView,
     theme: CoderTheme,
     uiRevision: Int,
+    deepLinkSettingsPage: SettingsPage?,
+    deepLinkRevision: Int,
+    debugPlaygroundRevision: Int,
     onThemeChanged: () -> Unit,
     onFontChanged: () -> Unit,
     onShowKeyboard: (CoderTerminalView) -> Unit,
@@ -203,6 +207,13 @@ fun CoderApp(
     val context = LocalContext.current
     val sessionStore = remember(context) { CoderSessionStore(context) }
     var networkAvailable by remember { mutableStateOf(true) }
+    LaunchedEffect(deepLinkRevision) {
+        if (deepLinkSettingsPage != null) destination = AppDestination.SETTINGS
+    }
+    LaunchedEffect(debugPlaygroundRevision) {
+        val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debugBuild && debugPlaygroundRevision > 0) destination = AppDestination.DEBUG_RENDER
+    }
     DisposableEffect(context) {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val mainHandler = Handler(Looper.getMainLooper())
@@ -374,7 +385,8 @@ fun CoderApp(
                     )
                 }
                 AppDestination.TERMINAL -> TerminalPane(terminalView, theme, onShowKeyboard, onHideKeyboard)
-                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, onThemeChanged, { key ->
+                AppDestination.DEBUG_RENDER -> DebugRenderPlayground(theme, tokens) { destination = AppDestination.HOME }
+                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
                     terminalSessions.forEach { it.terminalView.setFontFamily(key) }
                     onFontChanged()
@@ -1009,6 +1021,67 @@ private fun TerminalPane(
 }
 
 @Composable
+private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    if (!debugBuild) {
+        Box(Modifier.fillMaxSize().background(tokens.background))
+        return
+    }
+    val baselineFont = remember { CoderFonts.builtInOptions().first { it.key == "jetbrains" } }
+    val playgroundTerminalView = remember(context) {
+        CoderTerminalView(context).also {
+            it.setFontSizePoints(22)
+            it.applyTheme(theme)
+        }
+    }
+    BackHandler { onBack() }
+    DisposableEffect(playgroundTerminalView) {
+        onDispose { playgroundTerminalView.dispose() }
+    }
+    AndroidView(
+        factory = { playgroundTerminalView.detachFromCurrentParent() },
+        modifier = Modifier.fillMaxSize().background(theme.background.toComposeColor()),
+        update = {
+            it.applyTheme(theme)
+            it.post { it.refreshSurface() }
+            it.setPreviewFontFamily(baselineFont.key)
+            it.setFontSizePoints(22)
+            listOf(0L, 300L, 900L, 1800L, 3500L, 7000L, 12000L).forEach { delayMillis ->
+                it.postDelayed({ it.feedRemoteOutput(debugRenderPlaygroundBytes(baselineFont.name)) }, delayMillis)
+            }
+        },
+    )
+}
+
+private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
+    val esc = "\u001b"
+    val sample = buildString {
+        append("${esc}[2J${esc}[H")
+        append("${esc}[1mDotAI renderer playground · $fontName${esc}[0m\r\n")
+        append("Real CoderTerminalView + libghostty-vt + native GLES renderer\r\n\r\n")
+        append("${esc}[1mBold${esc}[0m   ${esc}[3mItalic${esc}[0m   ${esc}[1;3mBoldItalic${esc}[0m\r\n")
+        append("${esc}[2mFaint${esc}[0m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")
+        append("${esc}[4mSingle underline${esc}[0m\r\n")
+        append("${esc}[4:2mDouble underline${esc}[0m\r\n")
+        append("${esc}[4:3mCurly underline${esc}[0m\r\n")
+        append("${esc}[4:4mDotted underline${esc}[0m   ${esc}[4:5mDashed underline${esc}[0m\r\n")
+        append("${esc}[58:2::255:120:80;4mColored underline${esc}[0m\r\n\r\n")
+        append("Ligatures: -> => != <= >= === !== && || :: ...\r\n\r\n")
+        append("Nerd: 󰊢  λ 󰢱 󰊠 󰘳\r\n")
+        append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡️\r\n\r\n")
+        append("CJK: こんにちは 世界 你好 世界 안녕하세요\r\n")
+        append("Arabic: مرحبا بالعالم\r\n")
+        append("Combining: café  ZWJ: 👩🏽‍🚀\r\n")
+        append("Wide: 表表表  Narrow: iii  Mixed: A表B😀C\r\n")
+        append("${esc}]12;#ffcc00${'\u0007'}")
+        append("${esc}[5 qbar cursor  ${esc}[3 qunderline cursor  ${esc}[1 qblock cursor\r\n")
+        append("\r\n${esc}[38;2;137;180;250mForeground RGB${esc}[0m ${esc}[48;2;49;50;68mBackground RGB${esc}[0m\r\n")
+    }
+    return sample.toByteArray(Charsets.UTF_8)
+}
+
+@Composable
 private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: CoderTheme, enabled: Boolean, selection: TerminalSelectionRange?, onSelectionChange: (TerminalSelectionRange?) -> Unit, onCopy: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         Canvas(
@@ -1555,10 +1628,13 @@ private fun RowScope.EmptyToolbarSlot(background: Color) {
 }
 
 @Composable
-private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSessionStore, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onTerminalFontSizeSelected: (Int) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
+private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSessionStore, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, deepLinkSettingsPage: SettingsPage?, deepLinkRevision: Int, onThemeChanged: () -> Unit, onTerminalFontSelected: (String) -> Unit, onTerminalFontSizeSelected: (Int) -> Unit, onFontChanged: () -> Unit, onBackToHome: () -> Unit) {
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
+    LaunchedEffect(deepLinkRevision) {
+        deepLinkSettingsPage?.let { page = it }
+    }
     fun navigateBack() {
         page = when (page) {
             SettingsPage.ROOT -> {
@@ -2140,18 +2216,24 @@ private fun DebugLogsScreen(sessionStore: CoderSessionStore, tokens: UiTokens, o
 
 @Composable
 private fun FontSettingsPreview(tokens: UiTokens, fontSize: Int, uiFontFamily: FontFamily) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 10.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(16.dp)) {
+    val previewSize = fontSize.coerceIn(10, 18).sp
+    val previewLineHeight = (fontSize.coerceIn(10, 18) + 4).sp
+    Column(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 10.dp).clip(RoundedCornerShape(20.dp)).background(tokens.surfaceHigh).padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Font Preview", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), fontFamily = uiFontFamily)
             Text("${fontSize}pt", color = tokens.secondary, fontSize = captionSize(), fontFamily = uiFontFamily)
         }
         Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xff101014)).padding(12.dp)) {
-            Column {
-                Text("› echo \$PATH", color = Color(0xffd8d8ea), fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, maxLines = 1)
-                Text("λ main 󰘧 󰌘 0123456789", color = tokens.accent, fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, maxLines = 1)
-                Text("Bold Italic Regular", color = Color(0xffa7f3d0), fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text("Ligatures: -> => != <= >=", color = Color(0xffffcc00), fontSize = fontSize.coerceIn(10, 20).sp, fontFamily = uiFontFamily, maxLines = 1)
+        Box(Modifier.fillMaxWidth().height(188.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xff101014)).padding(horizontal = 13.dp, vertical = 12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("coder in ~/android", color = Color(0xffa7f3d0), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("› ./gradlew build", color = Color(0xffd8d8ea), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("fun draw(g) = g != null && x <= y", color = Color(0xfff8f8f2), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("Ligatures  ->  =>  !=  <=  >=  ===", color = Color(0xffffcc00), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("Nerd Font      󰘧  󰌘  󰈸  󰊢", color = tokens.accent, fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("Emoji      😀  🧑🏽‍💻  👨‍👩‍👧‍👦  ⚡", color = Color(0xfffff1a8), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("CJK/Arabic こんにちは 世界 مرحبا", color = Color(0xff93c5fd), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, maxLines = 1)
+                Text("Bold weight 0123456789 AaBbCc", color = Color(0xfffda4af), fontSize = previewSize, lineHeight = previewLineHeight, fontFamily = uiFontFamily, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
         Spacer(Modifier.height(10.dp))

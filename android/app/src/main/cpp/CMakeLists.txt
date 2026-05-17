@@ -8,11 +8,24 @@ project(coder-terminal LANGUAGES C CXX)
 
 include(FetchContent)
 
-set(FT_DISABLE_ZLIB TRUE CACHE BOOL "" FORCE)
+set(FT_DISABLE_ZLIB FALSE CACHE BOOL "" FORCE)
+set(FT_REQUIRE_ZLIB TRUE CACHE BOOL "" FORCE)
 set(FT_DISABLE_BZIP2 TRUE CACHE BOOL "" FORCE)
-set(FT_DISABLE_PNG TRUE CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG FALSE CACHE BOOL "" FORCE)
+set(FT_REQUIRE_PNG TRUE CACHE BOOL "" FORCE)
 set(FT_DISABLE_HARFBUZZ TRUE CACHE BOOL "" FORCE)
 set(FT_DISABLE_BROTLI TRUE CACHE BOOL "" FORCE)
+set(PNG_SHARED OFF CACHE BOOL "" FORCE)
+set(PNG_TESTS OFF CACHE BOOL "" FORCE)
+set(PNG_TOOLS OFF CACHE BOOL "" FORCE)
+set(PNG_FRAMEWORK OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    libpng
+    URL https://download.sourceforge.net/libpng/libpng-1.6.43.tar.xz
+)
+FetchContent_MakeAvailable(libpng)
+list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 FetchContent_Declare(
     freetype
@@ -41,6 +54,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(GHOSTTY_LIB ${CMAKE_SOURCE_DIR}/../../../libs/${ANDROID_ABI}/libghostty-vt.a)
 set(GHOSTTY_INCLUDE ${CMAKE_SOURCE_DIR}/../../../libs/include)
 set(GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(SHADER_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terminal.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terminal.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/solid.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/solid.frag
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SHADER_SOURCES})
 
 file(MAKE_DIRECTORY ${GENERATED_DIR})
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terminal.vert TERMINAL_VERTEX_SHADER)
@@ -55,6 +75,8 @@ add_library(coder-terminal SHARED
     coder_renderer.cpp
     coder_font.cpp
 )
+
+set_source_files_properties(coder_renderer.cpp PROPERTIES OBJECT_DEPENDS ${GENERATED_DIR}/coder_shaders.h)
 
 target_include_directories(coder-terminal PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${GENERATED_DIR})
 

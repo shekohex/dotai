@@ -10,7 +10,13 @@ uniform sampler2D glyphAtlas;
 out vec4 fragmentColor;
 
 void main() {
-    float coverage = texture(glyphAtlas, atlasUv).r;
+    vec4 glyph = texture(glyphAtlas, atlasUv);
+    if (textColor.a > 0.5) {
+        if (glyph.a <= 0.01) discard;
+        fragmentColor = glyph;
+        return;
+    }
+    float coverage = glyph.a;
     if (coverage <= 0.01) discard;
-    fragmentColor = vec4(textColor.rgb, textColor.a * coverage);
+    fragmentColor = vec4(textColor.rgb, coverage);
 }

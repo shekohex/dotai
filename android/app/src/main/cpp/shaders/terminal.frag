@@ -16,7 +16,7 @@ void main() {
         fragmentColor = glyph;
         return;
     }
-    float coverage = glyph.a;
+    float coverage = pow(glyph.a, 1.0 / 1.35);
     if (coverage <= 0.01) discard;
     fragmentColor = vec4(textColor.rgb, coverage);
 }

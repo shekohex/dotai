@@ -24,6 +24,7 @@ static bool isEmojiCodepoint(uint32_t codepoint) {
 }
 
 static bool isEmojiClusterContinuation(const CoderCell& cell) {
+    if (cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) return true;
     if (cell.codepointCount == 0) return false;
     uint32_t codepoint = cell.codepoints[0];
     return codepoint == 0x200d || (codepoint >= 0xfe00 && codepoint <= 0xfe0f) || (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff);
@@ -222,6 +223,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             }
             if ((cell.flags & 8u) != 0u) addDecoration(y0 + ch * 0.50f, 0.045f);
             if ((cell.flags & 16u) != 0u) addDecoration(y1 - ch * 0.14f, 0.045f);
+            if (cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) continue;
             if (cell.codepointCount == 0) continue;
             if (skipText[static_cast<size_t>(row * cols + col)] != 0) continue;
             std::array<uint32_t, 32> clusterCodepoints{};
@@ -238,7 +240,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             appendCellCodepoints(cell);
             while (clusterCodepointCount > 0 && clusterEndCol + 1 < cols) {
                 int nextCol = clusterEndCol + 1;
-                while (nextCol < cols && cells[row * cols + nextCol].codepointCount == 0 && nextCol <= clusterEndCol + 2) nextCol++;
+                while (nextCol < cols && (cells[row * cols + nextCol].codepointCount == 0 || cells[row * cols + nextCol].wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cells[row * cols + nextCol].wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) && nextCol <= clusterEndCol + 2) nextCol++;
                 if (nextCol >= cols) break;
                 const auto& nextCell = cells[row * cols + nextCol];
                 if (nextCell.codepointCount == 0) break;

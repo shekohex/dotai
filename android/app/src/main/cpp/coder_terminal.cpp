@@ -26,7 +26,8 @@ bool operator==(const CoderCell& lhs, const CoderCell& rhs) {
         && lhs.foreground == rhs.foreground
         && lhs.background == rhs.background
         && lhs.underlineColor == rhs.underlineColor
-        && lhs.flags == rhs.flags;
+        && lhs.flags == rhs.flags
+        && lhs.wide == rhs.wide;
 }
 
 CoderTerminal::CoderTerminal() = default;
@@ -231,7 +232,7 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
                 continue;
             }
             for (int col = 0; col < cols_; col++) {
-                cells_[row * cols_ + col] = CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0};
+                cells_[row * cols_ + col] = CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0, GHOSTTY_CELL_WIDE_NARROW};
             }
             GhosttyRenderStateRowCells rowCells = rowCells_.get();
             ghostty_render_state_row_get(rowIterator, GHOSTTY_RENDER_STATE_ROW_DATA_CELLS, &rowCells);
@@ -239,6 +240,11 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
             while (ghostty_render_state_row_cells_next(rowCells) && col < cols_) {
                 uint32_t graphemeLength = 0;
                 ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN, &graphemeLength);
+                GhosttyCell rawCell = 0;
+                GhosttyCellWide wide = GHOSTTY_CELL_WIDE_NARROW;
+                if (ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW, &rawCell) == GHOSTTY_SUCCESS) {
+                    ghostty_cell_get(rawCell, GHOSTTY_CELL_DATA_WIDE, &wide);
+                }
                 std::array<uint32_t, 8> codepoints{};
                 uint32_t codepointCount = 0;
                 if (graphemeLength > 0) {
@@ -274,7 +280,7 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
                         loggedEmojiCells++;
                     }
                 }
-                cells_[row * cols_ + col] = CoderCell{codepoints, codepointCount, rgb(foregroundColor), rgb(backgroundColor), rgb(underlineColor), flags};
+                cells_[row * cols_ + col] = CoderCell{codepoints, codepointCount, rgb(foregroundColor), rgb(backgroundColor), rgb(underlineColor), flags, wide};
                 col++;
             }
             bool clean = false;

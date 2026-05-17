@@ -16,6 +16,7 @@ struct CoderCell {
     uint32_t background;
     uint32_t underlineColor;
     uint32_t flags;
+    GhosttyCellWide wide;
 };
 
 struct CoderCursor {

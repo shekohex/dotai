@@ -7,7 +7,7 @@ import handoffExtension from "./handoff.js";
 import reviewExtension from "./review.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
 import sessionNameExtension from "./session-name.js";
-import sessionQueryExtension from "./session-query.js";
+// import sessionQueryExtension from "./session-query.js";
 import skillReadExtension from "./skill-read.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
@@ -17,7 +17,7 @@ export const groupedExtensionsB: GroupedExtensionDefinition[] = [
   { id: "compaction", factory: compactionExtension },
   { id: "handoff", factory: handoffExtension },
   { id: "debug-provider-request", factory: debugProviderRequestExtension },
-  { id: "session-query", factory: sessionQueryExtension },
+  // { id: "session-query", factory: sessionQueryExtension },
   { id: "context", factory: contextExtension },
   { id: "session-breakdown", factory: sessionBreakdownExtension },
   { id: "session-name", factory: sessionNameExtension },

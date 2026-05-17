@@ -251,6 +251,8 @@ const CONTINUATION_RETRY_MS = 50;
 
 class GoalRuntime {
   private goal: ThreadGoal | null = null;
+  private toolRegistered = false;
+  private toolEnabled = false;
   private isCompacting = false;
   private continuationQueuedFor: string | null = null;
   private continuationScheduledFor: string | null = null;
@@ -266,15 +268,6 @@ class GoalRuntime {
   constructor(private readonly pi: ExtensionAPI) {}
 
   register(): void {
-    registerGoalTools(this.pi, {
-      getGoal: () => this.goalForDisplay(),
-      setGoal: (nextGoal, source, ctx) => {
-        this.persistGoal(nextGoal, source);
-        this.refreshUi(ctx);
-      },
-      completeGoal: (source, ctx) => this.completeGoal(source, ctx),
-    });
-
     registerGoalCommand(this.pi, {
       getGoal: () => this.goalForDisplay(),
       setGoal: (nextGoal, source, ctx) => {
@@ -288,9 +281,39 @@ class GoalRuntime {
         this.persistClear(source);
         this.refreshUi(ctx);
       },
+      enableTool: () => {
+        this.enableTool();
+      },
+      disableTool: () => {
+        this.disableTool();
+      },
     });
 
     this.registerEventHandlers();
+  }
+
+  private enableTool(): void {
+    if (!this.toolRegistered) {
+      registerGoalTools(this.pi, {
+        getGoal: () => this.goalForDisplay(),
+        setGoal: (nextGoal, source, ctx) => {
+          this.persistGoal(nextGoal, source);
+          this.refreshUi(ctx);
+        },
+        completeGoal: (source, ctx) => this.completeGoal(source, ctx),
+      });
+      this.toolRegistered = true;
+    }
+    this.toolEnabled = true;
+    const activeTools = new Set([...this.pi.getActiveTools(), "goal"]);
+    this.pi.setActiveTools(
+      Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)),
+    );
+  }
+
+  private disableTool(): void {
+    this.toolEnabled = false;
+    this.pi.setActiveTools(this.pi.getActiveTools().filter((toolName) => toolName !== "goal"));
   }
 
   private goalForDisplay(): ThreadGoal | null {
@@ -744,6 +767,9 @@ class GoalRuntime {
       this.handleSessionTree(event, ctx);
     });
     this.pi.on("before_agent_start", (event, ctx) => {
+      if (!this.toolEnabled) {
+        this.disableTool();
+      }
       return this.handleBeforeAgentStart(event, ctx);
     });
     this.pi.on("turn_start", (event, ctx) => {

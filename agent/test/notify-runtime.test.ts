@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   createNotifyCallbackAction,
+  default as notifyExtension,
   invokeNotifyCallbackHandler,
   publishNotify,
   takePendingCallback,
@@ -37,6 +38,26 @@ function createFakePi(): ExtensionAPI {
 }
 
 describe("notify callback runtime", () => {
+  test("notify extension does not register agent tool", () => {
+    const registeredTools: string[] = [];
+    const registeredCommands: string[] = [];
+    const pi = {
+      events: new EventBus(),
+      on() {},
+      registerCommand(name: string) {
+        registeredCommands.push(name);
+      },
+      registerTool(tool: { name: string }) {
+        registeredTools.push(tool.name);
+      },
+    } as unknown as ExtensionAPI;
+
+    notifyExtension(pi);
+
+    expect(registeredCommands).toContain("notify");
+    expect(registeredTools).not.toContain("notify");
+  });
+
   test("waitForBlockingResponse ignores other correlation ids", async () => {
     const pi = createFakePi();
     const responsePromise = waitForBlockingResponse(pi, "wanted", undefined);

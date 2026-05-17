@@ -6,6 +6,16 @@ import { replaceGoal, updateGoalStatus } from "./state.js";
 import { GOAL_EXTENSION_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.js";
 const GOAL_COMMAND_AUTOCOMPLETE_ITEMS: AutocompleteItem[] = [
   {
+    value: "on",
+    label: "on",
+    description: "Enable goal tool",
+  },
+  {
+    value: "off",
+    label: "off",
+    description: "Disable goal tool",
+  },
+  {
     value: "pause",
     label: "pause",
     description: "Pause active goal and stop auto-continuation",
@@ -33,6 +43,8 @@ export interface GoalCommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
+  enableTool(ctx: GoalCommandContext): void;
+  disableTool(ctx: GoalCommandContext): void;
 }
 
 function goalCommandCompletions(prefix: string): AutocompleteItem[] {
@@ -62,6 +74,19 @@ export async function handleGoalCommand(
   ctx: GoalCommandContext,
 ): Promise<void> {
   const trimmed = args.trim();
+  if (trimmed === "off") {
+    host.disableTool(ctx);
+    ctx.ui.notify("Goal tool disabled.");
+    return;
+  }
+
+  host.enableTool(ctx);
+
+  if (trimmed === "on") {
+    ctx.ui.notify("Goal tool enabled.");
+    return;
+  }
+
   if (trimmed.length === 0) {
     ctx.ui.notify(formatGoalSummary(host.getGoal()));
     return;

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 
@@ -48,7 +48,16 @@ const INTERVIEW_DESCRIPTION =
   'Media blocks: { type: "image", src, alt, caption }, { type: "table", table: { headers, rows, highlights }, caption }, { type: "chart", chart: { type, data, options }, caption }, { type: "mermaid", mermaid: "graph LR\\n..." }, { type: "html", html }. ' +
   "Info type is non-interactive content panel for displaying context with media. Media position: above (default), below, side (two-column).";
 
-export default function registerInterviewTool(pi: ExtensionAPI): void {
+function activateTool(pi: ExtensionAPI, toolName: string): void {
+  const activeTools = new Set([...pi.getActiveTools(), toolName]);
+  pi.setActiveTools(Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)));
+}
+
+function deactivateTool(pi: ExtensionAPI, toolName: string): void {
+  pi.setActiveTools(pi.getActiveTools().filter((activeToolName) => activeToolName !== toolName));
+}
+
+function registerInterviewTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "interview",
     label: "Interview",
@@ -66,5 +75,63 @@ export default function registerInterviewTool(pi: ExtensionAPI): void {
     renderResult(result, options, theme, context) {
       return renderInterviewResult(result, options, theme, context);
     },
+  });
+}
+
+export default function registerInterviewExtension(pi: ExtensionAPI): void {
+  let toolRegistered = false;
+  let toolEnabled = false;
+
+  const enableTool = (ctx?: ExtensionCommandContext): void => {
+    if (!toolRegistered) {
+      registerInterviewTool(pi);
+      toolRegistered = true;
+    }
+    toolEnabled = true;
+    activateTool(pi, "interview");
+    ctx?.ui.notify("Interview tool enabled.");
+  };
+
+  const disableTool = (ctx?: ExtensionCommandContext): void => {
+    toolEnabled = false;
+    deactivateTool(pi, "interview");
+    ctx?.ui.notify("Interview tool disabled.");
+  };
+
+  pi.registerCommand("interview", {
+    description: "Toggle structured interview forms. Usage: /interview [on|off]",
+    getArgumentCompletions(prefix) {
+      return [
+        { value: "on", label: "on", description: "Enable interview tool for agent turns" },
+        { value: "off", label: "off", description: "Disable interview tool for agent turns" },
+      ].filter((item) => item.value.startsWith(prefix.trim()));
+    },
+    handler(args, ctx) {
+      const trimmed = args.trim();
+      if (trimmed === "off") {
+        disableTool(ctx);
+        return Promise.resolve();
+      }
+      if (trimmed === "on") {
+        enableTool(ctx);
+        return Promise.resolve();
+      }
+      if (trimmed === "") {
+        if (toolEnabled) {
+          disableTool(ctx);
+        } else {
+          enableTool(ctx);
+        }
+        return Promise.resolve();
+      }
+      ctx.ui.notify("Usage: /interview [on|off]", "error");
+      return Promise.resolve();
+    },
+  });
+
+  pi.on("before_agent_start", () => {
+    if (!toolEnabled) {
+      deactivateTool(pi, "interview");
+    }
   });
 }

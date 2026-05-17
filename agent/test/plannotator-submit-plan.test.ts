@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,8 +6,15 @@ import { tmpdir } from "node:os";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 describe("submit_plan tool", () => {
+  const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+
   beforeEach(() => {
     vi.resetModules();
+    process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  });
+
+  afterEach(() => {
+    process.env.PI_CODING_AGENT_DIR = originalAgentDir;
   });
 
   function createContext(cwd: string): ExtensionContext {
@@ -117,4 +124,67 @@ describe("submit_plan tool", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  it("plannotator extension does not register submit_plan by default", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-submit-plan-settings-"));
+    process.env.PI_CODING_AGENT_DIR = cwd;
+    try {
+      const { default: plannotator } = await import("../src/extensions/plannotator/index.js");
+      const registeredTools: string[] = [];
+      const pi = createPlannotatorPi(registeredTools);
+
+      plannotator(pi as never);
+
+      expect(registeredTools).not.toContain("submit_plan");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("plannotator extension registers submit_plan when setting enables it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-submit-plan-settings-"));
+    process.env.PI_CODING_AGENT_DIR = cwd;
+    await writeFile(
+      join(cwd, "settings.json"),
+      JSON.stringify({ plannotator: { submitPlanTool: { enabled: true } } }),
+      "utf8",
+    );
+
+    try {
+      const { default: plannotator } = await import("../src/extensions/plannotator/index.js");
+      const registeredTools: string[] = [];
+      const pi = createPlannotatorPi(registeredTools);
+
+      plannotator(pi as never);
+
+      expect(registeredTools).toContain("submit_plan");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
+
+function createPlannotatorPi(registeredTools: string[]) {
+  return {
+    appendEntry() {},
+    events: {
+      emit() {},
+      on() {
+        return () => {};
+      },
+    },
+    getActiveTools: () => [],
+    getFlag: () => false,
+    getThinkingLevel: () => "low",
+    on() {},
+    registerCommand() {},
+    registerFlag() {},
+    registerMessageRenderer() {},
+    registerTool(definition: { name: string }) {
+      registeredTools.push(definition.name);
+    },
+    sendMessage() {},
+    setActiveTools() {},
+    setThinkingLevel() {},
+  };
+}

@@ -8,7 +8,7 @@ import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
 import openAIBetterExtension from "./openai-better/index.js";
 import openUsageExtension from "./openusage/index.js";
 import patchExtension from "./patch.js";
-import webSearchExtension from "./websearch.js";
+// import webSearchExtension from "./websearch.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsA: GroupedExtensionDefinition[] = [
@@ -23,7 +23,7 @@ export const groupedExtensionsA: GroupedExtensionDefinition[] = [
   { id: "openai-better", factory: openAIBetterExtension },
   { id: "openusage", factory: openUsageExtension },
   { id: "patch", factory: patchExtension },
-  { id: "websearch", factory: webSearchExtension },
+  // { id: "websearch", factory: webSearchExtension },
   { id: "modes", factory: modesExtension },
   { id: "commit", factory: commitExtension },
 ];

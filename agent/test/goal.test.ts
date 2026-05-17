@@ -31,6 +31,7 @@ function createGoalHarness(
   const sentMessages: SentGoalMessage[] = [];
   const emittedEvents: Array<{ eventName: string; data: unknown }> = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
+  let activeTools: string[] = [];
   const runtime = {
     abortCount: 0,
     idle: options.idle ?? true,
@@ -78,7 +79,7 @@ function createGoalHarness(
       },
     },
     exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
-    getActiveTools: () => [],
+    getActiveTools: () => activeTools,
     getAllTools: () => [],
     getCommands: () => [],
     getFlag: () => undefined,
@@ -99,7 +100,9 @@ function createGoalHarness(
       sentMessages.push({ message, options: messageOptions });
     },
     sendUserMessage() {},
-    setActiveTools() {},
+    setActiveTools(toolNames) {
+      activeTools = toolNames;
+    },
     setLabel() {},
     setModel: async () => false,
     setSessionName() {},
@@ -239,6 +242,10 @@ function createGoalHarness(
     },
     snapshot: () => reconstructGoal(entries),
     emittedEvents,
+    tools,
+    get activeTools() {
+      return activeTools;
+    },
   };
 }
 
@@ -280,8 +287,35 @@ describe("goal extension", () => {
     expect(groupedExtensionsC.some((definition) => definition.id === "goal")).toBe(true);
   });
 
+  test("goal tool is hidden until goal command enables it", async () => {
+    const harness = createGoalHarness();
+
+    expect(harness.tools.has("goal")).toBe(false);
+    expect(harness.activeTools.includes("goal")).toBe(false);
+
+    await harness.runCommand("on");
+
+    expect(harness.tools.has("goal")).toBe(true);
+    expect(harness.activeTools.includes("goal")).toBe(true);
+
+    await harness.runCommand("off");
+
+    expect(harness.tools.has("goal")).toBe(true);
+    expect(harness.activeTools.includes("goal")).toBe(false);
+  });
+
+  test("goal command first use enables goal tool", async () => {
+    const harness = createGoalHarness();
+
+    await harness.runCommand("");
+
+    expect(harness.tools.has("goal")).toBe(true);
+    expect(harness.activeTools.includes("goal")).toBe(true);
+  });
+
   test("goal tool supports get create and update actions", async () => {
     const harness = createGoalHarness();
+    await harness.runCommand("on");
 
     const created = (await harness.runTool({
       action: "create",
@@ -305,6 +339,7 @@ describe("goal extension", () => {
 
   test("goal tool can create new goal after previous goal is complete", async () => {
     const harness = createGoalHarness();
+    await harness.runCommand("on");
 
     await harness.runTool({ action: "create", objective: "first goal" });
     await harness.runTool({ action: "update", status: "complete" });
@@ -318,6 +353,7 @@ describe("goal extension", () => {
 
   test("completing goal emits notify publish event", async () => {
     const harness = createGoalHarness();
+    await harness.runCommand("on");
 
     await harness.runTool({ action: "create", objective: "ship it", token_budget: 10 });
     harness.entries.push({
@@ -349,6 +385,7 @@ describe("goal extension", () => {
     const harness = createGoalHarness();
     await harness.runCommand("ship it");
 
+    expect(harness.activeTools.includes("goal")).toBe(true);
     expect(harness.snapshot().goal?.objective).toBe("ship it");
     expect(harness.sentMessages).toHaveLength(1);
     expect(harness.sentMessages[0]?.message.details).toEqual({
@@ -398,6 +435,7 @@ describe("goal extension", () => {
 
   test("budget crossing sends one hidden steering message", async () => {
     const harness = createGoalHarness();
+    await harness.runCommand("on");
     await harness.runTool({ action: "create", objective: "ship it", token_budget: 10 });
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });

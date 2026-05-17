@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
-import { StringEnum } from "@earendil-works/pi-ai";
 import {
   defineTool,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Box, Container, Image, Text } from "@earendil-works/pi-tui";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
 import {
@@ -21,73 +21,25 @@ import {
 } from "../coreui/tools.js";
 import { formatToolStatus } from "../coreui/tools-status.js";
 import { LITELLM_API_KEY_ENV, resolveLiteLLMApiKey, resolveLiteLLMState } from "../litellm.js";
+import {
+  IMAGE_ACTIONS,
+  IMAGE_OUTPUT_FORMATS,
+  ImageGenerationCallSchema,
+  OPENAI_IMAGE_COMMAND,
+  OPENAI_IMAGE_PROMPT_GUIDELINES,
+  OPENAI_IMAGE_SYSTEM_PROMPT,
+  OPENAI_IMAGE_TOOL,
+  ToolParamsSchema,
+  type ImageAction,
+  type ImageGenerationCall,
+  type ImageOutputFormat,
+  type ImageSaveMode,
+  type ToolParams,
+} from "./image-schema.js";
 import type { OpenAIBetterSettings } from "./settings.js";
 
-const OPENAI_IMAGE_TOOL = "generate_image";
-const OPENAI_IMAGE_COMMAND = "openai-image";
 const LITELLM_RESPONSES_PATH = "/responses";
 const DEFAULT_TIMEOUT_MS = 360_000;
-const OPENAI_IMAGE_PROMPT_GUIDELINES = [
-  `Always use ${OPENAI_IMAGE_TOOL} when the user asks to generate or edit a raster image, photo, illustration, mockup, texture, sprite, bitmap asset, or any visual artwork. Do not answer with text only for image-generation requests.`,
-  `Prefer calling ${OPENAI_IMAGE_TOOL} instead of any other tool when generating or editing images for the user.`,
-  "Pass the user's image prompt verbatim. Do not embellish, rewrite, add camera/style details, or add negative prompt terms unless the user explicitly asks you to refine the prompt.",
-  `Use ${OPENAI_IMAGE_TOOL} with images for local reference images or edit targets; save project assets into the workspace when requested.`,
-  `Prefer ${OPENAI_IMAGE_TOOL} over any built-in or provider-hosted image tool for raster image generation/editing in this project.`,
-];
-
-const OPENAI_IMAGE_SYSTEM_PROMPT = [
-  "Image Generation Routing:",
-  ...OPENAI_IMAGE_PROMPT_GUIDELINES.map((guideline) => `- ${guideline}`),
-].join("\n");
-
-const IMAGE_SAVE_MODES = ["none", "project", "global", "custom"] as const;
-const IMAGE_ACTIONS = ["auto", "generate", "edit"] as const;
-const IMAGE_OUTPUT_FORMATS = ["png", "jpeg", "webp"] as const;
-
-type ImageSaveMode = (typeof IMAGE_SAVE_MODES)[number];
-type ImageAction = (typeof IMAGE_ACTIONS)[number];
-type ImageOutputFormat = (typeof IMAGE_OUTPUT_FORMATS)[number];
-
-const ToolParamsSchema = Type.Object({
-  prompt: Type.String({
-    description:
-      "Image generation/editing prompt. Pass the user's wording verbatim unless they explicitly ask you to refine or expand it.",
-  }),
-  action: Type.Optional(
-    StringEnum(IMAGE_ACTIONS, {
-      description:
-        "Whether to generate a new image, edit/reference provided images, or let the model decide.",
-    }),
-  ),
-  images: Type.Optional(
-    Type.Array(Type.String(), {
-      description: "Local image paths to use as edit targets or references.",
-    }),
-  ),
-  model: Type.Optional(
-    Type.String({
-      description:
-        "OpenAI Responses model to drive the hosted image_generation tool. Defaults to current codex-openai model or settings default.",
-    }),
-  ),
-  outputFormat: Type.Optional(
-    StringEnum(IMAGE_OUTPUT_FORMATS, { description: "Generated image format." }),
-  ),
-  save: Type.Optional(StringEnum(IMAGE_SAVE_MODES, { description: "Where to save the image." })),
-  saveDir: Type.Optional(Type.String({ description: "Directory to save image when save=custom." })),
-});
-
-const ImageGenerationCallSchema = Type.Object(
-  {
-    type: Type.Literal("image_generation_call"),
-    id: Type.Optional(Type.String()),
-    status: Type.Optional(Type.String()),
-    revised_prompt: Type.Optional(Type.String()),
-    result: Type.Optional(Type.String()),
-    b64_json: Type.Optional(Type.String()),
-  },
-  { additionalProperties: true },
-);
 
 const ImageEventSchema = Type.Object(
   {
@@ -102,8 +54,6 @@ const ImageEventSchema = Type.Object(
   { additionalProperties: true },
 );
 
-type ToolParams = Static<typeof ToolParamsSchema>;
-type ImageGenerationCall = Static<typeof ImageGenerationCallSchema>;
 type LiteLLMImageCredentials = {
   accessToken: string;
   baseUrl: string;
@@ -706,12 +656,43 @@ export function registerOpenAIImage(
 ): { getDebug: (ctx: ExtensionContext) => Promise<ImageGenerationDebug> } {
   let lastStatus: string | undefined;
   let lastError: string | undefined;
+  let commandEnabled = false;
+  let toolRegistered = false;
+
+  function getEffectiveSettings(): OpenAIBetterSettings {
+    const settings = getSettings();
+    if (!commandEnabled) {
+      return settings;
+    }
+    return {
+      ...settings,
+      image: {
+        ...settings.image,
+        enabled: true,
+      },
+    };
+  }
+
+  function registerImageTool(): void {
+    if (toolRegistered) {
+      return;
+    }
+    pi.registerTool(createImageTool(getEffectiveSettings));
+    toolRegistered = true;
+  }
+
+  function activateImageTool(): void {
+    commandEnabled = true;
+    registerImageTool();
+    const activeTools = new Set([...pi.getActiveTools(), OPENAI_IMAGE_TOOL]);
+    pi.setActiveTools(Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)));
+  }
 
   async function generate(params: ToolParams, ctx: ExtensionContext, requestSignal?: AbortSignal) {
     try {
       lastStatus = "requesting";
       lastError = undefined;
-      const result = await requestLiteLLMImage(params, ctx, getSettings(), requestSignal);
+      const result = await requestLiteLLMImage(params, ctx, getEffectiveSettings(), requestSignal);
       lastStatus = `completed (${result.id})`;
       return result;
     } catch (error) {
@@ -722,7 +703,7 @@ export function registerOpenAIImage(
   }
 
   async function getDebug(ctx: ExtensionContext): Promise<ImageGenerationDebug> {
-    const settings = getSettings();
+    const settings = getEffectiveSettings();
     const credentials = await getCredentials().catch(() => {});
     return {
       authFound: credentials !== undefined,
@@ -742,18 +723,19 @@ export function registerOpenAIImage(
 
   registerImageRenderer(pi);
   pi.on("before_agent_start", (event) =>
-    getSettings().image.enabled
+    getEffectiveSettings().image.enabled
       ? { systemPrompt: `${event.systemPrompt}\n\n${OPENAI_IMAGE_SYSTEM_PROMPT}` }
       : undefined,
   );
   pi.registerCommand(OPENAI_IMAGE_COMMAND, {
-    description: "Generate an image with OpenAI image generation",
+    description: "Generate or edit an image. Usage: /imagen <prompt>",
     handler: async (args, ctx) => {
       const prompt = args.trim();
       if (prompt.length === 0) {
-        ctx.ui.notify("Usage: /openai-image <prompt>", "error");
+        ctx.ui.notify("Usage: /imagen <prompt>", "error");
         return;
       }
+      activateImageTool();
       ctx.ui.notify("Requesting OpenAI image...", "info");
       const result = await generate({ prompt }, ctx);
       pi.sendMessage({
@@ -767,7 +749,9 @@ export function registerOpenAIImage(
       });
     },
   });
-  pi.registerTool(createImageTool(getSettings));
+  if (getEffectiveSettings().image.enabled) {
+    registerImageTool();
+  }
   return { getDebug };
 }
 

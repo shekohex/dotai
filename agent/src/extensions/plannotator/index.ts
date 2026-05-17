@@ -32,6 +32,7 @@ import {
 import { type SavedPhaseState } from "./plannotator-support.js";
 import { registerPlannotatorSessionHooks } from "./plannotator-session-hooks.js";
 import { createPlannotatorPhaseRuntime } from "./plannotator-phase-runtime.js";
+import { isSubmitPlanToolEnabled } from "./settings.js";
 
 type PlannotatorCommandHandler = (
   args: string,
@@ -204,22 +205,24 @@ export default function plannotator(pi: ExtensionAPI): void {
 
   // ── submit_plan Tool ────────────────────────────────────
 
-  registerPlanSubmitTool({
-    pi,
-    getPhase: () => phase,
-    setPhase: (nextPhase) => {
-      phase = nextPhase;
-    },
-    getLastSubmittedPath: () => lastSubmittedPath,
-    setLastSubmittedPath: (nextPath) => {
-      lastSubmittedPath = nextPath;
-    },
-    persistState: phaseRuntime.persistState,
-    applyPhaseConfig: phaseRuntime.applyPhaseConfig,
-    setJustApprovedPlan: (value) => {
-      justApprovedPlan = value;
-    },
-  });
+  if (isSubmitPlanToolEnabled()) {
+    registerPlanSubmitTool({
+      pi,
+      getPhase: () => phase,
+      setPhase: (nextPhase) => {
+        phase = nextPhase;
+      },
+      getLastSubmittedPath: () => lastSubmittedPath,
+      setLastSubmittedPath: (nextPath) => {
+        lastSubmittedPath = nextPath;
+      },
+      persistState: phaseRuntime.persistState,
+      applyPhaseConfig: phaseRuntime.applyPhaseConfig,
+      setJustApprovedPlan: (value) => {
+        justApprovedPlan = value;
+      },
+    });
+  }
 
   registerPlannotatorSessionHooks({
     pi,

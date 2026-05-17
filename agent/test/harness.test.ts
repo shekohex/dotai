@@ -148,6 +148,14 @@ async function withTempAgentDir<T>(agentDir: string, fn: () => Promise<T>): Prom
   }
 }
 
+async function writeHandoffCommandSettings(agentDir: string): Promise<void> {
+  await writeFile(
+    join(agentDir, "settings.json"),
+    JSON.stringify({ handoff: { command: { enabled: true } } }),
+    "utf8",
+  );
+}
+
 async function createExecutorProbeServer(
   scopeDir: string,
 ): Promise<{ mcpUrl: string; close: () => Promise<void> }> {
@@ -761,6 +769,19 @@ async function getCommandArgumentCompletions(
   return await command.getArgumentCompletions(prefix);
 }
 
+function hasRegisteredCommand(testSession: TestSession, commandName: string): boolean {
+  const extensionRunner = (
+    testSession.session as {
+      extensionRunner: {
+        getRegisteredCommands: () => Array<{ invocationName: string }>;
+      };
+    }
+  ).extensionRunner;
+  return extensionRunner
+    .getRegisteredCommands()
+    .some((registeredCommand) => registeredCommand.invocationName === commandName);
+}
+
 function getCurrentSystemPrompt(testSession: TestSession): string {
   return (testSession.session as { agent: { state: { systemPrompt: string } } }).agent.state
     .systemPrompt;
@@ -1238,6 +1259,25 @@ timedTest("bundled themes are available before reload", async () => {
   expect(activeTheme.name).toBe("catppuccin-mocha");
 });
 
+timedTest("handoff command is hidden by default", async () => {
+  const cwd = await createTempDir("agent-handoff-hidden-default-");
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+    });
+
+    expect(hasRegisteredCommand(session, "handoff")).toBe(false);
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("handoff command starts the new session in the requested mode", async () => {
   const cwd = await createTempDir("agent-handoff-command-");
   let session: TestSession | undefined;
@@ -1247,19 +1287,22 @@ timedTest("handoff command starts the new session in the requested mode", async 
   );
 
   await writeHandoffModesFile(cwd);
+  await writeHandoffCommandSettings(cwd);
 
   try {
-    session = await createTestSession({
-      cwd,
-      extensionFactories: [
-        modesExtension,
-        handoffExtension,
-        createModeChangeCaptureExtension(observedModeChanges),
-        providers.extensionFactory,
-      ],
-      mockUI: {
-        editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
-      },
+    await withTempAgentDir(cwd, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [
+          modesExtension,
+          handoffExtension,
+          createModeChangeCaptureExtension(observedModeChanges),
+          providers.extensionFactory,
+        ],
+        mockUI: {
+          editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
+        },
+      });
     });
     patchHarnessAgent(session);
     setSessionPersistence(session, true);
@@ -1324,19 +1367,22 @@ timedTest("handoff command with mode and model applies the startup selection onc
   );
 
   await writeHandoffModesFile(cwd);
+  await writeHandoffCommandSettings(cwd);
 
   try {
-    session = await createTestSession({
-      cwd,
-      extensionFactories: [
-        modesExtension,
-        handoffExtension,
-        createModeChangeCaptureExtension(observedModeChanges),
-        providers.extensionFactory,
-      ],
-      mockUI: {
-        editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
-      },
+    await withTempAgentDir(cwd, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [
+          modesExtension,
+          handoffExtension,
+          createModeChangeCaptureExtension(observedModeChanges),
+          providers.extensionFactory,
+        ],
+        mockUI: {
+          editor: (_title, prefill) => `${prefill ?? ""}\n\nReviewed by user`,
+        },
+      });
     });
     patchHarnessAgent(session);
     setSessionPersistence(session, true);
@@ -1385,11 +1431,14 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
   await writeHandoffModesFile(cwd);
+  await writeHandoffCommandSettings(cwd);
 
   try {
-    session = await createTestSession({
-      cwd,
-      extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+    await withTempAgentDir(cwd, async () => {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, handoffExtension, providers.extensionFactory],
+      });
     });
     patchHarnessAgent(session);
 
@@ -2280,43 +2329,8 @@ timedTest("modes extension injects selected mode systemPrompt into next agent tu
   }
 });
 
-timedTest("gsd debug manager mode activates interview and subagent tools", async () => {
-  const cwd = await createTempDir("agent-gsd-debug-mode-tools-");
-  let session: TestSession | undefined;
-  const providers = createHandoffTestProviders("ok");
-  const capturedToolSets: string[][] = [];
-
-  try {
-    session = await createTestSession({
-      cwd,
-      extensionFactories: [
-        modesExtension,
-        interviewExtension,
-        gsdExtension,
-        createSubagentExtension(),
-        createActiveToolsCaptureExtension(capturedToolSets),
-        providers.extensionFactory,
-      ],
-    });
-
-    await session.session.prompt("/mode gsd-debug-session-manager");
-    await session.session.agent.waitForIdle();
-    await waitForAssertion(() => {
-      expect(capturedToolSets.length).toBeGreaterThan(0);
-    });
-
-    const activeTools = capturedToolSets.at(-1) ?? [];
-    expect(activeTools.includes("interview")).toBe(true);
-    expect(activeTools.includes("subagent")).toBe(true);
-  } finally {
-    session?.dispose();
-    providers.dispose();
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
-
-timedTest("gsd debug manager mode exposes interview and subagent in system prompt", async () => {
-  const cwd = await createTempDir("agent-gsd-debug-mode-prompt-tools-");
+timedTest("interview tool is hidden by default and toggled by command", async () => {
+  const cwd = await createTempDir("agent-interview-toggle-tools-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
 
@@ -2325,22 +2339,41 @@ timedTest("gsd debug manager mode exposes interview and subagent in system promp
       cwd,
       extensionFactories: [
         modelFamilySystemPromptExtension,
-        modesExtension,
         interviewExtension,
-        gsdExtension,
-        createSubagentExtension(),
         providers.extensionFactory,
       ],
     });
 
-    await session.session.prompt("/mode gsd-debug-session-manager");
-    await session.session.agent.waitForIdle();
     await session.session.prompt("hello");
     await session.session.agent.waitForIdle();
+    expect(getCurrentSystemPrompt(session)).not.toContain("- interview:");
 
-    const systemPrompt = getCurrentSystemPrompt(session);
-    expect(systemPrompt).toContain("- interview:");
-    expect(systemPrompt).toContain("- subagent:");
+    await session.session.prompt("/interview on");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello again");
+    await session.session.agent.waitForIdle();
+    expect(getCurrentSystemPrompt(session)).toContain("- interview:");
+
+    await session.session.prompt("/interview off");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello after off");
+    await session.session.agent.waitForIdle();
+    expect(getCurrentSystemPrompt(session)).not.toContain("- interview:");
+
+    const completions = await getCommandArgumentCompletions(session, "interview", "o");
+    expect(completions?.map((item) => item.label)).toEqual(["on", "off"]);
+
+    await session.session.prompt("/interview");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello after toggle on");
+    await session.session.agent.waitForIdle();
+    expect(getCurrentSystemPrompt(session)).toContain("- interview:");
+
+    await session.session.prompt("/interview");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello after toggle off");
+    await session.session.agent.waitForIdle();
+    expect(getCurrentSystemPrompt(session)).not.toContain("- interview:");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -2349,14 +2382,49 @@ timedTest("gsd debug manager mode exposes interview and subagent in system promp
 });
 
 timedTest(
-  "/gsd debug launches replacement session with interview in prompt and active tools",
+  "gsd debug manager mode keeps interview hidden by default and activates subagent",
   async () => {
-    const cwd = await createTempDir("agent-gsd-debug-launch-tools-");
+    const cwd = await createTempDir("agent-gsd-debug-mode-tools-");
     let session: TestSession | undefined;
     const providers = createHandoffTestProviders("ok");
     const capturedToolSets: string[][] = [];
 
-    await writeGsdEnabledConfig(cwd);
+    try {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [
+          modesExtension,
+          interviewExtension,
+          gsdExtension,
+          createSubagentExtension(),
+          createActiveToolsCaptureExtension(capturedToolSets),
+          providers.extensionFactory,
+        ],
+      });
+
+      await session.session.prompt("/mode gsd-debug-session-manager");
+      await session.session.agent.waitForIdle();
+      await waitForAssertion(() => {
+        expect(capturedToolSets.length).toBeGreaterThan(0);
+      });
+
+      const activeTools = capturedToolSets.at(-1) ?? [];
+      expect(activeTools.includes("interview")).toBe(false);
+      expect(activeTools.includes("subagent")).toBe(true);
+    } finally {
+      session?.dispose();
+      providers.dispose();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest(
+  "gsd debug manager mode exposes subagent but keeps interview out of system prompt",
+  async () => {
+    const cwd = await createTempDir("agent-gsd-debug-mode-prompt-tools-");
+    let session: TestSession | undefined;
+    const providers = createHandoffTestProviders("ok");
 
     try {
       session = await createTestSession({
@@ -2367,24 +2435,18 @@ timedTest(
           interviewExtension,
           gsdExtension,
           createSubagentExtension(),
-          createActiveToolsCaptureExtension(capturedToolSets),
           providers.extensionFactory,
         ],
       });
 
-      await session.session.prompt("/gsd on");
-      await session.session.agent.waitForIdle();
-      await session.session.prompt("/gsd debug parser unstable");
+      await session.session.prompt("/mode gsd-debug-session-manager");
       await session.session.agent.waitForIdle();
       await session.session.prompt("hello");
       await session.session.agent.waitForIdle();
 
       const systemPrompt = getCurrentSystemPrompt(session);
-      expect(systemPrompt).toContain("- interview:");
-      await waitForAssertion(() => {
-        const activeTools = capturedToolSets.at(-1) ?? [];
-        expect(activeTools.includes("interview")).toBe(true);
-      });
+      expect(systemPrompt).not.toContain("- interview:");
+      expect(systemPrompt).toContain("- subagent:");
     } finally {
       session?.dispose();
       providers.dispose();
@@ -2393,7 +2455,49 @@ timedTest(
   },
 );
 
-timedTest("bundled extension stack exposes interview in gsd debug manager mode", async () => {
+timedTest("/gsd debug launches replacement session without interview by default", async () => {
+  const cwd = await createTempDir("agent-gsd-debug-launch-tools-");
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+  const capturedToolSets: string[][] = [];
+
+  await writeGsdEnabledConfig(cwd);
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        modelFamilySystemPromptExtension,
+        modesExtension,
+        interviewExtension,
+        gsdExtension,
+        createSubagentExtension(),
+        createActiveToolsCaptureExtension(capturedToolSets),
+        providers.extensionFactory,
+      ],
+    });
+
+    await session.session.prompt("/gsd on");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("/gsd debug parser unstable");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    const systemPrompt = getCurrentSystemPrompt(session);
+    expect(systemPrompt).not.toContain("- interview:");
+    await waitForAssertion(() => {
+      const activeTools = capturedToolSets.at(-1) ?? [];
+      expect(activeTools.includes("interview")).toBe(false);
+    });
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("bundled extension stack keeps interview hidden in gsd debug manager mode", async () => {
   const cwd = await createTempDir("agent-bundled-gsd-debug-mode-tools-");
   let session: TestSession | undefined;
   const providers = createHandoffTestProviders("ok");
@@ -2409,7 +2513,7 @@ timedTest("bundled extension stack exposes interview in gsd debug manager mode",
     await session.session.prompt("hello");
     await session.session.agent.waitForIdle();
 
-    expect(getCurrentSystemPrompt(session)).toContain("- interview:");
+    expect(getCurrentSystemPrompt(session)).not.toContain("- interview:");
   } finally {
     session?.dispose();
     providers.dispose();

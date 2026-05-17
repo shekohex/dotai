@@ -13,7 +13,6 @@ import {
 import { parseNotifyActionResponseEvent, parseNotifyPublishEvent } from "./events.js";
 import { registerNotifyCommands } from "./commands.js";
 import { resolveNotifySettings } from "./settings.js";
-import registerNotifyTool from "./tool.js";
 import {
   NOTIFY_ACTION_INVOKED_EVENT,
   NOTIFY_ACTION_RESPONSE_EVENT,
@@ -160,9 +159,6 @@ class NotifyRuntime {
   }
 
   register(): void {
-    if (this.settings.tool.enabled) {
-      registerNotifyTool(this.pi);
-    }
     registerNotifyCommands(this.pi);
     this.pi.on("session_start", (_event, ctx) => {
       this.currentCtx = ctx;

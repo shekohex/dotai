@@ -42,7 +42,7 @@ export const defaultOpenAIBetterSettings = {
     ],
   },
   image: {
-    enabled: true,
+    enabled: false,
     defaultModel: "gpt-5.5",
     defaultSave: "project",
     outputFormat: "png",

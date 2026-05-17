@@ -16,6 +16,8 @@ interface SentGoalMessage {
   options: Parameters<ExtensionAPI["sendMessage"]>[1];
 }
 
+type CompactCall = Parameters<ExtensionContext["compact"]>[0];
+
 function createGoalHarness(
   options: {
     idle?: boolean;
@@ -29,6 +31,7 @@ function createGoalHarness(
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, GoalEventHandler[]>();
   const sentMessages: SentGoalMessage[] = [];
+  const compactCalls: CompactCall[] = [];
   const emittedEvents: Array<{ eventName: string; data: unknown }> = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   let activeTools: string[] = [];
@@ -163,7 +166,9 @@ function createGoalHarness(
     abort() {
       runtime.abortCount += 1;
     },
-    compact() {},
+    compact(options) {
+      compactCalls.push(options);
+    },
     cwd: "/tmp",
     fork: async () => ({ cancelled: false }),
     getContextUsage: () => {
@@ -227,6 +232,7 @@ function createGoalHarness(
     runCommand,
     runTool,
     sentMessages,
+    compactCalls,
     setIdle(idle: boolean) {
       runtime.idle = idle;
     },
@@ -633,6 +639,33 @@ describe("goal extension", () => {
       kind: "context_limit",
       goalId: harness.snapshot().goal?.goalId,
     });
+  });
+
+  test("repeated context limit after warning triggers compaction with goal instructions", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 90, contextUsageTokens: 900 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 1, output: 1 }),
+      toolResults: [],
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.compactCalls).toHaveLength(1);
+    expect(harness.compactCalls[0]?.customInstructions).toContain("# Goal");
+    expect(harness.compactCalls[0]?.customInstructions).toContain("# Success Criteria");
+    expect(harness.compactCalls[0]?.customInstructions).toContain("ship it");
   });
 
   test("does not continue while context usage is hard near limit", async () => {

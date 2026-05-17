@@ -47,6 +47,7 @@ export default function (pi: ExtensionAPI) {
           modelAuth,
           allMessages,
           preparation.previousSummary,
+          event.customInstructions,
           event.signal,
         );
         if (!summary.trim()) {
@@ -113,11 +114,12 @@ async function summarizeCompaction(
   modelAuth: CompactionModelAuth,
   allMessages: Parameters<typeof convertToLlm>[0],
   previousSummary: string | undefined,
+  customInstructions: string | undefined,
   signal: AbortSignal,
 ): Promise<string> {
   const response = await complete(
     modelAuth.model,
-    { messages: buildSummaryMessages(allMessages, previousSummary) },
+    { messages: buildSummaryMessages(allMessages, previousSummary, customInstructions) },
     {
       apiKey: modelAuth.apiKey,
       headers: modelAuth.headers,
@@ -132,14 +134,19 @@ async function summarizeCompaction(
     .join("\n");
 }
 
-function buildSummaryMessages(
+export function buildSummaryMessages(
   messages: Parameters<typeof convertToLlm>[0],
   previousSummary: string | undefined,
+  customInstructions: string | undefined,
 ) {
   const conversationText = serializeConversation(convertToLlm(messages));
   const previousContext =
     previousSummary !== undefined && previousSummary.length > 0
       ? `\n\nPrevious session summary for context:\n${previousSummary}`
+      : "";
+  const additionalInstructions =
+    customInstructions !== undefined && customInstructions.trim().length > 0
+      ? `\n\n# Additional Constraints And Instructions\n${customInstructions.trim()}`
       : "";
 
   return [
@@ -149,7 +156,7 @@ function buildSummaryMessages(
         {
           type: "text" as const,
           text: `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
-Create a comprehensive summary of this conversation that captures:${previousContext}
+Create a comprehensive summary of this conversation that captures:${previousContext}${additionalInstructions}
 
 Include:
 - Current progress and key decisions made

@@ -82,9 +82,9 @@ private:
     int glyphHeight_ = 36;
     int baseline_ = 28;
     bool ligaturesEnabled_ = true;
-    int atlasWidth_ = 4096;
-    int atlasHeight_ = 4096;
-    int atlasTargetSize_ = 4096;
+    int atlasWidth_ = 1024;
+    int atlasHeight_ = 1024;
+    int atlasTargetSize_ = 1024;
     int atlasMaxSize_ = 4096;
     bool atlasFullReported_ = false;
     bool atlasGrowing_ = false;

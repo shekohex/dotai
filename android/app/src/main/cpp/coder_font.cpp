@@ -369,6 +369,7 @@ void CoderFont::setCellSize(int width, int height) {
     glyphWidth_ = std::max(1, width);
     glyphHeight_ = std::max(1, height);
     baseline_ = static_cast<int>(glyphHeight_ * 0.78f);
+    releaseFace();
     if (texture_ != 0) rebuildAtlas();
 }
 
@@ -552,6 +553,7 @@ bool CoderFont::rebuildAtlas() {
     shelfHeight_ = 0;
     atlasFullReported_ = false;
     if (!loadPrimaryFace(0)) return false;
+    updateMetricsFromFace(primaryFaces_[0].face);
     GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
     int targetAtlasSize = maxTextureSize > 0 ? std::min(maxTextureSize, 8192) : 4096;
@@ -644,6 +646,20 @@ bool CoderFont::configureFaceSize(FT_Face face) {
         return FT_Select_Size(face, bestIndex) == 0;
     }
     return FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(glyphHeight_)) == 0;
+}
+
+void CoderFont::updateMetricsFromFace(FT_Face face) {
+    if (!face || !face->size) return;
+    int ascender = static_cast<int>((face->size->metrics.ascender + 32) >> 6);
+    int descender = static_cast<int>((face->size->metrics.descender - 32) >> 6);
+    int measuredHeight = static_cast<int>((face->size->metrics.height + 32) >> 6);
+    int inkHeight = std::max(1, ascender - descender);
+    baseline_ = std::clamp(static_cast<int>(std::round(static_cast<float>(glyphHeight_) * static_cast<float>(ascender) / static_cast<float>(inkHeight))), glyphHeight_ / 2, std::max(1, glyphHeight_ - 1));
+    static int loggedMetrics = 0;
+    if (loggedMetrics < 8) {
+        __android_log_print(ANDROID_LOG_INFO, "CoderFont", "font metrics cell=%dx%d ascender=%d descender=%d face_height=%d baseline=%d", glyphWidth_, glyphHeight_, ascender, descender, measuredHeight, baseline_);
+        loggedMetrics++;
+    }
 }
 
 uint32_t CoderFont::styleIndex(uint32_t flags) const {

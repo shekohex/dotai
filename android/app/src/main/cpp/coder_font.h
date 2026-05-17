@@ -67,6 +67,7 @@ private:
     bool loadPrimaryFace(size_t index);
     bool loadFallbackFaces();
     bool configureFaceSize(FT_Face face);
+    void updateMetricsFromFace(FT_Face face);
     uint32_t styleIndex(uint32_t flags) const;
     std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex);
     bool allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph);

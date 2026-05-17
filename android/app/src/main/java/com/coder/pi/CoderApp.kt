@@ -1887,8 +1887,8 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
             }
         }
         SettingsSection("FALLBACK", tokens) {
-            SettingsValueRow(R.drawable.ic_feather_globe, "CJK Fallback", "Use system fallback when glyph missing", "Planned", tokens) {}
-            SettingsValueRow(R.drawable.ic_feather_type, "Emoji Fallback", "Color emoji atlas", "Planned", tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_globe, "CJK Fallback", "Use Android system fallback when glyph missing", "Native", tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_type, "Emoji Fallback", "Use Android color emoji fonts", "Native", tokens) {}
         }
         item { Text("OpenType features, cursor mode, and cursor blink apply immediately to the native terminal renderer. CJK and emoji fallback use the native fallback stack.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
     }

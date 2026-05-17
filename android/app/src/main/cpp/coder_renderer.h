@@ -20,7 +20,7 @@ public:
     void setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength);
     void setShaderCacheDir(std::string path);
     void setTheme(uint32_t background, uint32_t cursor, uint32_t cursorText);
-    void setTextOptions(bool ligatures, bool cursorBlink, int cursorMode);
+    void setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool cursorBlink, int cursorMode);
     void setTargetRefreshRate(float refreshRate);
     void setCellSize(int width, int height);
     void resize(int width, int height);

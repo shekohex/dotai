@@ -454,6 +454,41 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun ligaturesEnabled(): Boolean = preferences.getBoolean("ligatures", true)
 
+    fun setContextualAlternatesEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("contextualAlternates", enabled) }
+        applyTextOptions()
+    }
+
+    fun contextualAlternatesEnabled(): Boolean = preferences.getBoolean("contextualAlternates", true)
+
+    fun setSlashedZeroEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("slashedZero", enabled) }
+        applyTextOptions()
+    }
+
+    fun slashedZeroEnabled(): Boolean = preferences.getBoolean("slashedZero", true)
+
+    fun setStylisticSet1Enabled(enabled: Boolean) {
+        preferences.edit { putBoolean("stylisticSet1", enabled) }
+        applyTextOptions()
+    }
+
+    fun stylisticSet1Enabled(): Boolean = preferences.getBoolean("stylisticSet1", false)
+
+    fun setStylisticSet2Enabled(enabled: Boolean) {
+        preferences.edit { putBoolean("stylisticSet2", enabled) }
+        applyTextOptions()
+    }
+
+    fun stylisticSet2Enabled(): Boolean = preferences.getBoolean("stylisticSet2", false)
+
+    fun setCharacterVariant1Enabled(enabled: Boolean) {
+        preferences.edit { putBoolean("characterVariant1", enabled) }
+        applyTextOptions()
+    }
+
+    fun characterVariant1Enabled(): Boolean = preferences.getBoolean("characterVariant1", false)
+
     fun setCursorBlinkEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("cursorBlink", enabled) }
         applyTextOptions()
@@ -545,7 +580,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun applyTextOptions() {
-        if (handle != 0L) native.nativeSetTextOptions(handle, ligaturesEnabled(), cursorBlinkEnabled(), cursorMode())
+        if (handle != 0L) native.nativeSetTextOptions(handle, ligaturesEnabled(), contextualAlternatesEnabled(), slashedZeroEnabled(), stylisticSet1Enabled(), stylisticSet2Enabled(), characterVariant1Enabled(), cursorBlinkEnabled(), cursorMode())
     }
 
     fun attachRemote(input: (ByteArray) -> Unit) {

@@ -373,8 +373,13 @@ void CoderFont::setCellSize(int width, int height) {
     if (texture_ != 0) rebuildAtlas();
 }
 
-void CoderFont::setLigaturesEnabled(bool enabled) {
-    ligaturesEnabled_ = enabled;
+void CoderFont::setOpenTypeFeatures(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1) {
+    ligaturesEnabled_ = ligatures;
+    contextualAlternatesEnabled_ = contextualAlternates;
+    slashedZeroEnabled_ = slashedZero;
+    stylisticSet1Enabled_ = stylisticSet1;
+    stylisticSet2Enabled_ = stylisticSet2;
+    characterVariant1Enabled_ = characterVariant1;
 }
 
 bool CoderFont::glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph) {
@@ -540,12 +545,15 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
     hb_buffer_t* buffer = hb_buffer_create();
     hb_buffer_add_codepoints(buffer, codepoints, codepointCount, 0, codepointCount);
     hb_buffer_guess_segment_properties(buffer);
-    std::array<hb_feature_t, 3> disabledLigatureFeatures{{
-        {HB_TAG('l', 'i', 'g', 'a'), 0, 0, UINT_MAX},
-        {HB_TAG('c', 'a', 'l', 't'), 0, 0, UINT_MAX},
-        {HB_TAG('d', 'l', 'i', 'g'), 0, 0, UINT_MAX},
+    std::array<hb_feature_t, 6> features{{
+        {HB_TAG('l', 'i', 'g', 'a'), ligaturesEnabled_ ? 1u : 0u, 0, UINT_MAX},
+        {HB_TAG('c', 'a', 'l', 't'), contextualAlternatesEnabled_ ? 1u : 0u, 0, UINT_MAX},
+        {HB_TAG('z', 'e', 'r', 'o'), slashedZeroEnabled_ ? 1u : 0u, 0, UINT_MAX},
+        {HB_TAG('s', 's', '0', '1'), stylisticSet1Enabled_ ? 1u : 0u, 0, UINT_MAX},
+        {HB_TAG('s', 's', '0', '2'), stylisticSet2Enabled_ ? 1u : 0u, 0, UINT_MAX},
+        {HB_TAG('c', 'v', '0', '1'), characterVariant1Enabled_ ? 1u : 0u, 0, UINT_MAX},
     }};
-    hb_shape(font, buffer, ligaturesEnabled_ ? nullptr : disabledLigatureFeatures.data(), ligaturesEnabled_ ? 0 : static_cast<unsigned int>(disabledLigatureFeatures.size()));
+    hb_shape(font, buffer, features.data(), static_cast<unsigned int>(features.size()));
     unsigned int glyphCount = 0;
     hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(buffer, &glyphCount);
     hb_glyph_position_t* positions = hb_buffer_get_glyph_positions(buffer, &glyphCount);

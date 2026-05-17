@@ -84,8 +84,8 @@ Java_com_coder_pi_CoderNative_nativeSetTheme(JNIEnv* env, jobject, jlong handle,
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetTextOptions(JNIEnv*, jobject, jlong handle, jboolean ligatures, jboolean cursorBlink, jint cursorMode) {
-    reinterpret_cast<CoderSession*>(handle)->renderer.setTextOptions(ligatures == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
+Java_com_coder_pi_CoderNative_nativeSetTextOptions(JNIEnv*, jobject, jlong handle, jboolean ligatures, jboolean contextualAlternates, jboolean slashedZero, jboolean stylisticSet1, jboolean stylisticSet2, jboolean characterVariant1, jboolean cursorBlink, jint cursorMode) {
+    reinterpret_cast<CoderSession*>(handle)->renderer.setTextOptions(ligatures == JNI_TRUE, contextualAlternates == JNI_TRUE, slashedZero == JNI_TRUE, stylisticSet1 == JNI_TRUE, stylisticSet2 == JNI_TRUE, characterVariant1 == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
 }
 
 extern "C" JNIEXPORT void JNICALL

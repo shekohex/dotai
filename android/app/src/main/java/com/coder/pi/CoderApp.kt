@@ -1840,15 +1840,40 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTer
 @Composable
 private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
     var ligatures by remember { mutableStateOf(terminalView.ligaturesEnabled()) }
+    var contextualAlternates by remember { mutableStateOf(terminalView.contextualAlternatesEnabled()) }
+    var slashedZero by remember { mutableStateOf(terminalView.slashedZeroEnabled()) }
+    var stylisticSet1 by remember { mutableStateOf(terminalView.stylisticSet1Enabled()) }
+    var stylisticSet2 by remember { mutableStateOf(terminalView.stylisticSet2Enabled()) }
+    var characterVariant1 by remember { mutableStateOf(terminalView.characterVariant1Enabled()) }
     var cursorBlink by remember { mutableStateOf(terminalView.cursorBlinkEnabled()) }
     var cursorMode by remember { mutableIntStateOf(terminalView.cursorMode()) }
     SettingsScaffold("Customize Text", tokens, onBack) {
         SettingsSection("OPEN TYPE", tokens) {
-            SettingsToggleRow(R.drawable.ic_feather_type, "Ligatures", ligatures, tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_type, "Standard Ligatures", ligatures, tokens) {
                 ligatures = it
                 terminalView.setLigaturesEnabled(it)
             }
-            SettingsValueRow(R.drawable.ic_feather_sliders, "Feature Tags", "liga, calt, kern", "Auto", tokens) {}
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "Contextual Alternates", contextualAlternates, tokens) {
+                contextualAlternates = it
+                terminalView.setContextualAlternatesEnabled(it)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_type, "Slashed Zero", slashedZero, tokens) {
+                slashedZero = it
+                terminalView.setSlashedZeroEnabled(it)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "Stylistic Set 1", stylisticSet1, tokens) {
+                stylisticSet1 = it
+                terminalView.setStylisticSet1Enabled(it)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "Stylistic Set 2", stylisticSet2, tokens) {
+                stylisticSet2 = it
+                terminalView.setStylisticSet2Enabled(it)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "Character Variant 1", characterVariant1, tokens) {
+                characterVariant1 = it
+                terminalView.setCharacterVariant1Enabled(it)
+            }
+            SettingsValueRow(R.drawable.ic_feather_sliders, "Feature Tags", "liga, calt, zero, ss01, ss02, cv01", "Native", tokens) {}
         }
         SettingsSection("CURSOR", tokens) {
             CursorSettingsPreview(tokens, cursorMode, cursorBlink)
@@ -1865,7 +1890,7 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
             SettingsValueRow(R.drawable.ic_feather_globe, "CJK Fallback", "Use system fallback when glyph missing", "Planned", tokens) {}
             SettingsValueRow(R.drawable.ic_feather_type, "Emoji Fallback", "Color emoji atlas", "Planned", tokens) {}
         }
-        item { Text("Ligatures, cursor mode, and cursor blink apply immediately to the native terminal renderer. CJK and emoji fallback are tracked here until fallback font stacks land.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+        item { Text("OpenType features, cursor mode, and cursor blink apply immediately to the native terminal renderer. CJK and emoji fallback use the native fallback stack.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
     }
 }
 

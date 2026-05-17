@@ -117,8 +117,8 @@ void CoderRenderer::setTheme(uint32_t background, uint32_t cursor, uint32_t curs
     cachedCells_.clear();
 }
 
-void CoderRenderer::setTextOptions(bool ligatures, bool cursorBlink, int cursorMode) {
-    font_.setLigaturesEnabled(ligatures);
+void CoderRenderer::setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool cursorBlink, int cursorMode) {
+    font_.setOpenTypeFeatures(ligatures, contextualAlternates, slashedZero, stylisticSet1, stylisticSet2, characterVariant1);
     cursorBlink_ = cursorBlink;
     cursorMode_ = cursorMode < 0 ? 0 : cursorMode > 2 ? 2 : cursorMode;
     cachedCells_.clear();

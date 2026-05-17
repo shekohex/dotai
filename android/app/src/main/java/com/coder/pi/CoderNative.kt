@@ -8,7 +8,7 @@ class CoderNative {
     external fun nativeSetFontStyles(handle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?)
     external fun nativeSetShaderCacheDir(handle: Long, path: String)
     external fun nativeSetTheme(handle: Long, foreground: Int, background: Int, cursor: Int, cursorText: Int, palette: IntArray)
-    external fun nativeSetTextOptions(handle: Long, ligatures: Boolean, cursorBlink: Boolean, cursorMode: Int)
+    external fun nativeSetTextOptions(handle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, cursorBlink: Boolean, cursorMode: Int)
     external fun nativeSetRefreshRate(handle: Long, refreshRate: Float)
     external fun nativeSurfaceChanged(handle: Long, width: Int, height: Int, cellWidth: Int, cellHeight: Int)
     external fun nativeDrawFrame(handle: Long)

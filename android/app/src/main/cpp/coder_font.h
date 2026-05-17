@@ -43,7 +43,7 @@ public:
     void setFontData(const uint8_t* data, size_t length);
     void setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength);
     void setCellSize(int width, int height);
-    void setLigaturesEnabled(bool enabled);
+    void setOpenTypeFeatures(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1);
     bool glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph);
     bool glyphByIndex(uint32_t glyphIndex, uint32_t flags, Glyph& outGlyph);
     bool primaryGlyphByIndex(uint32_t glyphIndex, uint32_t primaryIndex, Glyph& outGlyph);
@@ -83,6 +83,11 @@ private:
     int glyphHeight_ = 36;
     int baseline_ = 28;
     bool ligaturesEnabled_ = true;
+    bool contextualAlternatesEnabled_ = true;
+    bool slashedZeroEnabled_ = true;
+    bool stylisticSet1Enabled_ = false;
+    bool stylisticSet2Enabled_ = false;
+    bool characterVariant1Enabled_ = false;
     int atlasWidth_ = 1024;
     int atlasHeight_ = 1024;
     int atlasTargetSize_ = 1024;

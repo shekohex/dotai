@@ -35,6 +35,19 @@ export function isToolUseAssistantMessage(message: AssistantMessageLike): boolea
   return message.role === "assistant" && message.stopReason === "toolUse";
 }
 
+export function lastAssistantMessage(
+  messages: AssistantMessageLike[],
+): AssistantMessageLike | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "assistant") {
+      return message;
+    }
+  }
+
+  return null;
+}
+
 function isSessionMessageEntryLike(
   value: unknown,
 ): value is { type: "message"; message: { role: string; content?: unknown } } {

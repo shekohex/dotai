@@ -184,6 +184,9 @@ fun appTypography(fontFamily: FontFamily): Typography {
 
 fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
     (parent as? ViewGroup)?.removeView(this)
+    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    visibility = android.view.View.VISIBLE
+    post { refreshSurface() }
     return this
 }
 

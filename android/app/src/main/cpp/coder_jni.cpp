@@ -1,6 +1,7 @@
 #include "coder_renderer.h"
 #include "coder_terminal.h"
 
+#include <algorithm>
 #include <jni.h>
 #include <memory>
 #include <string>
@@ -96,9 +97,11 @@ Java_com_coder_pi_CoderNative_nativeSetRefreshRate(JNIEnv*, jobject, jlong handl
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeSurfaceChanged(JNIEnv*, jobject, jlong handle, jint width, jint height, jint cellWidth, jint cellHeight) {
     auto* session = reinterpret_cast<CoderSession*>(handle);
+    const int columns = std::max(1, width / std::max(1, cellWidth));
+    const int rows = std::max(1, height / std::max(1, cellHeight));
     session->renderer.setCellSize(cellWidth, cellHeight);
     session->renderer.resize(width, height);
-    session->terminal.resize(width / cellWidth, height / cellHeight, cellWidth, cellHeight);
+    session->terminal.resize(columns, rows, cellWidth, cellHeight);
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -95,9 +95,8 @@ void CoderTerminal::resize(int cols, int rows, int cellWidth, int cellHeight) {
     rows_ = std::max(1, rows);
     cellWidth_ = cellWidth;
     cellHeight_ = cellHeight;
-    cells_.assign(cols_ * rows_, CoderCell{{}, 0, 0xffd0d0d0, 0xff101014, 0xffd0d0d0, 0});
-    cursorCol_ = 0;
-    cursorRow_ = 0;
+    cursorCol_ = std::clamp(cursorCol_, 0, cols_ - 1);
+    cursorRow_ = std::clamp(cursorRow_, 0, rows_ - 1);
     ghostty_terminal_resize(terminal_.get(), static_cast<uint16_t>(cols_), static_cast<uint16_t>(rows_), static_cast<uint32_t>(cellWidth), static_cast<uint32_t>(cellHeight));
     if (ptyFd_ >= 0) {
         winsize size{static_cast<unsigned short>(rows_), static_cast<unsigned short>(cols_), static_cast<unsigned short>(cols_ * cellWidth), static_cast<unsigned short>(rows_ * cellHeight)};
@@ -353,14 +352,15 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
         bool dimensionsChanged = cols_ != renderCols || rows_ != renderRows || cells_.size() != static_cast<size_t>(renderCols) * static_cast<size_t>(renderRows);
         cols_ = renderCols;
         rows_ = renderRows;
-        if (dimensionsChanged || dirtyState == GHOSTTY_RENDER_STATE_DIRTY_FULL) {
+        const bool fullRedraw = dimensionsChanged || dirtyState == GHOSTTY_RENDER_STATE_DIRTY_FULL;
+        if (fullRedraw) {
             cells_.assign(cols_ * rows_, CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0});
         }
         GhosttyRenderStateRowIterator rowIterator = rowIterator_.get();
         ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &rowIterator);
         int row = 0;
         while (ghostty_render_state_row_iterator_next(rowIterator) && row < rows_) {
-            bool rowDirty = dirtyState == GHOSTTY_RENDER_STATE_DIRTY_FULL;
+            bool rowDirty = fullRedraw;
             if (!rowDirty) {
                 ghostty_render_state_row_get(rowIterator, GHOSTTY_RENDER_STATE_ROW_DATA_DIRTY, &rowDirty);
             }

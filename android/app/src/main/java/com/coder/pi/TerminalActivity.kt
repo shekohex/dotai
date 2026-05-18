@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +43,7 @@ class TerminalActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         terminalActivities.add(WeakReference(this))
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         val launch = terminalLaunchRequestFromIntent() ?: run {
@@ -77,7 +78,7 @@ class TerminalActivity : AppCompatActivity() {
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
-                TerminalSurface(terminalView, renderedTheme, terminalView.gestureEnabled("long_press_selection"), false, {}, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()))
+                TerminalSurface(terminalView, renderedTheme, terminalView.gestureEnabled("long_press_selection"), false, {}, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).imePadding())
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
                     if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"), detached = true))
@@ -183,7 +184,12 @@ class TerminalActivity : AppCompatActivity() {
         window.navigationBarColor = Color.BLACK
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller.hide(WindowInsetsCompat.Type.navigationBars())
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
     }
 
     private fun showTerminalKeyboard() {
@@ -200,7 +206,7 @@ class TerminalActivity : AppCompatActivity() {
         terminalView.setSoftwareKeyboardAllowed(false)
         WindowInsetsControllerCompat(window, terminalView).hide(WindowInsetsCompat.Type.ime())
         getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(terminalView.windowToken, 0)
-        WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
+        WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
     }
 
     companion object {

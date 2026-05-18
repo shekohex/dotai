@@ -60,6 +60,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         renderMode = RENDERMODE_CONTINUOUSLY
         isFocusable = true
         isFocusableInTouchMode = true
+        addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val width = right - left
+            val height = bottom - top
+            if (width != oldRight - oldLeft || height != oldBottom - oldTop) view.post { refreshSurface() }
+        }
     }
 
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
@@ -499,6 +504,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun refreshSurface() {
         if (handle != 0L && width > 0 && height > 0) {
+            if (surfaceWidth == width && surfaceHeight == height) {
+                requestRender()
+                return
+            }
             surfaceWidth = width
             surfaceHeight = height
             queueEvent { native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight) }

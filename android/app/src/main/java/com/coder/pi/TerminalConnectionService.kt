@@ -40,6 +40,13 @@ class TerminalConnectionService : Service() {
         .setContentText("Keeping terminal sessions connected in background")
         .setOngoing(true)
         .setSilent(true)
+        .setOnlyAlertOnce(true)
+        .setShowWhen(false)
+        .setLocalOnly(true)
+        .setPriority(NotificationCompat.PRIORITY_MIN)
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+        .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
         .setContentIntent(PendingIntent.getActivity(this, 0, packageManager.getLaunchIntentForPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .addAction(R.drawable.ic_feather_x, "Stop", PendingIntent.getService(this, 1, Intent(this, TerminalConnectionService::class.java).setAction(StopAction), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .build()
@@ -48,17 +55,19 @@ class TerminalConnectionService : Service() {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(ServiceChannelId) == null) {
-            manager.createNotificationChannel(NotificationChannel(ServiceChannelId, "Terminal Connections", NotificationManager.IMPORTANCE_LOW).apply {
+            manager.createNotificationChannel(NotificationChannel(ServiceChannelId, "Terminal Connections", NotificationManager.IMPORTANCE_MIN).apply {
                 setSound(null, null)
                 enableVibration(false)
                 enableLights(false)
+                setShowBadge(false)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
             })
         }
     }
 
     companion object {
         private const val ServiceNotificationId = 901
-        private const val ServiceChannelId = "terminal_connections"
+        private const val ServiceChannelId = "terminal_connections_minimized"
         private const val StopAction = "com.coder.pi.STOP_TERMINAL_CONNECTIONS"
     }
 }

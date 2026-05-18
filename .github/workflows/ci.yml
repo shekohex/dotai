@@ -124,7 +124,7 @@ jobs:
           PACKAGE_TARBALL="$(ls -1 *.tgz | head -n 1)"
           GLOBAL_PREFIX="$RUNNER_TEMP/npm-global"
           export PATH="$GLOBAL_PREFIX/bin:$PATH"
-          npm install --global --prefix "$GLOBAL_PREFIX" --no-audit --no-fund --progress=false "./${PACKAGE_TARBALL}"
+          npm install --global --prefix "$GLOBAL_PREFIX" --prefer-offline --no-audit --no-fund --progress=false "./${PACKAGE_TARBALL}"
           pi --help
 
       - name: Render preview release notes

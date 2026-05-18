@@ -57,7 +57,8 @@ Workflows measured:
 | 8 | Ignore in-progress runs in measurement script and verify Plannotator cache-hit CI path | 154s | 64s actual run, 134s rolling avg | 49s | 31s actual run, 39s rolling avg | Real CI, Release Please, Release passed; CI near target |
 | 9 | Disable audit/fund/progress during smoke global install | 134s | 50s actual run, 95s rolling avg | 39s | 29s actual run, 37s rolling avg | Real CI, Release Please, Release passed; CI target met, end-to-end still about 79s |
 | 10 | Combine preview release creation and package publishing into one Release job | 95s | 46s actual run, 89s rolling avg | 37s | 19s actual run, 36s rolling avg | Real CI, Release Please, Release passed; end-to-end still about 68s |
-| 11 | Move preview release creation and package publish into CI package job, remove `workflow_run` preview release path | 89s | Pending CI run | 36s | Pending release run | Local verification pending |
+| 11 | Move preview release creation and package publish into CI package job, remove `workflow_run` preview release path | 89s | 71s actual run, 83s rolling avg | 36s | No preview Release workflow triggered | Real CI and Release Please passed; preview publish happened inside CI |
+| 12 | Add `--prefer-offline` to smoke global install after local benchmark dropped install from about 18s to 6.6s | 83s | Pending CI run | N/A | N/A | Local verification pending |
 
 ## Vitest Worker Sweep
 

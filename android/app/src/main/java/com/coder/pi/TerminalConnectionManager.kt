@@ -21,7 +21,7 @@ object TerminalConnectionManager {
         }
     }
 
-    fun registerVisible(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
+    fun attachRenderer(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
         val previous = synchronized(sessions) {
             val existing = sessions[terminalId]
             sessions[terminalId] = RuntimeSession(endpoint, session, ownsEndpoint = false)
@@ -31,6 +31,10 @@ object TerminalConnectionManager {
             previous.session.stop()
             if (previous.endpoint is CoderHeadlessTerminalEndpoint) previous.endpoint.dispose()
         }
+    }
+
+    fun detachRenderer(terminalId: String) {
+        stop(terminalId)
     }
 
     fun startSavedHeadless(context: Context): Int {

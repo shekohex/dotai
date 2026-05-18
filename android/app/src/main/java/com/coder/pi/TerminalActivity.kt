@@ -79,7 +79,7 @@ class TerminalActivity : AppCompatActivity() {
         }, { safeError ->
             safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
         }).also {
-            TerminalConnectionManager.registerVisible(terminalId, terminalView, it)
+            TerminalConnectionManager.attachRenderer(terminalId, terminalView, it)
             it.start()
         }
         startPreviewPersistence()
@@ -125,7 +125,7 @@ class TerminalActivity : AppCompatActivity() {
     override fun onDestroy() {
         previewJob?.cancel()
         terminalSession?.stop()
-        TerminalConnectionManager.stop(terminalId)
+        TerminalConnectionManager.detachRenderer(terminalId)
         if (!isChangingConfigurations) terminalMetadata?.let { terminalStore?.updateActiveTerminalDetached(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command, false) }
         if (::terminalView.isInitialized) terminalView.dispose()
         terminalActivities.removeAll { it.get() == null || it.get() === this }

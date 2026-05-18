@@ -52,14 +52,14 @@ jobs:
       - name: Format check
         run: npm run format:check
 
-      - name: Test + Coverage
-        run: npm run test:coverage -- --reporter=github-actions --reporter=json
+      - name: Test
+        run: npm test -- --reporter=github-actions --reporter=json
 
       - name: Build
         run: npm run build
 
       - name: Pack package
-        run: npm pack
+        run: npm pack --ignore-scripts
 
       - name: Smoke test global install
         shell: bash
@@ -69,11 +69,3 @@ jobs:
           export PATH="$GLOBAL_PREFIX/bin:$PATH"
           npm install --global --prefix "$GLOBAL_PREFIX" "./${PACKAGE_TARBALL}"
           pi --help
-
-      - name: Upload coverage artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: agent/.tmp/coverage
-          if-no-files-found: ignore

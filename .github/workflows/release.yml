@@ -370,10 +370,6 @@ jobs:
         working-directory: agent
         run: npm pkg set version='${{ needs.create_preview_release.outputs.package_version }}'
 
-      - name: Refresh lockfile
-        working-directory: agent
-        run: npm install
-
       - name: Publish preview package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
@@ -419,10 +415,6 @@ jobs:
           RELEASE_TAG='${{ github.event.release.tag_name }}'
           npm pkg set version="${RELEASE_TAG#v}"
 
-      - name: Refresh lockfile
-        working-directory: agent
-        run: npm install
-
       - name: Publish release package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
@@ -463,10 +455,6 @@ jobs:
       - name: Set release package version
         working-directory: agent
         run: npm pkg set version='${{ needs.create_manual_release.outputs.package_version }}'
-
-      - name: Refresh lockfile
-        working-directory: agent
-        run: npm install
 
       - name: Publish release package
         env:

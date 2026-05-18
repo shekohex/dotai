@@ -348,7 +348,7 @@ fun CoderApp(
                 val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
                 val id = terminalSessionKey(identity)
                 if (terminalSessions.any { it.id == id }) return@forEach
-                val nextTerminalView = CoderTerminalView(context).also {
+                val nextTerminalView = createTerminalView(context, id).also {
                     it.setFontFamily(CoderFonts.selectedKey(context))
                     it.applyTheme(theme)
                 }
@@ -384,7 +384,7 @@ fun CoderApp(
                     val workspaceLabel = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId).alias ?: metadata.workspaceName
                     val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, workspaceLabel, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
                     val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
-                    val nextTerminalView = CoderTerminalView(context).also {
+                    val nextTerminalView = createTerminalView(context, id).also {
                         it.setFontFamily(CoderFonts.selectedKey(context))
                         it.applyTheme(theme)
                     }
@@ -497,7 +497,7 @@ fun CoderApp(
                                 Toast.makeText(context, "Close an active session before opening another terminal. Limit is $MaxActiveTerminalSessions.", Toast.LENGTH_SHORT).show()
                                 return@CoderHomeScreen
                             }
-                            val nextTerminalView = CoderTerminalView(context).also {
+                            val nextTerminalView = createTerminalView(context, id).also {
                                 it.setFontFamily(CoderFonts.selectedKey(context))
                                 it.applyTheme(theme)
                             }
@@ -627,6 +627,10 @@ data class TerminalIdentity(val baseUrl: String, val userId: String, val workspa
 private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val terminalView: CoderTerminalView, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val detached: Boolean, val errorDetail: String?)
 
 private const val MaxActiveTerminalSessions = 10
+
+private fun createTerminalView(context: Context, terminalId: String): CoderTerminalView {
+    return CoderTerminalView(context, attachedEngine = TerminalConnectionManager.engineFor(terminalId))
+}
 
 private fun configureTerminalNotificationContext(terminalView: CoderTerminalView, launch: TerminalLaunchRequest, identity: TerminalIdentity, sessionStore: CoderSessionStore) {
     val id = terminalSessionKey(identity)

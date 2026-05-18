@@ -64,10 +64,10 @@ class TerminalActivity : AppCompatActivity() {
         currentFontSizePoints = selectedTerminalFontSizePoints()
         terminalStore = CoderSessionStore(this)
         val localWorkspaceState = terminalStore?.workspaceState(identity.baseUrl, identity.userId, identity.workspaceId)
-        terminalView = CoderTerminalView(this).also {
+        terminalId = terminalSessionKey(identity)
+        terminalView = CoderTerminalView(this, attachedEngine = TerminalConnectionManager.engineFor(terminalId)).also {
             it.setPreviewFontFamily(currentFontKey ?: CoderFonts.selectedKey(this))
             it.applyTheme(theme)
-            terminalId = terminalSessionKey(identity)
             it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
             it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
         }

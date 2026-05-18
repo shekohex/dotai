@@ -6,7 +6,7 @@ class CoderHeadlessTerminalEndpoint(
     context: Context,
     private val notificationContext: TerminalNotificationContext,
 ) : CoderTerminalEndpoint {
-    private val engine = TerminalEngine()
+    internal val engine = TerminalEngine()
     private val router = TerminalNotificationRouter(context.applicationContext, notificationContext)
     private var remoteInput: ((ByteArray) -> Unit)? = null
     override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null

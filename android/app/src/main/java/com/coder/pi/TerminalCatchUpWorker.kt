@@ -1,6 +1,8 @@
 package com.coder.pi
 
 import android.content.Context
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -14,8 +16,8 @@ class TerminalCatchUpWorker(context: Context, params: WorkerParameters) : Corout
     override suspend fun doWork(): Result {
         val store = CoderSessionStore(applicationContext)
         if (store.loadSession() == null) return Result.success()
-        val started = TerminalConnectionManager.startSavedHeadless(applicationContext)
-        store.appendDebugLog("terminal catch-up started $started headless terminals")
+        ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, TerminalConnectionService::class.java))
+        store.appendDebugLog("terminal catch-up requested foreground terminal service")
         return Result.success()
     }
 

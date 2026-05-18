@@ -52,13 +52,17 @@ const val TerminalNotificationWorkspaceIdKey = "workspace_id"
 const val TerminalNotificationTerminalIdKey = "terminal_id"
 const val TerminalNotificationIdKey = "notification_id"
 
-class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer, CoderTerminalEndpoint {
-    private val native = CoderNative()
-    private var handle = 0L
-    private var nativeFontKey: String? = null
+class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, attachedEngine: TerminalEngine? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer, CoderTerminalEndpoint {
     private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
     private var cellWidth = preferences.getInt("cellWidth", 18)
     private var cellHeight = preferences.getInt("cellHeight", 36)
+    internal val terminalEngine = attachedEngine ?: TerminalEngine(80, 24, cellWidth, cellHeight)
+    private val engine = terminalEngine
+    private val native: CoderNative get() = engine.native
+    private var handle: Long
+        get() = engine.handle
+        set(value) { engine.handle = value }
+    private var nativeFontKey: String? = null
     private var surfaceWidth = 0
     private var surfaceHeight = 0
     private var lastTouchX = 0f

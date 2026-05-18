@@ -75,5 +75,20 @@ object TerminalConnectionManager {
         return true
     }
 
+    fun sendBytes(terminalId: String, bytes: ByteArray): Boolean {
+        val runtime = synchronized(sessions) { sessions[terminalId] } ?: return false
+        runtime.endpoint.sendInput(bytes)
+        return true
+    }
+
+    fun engineFor(terminalId: String): TerminalEngine? {
+        val runtime = synchronized(sessions) { sessions[terminalId] } ?: return null
+        return when (val endpoint = runtime.endpoint) {
+            is CoderHeadlessTerminalEndpoint -> endpoint.engine
+            is CoderTerminalView -> endpoint.terminalEngine
+            else -> null
+        }
+    }
+
     private data class RuntimeSession(val endpoint: CoderTerminalEndpoint, val session: CoderTerminalSession, val ownsEndpoint: Boolean)
 }

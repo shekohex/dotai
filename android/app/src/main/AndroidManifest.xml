@@ -4,7 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -40,6 +42,9 @@
             android:exported="false"
             android:launchMode="standard"
             android:taskAffinity="" />
+        <receiver
+            android:name=".TerminalNotificationReplyReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

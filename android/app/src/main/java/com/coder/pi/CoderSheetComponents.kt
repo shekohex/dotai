@@ -1,8 +1,13 @@
 package com.coder.pi
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,17 +17,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,26 +43,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+
+data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
 @Composable
-fun ChatInputBar(tokens: UiTokens, autoSend: Boolean = false, modifier: Modifier = Modifier, onSubmit: (String) -> Unit, onClose: () -> Unit) {
-    var text by remember { mutableStateOf("") }
+fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit, modifier: Modifier = Modifier, attachments: List<ChatImageAttachment> = emptyList(), onAttach: () -> Unit = {}, onRemoveAttachment: (Int) -> Unit = {}, onReplaceAttachment: (Int) -> Unit = {}, onCaptionAttachment: (Int, String) -> Unit = { _, _ -> }, onClear: () -> Unit, onSubmit: (String) -> Unit, onReturn: () -> Unit, onClose: () -> Unit) {
     var dictating by remember { mutableStateOf(false) }
-    var attachmentVisible by remember { mutableStateOf(false) }
+    var expandedEditor by remember { mutableStateOf(false) }
+    var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
+    val attachmentVisible = attachments.isNotEmpty()
     val submitText = {
         text.trimEnd().takeIf { it.isNotBlank() }?.let(onSubmit)
-        text = ""
+        onTextChanged("")
     }
     if (dictating) {
         DictationStubBar(tokens, modifier, { dictating = false })
@@ -60,43 +89,49 @@ fun ChatInputBar(tokens: UiTokens, autoSend: Boolean = false, modifier: Modifier
     ChatModeDock(tokens, modifier, attachmentVisible) {
         ChatDraftField(
             text = text,
-            autoSend = autoSend,
             tokens = tokens,
-            attachmentVisible = attachmentVisible,
-            onRemoveAttachment = { attachmentVisible = false },
+            attachments = attachments,
+            onExpand = { expandedEditor = true },
+            onAttachment = { selectedAttachmentIndex = it },
+            onRemoveAttachment = onRemoveAttachment,
             onTextChanged = { value ->
-                if (autoSend && value.endsWith("\n")) {
-                    value.trimEnd().takeIf { it.isNotBlank() }?.let(onSubmit)
-                    text = ""
-                } else {
-                    text = value
-                }
+                onTextChanged(value)
             },
         )
         ChatActionRail(
             tokens = tokens,
-            canSend = text.isNotBlank(),
-            onAttach = { hapticClick(); attachmentVisible = true },
+            onAttach = { hapticClick(); onAttach() },
             onClose = onClose,
+            onClear = onClear,
+            canClear = text.isNotBlank() || attachments.isNotEmpty(),
             onMic = { hapticClick(); dictating = true },
-            onSend = submitText,
+            sendIcon = if (text.isBlank()) R.drawable.ic_feather_corner_down_left else R.drawable.ic_feather_arrow_up,
+            sendAccent = text.isNotBlank(),
+            onSend = { if (text.isBlank()) onReturn() else submitText() },
         )
+    }
+    if (expandedEditor) FullscreenChatEditor(text, tokens, onTextChanged, { expandedEditor = false })
+    selectedAttachmentIndex?.let { index ->
+        attachments.getOrNull(index)?.let { attachment ->
+            AttachmentDetailsDialog(attachment, tokens, { selectedAttachmentIndex = null }, { onRemoveAttachment(index); selectedAttachmentIndex = null }, { onReplaceAttachment(index); selectedAttachmentIndex = null }) { onCaptionAttachment(index, it) }
+        } ?: run { selectedAttachmentIndex = null }
     }
 }
 
 @Composable
 private fun ChatModeDock(tokens: UiTokens, modifier: Modifier, attachmentVisible: Boolean, content: @Composable ColumnScope.() -> Unit) {
-    val dockHeight = if (attachmentVisible) 192.dp else 144.dp
-    val contentHeight = if (attachmentVisible) 168.dp else 120.dp
-    Column(modifier.fillMaxWidth().imePadding().height(dockHeight).padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.Center) {
+    val contentHeight = if (attachmentVisible) 214.dp else 144.dp
+    Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.Bottom) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .height(contentHeight)
-                .clip(RoundedCornerShape(34.dp))
+                .shadow(10.dp, RoundedCornerShape(28.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
+                .clip(RoundedCornerShape(28.dp))
                 .background(tokens.surfaceHigh)
-                .border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(34.dp))
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(28.dp))
+                .animateContentSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             content = content,
         )
@@ -104,7 +139,7 @@ private fun ChatModeDock(tokens: UiTokens, modifier: Modifier, attachmentVisible
 }
 
 @Composable
-private fun ChatDraftField(text: String, autoSend: Boolean, tokens: UiTokens, attachmentVisible: Boolean, onRemoveAttachment: () -> Unit, onTextChanged: (String) -> Unit) {
+private fun ChatDraftField(text: String, tokens: UiTokens, attachments: List<ChatImageAttachment>, onExpand: () -> Unit, onAttachment: (Int) -> Unit, onRemoveAttachment: (Int) -> Unit, onTextChanged: (String) -> Unit) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
@@ -112,28 +147,120 @@ private fun ChatDraftField(text: String, autoSend: Boolean, tokens: UiTokens, at
         keyboardController?.show()
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (attachmentVisible) {
-            AttachmentPreview(tokens, Modifier.align(Alignment.Start), onRemoveAttachment)
+        if (attachments.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                attachments.forEachIndexed { index, attachment ->
+                    AttachmentPreview(attachment, tokens, Modifier, { onAttachment(index) }) { onRemoveAttachment(index) }
+                }
+            }
         }
-        Box(Modifier.fillMaxWidth().height(42.dp).padding(horizontal = 4.dp)) {
+        val lineCount = text.count { it == '\n' } + 1
+        val showExpand = text.isNotBlank() && (lineCount > 3 || text.length > 120)
+        val inputHeight = when {
+            attachments.isNotEmpty() -> 92.dp
+            else -> 82.dp
+        }
+        Box(Modifier.fillMaxWidth().height(inputHeight).padding(horizontal = 8.dp, vertical = 4.dp)) {
             BasicTextField(
                 value = text,
-                onValueChange = onTextChanged,
+                onValueChange = { onTextChanged(applyMarkdownContinuation(text, it)) },
                 textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 23.sp),
-                modifier = Modifier.fillMaxSize().focusRequester(focusRequester).padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxSize().focusRequester(focusRequester),
+                cursorBrush = SolidColor(tokens.accent),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
+                maxLines = 5,
                 decorationBox = { inner ->
-                    if (text.isEmpty()) Text(if (autoSend) "command..." else "message...", color = tokens.secondary.copy(alpha = 0.72f), fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 23.sp)
+                    if (text.isEmpty()) Text("Type message...", color = tokens.secondary.copy(alpha = 0.72f), fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 23.sp)
                     inner()
                 },
             )
+            if (showExpand) Icon(painterResource(R.drawable.ic_feather_maximize_2), null, tint = tokens.secondary, modifier = Modifier.align(Alignment.TopEnd).size(20.dp).clickable { hapticClick(); onExpand() }.padding(2.dp))
         }
     }
 }
 
 @Composable
-private fun AttachmentPreview(tokens: UiTokens, modifier: Modifier, onRemove: () -> Unit) {
-    Box(modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(tokens.background).border(BorderStroke(0.6.dp, tokens.separator), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) {
-        Icon(painterResource(R.drawable.ic_feather_image), null, tint = tokens.secondary, modifier = Modifier.size(24.dp))
+private fun FullscreenChatEditor(text: String, tokens: UiTokens, onTextChanged: (String) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Box(Modifier.fillMaxSize().background(tokens.background).imePadding()) {
+            BasicTextField(
+                value = text,
+                onValueChange = onTextChanged,
+                textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 23.sp),
+                visualTransformation = MarkdownEditorVisualTransformation(tokens),
+                cursorBrush = SolidColor(tokens.accent),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 72.dp),
+                decorationBox = { inner -> if (text.isBlank()) Text("Type message...", color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace); inner() },
+            )
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 28.dp, end = 22.dp).size(44.dp).clickable { hapticClick(); onDismiss() }, contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_feather_minimize_2), null, tint = tokens.text, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+private class MarkdownEditorVisualTransformation(private val tokens: UiTokens) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val builder = AnnotatedString.Builder(text.text)
+        val source = text.text
+        source.lineSequence().fold(0) { offset, line ->
+            applyLineStyles(builder, source, offset, line)
+            offset + line.length + 1
+        }
+        Regex("(\\*\\*|__)(.+?)\\1").findAll(source).forEach { match -> builder.addStyle(SpanStyle(fontWeight = FontWeight.Bold), match.range.first, match.range.last + 1) }
+        Regex("(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|_([^_\\n]+)_").findAll(source).forEach { match -> builder.addStyle(SpanStyle(fontStyle = FontStyle.Italic), match.range.first, match.range.last + 1) }
+        Regex("~~(.+?)~~").findAll(source).forEach { match -> builder.addStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), match.range.first, match.range.last + 1) }
+        Regex("`([^`\\n]+)`").findAll(source).forEach { match -> builder.addStyle(SpanStyle(color = tokens.accent, fontFamily = FontFamily.Monospace), match.range.first, match.range.last + 1) }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
+
+    private fun applyLineStyles(builder: AnnotatedString.Builder, source: String, offset: Int, line: String) {
+        val end = (offset + line.length).coerceAtMost(source.length)
+        when {
+            line.startsWith("# ") -> builder.addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = tokens.text, fontSize = 24.sp), offset, end)
+            line.startsWith("## ") -> builder.addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = tokens.text, fontSize = 22.sp), offset, end)
+            line.startsWith("### ") -> builder.addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = tokens.text, fontSize = 20.sp), offset, end)
+            line.startsWith("#### ") -> builder.addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = tokens.text, fontSize = 18.sp), offset, end)
+            line.startsWith("##### ") -> builder.addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = tokens.text, fontSize = 16.sp), offset, end)
+            line.startsWith("###### ") -> builder.addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = tokens.secondary, fontSize = 14.sp), offset, end)
+            line.trimStart().startsWith(">") -> builder.addStyle(SpanStyle(fontStyle = FontStyle.Italic, color = tokens.secondary), offset, end)
+            Regex("^\\s*([-*+] )").containsMatchIn(line) -> builder.addStyle(SpanStyle(color = tokens.text), offset, end)
+            Regex("^\\s*\\d+\\. ").containsMatchIn(line) -> builder.addStyle(SpanStyle(color = tokens.text), offset, end)
+            Regex("^\\s*[-*+] \\[[ xX]\\] ").containsMatchIn(line) -> builder.addStyle(SpanStyle(color = tokens.text), offset, end)
+        }
+    }
+}
+
+private fun applyMarkdownContinuation(previous: String, next: String): String {
+    if (!next.endsWith("\n") || next.length != previous.length + 1 || !next.startsWith(previous)) return next
+    val currentLine = previous.substringAfterLast('\n')
+    val indentation = currentLine.takeWhile { it == ' ' || it == '\t' }
+    val trimmedLine = currentLine.drop(indentation.length)
+    if (trimmedLine.isBlank()) return next
+    Regex("^(\\d+)\\.\\s+(.*)$").matchEntire(trimmedLine)?.let { match ->
+        if (match.groupValues[2].isBlank()) return next
+        return next + indentation + "${match.groupValues[1].toIntOrNull()?.plus(1) ?: 1}. "
+    }
+    Regex("^([-*+])\\s+\\[([ xX])\\]\\s+(.*)$").matchEntire(trimmedLine)?.let { match ->
+        if (match.groupValues[3].isBlank()) return next
+        return next + indentation + "${match.groupValues[1]} [ ] "
+    }
+    Regex("^([-*+])\\s+(.*)$").matchEntire(trimmedLine)?.let { match ->
+        if (match.groupValues[2].isBlank()) return next
+        return next + indentation + "${match.groupValues[1]} "
+    }
+    Regex("^>\\s?(.*)$").matchEntire(trimmedLine)?.let { match ->
+        if (match.groupValues[1].isBlank()) return next
+        return next + indentation + "> "
+    }
+    return next
+}
+
+@Composable
+private fun AttachmentPreview(attachment: ChatImageAttachment, tokens: UiTokens, modifier: Modifier, onOpen: () -> Unit, onRemove: () -> Unit) {
+    Box(modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(tokens.background).border(BorderStroke(0.6.dp, tokens.separator), RoundedCornerShape(18.dp)).clickable { hapticClick(); onOpen() }, contentAlignment = Alignment.Center) {
+        AsyncImage(model = attachment.uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (attachment.caption.isNotBlank()) Text("Aa", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(5.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.56f)).padding(horizontal = 5.dp, vertical = 2.dp))
         Box(Modifier.align(Alignment.TopEnd).size(26.dp).clip(CircleShape).background(tokens.surfaceHigh).clickable { hapticClick(); onRemove() }, contentAlignment = Alignment.Center) {
             Icon(painterResource(R.drawable.ic_feather_x), null, tint = tokens.text, modifier = Modifier.size(15.dp))
         }
@@ -141,18 +268,46 @@ private fun AttachmentPreview(tokens: UiTokens, modifier: Modifier, onRemove: ()
 }
 
 @Composable
-private fun ChatActionRail(tokens: UiTokens, canSend: Boolean, onAttach: () -> Unit, onClose: () -> Unit, onMic: () -> Unit, onSend: () -> Unit) {
+private fun AttachmentDetailsDialog(attachment: ChatImageAttachment, tokens: UiTokens, onDismiss: () -> Unit, onRemove: () -> Unit, onReplace: () -> Unit, onCaption: (String) -> Unit) {
+    var caption by remember(attachment.uri) { mutableStateOf(attachment.caption) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = tokens.background,
+        titleContentColor = tokens.text,
+        textContentColor = tokens.text,
+        title = { Text("Image") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                AsyncImage(model = attachment.uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp)))
+                BasicTextField(value = caption, onValueChange = { caption = it; onCaption(it) }, textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), lineHeight = 22.sp), cursorBrush = SolidColor(tokens.accent), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(tokens.surfaceHigh).padding(14.dp), decorationBox = { inner -> if (caption.isBlank()) Text("Caption...", color = tokens.secondary, fontSize = bodySize()); inner() })
+            }
+        },
+        confirmButton = { TextButton(onClick = onReplace) { Text("Replace", color = tokens.accent) } },
+        dismissButton = { Row { TextButton(onClick = onRemove) { Text("Remove", color = Color(0xffff5c7a)) }; TextButton(onClick = onDismiss) { Text("Done", color = tokens.text) } } },
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ChatActionRail(tokens: UiTokens, onAttach: () -> Unit, onClose: () -> Unit, onClear: () -> Unit, canClear: Boolean, onMic: () -> Unit, sendIcon: Int, sendAccent: Boolean, onSend: () -> Unit) {
+    var clearArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(canClear) { if (!canClear) clearArmed = false }
     Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-        ChatRoundAction(R.drawable.ic_feather_plus, tokens.text, Color.Transparent, onAttach)
+        ChatRoundAction(R.drawable.ic_feather_plus, tokens.text, Color.Transparent, onClick = onAttach)
         Spacer(Modifier.width(10.dp))
-        ChatRoundAction(R.drawable.ic_feather_x, tokens.text, Color.Transparent) {
+        ChatRoundAction(if (clearArmed) R.drawable.ic_feather_trash_2 else R.drawable.ic_feather_x, if (clearArmed) Color(0xffff5c7a) else tokens.text, Color.Transparent, onLongClick = if (canClear) ({ hapticClick(); clearArmed = true }) else null) {
             hapticClick()
-            onClose()
+            if (clearArmed) {
+                onClear()
+                clearArmed = false
+            } else {
+                onClose()
+            }
         }
         Spacer(Modifier.weight(1f))
-        ChatRoundAction(R.drawable.ic_feather_mic, tokens.secondary, Color.Transparent, onMic)
+        ChatRoundAction(R.drawable.ic_feather_mic, tokens.secondary, Color.Transparent, onClick = onMic)
         Spacer(Modifier.width(12.dp))
-        ChatSendAction(canSend, tokens, onSend)
+        ChatSendAction(sendIcon, sendAccent, tokens, onSend)
     }
 }
 
@@ -180,19 +335,23 @@ private fun DictationMeter() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatRoundAction(icon: Int, color: Color, background: Color, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(CircleShape).background(background).clickable { onClick() }, contentAlignment = Alignment.Center) {
-        Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(25.dp))
+private fun ChatRoundAction(icon: Int, color: Color, background: Color, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    Box(Modifier.size(44.dp).clip(CircleShape).background(background).combinedClickable(onClick = onClick, onLongClick = onLongClick), contentAlignment = Alignment.Center) {
+        Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(20.dp))
     }
 }
 
 @Composable
-private fun ChatSendAction(canSend: Boolean, tokens: UiTokens, onSend: () -> Unit) {
-    val background = if (canSend) tokens.accent else Color.Transparent
-    val tint = if (canSend) tokens.background else tokens.secondary
-    Box(Modifier.size(44.dp).clip(CircleShape).background(background).clickable(enabled = canSend) { hapticClick(); onSend() }, contentAlignment = Alignment.Center) {
-        Icon(painterResource(R.drawable.ic_feather_arrow_up), null, tint = tint, modifier = Modifier.size(27.dp))
+private fun ChatSendAction(icon: Int, accent: Boolean, tokens: UiTokens, onSend: () -> Unit) {
+    val tint = if (accent) tokens.accent else tokens.text
+    Box(Modifier.size(44.dp).clip(CircleShape).clickable { hapticClick(); onSend() }, contentAlignment = Alignment.Center) {
+        Crossfade(icon, label = "chat-send-icon") { targetIcon ->
+            Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+                Icon(painterResource(targetIcon), null, tint = tint, modifier = Modifier.size(20.dp))
+            }
+        }
     }
 }
 

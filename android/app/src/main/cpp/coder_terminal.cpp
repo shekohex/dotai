@@ -593,9 +593,10 @@ void CoderTerminal::finishOscMetadata() {
         }
     } else if (oscMetadataBuffer_.rfind("9;", 0) == 0) {
         bool progressHandled = false;
-        if (oscMetadataBuffer_.rfind("9;4;", 0) == 0 && oscMetadataBuffer_.size() >= 5) {
+        const bool progressCommand = oscMetadataBuffer_.rfind("9;4;", 0) == 0;
+        if (progressCommand && oscMetadataBuffer_.size() >= 5) {
             const char state = oscMetadataBuffer_[4];
-            const bool validState = state == '0' || state == '1' || state == '2' || state == '4';
+            const bool validState = state == '0' || state == '1' || state == '2' || state == '3' || state == '4';
             const bool validShape = oscMetadataBuffer_.size() == 5 || oscMetadataBuffer_[5] == ';';
             if (validState && validShape) {
                 const size_t valueStart = oscMetadataBuffer_.size() > 5 ? 6 : oscMetadataBuffer_.size();
@@ -606,7 +607,7 @@ void CoderTerminal::finishOscMetadata() {
                 progressHandled = true;
             }
         }
-        if (!progressHandled) {
+        if (!progressHandled && !progressCommand) {
             const std::string body = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + 2), oscMetadataBuffer_.size() - 2, 512);
             if (!body.empty()) oscEvents_.push_back("notification\t\t" + body);
         }

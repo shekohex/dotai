@@ -1,6 +1,8 @@
 package com.coder.pi
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
@@ -282,4 +285,82 @@ fun CoderSheetHandle(tokens: UiTokens, metrics: CoderUiMetrics) {
 @Composable
 fun CoderPill(label: String, tokens: UiTokens, metrics: CoderUiMetrics, onClick: (() -> Unit)? = null) {
     Text(label, color = tokens.text, fontSize = metrics.bodySize, modifier = Modifier.clip(RoundedCornerShape(metrics.pillCorner)).background(tokens.surface).then(if (onClick == null) Modifier else Modifier.clickable { onClick() }).padding(horizontal = metrics.pillHorizontalPadding, vertical = metrics.pillVerticalPadding))
+}
+
+@Composable
+fun CoderScreenHeader(title: String, action: String, tokens: UiTokens, metrics: CoderUiMetrics, onAction: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(title.uppercase(), color = tokens.secondary, fontSize = metrics.sectionSize, letterSpacing = 0.6.sp, modifier = Modifier.weight(1f))
+        CoderPill(action, tokens, metrics) { onAction() }
+    }
+}
+
+@Composable
+fun CoderWorkspaceSummary(title: String, subtitle: String, iconUri: String?, iconUrl: String?, inactive: Boolean, tokens: UiTokens, metrics: CoderUiMetrics) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CoderWorkspaceIcon(title, iconUri, iconUrl, tokens, metrics, inactive)
+        Spacer(Modifier.width(metrics.iconGap * 0.7f))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = tokens.text, fontSize = metrics.titleSize, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = tokens.secondary, fontSize = metrics.captionSize, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+fun CoderAvatarPicker(title: String, iconUri: String?, iconUrl: String?, inactive: Boolean, tokens: UiTokens, metrics: CoderUiMetrics, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface).border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner)).clickable { onClick() }.padding(metrics.sheetPadding), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(metrics.iconSize * 3.1f).clip(CircleShape).background(tokens.background), contentAlignment = Alignment.Center) {
+            CoderWorkspaceIcon(title, iconUri, iconUrl, tokens, metrics.copy(iconSize = metrics.iconSize * 2.2f), inactive)
+        }
+        Spacer(Modifier.height(metrics.sheetPadding * 0.6f))
+        Text("Change icon", color = tokens.accent, fontSize = metrics.bodySize, fontWeight = FontWeight.SemiBold)
+        Text("Used locally for workspace cards and notifications", color = tokens.secondary, fontSize = metrics.captionSize, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+fun CoderHeaderIconButton(icon: Int, tokens: UiTokens, metrics: CoderUiMetrics, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(Modifier.size(metrics.actionIconHitSize).clip(CircleShape).background(if (enabled) tokens.surface else tokens.surface.copy(alpha = 0.5f)).clickable(enabled = enabled) { onClick() }, contentAlignment = Alignment.Center) {
+        Icon(painterResource(icon), null, tint = if (enabled) tokens.text else tokens.secondary.copy(alpha = 0.55f), modifier = Modifier.size(metrics.iconSize * 0.78f))
+    }
+}
+
+@Composable
+fun CoderInfoSection(title: String, rows: List<Pair<String, String>>, tokens: UiTokens, metrics: CoderUiMetrics, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth()) {
+        CoderSectionLabel(title, tokens, metrics)
+        if (rows.isEmpty()) return@Column
+        Spacer(Modifier.height(metrics.sheetPadding / 2))
+        CoderInfoCard(rows, tokens, metrics)
+    }
+}
+
+@Composable
+fun CoderSectionLabel(title: String, tokens: UiTokens, metrics: CoderUiMetrics) {
+    Text(title.uppercase(), color = tokens.secondary, fontSize = metrics.sectionSize, letterSpacing = 0.6.sp)
+}
+
+@Composable
+fun CoderInfoCard(rows: List<Pair<String, String>>, tokens: UiTokens, metrics: CoderUiMetrics, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface).border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner)).padding(metrics.sheetPadding * 0.7f)) {
+        rows.forEachIndexed { index, row ->
+            CoderInfoRow(row.first, tokens, metrics) { Text(row.second, color = tokens.text, fontSize = metrics.bodySize, modifier = Modifier.weight(1f)) }
+            if (index != rows.lastIndex) Box(Modifier.fillMaxWidth().height(0.5.dp).background(tokens.separator))
+        }
+    }
+}
+
+@Composable
+fun CoderInfoRow(label: String, tokens: UiTokens, metrics: CoderUiMetrics, content: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = metrics.sheetPadding * 0.3f), verticalAlignment = Alignment.Top) {
+        Text(label, color = tokens.secondary, fontSize = metrics.captionSize, modifier = Modifier.width(metrics.screenPadding * 4.8f))
+        content()
+    }
+}
+
+@Composable
+fun CoderToggleDateValue(timestamp: String, tokens: UiTokens, metrics: CoderUiMetrics, sinceLabel: (String) -> String, dateLabel: (String) -> String, modifier: Modifier = Modifier) {
+    var showDate by remember(timestamp) { mutableStateOf(false) }
+    Text(if (showDate) dateLabel(timestamp) else sinceLabel(timestamp), color = tokens.text, fontSize = metrics.bodySize, modifier = modifier.clip(RoundedCornerShape(metrics.pillCorner)).clickable { showDate = !showDate }.padding(vertical = 1.dp))
 }

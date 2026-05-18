@@ -139,26 +139,87 @@ private data class CoderWorkspaceDto(
     @SerialName("template_name") val templateName: String = "",
     @SerialName("template_icon") val templateIcon: String? = null,
     val favorite: Boolean = false,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
+    val health: CoderWorkspaceHealthDto? = null,
+    @SerialName("latest_app_status") val latestAppStatus: CoderWorkspaceAppStatusDto? = null,
     @SerialName("latest_build") val latestBuild: CoderWorkspaceBuildDto,
 ) {
     fun toModel(): CoderWorkspace {
-        val agents = latestBuild.resources.flatMap { it.agents }.map { CoderWorkspaceAgent(it.id, it.name, it.status) }
-        return CoderWorkspace(id, name, templateName, templateIcon, favorite, latestBuild.status, latestBuild.transition, agents)
+        val resources = latestBuild.resources.map { it.toModel() }
+        val agents = resources.flatMap { it.agents }
+        return CoderWorkspace(id, name, templateName, templateIcon, favorite, latestBuild.status, latestBuild.transition, agents, createdAt, updatedAt, latestBuild.startedAt, lastUsedAt, health?.toModel(), latestAppStatus?.toModel(), latestBuild.dailyCost, latestBuild.deadline, resources)
     }
+}
+
+@Serializable
+private data class CoderWorkspaceHealthDto(@SerialName("healthy") val healthy: Boolean = true, @SerialName("failing_agents") val failingAgents: List<String> = emptyList()) {
+    fun toModel(): CoderWorkspaceHealth = CoderWorkspaceHealth(healthy, failingAgents.size)
+}
+
+@Serializable
+private data class CoderWorkspaceAppStatusDto(val state: String = "", val message: String = "", @SerialName("needs_user_attention") val needsUserAttention: Boolean = false) {
+    fun toModel(): CoderWorkspaceAppStatus = CoderWorkspaceAppStatus(state, message, needsUserAttention)
 }
 
 @Serializable
 private data class CoderWorkspaceBuildDto(
     val status: String = "",
     val transition: String = "",
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("daily_cost") val dailyCost: Int = 0,
+    val deadline: String? = null,
     val resources: List<CoderWorkspaceResourceDto> = emptyList(),
 )
 
 @Serializable
-private data class CoderWorkspaceResourceDto(val agents: List<CoderWorkspaceAgentDto> = emptyList())
+private data class CoderWorkspaceResourceDto(
+    val name: String = "",
+    val type: String = "",
+    @SerialName("daily_cost") val dailyCost: Int = 0,
+    val metadata: List<CoderWorkspaceMetadataDto> = emptyList(),
+    val agents: List<CoderWorkspaceAgentDto> = emptyList(),
+) {
+    fun toModel(): CoderWorkspaceResource = CoderWorkspaceResource(name, type, dailyCost, metadata.filterNot { it.sensitive }.mapNotNull { it.toModel() }, agents.map { it.toModel() })
+}
 
 @Serializable
-private data class CoderWorkspaceAgentDto(val id: String, val name: String, val status: String = "")
+private data class CoderWorkspaceMetadataDto(
+    val key: String = "",
+    val value: String = "",
+    val sensitive: Boolean = false,
+) {
+    fun toModel(): CoderWorkspaceMetadata? = if (key.isBlank() || value.isBlank()) null else CoderWorkspaceMetadata(key, value)
+}
+
+@Serializable
+private data class CoderWorkspaceAgentDto(
+    val id: String,
+    val name: String,
+    val status: String = "",
+    @SerialName("lifecycle_state") val lifecycleState: String = "",
+    val health: CoderAgentHealthDto? = null,
+    @SerialName("operating_system") val operatingSystem: String = "",
+    val architecture: String = "",
+    val version: String = "",
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("first_connected_at") val firstConnectedAt: String? = null,
+    @SerialName("last_connected_at") val lastConnectedAt: String? = null,
+    val latency: Map<String, CoderAgentLatencyDto> = emptyMap(),
+    val apps: List<kotlinx.serialization.json.JsonElement> = emptyList(),
+    val scripts: List<kotlinx.serialization.json.JsonElement> = emptyList(),
+) {
+    fun toModel(): CoderWorkspaceAgent = CoderWorkspaceAgent(id, name, status, lifecycleState, health?.toModel(), operatingSystem, architecture, version, startedAt, firstConnectedAt, lastConnectedAt, latency.values.minOfOrNull { it.latencyMilliseconds }, apps.size, scripts.size)
+}
+
+@Serializable
+private data class CoderAgentHealthDto(val healthy: Boolean = true, val reason: String = "") {
+    fun toModel(): CoderAgentHealth = CoderAgentHealth(healthy, reason)
+}
+
+@Serializable
+private data class CoderAgentLatencyDto(@SerialName("latency_ms") val latencyMilliseconds: Double = 0.0)
 
 @Serializable
 private data class WorkspaceBuildRequestDto(val transition: String)

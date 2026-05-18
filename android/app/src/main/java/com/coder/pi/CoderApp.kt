@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.graphics.Rect
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
@@ -16,17 +17,19 @@ import android.view.KeyEvent
 import android.view.ViewGroup
 import android.content.Intent
 import android.widget.Toast
+import java.io.File
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -39,7 +42,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.combinedClickable
@@ -49,6 +51,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -65,6 +68,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -73,6 +77,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -100,7 +105,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.KeyEventType
@@ -117,6 +121,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -126,17 +131,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.util.UUID
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS, DEBUG_RENDER }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
-private enum class TerminalUiMode { SHEET, CAROUSEL }
+private enum class TerminalUiMode { SHEET }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -542,21 +549,7 @@ fun CoderApp(
                     selectedTerminalId = null
                     terminalUiMode = TerminalUiMode.SHEET
                 }
-                if (terminalUiMode == TerminalUiMode.CAROUSEL && terminalSessions.size > 1) {
-                    CoderTerminalCarousel(
-                        sessions = terminalSessions,
-                        selectedIndex = selectedIndex,
-                        theme = theme,
-                        tokens = tokens,
-                        networkAvailable = networkAvailable,
-                        onSelectSession = selectSession,
-                        onOpenSelected = { terminalUiMode = TerminalUiMode.SHEET },
-                        onCreateTerminal = dismiss,
-                        onShowKeyboard = { onShowKeyboard(managed.terminalView) },
-                        onHideKeyboard = onHideKeyboard,
-                    )
-                } else {
-                    CoderTerminalBottomSheet(
+                CoderTerminalBottomSheet(
                         terminalView = managed.terminalView,
                         theme = theme,
                         tokens = tokens,
@@ -566,10 +559,6 @@ fun CoderApp(
                         status = managed.sheet.status,
                         errorDetail = managed.errorDetail,
                         networkAvailable = networkAvailable,
-                        sessionCount = terminalSessions.size,
-                        selectedSessionIndex = selectedIndex,
-                        onSelectSession = selectSession,
-                        onEnterCarousel = { if (terminalSessions.size > 1) { onHideKeyboard(); terminalUiMode = TerminalUiMode.CAROUSEL } },
                         onRetry = retry,
                         onDismiss = dismiss,
                         onDetach = {
@@ -584,8 +573,7 @@ fun CoderApp(
                         },
                         onShowKeyboard = { onShowKeyboard(managed.terminalView) },
                         onHideKeyboard = onHideKeyboard,
-                    )
-                }
+                )
             }
             confirmCloseTerminalId?.let { terminalId ->
                 ConfirmCloseTerminalDialog(
@@ -723,6 +711,7 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     var error by remember { mutableStateOf<String?>(null) }
     var inactiveCollapsed by remember { mutableStateOf(sessionStore.hideInactive()) }
     var selectedWorkspace by remember { mutableStateOf<CoderWorkspace?>(null) }
+    var workspaceIconRevision by remember { mutableStateOf(0) }
     var selectedAgentPicker by remember { mutableStateOf<CoderWorkspace?>(null) }
     var tmuxLoading by remember { mutableStateOf<CoderWorkspaceAgent?>(null) }
     var tmuxPicker by remember { mutableStateOf<Triple<CoderWorkspace, CoderWorkspaceAgent, List<TmuxSession>>?>(null) }
@@ -738,8 +727,13 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val workspace = selectedWorkspace ?: return@rememberLauncherForActivityResult
         uri?.let {
-            context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            sessionStore.saveIcon(session.baseUrl, session.user.id, workspace.id, it.toString())
+            val localUri = copyWorkspaceIconToLocalStorage(context, workspace.id, it)
+            if (localUri != null) {
+                sessionStore.saveIcon(session.baseUrl, session.user.id, workspace.id, localUri)
+                workspaceIconRevision++
+            } else {
+                Toast.makeText(context, "Could not save workspace icon", Toast.LENGTH_SHORT).show()
+            }
         }
     }
     fun refresh() {
@@ -794,11 +788,11 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
             item { ActiveCoderSessionSection(activeTerminals, sessionStore, tokens, metrics, onResumeTerminal, onCloseTerminal) }
             if (error != null) item { Text(error ?: "", color = tokens.accent, modifier = Modifier.padding(horizontal = spacingLarge())) }
             if (loadingWorkspaces && workspaces.isEmpty()) item { WorkspaceLoadingSection(tokens, metrics) }
-            WorkspaceSection("RUNNING WORKSPACES", running, session, sessionStore, api, tokens, metrics, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
+            WorkspaceSection("RUNNING WORKSPACES", running, session, sessionStore, api, tokens, metrics, workspaceIconRevision, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
             item { CoderSectionHeader("STOPPED WORKSPACES", if (inactiveCollapsed) "show" else "hide", tokens, metrics) { inactiveCollapsed = !inactiveCollapsed } }
-            if (!inactiveCollapsed) WorkspaceRows(inactive, session, sessionStore, api, tokens, metrics, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
+            if (!inactiveCollapsed) WorkspaceRows(inactive, session, sessionStore, api, tokens, metrics, workspaceIconRevision, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
         }
-        selectedWorkspace?.let { workspace -> WorkspaceEditSheet(workspace, session, sessionStore, tokens, { selectedWorkspace = null }, { iconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp", "image/*")) }) }
+        selectedWorkspace?.let { workspace -> WorkspaceEditSheet(workspace, session, sessionStore, tokens, workspaceIconRevision, { selectedWorkspace = null }, { iconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp", "image/*")) }) }
         selectedAgentPicker?.let { workspace -> AgentPickerSheet(workspace, tokens, { selectedAgentPicker = null }) { agent ->
             selectedAgentPicker = null
             scope.launch {
@@ -813,9 +807,9 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     }
 }
 
-private fun LazyListScope.WorkspaceSection(title: String, workspaces: List<CoderWorkspace>, session: CoderSession, sessionStore: CoderSessionStore, api: CoderApi, tokens: UiTokens, metrics: CoderUiMetrics, onSessionExpired: () -> Unit, onActionError: (Throwable) -> Unit, onEdit: (CoderWorkspace) -> Unit, onOpen: (CoderWorkspace) -> Unit, refresh: () -> Unit) {
+private fun LazyListScope.WorkspaceSection(title: String, workspaces: List<CoderWorkspace>, session: CoderSession, sessionStore: CoderSessionStore, api: CoderApi, tokens: UiTokens, metrics: CoderUiMetrics, iconRevision: Int, onSessionExpired: () -> Unit, onActionError: (Throwable) -> Unit, onEdit: (CoderWorkspace) -> Unit, onOpen: (CoderWorkspace) -> Unit, refresh: () -> Unit) {
     item { CoderSectionHeader(title, null, tokens, metrics) }
-    WorkspaceRows(workspaces, session, sessionStore, api, tokens, metrics, onSessionExpired, onActionError, onEdit, onOpen, refresh)
+    WorkspaceRows(workspaces, session, sessionStore, api, tokens, metrics, iconRevision, onSessionExpired, onActionError, onEdit, onOpen, refresh)
 }
 
 @Composable
@@ -926,14 +920,14 @@ fun relativeSessionTime(timestampMillis: Long, nowMillis: Long = System.currentT
     }
 }
 
-private fun LazyListScope.WorkspaceRows(workspaces: List<CoderWorkspace>, session: CoderSession, sessionStore: CoderSessionStore, api: CoderApi, tokens: UiTokens, metrics: CoderUiMetrics, onSessionExpired: () -> Unit, onActionError: (Throwable) -> Unit, onEdit: (CoderWorkspace) -> Unit, onOpen: (CoderWorkspace) -> Unit, refresh: () -> Unit) {
-    items(workspaces.size) { index -> WorkspaceRow(workspaces[index], session, sessionStore, api, tokens, metrics, onSessionExpired, onActionError, onEdit, onOpen, refresh) }
+private fun LazyListScope.WorkspaceRows(workspaces: List<CoderWorkspace>, session: CoderSession, sessionStore: CoderSessionStore, api: CoderApi, tokens: UiTokens, metrics: CoderUiMetrics, iconRevision: Int, onSessionExpired: () -> Unit, onActionError: (Throwable) -> Unit, onEdit: (CoderWorkspace) -> Unit, onOpen: (CoderWorkspace) -> Unit, refresh: () -> Unit) {
+    items(workspaces.size) { index -> WorkspaceRow(workspaces[index], session, sessionStore, api, tokens, metrics, iconRevision, onSessionExpired, onActionError, onEdit, onOpen, refresh) }
 }
 
 @Composable
-private fun WorkspaceRow(workspace: CoderWorkspace, session: CoderSession, sessionStore: CoderSessionStore, api: CoderApi, tokens: UiTokens, metrics: CoderUiMetrics, onSessionExpired: () -> Unit, onActionError: (Throwable) -> Unit, onEdit: (CoderWorkspace) -> Unit, onOpen: (CoderWorkspace) -> Unit, refresh: () -> Unit) {
+private fun WorkspaceRow(workspace: CoderWorkspace, session: CoderSession, sessionStore: CoderSessionStore, api: CoderApi, tokens: UiTokens, metrics: CoderUiMetrics, iconRevision: Int, onSessionExpired: () -> Unit, onActionError: (Throwable) -> Unit, onEdit: (CoderWorkspace) -> Unit, onOpen: (CoderWorkspace) -> Unit, refresh: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val local = sessionStore.workspaceState(session.baseUrl, session.user.id, workspace.id)
+    val local = remember(workspace.id, iconRevision) { sessionStore.workspaceState(session.baseUrl, session.user.id, workspace.id) }
     CoderWorkspaceCard(
         title = local.alias ?: workspace.name,
         subtitle = "${workspace.templateName} · ${workspace.status}",
@@ -953,23 +947,134 @@ private fun WorkspaceRow(workspace: CoderWorkspace, session: CoderSession, sessi
     )
 }
 
+private fun copyWorkspaceIconToLocalStorage(context: Context, workspaceId: String, uri: Uri): String? = runCatching {
+    val directory = File(context.filesDir, "workspace_icons").apply { mkdirs() }
+    val file = File(directory, "${workspaceId.hashCode()}.png")
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        file.outputStream().use { output -> input.copyTo(output) }
+    } ?: return@runCatching null
+    Uri.fromFile(file).toString()
+}.getOrNull()
+
 @Composable
-private fun WorkspaceEditSheet(workspace: CoderWorkspace, session: CoderSession, sessionStore: CoderSessionStore, tokens: UiTokens, onDismiss: () -> Unit, onPickIcon: () -> Unit) {
-    var alias by remember { mutableStateOf(sessionStore.workspaceState(session.baseUrl, session.user.id, workspace.id).alias.orEmpty()) }
-    Box(Modifier.fillMaxSize()) {
-        SheetScrim(onDismiss)
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().alignBottomSheet(tokens).padding(20.dp)) {
-            SheetHandle(tokens)
-            Text(workspace.name, color = tokens.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(14.dp))
+private fun WorkspaceEditSheet(workspace: CoderWorkspace, session: CoderSession, sessionStore: CoderSessionStore, tokens: UiTokens, iconRevision: Int, onDismiss: () -> Unit, onPickIcon: () -> Unit) {
+    val initialAlias = remember(workspace.id) { sessionStore.workspaceState(session.baseUrl, session.user.id, workspace.id).alias.orEmpty() }
+    var alias by remember { mutableStateOf(initialAlias) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val local = remember(workspace.id, iconRevision) { sessionStore.workspaceState(session.baseUrl, session.user.id, workspace.id) }
+    val metrics = rememberCoderUiMetrics()
+    val displayName = alias.ifBlank { workspace.name }
+    val usefulResources = workspace.resources.filter { it.agents.isNotEmpty() || it.dailyCost > 0 || it.metadata.isNotEmpty() }.filterNot { it.type == "coder_env" || it.type == "terraform_data" }
+    val hasUnsavedChanges = alias != initialAlias
+    fun saveAndClose() {
+        sessionStore.saveAlias(session.baseUrl, session.user.id, workspace.id, alias)
+        onDismiss()
+    }
+    fun requestClose() {
+        if (hasUnsavedChanges) showDiscardDialog = true else onDismiss()
+    }
+    BackHandler { requestClose() }
+    Box(Modifier.fillMaxSize().background(tokens.background).statusBarsPadding()) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = metrics.screenPadding, vertical = metrics.sheetPadding * 0.8f)) {
+            Row(Modifier.fillMaxWidth().height(54.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = tokens.text, fontSize = 28.sp, modifier = Modifier.width(34.dp).clickable { hapticClick(); requestClose() })
+                Text("Workspace", color = tokens.text, fontSize = titleSize(), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Icon(painterResource(R.drawable.ic_feather_check), null, tint = tokens.text, modifier = Modifier.size(24.dp).clickable { hapticClick(); saveAndClose() })
+            }
+            Spacer(Modifier.height(metrics.sheetPadding * 0.8f))
+            CoderWorkspaceSummary(displayName, "${workspace.templateName} · ${workspace.status}", local.iconUri, workspace.templateIcon, !workspace.running, tokens, metrics)
+            Spacer(Modifier.height(metrics.sheetPadding * 1.1f))
+            CoderAvatarPicker(displayName, local.iconUri, workspace.templateIcon, !workspace.running, tokens, metrics) { hapticClick(); onPickIcon() }
+            Spacer(Modifier.height(metrics.sheetPadding * 0.8f))
+            CoderSectionLabel("Local alias", tokens, metrics)
+            Spacer(Modifier.height(metrics.sheetPadding / 2))
             CoderTextField(alias, { alias = it }, "Local alias", tokens)
-            Spacer(Modifier.height(12.dp))
-            CoderSecondaryButton("Choose icon", tokens, onPickIcon)
-            Spacer(Modifier.height(12.dp))
-            CoderPrimaryButton("Save", tokens) { sessionStore.saveAlias(session.baseUrl, session.user.id, workspace.id, alias); onDismiss() }
+            Spacer(Modifier.height(metrics.sheetPadding * 1.2f))
+            CoderWorkspaceRuntimeSection(workspace, tokens, metrics)
+            AnimatedVisibility(workspace.latestAppStatus != null) {
+                Column {
+                    Spacer(Modifier.height(metrics.sheetPadding * 0.6f))
+                    workspace.latestAppStatus?.let { appStatus ->
+                        CoderInfoSection("App status", workspaceInfoRows("State" to appStatus.state, "Message" to appStatus.message, "Needs attention" to if (appStatus.needsUserAttention) "Yes" else null), tokens, metrics)
+                    }
+                }
+            }
+            workspace.agents.forEach { agent ->
+                Spacer(Modifier.height(metrics.sheetPadding * 0.6f))
+                CoderInfoSection("Agent", workspaceInfoRows(
+                    "Name" to agent.name,
+                    "Status" to agent.status,
+                    "Lifecycle" to agent.lifecycleState.ifBlank { null },
+                    "Health" to agentHealthLabel(agent),
+                    "Platform" to listOf(agent.operatingSystem, agent.architecture).filter { it.isNotBlank() }.joinToString(" / ").ifBlank { null },
+                    "Version" to agent.version.ifBlank { null },
+                    "Latency" to agent.latencyMilliseconds?.let { "${"%.1f".format(it)} ms" },
+                    "Apps" to agent.appsCount.takeIf { it > 0 }?.toString(),
+                    "Scripts" to agent.scriptsCount.takeIf { it > 0 }?.toString(),
+                    "Started" to agent.startedAt,
+                    "Last connected" to agent.lastConnectedAt,
+                ), tokens, metrics)
+            }
+            usefulResources.forEach { resource ->
+                Spacer(Modifier.height(metrics.sheetPadding * 0.6f))
+                CoderInfoSection("Resource", workspaceInfoRows("Name" to resource.name.ifBlank { resource.type }, "Type" to resource.type.ifBlank { null }, "Cost" to resource.dailyCost.takeIf { it > 0 }?.let { "$it credits/day" }, *resource.metadata.map { readableWorkspaceMetadataKey(it.key) to it.value }.toTypedArray()), tokens, metrics)
+            }
+            Spacer(Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp))
+        }
+        if (showDiscardDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiscardDialog = false },
+                containerColor = tokens.background,
+                titleContentColor = tokens.text,
+                textContentColor = tokens.secondary,
+                title = { Text("Discard changes?") },
+                text = { Text("Local alias has unsaved changes.") },
+                confirmButton = { TextButton(onClick = { showDiscardDialog = false; onDismiss() }) { Text("Discard", color = tokens.accent) } },
+                dismissButton = { TextButton(onClick = { showDiscardDialog = false }) { Text("Keep editing", color = tokens.text) } },
+            )
         }
     }
 }
+
+@Composable
+private fun CoderWorkspaceRuntimeSection(workspace: CoderWorkspace, tokens: UiTokens, metrics: CoderUiMetrics) {
+    val rows = workspaceInfoRows(
+                "Name" to workspace.name,
+                "Template" to workspace.templateName,
+                "Status" to workspace.status,
+                "Health" to workspaceHealthLabel(workspace),
+                "Cost" to workspace.dailyCost.takeIf { it > 0 }?.let { "$it credits/day" },
+                "Transition" to workspace.transition.ifBlank { null },
+                "Deadline" to workspace.deadline,
+    )
+    Column(Modifier.fillMaxWidth()) {
+        CoderSectionLabel("Runtime", tokens, metrics)
+        Spacer(Modifier.height(metrics.sheetPadding / 2))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface).border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner)).padding(metrics.sheetPadding * 0.7f)) {
+            val allRows = if (workspace.lastUsedAt == null) rows else rows.take(4) + ("Last used" to workspace.lastUsedAt) + rows.drop(4)
+            allRows.forEachIndexed { index, row ->
+                if (row.first == "Last used") {
+                    CoderInfoRow(row.first, tokens, metrics) { CoderToggleDateValue(row.second, tokens, metrics, ::coderSinceLabel, ::coderDateLabel, Modifier.weight(1f)) }
+                } else {
+                    CoderInfoRow(row.first, tokens, metrics) { Text(row.second, color = tokens.text, fontSize = metrics.bodySize, modifier = Modifier.weight(1f)) }
+                }
+                if (index != allRows.lastIndex) Box(Modifier.fillMaxWidth().height(0.5.dp).background(tokens.separator))
+            }
+        }
+    }
+}
+
+private fun workspaceInfoRows(vararg rows: Pair<String, String?>): List<Pair<String, String>> = rows.mapNotNull { row -> row.second?.let { row.first to it } }
+
+private fun workspaceHealthLabel(workspace: CoderWorkspace): String? = workspace.health?.let { if (it.healthy) "Healthy" else "${it.failingAgents} failing agents" }
+
+private fun agentHealthLabel(agent: CoderWorkspaceAgent): String? = agent.health?.let { if (it.healthy) "Healthy" else it.reason.ifBlank { "Unhealthy" } }
+
+private fun coderSinceLabel(timestamp: String): String = runCatching { relativeSessionTime(Instant.parse(timestamp).toEpochMilli()) }.getOrDefault(timestamp)
+
+private fun coderDateLabel(timestamp: String): String = runCatching { DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(timestamp)) }.getOrDefault(timestamp)
+
+private fun readableWorkspaceMetadataKey(key: String): String = key.replace('_', ' ').replace('-', ' ').split(' ').filter { it.isNotBlank() }.joinToString(" ") { it.replaceFirstChar { char -> char.uppercaseChar().toString() } }
 
 @Composable
 private fun AgentPickerSheet(workspace: CoderWorkspace, tokens: UiTokens, onDismiss: () -> Unit, onAgent: (CoderWorkspaceAgent) -> Unit) {
@@ -987,21 +1092,24 @@ private fun AgentPickerSheet(workspace: CoderWorkspace, tokens: UiTokens, onDism
 private fun TmuxPickerSheet(agent: CoderWorkspaceAgent, sessions: List<TmuxSession>, tokens: UiTokens, onDismiss: () -> Unit, onTmux: (TmuxSession) -> Unit) {
     Box(Modifier.fillMaxSize()) {
         SheetScrim(onDismiss)
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().alignBottomSheet(tokens).padding(20.dp)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.86f).alignBottomSheet(tokens).padding(20.dp)) {
             SheetHandle(tokens)
             Text("Tmux sessions on ${agent.name}", color = tokens.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            sessions.forEach { HostSheetRow(it.name, "${it.windows} windows", tokens) { onTmux(it) } }
-            HostSheetRow("New shell", "No tmux attach", tokens) { onDismiss() }
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)).background(tokens.surface), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp)) {
+                items(sessions.size) { index ->
+                    val tmux = sessions[index]
+                    HostSheetRow(tmux.name, "${tmux.windows} windows", tokens) { onTmux(tmux) }
+                }
+                item { HostSheetRow("New shell", "No tmux attach", tokens) { onDismiss() } }
+            }
         }
     }
 }
 
 @Composable
 private fun CoderTmuxSheet(agent: CoderWorkspaceAgent, sessions: List<TmuxSession>, tokens: UiTokens, metrics: CoderUiMetrics, onDismiss: () -> Unit, onNewShell: () -> Unit, onTmux: (TmuxSession) -> Unit) {
-    Box(Modifier.fillMaxSize()) {
-        SheetScrim(onDismiss)
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.44f).alignBottomSheet(tokens).padding(metrics.sheetPadding)) {
-            CoderSheetHandle(tokens, metrics)
+    CoderResizableBottomSheet(tokens, metrics, onDismiss, label = "tmux-sheet-height") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 CoderPill("›_  Tmux", tokens, metrics)
                 Spacer(Modifier.weight(1f))
@@ -1018,9 +1126,44 @@ private fun CoderTmuxSheet(agent: CoderWorkspaceAgent, sessions: List<TmuxSessio
                 Text("Open ›", color = tokens.accent, fontSize = metrics.bodySize)
             }
             Spacer(Modifier.height(metrics.sheetPadding * 0.7f))
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface)) {
-                sessions.forEach { session -> HostSheetRow(session.name, "${session.windows} windows", tokens) { onTmux(session) } }
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + metrics.sheetPadding)) {
+                items(sessions.size) { index ->
+                    val session = sessions[index]
+                    HostSheetRow(session.name, "${session.windows} windows", tokens) { onTmux(session) }
+                }
             }
+    }
+}
+
+@Composable
+private fun CoderResizableBottomSheet(tokens: UiTokens, metrics: CoderUiMetrics, onDismiss: () -> Unit, label: String, initialHeightFraction: Float = 0.68f, minHeightFraction: Float = 0.42f, header: (@Composable ColumnScope.(Modifier, () -> Unit) -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    var sheetHeightFraction by remember { mutableFloatStateOf(initialHeightFraction) }
+    var expanded by remember { mutableStateOf(false) }
+    val density = LocalDensity.current.density
+    val animatedSheetHeightFraction by animateFloatAsState(if (expanded) 1f else sheetHeightFraction, animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f), label = label)
+    val sheetDragModifier = Modifier.pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                sheetHeightFraction = (sheetHeightFraction - (dragAmount / density / 700f)).coerceIn(minHeightFraction, 1f)
+                expanded = sheetHeightFraction > 0.96f
+            },
+            onDragEnd = {
+                sheetHeightFraction = when {
+                    sheetHeightFraction > 0.82f -> 1f
+                    sheetHeightFraction > 0.58f -> initialHeightFraction
+                    else -> minHeightFraction
+                }
+                expanded = sheetHeightFraction >= 0.99f
+            },
+        )
+    }
+    Box(Modifier.fillMaxSize()) {
+        SheetScrim(onDismiss)
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(animatedSheetHeightFraction).alignBottomSheet(tokens, expanded).padding(metrics.sheetPadding)) {
+            val expandSheet = { expanded = true; sheetHeightFraction = 1f }
+            if (header == null) SheetHandle(tokens, expandSheet, sheetDragModifier) else header(sheetDragModifier, expandSheet)
+            content()
         }
     }
 }
@@ -1113,7 +1256,7 @@ private fun TerminalPane(
     onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
-    TerminalSurface(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), false, {}, { onShowKeyboard(terminalView) }, onHideKeyboard, Modifier.fillMaxSize().imePadding())
+    TerminalSurface(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), { onShowKeyboard(terminalView) }, onHideKeyboard, Modifier.fillMaxSize().imePadding())
 }
 
 @Composable
@@ -1444,8 +1587,6 @@ fun TerminalSurface(
     terminalView: CoderTerminalView,
     theme: CoderTheme,
     selectionEnabled: Boolean,
-    carouselSwipeEnabled: Boolean,
-    onCarouselSwipe: () -> Unit,
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1496,7 +1637,7 @@ fun TerminalSurface(
             }
             statusContent()
         }
-        TerminalAccessory(theme, terminalView, selection != null, carouselSwipeEnabled, onCarouselSwipe, { copySelection() }, { selection = null }, onShowKeyboard, onHideKeyboard)
+        TerminalAccessory(theme, terminalView, selection != null, { copySelection() }, { selection = null }, onShowKeyboard, onHideKeyboard)
     }
     pendingHyperlink?.let { uri ->
         AlertDialog(
@@ -1532,95 +1673,47 @@ private fun CoderTerminalBottomSheet(
     status: String,
     errorDetail: String?,
     networkAvailable: Boolean,
-    sessionCount: Int,
-    selectedSessionIndex: Int,
-    onSelectSession: (Int) -> Unit,
-    onEnterCarousel: () -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     onDetach: () -> Unit,
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    var sheetHeightFraction by remember { mutableFloatStateOf(0f) }
-    var sheetClosing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val swipeSessionSwitch = terminalView.gestureEnabled("swipe_session_switch")
-    val sessionSwipeModifier = if (swipeSessionSwitch) Modifier.pointerInput(sessionCount, selectedSessionIndex) { detectManagedSessionSwipe(sessionCount, selectedSessionIndex, onSelectSession) } else Modifier
-    val density = LocalDensity.current.density
-    val animatedSheetHeightFraction by animateFloatAsState(if (sheetClosing) 0f else if (expanded) 1f else sheetHeightFraction, animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f), label = "terminal-sheet-height")
-    val scrimAlpha by animateFloatAsState(if (sheetClosing) 0f else if (sheetHeightFraction == 0f) 0f else 0.34f, animationSpec = tween(220), label = "terminal-sheet-scrim")
-    val sheetOffsetY by animateDpAsState(if (sheetClosing) 48.dp else 0.dp, animationSpec = tween(180), label = "terminal-sheet-offset")
-    fun closeSheet() {
-        if (sheetClosing) return
-        sheetClosing = true
-        scope.launch {
-            delay(180)
-            onDismiss()
-        }
-    }
-    BackHandler { closeSheet() }
-    val sheetDragModifier = Modifier.pointerInput(Unit) {
-        var totalDownDrag = 0f
-        detectVerticalDragGestures(
-            onDragStart = { totalDownDrag = 0f },
-            onVerticalDrag = { change, dragAmount ->
-                change.consume()
-                totalDownDrag += dragAmount.coerceAtLeast(0f)
-                val next = sheetHeightFraction - (dragAmount / density / 700f)
-                sheetHeightFraction = next.coerceIn(0.28f, 1f)
-                expanded = sheetHeightFraction > 0.96f
-            },
-            onDragEnd = {
-                when {
-                    totalDownDrag > 96f || sheetHeightFraction < 0.38f -> closeSheet()
-                    sheetHeightFraction > 0.82f -> sheetHeightFraction = 0.92f
-                    sheetHeightFraction > 0.62f -> sheetHeightFraction = 0.68f
-                    else -> sheetHeightFraction = 0.44f
-                }
-                expanded = false
-            },
-        )
-    }
     LaunchedEffect(Unit) {
-        sheetHeightFraction = 0.92f
         delay(80)
         terminalView.refreshSurface()
     }
-    Box(Modifier.fillMaxSize()) {
-        SheetScrim({ closeSheet() }, scrimAlpha)
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = sheetOffsetY)
-                .fillMaxWidth()
-                .fillMaxHeight(animatedSheetHeightFraction.coerceIn(0.01f, 1f))
-                .alignBottomSheet(tokens, expanded || sheetHeightFraction >= 0.99f)
-                .imePadding(),
-        ) {
-            SheetHandle(tokens, { closeSheet() }, sheetDragModifier)
-            Row(Modifier.fillMaxWidth().height(38.dp).then(sessionSwipeModifier).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xffffcc00)).clickable { hapticClick(); closeSheet() })
-                Spacer(Modifier.width(8.dp))
-                Box(Modifier.size(18.dp).clip(CircleShape).background(tokens.accent).clickable { hapticClick(); onDetach() })
-                Spacer(Modifier.width(14.dp))
-                Text(title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f).clickable(enabled = sessionCount > 1) { hapticClick(); onEnterCarousel() })
-                if (sessionLabel != null) {
-                    Text(sessionLabel, color = tokens.accent, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 10.dp, vertical = 4.dp))
-                    Spacer(Modifier.width(8.dp))
-                }
-                if (!networkAvailable) {
-                    Spacer(Modifier.width(8.dp))
-                    Text("offline", color = Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
+    BackHandler { onDismiss() }
+    val metrics = rememberCoderUiMetrics()
+    CoderResizableBottomSheet(
+        tokens = tokens,
+        metrics = metrics,
+        onDismiss = onDismiss,
+        label = "terminal-sheet-height",
+        initialHeightFraction = 0.68f,
+        minHeightFraction = 0.42f,
+        header = { dragModifier, expandSheet ->
+            Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Box(Modifier.weight(1f).height(28.dp).then(dragModifier).clickable { hapticClick(); expandSheet() }, contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    if (sessionLabel != null) {
+                        Text(sessionLabel, color = tokens.accent, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 10.dp, vertical = 4.dp))
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    if (!networkAvailable) {
+                        Text("offline", color = Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    ToolbarIconButton(R.drawable.ic_feather_maximize, tokens.text, Color.Transparent) { hapticClick(); onDetach() }
                 }
             }
+        },
+    ) {
             TerminalSurface(
                 terminalView = terminalView,
                 theme = theme,
                 selectionEnabled = terminalView.gestureEnabled("long_press_selection") && !terminalStatusIsRecoverable(status),
-                carouselSwipeEnabled = sessionCount > 1,
-                onCarouselSwipe = onEnterCarousel,
                 onShowKeyboard = onShowKeyboard,
                 onHideKeyboard = onHideKeyboard,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1640,192 +1733,11 @@ private fun CoderTerminalBottomSheet(
                     }
                 }
             }
-        }
-    }
-}
-
-private suspend fun PointerInputScope.detectManagedSessionSwipe(sessionCount: Int, selectedSessionIndex: Int, onSelectSession: (Int) -> Unit) {
-    if (sessionCount <= 1) return
-    var totalDrag = 0f
-    var switched = false
-    detectHorizontalDragGestures(
-        onDragStart = { totalDrag = 0f; switched = false },
-        onHorizontalDrag = { change, dragAmount ->
-            totalDrag += dragAmount
-            if (switched || abs(totalDrag) < 72f) return@detectHorizontalDragGestures
-            change.consume()
-            val nextIndex = when {
-                totalDrag < 0f -> (selectedSessionIndex + 1).coerceAtMost(sessionCount - 1)
-                else -> (selectedSessionIndex - 1).coerceAtLeast(0)
-            }
-            if (nextIndex != selectedSessionIndex) {
-                switched = true
-                hapticClick()
-                onSelectSession(nextIndex)
-            }
-        }
-    )
-}
-
-@Composable
-private fun CoderTerminalCarousel(
-    sessions: List<ManagedTerminalSession>,
-    selectedIndex: Int,
-    theme: CoderTheme,
-    tokens: UiTokens,
-    networkAvailable: Boolean,
-    onSelectSession: (Int) -> Unit,
-    onOpenSelected: () -> Unit,
-    onCreateTerminal: () -> Unit,
-    onShowKeyboard: () -> Unit,
-    onHideKeyboard: () -> Unit,
-) {
-    BackHandler { onOpenSelected() }
-    val selectedSession = sessions.getOrNull(selectedIndex) ?: return
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val density = LocalDensity.current.density
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.82f))
-            .pointerInput(sessions.size, selectedIndex) {
-                detectHorizontalDragGestures(
-                    onDragStart = { dragOffset = 0f },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        dragOffset = (dragOffset + dragAmount).coerceIn(-360f, 360f)
-                    },
-                    onDragCancel = { dragOffset = 0f },
-                    onDragEnd = {
-                        when {
-                            dragOffset < -96f -> onSelectSession((selectedIndex + 1).coerceAtMost(sessions.lastIndex))
-                            dragOffset > 96f -> onSelectSession((selectedIndex - 1).coerceAtLeast(0))
-                        }
-                        dragOffset = 0f
-                    },
-                )
-            },
-    ) {
-        (selectedIndex - 1..selectedIndex + 1).forEach { index ->
-            val offsetFromSelected = index - selectedIndex
-            val session = sessions.getOrNull(index)
-            val widthFraction = if (offsetFromSelected == 0) 0.74f else 0.42f
-            val xOffset = when {
-                offsetFromSelected < 0 -> (-230).dp
-                offsetFromSelected > 0 -> 230.dp
-                else -> 80.dp
-            }
-            val alpha = if (offsetFromSelected == 0) 1f else 0.48f
-            val cardBackground = if (session == null) tokens.surfaceHigh.copy(alpha = 0.08f) else tokens.background.copy(alpha = alpha)
-            val cardBorder = if (session == null) tokens.text.copy(alpha = 0.16f) else Color.Transparent
-            Box(
-                Modifier
-                    .align(Alignment.Center)
-                    .offset(x = xOffset + (dragOffset / density).dp, y = (-8).dp)
-                    .zIndex(if (offsetFromSelected == 0) 2f else 1f)
-                    .fillMaxWidth(widthFraction)
-                    .fillMaxHeight(0.84f)
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(cardBackground)
-                    .border(BorderStroke(1.dp, cardBorder), RoundedCornerShape(26.dp))
-                    .clickable {
-                        hapticClick()
-                        if (session == null) onCreateTerminal() else {
-                            onSelectSession(index)
-                            onOpenSelected()
-                        }
-                    },
-            ) {
-                if (session == null) {
-                    CarouselCreateTerminalCard(tokens)
-                } else if (offsetFromSelected == 0) {
-                    CarouselActiveTerminalCard(session, theme, tokens, networkAvailable, onShowKeyboard, onHideKeyboard)
-                    Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { hapticClick(); onOpenSelected() }) })
-                } else {
-                    CarouselPreviewTerminalCard(session, tokens)
-                }
-            }
-        }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 54.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            sessions.indices.forEach { index ->
-                Box(Modifier.padding(horizontal = 5.dp).size(if (index == selectedIndex) 8.dp else 6.dp).clip(CircleShape).background(if (index == selectedIndex) Color.White.copy(alpha = 0.86f) else Color.White.copy(alpha = 0.38f)))
-            }
-        }
     }
 }
 
 @Composable
-private fun CarouselActiveTerminalCard(session: ManagedTerminalSession, theme: CoderTheme, tokens: UiTokens, networkAvailable: Boolean, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
-        Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(14.dp).clip(CircleShape).background(Color(0xffffcc00)))
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.size(14.dp).clip(CircleShape).background(tokens.accent))
-            Spacer(Modifier.width(14.dp))
-            Text(session.sheet.title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (networkAvailable) session.sheet.status else "offline", color = if (networkAvailable && terminalStatusFromWireName(session.sheet.status) == TerminalConnectionStatus.Connected) tokens.success else Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
-        }
-        Box(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
-            AndroidView(factory = { session.terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme) })
-        }
-        TerminalAccessory(theme, session.terminalView, false, false, {}, {}, {}, onShowKeyboard, onHideKeyboard)
-    }
-}
-
-@Composable
-private fun CarouselPreviewTerminalCard(session: ManagedTerminalSession, tokens: UiTokens) {
-    Column(Modifier.fillMaxSize().padding(18.dp)) {
-        Spacer(Modifier.height(36.dp))
-        Text(session.sheet.title, color = tokens.text.copy(alpha = 0.62f), fontSize = bodySize(), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(10.dp))
-        session.previewLines.takeLast(5).forEach { line -> Text(line, color = tokens.secondary.copy(alpha = 0.52f), fontSize = smallCaptionSize(), fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-    }
-}
-
-@Composable
-private fun CarouselCreateTerminalCard(tokens: UiTokens) {
-    Column(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.025f)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(70.dp).clip(CircleShape).background(tokens.surfaceHigh.copy(alpha = 0.22f)).border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), CircleShape), contentAlignment = Alignment.Center) {
-            Text("+", color = tokens.accent.copy(alpha = 0.58f), fontSize = 38.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(10.dp))
-        Text("Create new terminal", color = tokens.text.copy(alpha = 0.34f), fontSize = bodySize(), textAlign = TextAlign.Center)
-    }
-}
-
-@Composable
-private fun NativeSessionSwitcher(titles: List<String>, selectedIndex: Int, tokens: UiTokens, modifier: Modifier = Modifier, onSelectSession: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth().height(54.dp).then(modifier), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            titles.forEachIndexed { index, title ->
-                val selected = index == selectedIndex
-                Box(
-                    Modifier
-                        .padding(horizontal = if (selected) 5.dp else 2.dp)
-                        .width(if (selected) 146.dp else 44.dp)
-                        .height(if (selected) 32.dp else 26.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (selected) tokens.surfaceHigh else tokens.surface.copy(alpha = 0.62f))
-                        .border(BorderStroke(1.dp, if (selected) tokens.separator else tokens.separator.copy(alpha = 0.45f)), RoundedCornerShape(12.dp))
-                        .clickable { hapticClick(); onSelectSession(index) }
-                        .padding(horizontal = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(if (selected) title else "", color = if (selected) tokens.text else tokens.secondary, fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
-                }
-            }
-        }
-        Row(Modifier.height(14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            titles.indices.forEach { index ->
-                Box(Modifier.padding(horizontal = 3.dp).size(if (index == selectedIndex) 7.dp else 5.dp).clip(CircleShape).background(if (index == selectedIndex) tokens.text else tokens.separator))
-            }
-        }
-    }
-}
-
-@Composable
-fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, carouselSwipeEnabled: Boolean, onCarouselSwipe: () -> Unit, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
+fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
     var chatMode by remember { mutableStateOf(false) }
     var dpadExpanded by remember { mutableStateOf(false) }
     var dpadOffset by remember { mutableStateOf(IntOffset.Zero) }
@@ -1834,15 +1746,30 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     var altActive by remember { mutableStateOf(false) }
     var showChat by remember { mutableStateOf(terminalView.toolbarActionVisible("chat")) }
     var showPaste by remember { mutableStateOf(terminalView.toolbarActionVisible("paste")) }
-    var autoSend by remember { mutableStateOf(terminalView.autoSendEnabled()) }
+    var chatDraft by remember { mutableStateOf("") }
+    var chatAttachments by remember { mutableStateOf<List<ChatImageAttachment>>(emptyList()) }
+    var replacingAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var toolbarOrder by remember { mutableStateOf(terminalView.toolbarOrder()) }
     val text = theme.foreground.toComposeColor()
     val active = theme.selectionBackground.toComposeColor()
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    var keyboardVisible by remember { mutableStateOf(false) }
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        val replaceIndex = replacingAttachmentIndex
+        replacingAttachmentIndex = null
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        chatAttachments = if (replaceIndex != null) {
+            chatAttachments.mapIndexed { index, attachment -> if (index == replaceIndex) attachment.copy(uri = uris.first()) else attachment }
+        } else {
+            chatAttachments + uris.map { ChatImageAttachment(it) }
+        }
+    }
     fun clampDPadOffset(offset: IntOffset): IntOffset {
         val horizontalLimit = (screenWidthPx / 2 - with(density) { 116.dp.roundToPx() }).coerceAtLeast(0)
         val topLimit = -(screenHeightPx - with(density) { 220.dp.roundToPx() }).coerceAtMost(0)
@@ -1861,33 +1788,44 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
         terminalView.onToolbarActionsChanged = {
             showChat = terminalView.toolbarActionVisible("chat")
             showPaste = terminalView.toolbarActionVisible("paste")
-            autoSend = terminalView.autoSendEnabled()
             shortcuts = terminalView.customShortcuts()
             toolbarOrder = terminalView.toolbarOrder()
         }
     }
+    DisposableEffect(view) {
+        val visibleFrame = Rect()
+        val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            view.getWindowVisibleDisplayFrame(visibleFrame)
+            keyboardVisible = view.rootView.height - visibleFrame.bottom > view.rootView.height * 0.15f
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+    }
     if (chatMode) {
-        ChatInputBar(uiTokens(theme), autoSend, modifier, { terminalView.sendText(it + "\n") }) { chatMode = false }
+        ChatInputBar(
+            tokens = uiTokens(theme),
+            text = chatDraft,
+            onTextChanged = { chatDraft = it },
+            modifier = modifier,
+            attachments = chatAttachments,
+            onAttach = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onRemoveAttachment = { index -> chatAttachments = chatAttachments.filterIndexed { currentIndex, _ -> currentIndex != index } },
+            onReplaceAttachment = { index -> replacingAttachmentIndex = index; imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onCaptionAttachment = { index, caption -> chatAttachments = chatAttachments.mapIndexed { currentIndex, attachment -> if (currentIndex == index) attachment.copy(caption = caption) else attachment } },
+            onClear = { chatDraft = ""; chatAttachments = emptyList() },
+            onSubmit = { terminalView.sendText(if ('\n' in it) it else "$it\n") },
+            onReturn = { terminalView.sendKey(KeyEvent.KEYCODE_ENTER) },
+        ) {
+            onShowKeyboard()
+            scope.launch {
+                delay(16)
+                chatMode = false
+            }
+        }
         return
     }
-    val carouselSwipeModifier = if (carouselSwipeEnabled) Modifier.pointerInput(Unit) {
-        var totalDrag = 0f
-        var fired = false
-        detectVerticalDragGestures(
-            onDragStart = { totalDrag = 0f; fired = false },
-            onVerticalDrag = { change, dragAmount ->
-                totalDrag += dragAmount
-                if (!fired && totalDrag < -48f) {
-                    fired = true
-                    change.consume()
-                    hapticClick()
-                    onCarouselSwipe()
-                }
-            },
-        )
-    } else Modifier
     TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
-    Box(modifier.fillMaxWidth().then(carouselSwipeModifier).height(78.dp).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
+    Box(modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
         Row(Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(30.dp)).background(uiTokens(theme).surfaceHigh).border(BorderStroke(0.7.dp, uiTokens(theme).separator), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).fillMaxHeight().clipToBounds().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 if (selectionActive) {
@@ -1912,7 +1850,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             Spacer(Modifier.width(5.dp))
             Row(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (showChat) ToolbarIconButton(R.drawable.ic_feather_message_circle, text, Color.Transparent) { chatMode = true }
-                ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
+                if (!keyboardVisible) ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
             }
         }
     }
@@ -1996,11 +1934,9 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
     var cursorBlink by remember { mutableStateOf(terminalView.cursorBlinkEnabled()) }
     var cursorMode by remember { mutableIntStateOf(terminalView.cursorMode()) }
     var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
-    var autoSend by remember { mutableStateOf(terminalView.autoSendEnabled()) }
     var oscNotifications by remember { mutableStateOf(terminalView.oscNotificationsEnabled()) }
     var hapticFeedback by remember { mutableStateOf(context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)) }
     val appPreferences = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE) }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     var fileSync by remember { mutableStateOf(appPreferences.getBoolean("file_sync", false)) }
     var syncCredentials by remember { mutableStateOf(appPreferences.getBoolean("sync_credentials", false)) }
     SettingsScaffold("Settings", tokens, onBack) {
@@ -2019,16 +1955,10 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             SettingsValueRow(R.drawable.ic_feather_sliders, "Toolbar", null, null, tokens, chevron = true) { onPlaceholder("Toolbar") }
             listOf("Shortcuts" to R.drawable.ic_feather_box, "Keyboard" to R.drawable.ic_feather_keyboard, "Gestures" to R.drawable.ic_feather_hand, "Speech" to R.drawable.ic_feather_mic).forEach { (title, icon) -> SettingsValueRow(icon, title, null, null, tokens, chevron = true) { onPlaceholder(title) } }
             SettingsToggleRow(R.drawable.ic_feather_message_circle, "Chat Mode", chatMode, tokens) { chatMode = it; terminalView.setChatModeEnabled(it) }
-            SettingsToggleRow(R.drawable.ic_feather_send, "Auto Send", autoSend, tokens) { autoSend = it; terminalView.setAutoSendEnabled(it) }
         }
         SettingsSection("INTEGRATIONS", tokens) {
             SettingsValueRow(R.drawable.ic_feather_globe, "Links", "Allowed OSC 8 link hosts", null, tokens, chevron = true) { onPlaceholder("Links") }
             SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "OSC 9 alerts and progress", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
-            SettingsToggleRow(R.drawable.ic_feather_bell, "Quick Toggle", oscNotifications, tokens) {
-                oscNotifications = it
-                terminalView.setOscNotificationsEnabled(it)
-                if (it && android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            }
             SettingsValueRow(R.drawable.ic_feather_box, "Inbox & Usage", null, null, tokens, chevron = true) { onPlaceholder("Inbox & Usage") }
             SettingsValueRow(R.drawable.ic_feather_folder, "File Sharing", null, null, tokens, pro = true, chevron = true) { onPlaceholder("File Sharing") }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Shell", null, null, tokens, pro = true, chevron = true) { onPlaceholder("Shell") }
@@ -2059,6 +1989,7 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
     var progress by remember { mutableStateOf(terminalView.oscNotificationProgressEnabled()) }
     var toasts by remember { mutableStateOf(terminalView.oscNotificationToastsEnabled()) }
     var iconStyle by remember { mutableStateOf(terminalView.oscNotificationIconStyle()) }
+    var hapticPattern by remember { mutableStateOf(terminalView.oscProgressHapticPattern()) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     SettingsScaffold("Terminal Notifications", tokens, onBack) {
         SettingsSection("OSC", tokens) {
@@ -2076,6 +2007,21 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
                 SettingsValueRow(R.drawable.ic_feather_bell, label, null, if (iconStyle == value) "✓" else null, tokens) {
                     iconStyle = value
                     terminalView.setOscNotificationIconStyle(value)
+                }
+            }
+        }
+        SettingsSection("PROGRESS HAPTICS", tokens) {
+            listOf(
+                "ripple" to "Ripple",
+                "heartbeat" to "Heartbeat",
+                "spark" to "Spark",
+                "wave" to "Wave",
+                "typewriter" to "Typewriter",
+            ).forEach { (value, label) ->
+                SettingsValueRow(R.drawable.ic_feather_sliders, label, "Tap to preview and select", if (hapticPattern == value) "✓" else null, tokens) {
+                    hapticPattern = value
+                    terminalView.setOscProgressHapticPattern(value)
+                    terminalView.previewOscProgressHapticPattern(value)
                 }
             }
         }
@@ -2577,12 +2523,10 @@ private fun KeyboardSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
 @Composable
 private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
     var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
-    var autoSend by remember { mutableStateOf(terminalView.autoSendEnabled()) }
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_message_circle, "Chat Input Mode", chatMode, tokens) { chatMode = it; terminalView.setChatModeEnabled(it) }
-            SettingsToggleRow(R.drawable.ic_feather_send, "Auto Send", autoSend, tokens) { autoSend = it; terminalView.setAutoSendEnabled(it) }
-            SettingsValueRow(R.drawable.ic_feather_keyboard, "Enter Behavior", if (autoSend) "Enter submits chat input" else "Enter inserts newline; send button submits", null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_keyboard, "Enter Behavior", "Enter inserts newline; send button submits", null, tokens) {}
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
         }
         SettingsSection("BEHAVIOR", tokens) {

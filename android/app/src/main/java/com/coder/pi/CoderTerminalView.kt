@@ -4,13 +4,18 @@ import android.animation.ValueAnimator
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.graphics.Color
 import android.graphics.BitmapFactory
+import android.graphics.drawable.Icon
 import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.opengl.GLSurfaceView
 import android.util.AttributeSet
 import android.util.Base64
@@ -37,7 +42,11 @@ data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount
 data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "")
 
 private const val TerminalOscNotificationChannelId = "terminal_osc"
+private const val TerminalOscProgressNotificationChannelId = "terminal_osc_progress"
 private const val TerminalOscProgressNotificationId = 904
+const val TerminalNotificationReplyAction = "com.coder.pi.TERMINAL_NOTIFICATION_REPLY"
+const val TerminalNotificationReplyInputKey = "terminal_reply"
+const val TerminalNotificationWorkspaceIdKey = "workspace_id"
 
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
     private val native = CoderNative()
@@ -69,6 +78,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var lastBellCount = 0L
     private var lastBellFeedbackMillis = 0L
     private var lastNotificationMillis = 0L
+    private var progressStatusRunnable: Runnable? = null
+    private var progressHapticRunnable: Runnable? = null
+    private var activeProgressState: Int? = null
+    private var activeProgressValue = 0
+    private var activeProgressIndeterminate = true
+    private var progressStatusIndex = 0
     private var notificationContext = TerminalNotificationContext()
     private var workspaceIconRequestInFlight = false
     private var workspaceIconCacheKey = ""
@@ -706,13 +721,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun chatModeEnabled(): Boolean = preferences.getBoolean("chat_mode", true)
 
-    fun setAutoSendEnabled(enabled: Boolean) {
-        preferences.edit { putBoolean("auto_send", enabled) }
-        notifyToolbarActionsChanged()
-    }
-
-    fun autoSendEnabled(): Boolean = preferences.getBoolean("auto_send", false)
-
     fun setCopyOnSelectEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("copy_on_select", enabled) }
     }
@@ -755,6 +763,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun oscNotificationIconStyle(): String = preferences.getString("osc.notifications.icon", "pi").orEmpty().ifBlank { "pi" }
 
+    fun setOscProgressHapticPattern(pattern: String) {
+        preferences.edit { putString("osc.progress.haptic.pattern", pattern) }
+    }
+
+    fun oscProgressHapticPattern(): String = preferences.getString("osc.progress.haptic.pattern", "ripple").orEmpty().ifBlank { "ripple" }
+
+    fun previewOscProgressHapticPattern(pattern: String) {
+        vibrateProgressPattern(pattern)
+    }
+
     fun setNotificationContext(context: TerminalNotificationContext) {
         notificationContext = context.copy(
             workspaceId = context.workspaceId.take(128),
@@ -764,6 +782,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             iconUri = context.iconUri.take(2048),
             iconUrl = context.iconUrl.take(2048),
         )
+        synchronized(terminalNotificationTargets) {
+            terminalNotificationTargets[notificationContext.workspaceId] = WeakReference(this)
+        }
     }
 
     fun setVolumeFontSizeEnabled(enabled: Boolean) {
@@ -892,80 +913,238 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val now = System.currentTimeMillis()
         if (now - lastNotificationMillis < 3000L) return
         lastNotificationMillis = now
-        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(title, body, false, -1, false)) {
+        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(formatNotificationText(title), formatNotificationText(body), false, -1, false)) {
             if (oscNotificationToastsEnabled()) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
+
+    private fun formatNotificationText(text: String): String = text
+        .replace(Regex("```[\\s\\S]*?```")) { it.value.removePrefix("```").removeSuffix("```") }
+        .replace(Regex("`([^`]+)`"), "$1")
+        .replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
+        .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+        .replace(Regex("[*_~#>]+"), "")
+        .lines()
+        .map { it.trim().removePrefix("- ").removePrefix("* ") }
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
+        .take(512)
 
     private fun handleOscProgress(stateText: String, valueText: String) {
         if (!oscNotificationsEnabled() || !oscNotificationProgressEnabled()) return
         val state = stateText.toIntOrNull() ?: return
         if (state == 0) {
+            stopProgressStatusUpdates()
             NotificationManagerCompat.from(context).cancel(oscProgressNotificationId())
             return
         }
         val value = valueText.toIntOrNull()?.coerceIn(0, 100) ?: 0
-        val indeterminate = valueText.isBlank()
-        val title = when (state) {
-            2 -> "Terminal command failed"
-            4 -> "Terminal command paused"
-            else -> "Terminal command running"
-        }
-        val body = when {
-            state == 2 && indeterminate -> "Failed"
-            state == 4 && indeterminate -> "Paused"
-            indeterminate -> "Working"
-            else -> "$value% complete"
-        }
-        postOscNotification(title, body, state != 2, value, indeterminate)
+        val indeterminate = state == 3 || valueText.isBlank()
+        activeProgressState = state
+        activeProgressValue = value
+        activeProgressIndeterminate = indeterminate
+        postOscProgressNotification(currentTerminalTitle(), nextProgressStatusText(), state, value, indeterminate)
+        scheduleProgressStatusUpdate()
+        scheduleProgressHapticPulse()
     }
 
-    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean): Boolean {
-        ensureOscNotificationChannel()
+    private fun currentTerminalTitle(): String = if (handle == 0L) "Terminal" else native.nativeTitle(handle).ifBlank { "Terminal" }.take(128)
+
+    private fun nextProgressStatusText(): String {
+        val messages = WhimsicalStatusMessages.working
+        val message = messages[progressStatusIndex % messages.size]
+        progressStatusIndex = (progressStatusIndex + 1) % messages.size
+        return message
+    }
+
+    private fun postOscProgressNotification(title: String, body: String, state: Int, progress: Int, indeterminate: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT >= 36 && postNativeProgressNotification(title, body, state, progress, indeterminate)) return true
+        return postOscNotification(title, body, state == 1 || state == 3 || state == 4, progress, indeterminate, oscProgressNotificationId())
+    }
+
+    private fun scheduleProgressStatusUpdate() {
+        progressStatusRunnable?.let { removeCallbacks(it) }
+        val runnable = Runnable {
+            val state = activeProgressState ?: return@Runnable
+            postOscProgressNotification(currentTerminalTitle(), nextProgressStatusText(), state, activeProgressValue, activeProgressIndeterminate)
+            scheduleProgressStatusUpdate()
+        }
+        progressStatusRunnable = runnable
+        postDelayed(runnable, 15_000L)
+    }
+
+    private fun stopProgressStatusUpdates() {
+        progressStatusRunnable?.let { removeCallbacks(it) }
+        progressHapticRunnable?.let { removeCallbacks(it) }
+        progressStatusRunnable = null
+        progressHapticRunnable = null
+        activeProgressState = null
+    }
+
+    private fun scheduleProgressHapticPulse() {
+        progressHapticRunnable?.let { removeCallbacks(it) }
+        if (activeProgressState == null) return
+        val runnable = Runnable {
+            if (activeProgressState != null && isShown && hasWindowFocus()) {
+                vibrateProgressPattern(oscProgressHapticPattern())
+            }
+            scheduleProgressHapticPulse()
+        }
+        progressHapticRunnable = runnable
+        postDelayed(runnable, 1800L)
+    }
+
+    private fun vibrateProgressPattern(pattern: String) {
+        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Vibrator::class.java)
+        } ?: return
+        if (!vibrator.hasVibrator()) return
+        val timings = progressHapticPatternTimings(pattern)
+        val amplitudes = progressHapticPatternAmplitudes(pattern)
+        if (Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1)) else @Suppress("DEPRECATION") vibrator.vibrate(timings, -1)
+    }
+
+    private fun progressHapticPatternTimings(pattern: String): LongArray = when (pattern) {
+        "heartbeat" -> longArrayOf(0, 38, 72, 58, 180, 32)
+        "spark" -> longArrayOf(0, 18, 34, 18, 34, 26, 80, 18)
+        "wave" -> longArrayOf(0, 28, 52, 42, 52, 58, 52, 42)
+        "typewriter" -> longArrayOf(0, 14, 42, 14, 42, 14, 42, 36)
+        else -> longArrayOf(0, 24, 46, 34, 70, 46)
+    }
+
+    private fun progressHapticPatternAmplitudes(pattern: String): IntArray = when (pattern) {
+        "heartbeat" -> intArrayOf(0, 160, 0, 225, 0, 110)
+        "spark" -> intArrayOf(0, 90, 0, 130, 0, 190, 0, 110)
+        "wave" -> intArrayOf(0, 75, 0, 120, 0, 180, 0, 105)
+        "typewriter" -> intArrayOf(0, 120, 0, 120, 0, 120, 0, 185)
+        else -> intArrayOf(0, 80, 0, 135, 0, 190)
+    }
+
+    private fun postNativeProgressNotification(title: String, body: String, state: Int, progress: Int, indeterminate: Boolean): Boolean {
+        ensureOscProgressNotificationChannel()
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             onNotificationPermissionNeeded?.invoke()
             return false
         }
-        val channelId = oscNotificationChannelId()
-        val launchIntent = if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, android.net.Uri.parse(notificationContext.deepLink), context, MainActivity::class.java)
-        launchIntent?.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val channelId = oscProgressNotificationChannelId()
+        val launchIntent = terminalNotificationLaunchIntent()
         val pendingIntent = PendingIntent.getActivity(context, notificationContext.deepLink.hashCode(), launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val baseTitle = title.ifBlank { "Terminal" }
-        val workspaceLabel = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }
-        val notificationTitle = (if (workspaceLabel.isBlank()) baseTitle else "$workspaceLabel · $baseTitle").take(128)
+        val notificationBody = body.ifBlank { title }.take(512)
+        val style = android.app.Notification.ProgressStyle()
+            .setStyledByProgress(true)
+            .setProgress(if (indeterminate) 0 else progress.coerceIn(0, 100))
+            .setProgressSegments(listOf(android.app.Notification.ProgressStyle.Segment(100).setColor(if (state == 2) Color.RED else Color.rgb(125, 92, 255))))
+        val builder = android.app.Notification.Builder(context, channelId)
+            .setSmallIcon(oscNotificationIconRes())
+            .setContentTitle(progressNotificationTitle(title))
+            .setContentText(notificationBody)
+            .setSubText(workspaceNotificationLabel())
+            .setContentIntent(pendingIntent)
+            .setOngoing(state == 1 || state == 3 || state == 4)
+            .setAutoCancel(false)
+            .setRequestPromotedOngoing(state == 1 || state == 3 || state == 4)
+            .setShortCriticalText(body.take(7))
+            .setStyle(style)
+            .addAction(android.app.Notification.Action.Builder(oscNotificationIconRes(), "Open terminal", pendingIntent).build())
+        builder.setLargeIcon(workspaceNotificationIcon())
+        NotificationManagerCompat.from(context).notify(oscProgressNotificationId(), builder.build())
+        return true
+    }
+
+    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean, notificationId: Int = if (ongoing) oscProgressNotificationId() else (nowNotificationId() and 0x7fffffff).toInt()): Boolean {
+        if (notificationId == oscProgressNotificationId()) ensureOscProgressNotificationChannel() else ensureOscNotificationChannel()
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            onNotificationPermissionNeeded?.invoke()
+            return false
+        }
+        val channelId = if (notificationId == oscProgressNotificationId()) oscProgressNotificationChannelId() else oscNotificationChannelId()
+        val launchIntent = terminalNotificationLaunchIntent()
+        val pendingIntent = PendingIntent.getActivity(context, notificationContext.deepLink.hashCode(), launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notificationBody = body.ifBlank { title }.take(512)
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(oscNotificationIconRes())
-            .setContentTitle(notificationTitle)
+            .setContentTitle(progressNotificationTitle(title))
             .setContentText(notificationBody)
+            .setSubText(workspaceNotificationLabel())
             .setContentIntent(pendingIntent)
             .setOngoing(ongoing)
             .setAutoCancel(true)
-        workspaceIconBitmap()?.let { builder.setLargeIcon(it) }
+            .addAction(oscNotificationIconRes(), "Open terminal", pendingIntent)
+            .addAction(replyNotificationAction())
+        workspaceIconBitmap(localOnly = notificationId == oscProgressNotificationId())?.let { builder.setLargeIcon(it) }
         if (ongoing) builder.setProgress(100, progress.coerceIn(0, 100), indeterminate) else builder.setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
-        NotificationManagerCompat.from(context).notify(if (ongoing) oscProgressNotificationId() else (nowNotificationId() and 0x7fffffff).toInt(), builder.build())
+        NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         return true
+    }
+
+    private fun replyNotificationAction(): NotificationCompat.Action {
+        val input = androidx.core.app.RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()
+        val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId)
+        val pendingIntent = PendingIntent.getBroadcast(context, notificationContext.workspaceId.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+        return NotificationCompat.Action.Builder(oscNotificationIconRes(), "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
+    }
+
+    private fun terminalNotificationLaunchIntent(): Intent = ((if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, android.net.Uri.parse(notificationContext.deepLink), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    }
+
+    private fun progressNotificationTitle(title: String): String {
+        return title.ifBlank { "Terminal" }.take(128)
+    }
+
+    private fun workspaceNotificationLabel(): String = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.take(64)
+
+    private fun workspaceNotificationIcon(): Icon {
+        val workspaceBitmap = workspaceIconBitmap(localOnly = true)
+        return if (workspaceBitmap != null) Icon.createWithBitmap(workspaceBitmap) else Icon.createWithResource(context, R.mipmap.ic_launcher)
     }
 
     private fun ensureOscNotificationChannel() {
         if (Build.VERSION.SDK_INT < 26) return
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = oscNotificationChannelId()
-        if (notificationManager.getNotificationChannel(channelId) == null) notificationManager.createNotificationChannel(NotificationChannel(channelId, oscNotificationChannelName(), NotificationManager.IMPORTANCE_DEFAULT))
+        val existingChannel = notificationManager.getNotificationChannel(channelId)
+        if (existingChannel != null && (existingChannel.importance < NotificationManager.IMPORTANCE_DEFAULT || existingChannel.sound == null)) notificationManager.deleteNotificationChannel(channelId)
+        if (notificationManager.getNotificationChannel(channelId) == null) {
+            notificationManager.createNotificationChannel(NotificationChannel(channelId, oscNotificationChannelName(), NotificationManager.IMPORTANCE_DEFAULT))
+        }
+    }
+
+    private fun ensureOscProgressNotificationChannel() {
+        if (Build.VERSION.SDK_INT < 26) return
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = oscProgressNotificationChannelId()
+        val existingChannel = notificationManager.getNotificationChannel(channelId)
+        if (existingChannel != null && (existingChannel.importance != NotificationManager.IMPORTANCE_DEFAULT || existingChannel.sound != null)) notificationManager.deleteNotificationChannel(channelId)
+        if (notificationManager.getNotificationChannel(channelId) == null) {
+            notificationManager.createNotificationChannel(NotificationChannel(channelId, oscProgressNotificationChannelName(), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+            })
+        }
     }
 
     private fun oscNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) TerminalOscNotificationChannelId else "terminal_osc_${notificationContext.workspaceId.hashCode()}"
 
+    private fun oscProgressNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) TerminalOscProgressNotificationChannelId else "terminal_osc_progress_${notificationContext.workspaceId.hashCode()}"
+
     private fun oscNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal OSC" else "Terminal · ${notificationContext.workspaceName}"
+
+    private fun oscProgressNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal Progress" else "Terminal Progress · ${notificationContext.workspaceName}"
 
     private fun oscProgressNotificationId(): Int = if (notificationContext.workspaceId.isBlank()) TerminalOscProgressNotificationId else (TerminalOscProgressNotificationId xor notificationContext.workspaceId.hashCode()) and 0x7fffffff
 
-    private fun workspaceIconBitmap(): android.graphics.Bitmap? {
+    private fun workspaceIconBitmap(localOnly: Boolean = false): android.graphics.Bitmap? {
         val localBitmap = runCatching {
             val uri = notificationContext.iconUri.takeIf { it.isNotBlank() }?.let { android.net.Uri.parse(it) } ?: return@runCatching null
             context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
         }.getOrNull()
         if (localBitmap != null) return localBitmap
+        if (localOnly) return null
         val iconUrl = notificationContext.iconUrl.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
         if (workspaceIconCacheKey == iconUrl) return workspaceIconCache
         if (!workspaceIconRequestInFlight) {
@@ -1000,6 +1179,14 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     companion object {
+        private val terminalNotificationTargets = mutableMapOf<String, WeakReference<CoderTerminalView>>()
+
+        fun sendNotificationReply(workspaceId: String, text: String): Boolean {
+            val terminalView = synchronized(terminalNotificationTargets) { terminalNotificationTargets[workspaceId]?.get() ?: terminalNotificationTargets[""]?.get() } ?: return false
+            terminalView.writeInput((text.take(4096) + "\r").toByteArray(Charsets.UTF_8))
+            return true
+        }
+
         private val terminalViews = mutableListOf<WeakReference<CoderTerminalView>>()
 
         private fun registerTerminalView(view: CoderTerminalView) {

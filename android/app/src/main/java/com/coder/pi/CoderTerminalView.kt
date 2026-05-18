@@ -34,6 +34,7 @@ import androidx.core.content.edit
 import androidx.core.content.getSystemService
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
 import java.net.URI
 import java.net.URL
 import java.lang.ref.WeakReference
@@ -1087,7 +1088,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return NotificationCompat.Action.Builder(oscNotificationIconRes(), "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
     }
 
-    private fun terminalNotificationLaunchIntent(): Intent = ((if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, android.net.Uri.parse(notificationContext.deepLink), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
+    private fun terminalNotificationLaunchIntent(): Intent = ((if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
         flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -1140,7 +1141,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun workspaceIconBitmap(localOnly: Boolean = false): android.graphics.Bitmap? {
         val localBitmap = runCatching {
-            val uri = notificationContext.iconUri.takeIf { it.isNotBlank() }?.let { android.net.Uri.parse(it) } ?: return@runCatching null
+            val uri = notificationContext.iconUri.takeIf { it.isNotBlank() }?.let { it.toUri() } ?: return@runCatching null
             context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
         }.getOrNull()
         if (localBitmap != null) return localBitmap

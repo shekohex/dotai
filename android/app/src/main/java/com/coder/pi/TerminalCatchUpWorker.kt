@@ -16,8 +16,13 @@ class TerminalCatchUpWorker(context: Context, params: WorkerParameters) : Corout
     override suspend fun doWork(): Result {
         val store = CoderSessionStore(applicationContext)
         if (store.loadSession() == null) return Result.success()
-        ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, TerminalConnectionService::class.java))
-        store.appendDebugLog("terminal catch-up requested foreground terminal service")
+        runCatching {
+            ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, TerminalConnectionService::class.java))
+            store.appendDebugLog("terminal catch-up requested foreground terminal service")
+        }.onFailure { failure ->
+            val started = TerminalConnectionManager.startSavedHeadless(applicationContext)
+            store.appendDebugLog("terminal catch-up fallback started $started headless terminals after ${failure::class.simpleName}")
+        }
         return Result.success()
     }
 

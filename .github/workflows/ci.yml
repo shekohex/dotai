@@ -27,7 +27,7 @@ jobs:
           - name: Format check
             command: npm run format:check
           - name: Test
-            command: npm test -- --reporter=github-actions --reporter=json
+            command: npm test -- --reporter=dot
     permissions:
       contents: read
     defaults:

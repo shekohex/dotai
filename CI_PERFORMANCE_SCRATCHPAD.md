@@ -50,7 +50,8 @@ Workflows measured:
 | 1 | Replace CI coverage with plain tests, remove coverage upload, pack with `--ignore-scripts`, remove release lockfile refresh after version mutation | 266s | 202s actual run, 257s rolling avg | 131s | 106s actual run, 128s rolling avg | Real CI, Release Please, Release passed |
 | 2 | Build preview-versioned tarball in CI, upload it, publish same artifact from Release without checkout/cache/install/repack | 257s | 209s actual run | 128s | Failed at artifact download | Release failed because `gh run download` had no checkout repo context |
 | 3 | Add explicit repository to preview artifact download | 257s | 201s actual run, 240s rolling avg | 128s | 28s actual run, 100s rolling avg | Real CI, Release Please, Release passed |
-| 4 | Split CI into parallel check matrix and separate package smoke job | 240s | Pending CI run | 100s | Pending release run | Local verification pending |
+| 4 | Split CI into parallel check matrix and separate package smoke job | 240s | 115s actual run, 217s rolling avg | 100s | 34s actual run, 87s rolling avg | Real CI, Release Please, Release passed |
+| 5 | Run Vitest with 2 workers in GitHub Actions and use dot reporter in CI | 217s | Pending CI run | 87s | Pending release run | Local verification pending |
 
 ## Baseline Summary
 

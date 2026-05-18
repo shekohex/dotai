@@ -19,7 +19,7 @@ export default defineConfig({
     },
     silent: "passed-only",
     hideSkippedTests: true,
-    maxWorkers: runningInGitHubActions ? 1 : 6,
+    maxWorkers: runningInGitHubActions ? 2 : 6,
     testTimeout: runningInGitHubActions ? 30_000 : undefined,
     pool: "forks",
     coverage: {

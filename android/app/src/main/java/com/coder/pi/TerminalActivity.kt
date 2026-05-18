@@ -73,15 +73,12 @@ class TerminalActivity : AppCompatActivity() {
         }
         terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), detached = true, workspaceIconUrl = launch.workspaceIconUrl)
         terminalStore?.saveActiveTerminal(terminalMetadata ?: return)
-        terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), terminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
+        terminalSession = TerminalConnectionManager.startVisible(terminalId, launch, terminalView, { status ->
             terminalStatus = status
             terminalStore?.appendDebugLog("terminal window ${launch.title} $status")
         }, { safeError ->
             safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
-        }).also {
-            TerminalConnectionManager.attachRenderer(terminalId, terminalView, it)
-            it.start()
-        }
+        })
         startPreviewPersistence()
         applySystemBars(currentTheme ?: theme)
         setContent {

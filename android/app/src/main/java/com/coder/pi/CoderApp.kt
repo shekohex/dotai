@@ -357,7 +357,7 @@ fun CoderApp(
                 val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null)
                 terminalSessions.add(managed)
                 if (metadata.detached) return@forEach
-                val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
+                val terminalSession = TerminalConnectionManager.startVisible(id, launch, nextTerminalView, { status ->
                     sessionStore.appendDebugLog("terminal ${launch.title} $status")
                     val index = terminalSessions.indexOfFirst { it.id == id }
                     if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
@@ -368,8 +368,6 @@ fun CoderApp(
                 })
                 val index = terminalSessions.indexOfFirst { it.id == id }
                 if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
-                TerminalConnectionManager.attachRenderer(id, nextTerminalView, terminalSession)
-                terminalSession.start()
             }
         }
         LaunchedEffect(sessionKey) {
@@ -396,7 +394,7 @@ fun CoderApp(
                     val metadata = metadataById[managed.id] ?: return@forEachIndexed
                     val previewLines = metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5)
                     if (!metadata.detached && managed.session == null) {
-                        val terminalSession = CoderTerminalSession(CoderApi(session.baseUrl, session.token), managed.terminalView, managed.launch.agentId, managed.launch.reconnectId, managed.launch.command, { status ->
+                        val terminalSession = TerminalConnectionManager.startVisible(managed.id, managed.launch.copy(baseUrl = session.baseUrl, token = session.token), managed.terminalView, { status ->
                             sessionStore.appendDebugLog("terminal ${managed.launch.title} $status")
                             val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
                             if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
@@ -406,8 +404,6 @@ fun CoderApp(
                             safeError?.let { sessionStore.appendDebugLog("terminal ${managed.launch.title} error $it") }
                         })
                         terminalSessions[index] = managed.copy(session = terminalSession, previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis, detached = false)
-                        TerminalConnectionManager.attachRenderer(managed.id, managed.terminalView, terminalSession)
-                        terminalSession.start()
                         return@forEachIndexed
                     }
                     terminalSessions[index] = managed.copy(
@@ -506,7 +502,7 @@ fun CoderApp(
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis(), workspaceIconUrl = workspace.templateIcon))
                             val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis(), false, null)
                             terminalSessions.add(managed)
-                            val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
+                            val terminalSession = TerminalConnectionManager.startVisible(id, launch, nextTerminalView, { status ->
                                 sessionStore.appendDebugLog("terminal ${launch.title} $status")
                                 val index = terminalSessions.indexOfFirst { it.id == id }
                                 if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
@@ -517,8 +513,6 @@ fun CoderApp(
                             })
                             val index = terminalSessions.indexOfFirst { it.id == id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
-                            TerminalConnectionManager.attachRenderer(id, nextTerminalView, terminalSession)
-                            terminalSession.start()
                             selectedTerminalId = id
                             terminalUiMode = TerminalUiMode.SHEET
                         },
@@ -552,7 +546,7 @@ fun CoderApp(
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached, workspaceIconUrl = launch.workspaceIconUrl))
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
-                        val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), managed.terminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
+                        val terminalSession = TerminalConnectionManager.startVisible(managed.id, launch, managed.terminalView, { status ->
                             sessionStore.appendDebugLog("terminal ${launch.title} $status")
                             val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
                             if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
@@ -562,8 +556,6 @@ fun CoderApp(
                             safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
                         })
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
-                        TerminalConnectionManager.attachRenderer(managed.id, managed.terminalView, terminalSession)
-                        terminalSession.start()
                     }
                 val dismiss: () -> Unit = {
                     onHideKeyboard()

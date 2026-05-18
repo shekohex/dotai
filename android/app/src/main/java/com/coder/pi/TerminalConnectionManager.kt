@@ -33,6 +33,27 @@ object TerminalConnectionManager {
         }
     }
 
+    fun startVisible(
+        terminalId: String,
+        launch: TerminalLaunchRequest,
+        endpoint: CoderTerminalEndpoint,
+        onStatusChanged: (String) -> Unit = {},
+        onErrorChanged: (String?) -> Unit = {},
+    ): CoderTerminalSession {
+        val session = CoderTerminalSession(
+            CoderApi(launch.baseUrl, launch.token),
+            endpoint,
+            launch.agentId,
+            launch.reconnectId,
+            launch.command,
+            onStatusChanged,
+            onErrorChanged,
+        )
+        attachRenderer(terminalId, endpoint, session)
+        session.start()
+        return session
+    }
+
     fun detachRenderer(terminalId: String) {
         stop(terminalId)
     }

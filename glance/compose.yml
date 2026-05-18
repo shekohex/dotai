@@ -1,0 +1,29 @@
+services:
+  glance:
+    build:
+      context: .
+      target: runtime
+    image: glance:local
+    ports:
+      - "${GLANCE_PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      PUBLIC_URL: ${PUBLIC_URL:-http://127.0.0.1:${GLANCE_PORT:-3000}}
+      GLANCE_TTL_MS: ${GLANCE_TTL_MS:-1800000}
+      GLANCE_MAX_UPLOAD_BYTES: ${GLANCE_MAX_UPLOAD_BYTES:-10485760}
+      GLANCE_SWEEP_INTERVAL_MS: ${GLANCE_SWEEP_INTERVAL_MS:-30000}
+      GLANCE_MAX_IMAGES: ${GLANCE_MAX_IMAGES:-256}
+      GLANCE_STORAGE_DIR: /dev/shm/glance
+    tmpfs:
+      - /dev/shm/glance:size=${GLANCE_SHM_SIZE:-64m},mode=1777
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

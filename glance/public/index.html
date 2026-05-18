@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <title>Glance</title>
+  <style>
+    :root { color-scheme: dark; --bg: #090a0c; --panel: #1b1c20; --panel-2: #202126; --line: #34363d; --line-soft: #2a2b31; --muted: #83838d; --text: #f4f4f5; --green: #26c967; --green-dim: #1f7a41; --green-soft: #061d12; --green-line: #0e4b2b; --ink: #061109; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -20%, #111317 0, var(--bg) 34rem), var(--bg); color: var(--text); font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    main { width: min(532px, calc(100vw - 32px)); margin: 24px auto 56px; }
+    main > h1:first-child { margin-top: 50px; }
+    h1 { margin: 0; font-size: clamp(42px, 8vw, 48px); line-height: 1.08; letter-spacing: -2px; font-weight: 800; text-wrap: balance; }
+    .sub { margin: 22px 0 30px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .origin { margin: -18px 0 30px; color: #52e589; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .drop { border: 1px dashed #4a4c55; background: color-mix(in srgb, var(--panel) 96%, white); border-radius: 9px; padding: 25px 24px 28px; transition: border-color .16s ease, background .16s ease, transform .16s ease; box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%); }
+    .drop.dragging { border-color: var(--green); background: #1a211e; transform: translateY(-1px); }
+    .drop h2 { margin: 0 0 18px; font-size: 25px; letter-spacing: -1px; font-weight: 800; }
+    .hint { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+    input[type="file"] { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+    .choose { display: block; width: 100%; border: 0; border-radius: 5px; background: var(--green); color: var(--ink); padding: 13px 18px; font: 800 14px/1 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; cursor: pointer; text-align: center; transition: background .14s ease, transform .14s ease; }
+    .choose:hover { background: #35d978; }
+    .choose:active { transform: translateY(1px); }
+    .choose:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+    .rule { height: 1px; background: var(--line-soft); margin: 16px 0 17px; }
+    .formats { color: var(--muted); font-size: 12px; letter-spacing: 1px; }
+    .uploading { margin-top: 14px; border: 1px solid var(--green-line); background: var(--green-soft); border-radius: 7px; padding: 14px; }
+    .uploading[hidden], .recent[hidden] { display: none; }
+    .uploading p { margin: 0 0 10px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar { height: 4px; border-radius: 99px; background: #3b3d43; overflow: hidden; }
+    .bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #2bd36e, #54e88c); transition: width .12s ease; }
+    .recent-head { display: flex; justify-content: space-between; margin: 18px 2px 14px; color: var(--muted); font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+    .recent-head span:last-child { text-transform: none; letter-spacing: 0; }
+    .list { display: grid; gap: 12px; }
+    .item { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 14px; width: 100%; border: 1px solid #303139; background: var(--panel); border-radius: 9px; padding: 14px; box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%); }
+    .thumb { width: 120px; height: 150px; object-fit: cover; border-radius: 5px; background: #101114; border: 1px solid #25262c; }
+    .url-row { display: flex; gap: 8px; }
+    .url { flex: 1; min-width: 0; border: 1px solid #303139; background: var(--panel-2); border-radius: 5px; color: #bdbdc7; padding: 15px 14px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .copy-small, .action { border: 1px solid #3d3f48; background: transparent; color: var(--text); border-radius: 5px; font: 800 14px/1 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; cursor: pointer; transition: border-color .14s ease, background .14s ease, color .14s ease, transform .14s ease; }
+    .copy-small { display: grid; place-items: center; width: 42px; }
+    .copy-small svg, .action svg { width: 16px; height: 16px; pointer-events: none; }
+    .copy-small:hover, .action:hover { border-color: #555864; background: #23242a; }
+    .actions { display: flex; gap: 8px; margin-top: 10px; }
+    .action { display: inline-flex; align-items: center; gap: 8px; padding: 17px 18px; }
+    .action.primary { background: var(--green); border-color: var(--green); color: var(--ink); }
+    .action.primary:hover { background: #35d978; border-color: #35d978; }
+    .action:active, .copy-small:active { transform: translateY(1px); }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 14px; }
+    @media (max-width: 620px) { main { margin-top: 18px; } .item { grid-template-columns: 1fr; } .thumb { width: 100%; height: 190px; } .actions { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Share an image with<br>your coding agent.</h1>
+    <p class="sub">For agent environments where copy/pasting images is hard.</p>
+    <p id="origin" class="origin"></p>
+
+    <section id="drop" class="drop">
+      <h2>Paste (⌘V)</h2>
+      <div class="hint">or drag &amp; drop / choose an image</div>
+      <label class="choose" for="file">Choose image</label>
+      <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif">
+      <div class="rule"></div>
+      <div class="formats">PNG JPG WEBP GIF AVIF · 10 MB · 30M TTL</div>
+    </section>
+
+    <section id="uploading" class="uploading" hidden>
+      <p id="uploadText">Uploading...</p>
+      <div class="bar"><span id="bar"></span></div>
+    </section>
+
+    <section id="recent" class="recent" hidden>
+      <div class="recent-head"><span>Recent</span><span id="count">0 links</span></div>
+      <div id="list" class="list"></div>
+    </section>
+  </main>
+
+  <script>
+    const maxUploadBytes = 10 * 1024 * 1024;
+    const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]);
+    const drop = document.getElementById("drop");
+    const fileInput = document.getElementById("file");
+    const uploading = document.getElementById("uploading");
+    const uploadText = document.getElementById("uploadText");
+    const bar = document.getElementById("bar");
+    const recent = document.getElementById("recent");
+    const list = document.getElementById("list");
+    const count = document.getElementById("count");
+    const origin = document.getElementById("origin");
+    const items = [];
+
+    loadConfig();
+
+    fileInput.addEventListener("change", () => uploadFiles(fileInput.files));
+    document.addEventListener("paste", event => uploadFiles([...event.clipboardData.files].filter(file => file.type.startsWith("image/"))));
+
+    for (const eventName of ["dragenter", "dragover"]) {
+      drop.addEventListener(eventName, event => { event.preventDefault(); drop.classList.add("dragging"); });
+    }
+
+    for (const eventName of ["dragleave", "drop"]) {
+      drop.addEventListener(eventName, event => { event.preventDefault(); drop.classList.remove("dragging"); });
+    }
+
+    drop.addEventListener("drop", event => uploadFiles(event.dataTransfer.files));
+
+    function uploadFiles(files) {
+      const file = [...files][0];
+      if (!file) return;
+      if (!allowedTypes.has(file.type)) return showUploadError("Unsupported image type");
+      if (file.size > maxUploadBytes) return showUploadError("Image too large. Max 10 MB.");
+      uploadFile(file);
+    }
+
+    function uploadFile(file) {
+      const request = new XMLHttpRequest();
+      uploading.hidden = false;
+      uploadText.textContent = `Uploading ${file.name}... 0%`;
+      bar.style.width = "0%";
+
+      request.upload.addEventListener("progress", event => {
+        if (!event.lengthComputable) return;
+        const percent = Math.round((event.loaded / event.total) * 100);
+        uploadText.textContent = `Uploading ${file.name}... ${percent}%`;
+        bar.style.width = `${percent}%`;
+      });
+
+      request.addEventListener("load", () => {
+        if (request.status < 200 || request.status >= 300) return showUploadError(JSON.parse(request.responseText).error || "Upload failed");
+        const image = JSON.parse(request.responseText);
+        uploading.hidden = true;
+        addRecent(file, image);
+      });
+
+      request.addEventListener("error", () => showUploadError("Upload failed"));
+      request.open("POST", "/upload");
+      request.setRequestHeader("Content-Type", file.type);
+      request.setRequestHeader("X-File-Name", file.name);
+      request.send(file);
+    }
+
+    async function loadConfig() {
+      const response = await fetch("/config", { cache: "no-store" });
+      if (!response.ok) return;
+      const config = await response.json();
+      origin.textContent = `serving ${config.publicUrl}`;
+    }
+
+    function showUploadError(message) {
+      uploading.hidden = false;
+      uploadText.textContent = message;
+      bar.style.width = "0%";
+    }
+
+    function addRecent(file, image) {
+      const localPreview = URL.createObjectURL(file);
+      items.unshift({ file, image, localPreview });
+      renderRecent();
+    }
+
+    function renderRecent() {
+      recent.hidden = items.length === 0;
+      count.textContent = `${items.length} ${items.length === 1 ? "link" : "links"}`;
+      list.textContent = "";
+
+      for (const item of items) {
+        const element = document.createElement("article");
+        element.className = "item";
+        const thumbnail = document.createElement("img");
+        const content = document.createElement("div");
+        const urlRow = document.createElement("div");
+        const urlText = document.createElement("div");
+        const copyButton = createCopyIconButton(item.image.url);
+        const actions = document.createElement("div");
+        const promptButton = createIconButton(terminalIcon(), "Prompt", promptText(item.image.url), "action primary");
+        const curlButton = createIconButton(downloadIcon(), "cURL", curlText(item.image.url, item.file.name), "action");
+        const meta = document.createElement("div");
+
+        thumbnail.className = "thumb";
+        thumbnail.alt = "";
+        thumbnail.src = item.localPreview;
+        urlRow.className = "url-row";
+        urlText.className = "url";
+        urlText.textContent = item.image.url;
+        actions.className = "actions";
+        meta.className = "meta";
+        meta.dataset.expiresAt = item.image.expiresAt;
+        meta.textContent = expiryText(item.image.expiresAt);
+
+        urlRow.append(urlText, copyButton);
+        actions.append(promptButton, curlButton);
+        content.append(urlRow, actions, meta);
+        element.append(thumbnail, content);
+        list.appendChild(element);
+      }
+    }
+
+    list.addEventListener("click", event => {
+      const button = event.target.closest("button[data-copy]");
+      if (!button) return;
+      navigator.clipboard.writeText(button.dataset.copy);
+      const previous = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = previous; }, 900);
+    });
+
+    setInterval(updateTimers, 1000);
+
+    function updateTimers() {
+      for (const meta of list.querySelectorAll("[data-expires-at]")) {
+        meta.textContent = expiryText(meta.dataset.expiresAt);
+      }
+    }
+
+    function promptText(url) { return `use curl/wget and download this image to a tmpdir and read it: ${url}`; }
+    function curlText(url, name) { return `curl -L ${JSON.stringify(url)} -o ${JSON.stringify(name)}`; }
+    function createCopyButton(label, value, className) { const button = document.createElement("button"); button.className = className; button.type = "button"; button.textContent = label; button.dataset.copy = value; return button; }
+    function createIconButton(icon, label, value, className) { const button = createCopyButton("", value, className); button.innerHTML = `${icon}<span>${label}</span>`; return button; }
+    function createCopyIconButton(value) { const button = createIconButton(copyIcon(), "", value, "copy-small"); button.setAttribute("aria-label", "Copy link"); return button; }
+    function copyIcon() { return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`; }
+    function terminalIcon() { return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>`; }
+    function downloadIcon() { return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`; }
+    function expiryText(expiresAt) { return `expires in ${minutesLeft(expiresAt)}m ${secondsLeft(expiresAt)}s · ${formatUtc(expiresAt)} UTC`; }
+    function minutesLeft(expiresAt) { return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 60000)); }
+    function secondsLeft(expiresAt) { return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000) % 60); }
+    function formatUtc(value) { return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }); }
+  </script>
+</body>
+</html>

@@ -36,9 +36,11 @@ import {
 import {
   budgetLimitPrompt,
   contextLimitCompactionInstructions,
+  contextLimitGoalIdFromPrompt,
   contextLimitPrompt,
   continuationGoalIdFromPrompt,
   continuationPrompt,
+  staleContextLimitMessage,
 } from "./prompts.js";
 import {
   maybeRewriteStaleContextLimitMessage,
@@ -574,6 +576,37 @@ class GoalRuntime {
     event: { prompt: string; systemPrompt: string },
     ctx: ExtensionContext,
   ): { systemPrompt: string } | undefined {
+    const contextLimitGoalId = contextLimitGoalIdFromPrompt(event.prompt);
+    if (contextLimitGoalId !== null) {
+      const isCurrentActiveNearLimit =
+        this.goal !== null &&
+        this.goal.goalId === contextLimitGoalId &&
+        this.goal.status === "active" &&
+        isContextLimitWarningActive(ctx);
+      if (isCurrentActiveNearLimit) {
+        markContextLimitWarningDelivered(this.accounting.contextLimit, contextLimitGoalId);
+        return undefined;
+      }
+
+      if (
+        this.goal !== null &&
+        this.goal.goalId === contextLimitGoalId &&
+        this.goal.status === "active"
+      ) {
+        return {
+          systemPrompt: [event.systemPrompt, "", continuationPrompt(this.goal)].join("\n"),
+        };
+      }
+
+      return {
+        systemPrompt: [
+          event.systemPrompt,
+          "",
+          staleContextLimitMessage(contextLimitGoalId, this.goal),
+        ].join("\n"),
+      };
+    }
+
     const continuationGoalId = continuationGoalIdFromPrompt(event.prompt);
     if (continuationGoalId === null) {
       this.clearContinuationState();

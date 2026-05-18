@@ -869,6 +869,103 @@ describe("goal extension", () => {
     );
   });
 
+  test("raw stale context warning prompt gets system override after compaction", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 91, contextUsageTokens: 910 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+
+    const queued = harness.sentMessages[0];
+    if (typeof queued?.message.content !== "string") {
+      throw new Error("expected context warning content");
+    }
+
+    harness.setContextUsage(10, 100);
+    const results = await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: queued.message.content,
+      systemPrompt: "base prompt",
+      systemPromptOptions: {},
+    });
+
+    const result = results[0] as { systemPrompt?: string } | undefined;
+    expect(result?.systemPrompt).toContain("Continue working toward the active thread goal.");
+    expect(result?.systemPrompt).not.toContain("context-limit warning is stale");
+  });
+
+  test("raw stale context warning prompt for inactive goal gets stale override", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 91, contextUsageTokens: 910 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+
+    const queued = harness.sentMessages[0];
+    if (typeof queued?.message.content !== "string") {
+      throw new Error("expected context warning content");
+    }
+
+    await harness.runTool({ action: "update", status: "complete" });
+    harness.setContextUsage(10, 100);
+    const results = await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: queued.message.content,
+      systemPrompt: "base prompt",
+      systemPromptOptions: {},
+    });
+
+    const result = results[0] as { systemPrompt?: string } | undefined;
+    expect(result?.systemPrompt).toContain("context-limit warning is stale");
+    expect(result?.systemPrompt).toContain("Current goal id:");
+    expect(result?.systemPrompt).toContain("current status: complete");
+  });
+
+  test("raw current context warning prompt marks warning delivered", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 91, contextUsageTokens: 910 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+
+    const queued = harness.sentMessages[0];
+    if (typeof queued?.message.content !== "string") {
+      throw new Error("expected context warning content");
+    }
+
+    const results = await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: queued.message.content,
+      systemPrompt: "base prompt",
+      systemPromptOptions: {},
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 1, output: 1 })],
+    });
+
+    expect(results[0]).toBeUndefined();
+    expect(harness.compactCalls).toHaveLength(1);
+  });
+
   test("stale context warning remains warning when context is still near limit", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 91, contextUsageTokens: 910 });
     await harness.runCommand("ship it");
@@ -1319,6 +1416,127 @@ describe("goal extension", () => {
     });
 
     expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("successful compaction after failed compaction resumes goal", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 91, contextUsageTokens: 910 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+    await harness.emit("message_start", {
+      type: "message_start",
+      message: {
+        role: "custom",
+        customType: GOAL_EXTENSION_ENTRY_TYPE,
+        details: harness.sentMessages[0]?.message.details,
+        content: harness.sentMessages[0]?.message.content,
+        display: false,
+      },
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 1, output: 1 })],
+    });
+
+    expect(harness.compactCalls).toHaveLength(1);
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "manual",
+      result: undefined,
+      aborted: false,
+      willRetry: false,
+      errorMessage: "failed",
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+
+    await harness.emit("compaction_start", { type: "compaction_start", reason: "manual" });
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "manual",
+      result: {},
+      aborted: false,
+      willRetry: false,
+    });
+
+    expect(harness.sentMessages).toHaveLength(2);
+    expect(harness.sentMessages[1]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("retry turn after successful overflow compaction resumes goal when it stops", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 91, contextUsageTokens: 910 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 30, output: 12 }),
+      toolResults: [],
+    });
+    await harness.emit("message_start", {
+      type: "message_start",
+      message: {
+        role: "custom",
+        customType: GOAL_EXTENSION_ENTRY_TYPE,
+        details: harness.sentMessages[0]?.message.details,
+        content: harness.sentMessages[0]?.message.content,
+        display: false,
+      },
+    });
+
+    await harness.emit("compaction_start", { type: "compaction_start", reason: "overflow" });
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+    await harness.emit("compaction_end", {
+      type: "compaction_end",
+      reason: "overflow",
+      result: {},
+      aborted: false,
+      willRetry: true,
+    });
+
+    expect(harness.sentMessages).toHaveLength(1);
+
+    harness.setContextUsage(10, 100);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 10, output: 10 }),
+      toolResults: [],
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 10, output: 10 })],
+    });
+
+    expect(harness.sentMessages).toHaveLength(2);
+    expect(harness.sentMessages[1]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
   });
 
   test("compaction end with context still near limit sends warning not continuation", async () => {

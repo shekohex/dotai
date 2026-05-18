@@ -2,6 +2,20 @@ import { formatDuration, formatTokenValue } from "./format.js";
 import type { ThreadGoal } from "./types.js";
 
 const CONTINUATION_MARKER_PREFIX = '<pi_goal_continuation goal_id="';
+const CONTEXT_LIMIT_MARKER_PREFIX = '<pi_goal_context_limit goal_id="';
+
+function goalIdFromTaggedPrompt(prompt: string, markerPrefix: string): string | null {
+  if (!prompt.startsWith(markerPrefix)) {
+    return null;
+  }
+
+  const end = prompt.indexOf('"', markerPrefix.length);
+  if (end === -1) {
+    return null;
+  }
+
+  return prompt.slice(markerPrefix.length, end);
+}
 
 export const GOAL_TOOL_PROMPT_GUIDELINES = [
   "Use goal with action get when you need to inspect the current long-running user objective.",
@@ -13,16 +27,11 @@ export const GOAL_TOOL_PROMPT_GUIDELINES = [
 ];
 
 export function continuationGoalIdFromPrompt(prompt: string): string | null {
-  if (!prompt.startsWith(CONTINUATION_MARKER_PREFIX)) {
-    return null;
-  }
+  return goalIdFromTaggedPrompt(prompt, CONTINUATION_MARKER_PREFIX);
+}
 
-  const end = prompt.indexOf('"', CONTINUATION_MARKER_PREFIX.length);
-  if (end === -1) {
-    return null;
-  }
-
-  return prompt.slice(CONTINUATION_MARKER_PREFIX.length, end);
+export function contextLimitGoalIdFromPrompt(prompt: string): string | null {
+  return goalIdFromTaggedPrompt(prompt, CONTEXT_LIMIT_MARKER_PREFIX);
 }
 
 function formatOptionalTokenBudget(goal: ThreadGoal): string {
@@ -106,11 +115,27 @@ export function budgetLimitPrompt(goal: ThreadGoal): string {
 }
 
 export function contextLimitPrompt(goal: ThreadGoal, contextPercent: number): string {
-  return wrapUpPrompt(
-    goal,
-    `The active thread goal is near the context limit (${Math.trunc(contextPercent)}%).`,
-    "Wrap up this turn soon to avoid context overflow. Do not start broad new work. Summarize useful progress, list remaining work or blockers, and give clear next steps so the user or a new session can continue safely.",
-  );
+  return [
+    `${CONTEXT_LIMIT_MARKER_PREFIX}${goal.goalId}">`,
+    wrapUpPrompt(
+      goal,
+      `The active thread goal is near the context limit (${Math.trunc(contextPercent)}%).`,
+      "Wrap up this turn soon to avoid context overflow. Do not start broad new work. Summarize useful progress, list remaining work or blockers, and give clear next steps so the user or a new session can continue safely.",
+    ),
+    "</pi_goal_context_limit>",
+  ].join("\n");
+}
+
+export function staleContextLimitMessage(goalId: string, goal: ThreadGoal | null): string {
+  const currentState = goal
+    ? `Current goal id: ${goal.goalId}; current status: ${goal.status}.`
+    : "There is no current goal.";
+  return [
+    "Queued hidden goal context-limit warning is stale because the session is no longer near the context limit or referenced goal is no longer active.",
+    `Queued goal id: ${goalId}.`,
+    currentState,
+    "Ignore the stale wrap-up request. Continue working toward the active goal if one is active and context allows it.",
+  ].join("\n");
 }
 
 export function contextLimitCompactionInstructions(goal: ThreadGoal): string {

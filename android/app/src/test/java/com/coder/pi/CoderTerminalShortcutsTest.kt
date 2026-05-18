@@ -10,7 +10,14 @@ class CoderTerminalShortcutsTest {
     fun normalizeToolbarOrderKeepsKnownSlotsAndAppendsMissingDefaults() {
         val order = normalizeToolbarOrder("keyboard,ctrl,unknown,tab")
 
-        assertEquals(listOf("keyboard", "ctrl", "tab", "shift", "alt", "esc", "empty", "paste", "theme", "chat"), order)
+        assertEquals(listOf("keyboard", "ctrl", "tab", "esc", "dpad", "shift", "alt", "paste", "undo", "chat"), order)
+    }
+
+    @Test
+    fun normalizeToolbarOrderMigratesLegacyDefaultOrder() {
+        val order = normalizeToolbarOrder("esc,tab,ctrl,empty,paste,theme,chat,keyboard")
+
+        assertEquals(defaultToolbarSlots, order)
     }
 
     @Test

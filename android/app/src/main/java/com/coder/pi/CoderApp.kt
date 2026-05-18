@@ -94,6 +94,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -113,6 +114,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -121,6 +123,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
@@ -671,8 +674,7 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
     var lastRefreshedAt by remember { mutableStateOf(0L) }
     var pullDistance by remember { mutableStateOf(0f) }
     var error by remember { mutableStateOf<String?>(null) }
-    var hideInactive by remember { mutableStateOf(sessionStore.hideInactive()) }
-    var inactiveCollapsed by remember { mutableStateOf(hideInactive) }
+    var inactiveCollapsed by remember { mutableStateOf(sessionStore.hideInactive()) }
     var selectedWorkspace by remember { mutableStateOf<CoderWorkspace?>(null) }
     var selectedAgentPicker by remember { mutableStateOf<CoderWorkspace?>(null) }
     var tmuxLoading by remember { mutableStateOf<CoderWorkspaceAgent?>(null) }
@@ -748,23 +750,6 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
             WorkspaceSection("RUNNING WORKSPACES", running, session, sessionStore, api, tokens, metrics, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
             item { CoderSectionHeader("STOPPED WORKSPACES", if (inactiveCollapsed) "show" else "hide", tokens, metrics) { inactiveCollapsed = !inactiveCollapsed } }
             if (!inactiveCollapsed) WorkspaceRows(inactive, session, sessionStore, api, tokens, metrics, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
-            item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Always hide inactive", color = tokens.text, fontSize = bodySize(), modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = hideInactive,
-                        onCheckedChange = { hideInactive = it; inactiveCollapsed = it; sessionStore.saveHideInactive(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = tokens.background,
-                            checkedTrackColor = tokens.accent,
-                            checkedBorderColor = tokens.accent,
-                            uncheckedThumbColor = tokens.secondary,
-                            uncheckedTrackColor = tokens.surfaceHigh,
-                            uncheckedBorderColor = tokens.separator,
-                        ),
-                    )
-                }
-            }
         }
         selectedWorkspace?.let { workspace -> WorkspaceEditSheet(workspace, session, sessionStore, tokens, { selectedWorkspace = null }, { iconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp", "image/*")) }) }
         selectedAgentPicker?.let { workspace -> AgentPickerSheet(workspace, tokens, { selectedAgentPicker = null }) { agent ->
@@ -1693,20 +1678,33 @@ private fun NativeSessionSwitcher(titles: List<String>, selectedIndex: Int, toke
 }
 
 @Composable
-fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, carouselSwipeEnabled: Boolean, onCarouselSwipe: () -> Unit, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
+fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, carouselSwipeEnabled: Boolean, onCarouselSwipe: () -> Unit, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
     var chatMode by remember { mutableStateOf(false) }
-    var themeLabel by remember(theme.name) { mutableStateOf(CoderThemes.modeLabel(terminalView.context)) }
+    var dpadExpanded by remember { mutableStateOf(false) }
+    var dpadOffset by remember { mutableStateOf(IntOffset.Zero) }
     var shiftActive by remember { mutableStateOf(false) }
     var ctrlActive by remember { mutableStateOf(false) }
     var altActive by remember { mutableStateOf(false) }
     var showChat by remember { mutableStateOf(terminalView.toolbarActionVisible("chat")) }
     var showPaste by remember { mutableStateOf(terminalView.toolbarActionVisible("paste")) }
-    var showTheme by remember { mutableStateOf(terminalView.toolbarActionVisible("theme")) }
     var autoSend by remember { mutableStateOf(terminalView.autoSendEnabled()) }
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var toolbarOrder by remember { mutableStateOf(terminalView.toolbarOrder()) }
     val text = theme.foreground.toComposeColor()
     val active = theme.selectionBackground.toComposeColor()
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+    fun clampDPadOffset(offset: IntOffset): IntOffset {
+        val horizontalLimit = (screenWidthPx / 2 - with(density) { 116.dp.roundToPx() }).coerceAtLeast(0)
+        val topLimit = -(screenHeightPx - with(density) { 220.dp.roundToPx() }).coerceAtMost(0)
+        return IntOffset(offset.x.coerceIn(-horizontalLimit, horizontalLimit), offset.y.coerceIn(topLimit, 0))
+    }
+    fun snapDPadOffset() {
+        val horizontalLimit = (screenWidthPx / 2 - with(density) { 116.dp.roundToPx() }).coerceAtLeast(0)
+        dpadOffset = clampDPadOffset(IntOffset(if (dpadOffset.x < 0) -horizontalLimit else horizontalLimit, dpadOffset.y))
+    }
     LaunchedEffect(terminalView) {
         terminalView.onModifierLatchChanged = { shift, ctrl, alt ->
             shiftActive = shift
@@ -1716,14 +1714,13 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
         terminalView.onToolbarActionsChanged = {
             showChat = terminalView.toolbarActionVisible("chat")
             showPaste = terminalView.toolbarActionVisible("paste")
-            showTheme = terminalView.toolbarActionVisible("theme")
             autoSend = terminalView.autoSendEnabled()
             shortcuts = terminalView.customShortcuts()
             toolbarOrder = terminalView.toolbarOrder()
         }
     }
     if (chatMode) {
-        ChatInputBar(uiTokens(theme), autoSend, { terminalView.sendText(it + "\n") }) { chatMode = false }
+        ChatInputBar(uiTokens(theme), autoSend, modifier, { terminalView.sendText(it + "\n") }) { chatMode = false }
         return
     }
     val carouselSwipeModifier = if (carouselSwipeEnabled) Modifier.pointerInput(Unit) {
@@ -1742,40 +1739,35 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             },
         )
     } else Modifier
-    Box(Modifier.fillMaxWidth().height(74.dp).background(theme.background.toComposeColor()).then(carouselSwipeModifier).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-        Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(22.dp)).background(uiTokens(theme).surfaceHigh).padding(start = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+    TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
+    Box(modifier.fillMaxWidth().then(carouselSwipeModifier).height(78.dp).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
+        Row(Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(30.dp)).background(uiTokens(theme).surfaceHigh).border(BorderStroke(0.7.dp, uiTokens(theme).separator), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).fillMaxHeight().clipToBounds().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 if (selectionActive) {
                     ToolbarTextButton("Copy", text, uiTokens(theme).surface, onCopySelection)
                     ToolbarTextButton("Clear", text, uiTokens(theme).surface, onClearSelection)
-                } else toolbarOrder.filterNot { it == "keyboard" }.forEach { slot ->
+                } else toolbarOrder.filterNot { it == "keyboard" || it == "chat" }.forEach { slot ->
                     when (slot) {
-                        "ctrl" -> ToolbarTextButton("Ctrl", text, if (ctrlActive) active else uiTokens(theme).surface) { terminalView.toggleCtrlLatch() }
-                        "shift" -> ToolbarTextButton("Shift", text, if (shiftActive) active else uiTokens(theme).surface) { terminalView.toggleShiftLatch() }
-                        "alt" -> ToolbarTextButton("Alt", text, if (altActive) active else uiTokens(theme).surface) { terminalView.toggleAltLatch() }
-                        "esc" -> ToolbarTextButton("Esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
-                        "tab" -> ToolbarTextButton("Tab", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_TAB) }
-                        "empty" -> EmptyToolbarSlot(uiTokens(theme).surface)
-                        "paste" -> if (showPaste) ToolbarIconButton(R.drawable.ic_feather_upload, text, uiTokens(theme).surface) { terminalView.pasteFromClipboard() } else EmptyToolbarSlot(uiTokens(theme).surface)
-                        "theme" -> if (showTheme) ToolbarIconButton(R.drawable.ic_feather_rotate_ccw, text, uiTokens(theme).surface) { CoderThemes.nextMode(terminalView.context); themeLabel = CoderThemes.modeLabel(terminalView.context); terminalView.applyTheme(CoderThemes.current(terminalView.context)) }
-                        "chat" -> if (showChat) ToolbarIconButton(R.drawable.ic_feather_message_circle, text, Color.Transparent) { chatMode = true }
+                        "ctrl" -> ToolbarTextButton("ctrl", text, if (ctrlActive) active else uiTokens(theme).surface) { terminalView.toggleCtrlLatch() }
+                        "shift" -> ToolbarTextButton("⇧", text, if (shiftActive) active else uiTokens(theme).surface) { terminalView.toggleShiftLatch() }
+                        "alt" -> ToolbarTextButton("alt", text, if (altActive) active else uiTokens(theme).surface) { terminalView.toggleAltLatch() }
+                        "esc" -> ToolbarTextButton("esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
+                        "tab" -> ToolbarTextButton("tab", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_TAB) }
+                        "dpad" -> ToolbarTextButton("✣", text, if (dpadExpanded) active else uiTokens(theme).surface) { dpadExpanded = !dpadExpanded }
+                        "empty" -> Unit
+                        "paste" -> if (showPaste) ToolbarIconButton(R.drawable.ic_feather_clipboard, text, uiTokens(theme).surface) { terminalView.pasteFromClipboard() } else EmptyToolbarSlot(uiTokens(theme).surface)
+                        "undo" -> ToolbarIconButton(R.drawable.ic_feather_rotate_ccw, text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON) }
                     }
                 }
+                if (!selectionActive && "dpad" !in toolbarOrder) ToolbarTextButton("✣", text, if (dpadExpanded) active else uiTokens(theme).surface) { dpadExpanded = !dpadExpanded }
                 if (!selectionActive) shortcuts.forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.sendText(shortcut.sequence) } }
             }
-            DPadToolbarButton(text, uiTokens(theme).surface, terminalView)
-            ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
+            Spacer(Modifier.width(5.dp))
+            Row(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (showChat) ToolbarIconButton(R.drawable.ic_feather_message_circle, text, Color.Transparent) { chatMode = true }
+                ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
+            }
         }
-    }
-}
-
-@Composable
-private fun RowScope.DPadToolbarButton(color: Color, background: Color, terminalView: CoderTerminalView) {
-    Box(Modifier.padding(end = 6.dp).size(width = 68.dp, height = 44.dp).clip(RoundedCornerShape(16.dp)).background(background), contentAlignment = Alignment.Center) {
-        Box(Modifier.align(Alignment.TopCenter).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_UP) }, contentAlignment = Alignment.Center) { Text("↑", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
-        Box(Modifier.align(Alignment.BottomCenter).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_DOWN) }, contentAlignment = Alignment.Center) { Text("↓", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
-        Box(Modifier.align(Alignment.CenterStart).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_LEFT) }, contentAlignment = Alignment.Center) { Text("←", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
-        Box(Modifier.align(Alignment.CenterEnd).size(22.dp).clickable { hapticClick(); terminalView.sendKey(KeyEvent.KEYCODE_DPAD_RIGHT) }, contentAlignment = Alignment.Center) { Text("→", color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace) }
     }
 }
 
@@ -1788,21 +1780,21 @@ private fun RowScope.AccessoryKey(label: String, color: Color, background: Color
 
 @Composable
 private fun RowScope.ToolbarTextButton(label: String, color: Color, background: Color, onClick: () -> Unit) {
-    Box(Modifier.padding(end = 6.dp).height(36.dp).clip(RoundedCornerShape(14.dp)).background(background).clickable { hapticClick(); onClick() }.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
-        Text(label, color = color, fontSize = 14.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+    Box(Modifier.padding(end = 4.dp).height(32.dp).clip(RoundedCornerShape(12.dp)).background(background).clickable { hapticClick(); onClick() }.padding(horizontal = 7.dp), contentAlignment = Alignment.Center) {
+        Text(label, color = color, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
     }
 }
 
 @Composable
 private fun RowScope.ToolbarIconButton(icon: Int, color: Color, background: Color, onClick: () -> Unit) {
-    Box(Modifier.padding(end = 6.dp).size(36.dp).clip(RoundedCornerShape(14.dp)).background(background).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) {
-        Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(19.dp))
+    Box(Modifier.padding(end = 4.dp).size(32.dp).clip(RoundedCornerShape(12.dp)).background(background).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) {
+        Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(17.dp))
     }
 }
 
 @Composable
 private fun RowScope.EmptyToolbarSlot(background: Color) {
-    Box(Modifier.padding(end = 6.dp).size(36.dp).clip(RoundedCornerShape(14.dp)).background(background))
+    Box(Modifier.padding(end = 5.dp).size(34.dp).clip(RoundedCornerShape(13.dp)).background(background))
 }
 
 @Composable
@@ -2364,11 +2356,16 @@ private fun ShortcutKeyGrid(tokens: UiTokens, selectedKey: String, onSelected: (
 @Composable
 private fun ConnectionSettingsScreen(session: CoderSession?, sessionStore: CoderSessionStore, tokens: UiTokens, onDebugLogs: () -> Unit, onBack: () -> Unit) {
     var refreshInterval by remember { mutableStateOf(sessionStore.workspaceRefreshIntervalMillis()) }
+    var hideInactive by remember { mutableStateOf(sessionStore.hideInactive()) }
     SettingsScaffold("Coder Connection", tokens, onBack) {
         SettingsSection("SAVED CONNECTIONS", tokens) {
             SettingsValueRow(R.drawable.ic_feather_server, session?.baseUrl?.let { connectionHostLabel(it) } ?: "No saved connection", session?.user?.username, "Coder", tokens) {}
         }
         SettingsSection("REFRESH", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_server, "Always Hide Inactive", hideInactive, tokens) {
+                hideInactive = it
+                sessionStore.saveHideInactive(it)
+            }
             listOf(
                 30_000L to "30s",
                 60_000L to "60s",

@@ -4,19 +4,19 @@ import android.view.KeyEvent
 
 data class TerminalShortcut(val label: String, val sequence: String)
 
-val defaultToolbarSlots = listOf("ctrl", "shift", "alt", "esc", "tab", "empty", "paste", "theme", "chat", "keyboard")
+val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
 data class ToolbarSlotDefinition(val id: String, val label: String, val removable: Boolean = true)
 
 val toolbarSlotDefinitions = listOf(
+    ToolbarSlotDefinition("esc", "Esc", false),
     ToolbarSlotDefinition("ctrl", "Ctrl", false),
+    ToolbarSlotDefinition("tab", "Tab", false),
+    ToolbarSlotDefinition("dpad", "D-pad", false),
     ToolbarSlotDefinition("shift", "Shift"),
     ToolbarSlotDefinition("alt", "Alt"),
-    ToolbarSlotDefinition("esc", "Esc", false),
-    ToolbarSlotDefinition("tab", "Tab", false),
-    ToolbarSlotDefinition("empty", "Empty slot"),
     ToolbarSlotDefinition("paste", "Paste"),
-    ToolbarSlotDefinition("theme", "Theme switcher"),
+    ToolbarSlotDefinition("undo", "Undo"),
     ToolbarSlotDefinition("chat", "Chat"),
     ToolbarSlotDefinition("keyboard", "Keyboard", false),
 )
@@ -24,7 +24,9 @@ val toolbarSlotDefinitions = listOf(
 fun toolbarSlotLabel(id: String): String = toolbarSlotDefinitions.firstOrNull { it.id == id }?.label ?: id
 
 fun normalizeToolbarOrder(value: String?): List<String> {
-    val saved = value.orEmpty().split(",").filter { it.isNotBlank() }
+    val rawSaved = value.orEmpty().split(",").filter { it.isNotBlank() }
+    val saved = rawSaved.map { if (it == "theme") "undo" else it }
+    if (rawSaved.isNotEmpty() && "dpad" !in saved && (rawSaved.contains("empty") || rawSaved.contains("theme"))) return defaultToolbarSlots
     return (saved + defaultToolbarSlots).distinct().filter { slot -> defaultToolbarSlots.contains(slot) }
 }
 

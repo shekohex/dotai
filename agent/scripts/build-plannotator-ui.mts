@@ -54,6 +54,15 @@ if (!existsSync(reviewAppDir) || !existsSync(hookAppDir)) {
   process.exit(0);
 }
 
+if (process.env.SHEKOHEX_AGENT_SKIP_PLANNOTATOR_BUILD === "true") {
+  const plannotatorPath = join(resourcesDir, "plannotator.html");
+  const reviewEditorPath = join(resourcesDir, "review-editor.html");
+  if (existsSync(plannotatorPath) && existsSync(reviewEditorPath)) {
+    console.log("[shekohex/agent] Skipping Plannotator UI build; cached resources present");
+    process.exit(0);
+  }
+}
+
 for (const vendoredPackageDir of [...packageDirs, reviewAppDir, hookAppDir]) {
   ensureNodeModulesPresent(vendoredPackageDir);
 }

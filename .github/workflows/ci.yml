@@ -89,6 +89,13 @@ jobs:
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm install
 
+      - name: Restore Plannotator resources cache
+        id: plannotator-cache
+        uses: actions/cache@v4
+        with:
+          path: agent/src/resources/plannotator
+          key: ${{ runner.os }}-plannotator-${{ hashFiles('agent/vendor/plannotator-ui/**', 'agent/scripts/build-plannotator-ui.mts') }}
+
       - name: Set preview package version
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
@@ -98,6 +105,8 @@ jobs:
           npm pkg set version="${BASE_VERSION}-dev.${SHORT_SHA}"
 
       - name: Build
+        env:
+          SHEKOHEX_AGENT_SKIP_PLANNOTATOR_BUILD: ${{ steps.plannotator-cache.outputs.cache-hit == 'true' && 'true' || 'false' }}
         run: npm run build
 
       - name: Pack package

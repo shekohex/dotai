@@ -22,8 +22,14 @@ object TerminalConnectionManager {
     }
 
     fun registerVisible(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
-        synchronized(sessions) {
+        val previous = synchronized(sessions) {
+            val existing = sessions[terminalId]
             sessions[terminalId] = RuntimeSession(endpoint, session, ownsEndpoint = false)
+            existing
+        }
+        if (previous != null && previous.ownsEndpoint) {
+            previous.session.stop()
+            if (previous.endpoint is CoderHeadlessTerminalEndpoint) previous.endpoint.dispose()
         }
     }
 

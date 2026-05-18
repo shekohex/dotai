@@ -45,6 +45,7 @@ public:
     void key(int keyCode, int unicodeChar, int metaState);
     void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
+    std::vector<uint8_t> scrollInput(int rowDelta, float x, float y);
     bool mouseTracking() const;
     std::vector<uint8_t> mouse(int action, float x, float y, int button, int metaState);
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);

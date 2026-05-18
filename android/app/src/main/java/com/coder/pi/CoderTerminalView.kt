@@ -26,6 +26,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var cellHeight = preferences.getInt("cellHeight", 36)
     private var surfaceWidth = 0
     private var surfaceHeight = 0
+    private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var accumulatedScrollY = 0f
     private var smoothScrollAnimator: ValueAnimator? = null
@@ -113,7 +114,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (!gestureEnabled("drag_scroll")) return super.onGenericMotionEvent(event)
         if (event.action == MotionEvent.ACTION_SCROLL) {
             val rows = event.getAxisValue(MotionEvent.AXIS_VSCROLL).toInt()
-            if (rows != 0) scrollTerminal(-rows * 3)
+            if (rows != 0) scrollTerminal(-rows * 3, event.x, event.y)
             return true
         }
         return super.onGenericMotionEvent(event)
@@ -126,6 +127,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             MotionEvent.ACTION_DOWN -> {
                 mouseTrackingTouch = sendMouseEvent(0, event.x, event.y, 1, event.metaState)
                 if (mouseTrackingTouch) return true
+                lastTouchX = event.x
                 lastTouchY = event.y
                 accumulatedScrollY = 0f
                 beginSmoothScrollGesture()
@@ -133,6 +135,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
             MotionEvent.ACTION_MOVE -> {
                 if (mouseTrackingTouch) return sendMouseEvent(2, event.x, event.y, 1, event.metaState)
+                lastTouchX = event.x
                 val deltaY = event.y - lastTouchY
                 lastTouchY = event.y
                 if (smoothScrollEnabled()) {
@@ -259,7 +262,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun scrollRows(rowDelta: Int, smooth: Boolean = false) {
-        if (smooth && smoothScrollEnabled()) scrollPixels(-rowDelta * cellHeight.toFloat()) else scrollTerminal(rowDelta)
+        if (smooth && smoothScrollEnabled()) scrollPixels(-rowDelta * cellHeight.toFloat()) else scrollTerminal(rowDelta, lastTouchX, lastTouchY)
     }
 
     fun scrollRowHeight(): Int = cellHeight.coerceAtLeast(1)
@@ -322,20 +325,14 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         smoothScrollPendingPixels += pixelDelta
         val rows = (smoothScrollPendingPixels / cellHeight).toInt()
         if (rows == 0) return
-        scrollTerminal(-rows)
+        scrollTerminal(-rows, lastTouchX, lastTouchY)
         smoothScrollPendingPixels -= rows * cellHeight
     }
 
-    private fun scrollTerminal(rowDelta: Int) {
+    private fun scrollTerminal(rowDelta: Int, x: Float = 0f, y: Float = 0f) {
         if (handle == 0L || rowDelta == 0) return
-        val mouseTracking = remoteInput != null && native.nativeMouseTracking(handle)
-        if (!mouseTracking) native.nativeScroll(handle, rowDelta)
-        remoteInput?.takeIf { mouseTracking }?.let { input ->
-            repeat(kotlin.math.abs(rowDelta).coerceAtMost(12)) {
-                val button = if (rowDelta < 0) 4 else 5
-                sendMouseEvent(0, 0f, 0f, button, 0)
-            }
-        }
+        val output = native.nativeScrollInput(handle, rowDelta.coerceIn(-12, 12), x, y)
+        if (output.isNotEmpty()) writeInput(output)
     }
 
     private fun sendMouseEvent(action: Int, x: Float, y: Float, button: Int, metaState: Int): Boolean {

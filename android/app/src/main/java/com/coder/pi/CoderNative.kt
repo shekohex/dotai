@@ -17,6 +17,7 @@ class CoderNative {
     external fun nativeTextInput(handle: Long, text: String)
     external fun nativeKeyEvent(handle: Long, keyCode: Int, unicodeChar: Int, metaState: Int)
     external fun nativeScroll(handle: Long, rowDelta: Int)
+    external fun nativeScrollInput(handle: Long, rowDelta: Int, x: Float, y: Float): ByteArray
     external fun nativeMouseTracking(handle: Long): Boolean
     external fun nativeMouseEvent(handle: Long, action: Int, x: Float, y: Float, button: Int, metaState: Int): ByteArray
     external fun nativeSnapshotText(handle: Long): Array<String>

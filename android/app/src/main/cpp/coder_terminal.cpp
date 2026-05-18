@@ -194,6 +194,56 @@ void CoderTerminal::scroll(int rowDelta) {
     ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &dirty);
 }
 
+std::vector<uint8_t> CoderTerminal::scrollInput(int rowDelta, float x, float y) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_ || rowDelta == 0) return {};
+    bool mouseTracking = false;
+    ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING, &mouseTracking);
+    if (mouseTracking) {
+        ghostty_mouse_encoder_setopt_from_terminal(mouseEncoder_.get(), terminal_.get());
+        GhosttyMouseEncoderSize size = GHOSTTY_INIT_SIZED(GhosttyMouseEncoderSize);
+        size.screen_width = static_cast<uint32_t>(std::max(1, cols_ * cellWidth_));
+        size.screen_height = static_cast<uint32_t>(std::max(1, rows_ * cellHeight_));
+        size.cell_width = static_cast<uint32_t>(std::max(1, cellWidth_));
+        size.cell_height = static_cast<uint32_t>(std::max(1, cellHeight_));
+        ghostty_mouse_encoder_setopt(mouseEncoder_.get(), GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &size);
+        ghostty_mouse_encoder_setopt(mouseEncoder_.get(), GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &mouseButtonPressed_);
+        ghostty_mouse_event_set_action(mouseEvent_.get(), GHOSTTY_MOUSE_ACTION_PRESS);
+        ghostty_mouse_event_set_button(mouseEvent_.get(), rowDelta < 0 ? GHOSTTY_MOUSE_BUTTON_FOUR : GHOSTTY_MOUSE_BUTTON_FIVE);
+        ghostty_mouse_event_set_mods(mouseEvent_.get(), 0);
+        ghostty_mouse_event_set_position(mouseEvent_.get(), GhosttyMousePosition{std::clamp(x, 0.0f, static_cast<float>(size.screen_width - 1)), std::clamp(y, 0.0f, static_cast<float>(size.screen_height - 1))});
+        std::vector<uint8_t> result;
+        for (int index = 0; index < std::abs(rowDelta); index++) {
+            std::array<char, 128> output{};
+            size_t written = 0;
+            GhosttyResult encodeResult = ghostty_mouse_encoder_encode(mouseEncoder_.get(), mouseEvent_.get(), output.data(), output.size(), &written);
+            if (encodeResult == GHOSTTY_SUCCESS && written > 0) result.insert(result.end(), output.begin(), output.begin() + static_cast<std::ptrdiff_t>(written));
+        }
+        return result;
+    }
+    GhosttyTerminalScreen activeScreen = GHOSTTY_TERMINAL_SCREEN_PRIMARY;
+    bool altScroll = false;
+    ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &activeScreen);
+    ghostty_terminal_mode_get(terminal_.get(), GHOSTTY_MODE_ALT_SCROLL, &altScroll);
+    if (activeScreen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE && altScroll) {
+        bool applicationCursor = false;
+        ghostty_terminal_mode_get(terminal_.get(), GHOSTTY_MODE_DECCKM, &applicationCursor);
+        const char* sequence = rowDelta < 0 ? (applicationCursor ? "\x1bOA" : "\x1b[A") : (applicationCursor ? "\x1bOB" : "\x1b[B");
+        size_t sequenceLength = std::strlen(sequence);
+        std::vector<uint8_t> result;
+        result.reserve(sequenceLength * static_cast<size_t>(std::abs(rowDelta)));
+        for (int index = 0; index < std::abs(rowDelta); index++) result.insert(result.end(), sequence, sequence + sequenceLength);
+        return result;
+    }
+    GhosttyTerminalScrollViewport scroll{};
+    scroll.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA;
+    scroll.value.delta = rowDelta;
+    ghostty_terminal_scroll_viewport(terminal_.get(), scroll);
+    GhosttyRenderStateDirty dirty = GHOSTTY_RENDER_STATE_DIRTY_FULL;
+    ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &dirty);
+    return {};
+}
+
 bool CoderTerminal::mouseTracking() const {
     if (!terminal_) return false;
     bool enabled = false;

@@ -147,6 +147,14 @@ Java_com_coder_pi_CoderNative_nativeScroll(JNIEnv*, jobject, jlong handle, jint 
     reinterpret_cast<CoderSession*>(handle)->terminal.scroll(rowDelta);
 }
 
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_coder_pi_CoderNative_nativeScrollInput(JNIEnv* env, jobject, jlong handle, jint rowDelta, jfloat x, jfloat y) {
+    auto output = reinterpret_cast<CoderSession*>(handle)->terminal.scrollInput(rowDelta, x, y);
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(output.size()));
+    if (!output.empty()) env->SetByteArrayRegion(result, 0, static_cast<jsize>(output.size()), reinterpret_cast<const jbyte*>(output.data()));
+    return result;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_coder_pi_CoderNative_nativeMouseTracking(JNIEnv*, jobject, jlong handle) {
     return reinterpret_cast<CoderSession*>(handle)->terminal.mouseTracking() ? JNI_TRUE : JNI_FALSE;

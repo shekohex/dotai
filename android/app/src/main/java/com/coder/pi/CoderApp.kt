@@ -1096,6 +1096,26 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val startOffset = down.position
+                        if (terminalView.terminalMouseTrackingActive()) {
+                            terminalView.sendTerminalMouseEvent(0, startOffset.x, startOffset.y)
+                            down.consume()
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                when {
+                                    event.changes.all { it.changedToUpIgnoreConsumed() } -> {
+                                        terminalView.sendTerminalMouseEvent(1, change.position.x, change.position.y)
+                                        change.consume()
+                                        break
+                                    }
+                                    change.position != change.previousPosition -> {
+                                        terminalView.sendTerminalMouseEvent(2, change.position.x, change.position.y)
+                                        change.consume()
+                                    }
+                                }
+                            }
+                            return@awaitEachGesture
+                        }
                         var cancelled = false
                         withTimeoutOrNull(850L) {
                             while (true) {

@@ -336,11 +336,20 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun sendMouseEvent(action: Int, x: Float, y: Float, button: Int, metaState: Int): Boolean {
-        if (handle == 0L || remoteInput == null || !native.nativeMouseTracking(handle)) return false
+        val tracking = handle != 0L && remoteInput != null && native.nativeMouseTracking(handle)
+        if (!tracking) return false
         val output = native.nativeMouseEvent(handle, action, x, y, button, metaState)
         if (output.isEmpty()) return false
         remoteInput?.invoke(output)
         return true
+    }
+
+    fun terminalMouseTrackingActive(): Boolean {
+        return handle != 0L && remoteInput != null && native.nativeMouseTracking(handle)
+    }
+
+    fun sendTerminalMouseEvent(action: Int, x: Float, y: Float, button: Int = 1, metaState: Int = 0): Boolean {
+        return sendMouseEvent(action, x, y, button, metaState)
     }
 
     fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0

@@ -1,29 +1,29 @@
 {
-  "generated_at": "2026-05-18T08:37:53Z",
+  "generated_at": "2026-05-18T08:41:15Z",
   "sample_limit": 20,
   "workflows": [
     {
       "workflow": "CI",
       "name": "CI",
       "samples": 7,
-      "avg_seconds": 154,
-      "min_seconds": 100,
+      "avg_seconds": 134.28571428571428,
+      "min_seconds": 64,
       "max_seconds": 214
     },
     {
       "workflow": "Release",
       "name": "Release",
       "samples": 7,
-      "avg_seconds": 49.142857142857146,
+      "avg_seconds": 38.714285714285715,
       "min_seconds": 28,
-      "max_seconds": 106
+      "max_seconds": 60
     },
     {
       "workflow": "Release Please",
       "name": "Release Please",
       "samples": 6,
-      "avg_seconds": 168.5,
-      "min_seconds": 144,
+      "avg_seconds": 166.16666666666666,
+      "min_seconds": 136,
       "max_seconds": 207
     }
   ],
@@ -31,48 +31,48 @@
     {
       "workflow": "CI",
       "name": "verify",
-      "samples": 3,
-      "avg_seconds": 203,
-      "min_seconds": 199,
+      "samples": 2,
+      "avg_seconds": 205,
+      "min_seconds": 201,
       "max_seconds": 209
     },
     {
       "workflow": "CI",
       "name": "package",
-      "samples": 4,
-      "avg_seconds": 106,
-      "min_seconds": 94,
+      "samples": 5,
+      "avg_seconds": 96.8,
+      "min_seconds": 60,
       "max_seconds": 120
     },
     {
       "workflow": "CI",
       "name": "Test",
-      "samples": 4,
-      "avg_seconds": 68.75,
-      "min_seconds": 46,
+      "samples": 5,
+      "avg_seconds": 63.6,
+      "min_seconds": 43,
       "max_seconds": 112
     },
     {
       "workflow": "CI",
       "name": "Typecheck",
-      "samples": 4,
-      "avg_seconds": 21.5,
+      "samples": 5,
+      "avg_seconds": 21,
       "min_seconds": 19,
       "max_seconds": 26
     },
     {
       "workflow": "CI",
       "name": "Lint",
-      "samples": 4,
-      "avg_seconds": 19.75,
+      "samples": 5,
+      "avg_seconds": 19.4,
       "min_seconds": 16,
       "max_seconds": 24
     },
     {
       "workflow": "CI",
       "name": "Format check",
-      "samples": 4,
-      "avg_seconds": 17,
+      "samples": 5,
+      "avg_seconds": 17.4,
       "min_seconds": 15,
       "max_seconds": 20
     },
@@ -80,15 +80,15 @@
       "workflow": "Release",
       "name": "publish_preview_package",
       "samples": 7,
-      "avg_seconds": 26.857142857142858,
+      "avg_seconds": 16.571428571428573,
       "min_seconds": 5,
-      "max_seconds": 85
+      "max_seconds": 41
     },
     {
       "workflow": "Release",
       "name": "create_preview_release",
       "samples": 7,
-      "avg_seconds": 15,
+      "avg_seconds": 14.857142857142858,
       "min_seconds": 11,
       "max_seconds": 25
     },
@@ -96,8 +96,8 @@
       "workflow": "Release Please",
       "name": "release-please",
       "samples": 6,
-      "avg_seconds": 164.16666666666666,
-      "min_seconds": 141,
+      "avg_seconds": 162,
+      "min_seconds": 132,
       "max_seconds": 203
     }
   ],
@@ -105,207 +105,207 @@
     {
       "workflow": "CI",
       "name": "verify / Test",
-      "samples": 3,
-      "avg_seconds": 83,
-      "min_seconds": 82,
+      "samples": 2,
+      "avg_seconds": 83.5,
+      "min_seconds": 83,
       "max_seconds": 84
     },
     {
       "workflow": "CI",
       "name": "verify / Build",
-      "samples": 3,
-      "avg_seconds": 63.666666666666664,
-      "min_seconds": 63,
+      "samples": 2,
+      "avg_seconds": 64,
+      "min_seconds": 64,
       "max_seconds": 64
     },
     {
       "workflow": "CI",
       "name": "package / Build",
-      "samples": 4,
-      "avg_seconds": 63.5,
-      "min_seconds": 60,
+      "samples": 5,
+      "avg_seconds": 52.6,
+      "min_seconds": 9,
       "max_seconds": 72
     },
     {
       "workflow": "CI",
       "name": "Test / Test",
-      "samples": 4,
-      "avg_seconds": 53,
+      "samples": 5,
+      "avg_seconds": 48.4,
       "min_seconds": 28,
       "max_seconds": 99
     },
     {
       "workflow": "CI",
-      "name": "package / Post Restore Plannotator resources cache",
-      "samples": 1,
-      "avg_seconds": 19,
-      "min_seconds": 19,
-      "max_seconds": 19
+      "name": "package / Smoke test global install",
+      "samples": 5,
+      "avg_seconds": 19.4,
+      "min_seconds": 17,
+      "max_seconds": 23
     },
     {
       "workflow": "CI",
       "name": "verify / Smoke test global install",
-      "samples": 3,
+      "samples": 2,
       "avg_seconds": 19,
       "min_seconds": 19,
       "max_seconds": 19
     },
     {
       "workflow": "CI",
-      "name": "package / Smoke test global install",
-      "samples": 4,
-      "avg_seconds": 18.5,
-      "min_seconds": 17,
-      "max_seconds": 21
+      "name": "package / Post Restore Plannotator resources cache",
+      "samples": 2,
+      "avg_seconds": 9.5,
+      "min_seconds": 0,
+      "max_seconds": 19
     },
     {
       "workflow": "CI",
       "name": "verify / Typecheck",
-      "samples": 3,
-      "avg_seconds": 8.333333333333334,
+      "samples": 2,
+      "avg_seconds": 8.5,
       "min_seconds": 8,
       "max_seconds": 9
     },
     {
       "workflow": "CI",
       "name": "Typecheck / Typecheck",
-      "samples": 4,
-      "avg_seconds": 7.75,
+      "samples": 5,
+      "avg_seconds": 7.6,
       "min_seconds": 7,
       "max_seconds": 8
     },
     {
       "workflow": "CI",
       "name": "verify / Setup Node.js",
-      "samples": 3,
+      "samples": 2,
       "avg_seconds": 6,
       "min_seconds": 5,
       "max_seconds": 7
     },
     {
       "workflow": "CI",
-      "name": "Lint / Lint",
-      "samples": 4,
+      "name": "package / Setup Node.js",
+      "samples": 5,
+      "avg_seconds": 4.6,
+      "min_seconds": 3,
+      "max_seconds": 7
+    },
+    {
+      "workflow": "CI",
+      "name": "verify / Lint",
+      "samples": 2,
       "avg_seconds": 4.5,
+      "min_seconds": 4,
+      "max_seconds": 5
+    },
+    {
+      "workflow": "CI",
+      "name": "Lint / Lint",
+      "samples": 5,
+      "avg_seconds": 4.4,
       "min_seconds": 4,
       "max_seconds": 5
     },
     {
       "workflow": "CI",
       "name": "Test / Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 4.5,
+      "samples": 5,
+      "avg_seconds": 4.4,
       "min_seconds": 3,
       "max_seconds": 6
     },
     {
       "workflow": "CI",
-      "name": "verify / Format check",
-      "samples": 3,
-      "avg_seconds": 4.333333333333333,
-      "min_seconds": 4,
-      "max_seconds": 5
-    },
-    {
-      "workflow": "CI",
-      "name": "verify / Lint",
-      "samples": 3,
-      "avg_seconds": 4.333333333333333,
-      "min_seconds": 4,
-      "max_seconds": 5
-    },
-    {
-      "workflow": "CI",
       "name": "Format check / Format check",
-      "samples": 4,
-      "avg_seconds": 4,
+      "samples": 5,
+      "avg_seconds": 4.2,
       "min_seconds": 3,
       "max_seconds": 5
     },
     {
       "workflow": "CI",
       "name": "Format check / Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 4,
+      "samples": 5,
+      "avg_seconds": 4.2,
       "min_seconds": 2,
       "max_seconds": 6
-    },
-    {
-      "workflow": "CI",
-      "name": "Lint / Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 4,
-      "min_seconds": 3,
-      "max_seconds": 5
     },
     {
       "workflow": "CI",
       "name": "Lint / Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 4,
+      "samples": 5,
+      "avg_seconds": 4.2,
       "min_seconds": 2,
       "max_seconds": 6
     },
     {
       "workflow": "CI",
-      "name": "Test / Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 4,
-      "min_seconds": 3,
-      "max_seconds": 5
-    },
-    {
-      "workflow": "CI",
       "name": "package / Restore node_modules cache",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 4,
       "min_seconds": 3,
       "max_seconds": 7
     },
     {
       "workflow": "CI",
-      "name": "package / Setup Node.js",
-      "samples": 4,
+      "name": "verify / Format check",
+      "samples": 2,
       "avg_seconds": 4,
+      "min_seconds": 4,
+      "max_seconds": 4
+    },
+    {
+      "workflow": "CI",
+      "name": "Lint / Restore node_modules cache",
+      "samples": 5,
+      "avg_seconds": 3.8,
       "min_seconds": 3,
       "max_seconds": 5
     },
     {
       "workflow": "CI",
-      "name": "Typecheck / Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 3.5,
-      "min_seconds": 2,
-      "max_seconds": 6
+      "name": "Test / Restore node_modules cache",
+      "samples": 5,
+      "avg_seconds": 3.8,
+      "min_seconds": 3,
+      "max_seconds": 5
     },
     {
       "workflow": "CI",
       "name": "verify / Checkout",
-      "samples": 3,
-      "avg_seconds": 3.3333333333333335,
+      "samples": 2,
+      "avg_seconds": 3.5,
       "min_seconds": 3,
       "max_seconds": 4
     },
     {
       "workflow": "CI",
       "name": "verify / Restore node_modules cache",
-      "samples": 3,
-      "avg_seconds": 3.3333333333333335,
+      "samples": 2,
+      "avg_seconds": 3.5,
       "min_seconds": 3,
       "max_seconds": 4
     },
     {
       "workflow": "CI",
+      "name": "Typecheck / Setup Node.js",
+      "samples": 5,
+      "avg_seconds": 3.4,
+      "min_seconds": 2,
+      "max_seconds": 6
+    },
+    {
+      "workflow": "CI",
       "name": "Typecheck / Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 3.25,
+      "samples": 5,
+      "avg_seconds": 3.2,
       "min_seconds": 2,
       "max_seconds": 5
     },
     {
       "workflow": "CI",
       "name": "Lint / Checkout",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 3,
       "min_seconds": 2,
       "max_seconds": 4
@@ -313,7 +313,7 @@
     {
       "workflow": "CI",
       "name": "Test / Checkout",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 3,
       "min_seconds": 2,
       "max_seconds": 4
@@ -321,7 +321,15 @@
     {
       "workflow": "CI",
       "name": "Typecheck / Checkout",
-      "samples": 4,
+      "samples": 5,
+      "avg_seconds": 3,
+      "min_seconds": 2,
+      "max_seconds": 4
+    },
+    {
+      "workflow": "CI",
+      "name": "package / Pack package",
+      "samples": 5,
       "avg_seconds": 3,
       "min_seconds": 2,
       "max_seconds": 4
@@ -329,39 +337,31 @@
     {
       "workflow": "CI",
       "name": "Format check / Checkout",
-      "samples": 4,
-      "avg_seconds": 2.75,
-      "min_seconds": 2,
-      "max_seconds": 3
-    },
-    {
-      "workflow": "CI",
-      "name": "package / Checkout",
-      "samples": 4,
-      "avg_seconds": 2.75,
-      "min_seconds": 2,
-      "max_seconds": 3
-    },
-    {
-      "workflow": "CI",
-      "name": "package / Pack package",
-      "samples": 4,
-      "avg_seconds": 2.75,
+      "samples": 5,
+      "avg_seconds": 2.8,
       "min_seconds": 2,
       "max_seconds": 3
     },
     {
       "workflow": "CI",
       "name": "Format check / Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 2.5,
+      "samples": 5,
+      "avg_seconds": 2.6,
+      "min_seconds": 2,
+      "max_seconds": 3
+    },
+    {
+      "workflow": "CI",
+      "name": "package / Checkout",
+      "samples": 5,
+      "avg_seconds": 2.6,
       "min_seconds": 2,
       "max_seconds": 3
     },
     {
       "workflow": "CI",
       "name": "verify / Pack package",
-      "samples": 3,
+      "samples": 2,
       "avg_seconds": 2,
       "min_seconds": 2,
       "max_seconds": 2
@@ -377,23 +377,31 @@
     {
       "workflow": "CI",
       "name": "Typecheck / Set up job",
-      "samples": 4,
-      "avg_seconds": 1.25,
+      "samples": 5,
+      "avg_seconds": 1.2,
       "min_seconds": 1,
       "max_seconds": 2
     },
     {
       "workflow": "CI",
       "name": "package / Set up job",
-      "samples": 4,
-      "avg_seconds": 1.25,
+      "samples": 5,
+      "avg_seconds": 1.2,
       "min_seconds": 1,
       "max_seconds": 2
     },
     {
       "workflow": "CI",
+      "name": "package / Upload package artifact",
+      "samples": 5,
+      "avg_seconds": 1.2,
+      "min_seconds": 0,
+      "max_seconds": 2
+    },
+    {
+      "workflow": "CI",
       "name": "Format check / Set up job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 1,
       "min_seconds": 1,
       "max_seconds": 1
@@ -401,7 +409,7 @@
     {
       "workflow": "CI",
       "name": "Lint / Set up job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 1,
       "min_seconds": 1,
       "max_seconds": 1
@@ -409,15 +417,15 @@
     {
       "workflow": "CI",
       "name": "Test / Set up job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 1,
       "min_seconds": 1,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
-      "name": "package / Upload package artifact",
-      "samples": 4,
+      "name": "package / Restore Plannotator resources cache",
+      "samples": 2,
       "avg_seconds": 1,
       "min_seconds": 0,
       "max_seconds": 2
@@ -425,111 +433,111 @@
     {
       "workflow": "CI",
       "name": "verify / Set up job",
-      "samples": 3,
+      "samples": 2,
       "avg_seconds": 1,
       "min_seconds": 1,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
+      "name": "Format check / Post Checkout",
+      "samples": 5,
+      "avg_seconds": 0.4,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "CI",
       "name": "Format check / Post Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 0.5,
+      "samples": 5,
+      "avg_seconds": 0.4,
       "min_seconds": 0,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
       "name": "Lint / Post Checkout",
-      "samples": 4,
-      "avg_seconds": 0.5,
-      "min_seconds": 0,
-      "max_seconds": 1
-    },
-    {
-      "workflow": "CI",
-      "name": "Typecheck / Post Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 0.5,
-      "min_seconds": 0,
-      "max_seconds": 1
-    },
-    {
-      "workflow": "CI",
-      "name": "package / Post Checkout",
-      "samples": 4,
-      "avg_seconds": 0.5,
-      "min_seconds": 0,
-      "max_seconds": 1
-    },
-    {
-      "workflow": "CI",
-      "name": "verify / Post Checkout",
-      "samples": 3,
-      "avg_seconds": 0.3333333333333333,
-      "min_seconds": 0,
-      "max_seconds": 1
-    },
-    {
-      "workflow": "CI",
-      "name": "Format check / Post Checkout",
-      "samples": 4,
-      "avg_seconds": 0.25,
-      "min_seconds": 0,
-      "max_seconds": 1
-    },
-    {
-      "workflow": "CI",
-      "name": "Lint / Post Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 0.25,
-      "min_seconds": 0,
-      "max_seconds": 1
-    },
-    {
-      "workflow": "CI",
-      "name": "Test / Post Checkout",
-      "samples": 4,
-      "avg_seconds": 0.25,
+      "samples": 5,
+      "avg_seconds": 0.4,
       "min_seconds": 0,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
       "name": "Test / Post Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 0.25,
+      "samples": 5,
+      "avg_seconds": 0.4,
       "min_seconds": 0,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
-      "name": "Typecheck / Post Checkout",
-      "samples": 4,
-      "avg_seconds": 0.25,
+      "name": "Typecheck / Post Setup Node.js",
+      "samples": 5,
+      "avg_seconds": 0.4,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "CI",
+      "name": "package / Post Checkout",
+      "samples": 5,
+      "avg_seconds": 0.4,
       "min_seconds": 0,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
       "name": "package / Post Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 0.25,
+      "samples": 5,
+      "avg_seconds": 0.4,
       "min_seconds": 0,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
       "name": "package / Set preview package version",
-      "samples": 4,
-      "avg_seconds": 0.25,
+      "samples": 5,
+      "avg_seconds": 0.4,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "CI",
+      "name": "Lint / Post Setup Node.js",
+      "samples": 5,
+      "avg_seconds": 0.2,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "CI",
+      "name": "Test / Post Checkout",
+      "samples": 5,
+      "avg_seconds": 0.2,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "CI",
+      "name": "Typecheck / Complete job",
+      "samples": 5,
+      "avg_seconds": 0.2,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "CI",
+      "name": "Typecheck / Post Checkout",
+      "samples": 5,
+      "avg_seconds": 0.2,
       "min_seconds": 0,
       "max_seconds": 1
     },
     {
       "workflow": "CI",
       "name": "Format check / Complete job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -537,7 +545,7 @@
     {
       "workflow": "CI",
       "name": "Format check / Post Setup Node.js",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -545,7 +553,7 @@
     {
       "workflow": "CI",
       "name": "Lint / Complete job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -553,7 +561,7 @@
     {
       "workflow": "CI",
       "name": "Lint / Post Restore node_modules cache",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -561,7 +569,7 @@
     {
       "workflow": "CI",
       "name": "Test / Complete job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -569,15 +577,7 @@
     {
       "workflow": "CI",
       "name": "Test / Post Setup Node.js",
-      "samples": 4,
-      "avg_seconds": 0,
-      "min_seconds": 0,
-      "max_seconds": 0
-    },
-    {
-      "workflow": "CI",
-      "name": "Typecheck / Complete job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -585,7 +585,7 @@
     {
       "workflow": "CI",
       "name": "Typecheck / Post Restore node_modules cache",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -593,7 +593,7 @@
     {
       "workflow": "CI",
       "name": "package / Complete job",
-      "samples": 4,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -601,15 +601,7 @@
     {
       "workflow": "CI",
       "name": "package / Post Restore node_modules cache",
-      "samples": 4,
-      "avg_seconds": 0,
-      "min_seconds": 0,
-      "max_seconds": 0
-    },
-    {
-      "workflow": "CI",
-      "name": "package / Restore Plannotator resources cache",
-      "samples": 1,
+      "samples": 5,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -617,7 +609,15 @@
     {
       "workflow": "CI",
       "name": "verify / Complete job",
-      "samples": 3,
+      "samples": 2,
+      "avg_seconds": 0,
+      "min_seconds": 0,
+      "max_seconds": 0
+    },
+    {
+      "workflow": "CI",
+      "name": "verify / Post Checkout",
+      "samples": 2,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -625,7 +625,7 @@
     {
       "workflow": "CI",
       "name": "verify / Post Restore node_modules cache",
-      "samples": 3,
+      "samples": 2,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -633,7 +633,7 @@
     {
       "workflow": "CI",
       "name": "verify / Post Setup Node.js",
-      "samples": 3,
+      "samples": 2,
       "avg_seconds": 0,
       "min_seconds": 0,
       "max_seconds": 0
@@ -650,30 +650,14 @@
       "workflow": "Release",
       "name": "publish_preview_package / Publish preview package",
       "samples": 6,
-      "avg_seconds": 22.166666666666668,
+      "avg_seconds": 11.666666666666666,
       "min_seconds": 4,
-      "max_seconds": 71
+      "max_seconds": 35
     },
     {
       "workflow": "Release",
       "name": "create_preview_release / Upsert preview release notes",
       "samples": 7,
-      "avg_seconds": 3,
-      "min_seconds": 3,
-      "max_seconds": 3
-    },
-    {
-      "workflow": "Release",
-      "name": "publish_preview_package / Checkout",
-      "samples": 1,
-      "avg_seconds": 3,
-      "min_seconds": 3,
-      "max_seconds": 3
-    },
-    {
-      "workflow": "Release",
-      "name": "publish_preview_package / Restore node_modules cache",
-      "samples": 1,
       "avg_seconds": 3,
       "min_seconds": 3,
       "max_seconds": 3
@@ -690,41 +674,33 @@
       "workflow": "Release",
       "name": "create_preview_release / Render preview release notes",
       "samples": 7,
-      "avg_seconds": 2.4285714285714284,
-      "min_seconds": 1,
+      "avg_seconds": 2.2857142857142856,
+      "min_seconds": 0,
       "max_seconds": 11
-    },
-    {
-      "workflow": "Release",
-      "name": "publish_preview_package / Setup Node.js",
-      "samples": 7,
-      "avg_seconds": 1.8571428571428572,
-      "min_seconds": 0,
-      "max_seconds": 4
-    },
-    {
-      "workflow": "Release",
-      "name": "publish_preview_package / Download preview package artifact",
-      "samples": 6,
-      "avg_seconds": 1.6666666666666667,
-      "min_seconds": 0,
-      "max_seconds": 3
     },
     {
       "workflow": "Release",
       "name": "create_preview_release / Setup Node.js",
       "samples": 7,
-      "avg_seconds": 1.2857142857142858,
+      "avg_seconds": 1.5714285714285714,
       "min_seconds": 0,
       "max_seconds": 3
     },
     {
       "workflow": "Release",
-      "name": "create_preview_release / Set up job",
+      "name": "publish_preview_package / Download preview package artifact",
       "samples": 7,
-      "avg_seconds": 1,
+      "avg_seconds": 1.5714285714285714,
       "min_seconds": 0,
-      "max_seconds": 2
+      "max_seconds": 3
+    },
+    {
+      "workflow": "Release",
+      "name": "publish_preview_package / Setup Node.js",
+      "samples": 7,
+      "avg_seconds": 1.2857142857142858,
+      "min_seconds": 0,
+      "max_seconds": 3
     },
     {
       "workflow": "Release",
@@ -744,17 +720,17 @@
     },
     {
       "workflow": "Release",
-      "name": "create_preview_release / Post Checkout",
+      "name": "create_preview_release / Set up job",
       "samples": 7,
-      "avg_seconds": 0.42857142857142855,
+      "avg_seconds": 0.8571428571428571,
       "min_seconds": 0,
-      "max_seconds": 1
+      "max_seconds": 2
     },
     {
       "workflow": "Release",
       "name": "publish_preview_package / Post Setup Node.js",
       "samples": 6,
-      "avg_seconds": 0.16666666666666666,
+      "avg_seconds": 0.3333333333333333,
       "min_seconds": 0,
       "max_seconds": 1
     },
@@ -762,7 +738,15 @@
       "workflow": "Release",
       "name": "create_preview_release / Compute preview package version",
       "samples": 7,
-      "avg_seconds": 0.14285714285714285,
+      "avg_seconds": 0.2857142857142857,
+      "min_seconds": 0,
+      "max_seconds": 1
+    },
+    {
+      "workflow": "Release",
+      "name": "create_preview_release / Post Checkout",
+      "samples": 7,
+      "avg_seconds": 0.2857142857142857,
       "min_seconds": 0,
       "max_seconds": 1
     },
@@ -799,43 +783,19 @@
       "max_seconds": 0
     },
     {
-      "workflow": "Release",
-      "name": "publish_preview_package / Post Checkout",
-      "samples": 1,
-      "avg_seconds": 0,
-      "min_seconds": 0,
-      "max_seconds": 0
-    },
-    {
-      "workflow": "Release",
-      "name": "publish_preview_package / Post Restore node_modules cache",
-      "samples": 1,
-      "avg_seconds": 0,
-      "min_seconds": 0,
-      "max_seconds": 0
-    },
-    {
-      "workflow": "Release",
-      "name": "publish_preview_package / Set preview package version",
-      "samples": 1,
-      "avg_seconds": 0,
-      "min_seconds": 0,
-      "max_seconds": 0
-    },
-    {
       "workflow": "Release Please",
       "name": "release-please / Run release-please",
       "samples": 6,
-      "avg_seconds": 160.66666666666666,
-      "min_seconds": 137,
+      "avg_seconds": 158.5,
+      "min_seconds": 130,
       "max_seconds": 198
     },
     {
       "workflow": "Release Please",
       "name": "release-please / Set up job",
       "samples": 6,
-      "avg_seconds": 0.8333333333333334,
-      "min_seconds": 0,
+      "avg_seconds": 1,
+      "min_seconds": 1,
       "max_seconds": 1
     },
     {

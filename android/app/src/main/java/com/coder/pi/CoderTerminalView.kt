@@ -48,6 +48,7 @@ private const val TerminalOscProgressNotificationId = 904
 const val TerminalNotificationReplyAction = "com.coder.pi.TERMINAL_NOTIFICATION_REPLY"
 const val TerminalNotificationReplyInputKey = "terminal_reply"
 const val TerminalNotificationWorkspaceIdKey = "workspace_id"
+const val TerminalNotificationIdKey = "notification_id"
 
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
     private val native = CoderNative()
@@ -1074,17 +1075,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .setOngoing(ongoing)
             .setAutoCancel(true)
             .addAction(oscNotificationIconRes(), "Open terminal", pendingIntent)
-            .addAction(replyNotificationAction())
+            .addAction(replyNotificationAction(notificationId))
         workspaceIconBitmap(localOnly = notificationId == oscProgressNotificationId())?.let { builder.setLargeIcon(it) }
         if (ongoing) builder.setProgress(100, progress.coerceIn(0, 100), indeterminate) else builder.setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         return true
     }
 
-    private fun replyNotificationAction(): NotificationCompat.Action {
+    private fun replyNotificationAction(notificationId: Int): NotificationCompat.Action {
         val input = androidx.core.app.RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()
-        val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId)
-        val pendingIntent = PendingIntent.getBroadcast(context, notificationContext.workspaceId.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+        val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId).putExtra(TerminalNotificationIdKey, notificationId)
+        val pendingIntent = PendingIntent.getBroadcast(context, notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
         return NotificationCompat.Action.Builder(oscNotificationIconRes(), "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
     }
 

@@ -16,8 +16,14 @@ object TerminalConnectionManager {
                 launch.reconnectId,
                 launch.command,
             )
-            sessions[notificationContext.terminalId] = RuntimeSession(endpoint, session)
+            sessions[notificationContext.terminalId] = RuntimeSession(endpoint, session, ownsEndpoint = true)
             session.start()
+        }
+    }
+
+    fun registerVisible(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
+        synchronized(sessions) {
+            sessions[terminalId] = RuntimeSession(endpoint, session, ownsEndpoint = false)
         }
     }
 
@@ -45,7 +51,7 @@ object TerminalConnectionManager {
     fun stop(terminalId: String) {
         val runtime = synchronized(sessions) { sessions.remove(terminalId) } ?: return
         runtime.session.stop()
-        runtime.endpoint.dispose()
+        if (runtime.ownsEndpoint && runtime.endpoint is CoderHeadlessTerminalEndpoint) runtime.endpoint.dispose()
     }
 
     fun stopAll() {
@@ -59,5 +65,5 @@ object TerminalConnectionManager {
         return true
     }
 
-    private data class RuntimeSession(val endpoint: CoderHeadlessTerminalEndpoint, val session: CoderTerminalSession)
+    private data class RuntimeSession(val endpoint: CoderTerminalEndpoint, val session: CoderTerminalSession, val ownsEndpoint: Boolean)
 }

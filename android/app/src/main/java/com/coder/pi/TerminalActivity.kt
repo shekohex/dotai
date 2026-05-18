@@ -35,6 +35,7 @@ class TerminalActivity : AppCompatActivity() {
     private var terminalSession: CoderTerminalSession? = null
     private var terminalMetadata: CoderActiveTerminalMetadata? = null
     private var terminalStore: CoderSessionStore? = null
+    private var terminalId: String = ""
     private var previewJob: Job? = null
     private var currentTheme by mutableStateOf<CoderTheme?>(null)
     private var currentFontKey: String? = null
@@ -66,7 +67,7 @@ class TerminalActivity : AppCompatActivity() {
         terminalView = CoderTerminalView(this).also {
             it.setPreviewFontFamily(currentFontKey ?: CoderFonts.selectedKey(this))
             it.applyTheme(theme)
-            val terminalId = terminalSessionKey(identity)
+            terminalId = terminalSessionKey(identity)
             it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
             it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
         }
@@ -77,7 +78,10 @@ class TerminalActivity : AppCompatActivity() {
             terminalStore?.appendDebugLog("terminal window ${launch.title} $status")
         }, { safeError ->
             safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
-        }).also { it.start() }
+        }).also {
+            TerminalConnectionManager.registerVisible(terminalId, terminalView, it)
+            it.start()
+        }
         startPreviewPersistence()
         applySystemBars(currentTheme ?: theme)
         setContent {
@@ -121,6 +125,7 @@ class TerminalActivity : AppCompatActivity() {
     override fun onDestroy() {
         previewJob?.cancel()
         terminalSession?.stop()
+        TerminalConnectionManager.stop(terminalId)
         if (!isChangingConfigurations) terminalMetadata?.let { terminalStore?.updateActiveTerminalDetached(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command, false) }
         if (::terminalView.isInitialized) terminalView.dispose()
         terminalActivities.removeAll { it.get() == null || it.get() === this }

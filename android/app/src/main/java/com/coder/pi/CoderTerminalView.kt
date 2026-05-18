@@ -49,9 +49,10 @@ private const val TerminalOscProgressNotificationId = 904
 const val TerminalNotificationReplyAction = "com.coder.pi.TERMINAL_NOTIFICATION_REPLY"
 const val TerminalNotificationReplyInputKey = "terminal_reply"
 const val TerminalNotificationWorkspaceIdKey = "workspace_id"
+const val TerminalNotificationTerminalIdKey = "terminal_id"
 const val TerminalNotificationIdKey = "notification_id"
 
-class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
+class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer, CoderTerminalEndpoint {
     private val native = CoderNative()
     private var handle = 0L
     private var nativeFontKey: String? = null
@@ -94,7 +95,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var remoteInput: ((ByteArray) -> Unit)? = null
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val pendingRemoteOutput = mutableListOf<ByteArray>()
-    var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
+    override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
     var onOscMetadataChanged: ((TerminalOscMetadata) -> Unit)? = null
     var onHyperlinkActivated: ((String) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
@@ -491,9 +492,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return sendMouseEvent(action, x, y, button, metaState)
     }
 
-    fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0
+    override fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0
 
-    fun terminalRows(): Int = if (cellHeight > 0) surfaceHeight / cellHeight else 0
+    override fun terminalRows(): Int = if (cellHeight > 0) surfaceHeight / cellHeight else 0
 
     fun cellAt(x: Float, y: Float): TerminalCellPosition {
         val col = if (cellWidth > 0) (x / cellWidth).toInt().coerceIn(0, (terminalColumns() - 1).coerceAtLeast(0)) else 0
@@ -827,15 +828,15 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle != 0L) native.nativeSetTextOptions(handle, ligaturesEnabled(), contextualAlternatesEnabled(), slashedZeroEnabled(), stylisticSet1Enabled(), stylisticSet2Enabled(), characterVariant1Enabled(), cursorBlinkEnabled(), cursorMode())
     }
 
-    fun attachRemote(input: (ByteArray) -> Unit) {
+    override fun attachRemote(input: (ByteArray) -> Unit) {
         remoteInput = input
     }
 
-    fun detachRemote() {
+    override fun detachRemote() {
         remoteInput = null
     }
 
-    fun feedRemoteOutput(bytes: ByteArray) {
+    override fun feedRemoteOutput(bytes: ByteArray) {
         if (bytes.isEmpty()) return
         if (handle == 0L) {
             pendingRemoteOutput.add(bytes)
@@ -857,11 +858,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
-    private fun writeInput(bytes: ByteArray) {
+    override fun sendInput(bytes: ByteArray) {
         if (bytes.isEmpty()) return
         remoteInput?.let { it(bytes); return }
         native.nativeWrite(handle, bytes)
     }
+
+    private fun writeInput(bytes: ByteArray) = sendInput(bytes)
 
     private fun notifyModifierLatchChanged() {
         onModifierLatchChanged?.invoke(shiftLatch, ctrlLatch, altLatch)
@@ -1192,7 +1195,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
         fun sendNotificationReply(workspaceId: String, text: String): Boolean {
             val terminalView = synchronized(terminalNotificationTargets) { terminalNotificationTargets[workspaceId]?.get() ?: terminalNotificationTargets[""]?.get() } ?: return false
-            terminalView.writeInput((text.take(4096) + "\r").toByteArray(Charsets.UTF_8))
+            terminalView.sendInput((text.take(4096) + "\r").toByteArray(Charsets.UTF_8))
             return true
         }
 

@@ -8,7 +8,7 @@ import kotlinx.coroutines.launch
 
 class CoderTerminalSession(
     private val api: CoderApi,
-    private val terminalView: CoderTerminalView,
+    private val terminalEndpoint: CoderTerminalEndpoint,
     private val agentId: String,
     private val reconnectId: String,
     private val command: String,
@@ -45,13 +45,13 @@ class CoderTerminalSession(
         scope.launch {
             runCatching {
                 if (reconnecting) updateStatus(TerminalConnectionStatus.Reconnecting.wireName)
-                val initialWidth = terminalView.terminalColumns().takeIf { it > 0 } ?: 80
-                val initialHeight = terminalView.terminalRows().takeIf { it > 0 } ?: 24
+                val initialWidth = terminalEndpoint.terminalColumns().takeIf { it > 0 } ?: 80
+                val initialHeight = terminalEndpoint.terminalRows().takeIf { it > 0 } ?: 24
                 val terminalSocket = CoderTerminalSocket(api.connectTerminal(agentId, reconnectId, command, initialWidth, initialHeight))
                 socket = terminalSocket
-                terminalView.attachRemote { bytes -> terminalSocket.send(bytes) }
-                terminalView.onTerminalSizeChanged = { width, height -> terminalSocket.resize(width, height) }
-                terminalSocket.onBytes = { terminalView.feedRemoteOutput(it) }
+                terminalEndpoint.attachRemote { bytes -> terminalSocket.send(bytes) }
+                terminalEndpoint.onTerminalSizeChanged = { width, height -> terminalSocket.resize(width, height) }
+                terminalSocket.onBytes = { terminalEndpoint.feedRemoteOutput(it) }
                 terminalSocket.onClosed = { handleClosed() }
                 terminalSocket.start()
                 terminalSocket.resize(initialWidth, initialHeight)
@@ -73,7 +73,7 @@ class CoderTerminalSession(
 
     private fun handleClosed() {
         socket = null
-        terminalView.detachRemote()
+        terminalEndpoint.detachRemote()
         if (stopped) {
             updateStatus(TerminalConnectionStatus.Disconnected.wireName)
             return
@@ -121,8 +121,8 @@ class CoderTerminalSession(
         stopped = true
         networkUnavailable = false
         reconnectScheduled = false
-        terminalView.detachRemote()
-        terminalView.onTerminalSizeChanged = null
+        terminalEndpoint.detachRemote()
+        terminalEndpoint.onTerminalSizeChanged = null
         scope.launch { socket?.close() }
         updateError(null)
         updateStatus(TerminalConnectionStatus.Disconnected.wireName)

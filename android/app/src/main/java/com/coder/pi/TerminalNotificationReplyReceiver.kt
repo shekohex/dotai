@@ -12,7 +12,8 @@ class TerminalNotificationReplyReceiver : BroadcastReceiver() {
         val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(TerminalNotificationReplyInputKey)?.toString().orEmpty().trim()
         if (text.isBlank()) return
         val workspaceId = intent.getStringExtra(TerminalNotificationWorkspaceIdKey).orEmpty()
-        if (CoderTerminalView.sendNotificationReply(workspaceId, text)) {
+        val terminalId = intent.getStringExtra(TerminalNotificationTerminalIdKey).orEmpty()
+        if (TerminalConnectionManager.sendInput(terminalId, text) || CoderTerminalView.sendNotificationReply(workspaceId, text)) {
             NotificationManagerCompat.from(context).cancel(intent.getIntExtra(TerminalNotificationIdKey, 0))
         }
     }

@@ -1,0 +1,42 @@
+package com.coder.pi
+
+import android.content.Context
+
+object TerminalConnectionManager {
+    private val sessions = mutableMapOf<String, RuntimeSession>()
+
+    fun startHeadless(context: Context, launch: TerminalLaunchRequest, identity: TerminalIdentity, notificationContext: TerminalNotificationContext) {
+        synchronized(sessions) {
+            if (sessions.containsKey(notificationContext.terminalId)) return
+            val endpoint = CoderHeadlessTerminalEndpoint(context.applicationContext, notificationContext)
+            val session = CoderTerminalSession(
+                CoderApi(launch.baseUrl, launch.token),
+                endpoint,
+                launch.agentId,
+                launch.reconnectId,
+                launch.command,
+            )
+            sessions[notificationContext.terminalId] = RuntimeSession(endpoint, session)
+            session.start()
+        }
+    }
+
+    fun stop(terminalId: String) {
+        val runtime = synchronized(sessions) { sessions.remove(terminalId) } ?: return
+        runtime.session.stop()
+        runtime.endpoint.dispose()
+    }
+
+    fun stopAll() {
+        val ids = synchronized(sessions) { sessions.keys.toList() }
+        ids.forEach(::stop)
+    }
+
+    fun sendInput(terminalId: String, text: String): Boolean {
+        val runtime = synchronized(sessions) { sessions[terminalId] } ?: return false
+        runtime.endpoint.sendInput((text.take(4096) + "\r").toByteArray(Charsets.UTF_8))
+        return true
+    }
+
+    private data class RuntimeSession(val endpoint: CoderHeadlessTerminalEndpoint, val session: CoderTerminalSession)
+}

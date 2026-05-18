@@ -97,6 +97,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -226,6 +229,7 @@ fun CoderApp(
     val tokens = remember(theme) { uiTokens(theme) }
     val context = LocalContext.current
     val sessionStore = remember(context) { CoderSessionStore(context) }
+    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     var networkAvailable by remember { mutableStateOf(true) }
     DisposableEffect(context, terminalView, terminalSessions) {
@@ -252,6 +256,16 @@ fun CoderApp(
         preferences.registerOnSharedPreferenceChangeListener(listener)
         terminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    DisposableEffect(context, lifecycleOwner, terminalSessions) {
+        if (lifecycleOwner == null) return@DisposableEffect onDispose { }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("background_terminals", false) && terminalSessions.isNotEmpty()) {
+                androidx.core.content.ContextCompat.startForegroundService(context, Intent(context, TerminalConnectionService::class.java))
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(deepLinkRevision) {
         if (deepLinkSettingsPage != null) destination = AppDestination.SETTINGS
@@ -1939,6 +1953,7 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
     var oscNotifications by remember { mutableStateOf(terminalView.oscNotificationsEnabled()) }
     var hapticFeedback by remember { mutableStateOf(context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)) }
     val appPreferences = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE) }
+    var backgroundTerminals by remember { mutableStateOf(appPreferences.getBoolean("background_terminals", false)) }
     var fileSync by remember { mutableStateOf(appPreferences.getBoolean("file_sync", false)) }
     var syncCredentials by remember { mutableStateOf(appPreferences.getBoolean("sync_credentials", false)) }
     SettingsScaffold("Settings", tokens, onBack) {
@@ -1961,6 +1976,11 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
         SettingsSection("INTEGRATIONS", tokens) {
             SettingsValueRow(R.drawable.ic_feather_globe, "Links", "Allowed OSC 8 link hosts", null, tokens, chevron = true) { onPlaceholder("Links") }
             SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "OSC 9 alerts and progress", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
+            SettingsToggleRow(R.drawable.ic_feather_terminal, "Background Terminals", backgroundTerminals, tokens) {
+                backgroundTerminals = it
+                appPreferences.edit { putBoolean("background_terminals", it) }
+                if (it) TerminalCatchUpWorker.schedule(context) else TerminalCatchUpWorker.cancel(context)
+            }
             SettingsValueRow(R.drawable.ic_feather_box, "Inbox & Usage", null, null, tokens, chevron = true) { onPlaceholder("Inbox & Usage") }
             SettingsValueRow(R.drawable.ic_feather_folder, "File Sharing", null, null, tokens, pro = true, chevron = true) { onPlaceholder("File Sharing") }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Shell", null, null, tokens, pro = true, chevron = true) { onPlaceholder("Shell") }
@@ -2702,6 +2722,14 @@ private fun android.content.Context.findActivityView(): android.view.View? {
     return when (this) {
         is android.app.Activity -> window.decorView
         is android.content.ContextWrapper -> baseContext.findActivityView()
+        else -> null
+    }
+}
+
+private fun android.content.Context.findLifecycleOwner(): LifecycleOwner? {
+    return when (this) {
+        is LifecycleOwner -> this
+        is android.content.ContextWrapper -> baseContext.findLifecycleOwner()
         else -> null
     }
 }

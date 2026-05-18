@@ -3,6 +3,7 @@ package com.coder.pi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -128,10 +129,17 @@ class CoderTerminalSession(
         reconnectScheduled = false
         terminalEndpoint.detachRemote()
         terminalEndpoint.onTerminalSizeChanged = null
-        scope.launch { socket?.close() }
-        updateError(null)
-        updateStatus(TerminalConnectionStatus.Disconnected.wireName)
+        val terminalSocket = socket
         socket = null
+        scope.launch {
+            terminalSocket?.close()
+            scope.cancel()
+        }
+        mainScope.launch {
+            onErrorChanged(null)
+            onStatusChanged(TerminalConnectionStatus.Disconnected.wireName)
+            mainScope.cancel()
+        }
     }
 
     companion object {

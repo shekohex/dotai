@@ -12,8 +12,8 @@ class CoderTerminalSession(
     private val agentId: String,
     private val reconnectId: String,
     private val command: String,
-    private val onStatusChanged: (String) -> Unit = {},
-    private val onErrorChanged: (String?) -> Unit = {},
+    private var onStatusChanged: (String) -> Unit = {},
+    private var onErrorChanged: (String?) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -24,6 +24,11 @@ class CoderTerminalSession(
     private var networkUnavailable = false
 
     private val maxReconnectAttempts = Int.MAX_VALUE
+
+    fun updateCallbacks(onStatusChanged: (String) -> Unit, onErrorChanged: (String?) -> Unit) {
+        this.onStatusChanged = onStatusChanged
+        this.onErrorChanged = onErrorChanged
+    }
 
     private fun updateStatus(status: String) {
         mainScope.launch { onStatusChanged(status) }

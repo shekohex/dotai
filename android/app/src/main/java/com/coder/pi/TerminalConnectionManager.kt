@@ -41,7 +41,10 @@ object TerminalConnectionManager {
         onStatusChanged: (String) -> Unit = {},
         onErrorChanged: (String?) -> Unit = {},
     ): CoderTerminalSession {
-        attachRendererToExistingSession(terminalId, endpoint)?.let { return it }
+        attachRendererToExistingSession(terminalId, endpoint)?.let {
+            it.updateCallbacks(onStatusChanged, onErrorChanged)
+            return it
+        }
         val proxy = TerminalEndpointProxy(endpoint)
         val session = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), proxy, launch.agentId, launch.reconnectId, launch.command, onStatusChanged, onErrorChanged)
         attachRenderer(terminalId, endpoint, session)

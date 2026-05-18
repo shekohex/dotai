@@ -8,27 +8,29 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
     override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
         set(value) {
             field = value
-            synchronized(lock) { endpoint.onTerminalSizeChanged = value }
+            val currentEndpoint = synchronized(lock) { endpoint }
+            currentEndpoint.onTerminalSizeChanged = value
         }
 
     fun attachEndpoint(nextEndpoint: CoderTerminalEndpoint): CoderTerminalEndpoint {
-        return synchronized(lock) {
+        val input = synchronized(lock) { remoteInput }
+        val previous = synchronized(lock) {
             val previous = endpoint
-            previous.detachRemote()
-            previous.onTerminalSizeChanged = null
             endpoint = nextEndpoint
-            nextEndpoint.attachRemote { bytes -> remoteInput?.invoke(bytes) }
-            nextEndpoint.onTerminalSizeChanged = onTerminalSizeChanged
             previous
         }
+        previous.detachRemote()
+        previous.onTerminalSizeChanged = null
+        nextEndpoint.attachRemote { bytes -> input?.invoke(bytes) }
+        nextEndpoint.onTerminalSizeChanged = onTerminalSizeChanged
+        return previous
     }
 
     fun detachEndpoint(endpointToDetach: CoderTerminalEndpoint) {
-        synchronized(lock) {
-            if (endpoint !== endpointToDetach) return
-            endpoint.detachRemote()
-            endpoint.onTerminalSizeChanged = null
-        }
+        val shouldDetach = synchronized(lock) { endpoint === endpointToDetach }
+        if (!shouldDetach) return
+        endpointToDetach.detachRemote()
+        endpointToDetach.onTerminalSizeChanged = null
     }
 
     fun currentEndpoint(): CoderTerminalEndpoint = synchronized(lock) { endpoint }
@@ -38,24 +40,28 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
     override fun terminalRows(): Int = synchronized(lock) { endpoint.terminalRows() }
 
     override fun attachRemote(input: (ByteArray) -> Unit) {
-        synchronized(lock) {
+        val currentEndpoint = synchronized(lock) {
             remoteInput = input
-            endpoint.attachRemote { bytes -> remoteInput?.invoke(bytes) }
+            endpoint
         }
+        currentEndpoint.attachRemote { bytes -> synchronized(lock) { remoteInput }?.invoke(bytes) }
     }
 
     override fun detachRemote() {
-        synchronized(lock) {
+        val currentEndpoint = synchronized(lock) {
             remoteInput = null
-            endpoint.detachRemote()
+            endpoint
         }
+        currentEndpoint.detachRemote()
     }
 
     override fun feedRemoteOutput(bytes: ByteArray) {
-        synchronized(lock) { endpoint.feedRemoteOutput(bytes) }
+        val currentEndpoint = synchronized(lock) { endpoint }
+        currentEndpoint.feedRemoteOutput(bytes)
     }
 
     override fun sendInput(bytes: ByteArray) {
-        synchronized(lock) { remoteInput?.invoke(bytes) ?: endpoint.sendInput(bytes) }
+        val input = synchronized(lock) { remoteInput }
+        input?.invoke(bytes) ?: synchronized(lock) { endpoint }.sendInput(bytes)
     }
 }

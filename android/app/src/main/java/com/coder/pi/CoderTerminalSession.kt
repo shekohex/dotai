@@ -18,11 +18,11 @@ class CoderTerminalSession(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var socket: CoderTerminalSocket? = null
-    private var stopped = false
+    @Volatile private var socket: CoderTerminalSocket? = null
+    @Volatile private var stopped = false
     private var reconnectAttempts = 0
-    private var reconnectScheduled = false
-    private var networkUnavailable = false
+    @Volatile private var reconnectScheduled = false
+    @Volatile private var networkUnavailable = false
 
     private val maxReconnectAttempts = Int.MAX_VALUE
 

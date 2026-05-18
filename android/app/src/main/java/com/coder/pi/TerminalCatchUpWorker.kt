@@ -14,7 +14,8 @@ class TerminalCatchUpWorker(context: Context, params: WorkerParameters) : Corout
     override suspend fun doWork(): Result {
         val store = CoderSessionStore(applicationContext)
         if (store.loadSession() == null) return Result.success()
-        store.appendDebugLog("terminal catch-up checked saved session")
+        val started = TerminalConnectionManager.startSavedHeadless(applicationContext)
+        store.appendDebugLog("terminal catch-up started $started headless terminals")
         return Result.success()
     }
 

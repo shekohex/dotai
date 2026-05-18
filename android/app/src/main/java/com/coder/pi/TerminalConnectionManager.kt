@@ -21,6 +21,27 @@ object TerminalConnectionManager {
         }
     }
 
+    fun startSavedHeadless(context: Context): Int {
+        val store = CoderSessionStore(context.applicationContext)
+        val savedSession = store.loadSession() ?: return 0
+        val baseUrl = savedSession.first
+        val token = savedSession.second
+        var started = 0
+        store.activeTerminalsForBaseUrl(baseUrl).forEach { metadata ->
+            val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
+            val terminalId = terminalSessionKey(identity)
+            val local = store.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId)
+            startHeadless(
+                context,
+                TerminalLaunchRequest(metadata.baseUrl, token, metadata.agentId, metadata.reconnectId, metadata.command, metadata.workspaceName, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl),
+                identity,
+                TerminalNotificationContext(metadata.workspaceId, metadata.workspaceName, local.alias ?: metadata.workspaceName, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", local.iconUri.orEmpty(), metadata.workspaceIconUrl.orEmpty(), terminalId),
+            )
+            started++
+        }
+        return started
+    }
+
     fun stop(terminalId: String) {
         val runtime = synchronized(sessions) { sessions.remove(terminalId) } ?: return
         runtime.session.stop()

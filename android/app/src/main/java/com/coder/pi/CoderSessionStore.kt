@@ -124,6 +124,27 @@ class CoderSessionStore(context: Context) {
         }.sortedByDescending { it.updatedAtMillis }
     }
 
+    fun activeTerminalsForBaseUrl(baseUrl: String, ttlMillis: Long = reconnectTokenTtlMillis): List<CoderActiveTerminalMetadata> {
+        val now = System.currentTimeMillis()
+        return activeTerminalKeys().mapNotNull { prefix ->
+            val metadata = CoderActiveTerminalMetadata(
+                baseUrl = localPreferences.getString("$prefix.base_url", null) ?: return@mapNotNull null,
+                userId = localPreferences.getString("$prefix.user_id", null) ?: return@mapNotNull null,
+                workspaceId = localPreferences.getString("$prefix.workspace_id", null) ?: return@mapNotNull null,
+                workspaceName = localPreferences.getString("$prefix.workspace_name", null) ?: return@mapNotNull null,
+                agentId = localPreferences.getString("$prefix.agent_id", null) ?: return@mapNotNull null,
+                agentName = localPreferences.getString("$prefix.agent_name", null) ?: return@mapNotNull null,
+                command = localPreferences.getString("$prefix.command", null) ?: return@mapNotNull null,
+                reconnectId = localPreferences.getString("$prefix.reconnect_id", null) ?: return@mapNotNull null,
+                updatedAtMillis = localPreferences.getLong("$prefix.updated_at", 0L),
+                preview = localPreferences.getString("$prefix.preview", "").orEmpty(),
+                detached = localPreferences.getBoolean("$prefix.detached", false),
+                workspaceIconUrl = localPreferences.getString("$prefix.workspace_icon_url", null),
+            )
+            metadata.takeIf { it.baseUrl == baseUrl && now - it.updatedAtMillis <= ttlMillis }
+        }.sortedByDescending { it.updatedAtMillis }
+    }
+
     fun updateActiveTerminalDetached(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String, detached: Boolean) {
         val prefix = activeTerminalStorageKey(baseUrl, userId, workspaceId, agentId, command)
         if (!activeTerminalKeys().contains(prefix)) return

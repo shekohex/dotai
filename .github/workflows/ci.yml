@@ -62,19 +62,22 @@ jobs:
   package:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      actions: read
+      contents: write
+      packages: write
     defaults:
       run:
         working-directory: agent
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          registry-url: https://npm.pkg.github.com
           cache: npm
           cache-dependency-path: agent/package-lock.json
 
@@ -97,12 +100,15 @@ jobs:
           key: ${{ runner.os }}-plannotator-${{ hashFiles('agent/vendor/plannotator-ui/**', 'agent/scripts/build-plannotator-ui.mts') }}
 
       - name: Set preview package version
+        id: preview_version
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           BASE_VERSION="$(npm pkg get version | tr -d '"')"
           SHORT_SHA="$(git rev-parse --short HEAD)"
-          npm pkg set version="${BASE_VERSION}-dev.${SHORT_SHA}"
+          PACKAGE_VERSION="${BASE_VERSION}-dev.${SHORT_SHA}"
+          npm pkg set version="$PACKAGE_VERSION"
+          echo "value=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:
@@ -112,14 +118,6 @@ jobs:
       - name: Pack package
         run: npm pack --ignore-scripts
 
-      - name: Upload package artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: preview-package
-          path: agent/*.tgz
-          if-no-files-found: error
-
       - name: Smoke test global install
         shell: bash
         run: |
@@ -128,3 +126,86 @@ jobs:
           export PATH="$GLOBAL_PREFIX/bin:$PATH"
           npm install --global --prefix "$GLOBAL_PREFIX" --no-audit --no-fund --progress=false "./${PACKAGE_TARBALL}"
           pi --help
+
+      - name: Render preview release notes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/preview/install-github-package.sh
+          WINDOWS_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/preview/install-github-package.ps1
+        shell: bash
+        working-directory: .
+        run: |
+          PREVIOUS_TARGET=''
+          if gh api "repos/${REPOSITORY}/releases/tags/preview" >/dev/null 2>&1; then
+            PREVIOUS_TARGET="$(gh api "repos/${REPOSITORY}/releases/tags/preview" --jq '.target_commitish')"
+          fi
+
+          CHANGELOG_BODY='- Rolling preview initialized.'
+          if [[ -n "$PREVIOUS_TARGET" ]] && git rev-parse --verify "$PREVIOUS_TARGET" >/dev/null 2>&1; then
+            CHANGELOG_BODY="$(git log --no-merges --pretty='- %s (%h)' "${PREVIOUS_TARGET}..HEAD")"
+          fi
+
+          if [[ -z "$CHANGELOG_BODY" ]]; then
+            CHANGELOG_BODY="$(git log --no-merges -20 --pretty='- %s (%h)')"
+          fi
+
+          export CHANGELOG_BODY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          template = Path('.github/release-notes/preview.md').read_text()
+          rendered = template.replace('{{PACKAGE_VERSION}}', '${{ steps.preview_version.outputs.value }}').replace('{{CHANGELOG_BODY}}', os.environ['CHANGELOG_BODY']).replace('{{INSTALL_SCRIPT_URL}}', os.environ['INSTALL_SCRIPT_URL']).replace('{{WINDOWS_INSTALL_SCRIPT_URL}}', os.environ['WINDOWS_INSTALL_SCRIPT_URL'])
+          Path('/tmp/preview-release-notes.md').write_text(rendered)
+          PY
+
+      - name: Upsert preview release notes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        working-directory: .
+        run: |
+          if gh release view preview >/dev/null 2>&1; then
+            gh release delete preview --yes --cleanup-tag
+          fi
+
+          gh release create preview \
+            --title "Preview" \
+            --target "$(git rev-parse HEAD)" \
+            --prerelease \
+            --notes-file /tmp/preview-release-notes.md
+
+      - name: Render preview installer asset
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        working-directory: .
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('agent/scripts/install-github-package.sh').read_text()
+          rendered = source.replace("default_package_version=''", "default_package_version='${{ steps.preview_version.outputs.value }}'", 1)
+          Path('/tmp/install-github-package.sh').write_text(rendered)
+
+          windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
+          windows_rendered = windows_source.replace("$defaultPackageVersion = ''", "$defaultPackageVersion = '${{ steps.preview_version.outputs.value }}'", 1)
+          Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
+          PY
+
+      - name: Upload preview installer asset
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        working-directory: .
+        run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
+
+      - name: Publish preview package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish ./*.tgz --tag preview --access public --no-git-checks

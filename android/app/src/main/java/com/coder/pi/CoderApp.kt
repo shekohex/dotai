@@ -270,6 +270,9 @@ fun CoderApp(
     LaunchedEffect(deepLinkRevision) {
         if (deepLinkSettingsPage != null) destination = AppDestination.SETTINGS
     }
+    LaunchedEffect(context) {
+        if (context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("background_terminals", false)) TerminalCatchUpWorker.schedule(context) else TerminalCatchUpWorker.cancel(context)
+    }
     LaunchedEffect(debugPlaygroundRevision) {
         val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         if (debugBuild && debugPlaygroundRevision > 0) destination = AppDestination.DEBUG_RENDER

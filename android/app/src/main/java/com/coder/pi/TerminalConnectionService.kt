@@ -28,6 +28,11 @@ class TerminalConnectionService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onDestroy() {
+        TerminalConnectionManager.stopAll()
+        super.onDestroy()
+    }
+
     private fun serviceNotification() = NotificationCompat.Builder(this, ServiceChannelId)
         .setSmallIcon(R.drawable.pi_logo_mark)
         .setContentTitle("Terminal connections active")

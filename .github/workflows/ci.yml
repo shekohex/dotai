@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
     defaults:
       run:
         working-directory: agent
@@ -55,11 +56,27 @@ jobs:
       - name: Test
         run: npm test -- --reporter=github-actions --reporter=json
 
+      - name: Set preview package version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          BASE_VERSION="$(npm pkg get version | tr -d '"')"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          npm pkg set version="${BASE_VERSION}-dev.${SHORT_SHA}"
+
       - name: Build
         run: npm run build
 
       - name: Pack package
         run: npm pack --ignore-scripts
+
+      - name: Upload package artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-package
+          path: agent/*.tgz
+          if-no-files-found: error
 
       - name: Smoke test global install
         shell: bash

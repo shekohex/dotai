@@ -36,6 +36,7 @@ concurrency:
 permissions:
   contents: write
   packages: write
+  actions: read
 
 jobs:
   create_preview_release:
@@ -341,40 +342,21 @@ jobs:
     if: needs.create_preview_release.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.create_preview_release.outputs.release_ref }}
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://npm.pkg.github.com
-          cache: npm
-          cache-dependency-path: agent/package-lock.json
 
-      - name: Restore node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@v4
-        with:
-          path: agent/node_modules
-          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
-
-      - name: Install dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        working-directory: agent
-        run: npm install
-
-      - name: Set preview package version
-        working-directory: agent
-        run: npm pkg set version='${{ needs.create_preview_release.outputs.package_version }}'
+      - name: Download preview package artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download '${{ github.event.workflow_run.id }}' --name preview-package --dir /tmp/preview-package
 
       - name: Publish preview package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        working-directory: agent
-        run: npm publish --tag preview --access public --no-git-checks
+        run: npm publish /tmp/preview-package/*.tgz --tag preview --access public --no-git-checks
 
   publish_release_package:
     needs:

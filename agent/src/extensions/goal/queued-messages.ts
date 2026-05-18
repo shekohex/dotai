@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import { continuationGoalIdFromPrompt } from "./prompts.js";
 import { GOAL_EXTENSION_ENTRY_TYPE, type ThreadGoal } from "./types.js";
 
 export interface GoalCustomMessageLike {
@@ -19,7 +19,6 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
         Type.Literal("command_start"),
         Type.Literal("command_resume"),
         Type.Literal("budget_limit"),
-        Type.Literal("context_limit"),
         Type.Literal("stale_continuation"),
       ]),
     ),
@@ -69,10 +68,7 @@ export function queuedGoalWorkMessageId(message: GoalCustomMessageLike): string 
   const details = parseQueuedGoalMessageDetails(message.details);
   const { kind, goalId } = details ?? {};
   if (
-    (kind === "continuation" ||
-      kind === "command_start" ||
-      kind === "command_resume" ||
-      kind === "context_limit") &&
+    (kind === "continuation" || kind === "command_start" || kind === "command_resume") &&
     goalId !== undefined
   ) {
     return goalId;
@@ -83,32 +79,4 @@ export function queuedGoalWorkMessageId(message: GoalCustomMessageLike): string 
   }
 
   return continuationGoalIdFromPrompt(message.content);
-}
-
-export function maybeRewriteStaleContextLimitMessage<TMessage extends GoalCustomMessageLike>(
-  message: TMessage,
-  goal: ThreadGoal | null,
-  isContextNearLimit: boolean,
-): TMessage | null {
-  if (message.customType !== GOAL_EXTENSION_ENTRY_TYPE) {
-    return null;
-  }
-
-  const details = parseQueuedGoalMessageDetails(message.details);
-  if (
-    details?.kind !== "context_limit" ||
-    details.goalId === undefined ||
-    goal?.goalId !== details.goalId ||
-    goal.status !== "active" ||
-    isContextNearLimit
-  ) {
-    return null;
-  }
-
-  return {
-    ...message,
-    content: continuationPrompt(goal),
-    display: false,
-    details: { kind: "continuation", goalId: goal.goalId },
-  };
 }

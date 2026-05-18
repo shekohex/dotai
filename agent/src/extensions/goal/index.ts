@@ -8,18 +8,6 @@ import { emitNotifyPublish } from "../notify/index.js";
 import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { registerGoalCommand } from "./commands.js";
 import {
-  contextUsagePercent,
-  createGoalContextLimitState,
-  hasContextLimitWarningDelivered,
-  hasContextLimitWarningQueued,
-  isContextLimitWarningActive,
-  isContinuationContextNearLimit,
-  markContextLimitWarningDelivered,
-  markContextLimitWarningQueued,
-  resetGoalContextLimitState,
-  type GoalContextLimitState,
-} from "./context-limit.js";
-import {
   completionBudgetReport,
   formatDuration,
   formatFooterStatus,
@@ -29,25 +17,11 @@ import {
   assistantTurnTokens,
   isAbortedAssistantMessage,
   isToolUseAssistantMessage,
-  lastAssistantMessage,
   lastAssistantMessageText,
   type AssistantMessageLike,
 } from "./messages.js";
-import {
-  budgetLimitPrompt,
-  contextLimitCompactionInstructions,
-  contextLimitGoalIdFromPrompt,
-  contextLimitPrompt,
-  continuationGoalIdFromPrompt,
-  continuationPrompt,
-  staleContextLimitMessage,
-} from "./prompts.js";
-import {
-  maybeRewriteStaleContextLimitMessage,
-  parseQueuedGoalMessageDetails,
-  queuedGoalWorkMessageId,
-  staleGoalContinuationMessage,
-} from "./queued-messages.js";
+import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import { queuedGoalWorkMessageId, staleGoalContinuationMessage } from "./queued-messages.js";
 import {
   applyUsage,
   clearEntry,
@@ -69,7 +43,6 @@ interface GoalAccountingState {
   activeGoalId: string | null;
   lastAccountedAt: number | null;
   budgetWarningSentFor: string | null;
-  contextLimit: GoalContextLimitState;
 }
 
 interface GoalStatusContext {
@@ -77,6 +50,7 @@ interface GoalStatusContext {
 }
 
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
+const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
 const GOAL_TOOL_NAME = "goal";
 
 function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
@@ -123,7 +97,6 @@ class GoalRuntime {
     activeGoalId: null,
     lastAccountedAt: null,
     budgetWarningSentFor: null,
-    contextLimit: createGoalContextLimitState(),
   };
 
   constructor(private readonly pi: ExtensionAPI) {}
@@ -271,7 +244,6 @@ class GoalRuntime {
     this.goal = nextGoal;
     if (previousGoalId !== nextGoal.goalId) {
       this.accounting.budgetWarningSentFor = null;
-      resetGoalContextLimitState(this.accounting.contextLimit);
       this.clearStoppedRuntimeState();
     }
 
@@ -443,75 +415,12 @@ class GoalRuntime {
     );
   }
 
-  private compactForContextLimit(ctx: ExtensionContext): void {
-    const goal = this.goal;
-    if (goal === null) {
-      return;
-    }
-
-    this.isCompacting = true;
-    ctx.compact({
-      customInstructions: contextLimitCompactionInstructions(goal),
-      onError: () => {
-        this.isCompacting = false;
-      },
-    });
-  }
-
-  private maybeSendContextLimitWarning(ctx: ExtensionContext): boolean {
-    if (this.goal === null || this.goal.status !== "active" || this.isCompacting) {
-      return false;
-    }
-
-    const percent = contextUsagePercent(ctx);
-    if (percent === null || !isContextLimitWarningActive(ctx)) {
-      return false;
-    }
-
-    if (hasContextLimitWarningQueued(this.accounting.contextLimit, this.goal.goalId)) {
-      return true;
-    }
-
-    markContextLimitWarningQueued(this.accounting.contextLimit, this.goal.goalId);
-    this.pi.sendMessage(
-      {
-        customType: GOAL_EXTENSION_ENTRY_TYPE,
-        content: contextLimitPrompt(this.goal, percent),
-        display: false,
-        details: { kind: "context_limit", goalId: this.goal.goalId },
-      },
-      { triggerTurn: true, deliverAs: "steer" },
-    );
-    return true;
-  }
-
-  private maybeCompactForDeliveredContextLimitWarning(ctx: ExtensionContext): boolean {
-    if (this.goal === null || this.goal.status !== "active" || this.isCompacting) {
-      return false;
-    }
-
-    if (!isContextLimitWarningActive(ctx)) {
-      return false;
-    }
-
-    if (!hasContextLimitWarningDelivered(this.accounting.contextLimit, this.goal.goalId)) {
-      return false;
-    }
-
-    this.compactForContextLimit(ctx);
-    return true;
-  }
-
-  private maybeContinue(ctx: ExtensionContext, allowContextLimitSteering = true): void {
+  private maybeContinue(ctx: ExtensionContext): void {
     if (
       this.goal === null ||
       this.goal.status !== "active" ||
       this.continuationQueuedFor === this.goal.goalId
     ) {
-      return;
-    }
-
-    if (allowContextLimitSteering && this.maybeSendContextLimitWarning(ctx)) {
       return;
     }
 
@@ -544,7 +453,13 @@ class GoalRuntime {
   }
 
   private isContextNearLimit(ctx: ExtensionContext): boolean {
-    return isContinuationContextNearLimit(ctx);
+    const usage = ctx.getContextUsage();
+    const percent = usage?.percent;
+    if (percent === null || percent === undefined || !Number.isFinite(percent)) {
+      return false;
+    }
+
+    return percent >= CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT;
   }
 
   private async handleSessionStart(
@@ -576,37 +491,6 @@ class GoalRuntime {
     event: { prompt: string; systemPrompt: string },
     ctx: ExtensionContext,
   ): { systemPrompt: string } | undefined {
-    const contextLimitGoalId = contextLimitGoalIdFromPrompt(event.prompt);
-    if (contextLimitGoalId !== null) {
-      const isCurrentActiveNearLimit =
-        this.goal !== null &&
-        this.goal.goalId === contextLimitGoalId &&
-        this.goal.status === "active" &&
-        isContextLimitWarningActive(ctx);
-      if (isCurrentActiveNearLimit) {
-        markContextLimitWarningDelivered(this.accounting.contextLimit, contextLimitGoalId);
-        return undefined;
-      }
-
-      if (
-        this.goal !== null &&
-        this.goal.goalId === contextLimitGoalId &&
-        this.goal.status === "active"
-      ) {
-        return {
-          systemPrompt: [event.systemPrompt, "", continuationPrompt(this.goal)].join("\n"),
-        };
-      }
-
-      return {
-        systemPrompt: [
-          event.systemPrompt,
-          "",
-          staleContextLimitMessage(contextLimitGoalId, this.goal),
-        ].join("\n"),
-      };
-    }
-
     const continuationGoalId = continuationGoalIdFromPrompt(event.prompt);
     if (continuationGoalId === null) {
       this.clearContinuationState();
@@ -640,19 +524,6 @@ class GoalRuntime {
     this.refreshUi(ctx);
   }
 
-  private handleMessageStart(event: { message: { role: string; details?: unknown } }): void {
-    if (event.message.role !== "custom") {
-      return;
-    }
-
-    const details = parseQueuedGoalMessageDetails(event.message.details);
-    if (details?.kind !== "context_limit" || details.goalId === undefined) {
-      return;
-    }
-
-    markContextLimitWarningDelivered(this.accounting.contextLimit, details.goalId);
-  }
-
   private handleToolExecutionEnd(_event: object, ctx: ExtensionContext): void {
     this.accountProgress(ctx, true, 0, true);
   }
@@ -669,11 +540,7 @@ class GoalRuntime {
       return;
     }
 
-    if (this.maybeSendContextLimitWarning(ctx)) {
-      return;
-    }
-
-    this.maybeContinue(ctx, false);
+    this.maybeContinue(ctx);
   }
 
   private handleAgentEnd(event: { messages: AssistantMessageLike[] }, ctx: ExtensionContext): void {
@@ -688,22 +555,7 @@ class GoalRuntime {
       return;
     }
 
-    const finalAssistantMessage = lastAssistantMessage(event.messages);
-    if (finalAssistantMessage !== null && isToolUseAssistantMessage(finalAssistantMessage)) {
-      return;
-    }
-
-    // Compaction is only safe after the warning turn fully ends. turn_end may still be
-    // followed by tool calls, while agent_end means the agent really stopped.
-    if (this.maybeCompactForDeliveredContextLimitWarning(ctx)) {
-      return;
-    }
-
-    if (this.maybeSendContextLimitWarning(ctx)) {
-      return;
-    }
-
-    this.maybeContinue(ctx, false);
+    this.maybeContinue(ctx);
   }
 
   private handleSessionBeforeCompact(_event: object, ctx: ExtensionContext): void {
@@ -713,7 +565,6 @@ class GoalRuntime {
 
   private handleSessionCompact(_event: object, ctx: ExtensionContext): void {
     this.isCompacting = false;
-    resetGoalContextLimitState(this.accounting.contextLimit);
     if (this.goal !== null) {
       this.persistGoal(this.goal, "runtime");
     }
@@ -743,21 +594,11 @@ class GoalRuntime {
   }
 
   private registerEventHandlers(): void {
-    this.pi.on("context", (event, ctx) => {
+    this.pi.on("context", (event) => {
       let changed = false;
       const messages = event.messages.map((message) => {
         if (message.role !== "custom") {
           return message;
-        }
-
-        const rewrittenMessage = maybeRewriteStaleContextLimitMessage(
-          message,
-          this.goal,
-          isContextLimitWarningActive(ctx),
-        );
-        if (rewrittenMessage !== null) {
-          changed = true;
-          return rewrittenMessage;
         }
 
         const queuedGoalId = queuedGoalWorkMessageId(message);
@@ -801,9 +642,6 @@ class GoalRuntime {
     });
     this.pi.on("turn_start", (event, ctx) => {
       this.handleTurnStart(event, ctx);
-    });
-    this.pi.on("message_start", (event) => {
-      this.handleMessageStart(event);
     });
     this.pi.on("tool_execution_end", (event, ctx) => {
       this.handleToolExecutionEnd(event, ctx);

@@ -4,6 +4,7 @@ import {
   defaultOpenAIBetterSettings,
   getOpenAIBetterSettings,
   parseSupportedModelKey,
+  setOpenAIBetterFastEnabled,
   type OpenAIBetterSettings,
 } from "./settings.js";
 import { OPENAI_BETTER_STATUS_KEY, OPENAI_BETTER_UPDATED_EVENT } from "./types.js";
@@ -11,6 +12,7 @@ import { OPENAI_BETTER_STATUS_KEY, OPENAI_BETTER_UPDATED_EVENT } from "./types.j
 const COMMAND = "fast";
 const FLAG = "fast";
 const SERVICE_TIER = "priority";
+const LEGACY_FAST_SERVICE_TIER = "fast";
 
 function currentModelKey(ctx: ExtensionContext): string {
   return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
@@ -46,6 +48,20 @@ function isRequestPayload(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function normalizeFastServiceTier(value: unknown): typeof SERVICE_TIER | undefined {
+  return value === SERVICE_TIER || value === LEGACY_FAST_SERVICE_TIER ? SERVICE_TIER : undefined;
+}
+
+function applyFastServiceTier(payload: Record<string, unknown>): Record<string, unknown> {
+  const normalizedServiceTier = normalizeFastServiceTier(payload.service_tier);
+  if (normalizedServiceTier === SERVICE_TIER) {
+    return payload.service_tier === SERVICE_TIER
+      ? payload
+      : { ...payload, service_tier: normalizedServiceTier };
+  }
+  return { ...payload, service_tier: SERVICE_TIER };
+}
+
 export default function betterOpenAI(pi: ExtensionAPI): void {
   let desiredActive = false;
   let active = false;
@@ -72,6 +88,7 @@ export default function betterOpenAI(pi: ExtensionAPI): void {
   function setActive(ctx: ExtensionContext, next: boolean): void {
     const currentSettings = settings();
     desiredActive = next;
+    if (currentSettings.fast.persistState) setOpenAIBetterFastEnabled(next);
     applyDesiredFastState(ctx, currentSettings);
     refreshStatus(ctx);
     if (next && !active) {
@@ -147,7 +164,7 @@ export default function betterOpenAI(pi: ExtensionAPI): void {
     const shouldApplyFastMode = active && supportsFast(ctx, currentSettings.fast.supportedModels);
     const nextPayload =
       shouldApplyFastMode && isRequestPayload(event.payload)
-        ? { ...event.payload, service_tier: SERVICE_TIER }
+        ? applyFastServiceTier(event.payload)
         : undefined;
     return nextPayload;
   });
@@ -158,6 +175,9 @@ export const _test = {
   DEFAULT_CONFIG: defaultOpenAIBetterSettings,
   DEFAULT_IMAGE_CONFIG: defaultOpenAIBetterSettings.image,
   SERVICE_TIER,
+  LEGACY_FAST_SERVICE_TIER,
+  applyFastServiceTier,
+  normalizeFastServiceTier,
   parseModelKey: parseSupportedModelKey,
   supportsFast,
   imageTest: _imageTest,

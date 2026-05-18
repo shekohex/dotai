@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { getAgentRuntime } from "../interview/settings.js";
@@ -28,6 +28,8 @@ const AgentSettingsSchema = Type.Object({
   openaiBetter: Type.Optional(openAIBetterSettingsSchema),
 });
 
+const SettingsFileSchema = Type.Record(Type.String(), Type.Unknown());
+
 export type OpenAIBetterSettings = Static<typeof openAIBetterSettingsSchema>;
 
 export const defaultOpenAIBetterSettings = {
@@ -38,7 +40,9 @@ export const defaultOpenAIBetterSettings = {
       "codex-openai/gpt-5.4",
       "codex-openai/gpt-5.5",
       "codex-openai/gpt-5.4-mini",
-      "codex-openai/gpt-5.5-mini",
+      "openai-codex/gpt-5.4",
+      "openai-codex/gpt-5.5",
+      "openai-codex/gpt-5.4-mini",
     ],
   },
   image: {
@@ -60,6 +64,26 @@ export function getOpenAIBetterSettings(): OpenAIBetterSettings {
   const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
   if (!Value.Check(AgentSettingsSchema, parsed)) return defaultOpenAIBetterSettings;
   return Value.Parse(AgentSettingsSchema, parsed).openaiBetter ?? defaultOpenAIBetterSettings;
+}
+
+export function setOpenAIBetterFastEnabled(enabled: boolean): void {
+  const path = settingsPath();
+  const parsed = existsSync(path) ? (JSON.parse(readFileSync(path, "utf-8")) as unknown) : {};
+  const settingsFile = Value.Check(SettingsFileSchema, parsed) ? parsed : {};
+  const currentSettings = getOpenAIBetterSettings();
+  const nextSettings = {
+    ...settingsFile,
+    openaiBetter: {
+      ...currentSettings,
+      fast: {
+        ...currentSettings.fast,
+        enabled,
+      },
+    },
+  };
+
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(nextSettings, null, 2)}\n`, "utf-8");
 }
 
 export function parseSupportedModelKey(

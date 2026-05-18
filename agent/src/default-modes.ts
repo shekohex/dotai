@@ -15,7 +15,7 @@ export const defaultModes = {
   currentMode: "build",
   modes: {
     rush: {
-      provider: "codex-openai",
+      provider: "openai-codex",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       color: "warning",
@@ -35,7 +35,7 @@ export const defaultModes = {
         "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes.",
     },
     build: {
-      provider: "codex-openai",
+      provider: "openai-codex",
       modelId: "gpt-5.5",
       thinkingLevel: "low",
       color: "warning",
@@ -45,7 +45,7 @@ export const defaultModes = {
         "Use me when you want fast, capable model for day to day coding tasks, I'm the default mode.",
     },
     deep: {
-      provider: "codex-openai",
+      provider: "openai-codex",
       modelId: "gpt-5.5",
       thinkingLevel: "high",
       color: "warning",
@@ -55,7 +55,7 @@ export const defaultModes = {
         "Use me when you want the highest-quality help for complex implementation, debugging, and code review.",
     },
     review: {
-      provider: "codex-openai",
+      provider: "openai-codex",
       modelId: "gpt-5.5",
       thinkingLevel: "medium",
       color: "muted",
@@ -68,7 +68,7 @@ export const defaultModes = {
       systemPromptMode: "append",
     },
     commiter: {
-      provider: "codex-openai",
+      provider: "openai-codex",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "low",
       color: "muted",

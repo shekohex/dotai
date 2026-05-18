@@ -31,11 +31,11 @@ export type DefaultSettings = AgentSettings & {
 export const defaultMode = "build" as const satisfies AvailableModes;
 
 export const defaultSettings = {
-  defaultProvider: "codex-openai",
+  defaultProvider: "openai-codex",
   defaultModel: "gpt-5.5",
   hideThinkingBlock: true,
   defaultThinkingLevel: "low",
-  transport: "auto",
+  transport: "websocket-cached",
   quietStartup: true,
   editorPaddingX: 0,
   collapseChangelog: true,

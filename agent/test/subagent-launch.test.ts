@@ -185,14 +185,14 @@ describe("buildLaunchCommand", () => {
       {
         tmuxTarget: "window",
         modeName: "gsd-codebase-mapper",
-        model: "codex-openai/gpt-5.4-mini",
+        model: "openai-codex/gpt-5.4-mini",
         thinkingLevel: "high",
         systemPromptMode: "replace",
       },
     );
 
     expect(command).toContain("--mode-gsd-codebase-mapper=true");
-    expect(command).toContain("--model 'codex-openai/gpt-5.4-mini'");
+    expect(command).toContain("--model 'openai-codex/gpt-5.4-mini'");
     expect(command).toContain("--thinking 'high'");
   });
 

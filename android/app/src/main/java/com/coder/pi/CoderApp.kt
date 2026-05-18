@@ -13,7 +13,6 @@ import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.ViewGroup
-import android.net.Uri
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.core.RepeatMode
@@ -28,6 +27,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.http.HttpStatusCode
 import androidx.compose.foundation.BorderStroke
@@ -38,13 +39,13 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -157,7 +158,7 @@ data class UiTokens(
 
 fun Int.toComposeColor(): Color = Color(0xff000000.toInt() or this)
 
-private fun appTypography(fontFamily: FontFamily): Typography {
+fun appTypography(fontFamily: FontFamily): Typography {
     val base = Typography()
     return Typography(
         displayLarge = base.displayLarge.copy(fontFamily = fontFamily),
@@ -178,7 +179,7 @@ private fun appTypography(fontFamily: FontFamily): Typography {
     )
 }
 
-private fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
+fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
     (parent as? ViewGroup)?.removeView(this)
     return this
 }
@@ -207,6 +208,30 @@ fun CoderApp(
     val context = LocalContext.current
     val sessionStore = remember(context) { CoderSessionStore(context) }
     var networkAvailable by remember { mutableStateOf(true) }
+    DisposableEffect(context, terminalView, terminalSessions) {
+        val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                "themeMode", "themeName" -> {
+                    val nextTheme = CoderThemes.current(context)
+                    terminalView.applyTheme(nextTheme)
+                    terminalSessions.forEach { it.terminalView.applyTheme(nextTheme) }
+                }
+                "fontFamily" -> {
+                    val fontKey = CoderFonts.selectedKey(context)
+                    terminalView.setPreviewFontFamily(fontKey)
+                    terminalSessions.forEach { it.terminalView.setPreviewFontFamily(fontKey) }
+                }
+                "cellHeight", "cellWidth" -> {
+                    val points = (preferences.getInt("cellHeight", 36) / 2).coerceIn(8, 32)
+                    terminalView.setFontSizePoints(points)
+                    terminalSessions.forEach { it.terminalView.setFontSizePoints(points) }
+                }
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     LaunchedEffect(deepLinkRevision) {
         if (deepLinkSettingsPage != null) destination = AppDestination.SETTINGS
     }
@@ -276,8 +301,9 @@ fun CoderApp(
                     it.setFontFamily(CoderFonts.selectedKey(context))
                     it.applyTheme(theme)
                 }
-                val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, null)
+                val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null)
                 terminalSessions.add(managed)
+                if (metadata.detached) return@forEach
                 val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
                     sessionStore.appendDebugLog("terminal ${launch.title} $status")
                     val index = terminalSessions.indexOfFirst { it.id == id }
@@ -292,6 +318,48 @@ fun CoderApp(
                 terminalSession.start()
             }
         }
+        LaunchedEffect(sessionKey) {
+            while (true) {
+                delay(2_000)
+                val metadataById = sessionStore.activeTerminals(session.baseUrl, session.user.id).associateBy { metadata ->
+                    terminalSessionKey(TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command))
+                }
+                terminalSessions.removeAll { managed -> managed.id !in metadataById.keys }
+                metadataById.forEach { (id, metadata) ->
+                    if (terminalSessions.any { it.id == id }) return@forEach
+                    val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, metadata.workspaceName, metadata.agentName)
+                    val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
+                    val nextTerminalView = CoderTerminalView(context).also {
+                        it.setFontFamily(CoderFonts.selectedKey(context))
+                        it.applyTheme(theme)
+                    }
+                    terminalSessions.add(ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null))
+                }
+                terminalSessions.forEachIndexed { index, managed ->
+                    val metadata = metadataById[managed.id] ?: return@forEachIndexed
+                    val previewLines = metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5)
+                    if (!metadata.detached && managed.session == null) {
+                        val terminalSession = CoderTerminalSession(CoderApi(session.baseUrl, session.token), managed.terminalView, managed.launch.agentId, managed.launch.reconnectId, managed.launch.command, { status ->
+                            sessionStore.appendDebugLog("terminal ${managed.launch.title} $status")
+                            val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
+                            if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
+                        }, { safeError ->
+                            val errorIndex = terminalSessions.indexOfFirst { it.id == managed.id }
+                            if (errorIndex >= 0) terminalSessions[errorIndex] = terminalSessions[errorIndex].copy(errorDetail = safeError)
+                            safeError?.let { sessionStore.appendDebugLog("terminal ${managed.launch.title} error $it") }
+                        })
+                        terminalSessions[index] = managed.copy(session = terminalSession, previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis, detached = false)
+                        terminalSession.start()
+                        return@forEachIndexed
+                    }
+                    terminalSessions[index] = managed.copy(
+                        previewLines = previewLines,
+                        updatedAtMillis = metadata.updatedAtMillis,
+                        detached = metadata.detached,
+                    )
+                }
+            }
+        }
     }
     HapticTarget.view = LocalContext.current.findActivityView()
     HapticTarget.enabled = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true) }
@@ -303,12 +371,12 @@ fun CoderApp(
                     AuthState.Loading -> LoadingScreen(tokens)
                     AuthState.LoggedOut -> LoginScreen(tokens) { baseUrl ->
                         authState = AuthState.TokenInput(baseUrl)
-                        CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(baseUrl.trimEnd('/') + "/cli-auth"))
+                        CustomTabsIntent.Builder().build().launchUrl(context, (baseUrl.trimEnd('/') + "/cli-auth").toUri())
                     }
                     is AuthState.TokenInput -> {
                         BackHandler { authState = AuthState.LoggedOut }
                         TokenScreen(tokens, state.baseUrl, { baseUrl ->
-                            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(baseUrl.trimEnd('/') + "/cli-auth"))
+                            CustomTabsIntent.Builder().build().launchUrl(context, (baseUrl.trimEnd('/') + "/cli-auth").toUri())
                         }) { baseUrl, token ->
                             val api = CoderApi(baseUrl, token)
                             runCatching { api.me() }.onSuccess { user ->
@@ -324,6 +392,7 @@ fun CoderApp(
                         tokens = tokens,
                         sessionStore = sessionStore,
                         onSessionExpired = {
+                            TerminalActivity.finishDetachedTerminals(state.session.baseUrl, state.session.user.id)
                         sessionStore.clearSession()
                         sessionStore.clearActiveTerminals(state.session.baseUrl, state.session.user.id)
                         terminalSessions.forEach { it.session?.stop() }
@@ -339,9 +408,14 @@ fun CoderApp(
                             val now = System.currentTimeMillis()
                             val index = terminalSessions.indexOfFirst { session -> session.id == it.id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(updatedAtMillis = now)
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n")))
-                            selectedTerminalId = it.id
-                            terminalUiMode = TerminalUiMode.SHEET
+                            val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached))
+                            if (detached) {
+                                TerminalWindowLauncher.open(context, it.launch, it.identity)
+                            } else {
+                                selectedTerminalId = it.id
+                                terminalUiMode = TerminalUiMode.SHEET
+                            }
                         },
                         onCloseTerminal = {
                             confirmCloseTerminalId = it.id
@@ -352,8 +426,12 @@ fun CoderApp(
                             val identity = TerminalIdentity(state.session.baseUrl, state.session.user.id, workspace.id, agent.id, command)
                             val id = terminalSessionKey(identity)
                             terminalSessions.firstOrNull { it.id == id }?.let {
-                                selectedTerminalId = it.id
-                                terminalUiMode = TerminalUiMode.SHEET
+                                if (sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)) {
+                                    TerminalWindowLauncher.open(context, it.launch, it.identity)
+                                } else {
+                                    selectedTerminalId = it.id
+                                    terminalUiMode = TerminalUiMode.SHEET
+                                }
                                 return@CoderHomeScreen
                             }
                             if (terminalSessions.size >= MaxActiveTerminalSessions) {
@@ -365,7 +443,7 @@ fun CoderApp(
                                 it.applyTheme(theme)
                             }
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis()))
-                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis(), null)
+                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis(), false, null)
                             terminalSessions.add(managed)
                             val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
                                 sessionStore.appendDebugLog("terminal ${launch.title} $status")
@@ -401,13 +479,14 @@ fun CoderApp(
                 val selectSession: (Int) -> Unit = { index -> terminalSessions.getOrNull(index)?.let {
                         val now = System.currentTimeMillis()
                         terminalSessions[index] = it.copy(updatedAtMillis = now)
-                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n")))
+                        val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
+                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached))
                         selectedTerminalId = it.id
                     } }
                 val retry: () -> Unit = {
                         val launch = managed.launch
                         managed.session?.stop()
-                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis()))
+                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached))
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
                         val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), managed.terminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
@@ -458,6 +537,16 @@ fun CoderApp(
                         onEnterCarousel = { if (terminalSessions.size > 1) { onHideKeyboard(); terminalUiMode = TerminalUiMode.CAROUSEL } },
                         onRetry = retry,
                         onDismiss = dismiss,
+                        onDetach = {
+                            val index = terminalSessions.indexOfFirst { it.id == managed.id }
+                            managed.session?.stop()
+                            managed.terminalView.detachFromCurrentParent()
+                            if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = null, detached = true, updatedAtMillis = System.currentTimeMillis())
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true))
+                            selectedTerminalId = null
+                            onHideKeyboard()
+                            TerminalWindowLauncher.open(context, managed.launch, managed.identity)
+                        },
                         onShowKeyboard = { onShowKeyboard(managed.terminalView) },
                         onHideKeyboard = onHideKeyboard,
                     )
@@ -488,7 +577,7 @@ data class TerminalLaunchRequest(val baseUrl: String, val token: String, val age
 
 data class TerminalIdentity(val baseUrl: String, val userId: String, val workspaceId: String, val agentId: String, val command: String)
 
-private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val terminalView: CoderTerminalView, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val errorDetail: String?)
+private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val terminalView: CoderTerminalView, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val detached: Boolean, val errorDetail: String?)
 
 private const val MaxActiveTerminalSessions = 10
 
@@ -652,6 +741,7 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
         ) {
             item { CoderHeaderActions("Workspaces", tokens, metrics, onOpenSettings) }
             if (lastRefreshedAt > 0L || refreshInFlight) item { Text(if (refreshInFlight) "Refreshing..." else "Updated ${relativeSessionTime(lastRefreshedAt)}", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 4.dp)) }
+            if (refreshInFlight) item { CoderShimmerBox(tokens, Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 6.dp).height(3.dp).clip(RoundedCornerShape(3.dp))) }
             item { ActiveCoderSessionSection(activeTerminals, sessionStore, tokens, metrics, onResumeTerminal, onCloseTerminal) }
             if (error != null) item { Text(error ?: "", color = tokens.accent, modifier = Modifier.padding(horizontal = spacingLarge())) }
             if (loadingWorkspaces && workspaces.isEmpty()) item { WorkspaceLoadingSection(tokens, metrics) }
@@ -732,7 +822,7 @@ private fun ActiveCoderSessionSection(activeTerminals: List<ManagedTerminalSessi
 }
 
 @Composable
-private fun connectionHostLabel(baseUrl: String): String = runCatching { Uri.parse(baseUrl).host ?: baseUrl.removePrefix("https://").removePrefix("http://") }.getOrDefault(baseUrl)
+private fun connectionHostLabel(baseUrl: String): String = runCatching { baseUrl.toUri().host ?: baseUrl.removePrefix("https://").removePrefix("http://") }.getOrDefault(baseUrl)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -754,7 +844,8 @@ private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, sessionStore
                 relativeTime = relativeSessionTime(updatedAtMillis)
                 previewLines = lines
                 val launch = managed.launch
-                sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, updatedAtMillis, lines.joinToString("\n")))
+                val detached = sessionStore.isActiveTerminalDetached(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.identity.agentId, managed.identity.command)
+                sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, updatedAtMillis, lines.joinToString("\n"), detached))
             } else {
                 relativeTime = relativeSessionTime(updatedAtMillis)
             }
@@ -990,34 +1081,7 @@ private fun TerminalPane(
     onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
-    var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
-    val context = LocalContext.current
-    Column(Modifier.fillMaxSize().background(theme.background.toComposeColor()).imePadding()) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(
-                factory = { terminalView.detachFromCurrentParent() },
-                modifier = Modifier.fillMaxSize(),
-                update = { it.applyTheme(theme) },
-            )
-            TerminalPinchFontOverlay(terminalView)
-            TerminalSelectionOverlay(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), selection, { selection = it }) {
-                val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
-                if (selectedText.isNotBlank()) {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
-                    selection = null
-                }
-            }
-        }
-        TerminalAccessory(theme, terminalView, selection != null, false, {}, {
-            val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
-            if (selectedText.isNotBlank()) {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
-                selection = null
-            }
-        }, { selection = null }, { onShowKeyboard(terminalView) }, onHideKeyboard)
-    }
+    TerminalSurface(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), false, {}, { onShowKeyboard(terminalView) }, onHideKeyboard, Modifier.fillMaxSize().imePadding())
 }
 
 @Composable
@@ -1279,30 +1343,50 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
 }
 
 @Composable
-private fun TerminalPinchFontOverlay(terminalView: CoderTerminalView) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(terminalView, terminalView.gestureEnabled("pinch_font_size")) {
-                if (!terminalView.gestureEnabled("pinch_font_size")) return@pointerInput
-                var accumulatedZoom = 1f
-                detectTransformGestures { _, _, zoom, _ ->
-                    accumulatedZoom *= zoom
-                    when {
-                        accumulatedZoom >= 1.12f -> {
-                            terminalView.adjustFontSize(1)
-                            accumulatedZoom = 1f
-                            hapticClick()
-                        }
-                        accumulatedZoom <= 0.88f -> {
-                            terminalView.adjustFontSize(-1)
-                            accumulatedZoom = 1f
-                            hapticClick()
-                        }
-                    }
-                }
-            }
-    )
+fun TerminalPinchFontOverlay(terminalView: CoderTerminalView) {
+}
+
+@Composable
+fun TerminalSurface(
+    terminalView: CoderTerminalView,
+    theme: CoderTheme,
+    selectionEnabled: Boolean,
+    carouselSwipeEnabled: Boolean,
+    onCarouselSwipe: () -> Unit,
+    onShowKeyboard: () -> Unit,
+    onHideKeyboard: () -> Unit,
+    modifier: Modifier = Modifier,
+    statusContent: @Composable BoxScope.() -> Unit = {},
+) {
+    var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
+    val context = LocalContext.current
+    fun copySelection() {
+        val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
+        if (selectedText.isNotBlank()) {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
+            selection = null
+        }
+    }
+    Column(modifier.background(theme.background.toComposeColor())) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            AndroidView(
+                factory = { terminalView.detachFromCurrentParent() },
+                modifier = Modifier.fillMaxSize(),
+                update = {
+                    it.applyTheme(theme)
+                    it.post { it.refreshSurface() }
+                },
+            )
+            TerminalPinchFontOverlay(terminalView)
+            TerminalSelectionOverlay(terminalView, theme, selectionEnabled, selection, {
+                if (it != null && selection == null) onHideKeyboard()
+                selection = it
+            }) { copySelection() }
+            statusContent()
+        }
+        TerminalAccessory(theme, terminalView, selection != null, carouselSwipeEnabled, onCarouselSwipe, { copySelection() }, { selection = null }, onShowKeyboard, onHideKeyboard)
+    }
 }
 
 @Composable
@@ -1322,16 +1406,15 @@ private fun CoderTerminalBottomSheet(
     onEnterCarousel: () -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    onDetach: () -> Unit,
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var sheetHeightFraction by remember { mutableFloatStateOf(0f) }
     var sheetClosing by remember { mutableStateOf(false) }
-    var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
     val scope = rememberCoroutineScope()
     val swipeSessionSwitch = terminalView.gestureEnabled("swipe_session_switch")
-    val context = LocalContext.current
     val sessionSwipeModifier = if (swipeSessionSwitch) Modifier.pointerInput(sessionCount, selectedSessionIndex) { detectManagedSessionSwipe(sessionCount, selectedSessionIndex, onSelectSession) } else Modifier
     val density = LocalDensity.current.density
     val animatedSheetHeightFraction by animateFloatAsState(if (sheetClosing) 0f else if (expanded) 1f else sheetHeightFraction, animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f), label = "terminal-sheet-height")
@@ -1388,7 +1471,7 @@ private fun CoderTerminalBottomSheet(
             Row(Modifier.fillMaxWidth().height(38.dp).then(sessionSwipeModifier).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xffffcc00)).clickable { hapticClick(); closeSheet() })
                 Spacer(Modifier.width(8.dp))
-                Box(Modifier.size(18.dp).clip(CircleShape).background(tokens.accent).clickable { hapticClick(); expanded = !expanded })
+                Box(Modifier.size(18.dp).clip(CircleShape).background(tokens.accent).clickable { hapticClick(); onDetach() })
                 Spacer(Modifier.width(14.dp))
                 Text(title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f).clickable(enabled = sessionCount > 1) { hapticClick(); onEnterCarousel() })
                 if (sessionLabel != null) {
@@ -1400,17 +1483,16 @@ private fun CoderTerminalBottomSheet(
                     Text("offline", color = Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                AndroidView(factory = { terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme); it.post { it.refreshSurface() } })
-                TerminalPinchFontOverlay(terminalView)
-                TerminalSelectionOverlay(terminalView, theme, terminalView.gestureEnabled("long_press_selection") && !terminalStatusIsRecoverable(status), selection, { selection = it }) {
-                    val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
-                    if (selectedText.isNotBlank()) {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
-                        selection = null
-                    }
-                }
+            TerminalSurface(
+                terminalView = terminalView,
+                theme = theme,
+                selectionEnabled = terminalView.gestureEnabled("long_press_selection") && !terminalStatusIsRecoverable(status),
+                carouselSwipeEnabled = sessionCount > 1,
+                onCarouselSwipe = onEnterCarousel,
+                onShowKeyboard = onShowKeyboard,
+                onHideKeyboard = onHideKeyboard,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 if (terminalStatusIsRecoverable(status)) {
                     Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(tokens.background.copy(alpha = 0.92f)).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (terminalStatusFromWireName(status) == TerminalConnectionStatus.Failed) "Terminal failed" else "Terminal disconnected", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
@@ -1426,14 +1508,6 @@ private fun CoderTerminalBottomSheet(
                     }
                 }
             }
-            TerminalAccessory(theme, terminalView, selection != null, sessionCount > 1, onEnterCarousel, {
-                val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
-                if (selectedText.isNotBlank()) {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
-                    selection = null
-                }
-            }, { selection = null }, onShowKeyboard, onHideKeyboard)
         }
     }
 }
@@ -1619,7 +1693,7 @@ private fun NativeSessionSwitcher(titles: List<String>, selectedIndex: Int, toke
 }
 
 @Composable
-private fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, carouselSwipeEnabled: Boolean, onCarouselSwipe: () -> Unit, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
+fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, carouselSwipeEnabled: Boolean, onCarouselSwipe: () -> Unit, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit) {
     var chatMode by remember { mutableStateOf(false) }
     var themeLabel by remember(theme.name) { mutableStateOf(CoderThemes.modeLabel(terminalView.context)) }
     var shiftActive by remember { mutableStateOf(false) }
@@ -1794,7 +1868,7 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Haptic Feedback", hapticFeedback, tokens) {
                 hapticFeedback = it
                 HapticTarget.enabled = it
-                context.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putBoolean("haptic_feedback", it).apply()
+                context.getSharedPreferences("app", Context.MODE_PRIVATE).edit { putBoolean("haptic_feedback", it) }
             }
         }
         SettingsSection("INPUT", tokens) {
@@ -1810,8 +1884,8 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             SettingsValueRow(R.drawable.ic_feather_terminal, "Shell", null, null, tokens, pro = true, chevron = true) { onPlaceholder("Shell") }
         }
         SettingsSection("SECURITY & SYNC", tokens) {
-            SettingsToggleRow(R.drawable.ic_feather_shield, "File Sync", fileSync, tokens) { fileSync = it; appPreferences.edit().putBoolean("file_sync", it).apply() }
-            SettingsToggleRow(R.drawable.ic_feather_shield, "Sync Credentials", syncCredentials, tokens) { syncCredentials = it; appPreferences.edit().putBoolean("sync_credentials", it).apply() }
+            SettingsToggleRow(R.drawable.ic_feather_shield, "File Sync", fileSync, tokens) { fileSync = it; appPreferences.edit { putBoolean("file_sync", it) } }
+            SettingsToggleRow(R.drawable.ic_feather_shield, "Sync Credentials", syncCredentials, tokens) { syncCredentials = it; appPreferences.edit { putBoolean("sync_credentials", it) } }
             SettingsValueRow(R.drawable.ic_feather_folder, "Sync Folder", null, "Not Set", tokens, chevron = true) { onPlaceholder("Sync Folder") }
         }
         SettingsSection("GENERAL", tokens) { SettingsValueRow(R.drawable.ic_feather_globe, "Language", null, "Auto", tokens, chevron = true) { onPlaceholder("Language") } }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import androidx.annotation.RawRes
+import androidx.core.content.edit
 
 enum class CoderThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -81,7 +82,7 @@ object CoderThemes {
             CoderThemeMode.LIGHT -> "light"
             CoderThemeMode.DARK -> "dark"
         }
-        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putString("themeMode", value).apply()
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("themeMode", value) }
     }
 
     fun selectedThemeName(context: Context): String {
@@ -103,7 +104,7 @@ object CoderThemes {
 
     fun setSelectedTheme(context: Context, option: CoderThemeOption) {
         setMode(context, option.mode)
-        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putString("themeName", option.name).apply()
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("themeName", option.name) }
     }
 
     fun nextMode(context: Context): CoderThemeMode {

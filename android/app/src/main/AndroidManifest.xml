@@ -32,6 +32,13 @@
                 <data android:scheme="pi" android:host="debug" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".TerminalActivity"
+            android:documentLaunchMode="intoExisting"
+            android:excludeFromRecents="false"
+            android:exported="false"
+            android:launchMode="standard"
+            android:taskAffinity="" />
     </application>
 
 </manifest>

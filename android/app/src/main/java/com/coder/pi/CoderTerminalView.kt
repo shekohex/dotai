@@ -14,6 +14,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.InputConnection
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
 import java.lang.ref.WeakReference
@@ -39,6 +40,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var smoothScrollVelocityPixelsPerMillis = 0f
     private var smoothScrollLastEventMillis = 0L
     private var mouseTrackingTouch = false
+    private var pinchDistance = 0f
+    private var pinchAccumulatedZoom = 1f
     private var shiftLatch = false
     private var ctrlLatch = false
     private var altLatch = false
@@ -128,6 +131,32 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     override fun onTouchEvent(event: MotionEvent): Boolean {
         requestFocus()
         if (!gestureEnabled("drag_scroll")) return super.onTouchEvent(event)
+        if (event.pointerCount >= 2 && gestureEnabled("pinch_font_size")) {
+            val distance = pointerDistance(event)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
+                    pinchDistance = distance
+                    pinchAccumulatedZoom = 1f
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (pinchDistance > 0f && distance > 0f) {
+                        pinchAccumulatedZoom *= distance / pinchDistance
+                        pinchDistance = distance
+                        when {
+                            pinchAccumulatedZoom >= 1.12f -> {
+                                adjustFontSize(1)
+                                pinchAccumulatedZoom = 1f
+                            }
+                            pinchAccumulatedZoom <= 0.88f -> {
+                                adjustFontSize(-1)
+                                pinchAccumulatedZoom = 1f
+                            }
+                        }
+                    }
+                }
+            }
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = event.x
@@ -178,6 +207,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                pinchDistance = 0f
+                pinchAccumulatedZoom = 1f
                 if (mouseTrackingTouch) {
                     if (mouseTouchMoved) endSmoothScrollGesture() else {
                         sendMouseEvent(0, mouseTouchStartX, mouseTouchStartY, 1, event.metaState)
@@ -192,6 +223,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun pointerDistance(event: MotionEvent): Float {
+        if (event.pointerCount < 2) return 0f
+        val deltaX = event.getX(0) - event.getX(1)
+        val deltaY = event.getY(0) - event.getY(1)
+        return sqrt(deltaX * deltaX + deltaY * deltaY)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

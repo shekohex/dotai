@@ -2,6 +2,7 @@ package com.coder.pi
 
 import android.graphics.Color
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.WindowManager
@@ -27,6 +28,8 @@ class MainActivity : AppCompatActivity() {
     private var deepLinkRevision by mutableIntStateOf(0)
     private var debugPlaygroundRevision by mutableIntStateOf(0)
     private var keyboardTerminalView: CoderTerminalView? = null
+    private var terminalPreferences: SharedPreferences? = null
+    private var terminalPreferencesListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,6 +39,19 @@ class MainActivity : AppCompatActivity() {
         currentTheme = CoderThemes.current(this)
         handleDeepLink(intent)
         terminalView = CoderTerminalView(this)
+        terminalPreferences = getSharedPreferences("terminal", MODE_PRIVATE)
+        terminalPreferencesListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                "themeMode", "themeName" -> {
+                    currentTheme = CoderThemes.current(this)
+                    terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
+                    applySystemBars(currentTheme ?: CoderThemes.current(this))
+                }
+                "fontFamily" -> terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
+                "cellHeight", "cellWidth" -> terminalView.setFontSizePoints((getSharedPreferences("terminal", MODE_PRIVATE).getInt("cellHeight", 36) / 2).coerceIn(8, 32))
+            }
+        }
+        terminalPreferences?.registerOnSharedPreferenceChangeListener(terminalPreferencesListener)
         applySystemBars(currentTheme ?: CoderThemes.current(this))
         setContent {
             val context = LocalContext.current
@@ -138,6 +154,15 @@ class MainActivity : AppCompatActivity() {
         if (hasFocus) WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
     }
 
+    override fun onResume() {
+        super.onResume()
+        currentTheme = CoderThemes.current(this)
+        terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
+        terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
+        terminalView.setFontSizePoints((getSharedPreferences("terminal", MODE_PRIVATE).getInt("cellHeight", 36) / 2).coerceIn(8, 32))
+        applySystemBars(currentTheme ?: CoderThemes.current(this))
+    }
+
     private fun luminance(rgb: Int): Double {
         val r = ((rgb shr 16) and 0xff) / 255.0
         val g = ((rgb shr 8) and 0xff) / 255.0
@@ -146,6 +171,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        terminalPreferencesListener?.let { terminalPreferences?.unregisterOnSharedPreferenceChangeListener(it) }
         terminalView.dispose()
         super.onDestroy()
     }

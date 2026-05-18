@@ -102,6 +102,7 @@ class CoderSessionStore(context: Context) {
             putString("$prefix.reconnect_id", metadata.reconnectId)
             putLong("$prefix.updated_at", metadata.updatedAtMillis)
             putString("$prefix.preview", safePreviewText(metadata.preview).take(600))
+            putBoolean("$prefix.detached", metadata.detached)
         }
     }
 
@@ -119,9 +120,21 @@ class CoderSessionStore(context: Context) {
                 reconnectId = localPreferences.getString("$prefix.reconnect_id", null) ?: return@mapNotNull null,
                 updatedAtMillis = localPreferences.getLong("$prefix.updated_at", 0L),
                 preview = localPreferences.getString("$prefix.preview", "").orEmpty(),
+                detached = localPreferences.getBoolean("$prefix.detached", false),
             )
             metadata.takeIf { it.baseUrl == baseUrl && it.userId == userId && now - it.updatedAtMillis <= ttlMillis }
         }.sortedByDescending { it.updatedAtMillis }
+    }
+
+    fun updateActiveTerminalDetached(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String, detached: Boolean) {
+        val prefix = activeTerminalStorageKey(baseUrl, userId, workspaceId, agentId, command)
+        if (!activeTerminalKeys().contains(prefix)) return
+        localPreferences.edit { putBoolean("$prefix.detached", detached).putLong("$prefix.updated_at", System.currentTimeMillis()) }
+    }
+
+    fun isActiveTerminalDetached(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String): Boolean {
+        val prefix = activeTerminalStorageKey(baseUrl, userId, workspaceId, agentId, command)
+        return activeTerminalKeys().contains(prefix) && localPreferences.getBoolean("$prefix.detached", false)
     }
 
     fun removeActiveTerminal(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) {
@@ -139,6 +152,7 @@ class CoderSessionStore(context: Context) {
             remove("$prefix.reconnect_id")
             remove("$prefix.updated_at")
             remove("$prefix.preview")
+            remove("$prefix.detached")
         }
     }
 

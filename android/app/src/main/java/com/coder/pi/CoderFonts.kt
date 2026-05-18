@@ -6,6 +6,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.core.content.edit
 import java.io.File
 
 data class CoderFontOption(
@@ -68,7 +69,7 @@ object CoderFonts {
     }
 
     fun setSelected(context: Context, key: String) {
-        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putString("fontFamily", key).apply()
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("fontFamily", key) }
         if (uiMatchesTerminal(context)) setSelectedUi(context, key)
     }
 
@@ -82,13 +83,13 @@ object CoderFonts {
     }
 
     fun setSelectedUi(context: Context, key: String) {
-        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putString("uiFontFamily", key).apply()
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("uiFontFamily", key) }
     }
 
     fun uiMatchesTerminal(context: Context): Boolean = context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("matchUiTerminalFont", true)
 
     fun setUiMatchesTerminal(context: Context, enabled: Boolean) {
-        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit().putBoolean("matchUiTerminalFont", enabled).apply()
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putBoolean("matchUiTerminalFont", enabled) }
         if (enabled) setSelectedUi(context, selectedKey(context))
     }
 

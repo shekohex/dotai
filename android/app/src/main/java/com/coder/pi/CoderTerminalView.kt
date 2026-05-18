@@ -8,6 +8,7 @@ import android.util.AttributeSet
 import android.text.InputType
 import android.view.MotionEvent
 import android.view.KeyEvent
+import android.view.ViewConfiguration
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -28,6 +29,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var surfaceHeight = 0
     private var lastTouchX = 0f
     private var lastTouchY = 0f
+    private var mouseTouchStartX = 0f
+    private var mouseTouchStartY = 0f
+    private var mouseTouchMoved = false
     private var accumulatedScrollY = 0f
     private var smoothScrollAnimator: ValueAnimator? = null
     private var smoothScrollPendingPixels = 0f
@@ -40,6 +44,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var altLatch = false
     private var softwareKeyboardAllowed = false
     private var remoteInput: ((ByteArray) -> Unit)? = null
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val pendingRemoteOutput = mutableListOf<ByteArray>()
     var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
@@ -125,18 +130,40 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (!gestureEnabled("drag_scroll")) return super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                mouseTrackingTouch = sendMouseEvent(0, event.x, event.y, 1, event.metaState)
-                if (mouseTrackingTouch) return true
                 lastTouchX = event.x
                 lastTouchY = event.y
                 accumulatedScrollY = 0f
                 beginSmoothScrollGesture()
+                if (terminalMouseTrackingActive()) {
+                    mouseTrackingTouch = true
+                    mouseTouchStartX = event.x
+                    mouseTouchStartY = event.y
+                    mouseTouchMoved = false
+                    return true
+                }
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (mouseTrackingTouch) return sendMouseEvent(2, event.x, event.y, 1, event.metaState)
-                lastTouchX = event.x
                 val deltaY = event.y - lastTouchY
+                if (mouseTrackingTouch) {
+                    val distanceX = event.x - mouseTouchStartX
+                    val distanceY = event.y - mouseTouchStartY
+                    if (mouseTouchMoved || distanceX * distanceX + distanceY * distanceY > touchSlop * touchSlop) {
+                        mouseTouchMoved = true
+                        lastTouchX = event.x
+                        lastTouchY = event.y
+                        if (smoothScrollEnabled()) scrollPixels(deltaY) else {
+                            accumulatedScrollY += deltaY
+                            val rows = (accumulatedScrollY / cellHeight).toInt()
+                            if (rows != 0) {
+                                scrollRows(-rows)
+                                accumulatedScrollY -= rows * cellHeight
+                            }
+                        }
+                    }
+                    return true
+                }
+                lastTouchX = event.x
                 lastTouchY = event.y
                 if (smoothScrollEnabled()) {
                     scrollPixels(deltaY)
@@ -152,8 +179,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (mouseTrackingTouch) {
-                    sendMouseEvent(1, event.x, event.y, 1, event.metaState)
+                    if (mouseTouchMoved) endSmoothScrollGesture() else {
+                        sendMouseEvent(0, mouseTouchStartX, mouseTouchStartY, 1, event.metaState)
+                        sendMouseEvent(1, event.x, event.y, 1, event.metaState)
+                    }
                     mouseTrackingTouch = false
+                    mouseTouchMoved = false
                     return true
                 }
                 endSmoothScrollGesture()

@@ -1097,20 +1097,82 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val startOffset = down.position
                         if (terminalView.terminalMouseTrackingActive()) {
-                            terminalView.sendTerminalMouseEvent(0, startOffset.x, startOffset.y)
-                            down.consume()
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
-                                when {
-                                    event.changes.all { it.changedToUpIgnoreConsumed() } -> {
-                                        terminalView.sendTerminalMouseEvent(1, change.position.x, change.position.y)
-                                        change.consume()
-                                        break
+                            var lastPosition = startOffset
+                            var moved = false
+                            var released = false
+                            val longPressed = enabled && withTimeoutOrNull(280L) {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull() ?: return@withTimeoutOrNull false
+                                    lastPosition = change.position
+                                    if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
+                                        released = true
+                                        return@withTimeoutOrNull false
                                     }
-                                    change.position != change.previousPosition -> {
-                                        terminalView.sendTerminalMouseEvent(2, change.position.x, change.position.y)
-                                        change.consume()
+                                    if ((change.position - startOffset).getDistance() > viewConfiguration.touchSlop) {
+                                        moved = true
+                                        return@withTimeoutOrNull false
+                                    }
+                                }
+                            } == null
+                            when {
+                                longPressed -> {
+                                    val start = terminalView.cellAt(startOffset.x, startOffset.y)
+                                    var dragged = false
+                                    onSelectionChange(terminalView.wordRangeAt(start))
+                                    hapticClick()
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.all { it.changedToUpIgnoreConsumed() }) break
+                                        event.changes.forEach { change ->
+                                            dragged = true
+                                            onSelectionChange(TerminalSelectionRange(start, terminalView.cellAt(change.position.x, change.position.y)))
+                                            change.consume()
+                                        }
+                                    }
+                                    if (dragged && terminalView.copyOnSelectEnabled()) onCopy()
+                                }
+                                released -> {
+                                    terminalView.sendTerminalMouseEvent(0, startOffset.x, startOffset.y)
+                                    terminalView.sendTerminalMouseEvent(1, lastPosition.x, lastPosition.y)
+                                }
+                                moved -> {
+                                    var lastY = startOffset.y
+                                    var accumulatedScrollY = 0f
+                                    val rowHeight = terminalView.scrollRowHeight().toFloat()
+                                    terminalView.beginSmoothScrollGesture()
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull() ?: break
+                                        if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
+                                            terminalView.endSmoothScrollGesture()
+                                            break
+                                        }
+                                        val deltaY = change.position.y - lastY
+                                        lastY = change.position.y
+                                        if (terminalView.smoothScrollEnabled()) {
+                                            terminalView.scrollPixels(deltaY)
+                                            change.consume()
+                                            continue
+                                        }
+                                        accumulatedScrollY += deltaY
+                                        val rows = (accumulatedScrollY / rowHeight).toInt()
+                                        if (rows != 0) {
+                                            terminalView.scrollRows(-rows)
+                                            accumulatedScrollY -= rows * rowHeight
+                                            change.consume()
+                                        }
+                                    }
+                                }
+                                else -> {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull() ?: break
+                                        if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
+                                            terminalView.sendTerminalMouseEvent(0, startOffset.x, startOffset.y)
+                                            terminalView.sendTerminalMouseEvent(1, change.position.x, change.position.y)
+                                            break
+                                        }
                                     }
                                 }
                             }

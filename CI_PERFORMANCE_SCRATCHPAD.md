@@ -55,7 +55,8 @@ Workflows measured:
 | 6 | Increase GitHub Actions Vitest workers to 8 after local worker sweep | 193s | 100s actual run, 180s rolling avg | 72s | 59s actual run, 62s rolling avg | Real CI, Release Please, Release passed |
 | 7 | Cache generated Plannotator resources and skip UI rebuild on cache hit | 180s | 114s actual run, 154s rolling avg | 62s | 41s actual run, 49s rolling avg | Real CI, Release Please, Release passed; first run populated cache |
 | 8 | Ignore in-progress runs in measurement script and verify Plannotator cache-hit CI path | 154s | 64s actual run, 134s rolling avg | 49s | 31s actual run, 39s rolling avg | Real CI, Release Please, Release passed; CI near target |
-| 9 | Disable audit/fund/progress during smoke global install | 134s | Pending CI run | 39s | Pending release run | Local verification pending |
+| 9 | Disable audit/fund/progress during smoke global install | 134s | 50s actual run, 95s rolling avg | 39s | 29s actual run, 37s rolling avg | Real CI, Release Please, Release passed; CI target met, end-to-end still about 79s |
+| 10 | Combine preview release creation and package publishing into one Release job | 95s | Pending CI run | 37s | Pending release run | Local verification pending |
 
 ## Vitest Worker Sweep
 

@@ -39,17 +39,13 @@ permissions:
   actions: read
 
 jobs:
-  create_preview_release:
+  publish_preview:
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-    outputs:
-      package_version: ${{ steps.preview_version.outputs.value }}
-      release_tag: preview
-      release_ref: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,6 +57,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          registry-url: https://npm.pkg.github.com
 
       - name: Compute preview package version
         id: preview_version
@@ -139,6 +136,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
+
+      - name: Download preview package artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download '${{ github.event.workflow_run.id }}' --repo "$GITHUB_REPOSITORY" --name preview-package --dir /tmp/preview-package
+
+      - name: Publish preview package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish /tmp/preview-package/*.tgz --tag preview --access public --no-git-checks
 
   create_manual_release:
     if: github.event_name == 'workflow_dispatch'
@@ -335,28 +342,6 @@ jobs:
 
           echo "Timed out waiting for CI on ${RELEASE_SHA}" >&2
           exit 1
-
-  publish_preview_package:
-    needs:
-      - create_preview_release
-    if: needs.create_preview_release.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: https://npm.pkg.github.com
-
-      - name: Download preview package artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run download '${{ github.event.workflow_run.id }}' --repo "$GITHUB_REPOSITORY" --name preview-package --dir /tmp/preview-package
-
-      - name: Publish preview package
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
-        run: npm publish /tmp/preview-package/*.tgz --tag preview --access public --no-git-checks
 
   publish_release_package:
     needs:

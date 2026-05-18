@@ -351,7 +351,7 @@ jobs:
       - name: Download preview package artifact
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download '${{ github.event.workflow_run.id }}' --name preview-package --dir /tmp/preview-package
+        run: gh run download '${{ github.event.workflow_run.id }}' --repo "$GITHUB_REPOSITORY" --name preview-package --dir /tmp/preview-package
 
       - name: Publish preview package
         env:

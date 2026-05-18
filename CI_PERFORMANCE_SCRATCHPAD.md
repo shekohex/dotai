@@ -48,7 +48,8 @@ Workflows measured:
 | --- | --- | ---: | ---: | ---: | ---: | --- |
 | 0 | Baseline measurement fixtures created | 266s | TBD | 131s | TBD | Baseline captured from last 20 runs |
 | 1 | Replace CI coverage with plain tests, remove coverage upload, pack with `--ignore-scripts`, remove release lockfile refresh after version mutation | 266s | 202s actual run, 257s rolling avg | 131s | 106s actual run, 128s rolling avg | Real CI, Release Please, Release passed |
-| 2 | Build preview-versioned tarball in CI, upload it, publish same artifact from Release without checkout/cache/install/repack | 257s | Pending CI run | 128s | Pending release run | Local verification pending |
+| 2 | Build preview-versioned tarball in CI, upload it, publish same artifact from Release without checkout/cache/install/repack | 257s | 209s actual run | 128s | Failed at artifact download | Release failed because `gh run download` had no checkout repo context |
+| 3 | Add explicit repository to preview artifact download | 257s | Pending CI run | 128s | Pending release run | Local verification pending |
 
 ## Baseline Summary
 

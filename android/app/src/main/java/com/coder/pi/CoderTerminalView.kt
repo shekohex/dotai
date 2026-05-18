@@ -38,6 +38,7 @@ import androidx.core.net.toUri
 import java.net.URI
 import java.net.URL
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicInteger
 
 data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount: Long)
 data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "")
@@ -1056,7 +1057,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return true
     }
 
-    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean, notificationId: Int = if (ongoing) oscProgressNotificationId() else (nowNotificationId() and 0x7fffffff).toInt()): Boolean {
+    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean, notificationId: Int = if (ongoing) oscProgressNotificationId() else nextTerminalNotificationId()): Boolean {
         if (notificationId == oscProgressNotificationId()) ensureOscProgressNotificationChannel() else ensureOscNotificationChannel()
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             onNotificationPermissionNeeded?.invoke()
@@ -1074,6 +1075,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .setContentIntent(pendingIntent)
             .setOngoing(ongoing)
             .setAutoCancel(true)
+            .setGroup(terminalNotificationGroupKey())
             .addAction(oscNotificationIconRes(), "Open terminal", pendingIntent)
             .addAction(replyNotificationAction(notificationId))
         workspaceIconBitmap(localOnly = notificationId == oscProgressNotificationId())?.let { builder.setLargeIcon(it) }
@@ -1098,6 +1100,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun workspaceNotificationLabel(): String = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.take(64)
+
+    private fun terminalNotificationGroupKey(): String = "terminal:${notificationContext.workspaceId.ifBlank { notificationContext.deepLink }.ifBlank { context.packageName }}"
 
     private fun workspaceNotificationIcon(): Icon {
         val workspaceBitmap = workspaceIconBitmap(localOnly = true)
@@ -1169,9 +1173,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         else -> R.drawable.pi_logo_mark
     }
 
-    private fun nowNotificationId(): Long = System.currentTimeMillis() xor messageHashSeed()
-
-    private fun messageHashSeed(): Long = 0x43544f53434cL
+    private fun nextTerminalNotificationId(): Int = terminalNotificationIdCounter.updateAndGet { if (it == Int.MAX_VALUE) 1 else it + 1 }
 
     private fun openHyperlinkAt(x: Float, y: Float): Boolean {
         val uri = hyperlinkUriAt(cellAt(x, y))
@@ -1181,6 +1183,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     companion object {
+        private val terminalNotificationIdCounter = AtomicInteger((System.currentTimeMillis() and 0x3fffffff).toInt())
         private val terminalNotificationTargets = mutableMapOf<String, WeakReference<CoderTerminalView>>()
 
         fun sendNotificationReply(workspaceId: String, text: String): Boolean {

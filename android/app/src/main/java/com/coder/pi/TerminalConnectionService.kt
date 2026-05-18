@@ -23,6 +23,7 @@ class TerminalConnectionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        TerminalConnectionManager.startSavedHeadless(this)
         return START_STICKY
     }
 

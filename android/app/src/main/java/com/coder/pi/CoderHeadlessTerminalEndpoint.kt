@@ -6,10 +6,8 @@ class CoderHeadlessTerminalEndpoint(
     context: Context,
     private val notificationContext: TerminalNotificationContext,
 ) : CoderTerminalEndpoint {
-    private val native = CoderNative()
+    private val engine = TerminalEngine()
     private val router = TerminalNotificationRouter(context.applicationContext, notificationContext)
-    private val lock = Any()
-    private var handle = native.nativeInit(80, 24, 18, 36)
     private var remoteInput: ((ByteArray) -> Unit)? = null
     override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
 
@@ -26,12 +24,8 @@ class CoderHeadlessTerminalEndpoint(
     }
 
     override fun feedRemoteOutput(bytes: ByteArray) {
-        if (bytes.isEmpty()) return
-        synchronized(lock) {
-            if (handle == 0L) return
-            native.nativeFeed(handle, bytes)
-            native.nativeConsumeOscEvents(handle).forEach { router.handleOscEvent(it, native.nativeTitle(handle)) }
-        }
+        val update = engine.feed(bytes)
+        update.oscEvents.forEach { router.handleOscEvent(it, update.title) }
     }
 
     override fun sendInput(bytes: ByteArray) {
@@ -40,9 +34,6 @@ class CoderHeadlessTerminalEndpoint(
     }
 
     fun dispose() {
-        synchronized(lock) {
-            if (handle != 0L) native.nativeDispose(handle)
-            handle = 0L
-        }
+        engine.dispose()
     }
 }

@@ -37,7 +37,7 @@ records_file="$tmp_dir/records.jsonl"
 
 gh run list --limit "$limit" --json databaseId,workflowName,displayTitle,status,conclusion,createdAt,updatedAt,event,headBranch > "$raw_runs_file"
 
-jq -r '.[] | select(.workflowName == "CI" or .workflowName == "Release" or .workflowName == "Release Please") | .databaseId' "$raw_runs_file" |
+jq -r '.[] | select((.workflowName == "CI" or .workflowName == "Release" or .workflowName == "Release Please") and .status == "completed") | .databaseId' "$raw_runs_file" |
 while IFS= read -r run_id; do
   [[ -n "$run_id" ]] || continue
   run_file="$tmp_dir/run-${run_id}.json"

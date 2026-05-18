@@ -53,7 +53,8 @@ Workflows measured:
 | 4 | Split CI into parallel check matrix and separate package smoke job | 240s | 115s actual run, 217s rolling avg | 100s | 34s actual run, 87s rolling avg | Real CI, Release Please, Release passed |
 | 5 | Run Vitest with 2 workers in GitHub Actions and use dot reporter in CI | 217s | 122s actual run, 193s rolling avg | 87s | 32s actual run, 72s rolling avg | Real CI, Release Please, Release passed |
 | 6 | Increase GitHub Actions Vitest workers to 8 after local worker sweep | 193s | 100s actual run, 180s rolling avg | 72s | 59s actual run, 62s rolling avg | Real CI, Release Please, Release passed |
-| 7 | Cache generated Plannotator resources and skip UI rebuild on cache hit | 180s | Pending CI run | 62s | Pending release run | Local verification pending |
+| 7 | Cache generated Plannotator resources and skip UI rebuild on cache hit | 180s | 114s actual run, 154s rolling avg | 62s | 41s actual run, 49s rolling avg | Real CI, Release Please, Release passed; first run populated cache |
+| 8 | Ignore in-progress runs in measurement script and verify Plannotator cache-hit CI path | 154s | Pending CI run | 49s | Pending release run | Local verification pending |
 
 ## Vitest Worker Sweep
 

@@ -1,20 +1,16 @@
 package com.coder.pi
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.IOException
+import java.security.GeneralSecurityException
 import java.util.UUID
 
 class CoderSessionStore(context: Context) {
-    private val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-    private val securePreferences = EncryptedSharedPreferences.create(
-        context,
-        "coder_session",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+    private val securePreferences = securePreferences(context)
     private val localPreferences = context.getSharedPreferences("coder_workspace_state", Context.MODE_PRIVATE)
 
     fun loadSession(): Pair<String, String>? {
@@ -100,6 +96,7 @@ class CoderSessionStore(context: Context) {
             putString("$prefix.agent_name", metadata.agentName)
             putString("$prefix.command", metadata.command)
             putString("$prefix.reconnect_id", metadata.reconnectId)
+            putString("$prefix.workspace_icon_url", metadata.workspaceIconUrl)
             putLong("$prefix.updated_at", metadata.updatedAtMillis)
             putString("$prefix.preview", safePreviewText(metadata.preview).take(600))
             putBoolean("$prefix.detached", metadata.detached)
@@ -121,6 +118,7 @@ class CoderSessionStore(context: Context) {
                 updatedAtMillis = localPreferences.getLong("$prefix.updated_at", 0L),
                 preview = localPreferences.getString("$prefix.preview", "").orEmpty(),
                 detached = localPreferences.getBoolean("$prefix.detached", false),
+                workspaceIconUrl = localPreferences.getString("$prefix.workspace_icon_url", null),
             )
             metadata.takeIf { it.baseUrl == baseUrl && it.userId == userId && now - it.updatedAtMillis <= ttlMillis }
         }.sortedByDescending { it.updatedAtMillis }
@@ -150,6 +148,7 @@ class CoderSessionStore(context: Context) {
             remove("$prefix.agent_name")
             remove("$prefix.command")
             remove("$prefix.reconnect_id")
+            remove("$prefix.workspace_icon_url")
             remove("$prefix.updated_at")
             remove("$prefix.preview")
             remove("$prefix.detached")
@@ -170,6 +169,29 @@ class CoderSessionStore(context: Context) {
     private fun activeTerminalStorageKey(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) = activeTerminalKey(stateKey(baseUrl, userId, workspaceId), agentId, command)
 
     companion object {
+        private const val securePreferencesName = "coder_session"
+
+        private fun securePreferences(context: Context): SharedPreferences {
+            return try {
+                createSecurePreferences(context)
+            } catch (error: Exception) {
+                if (error !is GeneralSecurityException && error !is IOException && error !is SecurityException && error !is IllegalStateException) throw error
+                context.deleteSharedPreferences(securePreferencesName)
+                createSecurePreferences(context)
+            }
+        }
+
+        private fun createSecurePreferences(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+            return EncryptedSharedPreferences.create(
+                context,
+                securePreferencesName,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+
         fun activeTerminalKey(stateKey: String, agentId: String, command: String) = "$stateKey.$agentId.${command.hashCode()}.active"
 
         fun safeDebugLogMessage(value: String): String {

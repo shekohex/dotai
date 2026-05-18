@@ -49,17 +49,31 @@ public:
     bool mouseTracking() const;
     std::vector<uint8_t> mouse(int action, float x, float y, int button, int metaState);
     bool screenPositionFromViewport(int row, int col, int& screenRow, int& screenCol);
+    std::string title();
+    std::string pwd();
+    uint64_t bellCount();
+    std::string hyperlinkUriAt(int row, int col);
+    std::vector<std::string> consumeOscEvents();
     std::string selectedText(int startRow, int startCol, int endRow, int endCol);
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
     std::vector<CoderCell> snapshot(int& cols, int& rows, CoderCursor& cursor);
 
 private:
     void writePty(const uint8_t* data, size_t length);
+    void processOscMetadata(const uint8_t* data, size_t length);
+    void finishOscMetadata();
+    void updateTitle();
+    void updatePwd();
     uint32_t rgb(GhosttyColorRgb color) const;
     GhosttyKey mapAndroidKey(int keyCode) const;
     GhosttyMods mapAndroidMods(int metaState) const;
+    static std::string sanitizeGhosttyString(GhosttyString value, size_t maxBytes);
+    static std::string sanitizeBytes(const uint8_t* data, size_t length, size_t maxBytes);
     static void writePtyEffect(GhosttyTerminal terminal, void* userdata, const uint8_t* data, size_t length);
+    static void titleChangedEffect(GhosttyTerminal terminal, void* userdata);
+    static void bellEffect(GhosttyTerminal terminal, void* userdata);
     static bool sizeEffect(GhosttyTerminal terminal, void* userdata, GhosttySizeReportSize* outSize);
+    static bool colorSchemeEffect(GhosttyTerminal terminal, void* userdata, GhosttyColorScheme* outScheme);
     static bool deviceAttributesEffect(GhosttyTerminal terminal, void* userdata, GhosttyDeviceAttributes* outAttributes);
     static GhosttyString xtversionEffect(GhosttyTerminal terminal, void* userdata);
 
@@ -102,4 +116,13 @@ private:
     int cursorRow_ = 0;
     CoderCursor cursor_;
     std::vector<CoderCell> cells_;
+    std::string title_;
+    std::string pwd_;
+    std::string oscMetadataBuffer_;
+    std::vector<std::string> oscEvents_;
+    uint64_t bellCount_ = 0;
+    GhosttyColorScheme colorScheme_ = GHOSTTY_COLOR_SCHEME_DARK;
+    bool oscMetadataEsc_ = false;
+    bool oscMetadataActive_ = false;
+    bool oscMetadataStEsc_ = false;
 };

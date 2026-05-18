@@ -19,11 +19,6 @@ data class TerminalFontArchive(val family: String, val url: String, val includes
 
 val terminalFonts = listOf(
     TerminalFontArchive(
-        "GeistMono",
-        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/GeistMono.zip",
-        listOf("GeistMonoNerdFontMono-Regular.otf", "GeistMonoNerdFontMono-Bold.otf", "GeistMonoNerdFontMono-SemiBold.otf"),
-    ),
-    TerminalFontArchive(
         "IBMPlexMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/IBMPlexMono.zip",
         listOf("BlexMonoNerdFontMono-Regular.ttf", "BlexMonoNerdFontMono-Bold.ttf", "BlexMonoNerdFontMono-SemiBold.ttf", "BlexMonoNerdFontMono-Italic.ttf", "BlexMonoNerdFontMono-BoldItalic.ttf"),
@@ -40,8 +35,8 @@ val terminalFonts = listOf(
     ),
     TerminalFontArchive(
         "MapleMonoNormal",
-        "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMonoNormal-TTF.zip",
-        listOf("MapleMonoNormal-Regular.ttf", "MapleMonoNormal-Bold.ttf", "MapleMonoNormal-SemiBold.ttf", "MapleMonoNormal-Italic.ttf", "MapleMonoNormal-BoldItalic.ttf"),
+        "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMonoNormal-NF-unhinted.zip",
+        listOf("MapleMonoNormal-NF-Regular.ttf", "MapleMonoNormal-NF-Bold.ttf", "MapleMonoNormal-NF-SemiBold.ttf", "MapleMonoNormal-NF-Italic.ttf", "MapleMonoNormal-NF-BoldItalic.ttf"),
     ),
 )
 

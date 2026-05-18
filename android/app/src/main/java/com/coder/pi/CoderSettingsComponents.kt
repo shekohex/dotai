@@ -39,12 +39,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun SettingsScaffold(title: String, tokens: UiTokens, onBack: () -> Unit, content: LazyListScope.() -> Unit) {
+fun SettingsScaffold(title: String, tokens: UiTokens, onBack: () -> Unit, actionIcon: Int? = null, onAction: (() -> Unit)? = null, content: LazyListScope.() -> Unit) {
     LazyColumn(Modifier.fillMaxSize().background(tokens.background).statusBarsPadding(), contentPadding = WindowInsets.navigationBars.asPaddingValues()) {
         item {
             Row(Modifier.fillMaxWidth().height(54.dp).padding(horizontal = spacingLarge()), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = tokens.text, fontSize = 28.sp, modifier = Modifier.width(34.dp).clickable { hapticClick(); onBack() })
-                Text(title, color = tokens.text, fontSize = titleSize(), fontWeight = FontWeight.Bold)
+                Text(title, color = tokens.text, fontSize = titleSize(), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (actionIcon != null && onAction != null) Icon(painterResource(actionIcon), null, tint = tokens.text, modifier = Modifier.size(24.dp).clickable { hapticClick(); onAction() })
             }
         }
         content()

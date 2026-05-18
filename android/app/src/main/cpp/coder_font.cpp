@@ -364,6 +364,12 @@ void CoderFont::setFontData(const uint8_t* regularData, size_t regularLength, co
     if (texture_ != 0) rebuildAtlas();
 }
 
+void CoderFont::setFallbackFontData(const uint8_t* data, size_t length) {
+    if (data && length > 0) bundledFallbackData_.assign(data, data + length); else bundledFallbackData_.clear();
+    releaseFace();
+    if (texture_ != 0) rebuildAtlas();
+}
+
 void CoderFont::setCellSize(int width, int height) {
     if (glyphWidth_ == width && glyphHeight_ == height) return;
     glyphWidth_ = std::max(1, width);
@@ -642,11 +648,25 @@ bool CoderFont::loadPrimaryFace(size_t index) {
 bool CoderFont::loadFallbackFaces() {
     if (!fallbackFaces_.empty()) return true;
     if (!library_ && FT_Init_FreeType(&library_) != 0) return false;
-    static constexpr std::array<const char*, 12> paths{
+    if (!bundledFallbackData_.empty()) {
+        FontFace font;
+        if (FT_New_Memory_Face(library_, bundledFallbackData_.data(), static_cast<FT_Long>(bundledFallbackData_.size()), 0, &font.face) == 0) {
+            FT_Select_Charmap(font.face, FT_ENCODING_UNICODE);
+            configureFaceSize(font.face);
+            font.harfbuzzFont = hb_ft_font_create_referenced(font.face);
+            font.fallback = true;
+            if (font.harfbuzzFont) fallbackFaces_.push_back(std::move(font)); else FT_Done_Face(font.face);
+        }
+    }
+    static constexpr std::array<const char*, 16> paths{
         "/system/fonts/NotoColorEmoji.ttf",
         "/system/fonts/NotoColorEmojiFlags.ttf",
         "/system/fonts/AndroidEmoji.ttf",
         "/product/fonts/NotoColorEmoji.ttf",
+        "/system/fonts/NotoSansSymbols-Regular-Subsetted.ttf",
+        "/system/fonts/NotoSansSymbols-Regular-Subsetted2.ttf",
+        "/product/fonts/NotoSansSymbols-Regular-Subsetted.ttf",
+        "/product/fonts/NotoSansSymbols-Regular-Subsetted2.ttf",
         "/system/fonts/NotoSansCJK-Regular.ttc",
         "/system/fonts/NotoSansJP-Regular.otf",
         "/system/fonts/NotoSansSC-Regular.otf",

@@ -42,6 +42,7 @@ public:
     bool init();
     void setFontData(const uint8_t* data, size_t length);
     void setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength);
+    void setFallbackFontData(const uint8_t* data, size_t length);
     void setCellSize(int width, int height);
     void setOpenTypeFeatures(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1);
     bool glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph);
@@ -99,6 +100,7 @@ private:
     int shelfHeight_ = 0;
     FT_Library library_ = nullptr;
     std::array<FontFace, 4> primaryFaces_;
+    std::vector<uint8_t> bundledFallbackData_;
     std::vector<FontFace> fallbackFaces_;
     std::unordered_map<uint64_t, Glyph> glyphs_;
 };

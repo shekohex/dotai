@@ -29,10 +29,9 @@ object CoderFonts {
     fun builtInOptions(): List<CoderFontOption> {
         return listOf(
             CoderFontOption("jetbrains", "JetBrains Mono", "Ghostty embedded default", resourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular, boldResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_semi_bold, italicResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_italic, boldItalicResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_bold_italic),
-            CoderFontOption("geist", "Geist Mono", "Nerd Font Mono", resourceId = R.font.geist_mono_geist_mono_nerd_font_mono_regular, boldResourceId = R.font.geist_mono_geist_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.geist_mono_geist_mono_nerd_font_mono_semi_bold),
             CoderFontOption("ibm_plex", "IBM Plex Mono", "Blex Nerd Font Mono", resourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_regular, boldResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_semi_bold, italicResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_italic, boldItalicResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_bold_italic),
             CoderFontOption("iosevka", "Iosevka", "Nerd Font Mono", resourceId = R.font.iosevka_iosevka_nerd_font_mono_regular, boldResourceId = R.font.iosevka_iosevka_nerd_font_mono_bold, semiBoldResourceId = R.font.iosevka_iosevka_nerd_font_mono_semi_bold, italicResourceId = R.font.iosevka_iosevka_nerd_font_mono_italic, boldItalicResourceId = R.font.iosevka_iosevka_nerd_font_mono_bold_italic),
-            CoderFontOption("maple", "Maple Mono", "Normal TTF", resourceId = R.font.maple_mono_normal_maple_mono_normal_regular, boldResourceId = R.font.maple_mono_normal_maple_mono_normal_bold, semiBoldResourceId = R.font.maple_mono_normal_maple_mono_normal_semi_bold, italicResourceId = R.font.maple_mono_normal_maple_mono_normal_italic, boldItalicResourceId = R.font.maple_mono_normal_maple_mono_normal_bold_italic),
+            CoderFontOption("maple", "Maple Mono", "Nerd Font", resourceId = R.font.maple_mono_normal_maple_mono_normal_nf_regular, boldResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_bold, semiBoldResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_semi_bold, italicResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_italic, boldItalicResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_bold_italic),
         )
     }
 
@@ -118,10 +117,11 @@ object CoderFonts {
 
     fun styleBytes(context: Context, key: String = selectedKey(context)): CoderFontBytes {
         val option = allOptions(context).firstOrNull { it.key == key } ?: builtInOptions().first()
-        option.file?.let { bytes -> return CoderFontBytes(bytes.readBytes(), null, null, null) }
         fun readResource(resourceId: Int?): ByteArray? = resourceId?.let { context.resources.openRawResource(it).use { input -> input.readBytes() } }
+        val fallback = readResource(R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular)
+        option.file?.let { bytes -> return CoderFontBytes(bytes.readBytes(), null, null, null, fallback) }
         val regular = readResource(option.resourceId) ?: bytes(context, key)
-        return CoderFontBytes(regular, readResource(option.boldResourceId ?: option.semiBoldResourceId), readResource(option.italicResourceId), readResource(option.boldItalicResourceId))
+        return CoderFontBytes(regular, readResource(option.boldResourceId ?: option.semiBoldResourceId), readResource(option.italicResourceId), readResource(option.boldItalicResourceId), fallback)
     }
 
     fun importFont(context: Context, uri: Uri): CoderFontOption? {
@@ -150,4 +150,4 @@ object CoderFonts {
     }
 }
 
-data class CoderFontBytes(val regular: ByteArray, val bold: ByteArray?, val italic: ByteArray?, val boldItalic: ByteArray?)
+data class CoderFontBytes(val regular: ByteArray, val bold: ByteArray?, val italic: ByteArray?, val boldItalic: ByteArray?, val fallback: ByteArray?)

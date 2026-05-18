@@ -1,11 +1,21 @@
 package com.coder.pi
 
 import android.animation.ValueAnimator
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.graphics.BitmapFactory
+import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.opengl.GLSurfaceView
 import android.util.AttributeSet
+import android.util.Base64
 import android.text.InputType
+import android.widget.Toast
 import android.view.MotionEvent
 import android.view.KeyEvent
 import android.view.ViewConfiguration
@@ -17,7 +27,17 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import java.net.URI
+import java.net.URL
 import java.lang.ref.WeakReference
+
+data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount: Long)
+data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "")
+
+private const val TerminalOscNotificationChannelId = "terminal_osc"
+private const val TerminalOscProgressNotificationId = 904
 
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer {
     private val native = CoderNative()
@@ -46,12 +66,22 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var ctrlLatch = false
     private var altLatch = false
     private var softwareKeyboardAllowed = false
+    private var lastBellCount = 0L
+    private var lastBellFeedbackMillis = 0L
+    private var lastNotificationMillis = 0L
+    private var notificationContext = TerminalNotificationContext()
+    private var workspaceIconRequestInFlight = false
+    private var workspaceIconCacheKey = ""
+    private var workspaceIconCache: android.graphics.Bitmap? = null
     private var remoteInput: ((ByteArray) -> Unit)? = null
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val pendingRemoteOutput = mutableListOf<ByteArray>()
     var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
+    var onOscMetadataChanged: ((TerminalOscMetadata) -> Unit)? = null
+    var onHyperlinkActivated: ((String) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
     var onToolbarActionsChanged: (() -> Unit)? = null
+    var onNotificationPermissionNeeded: (() -> Unit)? = null
 
     init {
         registerTerminalView(this)
@@ -72,7 +102,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle == 0L) handle = native.nativeInit(80, 24, cellWidth, cellHeight)
         native.nativeSetShaderCacheDir(handle, context.cacheDir.resolve("shader-cache").apply { mkdirs() }.absolutePath)
         val selectedFontKey = CoderFonts.selectedKey(context)
-        CoderFonts.styleBytes(context, selectedFontKey).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic) }
+        CoderFonts.styleBytes(context, selectedFontKey).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic, it.fallback) }
         nativeFontKey = selectedFontKey
         applyTextOptions()
         applyTheme(CoderThemes.current(context))
@@ -224,6 +254,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                     mouseTouchMoved = false
                     return true
                 }
+                if (event.actionMasked == MotionEvent.ACTION_UP && openHyperlinkAt(event.x, event.y)) return true
                 endSmoothScrollGesture()
                 return true
             }
@@ -471,6 +502,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return TerminalCellPosition(result[0], result[1])
     }
 
+    fun hyperlinkUriAt(position: TerminalCellPosition): String {
+        if (handle == 0L) return ""
+        return native.nativeHyperlinkUriAt(handle, position.row, position.col)
+    }
+
     fun selectedScreenText(start: TerminalCellPosition, end: TerminalCellPosition): String {
         if (handle == 0L) return ""
         return native.nativeSelectedText(handle, start.row, start.col, end.row, end.col).trimEnd()
@@ -571,7 +607,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val bytes = CoderFonts.styleBytes(context, key)
         if (handle != 0L) {
             nativeFontKey = key
-            queueEvent { native.nativeSetFontStyles(handle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic) }
+            queueEvent { native.nativeSetFontStyles(handle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic, bytes.fallback) }
         }
     }
 
@@ -689,6 +725,47 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun keyboardPasteEnabled(): Boolean = preferences.getBoolean("keyboard_paste", true)
 
+    fun setOscNotificationsEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("osc.notifications", enabled) }
+    }
+
+    fun oscNotificationsEnabled(): Boolean = preferences.getBoolean("osc.notifications", true)
+
+    fun setOscNotificationAlertsEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("osc.notifications.alerts", enabled) }
+    }
+
+    fun oscNotificationAlertsEnabled(): Boolean = preferences.getBoolean("osc.notifications.alerts", true)
+
+    fun setOscNotificationProgressEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("osc.notifications.progress", enabled) }
+    }
+
+    fun oscNotificationProgressEnabled(): Boolean = preferences.getBoolean("osc.notifications.progress", true)
+
+    fun setOscNotificationToastsEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("osc.notifications.toasts", enabled) }
+    }
+
+    fun oscNotificationToastsEnabled(): Boolean = preferences.getBoolean("osc.notifications.toasts", true)
+
+    fun setOscNotificationIconStyle(style: String) {
+        preferences.edit { putString("osc.notifications.icon", style) }
+    }
+
+    fun oscNotificationIconStyle(): String = preferences.getString("osc.notifications.icon", "pi").orEmpty().ifBlank { "pi" }
+
+    fun setNotificationContext(context: TerminalNotificationContext) {
+        notificationContext = context.copy(
+            workspaceId = context.workspaceId.take(128),
+            workspaceName = context.workspaceName.take(128),
+            workspaceDisplayName = context.workspaceDisplayName.take(128),
+            deepLink = context.deepLink.take(2048),
+            iconUri = context.iconUri.take(2048),
+            iconUrl = context.iconUrl.take(2048),
+        )
+    }
+
     fun setVolumeFontSizeEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("volume_font_size", enabled) }
     }
@@ -736,14 +813,20 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             pendingRemoteOutput.add(bytes)
             return
         }
-        queueEvent { native.nativeFeed(handle, bytes) }
+        queueEvent {
+            native.nativeFeed(handle, bytes)
+            post { notifyOscMetadataChanged() }
+        }
     }
 
     private fun flushPendingRemoteOutput() {
         if (handle == 0L || pendingRemoteOutput.isEmpty()) return
         val outputs = pendingRemoteOutput.toList()
         pendingRemoteOutput.clear()
-        queueEvent { outputs.forEach { native.nativeFeed(handle, it) } }
+        queueEvent {
+            outputs.forEach { native.nativeFeed(handle, it) }
+            post { notifyOscMetadataChanged() }
+        }
     }
 
     private fun writeInput(bytes: ByteArray) {
@@ -762,6 +845,160 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (columns > 0 && rows > 0) onTerminalSizeChanged?.invoke(columns, rows)
     }
 
+    private fun notifyOscMetadataChanged() {
+        if (handle == 0L) return
+        val metadata = TerminalOscMetadata(native.nativeTitle(handle), native.nativePwd(handle), native.nativeBellCount(handle))
+        if (metadata.bellCount > lastBellCount) {
+            val now = System.currentTimeMillis()
+            if (now - lastBellFeedbackMillis >= 1000L) {
+                performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                lastBellFeedbackMillis = now
+            }
+            lastBellCount = metadata.bellCount
+        }
+        native.nativeConsumeOscEvents(handle).forEach { handleOscEvent(it) }
+        onOscMetadataChanged?.invoke(metadata)
+    }
+
+    private fun handleOscEvent(event: String) {
+        val parts = event.split("\t", limit = 3)
+        when (parts.getOrNull(0)) {
+            "clipboard" -> handleOscClipboard(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
+            "notification" -> handleOscNotification(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
+            "progress" -> handleOscProgress(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
+        }
+    }
+
+    private fun handleOscClipboard(kind: String, data: String) {
+        if (kind.none { it == 'c' || it == 's' || it == 'p' }) return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        when {
+            data == "?" -> {
+                val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty().take(4096)
+                val encoded = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                writeInput("\u001b]52;c;$encoded\u0007".toByteArray(Charsets.UTF_8))
+            }
+            data.isEmpty() -> clipboard.setPrimaryClip(ClipData.newPlainText("Terminal clipboard", ""))
+            data.length <= 8192 -> runCatching {
+                val decoded = Base64.decode(data, Base64.DEFAULT).toString(Charsets.UTF_8).take(4096)
+                clipboard.setPrimaryClip(ClipData.newPlainText("Terminal clipboard", decoded))
+            }
+        }
+    }
+
+    private fun handleOscNotification(title: String, body: String) {
+        val message = listOf(title, body).filter { it.isNotBlank() }.joinToString(" · ").take(256)
+        if (message.isBlank()) return
+        val now = System.currentTimeMillis()
+        if (now - lastNotificationMillis < 3000L) return
+        lastNotificationMillis = now
+        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(title, body, false, -1, false)) {
+            if (oscNotificationToastsEnabled()) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleOscProgress(stateText: String, valueText: String) {
+        if (!oscNotificationsEnabled() || !oscNotificationProgressEnabled()) return
+        val state = stateText.toIntOrNull() ?: return
+        if (state == 0) {
+            NotificationManagerCompat.from(context).cancel(oscProgressNotificationId())
+            return
+        }
+        val value = valueText.toIntOrNull()?.coerceIn(0, 100) ?: 0
+        val indeterminate = valueText.isBlank()
+        val title = when (state) {
+            2 -> "Terminal command failed"
+            4 -> "Terminal command paused"
+            else -> "Terminal command running"
+        }
+        val body = when {
+            state == 2 && indeterminate -> "Failed"
+            state == 4 && indeterminate -> "Paused"
+            indeterminate -> "Working"
+            else -> "$value% complete"
+        }
+        postOscNotification(title, body, state != 2, value, indeterminate)
+    }
+
+    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean): Boolean {
+        ensureOscNotificationChannel()
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            onNotificationPermissionNeeded?.invoke()
+            return false
+        }
+        val channelId = oscNotificationChannelId()
+        val launchIntent = if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, android.net.Uri.parse(notificationContext.deepLink), context, MainActivity::class.java)
+        launchIntent?.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val pendingIntent = PendingIntent.getActivity(context, notificationContext.deepLink.hashCode(), launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val baseTitle = title.ifBlank { "Terminal" }
+        val workspaceLabel = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }
+        val notificationTitle = (if (workspaceLabel.isBlank()) baseTitle else "$workspaceLabel · $baseTitle").take(128)
+        val notificationBody = body.ifBlank { title }.take(512)
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(oscNotificationIconRes())
+            .setContentTitle(notificationTitle)
+            .setContentText(notificationBody)
+            .setContentIntent(pendingIntent)
+            .setOngoing(ongoing)
+            .setAutoCancel(true)
+        workspaceIconBitmap()?.let { builder.setLargeIcon(it) }
+        if (ongoing) builder.setProgress(100, progress.coerceIn(0, 100), indeterminate) else builder.setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
+        NotificationManagerCompat.from(context).notify(if (ongoing) oscProgressNotificationId() else (nowNotificationId() and 0x7fffffff).toInt(), builder.build())
+        return true
+    }
+
+    private fun ensureOscNotificationChannel() {
+        if (Build.VERSION.SDK_INT < 26) return
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = oscNotificationChannelId()
+        if (notificationManager.getNotificationChannel(channelId) == null) notificationManager.createNotificationChannel(NotificationChannel(channelId, oscNotificationChannelName(), NotificationManager.IMPORTANCE_DEFAULT))
+    }
+
+    private fun oscNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) TerminalOscNotificationChannelId else "terminal_osc_${notificationContext.workspaceId.hashCode()}"
+
+    private fun oscNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal OSC" else "Terminal · ${notificationContext.workspaceName}"
+
+    private fun oscProgressNotificationId(): Int = if (notificationContext.workspaceId.isBlank()) TerminalOscProgressNotificationId else (TerminalOscProgressNotificationId xor notificationContext.workspaceId.hashCode()) and 0x7fffffff
+
+    private fun workspaceIconBitmap(): android.graphics.Bitmap? {
+        val localBitmap = runCatching {
+            val uri = notificationContext.iconUri.takeIf { it.isNotBlank() }?.let { android.net.Uri.parse(it) } ?: return@runCatching null
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+        }.getOrNull()
+        if (localBitmap != null) return localBitmap
+        val iconUrl = notificationContext.iconUrl.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
+        if (workspaceIconCacheKey == iconUrl) return workspaceIconCache
+        if (!workspaceIconRequestInFlight) {
+            workspaceIconRequestInFlight = true
+            Thread {
+                val bitmap = runCatching { URL(iconUrl).openStream().use { BitmapFactory.decodeStream(it) } }.getOrNull()
+                post {
+                    workspaceIconCacheKey = iconUrl
+                    workspaceIconCache = bitmap
+                    workspaceIconRequestInFlight = false
+                }
+            }.start()
+        }
+        return null
+    }
+
+    private fun oscNotificationIconRes(): Int = when (oscNotificationIconStyle()) {
+        "bell" -> R.drawable.ic_feather_bell
+        "terminal" -> R.drawable.ic_feather_terminal
+        else -> R.drawable.pi_logo_mark
+    }
+
+    private fun nowNotificationId(): Long = System.currentTimeMillis() xor messageHashSeed()
+
+    private fun messageHashSeed(): Long = 0x43544f53434cL
+
+    private fun openHyperlinkAt(x: Float, y: Float): Boolean {
+        val uri = hyperlinkUriAt(cellAt(x, y))
+        terminalOscHyperlinkUri(uri) ?: return false
+        onHyperlinkActivated?.invoke(uri)
+        return true
+    }
+
     companion object {
         private val terminalViews = mutableListOf<WeakReference<CoderTerminalView>>()
 
@@ -778,6 +1015,53 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             terminalViews.removeAll { it.get() == null }
             terminalViews.mapNotNull { it.get() }.forEach { it.onToolbarActionsChanged?.invoke() }
         }
+    }
+}
+
+fun terminalOscHyperlinkUri(value: String): URI? {
+    if (value.isBlank() || value.length > 2048) return null
+    val uri = runCatching { URI(value) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase() ?: return null
+    if (scheme != "https" && scheme != "http") return null
+    if (uri.rawAuthority.isNullOrBlank()) return null
+    return uri
+}
+
+fun terminalOscHyperlinkHost(value: String): String? {
+    return terminalOscHyperlinkUri(value)?.host?.lowercase()
+}
+
+fun terminalNormalizeLinkHostPattern(value: String): String? {
+    val trimmed = value.trim().lowercase()
+    if (trimmed.isBlank()) return null
+    if (trimmed.startsWith("*.")) {
+        val suffix = trimmed.removePrefix("*.").removeSuffix(".")
+        if (suffix.isBlank() || suffix.contains('/') || suffix.contains(':') || suffix.any { it.isWhitespace() }) return null
+        return "*.${suffix}"
+    }
+    val host = if (trimmed.contains("://")) runCatching { URI(trimmed).host?.lowercase()?.removeSuffix(".") }.getOrNull() else trimmed.removeSuffix(".")
+    if (host.isNullOrBlank() || host.contains('/') || host.contains(':') || host.any { it.isWhitespace() }) return null
+    return host
+}
+
+fun terminalAllowedLinkHosts(context: Context): Set<String> {
+    return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getStringSet("osc.allowed_link_hosts", emptySet()).orEmpty()
+}
+
+fun terminalSetLinkHostAllowed(context: Context, host: String, allowed: Boolean) {
+    val normalized = terminalNormalizeLinkHostPattern(host) ?: return
+    val next = terminalAllowedLinkHosts(context).toMutableSet()
+    if (allowed) next.add(normalized) else next.remove(normalized)
+    context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putStringSet("osc.allowed_link_hosts", next) }
+}
+
+fun terminalOscHyperlinkAllowed(context: Context, value: String): Boolean {
+    val host = terminalOscHyperlinkHost(value) ?: return false
+    return terminalAllowedLinkHosts(context).any { pattern ->
+        if (pattern.startsWith("*.")) {
+            val suffix = pattern.removePrefix("*.")
+            host != suffix && host.endsWith(".${suffix}")
+        } else host == pattern
     }
 }
 

@@ -9,7 +9,7 @@
 #include <fstream>
 #include <vector>
 
-struct Vertex { float x, y, u, v, r, g, b, colorGlyph; };
+struct Vertex { float x, y, u, v, r, g, b, br, bg, bb, colorGlyph; };
 struct SolidVertex { float x, y, r, g, b, a; };
 
 static bool isZeroWidthCodepoint(uint32_t codepoint) {
@@ -84,7 +84,11 @@ bool CoderRenderer::init() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 2));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 4));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 4));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 7));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 10));
     glBindVertexArray(solidVao_);
     glBindBuffer(GL_ARRAY_BUFFER, solidVbo_);
     glEnableVertexAttribArray(0);
@@ -103,6 +107,11 @@ void CoderRenderer::setFontData(const uint8_t* data, size_t length) {
 
 void CoderRenderer::setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength) {
     font_.setFontData(regularData, regularLength, boldData, boldLength, italicData, italicLength, boldItalicData, boldItalicLength);
+    cachedCells_.clear();
+}
+
+void CoderRenderer::setFallbackFontData(const uint8_t* data, size_t length) {
+    font_.setFallbackFontData(data, length);
     cachedCells_.clear();
 }
 
@@ -176,9 +185,18 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     CoderCursor cursor;
     auto cells = terminal.snapshot(cols, rows, cursor);
     auto now = std::chrono::steady_clock::now();
+    bool blinkPhase = (std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 550) % 2 == 0;
     bool cursorVisible = cursor.visible && (!cursor.blinking || !cursorBlink_ || (std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 550) % 2 == 0);
-    bool shouldUploadBuffers = updateCachedCells(cells, cols, rows, cursor) || cachedCursorVisible_ != cursorVisible;
+    bool hasBlinkingCells = false;
+    for (const auto& cell : cells) {
+        if ((cell.flags & 512u) != 0u) {
+            hasBlinkingCells = true;
+            break;
+        }
+    }
+    bool shouldUploadBuffers = updateCachedCells(cells, cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || (hasBlinkingCells && cachedBlinkPhase_ != blinkPhase);
     cachedCursorVisible_ = cursorVisible;
+    cachedBlinkPhase_ = blinkPhase;
     glClearColor(((clearColor_ >> 16u) & 255u) / 255.0f, ((clearColor_ >> 8u) & 255u) / 255.0f, (clearColor_ & 255u) / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     std::vector<Vertex> vertices;
@@ -222,6 +240,12 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float r = ((glyphColor >> 0) & 255) / 255.0f;
             float g = ((glyphColor >> 8) & 255) / 255.0f;
             float b = ((glyphColor >> 16) & 255) / 255.0f;
+            if ((cell.flags & 256u) != 0u) {
+                r = br + (r - br) * 0.50f;
+                g = bg + (g - bg) * 0.50f;
+                b = bb + (b - bb) * 0.50f;
+            }
+            const bool blinkHidden = (cell.flags & 512u) != 0u && !blinkPhase;
             bool synthesizeBold = font_.shouldSynthesizeBold(cell.flags);
             auto addDecorationColor = [&](float y, float thickness, float decorationR, float decorationG, float decorationB) {
                 float dy = thickness * ch;
@@ -257,7 +281,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             }
             if ((cell.flags & 8u) != 0u) addDecoration(y0 + ch * 0.50f, 0.045f);
             if ((cell.flags & 16u) != 0u) addDecoration(y1 - ch * 0.14f, 0.045f);
-            if (cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) continue;
+            if (blinkHidden || cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) continue;
             if (cell.codepointCount == 0) continue;
             if (skipText[static_cast<size_t>(row * cols + col)] != 0) continue;
             if (isNarrowPrintableAsciiCell(cell)) {
@@ -299,7 +323,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                            vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                            vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
                             runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
@@ -346,7 +370,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                            vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                            vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
                             runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
@@ -399,7 +423,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                         float glyphX1 = glyphX[1];
                         float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                         float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                        vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                        vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
                         clusterCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                     }
                     int clusterCellSpan = clusterEndCol - col + 1;
@@ -420,7 +444,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     float glyphX1 = glyphX[1];
                     float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                     float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                    vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                    vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
                     glyphCursorX += 2.0f * static_cast<float>(glyph.advance) / static_cast<float>(width_);
                 }
             };
@@ -452,10 +476,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 float glyphX1 = glyphX[1];
                 float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                 float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                vertices.insert(vertices.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
                 if (synthesizeBold && !glyph.color) {
                     float boldOffset = 2.0f / static_cast<float>(width_);
-                    vertices.insert(vertices.end(), {{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1 + boldOffset,glyphY0,glyph.u1,glyph.v1,r,g,b,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,colorGlyph},{glyphX0 + boldOffset,glyphY1,glyph.u0,glyph.v0,r,g,b,colorGlyph}});
+                    vertices.insert(vertices.end(), {{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1 + boldOffset,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0 + boldOffset,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
                 }
                 glyphCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
             }
@@ -502,6 +526,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     if (shouldUploadBuffers) {
         glBufferData(GL_ARRAY_BUFFER, solidVertices.size() * sizeof(SolidVertex), solidVertices.data(), GL_DYNAMIC_DRAW);
     }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLES, 0, cachedSolidVertexCount_);
     glUseProgram(program_);
     glBindVertexArray(vao_);
@@ -511,6 +536,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     if (shouldUploadBuffers) {
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_DYNAMIC_DRAW);
     }
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLES, 0, cachedGlyphVertexCount_);
     static auto lastReport = std::chrono::steady_clock::now();
     static int frameCount = 0;

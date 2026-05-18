@@ -5,7 +5,7 @@ class CoderNative {
     external fun nativeDispose(handle: Long)
     external fun nativeSurfaceCreated(handle: Long)
     external fun nativeSetFont(handle: Long, bytes: ByteArray)
-    external fun nativeSetFontStyles(handle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?)
+    external fun nativeSetFontStyles(handle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?, fallback: ByteArray?)
     external fun nativeSetShaderCacheDir(handle: Long, path: String)
     external fun nativeSetTheme(handle: Long, foreground: Int, background: Int, cursor: Int, cursorText: Int, palette: IntArray)
     external fun nativeSetTextOptions(handle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, cursorBlink: Boolean, cursorMode: Int)
@@ -21,6 +21,11 @@ class CoderNative {
     external fun nativeMouseTracking(handle: Long): Boolean
     external fun nativeMouseEvent(handle: Long, action: Int, x: Float, y: Float, button: Int, metaState: Int): ByteArray
     external fun nativeScreenPositionFromViewport(handle: Long, row: Int, col: Int): IntArray
+    external fun nativeTitle(handle: Long): String
+    external fun nativePwd(handle: Long): String
+    external fun nativeBellCount(handle: Long): Long
+    external fun nativeHyperlinkUriAt(handle: Long, row: Int, col: Int): String
+    external fun nativeConsumeOscEvents(handle: Long): Array<String>
     external fun nativeSelectedText(handle: Long, startRow: Int, startCol: Int, endRow: Int, endCol: Int): String
     external fun nativeSnapshotText(handle: Long): Array<String>
 

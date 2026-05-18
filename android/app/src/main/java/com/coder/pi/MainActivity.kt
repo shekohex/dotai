@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private var uiRevision by mutableIntStateOf(0)
     private var deepLinkSettingsPage by mutableStateOf<SettingsPage?>(null)
     private var deepLinkRevision by mutableIntStateOf(0)
+    private var deepLinkTerminalId by mutableStateOf<String?>(null)
     private var debugPlaygroundRevision by mutableIntStateOf(0)
     private var keyboardTerminalView: CoderTerminalView? = null
     private var terminalPreferences: SharedPreferences? = null
@@ -60,6 +61,7 @@ class MainActivity : AppCompatActivity() {
                 theme = currentTheme ?: CoderThemes.current(context),
                 uiRevision = uiRevision,
                 deepLinkSettingsPage = deepLinkSettingsPage,
+                deepLinkTerminalId = deepLinkTerminalId,
                 deepLinkRevision = deepLinkRevision,
                 debugPlaygroundRevision = debugPlaygroundRevision,
                 onThemeChanged = {
@@ -99,6 +101,11 @@ class MainActivity : AppCompatActivity() {
             if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 && uri.path?.trim('/') == "render") debugPlaygroundRevision++
             return
         }
+        if (uri.host == "terminal") {
+            deepLinkTerminalId = uri.getQueryParameter("id")
+            deepLinkRevision++
+            return
+        }
         if (uri.host != "settings") return
         deepLinkSettingsPage = when (uri.path?.trim('/')) {
             "fonts", "font", "size" -> SettingsPage.FONTS
@@ -109,6 +116,9 @@ class MainActivity : AppCompatActivity() {
             "keyboard" -> SettingsPage.KEYBOARD
             "gestures" -> SettingsPage.GESTURES
             "speech" -> SettingsPage.SPEECH
+            "links", "link-allowlist", "allowed-links" -> SettingsPage.LINKS
+            "links/add", "link-allowlist/add", "allowed-links/add" -> SettingsPage.LINKS_ADD
+            "notifications", "terminal-notifications" -> SettingsPage.NOTIFICATIONS
             "connection" -> SettingsPage.CONNECTION
             else -> SettingsPage.ROOT
         }

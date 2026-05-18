@@ -13,6 +13,7 @@ object TerminalWindowLauncher {
     const val AgentName = "agent_name"
     const val Command = "command"
     const val ReconnectId = "reconnect_id"
+    const val WorkspaceIconUrl = "workspace_icon_url"
 
     fun open(context: Context, launch: TerminalLaunchRequest, identity: TerminalIdentity) {
         context.startActivity(
@@ -22,11 +23,12 @@ object TerminalWindowLauncher {
                 .putExtra(BaseUrl, launch.baseUrl)
                 .putExtra(UserId, identity.userId)
                 .putExtra(WorkspaceId, identity.workspaceId)
-                .putExtra(WorkspaceName, launch.title)
+                .putExtra(WorkspaceName, launch.workspaceName)
                 .putExtra(AgentId, launch.agentId)
                 .putExtra(AgentName, launch.badge)
                 .putExtra(Command, launch.command)
                 .putExtra(ReconnectId, launch.reconnectId)
+                .putExtra(WorkspaceIconUrl, launch.workspaceIconUrl)
         )
     }
 

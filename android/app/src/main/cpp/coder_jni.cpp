@@ -56,13 +56,15 @@ Java_com_coder_pi_CoderNative_nativeSetFont(JNIEnv* env, jobject, jlong handle, 
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetFontStyles(JNIEnv* env, jobject, jlong handle, jbyteArray regularBytes, jbyteArray boldBytes, jbyteArray italicBytes, jbyteArray boldItalicBytes) {
+Java_com_coder_pi_CoderNative_nativeSetFontStyles(JNIEnv* env, jobject, jlong handle, jbyteArray regularBytes, jbyteArray boldBytes, jbyteArray italicBytes, jbyteArray boldItalicBytes, jbyteArray fallbackBytes) {
     auto* session = reinterpret_cast<CoderSession*>(handle);
     JniByteArrayView regular(env, regularBytes);
     JniByteArrayView bold(env, boldBytes);
     JniByteArrayView italic(env, italicBytes);
     JniByteArrayView boldItalic(env, boldItalicBytes);
+    JniByteArrayView fallback(env, fallbackBytes);
     session->renderer.setFontData(regular.bytes(), regular.size(), bold.bytes(), bold.size(), italic.bytes(), italic.size(), boldItalic.bytes(), boldItalic.size());
+    session->renderer.setFallbackFontData(fallback.bytes(), fallback.size());
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -182,6 +184,42 @@ Java_com_coder_pi_CoderNative_nativeScreenPositionFromViewport(JNIEnv* env, jobj
         values[1] = screenCol;
     }
     env->SetIntArrayRegion(result, 0, 2, values);
+    return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_coder_pi_CoderNative_nativeTitle(JNIEnv* env, jobject, jlong handle) {
+    auto text = reinterpret_cast<CoderSession*>(handle)->terminal.title();
+    return env->NewStringUTF(text.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_coder_pi_CoderNative_nativePwd(JNIEnv* env, jobject, jlong handle) {
+    auto text = reinterpret_cast<CoderSession*>(handle)->terminal.pwd();
+    return env->NewStringUTF(text.c_str());
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_coder_pi_CoderNative_nativeBellCount(JNIEnv*, jobject, jlong handle) {
+    return static_cast<jlong>(reinterpret_cast<CoderSession*>(handle)->terminal.bellCount());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_coder_pi_CoderNative_nativeHyperlinkUriAt(JNIEnv* env, jobject, jlong handle, jint row, jint col) {
+    auto text = reinterpret_cast<CoderSession*>(handle)->terminal.hyperlinkUriAt(row, col);
+    return env->NewStringUTF(text.c_str());
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_coder_pi_CoderNative_nativeConsumeOscEvents(JNIEnv* env, jobject, jlong handle) {
+    auto events = reinterpret_cast<CoderSession*>(handle)->terminal.consumeOscEvents();
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(events.size()), stringClass, env->NewStringUTF(""));
+    for (size_t index = 0; index < events.size(); index++) {
+        jstring value = env->NewStringUTF(events[index].c_str());
+        env->SetObjectArrayElement(result, static_cast<jsize>(index), value);
+        env->DeleteLocalRef(value);
+    }
     return result;
 }
 

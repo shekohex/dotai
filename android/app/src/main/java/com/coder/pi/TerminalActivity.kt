@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.getSystemService
+import androidx.core.app.ActivityCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -60,12 +61,15 @@ class TerminalActivity : AppCompatActivity() {
         currentTheme = theme
         currentFontKey = CoderFonts.selectedKey(this)
         currentFontSizePoints = selectedTerminalFontSizePoints()
+        terminalStore = CoderSessionStore(this)
+        val localWorkspaceState = terminalStore?.workspaceState(identity.baseUrl, identity.userId, identity.workspaceId)
         terminalView = CoderTerminalView(this).also {
             it.setPreviewFontFamily(currentFontKey ?: CoderFonts.selectedKey(this))
             it.applyTheme(theme)
+            it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalSessionKey(identity))}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty()))
+            it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
         }
-        terminalStore = CoderSessionStore(this)
-        terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.title, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), detached = true)
+        terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), detached = true, workspaceIconUrl = launch.workspaceIconUrl)
         terminalStore?.saveActiveTerminal(terminalMetadata ?: return)
         terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), terminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
             terminalStatus = status
@@ -175,7 +179,9 @@ class TerminalActivity : AppCompatActivity() {
         val command = intent.getStringExtra(TerminalWindowLauncher.Command) ?: return null
         val title = intent.getStringExtra(TerminalWindowLauncher.WorkspaceName) ?: return null
         val badge = intent.getStringExtra(TerminalWindowLauncher.AgentName) ?: return null
-        return TerminalLaunchRequest(baseUrl, token, agentId, reconnectId, command, title, badge)
+        val iconUrl = intent.getStringExtra(TerminalWindowLauncher.WorkspaceIconUrl)
+        val localWorkspaceState = CoderSessionStore(this).workspaceState(baseUrl, intent.getStringExtra(TerminalWindowLauncher.UserId) ?: "", intent.getStringExtra(TerminalWindowLauncher.WorkspaceId) ?: "")
+        return TerminalLaunchRequest(baseUrl, token, agentId, reconnectId, command, localWorkspaceState.alias ?: title, badge, title, iconUrl)
     }
 
     private fun terminalIdentityFromIntent(launch: TerminalLaunchRequest): TerminalIdentity? {

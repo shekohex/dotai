@@ -18,6 +18,7 @@ public:
     bool init();
     void setFontData(const uint8_t* data, size_t length);
     void setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength);
+    void setFallbackFontData(const uint8_t* data, size_t length);
     void setShaderCacheDir(std::string path);
     void setTheme(uint32_t background, uint32_t cursor, uint32_t cursorText);
     void setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool cursorBlink, int cursorMode);
@@ -48,6 +49,7 @@ private:
     int cachedCursorCol_ = -1;
     int cachedCursorRow_ = -1;
     bool cachedCursorVisible_ = true;
+    bool cachedBlinkPhase_ = true;
     bool cachedCursorBlinking_ = true;
     bool cachedCursorColorHasValue_ = false;
     uint32_t cachedCursorColor_ = 0;

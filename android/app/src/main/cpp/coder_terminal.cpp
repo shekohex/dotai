@@ -82,7 +82,10 @@ bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
     ghostty_terminal_resize(terminal_.get(), static_cast<uint16_t>(cols_), static_cast<uint16_t>(rows_), static_cast<uint32_t>(cellWidth), static_cast<uint32_t>(cellHeight));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_USERDATA, this);
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_WRITE_PTY, reinterpret_cast<const void*>(writePtyEffect));
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_TITLE_CHANGED, reinterpret_cast<const void*>(titleChangedEffect));
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_BELL, reinterpret_cast<const void*>(bellEffect));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_SIZE, reinterpret_cast<const void*>(sizeEffect));
+    ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_COLOR_SCHEME, reinterpret_cast<const void*>(colorSchemeEffect));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES, reinterpret_cast<const void*>(deviceAttributesEffect));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_XTVERSION, reinterpret_cast<const void*>(xtversionEffect));
 
@@ -115,7 +118,9 @@ void CoderTerminal::pump() {
     for (;;) {
         ssize_t count = read(ptyFd_, buffer.data(), buffer.size());
         if (count > 0) {
+            processOscMetadata(buffer.data(), static_cast<size_t>(count));
             ghostty_terminal_vt_write(terminal_.get(), buffer.data(), static_cast<size_t>(count));
+            updatePwd();
             continue;
         }
         if (count < 0 && errno == EAGAIN) break;
@@ -138,7 +143,9 @@ void CoderTerminal::writeUtf8(const char* data, int length) {
 void CoderTerminal::feed(const uint8_t* data, size_t length) {
     std::lock_guard lock(mutex_);
     if (!terminal_ || data == nullptr || length == 0) return;
+    processOscMetadata(data, length);
     ghostty_terminal_vt_write(terminal_.get(), data, length);
+    updatePwd();
 }
 
 void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
@@ -173,6 +180,8 @@ void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t 
     GhosttyColorRgb foregroundColor = makeColor(foreground);
     GhosttyColorRgb backgroundColor = makeColor(background);
     GhosttyColorRgb cursorColor = makeColor(cursor);
+    const int luminance = static_cast<int>(backgroundColor.r) * 299 + static_cast<int>(backgroundColor.g) * 587 + static_cast<int>(backgroundColor.b) * 114;
+    colorScheme_ = luminance > 127000 ? GHOSTTY_COLOR_SCHEME_LIGHT : GHOSTTY_COLOR_SCHEME_DARK;
     std::array<GhosttyColorRgb, 256> ghosttyPalette{};
     for (size_t index = 0; index < ghosttyPalette.size(); index++) {
         uint32_t color = index < paletteLength ? palette[index] : 0;
@@ -301,6 +310,48 @@ bool CoderTerminal::screenPositionFromViewport(int row, int col, int& screenRow,
     return true;
 }
 
+std::string CoderTerminal::title() {
+    std::lock_guard lock(mutex_);
+    return title_;
+}
+
+std::string CoderTerminal::pwd() {
+    std::lock_guard lock(mutex_);
+    updatePwd();
+    return pwd_;
+}
+
+uint64_t CoderTerminal::bellCount() {
+    std::lock_guard lock(mutex_);
+    return bellCount_;
+}
+
+std::string CoderTerminal::hyperlinkUriAt(int row, int col) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_) return {};
+    GhosttyPoint point{};
+    point.tag = GHOSTTY_POINT_TAG_VIEWPORT;
+    point.value.coordinate.x = static_cast<uint16_t>(std::clamp(col, 0, std::max(0, cols_ - 1)));
+    point.value.coordinate.y = static_cast<uint32_t>(std::clamp(row, 0, std::max(0, rows_ - 1)));
+    GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+    if (ghostty_terminal_grid_ref(terminal_.get(), point, &ref) != GHOSTTY_SUCCESS) return {};
+    size_t required = 0;
+    GhosttyResult sizeResult = ghostty_grid_ref_hyperlink_uri(&ref, nullptr, 0, &required);
+    if ((sizeResult != GHOSTTY_SUCCESS && sizeResult != GHOSTTY_OUT_OF_SPACE) || required == 0) return {};
+    if (required > 2048) return {};
+    std::vector<uint8_t> buffer(required);
+    size_t written = 0;
+    if (ghostty_grid_ref_hyperlink_uri(&ref, buffer.data(), buffer.size(), &written) != GHOSTTY_SUCCESS || written > buffer.size()) return {};
+    return sanitizeBytes(buffer.data(), written, 2048);
+}
+
+std::vector<std::string> CoderTerminal::consumeOscEvents() {
+    std::lock_guard lock(mutex_);
+    std::vector<std::string> events;
+    events.swap(oscEvents_);
+    return events;
+}
+
 std::string CoderTerminal::selectedText(int startRow, int startCol, int endRow, int endCol) {
     std::lock_guard lock(mutex_);
     if (!terminal_) return {};
@@ -412,6 +463,8 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
                 if (style.underline != 0) flags |= 4u;
                 if (style.strikethrough) flags |= 8u;
                 if (style.overline) flags |= 16u;
+                if (style.faint) flags |= 256u;
+                if (style.blink) flags |= 512u;
                 flags |= (static_cast<uint32_t>(style.underline) & 7u) << 5u;
                 if (style.invisible) codepointCount = 0;
                 if (codepointCount > 0 && codepoints[0] >= 0x1f000) {
@@ -480,6 +533,148 @@ void CoderTerminal::writePty(const uint8_t* data, size_t length) {
     }
 }
 
+void CoderTerminal::processOscMetadata(const uint8_t* data, size_t length) {
+    if (!data || length == 0) return;
+    for (size_t index = 0; index < length; index++) {
+        const uint8_t byte = data[index];
+        if (oscMetadataActive_) {
+            if (oscMetadataStEsc_) {
+                if (byte == '\\') {
+                    finishOscMetadata();
+                } else {
+                    if (oscMetadataBuffer_.size() < 8192) oscMetadataBuffer_.push_back('\x1b');
+                    if (oscMetadataBuffer_.size() < 8192) oscMetadataBuffer_.push_back(static_cast<char>(byte));
+                    else oscMetadataActive_ = false;
+                }
+                oscMetadataStEsc_ = false;
+                continue;
+            }
+            if (byte == 0x07) {
+                finishOscMetadata();
+                continue;
+            }
+            if (byte == 0x1b) {
+                oscMetadataStEsc_ = true;
+                continue;
+            }
+            if (oscMetadataBuffer_.size() < 8192) oscMetadataBuffer_.push_back(static_cast<char>(byte));
+            else oscMetadataActive_ = false;
+            continue;
+        }
+        if (oscMetadataEsc_) {
+            oscMetadataEsc_ = false;
+            if (byte == ']') {
+                oscMetadataActive_ = true;
+                oscMetadataStEsc_ = false;
+                oscMetadataBuffer_.clear();
+                continue;
+            }
+        }
+        oscMetadataEsc_ = byte == 0x1b;
+    }
+}
+
+void CoderTerminal::finishOscMetadata() {
+    oscMetadataActive_ = false;
+    oscMetadataStEsc_ = false;
+    if (oscMetadataBuffer_.rfind("7;", 0) == 0) {
+        const auto* bytes = reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + 2);
+        pwd_ = sanitizeBytes(bytes, oscMetadataBuffer_.size() - 2, 512);
+        if (terminal_) {
+            GhosttyString value{reinterpret_cast<const uint8_t*>(pwd_.data()), pwd_.size()};
+            ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_PWD, &value);
+        }
+    } else if (oscMetadataBuffer_.rfind("52;", 0) == 0) {
+        const size_t separator = oscMetadataBuffer_.find(';', 3);
+        if (separator != std::string::npos && separator > 3) {
+            const std::string kind = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + 3), separator - 3, 8);
+            const std::string data = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + separator + 1), oscMetadataBuffer_.size() - separator - 1, 8192);
+            oscEvents_.push_back("clipboard\t" + kind + "\t" + data);
+        }
+    } else if (oscMetadataBuffer_.rfind("9;", 0) == 0) {
+        bool progressHandled = false;
+        if (oscMetadataBuffer_.rfind("9;4;", 0) == 0 && oscMetadataBuffer_.size() >= 5) {
+            const char state = oscMetadataBuffer_[4];
+            const bool validState = state == '0' || state == '1' || state == '2' || state == '4';
+            const bool validShape = oscMetadataBuffer_.size() == 5 || oscMetadataBuffer_[5] == ';';
+            if (validState && validShape) {
+                const size_t valueStart = oscMetadataBuffer_.size() > 5 ? 6 : oscMetadataBuffer_.size();
+                const size_t valueEnd = oscMetadataBuffer_.find(';', valueStart);
+                const size_t valueLength = valueStart < oscMetadataBuffer_.size() ? (valueEnd == std::string::npos ? oscMetadataBuffer_.size() - valueStart : valueEnd - valueStart) : 0;
+                const std::string value = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + valueStart), valueLength, 8);
+                oscEvents_.push_back(std::string("progress\t") + state + "\t" + value);
+                progressHandled = true;
+            }
+        }
+        if (!progressHandled) {
+            const std::string body = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + 2), oscMetadataBuffer_.size() - 2, 512);
+            if (!body.empty()) oscEvents_.push_back("notification\t\t" + body);
+        }
+    } else if (oscMetadataBuffer_.rfind("777;notify;", 0) == 0) {
+        const size_t titleStart = 11;
+        const size_t separator = oscMetadataBuffer_.find(';', titleStart);
+        if (separator != std::string::npos) {
+            const std::string title = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + titleStart), separator - titleStart, 128);
+            const std::string body = sanitizeBytes(reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + separator + 1), oscMetadataBuffer_.size() - separator - 1, 512);
+            if (!title.empty() || !body.empty()) oscEvents_.push_back("notification\t" + title + "\t" + body);
+        }
+    }
+    oscMetadataBuffer_.clear();
+}
+
+void CoderTerminal::updateTitle() {
+    GhosttyString value{};
+    if (terminal_ && ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_TITLE, &value) == GHOSTTY_SUCCESS) title_ = sanitizeGhosttyString(value, 256);
+}
+
+void CoderTerminal::updatePwd() {
+    GhosttyString value{};
+    if (terminal_ && ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_PWD, &value) == GHOSTTY_SUCCESS) pwd_ = sanitizeGhosttyString(value, 512);
+}
+
+std::string CoderTerminal::sanitizeGhosttyString(GhosttyString value, size_t maxBytes) {
+    return sanitizeBytes(value.ptr, value.len, maxBytes);
+}
+
+std::string CoderTerminal::sanitizeBytes(const uint8_t* data, size_t length, size_t maxBytes) {
+    if (!data || length == 0 || maxBytes == 0) return {};
+    std::string output;
+    output.reserve(std::min(length, maxBytes));
+    size_t index = 0;
+    while (index < length && output.size() < maxBytes) {
+        const uint8_t byte = data[index];
+        uint32_t codepoint = 0;
+        size_t width = 0;
+        if (byte < 0x80) {
+            codepoint = byte;
+            width = 1;
+        } else if ((byte & 0xe0) == 0xc0 && index + 1 < length && (data[index + 1] & 0xc0) == 0x80) {
+            codepoint = ((byte & 0x1f) << 6) | (data[index + 1] & 0x3f);
+            width = codepoint >= 0x80 ? 2 : 0;
+        } else if ((byte & 0xf0) == 0xe0 && index + 2 < length && (data[index + 1] & 0xc0) == 0x80 && (data[index + 2] & 0xc0) == 0x80) {
+            codepoint = ((byte & 0x0f) << 12) | ((data[index + 1] & 0x3f) << 6) | (data[index + 2] & 0x3f);
+            width = codepoint >= 0x800 && (codepoint < 0xd800 || codepoint > 0xdfff) ? 3 : 0;
+        } else if ((byte & 0xf8) == 0xf0 && index + 3 < length && (data[index + 1] & 0xc0) == 0x80 && (data[index + 2] & 0xc0) == 0x80 && (data[index + 3] & 0xc0) == 0x80) {
+            codepoint = ((byte & 0x07) << 18) | ((data[index + 1] & 0x3f) << 12) | ((data[index + 2] & 0x3f) << 6) | (data[index + 3] & 0x3f);
+            width = codepoint >= 0x10000 && codepoint <= 0x10ffff ? 4 : 0;
+        }
+        if (width == 0) {
+            if (output.size() + 3 > maxBytes) break;
+            output.append("\xef\xbf\xbd", 3);
+            index++;
+            continue;
+        }
+        if ((codepoint < 0x20 && codepoint != '\t') || codepoint == 0x7f || (codepoint >= 0x80 && codepoint <= 0x9f)) {
+            index += width;
+            continue;
+        }
+        if (output.size() + width > maxBytes) break;
+        output.append(reinterpret_cast<const char*>(data + index), width);
+        index += width;
+    }
+    return output;
+}
+
 GhosttyKey CoderTerminal::mapAndroidKey(int keyCode) const {
     if (keyCode >= 29 && keyCode <= 54) return static_cast<GhosttyKey>(GHOSTTY_KEY_A + keyCode - 29);
     if (keyCode >= 7 && keyCode <= 16) return static_cast<GhosttyKey>(GHOSTTY_KEY_DIGIT_0 + keyCode - 7);
@@ -538,12 +733,26 @@ void CoderTerminal::writePtyEffect(GhosttyTerminal, void* userdata, const uint8_
     static_cast<CoderTerminal*>(userdata)->writePty(data, length);
 }
 
+void CoderTerminal::titleChangedEffect(GhosttyTerminal, void* userdata) {
+    static_cast<CoderTerminal*>(userdata)->updateTitle();
+}
+
+void CoderTerminal::bellEffect(GhosttyTerminal, void* userdata) {
+    static_cast<CoderTerminal*>(userdata)->bellCount_++;
+}
+
 bool CoderTerminal::sizeEffect(GhosttyTerminal, void* userdata, GhosttySizeReportSize* outSize) {
     auto* terminal = static_cast<CoderTerminal*>(userdata);
     outSize->rows = static_cast<uint16_t>(terminal->rows_);
     outSize->columns = static_cast<uint16_t>(terminal->cols_);
     outSize->cell_width = static_cast<uint32_t>(terminal->cellWidth_);
     outSize->cell_height = static_cast<uint32_t>(terminal->cellHeight_);
+    return true;
+}
+
+bool CoderTerminal::colorSchemeEffect(GhosttyTerminal, void* userdata, GhosttyColorScheme* outScheme) {
+    auto* terminal = static_cast<CoderTerminal*>(userdata);
+    *outScheme = terminal->colorScheme_;
     return true;
 }
 

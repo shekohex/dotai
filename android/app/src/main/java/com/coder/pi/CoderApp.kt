@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -134,7 +135,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS, DEBUG_RENDER }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 private enum class TerminalUiMode { SHEET, CAROUSEL }
 
 private sealed interface AuthState {
@@ -190,12 +191,17 @@ fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
     return this
 }
 
+private fun openTerminalHyperlink(context: Context, uri: String) {
+    CustomTabsIntent.Builder().build().launchUrl(context, uri.toUri())
+}
+
 @Composable
 fun CoderApp(
     terminalView: CoderTerminalView,
     theme: CoderTheme,
     uiRevision: Int,
     deepLinkSettingsPage: SettingsPage?,
+    deepLinkTerminalId: String?,
     deepLinkRevision: Int,
     debugPlaygroundRevision: Int,
     onThemeChanged: () -> Unit,
@@ -213,6 +219,7 @@ fun CoderApp(
     val tokens = remember(theme) { uiTokens(theme) }
     val context = LocalContext.current
     val sessionStore = remember(context) { CoderSessionStore(context) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     var networkAvailable by remember { mutableStateOf(true) }
     DisposableEffect(context, terminalView, terminalSessions) {
         val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
@@ -236,6 +243,7 @@ fun CoderApp(
             }
         }
         preferences.registerOnSharedPreferenceChangeListener(listener)
+        terminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     LaunchedEffect(deepLinkRevision) {
@@ -294,12 +302,25 @@ fun CoderApp(
         }
     }
     (authState as? AuthState.LoggedIn)?.session?.let { session ->
+        LaunchedEffect(deepLinkRevision, deepLinkTerminalId, terminalSessions.size) {
+            val terminalId = deepLinkTerminalId ?: return@LaunchedEffect
+            terminalSessions.firstOrNull { it.id == terminalId }?.let {
+                destination = AppDestination.HOME
+                if (it.detached) {
+                    TerminalWindowLauncher.open(context, it.launch, it.identity)
+                } else {
+                    selectedTerminalId = it.id
+                    terminalUiMode = TerminalUiMode.SHEET
+                }
+            }
+        }
         val sessionKey = "${session.baseUrl}|${session.user.id}"
         LaunchedEffect(sessionKey, theme.name) {
             if (hydratedSessionKey == sessionKey || terminalSessions.isNotEmpty()) return@LaunchedEffect
             hydratedSessionKey = sessionKey
             sessionStore.activeTerminals(session.baseUrl, session.user.id).forEach { metadata ->
-                val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, metadata.workspaceName, metadata.agentName)
+                val workspaceLabel = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId).alias ?: metadata.workspaceName
+                val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, workspaceLabel, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
                 val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
                 val id = terminalSessionKey(identity)
                 if (terminalSessions.any { it.id == id }) return@forEach
@@ -307,6 +328,8 @@ fun CoderApp(
                     it.setFontFamily(CoderFonts.selectedKey(context))
                     it.applyTheme(theme)
                 }
+                configureTerminalNotificationContext(nextTerminalView, launch, identity, sessionStore)
+                nextTerminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
                 val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null)
                 terminalSessions.add(managed)
                 if (metadata.detached) return@forEach
@@ -333,12 +356,15 @@ fun CoderApp(
                 terminalSessions.removeAll { managed -> managed.id !in metadataById.keys }
                 metadataById.forEach { (id, metadata) ->
                     if (terminalSessions.any { it.id == id }) return@forEach
-                    val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, metadata.workspaceName, metadata.agentName)
+                    val workspaceLabel = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId).alias ?: metadata.workspaceName
+                    val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, workspaceLabel, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
                     val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
                     val nextTerminalView = CoderTerminalView(context).also {
                         it.setFontFamily(CoderFonts.selectedKey(context))
                         it.applyTheme(theme)
                     }
+                    configureTerminalNotificationContext(nextTerminalView, launch, identity, sessionStore)
+                    nextTerminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
                     terminalSessions.add(ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), nextTerminalView, null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null))
                 }
                 terminalSessions.forEachIndexed { index, managed ->
@@ -415,7 +441,7 @@ fun CoderApp(
                             val index = terminalSessions.indexOfFirst { session -> session.id == it.id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(updatedAtMillis = now)
                             val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached))
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached, workspaceIconUrl = it.launch.workspaceIconUrl))
                             if (detached) {
                                 TerminalWindowLauncher.open(context, it.launch, it.identity)
                             } else {
@@ -428,7 +454,8 @@ fun CoderApp(
                         },
                         onOpenTerminal = { workspace, agent, command ->
                             val reconnect = sessionStore.reconnectToken(state.session.baseUrl, state.session.user.id, workspace.id, agent.id)
-                            val launch = TerminalLaunchRequest(state.session.baseUrl, state.session.token, agent.id, reconnect.id, command, workspace.name, agent.name)
+                            val workspaceLabel = sessionStore.workspaceState(state.session.baseUrl, state.session.user.id, workspace.id).alias ?: workspace.name
+                            val launch = TerminalLaunchRequest(state.session.baseUrl, state.session.token, agent.id, reconnect.id, command, workspaceLabel, agent.name, workspace.name, workspace.templateIcon)
                             val identity = TerminalIdentity(state.session.baseUrl, state.session.user.id, workspace.id, agent.id, command)
                             val id = terminalSessionKey(identity)
                             terminalSessions.firstOrNull { it.id == id }?.let {
@@ -448,7 +475,9 @@ fun CoderApp(
                                 it.setFontFamily(CoderFonts.selectedKey(context))
                                 it.applyTheme(theme)
                             }
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis()))
+                            configureTerminalNotificationContext(nextTerminalView, launch, identity, sessionStore)
+                            nextTerminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis(), workspaceIconUrl = workspace.templateIcon))
                             val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis(), false, null)
                             terminalSessions.add(managed)
                             val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), nextTerminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
@@ -486,13 +515,13 @@ fun CoderApp(
                         val now = System.currentTimeMillis()
                         terminalSessions[index] = it.copy(updatedAtMillis = now)
                         val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
-                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached))
+                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached, workspaceIconUrl = it.launch.workspaceIconUrl))
                         selectedTerminalId = it.id
                     } }
                 val retry: () -> Unit = {
                         val launch = managed.launch
                         managed.session?.stop()
-                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached))
+                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached, workspaceIconUrl = launch.workspaceIconUrl))
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
                         val terminalSession = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), managed.terminalView, launch.agentId, launch.reconnectId, launch.command, { status ->
@@ -548,7 +577,7 @@ fun CoderApp(
                             managed.session?.stop()
                             managed.terminalView.detachFromCurrentParent()
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = null, detached = true, updatedAtMillis = System.currentTimeMillis())
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true))
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true, workspaceIconUrl = managed.launch.workspaceIconUrl))
                             selectedTerminalId = null
                             onHideKeyboard()
                             TerminalWindowLauncher.open(context, managed.launch, managed.identity)
@@ -579,13 +608,28 @@ fun CoderApp(
 
 private data class TerminalSheetState(val title: String, val badge: String, val status: String)
 
-data class TerminalLaunchRequest(val baseUrl: String, val token: String, val agentId: String, val reconnectId: String, val command: String, val title: String, val badge: String)
+data class TerminalLaunchRequest(val baseUrl: String, val token: String, val agentId: String, val reconnectId: String, val command: String, val title: String, val badge: String, val workspaceName: String = title, val workspaceIconUrl: String? = null)
 
 data class TerminalIdentity(val baseUrl: String, val userId: String, val workspaceId: String, val agentId: String, val command: String)
 
 private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val terminalView: CoderTerminalView, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val detached: Boolean, val errorDetail: String?)
 
 private const val MaxActiveTerminalSessions = 10
+
+private fun configureTerminalNotificationContext(terminalView: CoderTerminalView, launch: TerminalLaunchRequest, identity: TerminalIdentity, sessionStore: CoderSessionStore) {
+    val id = terminalSessionKey(identity)
+    val local = sessionStore.workspaceState(identity.baseUrl, identity.userId, identity.workspaceId)
+    terminalView.setNotificationContext(
+        TerminalNotificationContext(
+            workspaceId = identity.workspaceId,
+            workspaceName = launch.workspaceName,
+            workspaceDisplayName = local.alias ?: launch.title,
+            deepLink = "pi://terminal?id=${Uri.encode(id)}",
+            iconUri = local.iconUri.orEmpty(),
+            iconUrl = launch.workspaceIconUrl.orEmpty(),
+        )
+    )
+}
 
 @Composable
 private fun ConfirmCloseTerminalDialog(tokens: UiTokens, onDismiss: () -> Unit, onConfirm: () -> Unit) {
@@ -833,7 +877,7 @@ private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, sessionStore
                 previewLines = lines
                 val launch = managed.launch
                 val detached = sessionStore.isActiveTerminalDetached(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.identity.agentId, managed.identity.command)
-                sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, updatedAtMillis, lines.joinToString("\n"), detached))
+                sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, updatedAtMillis, lines.joinToString("\n"), detached, workspaceIconUrl = launch.workspaceIconUrl))
             } else {
                 relativeTime = relativeSessionTime(updatedAtMillis)
             }
@@ -1081,6 +1125,8 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         return
     }
     val debugFonts = remember { CoderFonts.builtInOptions().filter { it.key in setOf("jetbrains", "geist", "ibm_plex", "iosevka", "maple") } }
+    var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
+    var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     val playgroundTerminalView = remember(context) {
         CoderTerminalView(context).also {
             it.setFontSizePoints(22)
@@ -1089,34 +1135,85 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
     }
     BackHandler { onBack() }
     DisposableEffect(playgroundTerminalView) {
-        onDispose { playgroundTerminalView.dispose() }
+        val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
+        val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
+        playgroundTerminalView.onOscMetadataChanged = metadataHandler
+        playgroundTerminalView.onHyperlinkActivated = hyperlinkHandler
+        onDispose {
+            if (playgroundTerminalView.onOscMetadataChanged === metadataHandler) playgroundTerminalView.onOscMetadataChanged = null
+            if (playgroundTerminalView.onHyperlinkActivated === hyperlinkHandler) playgroundTerminalView.onHyperlinkActivated = null
+            playgroundTerminalView.dispose()
+        }
     }
-    AndroidView(
-        factory = { playgroundTerminalView.detachFromCurrentParent() },
-        modifier = Modifier.fillMaxSize().background(theme.background.toComposeColor()),
-        update = {
-            it.applyTheme(theme)
-            it.post { it.refreshSurface() }
-            it.setFontSizePoints(22)
-            debugFonts.forEachIndexed { index, font ->
-                val delayMillis = index * 900L
-                it.postDelayed({
-                    it.setPreviewFontFamily(font.key)
-                    it.feedRemoteOutput(debugRenderPlaygroundBytes(font.name))
-                }, delayMillis)
+    Box(Modifier.fillMaxSize().background(theme.background.toComposeColor())) {
+        AndroidView(
+            factory = { playgroundTerminalView.detachFromCurrentParent() },
+            modifier = Modifier.fillMaxSize(),
+            update = {
+                it.applyTheme(theme)
+                it.post { it.refreshSurface() }
+                it.setFontSizePoints(22)
+                debugFonts.forEachIndexed { index, font ->
+                    val delayMillis = index * 900L
+                    it.postDelayed({
+                        it.setPreviewFontFamily(font.key)
+                        it.feedRemoteOutput(debugRenderPlaygroundBytes(font.name))
+                    }, delayMillis)
+                }
+                repeat(96) { frameIndex ->
+                    it.postDelayed({ it.feedRemoteOutput(debugWorkingIndicatorFrameBytes(frameIndex)) }, 4500L + frameIndex * 80L)
+                }
+                listOf(0, 20, 45, 70, 100).forEachIndexed { index, progress ->
+                    it.postDelayed({ it.feedRemoteOutput("\u001b]9;4;1;$progress\u0007".toByteArray(Charsets.UTF_8)) }, 5200L + index * 700L)
+                }
+                it.postDelayed({ it.feedRemoteOutput("\u001b]9;4;0;0\u0007".toByteArray(Charsets.UTF_8)) }, 9000L)
+            },
+        )
+        if (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank()) {
+            Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
+                if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
             }
-        },
-    )
+        }
+    }
+    pendingHyperlink?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingHyperlink = null },
+            containerColor = theme.background.toComposeColor(),
+            titleContentColor = theme.foreground.toComposeColor(),
+            textContentColor = theme.foreground.toComposeColor(),
+            title = { Text("Open link?") },
+            text = { Text(uri, fontFamily = FontFamily.Monospace, fontSize = captionSize()) },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        terminalOscHyperlinkHost(uri)?.let { terminalSetLinkHostAllowed(context, it, true) }
+                        pendingHyperlink = null
+                        openTerminalHyperlink(context, uri)
+                    }) { Text("Always", color = theme.selectionBackground.toComposeColor()) }
+                    TextButton(onClick = { pendingHyperlink = null; openTerminalHyperlink(context, uri) }) { Text("Open", color = theme.selectionBackground.toComposeColor()) }
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = theme.foreground.toComposeColor()) } },
+        )
+    }
 }
 
 private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
     val esc = "\u001b"
     val sample = buildString {
         append("${esc}[2J${esc}[H")
+        append("${esc}]2;DotAI OSC $fontName${'\u0007'}")
+        append("${esc}]7;file://coder.example/home/coder/dotai${'\u0007'}")
+        append("${esc}]52;c;Y2xpcGJvYXJkLXNtb2tl${'\u0007'}")
+        append("${esc}]9;OSC notification smoke${'\u0007'}")
+        append("${esc}]9;4;1;42${'\u0007'}")
         append("${esc}[1mDotAI renderer playground · $fontName${esc}[0m\r\n")
         append("Real CoderTerminalView + libghostty-vt + native GLES renderer\r\n\r\n")
+        append("OSC 8: ${esc}]8;;https://example.com${'\u0007'}tap link${esc}]8;;${'\u0007'}  BEL:${'\u0007'}  Color:${esc}]10;#ff5c7a${'\u0007'}fg override${esc}]110${'\u0007'}\r\n\r\n")
+        append("Working: ⣾ CoreUI indicator\r\n\r\n")
         append("${esc}[1mBold${esc}[0m   ${esc}[3mItalic${esc}[0m   ${esc}[1;3mBoldItalic${esc}[0m\r\n")
-        append("${esc}[2mFaint${esc}[0m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")
+        append("${esc}[2mFaint${esc}[0m   ${esc}[5mBlink${esc}[25m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")
         append("${esc}[4mSingle underline${esc}[0m\r\n")
         append("${esc}[4:2mDouble underline${esc}[0m\r\n")
         append("${esc}[4:3mCurly underline${esc}[0m\r\n")
@@ -1135,6 +1232,14 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("\r\n${esc}[38;2;137;180;250mForeground RGB${esc}[0m ${esc}[48;2;49;50;68mBackground RGB${esc}[0m\r\n")
     }
     return sample.toByteArray(Charsets.UTF_8)
+}
+
+private fun debugWorkingIndicatorFrameBytes(index: Int): ByteArray {
+    val frames = listOf("⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷")
+    val colors = listOf("\u001b[38;2;255;179;186m", "\u001b[38;2;255;223;186m", "\u001b[38;2;255;255;186m", "\u001b[38;2;186;255;201m", "\u001b[38;2;186;225;255m", "\u001b[38;2;218;186;255m")
+    val frame = frames[index % frames.size]
+    val color = colors[index % colors.size]
+    return "\u001b[7;10H$color$frame\u001b[39m\u001b[999;1H".toByteArray(Charsets.UTF_8)
 }
 
 @Composable
@@ -1347,7 +1452,19 @@ fun TerminalSurface(
     statusContent: @Composable BoxScope.() -> Unit = {},
 ) {
     var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
+    var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
+    var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    DisposableEffect(terminalView) {
+        val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
+        val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
+        terminalView.onOscMetadataChanged = metadataHandler
+        terminalView.onHyperlinkActivated = hyperlinkHandler
+        onDispose {
+            if (terminalView.onOscMetadataChanged === metadataHandler) terminalView.onOscMetadataChanged = null
+            if (terminalView.onHyperlinkActivated === hyperlinkHandler) terminalView.onHyperlinkActivated = null
+        }
+    }
     fun copySelection() {
         val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
         if (selectedText.isNotBlank()) {
@@ -1371,9 +1488,36 @@ fun TerminalSurface(
                 if (it != null && selection == null) onHideKeyboard()
                 selection = it
             }) { copySelection() }
+            if (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank()) {
+                Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
+                    if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                    if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                }
+            }
             statusContent()
         }
         TerminalAccessory(theme, terminalView, selection != null, carouselSwipeEnabled, onCarouselSwipe, { copySelection() }, { selection = null }, onShowKeyboard, onHideKeyboard)
+    }
+    pendingHyperlink?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingHyperlink = null },
+            containerColor = theme.background.toComposeColor(),
+            titleContentColor = theme.foreground.toComposeColor(),
+            textContentColor = theme.foreground.toComposeColor(),
+            title = { Text("Open link?") },
+            text = { Text(uri, fontFamily = FontFamily.Monospace, fontSize = captionSize()) },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        terminalOscHyperlinkHost(uri)?.let { terminalSetLinkHostAllowed(context, it, true) }
+                        pendingHyperlink = null
+                        openTerminalHyperlink(context, uri)
+                    }) { Text("Always", color = theme.selectionBackground.toComposeColor()) }
+                    TextButton(onClick = { pendingHyperlink = null; openTerminalHyperlink(context, uri) }) { Text("Open", color = theme.selectionBackground.toComposeColor()) }
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = theme.foreground.toComposeColor()) } },
+        )
     }
 }
 
@@ -1822,8 +1966,8 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
     }
     BackHandler { navigateBack() }
     when (page) {
-        SettingsPage.ROOT -> SettingsRootScreen(session, terminalView, theme, tokens, uiRevision, ::navigateBack, { page = SettingsPage.THEME }, { page = SettingsPage.FONTS }) {
-            if (it == "Toolbar") page = SettingsPage.TOOLBAR else if (it == "Shortcuts") page = SettingsPage.SHORTCUTS else if (it == "Keyboard") page = SettingsPage.KEYBOARD else if (it == "Gestures") page = SettingsPage.GESTURES else if (it == "Speech") page = SettingsPage.SPEECH else if (it == "Coder Connection") page = SettingsPage.CONNECTION else {
+        SettingsPage.ROOT -> SettingsRootScreen(session, terminalView, theme, tokens, uiRevision, ::navigateBack, { page = SettingsPage.THEME }, { page = SettingsPage.FONTS }, { page = SettingsPage.NOTIFICATIONS }) {
+            if (it == "Toolbar") page = SettingsPage.TOOLBAR else if (it == "Shortcuts") page = SettingsPage.SHORTCUTS else if (it == "Keyboard") page = SettingsPage.KEYBOARD else if (it == "Gestures") page = SettingsPage.GESTURES else if (it == "Speech") page = SettingsPage.SPEECH else if (it == "Links") page = SettingsPage.LINKS else if (it == "Coder Connection") page = SettingsPage.CONNECTION else {
                 placeholderTitle = it
                 page = SettingsPage.PLACEHOLDER
             }
@@ -1837,6 +1981,9 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
+        SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
+        SettingsPage.NOTIFICATIONS -> TerminalNotificationsSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens, { page = SettingsPage.DEBUG_LOGS }, ::navigateBack)
         SettingsPage.DEBUG_LOGS -> DebugLogsScreen(sessionStore, tokens, ::navigateBack)
         SettingsPage.PLACEHOLDER -> PlaceholderSettingsScreen(placeholderTitle, tokens, ::navigateBack)
@@ -1844,14 +1991,16 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
 }
 
 @Composable
-private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onBack: () -> Unit, onTheme: () -> Unit, onFonts: () -> Unit, onPlaceholder: (String) -> Unit) {
+private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, uiRevision: Int, onBack: () -> Unit, onTheme: () -> Unit, onFonts: () -> Unit, onNotifications: () -> Unit, onPlaceholder: (String) -> Unit) {
     val context = LocalContext.current
     var cursorBlink by remember { mutableStateOf(terminalView.cursorBlinkEnabled()) }
     var cursorMode by remember { mutableIntStateOf(terminalView.cursorMode()) }
     var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
     var autoSend by remember { mutableStateOf(terminalView.autoSendEnabled()) }
+    var oscNotifications by remember { mutableStateOf(terminalView.oscNotificationsEnabled()) }
     var hapticFeedback by remember { mutableStateOf(context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)) }
     val appPreferences = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     var fileSync by remember { mutableStateOf(appPreferences.getBoolean("file_sync", false)) }
     var syncCredentials by remember { mutableStateOf(appPreferences.getBoolean("sync_credentials", false)) }
     SettingsScaffold("Settings", tokens, onBack) {
@@ -1873,7 +2022,13 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             SettingsToggleRow(R.drawable.ic_feather_send, "Auto Send", autoSend, tokens) { autoSend = it; terminalView.setAutoSendEnabled(it) }
         }
         SettingsSection("INTEGRATIONS", tokens) {
-            SettingsValueRow(R.drawable.ic_feather_bell, "Push Notifications", null, "Off", tokens, chevron = true) { onPlaceholder("Push Notifications") }
+            SettingsValueRow(R.drawable.ic_feather_globe, "Links", "Allowed OSC 8 link hosts", null, tokens, chevron = true) { onPlaceholder("Links") }
+            SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "OSC 9 alerts and progress", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
+            SettingsToggleRow(R.drawable.ic_feather_bell, "Quick Toggle", oscNotifications, tokens) {
+                oscNotifications = it
+                terminalView.setOscNotificationsEnabled(it)
+                if (it && android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
             SettingsValueRow(R.drawable.ic_feather_box, "Inbox & Usage", null, null, tokens, chevron = true) { onPlaceholder("Inbox & Usage") }
             SettingsValueRow(R.drawable.ic_feather_folder, "File Sharing", null, null, tokens, pro = true, chevron = true) { onPlaceholder("File Sharing") }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Shell", null, null, tokens, pro = true, chevron = true) { onPlaceholder("Shell") }
@@ -1897,6 +2052,43 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
 }
 
 @Composable
+private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(terminalView.oscNotificationsEnabled()) }
+    var alerts by remember { mutableStateOf(terminalView.oscNotificationAlertsEnabled()) }
+    var progress by remember { mutableStateOf(terminalView.oscNotificationProgressEnabled()) }
+    var toasts by remember { mutableStateOf(terminalView.oscNotificationToastsEnabled()) }
+    var iconStyle by remember { mutableStateOf(terminalView.oscNotificationIconStyle()) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    SettingsScaffold("Terminal Notifications", tokens, onBack) {
+        SettingsSection("OSC", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_bell, "Enabled", enabled, tokens) {
+                enabled = it
+                terminalView.setOscNotificationsEnabled(it)
+                if (it && android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_bell, "OSC 9 Alerts", alerts, tokens) { alerts = it; terminalView.setOscNotificationAlertsEnabled(it) }
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "OSC 9 Progress", progress, tokens) { progress = it; terminalView.setOscNotificationProgressEnabled(it) }
+            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Toast Fallback", toasts, tokens) { toasts = it; terminalView.setOscNotificationToastsEnabled(it) }
+        }
+        SettingsSection("ICON", tokens) {
+            listOf("pi" to "Pi", "terminal" to "Terminal", "bell" to "Bell").forEach { (value, label) ->
+                SettingsValueRow(R.drawable.ic_feather_bell, label, null, if (iconStyle == value) "✓" else null, tokens) {
+                    iconStyle = value
+                    terminalView.setOscNotificationIconStyle(value)
+                }
+            }
+        }
+        SettingsSection("SYSTEM", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_sliders, "Android Notification Settings", "Channel, sound, vibration, lock screen", null, tokens, chevron = true) {
+                val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                context.startActivity(intent)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ThemePickerScreen(tokens: UiTokens, onBack: () -> Unit, onThemeChanged: () -> Unit) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(CoderThemes.selectedThemeName(context)) }
@@ -1914,6 +2106,72 @@ private fun LazyListScope.ThemeSection(title: String, options: List<CoderThemeOp
                 Text(if (selected == option.name) "✓" else "", color = tokens.success, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun LinkAllowlistSettingsScreen(tokens: UiTokens, showAddOnOpen: Boolean, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var hosts by remember { mutableStateOf(terminalAllowedLinkHosts(context).toList().sorted()) }
+    var addDialog by remember { mutableStateOf(false) }
+    var addValue by remember { mutableStateOf("") }
+    var addError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(showAddOnOpen) {
+        if (showAddOnOpen) addDialog = true
+    }
+    fun removeHost(host: String) {
+        terminalSetLinkHostAllowed(context, host, false)
+        hosts = terminalAllowedLinkHosts(context).toList().sorted()
+    }
+    fun addHost() {
+        val pattern = terminalNormalizeLinkHostPattern(addValue)
+        if (pattern == null) {
+            addError = "Enter host, URL, or wildcard like *.example.com"
+            return
+        }
+        terminalSetLinkHostAllowed(context, pattern, true)
+        hosts = terminalAllowedLinkHosts(context).toList().sorted()
+        addValue = ""
+        addError = null
+        addDialog = false
+    }
+    SettingsScaffold("Links", tokens, onBack, R.drawable.ic_feather_plus, { addDialog = true }) {
+        SettingsSection("OSC 8 ALLOWLIST", tokens) {
+            if (hosts.isEmpty()) {
+                item {
+                    Text("No hosts allowed. Terminal links ask before opening.", color = tokens.secondary, fontSize = bodySize(), modifier = Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 16.dp))
+                }
+            } else {
+                hosts.forEach { host ->
+                    SettingsRow(R.drawable.ic_feather_globe, host, "Opens without asking", tokens, {}) {
+                        Text("Remove", color = Color(0xffff5c7a), fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { removeHost(host) }.padding(horizontal = 10.dp, vertical = 7.dp))
+                    }
+                }
+            }
+        }
+    }
+    if (addDialog) {
+        AlertDialog(
+            onDismissRequest = { addDialog = false; addError = null },
+            containerColor = tokens.surfaceHigh,
+            titleContentColor = tokens.text,
+            textContentColor = tokens.text,
+            title = { Text("Allow link host") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BasicTextField(
+                        value = addValue,
+                        onValueChange = { addValue = it; addError = null },
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tokens.surface).padding(12.dp),
+                    )
+                    Text(addError ?: "Examples: example.com, https://example.com, *.example.com", color = if (addError == null) tokens.secondary else Color(0xffff5c7a), fontSize = captionSize())
+                }
+            },
+            confirmButton = { TextButton(onClick = { addHost() }) { Text("Add", color = tokens.accent) } },
+            dismissButton = { TextButton(onClick = { addDialog = false; addError = null }) { Text("Cancel", color = tokens.secondary) } },
+        )
     }
 }
 

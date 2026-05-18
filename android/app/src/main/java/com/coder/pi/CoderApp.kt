@@ -1028,7 +1028,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         Box(Modifier.fillMaxSize().background(tokens.background))
         return
     }
-    val baselineFont = remember { CoderFonts.builtInOptions().first { it.key == "jetbrains" } }
+    val debugFonts = remember { CoderFonts.builtInOptions().filter { it.key in setOf("jetbrains", "geist", "ibm_plex", "iosevka", "maple") } }
     val playgroundTerminalView = remember(context) {
         CoderTerminalView(context).also {
             it.setFontSizePoints(22)
@@ -1045,10 +1045,13 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         update = {
             it.applyTheme(theme)
             it.post { it.refreshSurface() }
-            it.setPreviewFontFamily(baselineFont.key)
             it.setFontSizePoints(22)
-            listOf(0L, 300L, 900L, 1800L, 3500L, 7000L, 12000L).forEach { delayMillis ->
-                it.postDelayed({ it.feedRemoteOutput(debugRenderPlaygroundBytes(baselineFont.name)) }, delayMillis)
+            debugFonts.forEachIndexed { index, font ->
+                val delayMillis = index * 900L
+                it.postDelayed({
+                    it.setPreviewFontFamily(font.key)
+                    it.feedRemoteOutput(debugRenderPlaygroundBytes(font.name))
+                }, delayMillis)
             }
         },
     )

@@ -26,120 +26,129 @@ struct JniByteArrayView {
     size_t size() const { return static_cast<size_t>(length); }
 };
 
-struct CoderSession {
+struct NativeTerminal {
     CoderTerminal terminal;
+};
+
+struct NativeRenderer {
     CoderRenderer renderer;
 };
 
-static CoderTerminal* terminal(CoderSession* session) { return &session->terminal; }
-static CoderRenderer* renderer(CoderSession* session) { return &session->renderer; }
+static CoderTerminal* terminal(NativeTerminal* handle) { return &handle->terminal; }
+static CoderRenderer* renderer(NativeRenderer* handle) { return &handle->renderer; }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_coder_pi_CoderNative_nativeInit(JNIEnv*, jobject, jint cols, jint rows, jint cellWidth, jint cellHeight) {
-    auto session = std::make_unique<CoderSession>();
-    session->terminal.start(cols, rows, cellWidth, cellHeight);
-    return reinterpret_cast<jlong>(session.release());
+Java_com_coder_pi_CoderNative_nativeInitTerminal(JNIEnv*, jobject, jint cols, jint rows, jint cellWidth, jint cellHeight) {
+    auto handle = std::make_unique<NativeTerminal>();
+    handle->terminal.start(cols, rows, cellWidth, cellHeight);
+    return reinterpret_cast<jlong>(handle.release());
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeDispose(JNIEnv*, jobject, jlong handle) {
-    delete reinterpret_cast<CoderSession*>(handle);
+Java_com_coder_pi_CoderNative_nativeDisposeTerminal(JNIEnv*, jobject, jlong handle) {
+    delete reinterpret_cast<NativeTerminal*>(handle);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_coder_pi_CoderNative_nativeInitRenderer(JNIEnv*, jobject) {
+    return reinterpret_cast<jlong>(new NativeRenderer());
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSurfaceCreated(JNIEnv*, jobject, jlong handle) {
-    renderer(reinterpret_cast<CoderSession*>(handle))->init();
+Java_com_coder_pi_CoderNative_nativeDisposeRenderer(JNIEnv*, jobject, jlong handle) {
+    delete reinterpret_cast<NativeRenderer*>(handle);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetFont(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
+Java_com_coder_pi_CoderNative_nativeRendererSurfaceCreated(JNIEnv*, jobject, jlong rendererHandle) {
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->init();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeRendererSetFont(JNIEnv* env, jobject, jlong rendererHandle, jbyteArray bytes) {
     JniByteArrayView regular(env, bytes);
-    renderer(session)->setFontData(regular.bytes(), regular.size());
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setFontData(regular.bytes(), regular.size());
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetFontStyles(JNIEnv* env, jobject, jlong handle, jbyteArray regularBytes, jbyteArray boldBytes, jbyteArray italicBytes, jbyteArray boldItalicBytes, jbyteArray fallbackBytes) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
+Java_com_coder_pi_CoderNative_nativeRendererSetFontStyles(JNIEnv* env, jobject, jlong rendererHandle, jbyteArray regularBytes, jbyteArray boldBytes, jbyteArray italicBytes, jbyteArray boldItalicBytes, jbyteArray fallbackBytes) {
     JniByteArrayView regular(env, regularBytes);
     JniByteArrayView bold(env, boldBytes);
     JniByteArrayView italic(env, italicBytes);
     JniByteArrayView boldItalic(env, boldItalicBytes);
     JniByteArrayView fallback(env, fallbackBytes);
-    renderer(session)->setFontData(regular.bytes(), regular.size(), bold.bytes(), bold.size(), italic.bytes(), italic.size(), boldItalic.bytes(), boldItalic.size());
-    renderer(session)->setFallbackFontData(fallback.bytes(), fallback.size());
+    auto* nativeRenderer = renderer(reinterpret_cast<NativeRenderer*>(rendererHandle));
+    nativeRenderer->setFontData(regular.bytes(), regular.size(), bold.bytes(), bold.size(), italic.bytes(), italic.size(), boldItalic.bytes(), boldItalic.size());
+    nativeRenderer->setFallbackFontData(fallback.bytes(), fallback.size());
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetShaderCacheDir(JNIEnv* env, jobject, jlong handle, jstring path) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
+Java_com_coder_pi_CoderNative_nativeRendererSetShaderCacheDir(JNIEnv* env, jobject, jlong rendererHandle, jstring path) {
     const char* chars = env->GetStringUTFChars(path, nullptr);
     if (!chars) return;
-    renderer(session)->setShaderCacheDir(chars);
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setShaderCacheDir(chars);
     env->ReleaseStringUTFChars(path, chars);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetTheme(JNIEnv* env, jobject, jlong handle, jint foreground, jint background, jint cursor, jint cursorText, jintArray palette) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
+Java_com_coder_pi_CoderNative_nativeSetTerminalTheme(JNIEnv* env, jobject, jlong terminalHandle, jint foreground, jint background, jint cursor, jintArray palette) {
     jsize length = env->GetArrayLength(palette);
     jint* data = env->GetIntArrayElements(palette, nullptr);
-    terminal(session)->setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
-    renderer(session)->setTheme(static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), static_cast<uint32_t>(cursorText));
+    terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
     env->ReleaseIntArrayElements(palette, data, JNI_ABORT);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetTextOptions(JNIEnv*, jobject, jlong handle, jboolean ligatures, jboolean contextualAlternates, jboolean slashedZero, jboolean stylisticSet1, jboolean stylisticSet2, jboolean characterVariant1, jboolean cursorBlink, jint cursorMode) {
-    renderer(reinterpret_cast<CoderSession*>(handle))->setTextOptions(ligatures == JNI_TRUE, contextualAlternates == JNI_TRUE, slashedZero == JNI_TRUE, stylisticSet1 == JNI_TRUE, stylisticSet2 == JNI_TRUE, characterVariant1 == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
+Java_com_coder_pi_CoderNative_nativeRendererSetTheme(JNIEnv*, jobject, jlong rendererHandle, jint background, jint cursor, jint cursorText) {
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setTheme(static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), static_cast<uint32_t>(cursorText));
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetRefreshRate(JNIEnv*, jobject, jlong handle, jfloat refreshRate) {
-    renderer(reinterpret_cast<CoderSession*>(handle))->setTargetRefreshRate(refreshRate);
+Java_com_coder_pi_CoderNative_nativeRendererSetTextOptions(JNIEnv*, jobject, jlong rendererHandle, jboolean ligatures, jboolean contextualAlternates, jboolean slashedZero, jboolean stylisticSet1, jboolean stylisticSet2, jboolean characterVariant1, jboolean cursorBlink, jint cursorMode) {
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setTextOptions(ligatures == JNI_TRUE, contextualAlternates == JNI_TRUE, slashedZero == JNI_TRUE, stylisticSet1 == JNI_TRUE, stylisticSet2 == JNI_TRUE, characterVariant1 == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSurfaceChanged(JNIEnv*, jobject, jlong handle, jint width, jint height, jint cellWidth, jint cellHeight) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
+Java_com_coder_pi_CoderNative_nativeRendererSetRefreshRate(JNIEnv*, jobject, jlong rendererHandle, jfloat refreshRate) {
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setTargetRefreshRate(refreshRate);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeRendererSurfaceChanged(JNIEnv*, jobject, jlong terminalHandle, jlong rendererHandle, jint width, jint height, jint cellWidth, jint cellHeight) {
     const int columns = std::max(1, width / std::max(1, cellWidth));
     const int rows = std::max(1, height / std::max(1, cellHeight));
-    renderer(session)->setCellSize(cellWidth, cellHeight);
-    renderer(session)->resize(width, height);
-    terminal(session)->resize(columns, rows, cellWidth, cellHeight);
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setCellSize(cellWidth, cellHeight);
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->resize(width, height);
+    terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->resize(columns, rows, cellWidth, cellHeight);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeDrawFrame(JNIEnv*, jobject, jlong handle) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
-    renderer(session)->draw(*terminal(session));
+Java_com_coder_pi_CoderNative_nativeRendererDrawFrame(JNIEnv*, jobject, jlong terminalHandle, jlong rendererHandle) {
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->draw(*terminal(reinterpret_cast<NativeTerminal*>(terminalHandle)));
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeWrite(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
     jsize length = env->GetArrayLength(bytes);
     jbyte* data = env->GetByteArrayElements(bytes, nullptr);
-    terminal(session)->writeUtf8(reinterpret_cast<const char*>(data), length);
+    terminal(reinterpret_cast<NativeTerminal*>(handle))->writeUtf8(reinterpret_cast<const char*>(data), length);
     env->ReleaseByteArrayElements(bytes, data, JNI_ABORT);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeFeed(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
     jsize length = env->GetArrayLength(bytes);
     jbyte* data = env->GetByteArrayElements(bytes, nullptr);
-    terminal(session)->feed(reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(length));
+    terminal(reinterpret_cast<NativeTerminal*>(handle))->feed(reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(length));
     env->ReleaseByteArrayElements(bytes, data, JNI_ABORT);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeTextInput(JNIEnv* env, jobject, jlong handle, jstring text) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
     const char* chars = env->GetStringUTFChars(text, nullptr);
     if (chars) {
         for (const unsigned char* cursor = reinterpret_cast<const unsigned char*>(chars); *cursor != 0; cursor++) {
-            terminal(session)->key(0, *cursor, 0);
+            terminal(reinterpret_cast<NativeTerminal*>(handle))->key(0, *cursor, 0);
         }
         env->ReleaseStringUTFChars(text, chars);
     }
@@ -147,17 +156,17 @@ Java_com_coder_pi_CoderNative_nativeTextInput(JNIEnv* env, jobject, jlong handle
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeKeyEvent(JNIEnv*, jobject, jlong handle, jint keyCode, jint unicodeChar, jint metaState) {
-    terminal(reinterpret_cast<CoderSession*>(handle))->key(keyCode, unicodeChar, metaState);
+    terminal(reinterpret_cast<NativeTerminal*>(handle))->key(keyCode, unicodeChar, metaState);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeScroll(JNIEnv*, jobject, jlong handle, jint rowDelta) {
-    terminal(reinterpret_cast<CoderSession*>(handle))->scroll(rowDelta);
+    terminal(reinterpret_cast<NativeTerminal*>(handle))->scroll(rowDelta);
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_coder_pi_CoderNative_nativeScrollInput(JNIEnv* env, jobject, jlong handle, jint rowDelta, jfloat x, jfloat y) {
-    auto output = terminal(reinterpret_cast<CoderSession*>(handle))->scrollInput(rowDelta, x, y);
+    auto output = terminal(reinterpret_cast<NativeTerminal*>(handle))->scrollInput(rowDelta, x, y);
     jbyteArray result = env->NewByteArray(static_cast<jsize>(output.size()));
     if (!output.empty()) env->SetByteArrayRegion(result, 0, static_cast<jsize>(output.size()), reinterpret_cast<const jbyte*>(output.data()));
     return result;
@@ -165,12 +174,12 @@ Java_com_coder_pi_CoderNative_nativeScrollInput(JNIEnv* env, jobject, jlong hand
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_coder_pi_CoderNative_nativeMouseTracking(JNIEnv*, jobject, jlong handle) {
-    return terminal(reinterpret_cast<CoderSession*>(handle))->mouseTracking() ? JNI_TRUE : JNI_FALSE;
+    return terminal(reinterpret_cast<NativeTerminal*>(handle))->mouseTracking() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_coder_pi_CoderNative_nativeMouseEvent(JNIEnv* env, jobject, jlong handle, jint action, jfloat x, jfloat y, jint button, jint metaState) {
-    auto output = terminal(reinterpret_cast<CoderSession*>(handle))->mouse(action, x, y, button, metaState);
+    auto output = terminal(reinterpret_cast<NativeTerminal*>(handle))->mouse(action, x, y, button, metaState);
     jbyteArray result = env->NewByteArray(static_cast<jsize>(output.size()));
     if (!output.empty()) env->SetByteArrayRegion(result, 0, static_cast<jsize>(output.size()), reinterpret_cast<const jbyte*>(output.data()));
     return result;
@@ -182,7 +191,7 @@ Java_com_coder_pi_CoderNative_nativeScreenPositionFromViewport(JNIEnv* env, jobj
     int screenCol = 0;
     jintArray result = env->NewIntArray(2);
     jint values[2] = {-1, -1};
-    if (terminal(reinterpret_cast<CoderSession*>(handle))->screenPositionFromViewport(row, col, screenRow, screenCol)) {
+    if (terminal(reinterpret_cast<NativeTerminal*>(handle))->screenPositionFromViewport(row, col, screenRow, screenCol)) {
         values[0] = screenRow;
         values[1] = screenCol;
     }
@@ -192,30 +201,30 @@ Java_com_coder_pi_CoderNative_nativeScreenPositionFromViewport(JNIEnv* env, jobj
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_coder_pi_CoderNative_nativeTitle(JNIEnv* env, jobject, jlong handle) {
-    auto text = terminal(reinterpret_cast<CoderSession*>(handle))->title();
+    auto text = terminal(reinterpret_cast<NativeTerminal*>(handle))->title();
     return env->NewStringUTF(text.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_coder_pi_CoderNative_nativePwd(JNIEnv* env, jobject, jlong handle) {
-    auto text = terminal(reinterpret_cast<CoderSession*>(handle))->pwd();
+    auto text = terminal(reinterpret_cast<NativeTerminal*>(handle))->pwd();
     return env->NewStringUTF(text.c_str());
 }
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_coder_pi_CoderNative_nativeBellCount(JNIEnv*, jobject, jlong handle) {
-    return static_cast<jlong>(terminal(reinterpret_cast<CoderSession*>(handle))->bellCount());
+    return static_cast<jlong>(terminal(reinterpret_cast<NativeTerminal*>(handle))->bellCount());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_coder_pi_CoderNative_nativeHyperlinkUriAt(JNIEnv* env, jobject, jlong handle, jint row, jint col) {
-    auto text = terminal(reinterpret_cast<CoderSession*>(handle))->hyperlinkUriAt(row, col);
+    auto text = terminal(reinterpret_cast<NativeTerminal*>(handle))->hyperlinkUriAt(row, col);
     return env->NewStringUTF(text.c_str());
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_coder_pi_CoderNative_nativeConsumeOscEvents(JNIEnv* env, jobject, jlong handle) {
-    auto events = terminal(reinterpret_cast<CoderSession*>(handle))->consumeOscEvents();
+    auto events = terminal(reinterpret_cast<NativeTerminal*>(handle))->consumeOscEvents();
     jclass stringClass = env->FindClass("java/lang/String");
     jobjectArray result = env->NewObjectArray(static_cast<jsize>(events.size()), stringClass, env->NewStringUTF(""));
     for (size_t index = 0; index < events.size(); index++) {
@@ -228,7 +237,7 @@ Java_com_coder_pi_CoderNative_nativeConsumeOscEvents(JNIEnv* env, jobject, jlong
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_coder_pi_CoderNative_nativeSelectedText(JNIEnv* env, jobject, jlong handle, jint startRow, jint startCol, jint endRow, jint endCol) {
-    auto text = terminal(reinterpret_cast<CoderSession*>(handle))->selectedText(startRow, startCol, endRow, endCol);
+    auto text = terminal(reinterpret_cast<NativeTerminal*>(handle))->selectedText(startRow, startCol, endRow, endCol);
     return env->NewStringUTF(text.c_str());
 }
 
@@ -252,12 +261,11 @@ static void appendUtf8(std::string& output, uint32_t codepoint) {
 
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_coder_pi_CoderNative_nativeSnapshotText(JNIEnv* env, jobject, jlong handle) {
-    auto* session = reinterpret_cast<CoderSession*>(handle);
     int cols = 0;
     int rows = 0;
     int cursorCol = 0;
     int cursorRow = 0;
-    auto cells = terminal(session)->snapshot(cols, rows, cursorCol, cursorRow);
+    auto cells = terminal(reinterpret_cast<NativeTerminal*>(handle))->snapshot(cols, rows, cursorCol, cursorRow);
     jclass stringClass = env->FindClass("java/lang/String");
     jobjectArray result = env->NewObjectArray(rows, stringClass, env->NewStringUTF(""));
     for (int row = 0; row < rows; row++) {

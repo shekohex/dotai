@@ -8,7 +8,7 @@ class TerminalEngine(
 ) {
     internal val native = CoderNative()
     private val lock = Any()
-    @Volatile internal var handle = native.nativeInit(columns, rows, cellWidth, cellHeight)
+    @Volatile internal var handle = native.nativeInitTerminal(columns, rows, cellWidth, cellHeight)
 
     fun feed(bytes: ByteArray): TerminalEngineUpdate {
         if (bytes.isEmpty()) return TerminalEngineUpdate(emptyList(), title())
@@ -33,7 +33,7 @@ class TerminalEngine(
 
     fun dispose() {
         synchronized(lock) {
-            if (handle != 0L) native.nativeDispose(handle)
+            if (handle != 0L) native.nativeDisposeTerminal(handle)
             handle = 0L
         }
     }

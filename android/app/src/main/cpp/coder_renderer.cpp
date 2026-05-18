@@ -54,9 +54,28 @@ static void addSolidQuad(std::vector<SolidVertex>& vertices, float x0, float y0,
 
 CoderRenderer::CoderRenderer() = default;
 
-CoderRenderer::~CoderRenderer() = default;
+CoderRenderer::~CoderRenderer() {
+    releaseGlResources();
+}
+
+void CoderRenderer::releaseGlResources() {
+    if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
+    if (solidVbo_ != 0) glDeleteBuffers(1, &solidVbo_);
+    if (vao_ != 0) glDeleteVertexArrays(1, &vao_);
+    if (solidVao_ != 0) glDeleteVertexArrays(1, &solidVao_);
+    if (program_ != 0) glDeleteProgram(program_);
+    if (solidProgram_ != 0) glDeleteProgram(solidProgram_);
+    vbo_ = 0;
+    solidVbo_ = 0;
+    vao_ = 0;
+    solidVao_ = 0;
+    program_ = 0;
+    solidProgram_ = 0;
+}
 
 bool CoderRenderer::init() {
+    releaseGlResources();
+    cachedCells_.clear();
     GLint programBinaryFormatCount = 0;
     glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &programBinaryFormatCount);
     __android_log_print(ANDROID_LOG_INFO, "CoderRenderer", "gl_vendor=%s gl_renderer=%s gl_version=%s program_binary_formats=%d shader_cache=%s", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION), programBinaryFormatCount, shaderCacheDir_.empty() ? "disabled" : shaderCacheDir_.c_str());

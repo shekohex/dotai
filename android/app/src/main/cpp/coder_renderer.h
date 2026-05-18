@@ -30,6 +30,7 @@ public:
     int cellHeight() const;
 
 private:
+    void releaseGlResources();
     GLuint compile(GLenum type, const char* source);
     GLuint linkProgram(const char* name, const char* vertexSource, const char* fragmentSource);
     bool loadProgramBinary(GLuint program, const char* name, const char* vertexSource, const char* fragmentSource);

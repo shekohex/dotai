@@ -59,6 +59,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     internal val terminalEngine = attachedEngine ?: TerminalEngine(80, 24, cellWidth, cellHeight)
     private val engine = terminalEngine
     private var managerOwnsEngine = false
+    private var rendererHandle = native.nativeInitRenderer()
     private val native: CoderNative get() = engine.native
     private var handle: Long
         get() = engine.handle
@@ -123,27 +124,28 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
-        if (handle == 0L) handle = native.nativeInit(80, 24, cellWidth, cellHeight)
-        native.nativeSetShaderCacheDir(handle, context.cacheDir.resolve("shader-cache").apply { mkdirs() }.absolutePath)
+        if (handle == 0L) return
+        if (rendererHandle == 0L) rendererHandle = native.nativeInitRenderer()
+        native.nativeRendererSetShaderCacheDir(rendererHandle, context.cacheDir.resolve("shader-cache").apply { mkdirs() }.absolutePath)
         val selectedFontKey = CoderFonts.selectedKey(context)
-        CoderFonts.styleBytes(context, selectedFontKey).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic, it.fallback) }
+        CoderFonts.styleBytes(context, selectedFontKey).let { native.nativeRendererSetFontStyles(rendererHandle, it.regular, it.bold, it.italic, it.boldItalic, it.fallback) }
         nativeFontKey = selectedFontKey
         applyTextOptions()
         applyTheme(CoderThemes.current(context))
-        native.nativeSetRefreshRate(handle, display?.refreshRate ?: 60f)
-        native.nativeSurfaceCreated(handle)
+        native.nativeRendererSetRefreshRate(rendererHandle, display?.refreshRate ?: 60f)
+        native.nativeRendererSurfaceCreated(rendererHandle)
         flushPendingRemoteOutput()
     }
 
     override fun onSurfaceChanged(gl: javax.microedition.khronos.opengles.GL10?, width: Int, height: Int) {
         surfaceWidth = width
         surfaceHeight = height
-        native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight)
+        if (handle != 0L && rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight)
         notifyTerminalSizeChanged()
     }
 
     override fun onDrawFrame(gl: javax.microedition.khronos.opengles.GL10?) {
-        native.nativeDrawFrame(handle)
+        if (handle != 0L && rendererHandle != 0L) native.nativeRendererDrawFrame(handle, rendererHandle)
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
@@ -571,7 +573,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
             surfaceWidth = width
             surfaceHeight = height
-            queueEvent { native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
             requestRender()
         }
@@ -581,7 +583,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle != 0L && width > 0 && height > 0) {
             surfaceWidth = width
             surfaceHeight = height
-            queueEvent { native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
             requestRender()
         }
@@ -596,7 +598,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         cellWidth = (cellWidth * ratio).roundToInt().coerceIn(8, maxWidth.coerceAtMost(40))
         preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { native.nativeSurfaceChanged(handle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
         }
     }
@@ -612,7 +614,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         cellWidth = nextWidth
         preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { native.nativeSurfaceChanged(handle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
         }
     }
@@ -631,12 +633,18 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val bytes = CoderFonts.styleBytes(context, key)
         if (handle != 0L) {
             nativeFontKey = key
-            queueEvent { native.nativeSetFontStyles(handle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic, bytes.fallback) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSetFontStyles(rendererHandle, bytes.regular, bytes.bold, bytes.italic, bytes.boldItalic, bytes.fallback) }
         }
     }
 
     fun dispose() {
         unregisterTerminalView(this)
+        if (rendererHandle != 0L) {
+            val handleToDispose = rendererHandle
+            runCatching { queueEvent { native.nativeDisposeRenderer(handleToDispose) } }
+                .onFailure { native.nativeDisposeRenderer(handleToDispose) }
+        }
+        rendererHandle = 0L
         if (!managerOwnsEngine) engine.dispose()
         nativeFontKey = null
     }
@@ -652,7 +660,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun applyTheme(theme: CoderTheme) {
-        if (handle != 0L) native.nativeSetTheme(handle, theme.foreground, theme.background, theme.cursor, theme.cursorText, theme.palette)
+        if (handle != 0L) native.nativeSetTerminalTheme(handle, theme.foreground, theme.background, theme.cursor, theme.palette)
+        if (rendererHandle != 0L) native.nativeRendererSetTheme(rendererHandle, theme.background, theme.cursor, theme.cursorText)
     }
 
     fun setLigaturesEnabled(enabled: Boolean) {
@@ -841,7 +850,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun applyTextOptions() {
-        if (handle != 0L) native.nativeSetTextOptions(handle, ligaturesEnabled(), contextualAlternatesEnabled(), slashedZeroEnabled(), stylisticSet1Enabled(), stylisticSet2Enabled(), characterVariant1Enabled(), cursorBlinkEnabled(), cursorMode())
+        if (rendererHandle != 0L) native.nativeRendererSetTextOptions(rendererHandle, ligaturesEnabled(), contextualAlternatesEnabled(), slashedZeroEnabled(), stylisticSet1Enabled(), stylisticSet2Enabled(), characterVariant1Enabled(), cursorBlinkEnabled(), cursorMode())
     }
 
     override fun attachRemote(input: (ByteArray) -> Unit) {

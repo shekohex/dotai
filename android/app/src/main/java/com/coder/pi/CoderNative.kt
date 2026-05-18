@@ -1,17 +1,20 @@
 package com.coder.pi
 
 class CoderNative {
-    external fun nativeInit(cols: Int, rows: Int, cellWidth: Int, cellHeight: Int): Long
-    external fun nativeDispose(handle: Long)
-    external fun nativeSurfaceCreated(handle: Long)
-    external fun nativeSetFont(handle: Long, bytes: ByteArray)
-    external fun nativeSetFontStyles(handle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?, fallback: ByteArray?)
-    external fun nativeSetShaderCacheDir(handle: Long, path: String)
-    external fun nativeSetTheme(handle: Long, foreground: Int, background: Int, cursor: Int, cursorText: Int, palette: IntArray)
-    external fun nativeSetTextOptions(handle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, cursorBlink: Boolean, cursorMode: Int)
-    external fun nativeSetRefreshRate(handle: Long, refreshRate: Float)
-    external fun nativeSurfaceChanged(handle: Long, width: Int, height: Int, cellWidth: Int, cellHeight: Int)
-    external fun nativeDrawFrame(handle: Long)
+    external fun nativeInitTerminal(cols: Int, rows: Int, cellWidth: Int, cellHeight: Int): Long
+    external fun nativeDisposeTerminal(handle: Long)
+    external fun nativeInitRenderer(): Long
+    external fun nativeDisposeRenderer(handle: Long)
+    external fun nativeRendererSurfaceCreated(rendererHandle: Long)
+    external fun nativeRendererSetFont(rendererHandle: Long, bytes: ByteArray)
+    external fun nativeRendererSetFontStyles(rendererHandle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?, fallback: ByteArray?)
+    external fun nativeRendererSetShaderCacheDir(rendererHandle: Long, path: String)
+    external fun nativeSetTerminalTheme(terminalHandle: Long, foreground: Int, background: Int, cursor: Int, palette: IntArray)
+    external fun nativeRendererSetTheme(rendererHandle: Long, background: Int, cursor: Int, cursorText: Int)
+    external fun nativeRendererSetTextOptions(rendererHandle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, cursorBlink: Boolean, cursorMode: Int)
+    external fun nativeRendererSetRefreshRate(rendererHandle: Long, refreshRate: Float)
+    external fun nativeRendererSurfaceChanged(terminalHandle: Long, rendererHandle: Long, width: Int, height: Int, cellWidth: Int, cellHeight: Int)
+    external fun nativeRendererDrawFrame(terminalHandle: Long, rendererHandle: Long)
     external fun nativeWrite(handle: Long, bytes: ByteArray)
     external fun nativeFeed(handle: Long, bytes: ByteArray)
     external fun nativeTextInput(handle: Long, text: String)

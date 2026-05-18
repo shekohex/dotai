@@ -449,7 +449,7 @@ fun CoderApp(
                             TerminalActivity.finishDetachedTerminals(state.session.baseUrl, state.session.user.id)
                         sessionStore.clearSession()
                         sessionStore.clearActiveTerminals(state.session.baseUrl, state.session.user.id)
-                        terminalSessions.forEach { it.session?.stop() }
+                        TerminalConnectionManager.stopAll()
                             terminalSessions.clear()
                             selectedTerminalId = null
                             terminalUiMode = TerminalUiMode.SHEET
@@ -541,8 +541,7 @@ fun CoderApp(
                     } }
                 val retry: () -> Unit = {
                         val launch = managed.launch
-                        managed.session?.stop()
-                        TerminalConnectionManager.detachRenderer(managed.id)
+                        TerminalConnectionManager.stop(managed.id)
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached, workspaceIconUrl = launch.workspaceIconUrl))
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
@@ -577,8 +576,7 @@ fun CoderApp(
                         onDismiss = dismiss,
                         onDetach = {
                             val index = terminalSessions.indexOfFirst { it.id == managed.id }
-                            managed.session?.stop()
-                            TerminalConnectionManager.detachRenderer(managed.id)
+                            TerminalConnectionManager.stop(managed.id)
                             managed.terminalView.detachFromCurrentParent()
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = null, detached = true, updatedAtMillis = System.currentTimeMillis())
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true, workspaceIconUrl = managed.launch.workspaceIconUrl))
@@ -597,8 +595,7 @@ fun CoderApp(
                     onConfirm = {
                         confirmCloseTerminalId = null
                         val managed = terminalSessions.firstOrNull { it.id == terminalId }
-                        managed?.session?.stop()
-                        TerminalConnectionManager.detachRenderer(terminalId)
+                        TerminalConnectionManager.stop(terminalId)
                         managed?.let { sessionStore.removeActiveTerminal(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command) }
                         terminalSessions.removeAll { it.id == terminalId }
                         if (selectedTerminalId == terminalId) selectedTerminalId = null

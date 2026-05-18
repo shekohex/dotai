@@ -22,13 +22,16 @@ object TerminalConnectionManager {
     }
 
     fun attachRenderer(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
+        if (endpoint is CoderTerminalView) endpoint.releaseEngineOwnershipToManager()
         val previous = synchronized(sessions) {
             val existing = sessions[terminalId]
             sessions[terminalId] = RuntimeSession(endpoint, session, ownsEndpoint = false)
             existing
         }
-        if (previous != null && previous.ownsEndpoint) {
+        if (previous != null && previous.session !== session) {
             previous.session.stop()
+        }
+        if (previous != null && previous.ownsEndpoint) {
             if (previous.endpoint is CoderHeadlessTerminalEndpoint) previous.endpoint.dispose()
         }
     }
@@ -55,7 +58,8 @@ object TerminalConnectionManager {
     }
 
     fun detachRenderer(terminalId: String) {
-        stop(terminalId)
+        val runtime = synchronized(sessions) { sessions[terminalId] } ?: return
+        runtime.endpoint.detachRemote()
     }
 
     fun startSavedHeadless(context: Context): Int {
@@ -83,6 +87,7 @@ object TerminalConnectionManager {
         val runtime = synchronized(sessions) { sessions.remove(terminalId) } ?: return
         runtime.session.stop()
         if (runtime.ownsEndpoint && runtime.endpoint is CoderHeadlessTerminalEndpoint) runtime.endpoint.dispose()
+        if (runtime.endpoint is CoderTerminalView) runtime.endpoint.disposeManagerOwnedEngine()
     }
 
     fun stopAll() {

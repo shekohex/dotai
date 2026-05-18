@@ -121,9 +121,12 @@ class TerminalActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         previewJob?.cancel()
-        terminalSession?.stop()
-        TerminalConnectionManager.detachRenderer(terminalId)
-        if (!isChangingConfigurations) terminalMetadata?.let { terminalStore?.updateActiveTerminalDetached(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command, false) }
+        if (isChangingConfigurations) {
+            TerminalConnectionManager.detachRenderer(terminalId)
+        } else {
+            TerminalConnectionManager.stop(terminalId)
+            terminalMetadata?.let { terminalStore?.updateActiveTerminalDetached(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command, false) }
+        }
         if (::terminalView.isInitialized) terminalView.dispose()
         terminalActivities.removeAll { it.get() == null || it.get() === this }
         super.onDestroy()

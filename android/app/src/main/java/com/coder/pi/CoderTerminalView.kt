@@ -58,6 +58,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var cellHeight = preferences.getInt("cellHeight", 36)
     internal val terminalEngine = attachedEngine ?: TerminalEngine(80, 24, cellWidth, cellHeight)
     private val engine = terminalEngine
+    private var managerOwnsEngine = false
     private val native: CoderNative get() = engine.native
     private var handle: Long
         get() = engine.handle
@@ -636,8 +637,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun dispose() {
         unregisterTerminalView(this)
-        if (handle != 0L) native.nativeDispose(handle)
-        handle = 0L
+        if (!managerOwnsEngine) engine.dispose()
+        nativeFontKey = null
+    }
+
+    fun releaseEngineOwnershipToManager() {
+        managerOwnsEngine = true
+    }
+
+    fun disposeManagerOwnedEngine() {
+        managerOwnsEngine = false
+        engine.dispose()
         nativeFontKey = null
     }
 

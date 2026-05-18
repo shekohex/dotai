@@ -54,8 +54,8 @@ const val TerminalNotificationIdKey = "notification_id"
 
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, attachedEngine: TerminalEngine? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer, CoderTerminalEndpoint {
     private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
-    private var cellWidth = preferences.getInt("cellWidth", 18)
-    private var cellHeight = preferences.getInt("cellHeight", 36)
+    private var cellHeight = selectedTerminalFontSizePixels(context)
+    private var cellWidth = terminalCellWidthForFontSize(cellHeight)
     internal val terminalEngine = attachedEngine ?: TerminalEngine(80, 24, cellWidth, cellHeight)
     private val engine = terminalEngine
     private var managerOwnsEngine = false
@@ -590,13 +590,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun adjustFontSize(delta: Int) {
-        val maxHeight = if (surfaceHeight > 0) (surfaceHeight / 8).coerceAtLeast(16) else 48
-        val maxWidth = if (surfaceWidth > 0) (surfaceWidth / 20).coerceAtLeast(8) else 28
-        val nextHeight = (cellHeight + delta * 2).coerceIn(16, maxHeight.coerceAtMost(64))
-        val ratio = nextHeight / cellHeight.toFloat()
+        val maxHeight = if (surfaceHeight > 0) (surfaceHeight / 8).coerceAtLeast(8) else 32
+        val nextHeight = (cellHeight + delta).coerceIn(8, maxHeight.coerceAtMost(32))
         cellHeight = nextHeight
-        cellWidth = (cellWidth * ratio).roundToInt().coerceIn(8, maxWidth.coerceAtMost(40))
-        preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
+        cellWidth = terminalCellWidthForFontSize(nextHeight)
+        preferences.edit { putInt("fontSizePx", cellHeight).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
             queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
@@ -604,15 +602,15 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun fontSizePoints(): Int {
-        return (cellHeight / 2).coerceIn(8, 32)
+        return cellHeight.coerceIn(8, 32)
     }
 
     fun setFontSizePoints(points: Int) {
-        val nextHeight = (points * 2).coerceIn(16, 64)
-        val nextWidth = points.coerceIn(8, 40)
+        val nextHeight = points.coerceIn(8, 32)
+        val nextWidth = terminalCellWidthForFontSize(nextHeight)
         cellHeight = nextHeight
         cellWidth = nextWidth
-        preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
+        preferences.edit { putInt("fontSizePx", cellHeight).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
             queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
@@ -825,6 +823,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun volumeFontSizeEnabled(): Boolean = preferences.getBoolean("volume_font_size", true)
+
+    fun setKeepScreenAwakeEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("keep_screen_awake", enabled) }
+    }
+
+    fun keepScreenAwakeEnabled(): Boolean = preferences.getBoolean("keep_screen_awake", false)
 
     fun customShortcuts(): List<TerminalShortcut> {
         return preferences.getString("toolbar.shortcuts", "").orEmpty().split("\n").mapNotNull { line ->
@@ -1251,6 +1255,14 @@ fun terminalNormalizeLinkHostPattern(value: String): String? {
 fun terminalAllowedLinkHosts(context: Context): Set<String> {
     return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getStringSet("osc.allowed_link_hosts", emptySet()).orEmpty()
 }
+
+fun selectedTerminalFontSizePixels(context: Context): Int {
+    val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
+    if (preferences.contains("fontSizePx")) return preferences.getInt("fontSizePx", 18).coerceIn(8, 32)
+    return (preferences.getInt("cellHeight", 36) / 2).coerceIn(8, 32)
+}
+
+fun terminalCellWidthForFontSize(fontSizePixels: Int): Int = (fontSizePixels * 0.55f).roundToInt().coerceIn(5, 24)
 
 fun terminalSetLinkHostAllowed(context: Context, host: String, allowed: Boolean) {
     val normalized = terminalNormalizeLinkHostPattern(host) ?: return

@@ -85,7 +85,7 @@ fun SettingsStepperRow(icon: Int?, title: String, value: Int, tokens: UiTokens, 
     SettingsRow(icon, title, null, tokens, {}) {
         Row(Modifier.clip(RoundedCornerShape(28.dp)).background(tokens.separator).height(34.dp), verticalAlignment = Alignment.CenterVertically) {
             StepperButton("−", tokens, onMinus)
-            Text("${value}pt", color = tokens.text, fontSize = bodySize(), modifier = Modifier.width(54.dp), textAlign = TextAlign.Center)
+            Text("${value}px", color = tokens.text, fontSize = bodySize(), modifier = Modifier.width(54.dp), textAlign = TextAlign.Center)
             StepperButton("+", tokens, onPlus)
         }
     }

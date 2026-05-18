@@ -246,8 +246,8 @@ fun CoderApp(
                     terminalView.setPreviewFontFamily(fontKey)
                     terminalSessions.forEach { it.terminalView.setPreviewFontFamily(fontKey) }
                 }
-                "cellHeight", "cellWidth" -> {
-                    val points = (preferences.getInt("cellHeight", 36) / 2).coerceIn(8, 32)
+                "fontSizePx", "cellHeight", "cellWidth" -> {
+                    val points = selectedTerminalFontSizePixels(context)
                     terminalView.setFontSizePoints(points)
                     terminalSessions.forEach { it.terminalView.setFontSizePoints(points) }
                 }
@@ -1961,6 +1961,7 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
     var cursorBlink by remember { mutableStateOf(terminalView.cursorBlinkEnabled()) }
     var cursorMode by remember { mutableIntStateOf(terminalView.cursorMode()) }
     var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
+    var keepScreenAwake by remember { mutableStateOf(terminalView.keepScreenAwakeEnabled()) }
     var oscNotifications by remember { mutableStateOf(terminalView.oscNotificationsEnabled()) }
     var hapticFeedback by remember { mutableStateOf(context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)) }
     val appPreferences = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE) }
@@ -1973,6 +1974,7 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             SettingsValueRow(R.drawable.ic_feather_type, "Fonts & Size", null, CoderFonts.selectedName(LocalContext.current).also { uiRevision.hashCode() }, tokens, chevron = true, onClick = onFonts)
             SettingsSegmentedControlRow(R.drawable.ic_feather_type, "Cursor Mode", tokens, cursorMode) { cursorMode = it; terminalView.setCursorMode(it) }
             SettingsToggleRow(R.drawable.ic_feather_circle, "Cursor Blink", cursorBlink, tokens) { cursorBlink = it; terminalView.setCursorBlinkEnabled(it) }
+            SettingsToggleRow(R.drawable.ic_feather_power, "Keep Screen Awake", keepScreenAwake, tokens) { keepScreenAwake = it; terminalView.setKeepScreenAwakeEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Haptic Feedback", hapticFeedback, tokens) {
                 hapticFeedback = it
                 HapticTarget.enabled = it

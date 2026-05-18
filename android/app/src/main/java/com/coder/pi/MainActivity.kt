@@ -49,11 +49,13 @@ class MainActivity : AppCompatActivity() {
                     applySystemBars(currentTheme ?: CoderThemes.current(this))
                 }
                 "fontFamily" -> terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
-                "cellHeight", "cellWidth" -> terminalView.setFontSizePoints((getSharedPreferences("terminal", MODE_PRIVATE).getInt("cellHeight", 36) / 2).coerceIn(8, 32))
+                "fontSizePx", "cellHeight", "cellWidth" -> terminalView.setFontSizePoints(selectedTerminalFontSizePixels(this))
+                "keep_screen_awake" -> applyKeepScreenAwake()
             }
         }
         terminalPreferences?.registerOnSharedPreferenceChangeListener(terminalPreferencesListener)
         applySystemBars(currentTheme ?: CoderThemes.current(this))
+        applyKeepScreenAwake()
         setContent {
             val context = LocalContext.current
             CoderApp(
@@ -173,9 +175,18 @@ class MainActivity : AppCompatActivity() {
         currentTheme = CoderThemes.current(this)
         terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
         terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
-        terminalView.setFontSizePoints((getSharedPreferences("terminal", MODE_PRIVATE).getInt("cellHeight", 36) / 2).coerceIn(8, 32))
+        terminalView.setFontSizePoints(selectedTerminalFontSizePixels(this))
         terminalView.post { terminalView.forceRefreshSurface() }
         applySystemBars(currentTheme ?: CoderThemes.current(this))
+        applyKeepScreenAwake()
+    }
+
+    private fun applyKeepScreenAwake() {
+        if (getSharedPreferences("terminal", MODE_PRIVATE).getBoolean("keep_screen_awake", false)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     override fun onPause() {

@@ -62,6 +62,7 @@ class TerminalActivity : AppCompatActivity() {
         currentTheme = theme
         currentFontKey = CoderFonts.selectedKey(this)
         currentFontSizePoints = selectedTerminalFontSizePoints()
+        applyKeepScreenAwake()
         terminalStore = CoderSessionStore(this)
         val localWorkspaceState = terminalStore?.workspaceState(identity.baseUrl, identity.userId, identity.workspaceId)
         terminalId = terminalSessionKey(identity)
@@ -160,10 +161,19 @@ class TerminalActivity : AppCompatActivity() {
             currentFontSizePoints = nextFontSizePoints
             terminalView.setFontSizePoints(nextFontSizePoints)
         }
+        applyKeepScreenAwake()
     }
 
     private fun selectedTerminalFontSizePoints(): Int {
-        return (getSharedPreferences("terminal", Context.MODE_PRIVATE).getInt("cellHeight", 36) / 2).coerceIn(8, 32)
+        return selectedTerminalFontSizePixels(this)
+    }
+
+    private fun applyKeepScreenAwake() {
+        if (getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("keep_screen_awake", false)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun persistTerminalState(detached: Boolean) {

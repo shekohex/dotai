@@ -91,12 +91,16 @@ bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
 
 void CoderTerminal::resize(int cols, int rows, int cellWidth, int cellHeight) {
     std::lock_guard lock(mutex_);
-    cols_ = std::max(1, cols);
-    rows_ = std::max(1, rows);
+    const int nextCols = std::max(1, cols);
+    const int nextRows = std::max(1, rows);
+    const bool unchanged = cols_ == nextCols && rows_ == nextRows && cellWidth_ == cellWidth && cellHeight_ == cellHeight;
+    cols_ = nextCols;
+    rows_ = nextRows;
     cellWidth_ = cellWidth;
     cellHeight_ = cellHeight;
     cursorCol_ = std::clamp(cursorCol_, 0, cols_ - 1);
     cursorRow_ = std::clamp(cursorRow_, 0, rows_ - 1);
+    if (unchanged) return;
     ghostty_terminal_resize(terminal_.get(), static_cast<uint16_t>(cols_), static_cast<uint16_t>(rows_), static_cast<uint32_t>(cellWidth), static_cast<uint32_t>(cellHeight));
     if (ptyFd_ >= 0) {
         winsize size{static_cast<unsigned short>(rows_), static_cast<unsigned short>(cols_), static_cast<unsigned short>(cols_ * cellWidth), static_cast<unsigned short>(rows_ * cellHeight)};

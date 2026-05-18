@@ -90,7 +90,9 @@ class TerminalActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        terminalView.onResume()
         applyCurrentSettings()
+        terminalView.post { terminalView.forceRefreshSurface() }
         val metadata = terminalMetadata
         val session = metadata?.let { terminalStore?.loadSession()?.takeIf { saved -> saved.first == it.baseUrl } }
         if (metadata != null && session == null) {
@@ -98,6 +100,11 @@ class TerminalActivity : AppCompatActivity() {
             return
         }
         terminalMetadata?.let { terminalStore?.saveActiveTerminal(it.copy(updatedAtMillis = System.currentTimeMillis(), detached = true)) }
+    }
+
+    override fun onPause() {
+        terminalView.onPause()
+        super.onPause()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -189,7 +196,10 @@ class TerminalActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
+        if (hasFocus) {
+            WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
+            terminalView.post { terminalView.forceRefreshSurface() }
+        }
     }
 
     private fun showTerminalKeyboard() {

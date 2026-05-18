@@ -56,6 +56,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     init {
         registerTerminalView(this)
         setEGLContextClientVersion(3)
+        preserveEGLContextOnPause = true
         setRenderer(this)
         renderMode = RENDERMODE_CONTINUOUSLY
         isFocusable = true
@@ -68,7 +69,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
-        handle = native.nativeInit(80, 24, cellWidth, cellHeight)
+        if (handle == 0L) handle = native.nativeInit(80, 24, cellWidth, cellHeight)
         native.nativeSetShaderCacheDir(handle, context.cacheDir.resolve("shader-cache").apply { mkdirs() }.absolutePath)
         val selectedFontKey = CoderFonts.selectedKey(context)
         CoderFonts.styleBytes(context, selectedFontKey).let { native.nativeSetFontStyles(handle, it.regular, it.bold, it.italic, it.boldItalic) }
@@ -508,6 +509,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 requestRender()
                 return
             }
+            surfaceWidth = width
+            surfaceHeight = height
+            queueEvent { native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight) }
+            notifyTerminalSizeChanged()
+            requestRender()
+        }
+    }
+
+    fun forceRefreshSurface() {
+        if (handle != 0L && width > 0 && height > 0) {
             surfaceWidth = width
             surfaceHeight = height
             queueEvent { native.nativeSurfaceChanged(handle, width, height, cellWidth, cellHeight) }

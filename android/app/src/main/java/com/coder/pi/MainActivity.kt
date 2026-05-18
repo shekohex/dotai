@@ -151,16 +151,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
+        if (hasFocus) {
+            WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
+            terminalView.post { terminalView.forceRefreshSurface() }
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        terminalView.onResume()
         currentTheme = CoderThemes.current(this)
         terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
         terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
         terminalView.setFontSizePoints((getSharedPreferences("terminal", MODE_PRIVATE).getInt("cellHeight", 36) / 2).coerceIn(8, 32))
+        terminalView.post { terminalView.forceRefreshSurface() }
         applySystemBars(currentTheme ?: CoderThemes.current(this))
+    }
+
+    override fun onPause() {
+        terminalView.onPause()
+        super.onPause()
     }
 
     private fun luminance(rgb: Int): Double {

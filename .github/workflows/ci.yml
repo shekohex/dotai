@@ -47,7 +47,7 @@ jobs:
 
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: agent/node_modules
           key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
@@ -83,7 +83,7 @@ jobs:
 
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: agent/node_modules
           key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
@@ -94,7 +94,7 @@ jobs:
 
       - name: Restore Plannotator resources cache
         id: plannotator-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: agent/src/resources/plannotator
           key: ${{ runner.os }}-plannotator-${{ hashFiles('agent/vendor/plannotator-ui/**', 'agent/scripts/build-plannotator-ui.mts') }}

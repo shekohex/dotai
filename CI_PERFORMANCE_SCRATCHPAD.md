@@ -58,7 +58,8 @@ Workflows measured:
 | 9 | Disable audit/fund/progress during smoke global install | 134s | 50s actual run, 95s rolling avg | 39s | 29s actual run, 37s rolling avg | Real CI, Release Please, Release passed; CI target met, end-to-end still about 79s |
 | 10 | Combine preview release creation and package publishing into one Release job | 95s | 46s actual run, 89s rolling avg | 37s | 19s actual run, 36s rolling avg | Real CI, Release Please, Release passed; end-to-end still about 68s |
 | 11 | Move preview release creation and package publish into CI package job, remove `workflow_run` preview release path | 89s | 71s actual run, 83s rolling avg | 36s | No preview Release workflow triggered | Real CI and Release Please passed; preview publish happened inside CI |
-| 12 | Add `--prefer-offline` to smoke global install after local benchmark dropped install from about 18s to 6.6s | 83s | Pending CI run | N/A | N/A | Local verification pending |
+| 12 | Add `--prefer-offline` to smoke global install after local benchmark dropped install from about 18s to 6.6s | 83s | 65s actual run, 75s rolling avg | N/A | N/A | Real CI and Release Please passed; runner smoke install stayed 17s |
+| 13 | Use restore-only cache actions on hot path to remove post-save hooks | 75s | Pending CI run | N/A | N/A | Local verification pending |
 
 ## Vitest Worker Sweep
 

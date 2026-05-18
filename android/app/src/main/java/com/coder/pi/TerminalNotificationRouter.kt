@@ -33,8 +33,8 @@ class TerminalNotificationRouter(
     }
 
     private fun postNotification(title: String, body: String) {
-        val cleanTitle = formatNotificationText(title).ifBlank { notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.ifBlank { "Terminal" } }
-        val cleanBody = formatNotificationText(body).ifBlank { cleanTitle }
+        val cleanTitle = TerminalNotificationFormat.cleanText(title).ifBlank { notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.ifBlank { "Terminal" } }
+        val cleanBody = TerminalNotificationFormat.cleanText(body).ifBlank { cleanTitle }
         if (!canPostNotifications()) return
         ensureChannel(oscNotificationChannelId(), oscNotificationChannelName(), silent = false)
         val notificationId = nextNotificationId()
@@ -110,33 +110,21 @@ class TerminalNotificationRouter(
         flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
-    private fun workspaceLabel(): String = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.take(64)
+    private fun workspaceLabel(): String = TerminalNotificationFormat.workspaceLabel(notificationContext)
 
-    private fun groupKey(): String = "terminal:${notificationContext.terminalId.ifBlank { notificationContext.deepLink }.ifBlank { notificationContext.workspaceId }.ifBlank { context.packageName }}"
+    private fun groupKey(): String = TerminalNotificationFormat.groupKey(notificationContext, context.packageName)
 
-    private fun oscNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) "terminal_osc" else "terminal_osc_${notificationContext.workspaceId.hashCode()}"
+    private fun oscNotificationChannelId(): String = TerminalNotificationFormat.oscChannelId(notificationContext)
 
-    private fun oscProgressNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) "terminal_osc_progress" else "terminal_osc_progress_${notificationContext.workspaceId.hashCode()}"
+    private fun oscProgressNotificationChannelId(): String = TerminalNotificationFormat.progressChannelId(notificationContext)
 
-    private fun oscNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal OSC" else "Terminal · ${notificationContext.workspaceName}"
+    private fun oscNotificationChannelName(): String = TerminalNotificationFormat.oscChannelName(notificationContext)
 
-    private fun oscProgressNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal Progress" else "Terminal Progress · ${notificationContext.workspaceName}"
+    private fun oscProgressNotificationChannelName(): String = TerminalNotificationFormat.progressChannelName(notificationContext)
 
-    private fun progressNotificationId(): Int = (904 xor notificationContext.terminalId.ifBlank { notificationContext.deepLink }.ifBlank { notificationContext.workspaceId }.hashCode()) and 0x7fffffff
+    private fun progressNotificationId(): Int = TerminalNotificationFormat.progressNotificationId(notificationContext)
 
     private fun nextNotificationId(): Int = notificationIdCounter.updateAndGet { if (it == Int.MAX_VALUE) 1 else it + 1 }
-
-    private fun formatNotificationText(text: String): String = text
-        .replace(Regex("```[\\s\\S]*?```")) { it.value.removePrefix("```").removeSuffix("```") }
-        .replace(Regex("`([^`]+)`"), "$1")
-        .replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
-        .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
-        .replace(Regex("[*_~#>]+"), "")
-        .lines()
-        .map { it.trim().removePrefix("- ").removePrefix("* ") }
-        .filter { it.isNotBlank() }
-        .joinToString(" · ")
-        .take(512)
 
     companion object {
         private val notificationIdCounter = AtomicInteger((System.currentTimeMillis() and 0x3fffffff).toInt())

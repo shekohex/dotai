@@ -43,9 +43,9 @@ import java.util.concurrent.atomic.AtomicInteger
 data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount: Long)
 data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "", val terminalId: String = "")
 
-private const val TerminalOscNotificationChannelId = "terminal_osc"
-private const val TerminalOscProgressNotificationChannelId = "terminal_osc_progress"
-private const val TerminalOscProgressNotificationId = 904
+private const val TerminalOscNotificationChannelId = TerminalNotificationFormat.defaultOscChannelId
+private const val TerminalOscProgressNotificationChannelId = TerminalNotificationFormat.defaultProgressChannelId
+private const val TerminalOscProgressNotificationId = TerminalNotificationFormat.progressBaseId
 const val TerminalNotificationReplyAction = "com.coder.pi.TERMINAL_NOTIFICATION_REPLY"
 const val TerminalNotificationReplyInputKey = "terminal_reply"
 const val TerminalNotificationWorkspaceIdKey = "workspace_id"
@@ -953,17 +953,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
-    private fun formatNotificationText(text: String): String = text
-        .replace(Regex("```[\\s\\S]*?```")) { it.value.removePrefix("```").removeSuffix("```") }
-        .replace(Regex("`([^`]+)`"), "$1")
-        .replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
-        .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
-        .replace(Regex("[*_~#>]+"), "")
-        .lines()
-        .map { it.trim().removePrefix("- ").removePrefix("* ") }
-        .filter { it.isNotBlank() }
-        .joinToString(" · ")
-        .take(512)
+    private fun formatNotificationText(text: String): String = TerminalNotificationFormat.cleanText(text)
 
     private fun handleOscProgress(stateText: String, valueText: String) {
         if (!oscNotificationsEnabled() || !oscNotificationProgressEnabled()) return
@@ -1131,9 +1121,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return title.ifBlank { "Terminal" }.take(128)
     }
 
-    private fun workspaceNotificationLabel(): String = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.take(64)
+    private fun workspaceNotificationLabel(): String = TerminalNotificationFormat.workspaceLabel(notificationContext)
 
-    private fun terminalNotificationGroupKey(): String = "terminal:${notificationContext.terminalId.ifBlank { notificationContext.deepLink }.ifBlank { notificationContext.workspaceId }.ifBlank { context.packageName }}"
+    private fun terminalNotificationGroupKey(): String = TerminalNotificationFormat.groupKey(notificationContext, context.packageName)
 
     private fun workspaceNotificationIcon(): Icon {
         val workspaceBitmap = workspaceIconBitmap(localOnly = true)
@@ -1166,15 +1156,15 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
-    private fun oscNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) TerminalOscNotificationChannelId else "terminal_osc_${notificationContext.workspaceId.hashCode()}"
+    private fun oscNotificationChannelId(): String = TerminalNotificationFormat.oscChannelId(notificationContext)
 
-    private fun oscProgressNotificationChannelId(): String = if (notificationContext.workspaceId.isBlank()) TerminalOscProgressNotificationChannelId else "terminal_osc_progress_${notificationContext.workspaceId.hashCode()}"
+    private fun oscProgressNotificationChannelId(): String = TerminalNotificationFormat.progressChannelId(notificationContext)
 
-    private fun oscNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal OSC" else "Terminal · ${notificationContext.workspaceName}"
+    private fun oscNotificationChannelName(): String = TerminalNotificationFormat.oscChannelName(notificationContext)
 
-    private fun oscProgressNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal Progress" else "Terminal Progress · ${notificationContext.workspaceName}"
+    private fun oscProgressNotificationChannelName(): String = TerminalNotificationFormat.progressChannelName(notificationContext)
 
-    private fun oscProgressNotificationId(): Int = (TerminalOscProgressNotificationId xor notificationContext.terminalId.ifBlank { notificationContext.deepLink }.ifBlank { notificationContext.workspaceId }.hashCode()) and 0x7fffffff
+    private fun oscProgressNotificationId(): Int = TerminalNotificationFormat.progressNotificationId(notificationContext)
 
     private fun workspaceIconBitmap(localOnly: Boolean = false): android.graphics.Bitmap? {
         val localBitmap = runCatching {

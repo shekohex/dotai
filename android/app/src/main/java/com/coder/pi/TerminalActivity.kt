@@ -66,7 +66,8 @@ class TerminalActivity : AppCompatActivity() {
         terminalView = CoderTerminalView(this).also {
             it.setPreviewFontFamily(currentFontKey ?: CoderFonts.selectedKey(this))
             it.applyTheme(theme)
-            it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalSessionKey(identity))}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty()))
+            val terminalId = terminalSessionKey(identity)
+            it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
             it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
         }
         terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), detached = true, workspaceIconUrl = launch.workspaceIconUrl)

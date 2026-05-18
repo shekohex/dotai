@@ -41,7 +41,7 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicInteger
 
 data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount: Long)
-data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "")
+data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "", val terminalId: String = "")
 
 private const val TerminalOscNotificationChannelId = "terminal_osc"
 private const val TerminalOscProgressNotificationChannelId = "terminal_osc_progress"
@@ -784,9 +784,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             deepLink = context.deepLink.take(2048),
             iconUri = context.iconUri.take(2048),
             iconUrl = context.iconUrl.take(2048),
+            terminalId = context.terminalId.take(256),
         )
+        workspaceIconCacheKey = ""
+        workspaceIconCache = null
         synchronized(terminalNotificationTargets) {
             terminalNotificationTargets[notificationContext.workspaceId] = WeakReference(this)
+            terminalNotificationTargets[notificationContext.terminalId] = WeakReference(this)
         }
     }
 
@@ -1101,7 +1105,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun workspaceNotificationLabel(): String = notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.take(64)
 
-    private fun terminalNotificationGroupKey(): String = "terminal:${notificationContext.workspaceId.ifBlank { notificationContext.deepLink }.ifBlank { context.packageName }}"
+    private fun terminalNotificationGroupKey(): String = "terminal:${notificationContext.terminalId.ifBlank { notificationContext.deepLink }.ifBlank { notificationContext.workspaceId }.ifBlank { context.packageName }}"
 
     private fun workspaceNotificationIcon(): Icon {
         val workspaceBitmap = workspaceIconBitmap(localOnly = true)
@@ -1142,7 +1146,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun oscProgressNotificationChannelName(): String = if (notificationContext.workspaceName.isBlank()) "Terminal Progress" else "Terminal Progress · ${notificationContext.workspaceName}"
 
-    private fun oscProgressNotificationId(): Int = if (notificationContext.workspaceId.isBlank()) TerminalOscProgressNotificationId else (TerminalOscProgressNotificationId xor notificationContext.workspaceId.hashCode()) and 0x7fffffff
+    private fun oscProgressNotificationId(): Int = (TerminalOscProgressNotificationId xor notificationContext.terminalId.ifBlank { notificationContext.deepLink }.ifBlank { notificationContext.workspaceId }.hashCode()) and 0x7fffffff
 
     private fun workspaceIconBitmap(localOnly: Boolean = false): android.graphics.Bitmap? {
         val localBitmap = runCatching {

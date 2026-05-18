@@ -615,6 +615,7 @@ private fun configureTerminalNotificationContext(terminalView: CoderTerminalView
             deepLink = "pi://terminal?id=${Uri.encode(id)}",
             iconUri = local.iconUri.orEmpty(),
             iconUrl = launch.workspaceIconUrl.orEmpty(),
+            terminalId = id,
         )
     )
 }
@@ -730,6 +731,7 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
             val localUri = copyWorkspaceIconToLocalStorage(context, workspace.id, it)
             if (localUri != null) {
                 sessionStore.saveIcon(session.baseUrl, session.user.id, workspace.id, localUri)
+                activeTerminals.filter { it.identity.workspaceId == workspace.id }.forEach { configureTerminalNotificationContext(it.terminalView, it.launch, it.identity, sessionStore) }
                 workspaceIconRevision++
             } else {
                 Toast.makeText(context, "Could not save workspace icon", Toast.LENGTH_SHORT).show()

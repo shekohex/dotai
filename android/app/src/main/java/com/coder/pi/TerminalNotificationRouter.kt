@@ -36,10 +36,10 @@ class TerminalNotificationRouter(
         val cleanTitle = TerminalNotificationFormat.cleanText(title).ifBlank { notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.ifBlank { "Terminal" } }
         val cleanBody = TerminalNotificationFormat.cleanText(body).ifBlank { cleanTitle }
         if (!canPostNotifications()) return
-        ensureChannel(oscNotificationChannelId(), oscNotificationChannelName(), silent = false)
+        ensureAlertChannel(oscNotificationChannelId(), oscNotificationChannelName())
         val notificationId = nextNotificationId()
         val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        notifySafely(notificationId, NotificationCompat.Builder(context, oscNotificationChannelId())
+        val notification = TerminalNotificationBehavior.applyAlertDefaults(NotificationCompat.Builder(context, oscNotificationChannelId())
             .setSmallIcon(R.drawable.pi_logo_mark)
             .setContentTitle(cleanTitle.take(128))
             .setContentText(cleanBody.take(512))
@@ -49,8 +49,10 @@ class TerminalNotificationRouter(
             .setGroup(groupKey())
             .setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody.take(512)))
             .addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
-            .addAction(replyAction(notificationId))
-            .build())
+            .addAction(replyAction(notificationId)))
+            .build()
+        TerminalNotificationBehavior.wakeScreen(context)
+        notifySafely(notificationId, notification)
     }
 
     private fun postProgress(title: String, stateText: String, valueText: String) {
@@ -94,6 +96,8 @@ class TerminalNotificationRouter(
             })
         }
     }
+
+    private fun ensureAlertChannel(id: String, name: String) = TerminalNotificationBehavior.ensureAlertChannel(context, id, name)
 
     private fun replyAction(notificationId: Int): NotificationCompat.Action {
         val input = RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()

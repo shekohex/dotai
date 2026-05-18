@@ -1100,8 +1100,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .setGroup(terminalNotificationGroupKey())
             .addAction(oscNotificationIconRes(), "Open terminal", pendingIntent)
             .addAction(replyNotificationAction(notificationId))
+        if (!ongoing) TerminalNotificationBehavior.applyAlertDefaults(builder)
         workspaceIconBitmap(localOnly = notificationId == oscProgressNotificationId())?.let { builder.setLargeIcon(it) }
         if (ongoing) builder.setProgress(100, progress.coerceIn(0, 100), indeterminate) else builder.setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
+        if (!ongoing) TerminalNotificationBehavior.wakeScreen(context)
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         return true
     }
@@ -1132,13 +1134,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun ensureOscNotificationChannel() {
         if (Build.VERSION.SDK_INT < 26) return
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = oscNotificationChannelId()
-        val existingChannel = notificationManager.getNotificationChannel(channelId)
-        if (existingChannel != null && (existingChannel.importance < NotificationManager.IMPORTANCE_DEFAULT || existingChannel.sound == null)) notificationManager.deleteNotificationChannel(channelId)
-        if (notificationManager.getNotificationChannel(channelId) == null) {
-            notificationManager.createNotificationChannel(NotificationChannel(channelId, oscNotificationChannelName(), NotificationManager.IMPORTANCE_DEFAULT))
-        }
+        TerminalNotificationBehavior.ensureAlertChannel(context, oscNotificationChannelId(), oscNotificationChannelName())
     }
 
     private fun ensureOscProgressNotificationChannel() {

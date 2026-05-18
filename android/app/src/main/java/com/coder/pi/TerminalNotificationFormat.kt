@@ -2,7 +2,7 @@ package com.coder.pi
 
 object TerminalNotificationFormat {
     const val progressBaseId = 904
-    const val defaultOscChannelId = "terminal_osc"
+    const val defaultOscChannelId = "terminal_osc_alerts"
     const val defaultProgressChannelId = "terminal_osc_progress"
 
     fun cleanText(text: String): String = text
@@ -21,7 +21,7 @@ object TerminalNotificationFormat {
 
     fun groupKey(context: TerminalNotificationContext, fallback: String): String = "terminal:${context.terminalId.ifBlank { context.deepLink }.ifBlank { context.workspaceId }.ifBlank { fallback }}"
 
-    fun oscChannelId(context: TerminalNotificationContext): String = if (context.workspaceId.isBlank()) defaultOscChannelId else "terminal_osc_${context.workspaceId.hashCode()}"
+    fun oscChannelId(context: TerminalNotificationContext): String = if (context.workspaceId.isBlank()) defaultOscChannelId else "terminal_osc_alerts_${context.workspaceId.hashCode()}"
 
     fun progressChannelId(context: TerminalNotificationContext): String = if (context.workspaceId.isBlank()) defaultProgressChannelId else "terminal_osc_progress_${context.workspaceId.hashCode()}"
 

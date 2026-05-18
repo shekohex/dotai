@@ -1097,7 +1097,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun replyNotificationAction(notificationId: Int): NotificationCompat.Action {
         val input = androidx.core.app.RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()
-        val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId).putExtra(TerminalNotificationIdKey, notificationId)
+        val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId).putExtra(TerminalNotificationTerminalIdKey, notificationContext.terminalId).putExtra(TerminalNotificationIdKey, notificationId)
         val pendingIntent = PendingIntent.getBroadcast(context, notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
         return NotificationCompat.Action.Builder(oscNotificationIconRes(), "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
     }
@@ -1196,12 +1196,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     companion object {
         private val terminalNotificationIdCounter = AtomicInteger((System.currentTimeMillis() and 0x3fffffff).toInt())
         private val terminalNotificationTargets = mutableMapOf<String, WeakReference<CoderTerminalView>>()
-
-        fun sendNotificationReply(workspaceId: String, text: String): Boolean {
-            val terminalView = synchronized(terminalNotificationTargets) { terminalNotificationTargets[workspaceId]?.get() ?: terminalNotificationTargets[""]?.get() } ?: return false
-            terminalView.sendInput((text.take(4096) + "\r").toByteArray(Charsets.UTF_8))
-            return true
-        }
 
         private val terminalViews = mutableListOf<WeakReference<CoderTerminalView>>()
 

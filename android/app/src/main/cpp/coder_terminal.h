@@ -46,6 +46,7 @@ public:
     void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
     bool mouseTracking() const;
+    std::vector<uint8_t> mouse(int action, float x, float y, int button, int metaState);
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
     std::vector<CoderCell> snapshot(int& cols, int& rows, CoderCursor& cursor);
 
@@ -65,6 +66,8 @@ private:
     struct RowCellsDeleter { void operator()(GhosttyRenderStateRowCells cells) const; };
     struct KeyEncoderDeleter { void operator()(GhosttyKeyEncoder encoder) const; };
     struct KeyEventDeleter { void operator()(GhosttyKeyEvent event) const; };
+    struct MouseEncoderDeleter { void operator()(GhosttyMouseEncoder encoder) const; };
+    struct MouseEventDeleter { void operator()(GhosttyMouseEvent event) const; };
 
     using TerminalHandle = std::unique_ptr<GhosttyTerminalImpl, TerminalDeleter>;
     using RenderStateHandle = std::unique_ptr<GhosttyRenderStateImpl, RenderStateDeleter>;
@@ -72,6 +75,8 @@ private:
     using RowCellsHandle = std::unique_ptr<GhosttyRenderStateRowCellsImpl, RowCellsDeleter>;
     using KeyEncoderHandle = std::unique_ptr<GhosttyKeyEncoderImpl, KeyEncoderDeleter>;
     using KeyEventHandle = std::unique_ptr<GhosttyKeyEventImpl, KeyEventDeleter>;
+    using MouseEncoderHandle = std::unique_ptr<GhosttyMouseEncoderImpl, MouseEncoderDeleter>;
+    using MouseEventHandle = std::unique_ptr<GhosttyMouseEventImpl, MouseEventDeleter>;
 
     TerminalHandle terminal_;
     RenderStateHandle renderState_;
@@ -79,6 +84,9 @@ private:
     RowCellsHandle rowCells_;
     KeyEncoderHandle keyEncoder_;
     KeyEventHandle keyEvent_;
+    MouseEncoderHandle mouseEncoder_;
+    MouseEventHandle mouseEvent_;
+    bool mouseButtonPressed_ = false;
 
     std::mutex mutex_;
     int ptyFd_ = -1;

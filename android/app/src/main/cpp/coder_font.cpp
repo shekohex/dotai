@@ -568,6 +568,19 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
             primaryIndex,
         });
     }
+    int totalAdvance = 0;
+    for (const auto& glyph : shaped) totalAdvance += glyph.xAdvance;
+    int targetAdvance = static_cast<int>(codepointCount) * glyphWidth_;
+    if (totalAdvance > 0 && targetAdvance > 0) {
+        float scale = static_cast<float>(targetAdvance) / static_cast<float>(totalAdvance);
+        int scaledTotal = 0;
+        for (auto& glyph : shaped) {
+            glyph.xAdvance = static_cast<int>(std::round(static_cast<float>(glyph.xAdvance) * scale));
+            glyph.xOffset = static_cast<int>(std::round(static_cast<float>(glyph.xOffset) * scale));
+            scaledTotal += glyph.xAdvance;
+        }
+        if (!shaped.empty()) shaped.back().xAdvance += targetAdvance - scaledTotal;
+    }
     hb_buffer_destroy(buffer);
     return shaped;
 }

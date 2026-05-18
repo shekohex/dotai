@@ -33,6 +33,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var smoothScrollGesturePixels = 0f
     private var smoothScrollVelocityPixelsPerMillis = 0f
     private var smoothScrollLastEventMillis = 0L
+    private var mouseTrackingTouch = false
     private var shiftLatch = false
     private var ctrlLatch = false
     private var altLatch = false
@@ -123,12 +124,15 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (!gestureEnabled("drag_scroll")) return super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                mouseTrackingTouch = sendMouseEvent(0, event.x, event.y, 1, event.metaState)
+                if (mouseTrackingTouch) return true
                 lastTouchY = event.y
                 accumulatedScrollY = 0f
                 beginSmoothScrollGesture()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (mouseTrackingTouch) return sendMouseEvent(2, event.x, event.y, 1, event.metaState)
                 val deltaY = event.y - lastTouchY
                 lastTouchY = event.y
                 if (smoothScrollEnabled()) {
@@ -144,6 +148,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (mouseTrackingTouch) {
+                    sendMouseEvent(1, event.x, event.y, 1, event.metaState)
+                    mouseTrackingTouch = false
+                    return true
+                }
                 endSmoothScrollGesture()
                 return true
             }
@@ -322,11 +331,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val mouseTracking = remoteInput != null && native.nativeMouseTracking(handle)
         if (!mouseTracking) native.nativeScroll(handle, rowDelta)
         remoteInput?.takeIf { mouseTracking }?.let { input ->
-            val button = if (rowDelta < 0) 64 else 65
             repeat(kotlin.math.abs(rowDelta).coerceAtMost(12)) {
-                input("\u001b[<${button};1;1M\u001b[<${button};1;1m".toByteArray(Charsets.UTF_8))
+                val button = if (rowDelta < 0) 4 else 5
+                sendMouseEvent(0, 0f, 0f, button, 0)
             }
         }
+    }
+
+    private fun sendMouseEvent(action: Int, x: Float, y: Float, button: Int, metaState: Int): Boolean {
+        if (handle == 0L || remoteInput == null || !native.nativeMouseTracking(handle)) return false
+        val output = native.nativeMouseEvent(handle, action, x, y, button, metaState)
+        if (output.isEmpty()) return false
+        remoteInput?.invoke(output)
+        return true
     }
 
     fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0

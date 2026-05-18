@@ -19,6 +19,8 @@ void CoderTerminal::RowIteratorDeleter::operator()(GhosttyRenderStateRowIterator
 void CoderTerminal::RowCellsDeleter::operator()(GhosttyRenderStateRowCells cells) const { ghostty_render_state_row_cells_free(cells); }
 void CoderTerminal::KeyEncoderDeleter::operator()(GhosttyKeyEncoder encoder) const { ghostty_key_encoder_free(encoder); }
 void CoderTerminal::KeyEventDeleter::operator()(GhosttyKeyEvent event) const { ghostty_key_event_free(event); }
+void CoderTerminal::MouseEncoderDeleter::operator()(GhosttyMouseEncoder encoder) const { ghostty_mouse_encoder_free(encoder); }
+void CoderTerminal::MouseEventDeleter::operator()(GhosttyMouseEvent event) const { ghostty_mouse_event_free(event); }
 
 bool operator==(const CoderCell& lhs, const CoderCell& rhs) {
     return lhs.codepointCount == rhs.codepointCount
@@ -58,18 +60,24 @@ bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
     GhosttyRenderStateRowCells rowCells = nullptr;
     GhosttyKeyEncoder keyEncoder = nullptr;
     GhosttyKeyEvent keyEvent = nullptr;
+    GhosttyMouseEncoder mouseEncoder = nullptr;
+    GhosttyMouseEvent mouseEvent = nullptr;
     if (ghostty_terminal_new(nullptr, &terminal, options) != GHOSTTY_SUCCESS) return false;
     if (ghostty_render_state_new(nullptr, &renderState) != GHOSTTY_SUCCESS) return false;
     if (ghostty_render_state_row_iterator_new(nullptr, &rowIterator) != GHOSTTY_SUCCESS) return false;
     if (ghostty_render_state_row_cells_new(nullptr, &rowCells) != GHOSTTY_SUCCESS) return false;
     if (ghostty_key_encoder_new(nullptr, &keyEncoder) != GHOSTTY_SUCCESS) return false;
     if (ghostty_key_event_new(nullptr, &keyEvent) != GHOSTTY_SUCCESS) return false;
+    if (ghostty_mouse_encoder_new(nullptr, &mouseEncoder) != GHOSTTY_SUCCESS) return false;
+    if (ghostty_mouse_event_new(nullptr, &mouseEvent) != GHOSTTY_SUCCESS) return false;
     terminal_.reset(terminal);
     renderState_.reset(renderState);
     rowIterator_.reset(rowIterator);
     rowCells_.reset(rowCells);
     keyEncoder_.reset(keyEncoder);
     keyEvent_.reset(keyEvent);
+    mouseEncoder_.reset(mouseEncoder);
+    mouseEvent_.reset(mouseEvent);
 
     ghostty_terminal_resize(terminal_.get(), static_cast<uint16_t>(cols_), static_cast<uint16_t>(rows_), static_cast<uint32_t>(cellWidth), static_cast<uint32_t>(cellHeight));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_USERDATA, this);
@@ -191,6 +199,37 @@ bool CoderTerminal::mouseTracking() const {
     bool enabled = false;
     ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING, &enabled);
     return enabled;
+}
+
+std::vector<uint8_t> CoderTerminal::mouse(int action, float x, float y, int button, int metaState) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_ || !mouseEncoder_ || !mouseEvent_) return {};
+    bool enabled = false;
+    ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING, &enabled);
+    if (!enabled) return {};
+    ghostty_mouse_encoder_setopt_from_terminal(mouseEncoder_.get(), terminal_.get());
+    GhosttyMouseEncoderSize size = GHOSTTY_INIT_SIZED(GhosttyMouseEncoderSize);
+    size.screen_width = static_cast<uint32_t>(std::max(1, cols_ * cellWidth_));
+    size.screen_height = static_cast<uint32_t>(std::max(1, rows_ * cellHeight_));
+    size.cell_width = static_cast<uint32_t>(std::max(1, cellWidth_));
+    size.cell_height = static_cast<uint32_t>(std::max(1, cellHeight_));
+    ghostty_mouse_encoder_setopt(mouseEncoder_.get(), GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &size);
+    ghostty_mouse_encoder_setopt(mouseEncoder_.get(), GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &mouseButtonPressed_);
+    ghostty_mouse_event_set_action(mouseEvent_.get(), action == 1 ? GHOSTTY_MOUSE_ACTION_RELEASE : action == 2 ? GHOSTTY_MOUSE_ACTION_MOTION : GHOSTTY_MOUSE_ACTION_PRESS);
+    if (button == 1) ghostty_mouse_event_set_button(mouseEvent_.get(), GHOSTTY_MOUSE_BUTTON_LEFT);
+    else if (button == 2) ghostty_mouse_event_set_button(mouseEvent_.get(), GHOSTTY_MOUSE_BUTTON_RIGHT);
+    else if (button == 3) ghostty_mouse_event_set_button(mouseEvent_.get(), GHOSTTY_MOUSE_BUTTON_MIDDLE);
+    else if (button == 4) ghostty_mouse_event_set_button(mouseEvent_.get(), GHOSTTY_MOUSE_BUTTON_FOUR);
+    else if (button == 5) ghostty_mouse_event_set_button(mouseEvent_.get(), GHOSTTY_MOUSE_BUTTON_FIVE);
+    else ghostty_mouse_event_clear_button(mouseEvent_.get());
+    ghostty_mouse_event_set_mods(mouseEvent_.get(), mapAndroidMods(metaState));
+    ghostty_mouse_event_set_position(mouseEvent_.get(), GhosttyMousePosition{std::clamp(x, 0.0f, static_cast<float>(size.screen_width - 1)), std::clamp(y, 0.0f, static_cast<float>(size.screen_height - 1))});
+    std::array<char, 128> output{};
+    size_t written = 0;
+    mouseButtonPressed_ = action != 1;
+    GhosttyResult result = ghostty_mouse_encoder_encode(mouseEncoder_.get(), mouseEvent_.get(), output.data(), output.size(), &written);
+    if (result != GHOSTTY_SUCCESS || written == 0) return {};
+    return std::vector<uint8_t>(output.begin(), output.begin() + static_cast<std::ptrdiff_t>(written));
 }
 
 std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow) {

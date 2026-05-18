@@ -14,7 +14,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Typecheck
+            command: npm run typecheck
+          - name: Lint
+            command: npm run lint
+          - name: Format check
+            command: npm run format:check
+          - name: Test
+            command: npm test -- --reporter=github-actions --reporter=json
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: agent
+    name: ${{ matrix.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Restore node_modules cache
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: agent/node_modules
+          key: ${{ runner.os }}-node-24-node-modules-${{ hashFiles('agent/package-lock.json', 'agent/package.json') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm install
+
+      - name: ${{ matrix.name }}
+        run: ${{ matrix.command }}
+
+  package:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,18 +88,6 @@ jobs:
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm install
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Format check
-        run: npm run format:check
-
-      - name: Test
-        run: npm test -- --reporter=github-actions --reporter=json
 
       - name: Set preview package version
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

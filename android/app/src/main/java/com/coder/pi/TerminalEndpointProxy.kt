@@ -34,9 +34,9 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
 
     fun currentEndpoint(): CoderTerminalEndpoint = synchronized(lock) { endpoint }
 
-    override fun terminalColumns(): Int = synchronized(lock) { endpoint.terminalColumns() }
+    override fun terminalColumns(): Int = synchronized(lock) { endpoint }.terminalColumns()
 
-    override fun terminalRows(): Int = synchronized(lock) { endpoint.terminalRows() }
+    override fun terminalRows(): Int = synchronized(lock) { endpoint }.terminalRows()
 
     override fun attachRemote(input: (ByteArray) -> Unit) {
         val currentEndpoint = synchronized(lock) {

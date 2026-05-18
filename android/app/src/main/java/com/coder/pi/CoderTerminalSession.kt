@@ -110,9 +110,12 @@ class CoderTerminalSession(
     fun networkLost() {
         if (stopped) return
         networkUnavailable = true
+        val terminalSocket = socket
+        socket = null
+        terminalEndpoint.detachRemote()
         updateError("Network unavailable")
         updateStatus(TerminalConnectionStatus.Reconnecting.wireName)
-        scope.launch { socket?.close() }
+        scope.launch { terminalSocket?.close() }
     }
 
     fun networkAvailable() {

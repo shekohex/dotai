@@ -168,6 +168,26 @@ Java_com_coder_pi_CoderNative_nativeMouseEvent(JNIEnv* env, jobject, jlong handl
     return result;
 }
 
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_coder_pi_CoderNative_nativeScreenPositionFromViewport(JNIEnv* env, jobject, jlong handle, jint row, jint col) {
+    int screenRow = 0;
+    int screenCol = 0;
+    jintArray result = env->NewIntArray(2);
+    jint values[2] = {-1, -1};
+    if (reinterpret_cast<CoderSession*>(handle)->terminal.screenPositionFromViewport(row, col, screenRow, screenCol)) {
+        values[0] = screenRow;
+        values[1] = screenCol;
+    }
+    env->SetIntArrayRegion(result, 0, 2, values);
+    return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_coder_pi_CoderNative_nativeSelectedText(JNIEnv* env, jobject, jlong handle, jint startRow, jint startCol, jint endRow, jint endCol) {
+    auto text = reinterpret_cast<CoderSession*>(handle)->terminal.selectedText(startRow, startCol, endRow, endCol);
+    return env->NewStringUTF(text.c_str());
+}
+
 static void appendUtf8(std::string& output, uint32_t codepoint) {
     if (codepoint <= 0x7f) {
         output.push_back(static_cast<char>(codepoint));

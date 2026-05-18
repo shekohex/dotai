@@ -282,6 +282,54 @@ std::vector<uint8_t> CoderTerminal::mouse(int action, float x, float y, int butt
     return std::vector<uint8_t>(output.begin(), output.begin() + static_cast<std::ptrdiff_t>(written));
 }
 
+bool CoderTerminal::screenPositionFromViewport(int row, int col, int& screenRow, int& screenCol) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_) return false;
+    GhosttyPoint point{};
+    point.tag = GHOSTTY_POINT_TAG_VIEWPORT;
+    point.value.coordinate.x = static_cast<uint16_t>(std::clamp(col, 0, std::max(0, cols_ - 1)));
+    point.value.coordinate.y = static_cast<uint32_t>(std::clamp(row, 0, std::max(0, rows_ - 1)));
+    GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+    if (ghostty_terminal_grid_ref(terminal_.get(), point, &ref) != GHOSTTY_SUCCESS) return false;
+    GhosttyPointCoordinate screen{};
+    if (ghostty_terminal_point_from_grid_ref(terminal_.get(), &ref, GHOSTTY_POINT_TAG_SCREEN, &screen) != GHOSTTY_SUCCESS) return false;
+    screenCol = static_cast<int>(screen.x);
+    screenRow = static_cast<int>(screen.y);
+    return true;
+}
+
+std::string CoderTerminal::selectedText(int startRow, int startCol, int endRow, int endCol) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_) return {};
+    GhosttyPoint startPoint{};
+    startPoint.tag = GHOSTTY_POINT_TAG_SCREEN;
+    startPoint.value.coordinate.x = static_cast<uint16_t>(std::clamp(startCol, 0, std::max(0, cols_ - 1)));
+    startPoint.value.coordinate.y = static_cast<uint32_t>(std::max(0, startRow));
+    GhosttyPoint endPoint{};
+    endPoint.tag = GHOSTTY_POINT_TAG_SCREEN;
+    endPoint.value.coordinate.x = static_cast<uint16_t>(std::clamp(endCol, 0, std::max(0, cols_ - 1)));
+    endPoint.value.coordinate.y = static_cast<uint32_t>(std::max(0, endRow));
+    GhosttySelection selection = GHOSTTY_INIT_SIZED(GhosttySelection);
+    if (ghostty_terminal_grid_ref(terminal_.get(), startPoint, &selection.start) != GHOSTTY_SUCCESS) return {};
+    if (ghostty_terminal_grid_ref(terminal_.get(), endPoint, &selection.end) != GHOSTTY_SUCCESS) return {};
+    selection.rectangle = false;
+    GhosttyFormatterTerminalOptions options = GHOSTTY_INIT_SIZED(GhosttyFormatterTerminalOptions);
+    options.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN;
+    options.unwrap = false;
+    options.trim = true;
+    options.selection = &selection;
+    GhosttyFormatter formatter = nullptr;
+    if (ghostty_formatter_terminal_new(nullptr, &formatter, terminal_.get(), options) != GHOSTTY_SUCCESS) return {};
+    uint8_t* output = nullptr;
+    size_t length = 0;
+    GhosttyResult result = ghostty_formatter_format_alloc(formatter, nullptr, &output, &length);
+    ghostty_formatter_free(formatter);
+    if (result != GHOSTTY_SUCCESS || !output || length == 0) return {};
+    std::string text(reinterpret_cast<const char*>(output), length);
+    ghostty_free(nullptr, output, length);
+    return text;
+}
+
 std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow) {
     CoderCursor cursor;
     auto result = snapshot(cols, rows, cursor);

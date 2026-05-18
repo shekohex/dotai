@@ -20,6 +20,8 @@ class CoderNative {
     external fun nativeScrollInput(handle: Long, rowDelta: Int, x: Float, y: Float): ByteArray
     external fun nativeMouseTracking(handle: Long): Boolean
     external fun nativeMouseEvent(handle: Long, action: Int, x: Float, y: Float, button: Int, metaState: Int): ByteArray
+    external fun nativeScreenPositionFromViewport(handle: Long, row: Int, col: Int): IntArray
+    external fun nativeSelectedText(handle: Long, startRow: Int, startCol: Int, endRow: Int, endCol: Int): String
     external fun nativeSnapshotText(handle: Long): Array<String>
 
     companion object {

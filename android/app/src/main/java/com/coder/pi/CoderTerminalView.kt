@@ -296,7 +296,22 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (smooth && smoothScrollEnabled()) scrollPixels(-rowDelta * cellHeight.toFloat()) else scrollTerminal(rowDelta, lastTouchX, lastTouchY)
     }
 
+    fun scrollViewportRows(rowDelta: Int) {
+        if (handle == 0L || rowDelta == 0) return
+        native.nativeScroll(handle, rowDelta.coerceIn(-12, 12))
+    }
+
     fun scrollRowHeight(): Int = cellHeight.coerceAtLeast(1)
+
+    fun selectionEdgeScrollRows(y: Float, height: Float): Int {
+        val rowHeight = scrollRowHeight().toFloat()
+        val edgeSize = (rowHeight * 1.5f).coerceAtLeast(48f)
+        return when {
+            y < edgeSize -> -((((edgeSize - y) / rowHeight).toInt() + 1).coerceIn(1, 6))
+            y > height - edgeSize -> ((((y - (height - edgeSize)) / rowHeight).toInt() + 1).coerceIn(1, 6))
+            else -> 0
+        }
+    }
 
     fun beginSmoothScrollGesture() {
         smoothScrollAnimator?.cancel()
@@ -403,6 +418,18 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             val endCol = if (row == range.end.row) range.end.col + 1 else line.length
             line.substring(startCol.coerceIn(0, line.length), endCol.coerceIn(0, line.length))
         }.trimEnd()
+    }
+
+    fun screenPositionAt(position: TerminalCellPosition): TerminalCellPosition? {
+        if (handle == 0L) return null
+        val result = native.nativeScreenPositionFromViewport(handle, position.row, position.col)
+        if (result.size < 2 || result[0] < 0 || result[1] < 0) return null
+        return TerminalCellPosition(result[0], result[1])
+    }
+
+    fun selectedScreenText(start: TerminalCellPosition, end: TerminalCellPosition): String {
+        if (handle == 0L) return ""
+        return native.nativeSelectedText(handle, start.row, start.col, end.row, end.col).trimEnd()
     }
 
     fun wordRangeAt(position: TerminalCellPosition): TerminalSelectionRange {
@@ -705,3 +732,5 @@ data class TerminalSelectionRange(val start: TerminalCellPosition, val end: Term
         return if (start.row < end.row || (start.row == end.row && start.col <= end.col)) this else TerminalSelectionRange(end, start)
     }
 }
+
+data class TerminalSelectionState(val viewport: TerminalSelectionRange, val screen: TerminalSelectionRange)

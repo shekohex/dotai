@@ -48,6 +48,8 @@ public:
     std::vector<uint8_t> scrollInput(int rowDelta, float x, float y);
     bool mouseTracking() const;
     std::vector<uint8_t> mouse(int action, float x, float y, int button, int metaState);
+    bool screenPositionFromViewport(int row, int col, int& screenRow, int& screenCol);
+    std::string selectedText(int startRow, int startCol, int endRow, int endCol);
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
     std::vector<CoderCell> snapshot(int& cols, int& rows, CoderCursor& cursor);
 

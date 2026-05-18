@@ -990,7 +990,7 @@ private fun TerminalPane(
     onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
-    var selection by remember { mutableStateOf<TerminalSelectionRange?>(null) }
+    var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().background(theme.background.toComposeColor()).imePadding()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -1001,7 +1001,7 @@ private fun TerminalPane(
             )
             TerminalPinchFontOverlay(terminalView)
             TerminalSelectionOverlay(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), selection, { selection = it }) {
-                val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
+                val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
                 if (selectedText.isNotBlank()) {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
@@ -1010,7 +1010,7 @@ private fun TerminalPane(
             }
         }
         TerminalAccessory(theme, terminalView, selection != null, false, {}, {
-            val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
+            val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
             if (selectedText.isNotBlank()) {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
@@ -1086,7 +1086,19 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
 }
 
 @Composable
-private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: CoderTheme, enabled: Boolean, selection: TerminalSelectionRange?, onSelectionChange: (TerminalSelectionRange?) -> Unit, onCopy: () -> Unit) {
+private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: CoderTheme, enabled: Boolean, selection: TerminalSelectionState?, onSelectionChange: (TerminalSelectionState?) -> Unit, onCopy: () -> Unit) {
+    fun wordSelectionState(position: TerminalCellPosition): TerminalSelectionState {
+        val viewport = terminalView.wordRangeAt(position)
+        val screenStart = terminalView.screenPositionAt(viewport.start) ?: viewport.start
+        val screenEnd = terminalView.screenPositionAt(viewport.end) ?: viewport.end
+        return TerminalSelectionState(viewport, TerminalSelectionRange(screenStart, screenEnd))
+    }
+
+    fun selectionStateFromScreenStart(start: TerminalCellPosition, screenStart: TerminalCellPosition, end: TerminalCellPosition): TerminalSelectionState {
+        val screenEnd = terminalView.screenPositionAt(end) ?: end
+        return TerminalSelectionState(TerminalSelectionRange(start, end), TerminalSelectionRange(screenStart, screenEnd))
+    }
+
     Box(Modifier.fillMaxSize()) {
         Canvas(
             Modifier
@@ -1118,15 +1130,18 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                             when {
                                 longPressed -> {
                                     val start = terminalView.cellAt(startOffset.x, startOffset.y)
+                                    val screenStart = terminalView.screenPositionAt(start) ?: start
                                     var dragged = false
-                                    onSelectionChange(terminalView.wordRangeAt(start))
+                                    onSelectionChange(wordSelectionState(start))
                                     hapticClick()
                                     while (true) {
                                         val event = awaitPointerEvent()
                                         if (event.changes.all { it.changedToUpIgnoreConsumed() }) break
                                         event.changes.forEach { change ->
                                             dragged = true
-                                            onSelectionChange(TerminalSelectionRange(start, terminalView.cellAt(change.position.x, change.position.y)))
+                                            val edgeRows = terminalView.selectionEdgeScrollRows(change.position.y, size.height.toFloat())
+                                            if (edgeRows != 0) terminalView.scrollViewportRows(edgeRows)
+                                            onSelectionChange(selectionStateFromScreenStart(start, screenStart, terminalView.cellAt(change.position.x, change.position.y)))
                                             change.consume()
                                         }
                                     }
@@ -1220,15 +1235,18 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                         }
                         if (cancelled) return@awaitEachGesture
                         val start = terminalView.cellAt(startOffset.x, startOffset.y)
+                        val screenStart = terminalView.screenPositionAt(start) ?: start
                         var dragged = false
-                        onSelectionChange(terminalView.wordRangeAt(start))
+                        onSelectionChange(wordSelectionState(start))
                         hapticClick()
                         while (true) {
                             val event = awaitPointerEvent()
                             if (event.changes.all { it.changedToUpIgnoreConsumed() }) break
                             event.changes.forEach { change ->
                                 dragged = true
-                                onSelectionChange(TerminalSelectionRange(start, terminalView.cellAt(change.position.x, change.position.y)))
+                                val edgeRows = terminalView.selectionEdgeScrollRows(change.position.y, size.height.toFloat())
+                                if (edgeRows != 0) terminalView.scrollViewportRows(edgeRows)
+                                onSelectionChange(selectionStateFromScreenStart(start, screenStart, terminalView.cellAt(change.position.x, change.position.y)))
                                 change.consume()
                             }
                         }
@@ -1236,7 +1254,7 @@ private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: Cod
                     }
                 },
         ) {
-            val range = selection?.normalized() ?: return@Canvas
+            val range = selection?.viewport?.normalized() ?: return@Canvas
             val columns = terminalView.terminalColumns().coerceAtLeast(1)
             val rows = terminalView.terminalRows().coerceAtLeast(1)
             val cellWidth = size.width / columns
@@ -1310,7 +1328,7 @@ private fun CoderTerminalBottomSheet(
     var expanded by remember { mutableStateOf(false) }
     var sheetHeightFraction by remember { mutableFloatStateOf(0f) }
     var sheetClosing by remember { mutableStateOf(false) }
-    var selection by remember { mutableStateOf<TerminalSelectionRange?>(null) }
+    var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
     val scope = rememberCoroutineScope()
     val swipeSessionSwitch = terminalView.gestureEnabled("swipe_session_switch")
     val context = LocalContext.current
@@ -1386,7 +1404,7 @@ private fun CoderTerminalBottomSheet(
                 AndroidView(factory = { terminalView.detachFromCurrentParent() }, modifier = Modifier.fillMaxSize(), update = { it.applyTheme(theme); it.post { it.refreshSurface() } })
                 TerminalPinchFontOverlay(terminalView)
                 TerminalSelectionOverlay(terminalView, theme, terminalView.gestureEnabled("long_press_selection") && !terminalStatusIsRecoverable(status), selection, { selection = it }) {
-                    val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
+                    val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
                     if (selectedText.isNotBlank()) {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
@@ -1409,7 +1427,7 @@ private fun CoderTerminalBottomSheet(
                 }
             }
             TerminalAccessory(theme, terminalView, selection != null, sessionCount > 1, onEnterCarousel, {
-                val selectedText = selection?.let { terminalView.selectedText(it.start, it.end) }.orEmpty()
+                val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
                 if (selectedText.isNotBlank()) {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))

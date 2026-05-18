@@ -542,10 +542,18 @@ fun CoderApp(
                 val retry: () -> Unit = {
                         val launch = managed.launch
                         TerminalConnectionManager.stop(managed.id)
+                        managed.terminalView.detachFromCurrentParent()
+                        managed.terminalView.dispose()
+                        val nextTerminalView = createTerminalView(context, managed.id).also {
+                            it.setFontFamily(CoderFonts.selectedKey(context))
+                            it.applyTheme(theme)
+                        }
+                        configureTerminalNotificationContext(nextTerminalView, launch, managed.identity, sessionStore)
+                        nextTerminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached, workspaceIconUrl = launch.workspaceIconUrl))
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
-                        if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
-                        val terminalSession = TerminalConnectionManager.startVisible(managed.id, launch, managed.terminalView, { status ->
+                        if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(terminalView = nextTerminalView, sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null)
+                        val terminalSession = TerminalConnectionManager.startVisible(managed.id, launch, nextTerminalView, { status ->
                             sessionStore.appendDebugLog("terminal ${launch.title} $status")
                             val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
                             if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))

@@ -128,9 +128,15 @@ fun CoderSectionHeader(title: String, trailing: String?, tokens: UiTokens, metri
 @Composable
 fun CoderHeaderActions(title: String, tokens: UiTokens, metrics: CoderUiMetrics, onOpenSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(metrics.headerHeight).padding(horizontal = metrics.screenPadding), verticalAlignment = Alignment.CenterVertically) {
-        Text(title.uppercase(), color = tokens.text, fontSize = metrics.titleSize, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, modifier = Modifier.weight(1f))
+        PiLogo(tokens, title, Modifier.size(width = metrics.headerHeight * 0.38f, height = metrics.headerHeight * 0.29f))
+        Spacer(Modifier.weight(1f))
         CoderIconButton(R.drawable.ic_feather_settings, tokens, metrics, onOpenSettings)
     }
+}
+
+@Composable
+fun PiLogo(tokens: UiTokens, contentDescription: String?, modifier: Modifier = Modifier, tint: Color = tokens.text) {
+    Icon(painterResource(R.drawable.pi_logo_mark), contentDescription, tint = tint, modifier = modifier)
 }
 
 @Composable

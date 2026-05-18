@@ -6,30 +6,37 @@ object TerminalConnectionManager {
     private val sessions = mutableMapOf<String, RuntimeSession>()
 
     fun startHeadless(context: Context, launch: TerminalLaunchRequest, identity: TerminalIdentity, notificationContext: TerminalNotificationContext) {
-        synchronized(sessions) {
-            if (sessions.containsKey(notificationContext.terminalId)) return
-            val endpoint = CoderHeadlessTerminalEndpoint(context.applicationContext, notificationContext)
-            val proxy = TerminalEndpointProxy(endpoint)
-            val session = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), proxy, launch.agentId, launch.reconnectId, launch.command)
-            sessions[notificationContext.terminalId] = RuntimeSession(proxy, endpoint, session, ownsEndpoint = true)
-            session.start()
+        if (synchronized(sessions) { sessions.containsKey(notificationContext.terminalId) }) return
+        val endpoint = CoderHeadlessTerminalEndpoint(context.applicationContext, notificationContext)
+        val proxy = TerminalEndpointProxy(endpoint)
+        val session = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), proxy, launch.agentId, launch.reconnectId, launch.command)
+        val shouldStart = synchronized(sessions) {
+            if (sessions.containsKey(notificationContext.terminalId)) false else {
+                sessions[notificationContext.terminalId] = RuntimeSession(proxy, endpoint, session, ownsEndpoint = true)
+                true
+            }
         }
+        if (shouldStart) session.start() else endpoint.dispose()
     }
 
     fun attachRenderer(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
         if (endpoint is CoderTerminalView) endpoint.releaseEngineOwnershipToManager()
-        val previous = synchronized(sessions) {
+        val previous: RuntimeSession?
+        val existingSameSession: RuntimeSession?
+        synchronized(sessions) {
             val existing = sessions[terminalId]
             if (existing != null && existing.session === session) {
-                existing.proxy.attachEndpoint(endpoint)
                 sessions[terminalId] = existing.copy(endpoint = endpoint, ownsEndpoint = false)
-                existing
+                existingSameSession = existing
+                previous = existing
             } else {
                 val proxy = TerminalEndpointProxy(endpoint)
                 sessions[terminalId] = RuntimeSession(proxy, endpoint, session, ownsEndpoint = false)
-                existing
+                existingSameSession = null
+                previous = existing
             }
         }
+        existingSameSession?.proxy?.attachEndpoint(endpoint)
         if (previous != null && previous.session !== session) previous.session.stop()
         if (previous != null && previous.ownsEndpoint && previous.endpoint is CoderHeadlessTerminalEndpoint) previous.endpoint.dispose()
     }
@@ -113,12 +120,13 @@ object TerminalConnectionManager {
 
     private fun attachRendererToExistingSession(terminalId: String, endpoint: CoderTerminalEndpoint): CoderTerminalSession? {
         if (endpoint is CoderTerminalView) endpoint.releaseEngineOwnershipToManager()
-        synchronized(sessions) {
+        val existing = synchronized(sessions) {
             val existing = sessions[terminalId] ?: return null
-            existing.proxy.attachEndpoint(endpoint)
             sessions[terminalId] = existing.copy(endpoint = endpoint, ownsEndpoint = false)
+            existing
         }
-        return synchronized(sessions) { sessions[terminalId]?.session }
+        existing.proxy.attachEndpoint(endpoint)
+        return existing.session
     }
 
     private data class RuntimeSession(val proxy: TerminalEndpointProxy, val endpoint: CoderTerminalEndpoint, val session: CoderTerminalSession, val ownsEndpoint: Boolean)

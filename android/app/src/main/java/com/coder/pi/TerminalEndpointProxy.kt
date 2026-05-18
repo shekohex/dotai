@@ -13,7 +13,6 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
         }
 
     fun attachEndpoint(nextEndpoint: CoderTerminalEndpoint): CoderTerminalEndpoint {
-        val input = synchronized(lock) { remoteInput }
         val previous = synchronized(lock) {
             val previous = endpoint
             endpoint = nextEndpoint
@@ -21,7 +20,7 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
         }
         previous.detachRemote()
         previous.onTerminalSizeChanged = null
-        nextEndpoint.attachRemote { bytes -> input?.invoke(bytes) }
+        nextEndpoint.attachRemote { bytes -> synchronized(lock) { remoteInput }?.invoke(bytes) }
         nextEndpoint.onTerminalSizeChanged = onTerminalSizeChanged
         return previous
     }

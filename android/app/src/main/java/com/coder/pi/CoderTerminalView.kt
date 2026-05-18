@@ -809,6 +809,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
+    fun notificationContextSnapshot(): TerminalNotificationContext? = notificationContext.takeIf { it.terminalId.isNotBlank() }
+
     fun setVolumeFontSizeEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("volume_font_size", enabled) }
     }

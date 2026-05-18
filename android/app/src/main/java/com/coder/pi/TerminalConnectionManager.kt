@@ -61,7 +61,17 @@ object TerminalConnectionManager {
 
     fun detachRenderer(terminalId: String) {
         val runtime = synchronized(sessions) { sessions[terminalId] } ?: return
-        runtime.proxy.detachEndpoint(runtime.endpoint)
+        val visibleEndpoint = runtime.endpoint as? CoderTerminalView ?: run {
+            runtime.proxy.detachEndpoint(runtime.endpoint)
+            return
+        }
+        val notificationContext = visibleEndpoint.notificationContextSnapshot() ?: TerminalNotificationContext(terminalId = terminalId)
+        val headlessEndpoint = CoderHeadlessTerminalEndpoint(visibleEndpoint.context.applicationContext, notificationContext, visibleEndpoint.terminalEngine, ownsEngine = true)
+        runtime.proxy.attachEndpoint(headlessEndpoint)
+        synchronized(sessions) {
+            val current = sessions[terminalId]
+            if (current === runtime) sessions[terminalId] = runtime.copy(endpoint = headlessEndpoint, ownsEndpoint = true)
+        }
     }
 
     fun startSavedHeadless(context: Context): Int {
@@ -125,7 +135,8 @@ object TerminalConnectionManager {
             sessions[terminalId] = existing.copy(endpoint = endpoint, ownsEndpoint = false)
             existing
         }
-        existing.proxy.attachEndpoint(endpoint)
+        val previousEndpoint = existing.proxy.attachEndpoint(endpoint)
+        if (previousEndpoint is CoderHeadlessTerminalEndpoint) previousEndpoint.dispose(disposeEngine = false)
         return existing.session
     }
 

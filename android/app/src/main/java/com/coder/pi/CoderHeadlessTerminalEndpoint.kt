@@ -5,8 +5,10 @@ import android.content.Context
 class CoderHeadlessTerminalEndpoint(
     context: Context,
     private val notificationContext: TerminalNotificationContext,
+    existingEngine: TerminalEngine? = null,
+    private val ownsEngine: Boolean = existingEngine == null,
 ) : CoderTerminalEndpoint {
-    internal val engine = TerminalEngine()
+    internal val engine = existingEngine ?: TerminalEngine()
     private val router = TerminalNotificationRouter(context.applicationContext, notificationContext)
     private var remoteInput: ((ByteArray) -> Unit)? = null
     override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
@@ -33,7 +35,7 @@ class CoderHeadlessTerminalEndpoint(
         remoteInput?.invoke(bytes)
     }
 
-    fun dispose() {
-        engine.dispose()
+    fun dispose(disposeEngine: Boolean = ownsEngine) {
+        if (disposeEngine) engine.dispose()
     }
 }

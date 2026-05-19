@@ -5,8 +5,8 @@ import android.content.Context
 object TerminalConnectionManager {
     private val sessions = mutableMapOf<String, RuntimeSession>()
 
-    fun startHeadless(context: Context, launch: TerminalLaunchRequest, identity: TerminalIdentity, notificationContext: TerminalNotificationContext) {
-        if (synchronized(sessions) { sessions.containsKey(notificationContext.terminalId) }) return
+    fun startHeadless(context: Context, launch: TerminalLaunchRequest, identity: TerminalIdentity, notificationContext: TerminalNotificationContext): CoderTerminalSession? {
+        if (synchronized(sessions) { sessions.containsKey(notificationContext.terminalId) }) return synchronized(sessions) { sessions[notificationContext.terminalId]?.session }
         val endpoint = CoderHeadlessTerminalEndpoint(context.applicationContext, notificationContext)
         val proxy = TerminalEndpointProxy(endpoint)
         val session = CoderTerminalSession(CoderApi(launch.baseUrl, launch.token), proxy, launch.agentId, launch.reconnectId, launch.command)
@@ -16,7 +16,12 @@ object TerminalConnectionManager {
                 true
             }
         }
-        if (shouldStart) session.start() else endpoint.dispose()
+        if (shouldStart) {
+            session.start()
+            return session
+        }
+        endpoint.dispose()
+        return synchronized(sessions) { sessions[notificationContext.terminalId]?.session }
     }
 
     fun attachRenderer(terminalId: String, endpoint: CoderTerminalEndpoint, session: CoderTerminalSession) {
@@ -84,13 +89,14 @@ object TerminalConnectionManager {
             val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
             val terminalId = terminalSessionKey(identity)
             val local = store.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId)
-            startHeadless(
+            if (startHeadless(
                 context,
                 TerminalLaunchRequest(metadata.baseUrl, token, metadata.agentId, metadata.reconnectId, metadata.command, metadata.workspaceName, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl),
                 identity,
                 TerminalNotificationContext(metadata.workspaceId, metadata.workspaceName, local.alias ?: metadata.workspaceName, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", local.iconUri.orEmpty(), metadata.workspaceIconUrl.orEmpty(), terminalId),
-            )
+            ) != null) {
             started++
+            }
         }
         return started
     }

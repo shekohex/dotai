@@ -80,6 +80,17 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun applicationShortcutActionsAreSeparateFromTerminalSends() {
+        assertEquals(ApplicationShortcutAction.SHOW_SHORTCUTS, applicationShortcutAction("show_shortcuts"))
+        assertEquals(ApplicationShortcutAction.OPEN_SWITCHER, applicationShortcutAction("switch_session"))
+        assertEquals(ApplicationShortcutAction.OPEN_SWITCHER, applicationShortcutAction("open_switcher"))
+        assertEquals(ApplicationShortcutAction.NEW_CONNECTION, applicationShortcutAction("new_connection"))
+        assertEquals(ApplicationShortcutAction.CLOSE_SESSION, applicationShortcutAction("close_session"))
+        assertEquals(ApplicationShortcutAction.PASTE, applicationShortcutAction("paste"))
+        assertEquals(null, applicationShortcutAction("^ c"))
+    }
+
+    @Test
     fun shortcutTabOrderNormalizesAndMovesKnownTabs() {
         assertEquals(listOf("tmux", "favorites", "ctrl", "pi"), normalizeShortcutTabOrder("tmux,favorites,unknown"))
         assertEquals(listOf("favorites", "ctrl", "tmux", "pi"), moveShortcutTab(defaultShortcutTabOrder, "tmux", 1))

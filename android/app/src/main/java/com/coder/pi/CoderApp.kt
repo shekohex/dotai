@@ -246,12 +246,13 @@ fun CoderApp(
         preferences.registerOnSharedPreferenceChangeListener(listener)
         terminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
         terminalView.onApplicationShortcut = { shortcutId ->
-            when (shortcutId) {
-                "show_shortcuts" -> { appShortcutSettingsPage = SettingsPage.SHORTCUTS; destination = AppDestination.SETTINGS; onHideKeyboard(); true }
-                "open_switcher", "switch_session" -> { destination = AppDestination.HOME; onHideKeyboard(); true }
-                "new_connection" -> { destination = AppDestination.HOME; onHideKeyboard(); true }
-                "close_session" -> { terminalSessions.lastOrNull()?.let { confirmCloseTerminalId = it.id }; true }
-                else -> false
+            when (applicationShortcutAction(shortcutId)) {
+                ApplicationShortcutAction.SHOW_SHORTCUTS -> { appShortcutSettingsPage = SettingsPage.SHORTCUTS; destination = AppDestination.SETTINGS; onHideKeyboard(); true }
+                ApplicationShortcutAction.OPEN_SWITCHER -> { destination = AppDestination.HOME; onHideKeyboard(); true }
+                ApplicationShortcutAction.NEW_CONNECTION -> { destination = AppDestination.HOME; onHideKeyboard(); true }
+                ApplicationShortcutAction.CLOSE_SESSION -> { terminalSessions.lastOrNull()?.let { confirmCloseTerminalId = it.id }; true }
+                ApplicationShortcutAction.PASTE -> { terminalView.pasteFromClipboard(); true }
+                null -> false
             }
         }
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener); terminalView.onApplicationShortcut = null }

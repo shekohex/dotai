@@ -446,7 +446,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         applicationShortcutIdForKey(keyCode, event.metaState)?.let { shortcutId ->
-            if (shortcutId == "paste") {
+            if (applicationShortcutAction(shortcutId) == ApplicationShortcutAction.PASTE) {
                 pasteFromClipboard()
                 return true
             }

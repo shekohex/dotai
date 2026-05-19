@@ -133,6 +133,23 @@ class KeyboardSettingsInstrumentedTest {
         check(sent.single().contentEquals(byteArrayOf(2, 99))) { "Terminal shortcut did not send expected bytes" }
     }
 
+    @Test
+    fun appActionShortcutEngineDoesNotSendTerminalBytes() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+        val sent = mutableListOf<ByteArray>()
+        var triggeredShortcut: String? = null
+        terminalView.attachRemote { sent.add(it) }
+        terminalView.onApplicationShortcut = { shortcutId -> triggeredShortcut = shortcutId; true }
+
+        val handled = terminalView.onKeyDown(KeyEvent.KEYCODE_O, KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_O, 0, KeyEvent.META_META_ON))
+
+        check(handled) { "App action shortcut was not handled" }
+        check(triggeredShortcut == "open_switcher") { "App action shortcut did not dispatch open_switcher" }
+        check(sent.isEmpty()) { "App action shortcut sent terminal bytes" }
+    }
+
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {
         val directory = File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")

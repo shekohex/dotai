@@ -10,6 +10,14 @@ data class ShortcutTabDefinition(val id: String, val title: String, val subtitle
 
 data class ApplicationShortcutDefinition(val id: String, val title: String, val chord: String, val description: String, val keyCode: Int)
 
+enum class ApplicationShortcutAction {
+    SHOW_SHORTCUTS,
+    OPEN_SWITCHER,
+    NEW_CONNECTION,
+    CLOSE_SESSION,
+    PASTE,
+}
+
 val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "copy", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
 data class ToolbarSlotDefinition(val id: String, val label: String, val removable: Boolean = true)
@@ -40,6 +48,15 @@ val applicationShortcutDefinitions = listOf(
 fun applicationShortcutIdForKey(keyCode: Int, metaState: Int): String? {
     if ((metaState and KeyEvent.META_META_ON) == 0) return null
     return applicationShortcutDefinitions.firstOrNull { it.keyCode == keyCode }?.id
+}
+
+fun applicationShortcutAction(shortcutId: String): ApplicationShortcutAction? = when (shortcutId) {
+    "show_shortcuts" -> ApplicationShortcutAction.SHOW_SHORTCUTS
+    "open_switcher", "switch_session" -> ApplicationShortcutAction.OPEN_SWITCHER
+    "new_connection" -> ApplicationShortcutAction.NEW_CONNECTION
+    "close_session" -> ApplicationShortcutAction.CLOSE_SESSION
+    "paste" -> ApplicationShortcutAction.PASTE
+    else -> null
 }
 
 fun toolbarSlotLabel(id: String): String = toolbarSlotDefinitions.firstOrNull { it.id == id }?.label ?: id

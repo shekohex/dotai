@@ -53,3 +53,4 @@ fi
 
 printf 'File: %s\n' "$draft_path"
 printf 'Plannotator: /plannotator annotate %s\n' "$draft_path"
+printf 'Creating Goal Manually: /goal @%s\n' "$draft_path"

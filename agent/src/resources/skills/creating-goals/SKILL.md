@@ -5,8 +5,6 @@ description: >-
   outcome-first closed feedback loop prompt. Use when the user asks to create,
   update, write, refine, or install a goal, or mentions goal prompts, closed
   feedback loops, goal tool usage, or goal instructions.
-metadata:
-  short-description: Draft, review, and install goal prompts
 ---
 
 # Creating Goals
@@ -90,7 +88,7 @@ Work loop:
 
 Store the draft in the temporary file created by the draft script so feedback can be applied directly to the same artifact. When presenting a draft, include the Plannotator annotation command from the draft script and advise the user they can run it to review and annotate the prompt visually. Use this shape:
 
-`**Draft Goal Prompt**`, `File: /tmp/goal-prompt-<short-slug>.md`, `Review UI: /plannotator annotate /tmp/goal-prompt-<short-slug>.md`, then: `Approve to create/update goal from this file, send edits, or run the Review UI command to annotate it.`
+`**Draft Goal Prompt**`, `File: /tmp/goal-prompt-<short-slug>.md`, `Review UI: /plannotator annotate /tmp/goal-prompt-<short-slug>.md` `or set the goal manually: /goal @/tmp/goal-prompt-<short-slug>`, then: `Approve to create/update goal from this file, send edits, or run the Review UI command to annotate it.`
 
 ## Approval Rule
 

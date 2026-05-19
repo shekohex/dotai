@@ -50,3 +50,4 @@ Role: [Define the agent's job, operating context, and responsibility in 1-2 sent
 
 Write-Output "File: $draftPath"
 Write-Output "Plannotator: /plannotator annotate $draftPath"
+Write-Output "Creating Goal Manually: /goal @$draftPath"

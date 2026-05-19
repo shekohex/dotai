@@ -489,27 +489,10 @@ fun CoderApp(
                                 Toast.makeText(context, "Close an active session before opening another terminal. Limit is $MaxActiveTerminalSessions.", Toast.LENGTH_SHORT).show()
                                 return@CoderHomeScreen
                             }
-                            val nextTerminalView = createTerminalView(context, id).also {
-                                it.setFontFamily(CoderFonts.selectedKey(context))
-                                it.applyTheme(theme)
-                            }
-                            configureTerminalNotificationContext(nextTerminalView, launch, identity, sessionStore)
-                            nextTerminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis(), workspaceIconUrl = workspace.templateIcon))
-                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), nextTerminalView, null, emptyList(), System.currentTimeMillis(), false, null)
+                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), null, null, emptyList(), System.currentTimeMillis(), false, null)
                             terminalSessions.add(managed)
-                            val terminalSession = TerminalConnectionManager.startVisible(id, launch, nextTerminalView, { status ->
-                                sessionStore.appendDebugLog("terminal ${launch.title} $status")
-                                val index = terminalSessions.indexOfFirst { it.id == id }
-                                if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
-                            }, { safeError ->
-                                val index = terminalSessions.indexOfFirst { it.id == id }
-                                if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(errorDetail = safeError)
-                                safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
-                            })
-                            val index = terminalSessions.indexOfFirst { it.id == id }
-                            if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
-                            selectedTerminalId = id
+                            showTerminalSheet(id)
                         },
                     )
                 }

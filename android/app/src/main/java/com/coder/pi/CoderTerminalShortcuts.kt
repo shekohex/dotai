@@ -73,6 +73,8 @@ fun shortcutSequence(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, c
     }
 }
 
+fun isShortcutInputValid(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, customText: String): Boolean = shortcutSequence(ctrl, opt, shift, key, customText).isNotEmpty()
+
 fun hardwareShortcutLabel(keyCode: Int): String? {
     return when (keyCode) {
         KeyEvent.KEYCODE_ESCAPE -> "Esc"

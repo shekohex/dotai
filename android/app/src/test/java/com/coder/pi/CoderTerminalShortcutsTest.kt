@@ -10,7 +10,7 @@ class CoderTerminalShortcutsTest {
     fun normalizeToolbarOrderKeepsKnownSlotsAndAppendsMissingDefaults() {
         val order = normalizeToolbarOrder("keyboard,ctrl,unknown,tab")
 
-        assertEquals(listOf("keyboard", "ctrl", "tab", "esc", "dpad", "shift", "alt", "paste", "undo", "chat"), order)
+        assertEquals(listOf("keyboard", "ctrl", "tab", "esc", "dpad", "copy", "shift", "alt", "paste", "undo", "chat"), order)
     }
 
     @Test
@@ -34,6 +34,14 @@ class CoderTerminalShortcutsTest {
         assertEquals("\u001b", shortcutSequence(false, false, false, "Esc", ""))
         assertEquals("\t", shortcutSequence(false, false, false, "Tab", ""))
         assertEquals("\u001b[A", shortcutSequence(false, false, false, "↑", ""))
+    }
+
+    @Test
+    fun shortcutInputValidityRequiresTerminalOutput() {
+        assertEquals(false, isShortcutInputValid(false, false, false, "", ""))
+        assertEquals(false, isShortcutInputValid(true, false, false, "", ""))
+        assertEquals(true, isShortcutInputValid(false, false, false, "Tab", ""))
+        assertEquals(true, isShortcutInputValid(false, false, false, "", "/gsd:progress"))
     }
 
     @Test

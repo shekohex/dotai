@@ -98,6 +98,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -114,6 +115,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -1978,9 +1982,10 @@ private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiToke
     var ctrl by remember { mutableStateOf(false) }
     var opt by remember { mutableStateOf(false) }
     var shift by remember { mutableStateOf(false) }
-    var selectedKey by remember { mutableStateOf("Tab") }
+    var selectedKey by remember { mutableStateOf("") }
     var customText by remember { mutableStateOf("") }
     var hint by remember { mutableStateOf("") }
+    val canSave = isShortcutInputValid(ctrl, opt, shift, selectedKey, customText)
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
     SettingsScaffold("New Shortcut", tokens, onBack) {
@@ -2002,11 +2007,11 @@ private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiToke
         item { Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge()).height(52.dp).clip(RoundedCornerShape(14.dp)).background(tokens.surfaceHigh).padding(14.dp)) { BasicTextField(value = hint, onValueChange = { hint = it }, singleLine = true, textStyle = androidx.compose.ui.text.TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace), decorationBox = { inner -> if (hint.isEmpty()) Text("e.g. \"submit\"", color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace); inner() }) } }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ShortcutFooterButton("Cancel", tokens.surfaceHigh, tokens.text, Modifier.weight(1f), onBack)
-                ShortcutFooterButton("Save", tokens.accent, tokens.background, Modifier.weight(1f)) {
+                ShortcutFooterButton("Cancel", tokens.surfaceHigh, tokens.text, Modifier.weight(1f), onClick = onBack)
+                ShortcutFooterButton("Save", tokens.accent, tokens.background, Modifier.weight(1f), canSave) {
                     val sequence = shortcutSequence(ctrl, opt, shift, selectedKey, customText)
                     val label = hint.ifBlank { shortcutPreview(ctrl, opt, shift, selectedKey, customText) }.take(14)
-                    if (sequence.isNotBlank()) terminalView.addCustomShortcut(TerminalShortcut(label, sequence))
+                    if (sequence.isNotEmpty()) terminalView.addCustomShortcut(TerminalShortcut(label, sequence))
                     onBack()
                 }
             }
@@ -2186,8 +2191,8 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
 }
 
 @Composable
-private fun ShortcutFooterButton(label: String, background: Color, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.height(52.dp).clip(RoundedCornerShape(18.dp)).background(background).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) {
+private fun ShortcutFooterButton(label: String, background: Color, color: Color, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(modifier.height(52.dp).semantics { contentDescription = label; if (!enabled) disabled() }.alpha(if (enabled) 1f else 0.55f).clip(RoundedCornerShape(18.dp)).background(background).clickable(enabled = enabled) { hapticClick(); onClick() }, contentAlignment = Alignment.Center) {
         Text(label, color = color, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
     }
 }

@@ -105,6 +105,7 @@ class MainActivity : AppCompatActivity() {
             "text", "customize-text", "opentype", "open-type", "font-features" -> SettingsPage.TEXT
             "theme" -> SettingsPage.THEME
             "toolbar" -> SettingsPage.TOOLBAR
+            "shortcuts/add", "shortcut", "shortcut/new" -> SettingsPage.SHORTCUT
             "shortcuts" -> SettingsPage.SHORTCUTS
             "keyboard" -> SettingsPage.KEYBOARD
             "gestures" -> SettingsPage.GESTURES

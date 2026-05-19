@@ -1470,7 +1470,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.THEME -> ThemePickerScreen(tokens, ::navigateBack, onThemeChanged)
         SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onTerminalFontSizeSelected, onFontChanged, { page = SettingsPage.TEXT }, ::navigateBack)
         SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens, ::navigateBack)
-        SettingsPage.TOOLBAR -> ToolbarSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.TOOLBAR -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
         SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }, ::navigateBack)
         SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -1957,23 +1957,84 @@ private fun ToolbarButtonRow(title: String, icon: Int?, visible: Boolean, tokens
 @Composable
 private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
+    var hideTitles by remember { mutableStateOf(terminalView.shortcutTabTitlesHidden()) }
+    var uploads by remember { mutableStateOf(terminalView.uploadsPanelVisible()) }
     LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts() } }
     SettingsScaffold("Shortcuts", tokens, onBack) {
-        SettingsSection("CUSTOM SHORTCUTS", tokens) {
-            if (shortcuts.isEmpty()) SettingsValueRow(R.drawable.ic_feather_terminal, "No shortcuts yet", "Create key sequences for the terminal toolbar", null, tokens) {}
-            shortcuts.forEachIndexed { index, shortcut ->
-                SettingsValueRow(R.drawable.ic_feather_terminal, shortcut.label, shortcut.sequence, "Remove", tokens) {
-                    terminalView.removeCustomShortcut(index)
-                    shortcuts = terminalView.customShortcuts()
-                }
-            }
+        item { ShortcutsOverviewPreview(tokens, shortcuts, hideTitles, uploads) }
+        SettingsSection("PANEL TABS", tokens) { shortcutOverviewTabs(shortcuts).forEach { tab -> ShortcutPanelTabRow(tab, true, tokens) {} } }
+        item { Text("Tap − to hide, + to show. Drag to reorder. Tap a row to configure shortcuts.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        SettingsSection("SETTINGS", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_type, "Hide Title on Tabs", hideTitles, tokens) { hideTitles = it; terminalView.setShortcutTabTitlesHidden(it) }
+            SettingsToggleRow(R.drawable.ic_feather_upload, "Show Uploads Panel", uploads, tokens) { uploads = it; terminalView.setUploadsPanelVisible(it) }
         }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(52.dp).clip(RoundedCornerShape(18.dp)).background(tokens.accent).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
                 Text("+  New Shortcut", color = tokens.background, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
             }
         }
-        item { Text("Shortcuts appear as toolbar buttons and send their saved key sequence into the active terminal.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+        item { Box(Modifier.fillMaxWidth().padding(bottom = 18.dp).height(44.dp).clickable { hapticClick() }, contentAlignment = Alignment.Center) { Text("↻  Reset", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
+    }
+}
+
+private data class ShortcutOverviewTab(val title: String, val subtitle: String, val icon: Int, val active: Boolean)
+
+private fun shortcutOverviewTabs(shortcuts: List<TerminalShortcut>): List<ShortcutOverviewTab> = listOf(
+    ShortcutOverviewTab("Favorites", "${shortcuts.size} shortcuts", R.drawable.ic_feather_star, true),
+    ShortcutOverviewTab("Tmux", "8 shortcuts", R.drawable.ic_feather_terminal, true),
+    ShortcutOverviewTab("Ctrl", "8 shortcuts", R.drawable.ic_feather_chevron_up, true),
+    ShortcutOverviewTab("Pi", "15 shortcuts", R.drawable.ic_feather_command, true),
+)
+
+@Composable
+private fun ShortcutsOverviewPreview(tokens: UiTokens, shortcuts: List<TerminalShortcut>, hideTitles: Boolean, uploads: Boolean) {
+    Column(Modifier.fillMaxWidth().height(280.dp).background(tokens.accent.copy(alpha = 0.28f)).padding(horizontal = spacingLarge(), vertical = 24.dp), verticalArrangement = Arrangement.Bottom) {
+        Text("Long-press Ctrl to open the shortcuts bar. Tap Ctrl to close.", color = tokens.secondary, fontSize = bodySize(), lineHeight = 21.sp, modifier = Modifier.align(Alignment.CenterHorizontally).weight(1f).padding(top = 46.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                listOf("Ctrl", "Esc", "Tab").forEach { label -> ShortcutPreviewTextButton(label, tokens) }
+                ShortcutPreviewIcon(R.drawable.ic_feather_move, tokens)
+                if (uploads) ShortcutPreviewIcon(R.drawable.ic_feather_clipboard, tokens)
+                ShortcutPreviewIcon(R.drawable.ic_feather_rotate_ccw, tokens)
+                Spacer(Modifier.weight(1f))
+                ShortcutPreviewIcon(R.drawable.ic_feather_message_circle, tokens)
+                ShortcutPreviewIcon(R.drawable.ic_feather_keyboard, tokens)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                shortcutOverviewTabs(shortcuts).take(4).forEach { tab -> ShortcutPreviewTab(tab, hideTitles, tokens) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShortcutPreviewTextButton(label: String, tokens: UiTokens) {
+    Box(Modifier.padding(end = 6.dp).height(34.dp).clip(RoundedCornerShape(13.dp)).background(tokens.surface).padding(horizontal = 10.dp), contentAlignment = Alignment.Center) { Text(label, color = tokens.text, fontSize = captionSize(), fontFamily = FontFamily.Monospace) }
+}
+
+@Composable
+private fun ShortcutPreviewIcon(icon: Int, tokens: UiTokens) {
+    Box(Modifier.padding(end = 6.dp).size(34.dp).clip(RoundedCornerShape(13.dp)).background(tokens.surface), contentAlignment = Alignment.Center) { Icon(painterResource(icon), null, tint = tokens.text, modifier = Modifier.size(17.dp)) }
+}
+
+@Composable
+private fun ShortcutPreviewTab(tab: ShortcutOverviewTab, hideTitles: Boolean, tokens: UiTokens) {
+    Row(Modifier.height(34.dp).clip(RoundedCornerShape(13.dp)).background(tokens.surface).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(tab.icon), null, tint = tokens.text, modifier = Modifier.size(16.dp))
+        if (!hideTitles) Text(tab.title, color = tokens.text, fontSize = captionSize(), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
+    }
+}
+
+@Composable
+private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, tokens: UiTokens, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(72.dp).clickable { hapticClick(); onClick() }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(if (tab.active) "⊖" else "⊕", color = if (tab.active) Color(0xffd62d5a) else Color(0xff3dae4b), fontSize = 25.sp, modifier = Modifier.width(36.dp))
+        Icon(painterResource(tab.icon), null, tint = tokens.secondary, modifier = Modifier.size(22.dp))
+        Column(Modifier.padding(start = 18.dp).weight(1f), verticalArrangement = Arrangement.Center) {
+            Text(tab.title, color = tokens.text, fontSize = rowTitleSize(), maxLines = 1)
+            Text(tab.subtitle, color = tokens.secondary, fontSize = captionSize(), maxLines = 1)
+        }
+        if (reorderable) Text("⠿", color = tokens.secondary, fontSize = 22.sp)
     }
 }
 

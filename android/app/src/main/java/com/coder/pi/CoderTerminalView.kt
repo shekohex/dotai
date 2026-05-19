@@ -834,6 +834,20 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun toolbarActionVisible(action: String): Boolean = preferences.getBoolean("toolbar.$action", true)
 
+    fun setShortcutTabTitlesHidden(hidden: Boolean) {
+        preferences.edit { putBoolean("shortcuts.hide_tab_titles", hidden) }
+        notifyToolbarActionsChanged()
+    }
+
+    fun shortcutTabTitlesHidden(): Boolean = preferences.getBoolean("shortcuts.hide_tab_titles", false)
+
+    fun setUploadsPanelVisible(visible: Boolean) {
+        preferences.edit { putBoolean("shortcuts.uploads_panel", visible) }
+        notifyToolbarActionsChanged()
+    }
+
+    fun uploadsPanelVisible(): Boolean = preferences.getBoolean("shortcuts.uploads_panel", true)
+
     fun toolbarOrder(): List<String> = normalizeToolbarOrder(preferences.getString("toolbar.order", null))
 
     fun setToolbarOrder(order: List<String>) {

@@ -45,6 +45,22 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun tmuxShortcutRowsFollowPrefixAndWindowNumbering() {
+        assertEquals("^ b,c", tmuxShortcutRows(0, true).first().sequence)
+        assertEquals("^ a,c", tmuxShortcutRows(1, true).first().sequence)
+        assertEquals("^ Space,c", tmuxShortcutRows(2, true).first().sequence)
+        assertEquals("^ b,1", tmuxShortcutRows(0, true).last().sequence)
+        assertEquals("^ b,0", tmuxShortcutRows(0, false).last().sequence)
+    }
+
+    @Test
+    fun tmuxPrefixSequenceMapsConfiguredPrefixBytes() {
+        assertEquals("\u0002", tmuxPrefixSequence(0))
+        assertEquals("\u0001", tmuxPrefixSequence(1))
+        assertEquals("\u0000", tmuxPrefixSequence(2))
+    }
+
+    @Test
     fun shortcutSequenceAppliesControlAltAndShift() {
         assertEquals("\u0003", shortcutSequence(true, false, false, "", "c"))
         assertEquals("\u001bc", shortcutSequence(false, true, false, "", "c"))

@@ -2050,7 +2050,7 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
 private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
     var tmuxPrefixIndex by remember { mutableIntStateOf(terminalView.tmuxPrefixIndex()) }
     var tmuxStartWindowFromOne by remember { mutableStateOf(terminalView.tmuxStartWindowFromOne()) }
-    val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { it.sequence to it.label } else defaultShortcutRows(tab.title)
+    val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { ShortcutRowDefinition(it.sequence, it.label) } else defaultShortcutRows(tab.title, tmuxPrefixIndex, tmuxStartWindowFromOne)
     val activeShortcuts = shortcuts.take(4)
     val inactiveShortcuts = shortcuts.drop(4)
     SettingsScaffold(tab.title, tokens, onBack) {
@@ -2077,12 +2077,12 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
             if (activeShortcuts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
             } else {
-                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.first, shortcut.second, true, tokens) }
+                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens) }
             }
         }
         item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         if (inactiveShortcuts.isNotEmpty()) {
-            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.first, shortcut.second, false, tokens) } }
+            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens) } }
         }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(56.dp).clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
@@ -2100,12 +2100,6 @@ private fun RowScope.TmuxPrefixChoice(label: String, selected: Boolean, tokens: 
     }
 }
 
-private fun tmuxPrefixPreview(index: Int): String = when (index.coerceIn(0, 2)) {
-    1 -> "^ a"
-    2 -> "^ Space"
-    else -> "^ b"
-}
-
 @Composable
 private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens) {
     Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2118,10 +2112,10 @@ private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, t
     }
 }
 
-private fun defaultShortcutRows(tab: String): List<Pair<String, String>> = when (tab) {
-    "Tmux" -> listOf("^ b,c" to "new win", "^ b,n" to "next", "^ b,p" to "prev", "^ b,d" to "detach", "^ b,w" to "windows", "^ b,z" to "zoom", "^ b,x" to "kill", "^ b,l" to "last")
-    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line")
-    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate", "/gsd:new-project" to "new project", "/gsd:plan-phase" to "plan", "/gsd:execute-phase" to "execute", "/gsd:verify-work" to "verify")
+private fun defaultShortcutRows(tab: String, tmuxPrefixIndex: Int, tmuxStartWindowFromOne: Boolean): List<ShortcutRowDefinition> = when (tab) {
+    "Tmux" -> tmuxShortcutRows(tmuxPrefixIndex, tmuxStartWindowFromOne)
+    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line").map { ShortcutRowDefinition(it.first, it.second) }
+    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate", "/gsd:new-project" to "new project", "/gsd:plan-phase" to "plan", "/gsd:execute-phase" to "execute", "/gsd:verify-work" to "verify").map { ShortcutRowDefinition(it.first, it.second) }
     else -> emptyList()
 }
 

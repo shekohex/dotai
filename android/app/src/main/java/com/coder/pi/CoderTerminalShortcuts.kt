@@ -4,6 +4,8 @@ import android.view.KeyEvent
 
 data class TerminalShortcut(val label: String, val sequence: String)
 
+data class ShortcutRowDefinition(val sequence: String, val hint: String)
+
 val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "copy", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
 data class ToolbarSlotDefinition(val id: String, val label: String, val removable: Boolean = true)
@@ -43,6 +45,33 @@ fun moveToolbarSlot(order: List<String>, slot: String, delta: Int): List<String>
 }
 
 fun terminalSessionKey(identity: TerminalIdentity): String = listOf(identity.baseUrl, identity.userId, identity.workspaceId, identity.agentId, identity.command).joinToString("|")
+
+fun tmuxPrefixPreview(index: Int): String = when (index.coerceIn(0, 2)) {
+    1 -> "^ a"
+    2 -> "^ Space"
+    else -> "^ b"
+}
+
+fun tmuxPrefixSequence(index: Int): String = when (index.coerceIn(0, 2)) {
+    1 -> "\u0001"
+    2 -> "\u0000"
+    else -> "\u0002"
+}
+
+fun tmuxShortcutRows(prefixIndex: Int, startWindowFromOne: Boolean): List<ShortcutRowDefinition> {
+    val prefix = tmuxPrefixPreview(prefixIndex)
+    val firstWindow = if (startWindowFromOne) "1" else "0"
+    return listOf(
+        ShortcutRowDefinition("$prefix,c", "new win"),
+        ShortcutRowDefinition("$prefix,n", "next"),
+        ShortcutRowDefinition("$prefix,p", "prev"),
+        ShortcutRowDefinition("$prefix,d", "detach"),
+        ShortcutRowDefinition("$prefix,w", "windows"),
+        ShortcutRowDefinition("$prefix,z", "zoom"),
+        ShortcutRowDefinition("$prefix,x", "kill"),
+        ShortcutRowDefinition("$prefix,$firstWindow", "first win"),
+    )
+}
 
 fun shortcutPreview(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, customText: String): String {
     val modifiers = listOfNotNull(if (ctrl) "^" else null, if (opt) "⌥" else null, if (shift) "⇧" else null).joinToString("")

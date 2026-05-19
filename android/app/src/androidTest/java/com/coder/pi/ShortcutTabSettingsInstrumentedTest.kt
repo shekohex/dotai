@@ -86,6 +86,7 @@ class ShortcutTabSettingsInstrumentedTest {
             check(device.wait(Until.hasObject(By.text("^ a")), 10_000)) { "Tmux prefix preview did not update" }
         }
         check(device.hasObject(By.text("^ a"))) { "Tmux prefix preview did not update" }
+        check(device.wait(Until.hasObject(By.text("^ a,c")), 10_000)) { "Tmux shortcut rows did not use selected prefix" }
         captureDeviceScreenshot(device, "shortcuts-tmux-prefix.png")
     }
 

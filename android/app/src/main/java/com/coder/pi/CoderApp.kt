@@ -110,6 +110,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
@@ -1449,10 +1450,10 @@ fun TerminalSurface(
         Box(Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(
                 factory = { terminalView.detachFromCurrentParent() },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().onSizeChanged { terminalView.post { terminalView.forceRefreshSurface() } },
                 update = {
                     it.applyTheme(theme)
-                    it.post { it.refreshSurface() }
+                    it.post { it.forceRefreshSurface() }
                 },
             )
             TerminalPinchFontOverlay(terminalView)

@@ -33,8 +33,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
@@ -81,7 +79,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var touchStartY = 0f
     private var touchMoved = false
     private var scrollDownGestureTriggered = false
-    private var scrollSuppressedUntilTouchEnd = false
     private var lastTapUpMillis = 0L
     private var tapCount = 0
     private var pendingTapAction: Runnable? = null
@@ -245,7 +242,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 touchStartY = event.y
                 touchMoved = false
                 scrollDownGestureTriggered = false
-                scrollSuppressedUntilTouchEnd = false
                 accumulatedScrollY = 0f
                 beginSmoothScrollGesture()
                 if (copyMode) {
@@ -271,12 +267,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 if (totalDeltaX * totalDeltaX + totalDeltaY * totalDeltaY > touchSlop * touchSlop) touchMoved = true
                 if (!scrollDownGestureTriggered && totalDeltaY > touchSlop * 5 && kotlin.math.abs(totalDeltaY) > kotlin.math.abs(totalDeltaX) * 1.4f) {
                     scrollDownGestureTriggered = true
-                    if (performGestureAction(selectedGestureAction("scroll_down", "dismiss_keyboard"))) {
-                        scrollSuppressedUntilTouchEnd = true
-                        cancelSmoothScrollState()
-                    }
+                    performGestureAction(selectedGestureAction("scroll_down", "dismiss_keyboard"))
                 }
-                if (scrollSuppressedUntilTouchEnd) return true
                 if (copyMode) {
                     val edgeRows = copyModeEdgeScrollRows(event.y)
                     if (edgeRows != 0) scrollViewportRows(edgeRows)
@@ -320,7 +312,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 pinchDistance = 0f
                 pinchAccumulatedZoom = 1f
-                scrollSuppressedUntilTouchEnd = false
                 if (copyMode) {
                     if (event.actionMasked == MotionEvent.ACTION_UP) copySelectionEnd = screenPositionAt(event.x, event.y) ?: copySelectionEnd
                     updateNativeSelection()
@@ -863,8 +854,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return when (action) {
             "paste" -> pasteFromClipboard()
             "dismiss_keyboard" -> {
-                if (!imeVisible()) return false
-                cancelSmoothScrollState()
                 context.getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(windowToken, 0)
                 clearFocus()
                 post { forceRefreshSurface() }
@@ -889,10 +878,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             "custom_shortcut", "session_switcher", "adjust_font_size", "hide", "no_action" -> false
             else -> false
         }
-    }
-
-    private fun imeVisible(): Boolean {
-        return ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) == true
     }
 
     fun setChatModeEnabled(enabled: Boolean) {

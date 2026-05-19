@@ -1966,7 +1966,15 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
     var tabRevision by remember { mutableIntStateOf(0) }
     val tabs = shortcutOverviewTabs(shortcuts, tabOrder) { tabRevision; terminalView.shortcutTabActive(it) }
     LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts(); tabOrder = terminalView.shortcutTabOrder(); tabRevision++ } }
-    SettingsScaffold("Shortcuts", tokens, onBack) {
+    val resetShortcuts = {
+        terminalView.resetShortcutsToDefaults()
+        hideTitles = false
+        uploads = true
+        tabOrder = defaultShortcutTabOrder
+        tabRevision++
+        Unit
+    }
+    SettingsScaffold("Shortcuts", tokens, onBack, R.drawable.ic_feather_rotate_ccw, resetShortcuts, "Reset shortcuts") {
         item { ShortcutsOverviewPreview(tokens, tabs, hideTitles, uploads) }
         SettingsSection("PANEL TABS", tokens) { tabs.filter { it.active }.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, false); tabRevision++ }, onMove = { delta -> tabOrder = moveShortcutTab(tabOrder, tab.id, delta); terminalView.setShortcutTabOrder(tabOrder) }) { onOpenTab(tab) } } }
         val inactiveTabs = tabs.filterNot { it.active }
@@ -1981,7 +1989,7 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
                 Text("+  New Shortcut", color = contentColorFor(tokens.accent), fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
             }
         }
-        item { Box(Modifier.fillMaxWidth().padding(bottom = 18.dp).height(44.dp).clickable { hapticClick() }, contentAlignment = Alignment.Center) { Text("↻  Reset", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
+        item { Box(Modifier.fillMaxWidth().padding(bottom = 18.dp).height(44.dp).clickable { hapticClick(); resetShortcuts() }, contentAlignment = Alignment.Center) { Text("↻  Reset", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
     }
 }
 

@@ -862,6 +862,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         notifyToolbarActionsChanged()
     }
 
+    fun resetShortcutsToDefaults() {
+        preferences.edit {
+            remove("toolbar.shortcuts")
+            putBoolean("shortcuts.hide_tab_titles", false)
+            putBoolean("shortcuts.uploads_panel", true)
+            putString("shortcuts.tab.order", defaultShortcutTabOrder.joinToString(","))
+            defaultShortcutTabOrder.forEach { putBoolean(shortcutTabPreferenceKey(it), true) }
+            putInt("shortcuts.tmux_prefix", 0)
+            putBoolean("shortcuts.tmux_start_window_from_one", true)
+        }
+        notifyToolbarActionsChanged()
+    }
+
     fun setTmuxPrefixIndex(index: Int) {
         preferences.edit { putInt("shortcuts.tmux_prefix", index.coerceIn(0, 2)) }
         notifyToolbarActionsChanged()

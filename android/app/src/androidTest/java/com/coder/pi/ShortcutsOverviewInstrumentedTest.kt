@@ -117,6 +117,33 @@ class ShortcutsOverviewInstrumentedTest {
     }
 
     @Test
+    fun resetRestoresShortcutOverviewDefaults() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        context.getSharedPreferences("terminal", 0).edit {
+            putBoolean("shortcuts.hide_tab_titles", true)
+            putBoolean("shortcuts.uploads_panel", false)
+            putString("shortcuts.tab.order", "ctrl,tmux,favorites,pi")
+            putBoolean(shortcutTabPreferenceKey("tmux"), false)
+            putString("toolbar.shortcuts", "demo\t/gsd:progress")
+        }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview uploads hidden")), 10_000)) { "Mutated uploads state missing" }
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview active tabs 3 Ctrl Favorites Pi icon only")), 10_000)) { "Mutated tab state missing" }
+        device.findObject(By.desc("Reset shortcuts"))?.click() ?: error("Reset shortcuts control missing")
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview uploads shown")), 10_000)) { "Uploads default not restored" }
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview active tabs 4 Favorites Tmux Ctrl Pi with titles")), 10_000)) { "Tab defaults not restored" }
+        check(device.hasObject(By.text("0 shortcuts"))) { "Custom shortcuts were not cleared" }
+    }
+
+    @Test
     fun showUploadsPanelToggleUpdatesPreview() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

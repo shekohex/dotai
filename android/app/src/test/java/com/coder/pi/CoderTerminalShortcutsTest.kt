@@ -62,6 +62,12 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutTabPreferenceKeysAreStable() {
+        assertEquals("shortcuts.tab.tmux.active", shortcutTabPreferenceKey("tmux"))
+        assertEquals(listOf("favorites", "tmux", "ctrl", "pi"), defaultShortcutTabOrder)
+    }
+
+    @Test
     fun tmuxShortcutRowsFollowPrefixAndWindowNumbering() {
         assertEquals("^ b,c", tmuxShortcutRows(0, true).first().sequence)
         assertEquals("^ a,c", tmuxShortcutRows(1, true).first().sequence)

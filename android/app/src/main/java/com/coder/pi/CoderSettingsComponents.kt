@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,13 +41,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun SettingsScaffold(title: String, tokens: UiTokens, onBack: () -> Unit, actionIcon: Int? = null, onAction: (() -> Unit)? = null, content: LazyListScope.() -> Unit) {
+fun SettingsScaffold(title: String, tokens: UiTokens, onBack: () -> Unit, actionIcon: Int? = null, onAction: (() -> Unit)? = null, actionContentDescription: String? = null, content: LazyListScope.() -> Unit) {
     LazyColumn(Modifier.fillMaxSize().background(tokens.background).statusBarsPadding(), contentPadding = WindowInsets.navigationBars.asPaddingValues()) {
         item {
             Row(Modifier.fillMaxWidth().height(54.dp).padding(horizontal = spacingLarge()), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = tokens.text, fontSize = 28.sp, modifier = Modifier.width(34.dp).clickable { hapticClick(); onBack() })
                 Text(title, color = tokens.text, fontSize = titleSize(), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (actionIcon != null && onAction != null) Icon(painterResource(actionIcon), null, tint = tokens.text, modifier = Modifier.size(24.dp).clickable { hapticClick(); onAction() })
+                if (actionIcon != null && onAction != null) Icon(painterResource(actionIcon), null, tint = tokens.text, modifier = Modifier.size(24.dp).semantics { actionContentDescription?.let { contentDescription = it } }.clickable { hapticClick(); onAction() })
             }
         }
         content()

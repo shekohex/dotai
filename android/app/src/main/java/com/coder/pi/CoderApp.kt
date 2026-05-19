@@ -411,6 +411,7 @@ fun CoderApp(
     HapticTarget.enabled = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true) }
     val appTypography = remember(uiRevision) { appTypography(CoderFonts.uiFontFamily(context)) }
     MaterialTheme(typography = appTypography) {
+        var preparedSheetTerminalId by remember { mutableStateOf<String?>(null) }
         val showTerminalSheet: (String) -> Unit = showTerminalSheet@{ terminalId ->
             val index = terminalSessions.indexOfFirst { it.id == terminalId }
             if (index < 0) return@showTerminalSheet
@@ -425,7 +426,12 @@ fun CoderApp(
             })
             terminalSessions[index] = managed.copy(terminalView = nextTerminalView, session = terminalSession, updatedAtMillis = now, detached = false)
             selectedTerminalId = terminalId
+            preparedSheetTerminalId = terminalId
             terminalUiMode = TerminalUiMode.SHEET
+        }
+        LaunchedEffect(selectedTerminalId) {
+            val terminalId = selectedTerminalId ?: return@LaunchedEffect
+            if (preparedSheetTerminalId != terminalId) showTerminalSheet(terminalId)
         }
         Box(Modifier.fillMaxSize().background(tokens.background)) {
             when (destination) {

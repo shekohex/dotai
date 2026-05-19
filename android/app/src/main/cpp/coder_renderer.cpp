@@ -157,8 +157,11 @@ void CoderRenderer::setTargetRefreshRate(float refreshRate) {
 }
 
 void CoderRenderer::resize(int width, int height) {
-    width_ = width > 0 ? width : 1;
-    height_ = height > 0 ? height : 1;
+    const int nextWidth = width > 0 ? width : 1;
+    const int nextHeight = height > 0 ? height : 1;
+    if (width_ != nextWidth || height_ != nextHeight) cachedCells_.clear();
+    width_ = nextWidth;
+    height_ = nextHeight;
     glViewport(0, 0, width_, height_);
 }
 

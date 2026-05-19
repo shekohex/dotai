@@ -71,6 +71,34 @@ class ShortcutEditorInstrumentedTest {
         captureDeviceScreenshot(device, "shortcuts-editor-preview.png")
     }
 
+    @Test
+    fun visualModifierAndSpecialKeySelectionCanCreateShortcut() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("MODIFIERS")), 10_000)) { "New Shortcut editor did not load" }
+        check(device.hasObject(By.desc("⇧ Shift modifier not selected"))) { "Shift modifier state missing" }
+        check(device.hasObject(By.desc("Tab key not selected"))) { "Tab key state missing" }
+        device.findObject(By.text("⇧ Shift"))?.click() ?: error("Shift modifier missing")
+        device.findObject(By.text("Tab"))?.click() ?: error("Tab key button missing")
+        check(device.wait(Until.hasObject(By.desc("⇧ Shift modifier selected")), 10_000)) { "Shift modifier did not select" }
+        check(device.wait(Until.hasObject(By.desc("Tab key selected")), 10_000)) { "Tab key did not select" }
+        check(device.wait(Until.hasObject(By.desc("Shortcut editor preview ⇧ Tab")), 10_000)) { "Visual key preview did not update" }
+        captureDeviceScreenshot(device, "shortcuts-visual-key-selection.png")
+
+        device.findObject(By.desc("Save"))?.click() ?: error("Save button missing")
+        check(device.wait(Until.gone(By.text("MODIFIERS")), 10_000)) { "Save did not leave editor" }
+        val saved = context.getSharedPreferences("terminal", 0).getString("toolbar.shortcuts", "").orEmpty()
+        check(saved.contains("⇧ Tab\t\u001b[Z")) { "Visual Shift+Tab shortcut did not persist terminal bytes" }
+    }
+
     private fun typeShortcutCommand(device: UiDevice, text: String) {
         text.forEach { char ->
             when (char) {

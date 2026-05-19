@@ -2392,14 +2392,14 @@ private fun ShortcutFooterButton(label: String, background: Color, color: Color,
 
 @Composable
 private fun RowScope.ShortcutChoice(label: String, selected: Boolean, tokens: UiTokens, onClick: () -> Unit) {
-    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(if (selected) tokens.accent.copy(alpha = 0.35f) else tokens.surfaceHigh).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) { Text(label, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace) }
+    Box(Modifier.weight(1f).height(44.dp).semantics { contentDescription = "$label modifier ${if (selected) "selected" else "not selected"}" }.clip(RoundedCornerShape(12.dp)).background(if (selected) tokens.accent.copy(alpha = 0.35f) else tokens.surfaceHigh).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) { Text(label, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace) }
 }
 
 @Composable
 private fun ShortcutKeyGrid(tokens: UiTokens, selectedKey: String, onSelected: (String) -> Unit) {
     val rows = listOf(listOf("Esc", "Tab", "Enter", "⌫"), listOf("↑", "↓", "←", "→"), listOf("Home", "End", "PgUp", "PgDn"))
     Column(Modifier.padding(horizontal = spacingLarge()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        rows.forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { key -> Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(if (key == selectedKey) tokens.accent.copy(alpha = 0.35f) else tokens.surfaceHigh).clickable { hapticClick(); onSelected(key) }, contentAlignment = Alignment.Center) { Text(key, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace) } } } }
+        rows.forEach { row -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { key -> Box(Modifier.weight(1f).height(44.dp).semantics { contentDescription = "$key key ${if (key == selectedKey) "selected" else "not selected"}" }.clip(RoundedCornerShape(12.dp)).background(if (key == selectedKey) tokens.accent.copy(alpha = 0.35f) else tokens.surfaceHigh).clickable { hapticClick(); onSelected(key) }, contentAlignment = Alignment.Center) { Text(key, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace) } } } }
         Box(Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(12.dp)).background(tokens.surfaceHigh), contentAlignment = Alignment.Center) { Text("Custom Key / Text...", color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace) }
     }
 }

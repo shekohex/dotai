@@ -449,10 +449,13 @@ fun CoderApp(
                         tokens = tokens,
                         sessionStore = sessionStore,
                         onSessionExpired = {
-                            TerminalActivity.finishDetachedTerminals(state.session.baseUrl, state.session.user.id)
+                        TerminalActivity.finishDetachedTerminals(state.session.baseUrl, state.session.user.id)
                         sessionStore.clearSession()
                         sessionStore.clearActiveTerminals(state.session.baseUrl, state.session.user.id)
                         TerminalConnectionManager.stopAll()
+                            selectedTerminalHost?.terminalView?.detachFromCurrentParent()
+                            selectedTerminalHost?.terminalView?.dispose()
+                            selectedTerminalHost = null
                             terminalSessions.clear()
                             selectedTerminalId = null
                             authState = AuthState.LoggedOut
@@ -588,6 +591,11 @@ fun CoderApp(
                         val managed = terminalSessions.firstOrNull { it.id == terminalId }
                         TerminalConnectionManager.stop(terminalId)
                         managed?.let { sessionStore.removeActiveTerminal(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command) }
+                        if (selectedTerminalHost?.terminalId == terminalId) {
+                            selectedTerminalHost?.terminalView?.detachFromCurrentParent()
+                            selectedTerminalHost?.terminalView?.dispose()
+                            selectedTerminalHost = null
+                        }
                         terminalSessions.removeAll { it.id == terminalId }
                         if (selectedTerminalId == terminalId) selectedTerminalId = null
                         onHideKeyboard()

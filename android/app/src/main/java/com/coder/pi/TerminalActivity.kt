@@ -56,8 +56,10 @@ class TerminalActivity : AppCompatActivity() {
             finish()
             return
         }
-        title = launch.title
-        setTaskDescription(android.app.ActivityManager.TaskDescription(launch.title))
+        val windowTitle = terminalWindowTitle(launch)
+        title = windowTitle
+        @Suppress("DEPRECATION")
+        setTaskDescription(android.app.ActivityManager.TaskDescription(windowTitle))
         val theme = CoderThemes.current(this)
         currentTheme = theme
         currentFontKey = CoderFonts.selectedKey(this)
@@ -209,6 +211,12 @@ class TerminalActivity : AppCompatActivity() {
         val userId = intent.getStringExtra(TerminalWindowLauncher.UserId) ?: return null
         val workspaceId = intent.getStringExtra(TerminalWindowLauncher.WorkspaceId) ?: return null
         return TerminalIdentity(launch.baseUrl, userId, workspaceId, launch.agentId, launch.command)
+    }
+
+    private fun terminalWindowTitle(launch: TerminalLaunchRequest): String {
+        val sessionLabel = tmuxSessionLabel(launch.command)
+        val suffix = sessionLabel ?: launch.badge.takeIf { it.isNotBlank() }
+        return suffix?.let { "${launch.title} · $it" } ?: launch.title
     }
 
     private fun applySystemBars(theme: CoderTheme) {

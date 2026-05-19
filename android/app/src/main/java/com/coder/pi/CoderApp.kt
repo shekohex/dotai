@@ -790,7 +790,6 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
             val localUri = copyWorkspaceIconToLocalStorage(context, workspace.id, it)
             if (localUri != null) {
                 sessionStore.saveIcon(session.baseUrl, session.user.id, workspace.id, localUri)
-                activeTerminals.filter { it.identity.workspaceId == workspace.id }.forEach { configureTerminalNotificationContext(it.terminalView, it.launch, it.identity, sessionStore) }
                 workspaceIconRevision++
             } else {
                 Toast.makeText(context, "Could not save workspace icon", Toast.LENGTH_SHORT).show()
@@ -885,10 +884,12 @@ private fun WorkspaceLoadingSection(tokens: UiTokens, metrics: CoderUiMetrics) {
 
 @Composable
 private fun ActiveCoderSessionSection(activeTerminals: List<ManagedTerminalSession>, sessionStore: CoderSessionStore, tokens: UiTokens, metrics: CoderUiMetrics, onResumeTerminal: (ManagedTerminalSession) -> Unit, onCloseTerminal: (ManagedTerminalSession) -> Unit) {
+    val context = LocalContext.current
+    val holdToClose = remember(context) { context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("gesture.hold_to_close", true) }
     Column {
         Row(Modifier.fillMaxWidth().padding(start = spacingLarge(), end = spacingLarge(), top = 18.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("ACTIVE SESSIONS", color = tokens.secondary, fontSize = metrics.sectionSize, letterSpacing = 0.6.sp, modifier = Modifier.weight(1f))
-            Text(if (activeTerminals.any { it.terminalView.gestureEnabled("hold_to_close") }) "${activeTerminals.size}/$MaxActiveTerminalSessions · hold to close" else "${activeTerminals.size}/$MaxActiveTerminalSessions", color = tokens.secondary, fontSize = metrics.captionSize, fontFamily = FontFamily.Monospace)
+            Text(if (holdToClose) "${activeTerminals.size}/$MaxActiveTerminalSessions · hold to close" else "${activeTerminals.size}/$MaxActiveTerminalSessions", color = tokens.secondary, fontSize = metrics.captionSize, fontFamily = FontFamily.Monospace)
         }
         if (activeTerminals.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 4.dp).height(82.dp).clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface).border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner)).padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
@@ -902,7 +903,7 @@ private fun ActiveCoderSessionSection(activeTerminals: List<ManagedTerminalSessi
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = spacingLarge(), end = spacingLarge()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             activeTerminals.forEach { managed ->
-                ActiveCoderSessionCard(managed, sessionStore, tokens, metrics, { onResumeTerminal(managed) }, { onCloseTerminal(managed) })
+                ActiveCoderSessionCard(managed, tokens, metrics, holdToClose, { onResumeTerminal(managed) }, { onCloseTerminal(managed) })
             }
         }
     }
@@ -913,10 +914,8 @@ private fun connectionHostLabel(baseUrl: String): String = runCatching { baseUrl
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, sessionStore: CoderSessionStore, tokens: UiTokens, metrics: CoderUiMetrics, onResume: () -> Unit, onClose: () -> Unit) {
+private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, tokens: UiTokens, metrics: CoderUiMetrics, holdToClose: Boolean, onResume: () -> Unit, onClose: () -> Unit) {
     val session = managed.sheet
-    val holdToClose = managed.terminalView.gestureEnabled("hold_to_close")
-    var previewLines by remember { mutableStateOf(managed.previewLines) }
     var updatedAtMillis by remember { mutableStateOf(managed.updatedAtMillis) }
     var relativeTime by remember { mutableStateOf(relativeSessionTime(updatedAtMillis)) }
     LaunchedEffect(managed.updatedAtMillis) {
@@ -925,17 +924,7 @@ private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, sessionStore
     }
     LaunchedEffect(session.status) {
         while (true) {
-            val lines = managed.terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5)
-            if (lines.isNotEmpty()) {
-                updatedAtMillis = System.currentTimeMillis()
-                relativeTime = relativeSessionTime(updatedAtMillis)
-                previewLines = lines
-                val launch = managed.launch
-                val detached = sessionStore.isActiveTerminalDetached(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.identity.agentId, managed.identity.command)
-                sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, updatedAtMillis, lines.joinToString("\n"), detached, workspaceIconUrl = launch.workspaceIconUrl))
-            } else {
-                relativeTime = relativeSessionTime(updatedAtMillis)
-            }
+            relativeTime = relativeSessionTime(updatedAtMillis)
             delay(1000)
         }
     }
@@ -955,7 +944,7 @@ private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, sessionStore
                 Text(tmuxLabel, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 7.dp).clip(RoundedCornerShape(8.dp)).background(if (terminalStatusFromWireName(session.status) == TerminalConnectionStatus.Connected) tokens.accent else Color(0xffff9f43)).padding(horizontal = 8.dp, vertical = 3.dp))
             }
             Column(Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 25.dp, end = 8.dp)) {
-                val lines = previewLines.ifEmpty { listOf("› ${session.status}") }
+                val lines = managed.previewLines.ifEmpty { listOf("› ${session.status}") }
                 lines.forEach { line -> Text(line, color = Color(0xffd8d8ea), fontSize = 9.sp, lineHeight = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }

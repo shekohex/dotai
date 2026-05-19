@@ -1358,6 +1358,14 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             toolbarOrder = terminalView.toolbarOrder()
         }
     }
+    DisposableEffect(terminalView) {
+        terminalView.onClipboardImagePaste = { uri ->
+            chatAttachments = chatAttachments + ChatImageAttachment(uri)
+            chatMode = true
+            true
+        }
+        onDispose { terminalView.onClipboardImagePaste = null }
+    }
     DisposableEffect(view) {
         val visibleFrame = Rect()
         val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {

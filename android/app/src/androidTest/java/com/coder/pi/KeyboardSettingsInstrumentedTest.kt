@@ -1,5 +1,6 @@
 package com.coder.pi
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.view.KeyEvent
@@ -101,6 +102,21 @@ class KeyboardSettingsInstrumentedTest {
 
         terminalView.setAutoHideToolbarEnabled(false)
         check(!terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), true, false, false)) { "Disabled auto-hide hid toolbar" }
+    }
+
+    @Test
+    fun pasteShortcutRoutesImageClipboardToImageHandler() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+        val imageUri = Uri.parse("content://com.coder.pi.test/image.png")
+        var pastedImageUri: Uri? = null
+        terminalView.onClipboardImagePaste = { uri -> pastedImageUri = uri; true }
+
+        val handled = terminalView.pasteClip(ClipData("Image", arrayOf("image/png"), ClipData.Item(imageUri)))
+
+        check(handled) { "Image paste shortcut was not handled" }
+        check(pastedImageUri == imageUri) { "Image paste shortcut did not route clipboard image" }
     }
 
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {

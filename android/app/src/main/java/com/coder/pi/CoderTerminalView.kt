@@ -8,10 +8,12 @@ import android.graphics.Color
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -121,6 +123,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
     var onToolbarActionsChanged: (() -> Unit)? = null
     var onApplicationShortcut: ((String) -> Boolean)? = null
+    var onClipboardImagePaste: ((Uri) -> Boolean)? = null
     var onNotificationPermissionNeeded: (() -> Unit)? = null
 
     override fun onResume() {
@@ -490,10 +493,24 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun pasteFromClipboard(): Boolean {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+        val clip = clipboard.primaryClip ?: return false
+        return pasteClip(clip)
+    }
+
+    fun pasteClip(clip: ClipData): Boolean {
+        clipboardImageUri(clip)?.let { imageUri ->
+            if (onClipboardImagePaste?.invoke(imageUri) == true) return true
+        }
+        val text = clip.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
         if (text.isBlank()) return false
         sendText(text)
         return true
+    }
+
+    private fun clipboardImageUri(clip: ClipData): Uri? {
+        if (clip.itemCount == 0 || clip.description?.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) == true) return null
+        if (clip.description?.hasMimeType("image/*") != true) return null
+        return clip.getItemAt(0).uri
     }
 
     fun sendKey(keyCode: Int, metaState: Int = 0, unicodeChar: Int = 0) {

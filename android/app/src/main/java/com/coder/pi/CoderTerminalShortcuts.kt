@@ -133,6 +133,9 @@ fun shortcutPreview(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, cu
 }
 
 fun shortcutSequence(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, customText: String): String {
+    val typedText = customText.trim()
+    if (typedText.isNotEmpty()) return typedShortcutSequence(ctrl, opt, shift, typedText)
+    if (shift && key == "Tab") return "\u001b[Z"
     val base = customText.ifBlank {
         when (key) {
             "Esc" -> "\u001b"
@@ -150,6 +153,18 @@ fun shortcutSequence(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, c
             else -> ""
         }
     }
+    return buildString {
+        if (opt) append('\u001b')
+        if (ctrl && base.length == 1) append(controlSequence(base.first())) else append(if (shift && base.length == 1) base.uppercase() else base)
+    }
+}
+
+private fun typedShortcutSequence(ctrl: Boolean, opt: Boolean, shift: Boolean, text: String): String {
+    val parts = text.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    if (parts.size > 1) {
+        return parts.mapIndexed { index, part -> typedShortcutSequence(ctrl && index == 0, opt && index == 0, shift && index == 0, part) }.joinToString("")
+    }
+    val base = text
     return buildString {
         if (opt) append('\u001b')
         if (ctrl && base.length == 1) append(controlSequence(base.first())) else append(if (shift && base.length == 1) base.uppercase() else base)

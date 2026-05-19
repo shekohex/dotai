@@ -112,6 +112,12 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutSequenceBuildsMultiStepKeySequences() {
+        assertEquals("\u0002c", shortcutSequence(true, false, false, "", "b,c"))
+        assertEquals("\u001b[Z", shortcutSequence(false, false, true, "Tab", ""))
+    }
+
+    @Test
     fun remoteKeyBytesMapTerminalControls() {
         assertArrayEquals(byteArrayOf(13), terminalRemoteKeyBytes(KeyEvent.KEYCODE_ENTER, 0))
         assertArrayEquals(byteArrayOf(127.toByte()), terminalRemoteKeyBytes(KeyEvent.KEYCODE_DEL, 0))

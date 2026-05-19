@@ -108,6 +108,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var activeProgressIndeterminate = true
     private var progressStatusIndex = 0
     private var notificationContext = TerminalNotificationContext()
+    private var terminalViewForeground = false
     private var workspaceIconRequestInFlight = false
     private var workspaceIconCacheKey = ""
     private var workspaceIconCache: android.graphics.Bitmap? = null
@@ -120,6 +121,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
     var onToolbarActionsChanged: (() -> Unit)? = null
     var onNotificationPermissionNeeded: (() -> Unit)? = null
+
+    override fun onResume() {
+        terminalViewForeground = true
+        super.onResume()
+    }
+
+    override fun onPause() {
+        terminalViewForeground = false
+        super.onPause()
+    }
 
     init {
         registerTerminalView(this)
@@ -1093,6 +1104,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val now = System.currentTimeMillis()
         if (now - lastNotificationMillis < 3000L) return
         lastNotificationMillis = now
+        if (terminalViewForeground && isShown && hasWindowFocus()) return
         if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(formatNotificationText(title), formatNotificationText(body), false, -1, false)) {
             if (oscNotificationToastsEnabled()) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }

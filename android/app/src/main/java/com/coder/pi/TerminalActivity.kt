@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
@@ -87,6 +88,11 @@ class TerminalActivity : AppCompatActivity() {
         })
         startPreviewPersistence()
         applySystemBars(currentTheme ?: theme)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        })
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
@@ -128,7 +134,7 @@ class TerminalActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         previewJob?.cancel()
-        if (isChangingConfigurations) {
+        if (isChangingConfigurations || !isFinishing) {
             TerminalConnectionManager.detachRenderer(terminalId)
         } else {
             TerminalConnectionManager.stop(terminalId)

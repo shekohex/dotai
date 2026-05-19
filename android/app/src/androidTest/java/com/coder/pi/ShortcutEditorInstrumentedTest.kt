@@ -2,6 +2,7 @@ package com.coder.pi
 
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -43,5 +44,45 @@ class ShortcutEditorInstrumentedTest {
         enabledSave.click()
         instrumentation.waitForIdleSync()
         check(device.wait(Until.gone(By.text("MODIFIERS")), 10_000)) { "Valid save should leave editor" }
+    }
+
+    @Test
+    fun shortcutPreviewUpdatesWhileEditing() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("MODIFIERS")), 10_000)) { "New Shortcut editor did not load" }
+        device.findObject(By.text("^ Ctrl"))?.click() ?: error("Ctrl modifier missing")
+        device.findObject(By.text("⇧ Shift"))?.click() ?: error("Shift modifier missing")
+        device.findObject(By.text("Tab"))?.click() ?: error("Tab key button missing")
+        check(device.wait(Until.hasObject(By.desc("Shortcut editor preview ^⇧ Tab")), 10_000)) { "Key preview did not update" }
+
+        device.click(device.displayWidth / 2, (device.displayHeight * 0.63f).toInt())
+        Thread.sleep(500)
+        typeShortcutCommand(device, "b,c")
+        Thread.sleep(500)
+        check(device.wait(Until.hasObject(By.desc("Shortcut editor preview ^⇧ b,c")), 10_000)) { "Text preview did not update" }
+        captureDeviceScreenshot(device, "shortcuts-editor-preview.png")
+    }
+
+    private fun typeShortcutCommand(device: UiDevice, text: String) {
+        text.forEach { char ->
+            when (char) {
+                ',' -> device.pressKeyCode(KeyEvent.KEYCODE_COMMA)
+                else -> device.pressKeyCode(KeyEvent.keyCodeFromString("KEYCODE_${char.uppercaseChar()}"))
+            }
+        }
+    }
+
+    private fun captureDeviceScreenshot(device: UiDevice, name: String) {
+        val directory = java.io.File("/data/local/tmp/pi-test-screenshots")
+        device.executeShellCommand("mkdir -p ${directory.absolutePath}")
+        device.takeScreenshot(java.io.File(directory, name))
     }
 }

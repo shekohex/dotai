@@ -37,6 +37,13 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutPreviewReflectsModifiersKeysAndText() {
+        assertEquals("Tab", shortcutPreview(false, false, false, "Tab", ""))
+        assertEquals("^⇧ Tab", shortcutPreview(true, false, true, "Tab", ""))
+        assertEquals("^ b,c", shortcutPreview(true, false, false, "", "b,c"))
+    }
+
+    @Test
     fun shortcutInputValidityRequiresTerminalOutput() {
         assertEquals(false, isShortcutInputValid(false, false, false, "", ""))
         assertEquals(false, isShortcutInputValid(true, false, false, "", ""))

@@ -2187,7 +2187,7 @@ private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiToke
             val label = hardwareShortcutLabel(event.key.nativeKeyCode)
             if (label != null) selectedKey = label
             label != null
-        }, contentAlignment = Alignment.CenterStart) { Text(shortcutPreview(ctrl, opt, shift, selectedKey, customText), color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace) } }
+        }, contentAlignment = Alignment.CenterStart) { Text(shortcutPreview(ctrl, opt, shift, selectedKey, customText), color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, modifier = Modifier.semantics { contentDescription = "Shortcut editor preview ${shortcutPreview(ctrl, opt, shift, selectedKey, customText)}" }) } }
         item { Text("MODIFIERS", color = tokens.secondary, fontSize = sectionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 5.dp)) }
         item { Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ShortcutChoice("^ Ctrl", ctrl, tokens) { ctrl = !ctrl }; ShortcutChoice("⌥ Opt", opt, tokens) { opt = !opt }; ShortcutChoice("⇧ Shift", shift, tokens) { shift = !shift } } }
         item { Text("KEY", color = tokens.secondary, fontSize = sectionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }

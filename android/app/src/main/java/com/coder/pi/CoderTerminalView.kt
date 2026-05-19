@@ -79,6 +79,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var touchStartY = 0f
     private var touchMoved = false
     private var scrollDownGestureTriggered = false
+    private var scrollSuppressedUntilTouchEnd = false
     private var lastTapUpMillis = 0L
     private var tapCount = 0
     private var pendingTapAction: Runnable? = null
@@ -132,7 +133,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val width = right - left
             val height = bottom - top
-            if (width != oldRight - oldLeft || height != oldBottom - oldTop) view.post { refreshSurface() }
+            if (width != oldRight - oldLeft || height != oldBottom - oldTop) {
+                cancelSmoothScrollState()
+                view.post { refreshSurface() }
+            }
         }
     }
 
@@ -239,6 +243,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 touchStartY = event.y
                 touchMoved = false
                 scrollDownGestureTriggered = false
+                scrollSuppressedUntilTouchEnd = false
                 accumulatedScrollY = 0f
                 beginSmoothScrollGesture()
                 if (copyMode) {
@@ -264,8 +269,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                 if (totalDeltaX * totalDeltaX + totalDeltaY * totalDeltaY > touchSlop * touchSlop) touchMoved = true
                 if (!scrollDownGestureTriggered && totalDeltaY > touchSlop * 5 && kotlin.math.abs(totalDeltaY) > kotlin.math.abs(totalDeltaX) * 1.4f) {
                     scrollDownGestureTriggered = true
-                    performGestureAction(selectedGestureAction("scroll_down", "dismiss_keyboard"))
+                    if (performGestureAction(selectedGestureAction("scroll_down", "dismiss_keyboard"))) {
+                        scrollSuppressedUntilTouchEnd = true
+                        cancelSmoothScrollState()
+                    }
                 }
+                if (scrollSuppressedUntilTouchEnd) return true
                 if (copyMode) {
                     val edgeRows = copyModeEdgeScrollRows(event.y)
                     if (edgeRows != 0) scrollViewportRows(edgeRows)
@@ -309,6 +318,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 pinchDistance = 0f
                 pinchAccumulatedZoom = 1f
+                scrollSuppressedUntilTouchEnd = false
                 if (copyMode) {
                     if (event.actionMasked == MotionEvent.ACTION_UP) copySelectionEnd = screenPositionAt(event.x, event.y) ?: copySelectionEnd
                     updateNativeSelection()
@@ -546,11 +556,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun beginSmoothScrollGesture() {
+        cancelSmoothScrollState()
+        smoothScrollLastEventMillis = android.os.SystemClock.uptimeMillis()
+    }
+
+    private fun cancelSmoothScrollState() {
         smoothScrollAnimator?.cancel()
         smoothScrollAnimator = null
         smoothScrollGesturePixels = 0f
         smoothScrollVelocityPixelsPerMillis = 0f
-        smoothScrollLastEventMillis = android.os.SystemClock.uptimeMillis()
+        smoothScrollPendingPixels = 0f
+        accumulatedScrollY = 0f
     }
 
     fun scrollPixels(pixelDelta: Float) {
@@ -845,8 +861,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return when (action) {
             "paste" -> pasteFromClipboard()
             "dismiss_keyboard" -> {
+                cancelSmoothScrollState()
                 context.getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(windowToken, 0)
                 clearFocus()
+                post { forceRefreshSurface() }
+                postDelayed({ forceRefreshSurface() }, 180L)
+                postDelayed({ forceRefreshSurface() }, 360L)
                 true
             }
             "send_escape" -> { sendKey(KeyEvent.KEYCODE_ESCAPE); true }

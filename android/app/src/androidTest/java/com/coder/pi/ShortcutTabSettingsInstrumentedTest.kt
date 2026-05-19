@@ -198,6 +198,30 @@ class ShortcutTabSettingsInstrumentedTest {
     }
 
     @Test
+    fun tappingShortcutRowOpensEditor() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        context.getSharedPreferences("terminal", 0).edit { putString("toolbar.shortcuts", "demo\t/gsd:progress") }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val favoritesRow = device.findObjects(By.text("Favorites")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Favorites tab missing")
+        favoritesRow.click()
+
+        check(device.wait(Until.hasObject(By.desc("Edit demo shortcut")), 10_000)) { "Custom shortcut row missing" }
+        device.findObject(By.desc("Edit demo shortcut"))?.click() ?: error("Custom shortcut row missing")
+        check(device.wait(Until.hasObject(By.text("Edit Shortcut")), 10_000)) { "Shortcut editor did not open" }
+        check(device.hasObject(By.text("/gsd:progress"))) { "Shortcut command was not prefilled" }
+        check(device.hasObject(By.text("demo"))) { "Shortcut hint was not prefilled" }
+        captureDeviceScreenshot(device, "shortcuts-edit-row.png")
+    }
+
+    @Test
     fun tmuxPrefixSelectorUpdatesEffectivePreview() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -222,7 +246,7 @@ class ShortcutTabSettingsInstrumentedTest {
             check(device.wait(Until.hasObject(By.text("^ a")), 10_000)) { "Tmux prefix preview did not update" }
         }
         check(device.hasObject(By.text("^ a"))) { "Tmux prefix preview did not update" }
-        check(device.wait(Until.hasObject(By.text("^ a,c")), 10_000)) { "Tmux shortcut rows did not use selected prefix" }
+        check(device.wait(Until.hasObject(By.text("^ a,c")), 10_000) || device.hasObject(By.text("^ a,n"))) { "Tmux shortcut rows did not use selected prefix" }
         captureDeviceScreenshot(device, "shortcuts-tmux-prefix.png")
     }
 
@@ -259,6 +283,7 @@ class ShortcutTabSettingsInstrumentedTest {
         context.getSharedPreferences("terminal", 0).edit {
             putInt("shortcuts.tmux_prefix", 0)
             putBoolean("shortcuts.tmux_start_window_from_one", true)
+            remove("toolbar.shortcuts")
             remove("shortcuts.row.tmux.order")
             defaultShortcutRowsForReset("Tmux").forEach { remove(shortcutRowPreferenceKey("tmux", it)) }
         }

@@ -1444,6 +1444,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
+    var editingShortcut by remember { mutableStateOf<ShortcutRowDefinition?>(null) }
     var selectedShortcutTab by remember { mutableStateOf(shortcutOverviewTabs(emptyList()).first()) }
     LaunchedEffect(deepLinkRevision) {
         deepLinkSettingsPage?.let { page = it }
@@ -1472,10 +1473,10 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.THEME -> ThemePickerScreen(tokens, ::navigateBack, onThemeChanged)
         SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onTerminalFontSizeSelected, onFontChanged, { page = SettingsPage.TEXT }, ::navigateBack)
         SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens, ::navigateBack)
-        SettingsPage.TOOLBAR -> ShortcutsSettingsScreen(terminalView, tokens, { tab -> selectedShortcutTab = tab; page = SettingsPage.SHORTCUT_TAB }, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
-        SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { tab -> selectedShortcutTab = tab; page = SettingsPage.SHORTCUT_TAB }, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }, ::navigateBack)
-        SettingsPage.SHORTCUT_TAB -> ShortcutTabSettingsScreen(selectedShortcutTab, terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUT_TAB; page = SettingsPage.SHORTCUT }, ::navigateBack)
-        SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.TOOLBAR -> ShortcutsSettingsScreen(terminalView, tokens, { tab -> selectedShortcutTab = tab; page = SettingsPage.SHORTCUT_TAB }, { editingShortcut = null; shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { tab -> selectedShortcutTab = tab; page = SettingsPage.SHORTCUT_TAB }, { editingShortcut = null; shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUT_TAB -> ShortcutTabSettingsScreen(selectedShortcutTab, terminalView, tokens, { editingShortcut = null; shortcutBackPage = SettingsPage.SHORTCUT_TAB; page = SettingsPage.SHORTCUT }, { shortcut -> editingShortcut = shortcut; shortcutBackPage = SettingsPage.SHORTCUT_TAB; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens, editingShortcut, selectedShortcutTab.id, ::navigateBack)
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.CHAT -> ChatModeSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -2091,7 +2092,7 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
 }
 
 @Composable
-private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
+private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onEditShortcut: (ShortcutRowDefinition) -> Unit, onBack: () -> Unit) {
     var tmuxPrefixIndex by remember { mutableIntStateOf(terminalView.tmuxPrefixIndex()) }
     var tmuxStartWindowFromOne by remember { mutableStateOf(terminalView.tmuxStartWindowFromOne()) }
     var shortcutRevision by remember { mutableIntStateOf(0) }
@@ -2125,12 +2126,12 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
             if (activeShortcuts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
             } else {
-                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens, onMove = { delta -> shortcutOrder = moveShortcutRow(terminalView.shortcutRowOrder(tab.id, defaultShortcuts), shortcutRowId(shortcut), delta); terminalView.setShortcutRowOrder(tab.id, shortcutOrder, defaultShortcuts); shortcutRevision++ }) { terminalView.setShortcutRowActive(tab.id, shortcut, false); shortcutRevision++ } }
+                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens, onMove = { delta -> shortcutOrder = moveShortcutRow(terminalView.shortcutRowOrder(tab.id, defaultShortcuts), shortcutRowId(shortcut), delta); terminalView.setShortcutRowOrder(tab.id, shortcutOrder, defaultShortcuts); shortcutRevision++ }, onEdit = { onEditShortcut(shortcut) }) { terminalView.setShortcutRowActive(tab.id, shortcut, false); shortcutRevision++ } }
             }
         }
         item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         if (inactiveShortcuts.isNotEmpty()) {
-            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens, onDelete = if (tab.id == "favorites") ({ terminalView.removeCustomShortcut(shortcut); shortcutRevision++ }) else null) { terminalView.setShortcutRowActive(tab.id, shortcut, true); shortcutRevision++ } } }
+            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens, onDelete = if (tab.id == "favorites") ({ terminalView.removeCustomShortcut(shortcut); shortcutRevision++ }) else null, onEdit = { onEditShortcut(shortcut) }) { terminalView.setShortcutRowActive(tab.id, shortcut, true); shortcutRevision++ } } }
         }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(56.dp).clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
@@ -2149,9 +2150,9 @@ private fun RowScope.TmuxPrefixChoice(label: String, selected: Boolean, tokens: 
 }
 
 @Composable
-private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onDelete: (() -> Unit)? = null, onMove: (Int) -> Unit = {}, onToggle: () -> Unit = {}) {
+private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onDelete: (() -> Unit)? = null, onMove: (Int) -> Unit = {}, onEdit: () -> Unit = {}, onToggle: () -> Unit = {}) {
     var dragOffset by remember { mutableStateOf(0f) }
-    Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(72.dp).semantics { contentDescription = "Edit $hint shortcut" }.clickable { hapticClick(); onEdit() }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(if (active) "⊖" else "⊕", color = if (active) Color(0xffd62d5a) else tokens.accent, fontSize = 25.sp, modifier = Modifier.width(42.dp).semantics { contentDescription = if (active) "Disable $hint shortcut" else "Enable $hint shortcut" }.clickable { hapticClick(); onToggle() })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Text(sequence, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
@@ -2167,17 +2168,17 @@ private fun defaultShortcutRows(tab: String, tmuxPrefixIndex: Int, tmuxStartWind
 }
 
 @Composable
-private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
+private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiTokens, editingShortcut: ShortcutRowDefinition? = null, editingTabId: String = "favorites", onBack: () -> Unit) {
     var ctrl by remember { mutableStateOf(false) }
     var opt by remember { mutableStateOf(false) }
     var shift by remember { mutableStateOf(false) }
     var selectedKey by remember { mutableStateOf("") }
-    var customText by remember { mutableStateOf("") }
-    var hint by remember { mutableStateOf("") }
+    var customText by remember(editingShortcut) { mutableStateOf(editingShortcut?.sequence.orEmpty()) }
+    var hint by remember(editingShortcut) { mutableStateOf(editingShortcut?.hint.orEmpty()) }
     val canSave = isShortcutInputValid(ctrl, opt, shift, selectedKey, customText)
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
-    SettingsScaffold("New Shortcut", tokens, onBack) {
+    SettingsScaffold(if (editingShortcut == null) "New Shortcut" else "Edit Shortcut", tokens, onBack) {
         item { Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 10.dp).height(66.dp).clip(RoundedCornerShape(14.dp)).background(tokens.surfaceHigh).padding(16.dp).focusRequester(focusRequester).focusable().onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
             ctrl = event.isCtrlPressed
@@ -2200,7 +2201,10 @@ private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiToke
                 ShortcutFooterButton("Save", tokens.accent, contentColorFor(tokens.accent), Modifier.weight(1f), canSave) {
                     val sequence = shortcutSequence(ctrl, opt, shift, selectedKey, customText)
                     val label = hint.ifBlank { shortcutPreview(ctrl, opt, shift, selectedKey, customText) }.take(14)
-                    if (sequence.isNotEmpty()) terminalView.addCustomShortcut(TerminalShortcut(label, sequence))
+                    if (sequence.isNotEmpty()) {
+                        val shortcut = TerminalShortcut(label, sequence)
+                        if (editingShortcut != null && editingTabId == "favorites") terminalView.replaceCustomShortcut(editingShortcut, shortcut) else terminalView.addCustomShortcut(shortcut)
+                    }
                     onBack()
                 }
             }

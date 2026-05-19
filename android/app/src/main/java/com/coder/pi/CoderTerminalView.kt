@@ -1068,6 +1068,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         notifyToolbarActionsChanged()
     }
 
+    fun replaceCustomShortcut(oldShortcut: ShortcutRowDefinition, newShortcut: TerminalShortcut) {
+        val next = customShortcuts().map { if (it.sequence == oldShortcut.sequence && it.label == oldShortcut.hint) newShortcut else it }.joinToString("\n") { "${it.label}\t${it.sequence}" }
+        preferences.edit { putString("toolbar.shortcuts", next) }
+        notifyToolbarActionsChanged()
+    }
+
     fun removeCustomShortcut(index: Int) {
         val next = customShortcuts().filterIndexed { itemIndex, _ -> itemIndex != index }.joinToString("\n") { "${it.label}\t${it.sequence}" }
         preferences.edit { putString("toolbar.shortcuts", next) }

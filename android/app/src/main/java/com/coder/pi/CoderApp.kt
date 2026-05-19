@@ -2095,7 +2095,10 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
     var tmuxPrefixIndex by remember { mutableIntStateOf(terminalView.tmuxPrefixIndex()) }
     var tmuxStartWindowFromOne by remember { mutableStateOf(terminalView.tmuxStartWindowFromOne()) }
     var shortcutRevision by remember { mutableIntStateOf(0) }
-    val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { ShortcutRowDefinition(it.sequence, it.label) } else defaultShortcutRows(tab.title, tmuxPrefixIndex, tmuxStartWindowFromOne)
+    var shortcutOrder by remember { mutableStateOf(emptyList<String>()) }
+    val defaultShortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { ShortcutRowDefinition(it.sequence, it.label) } else defaultShortcutRows(tab.title, tmuxPrefixIndex, tmuxStartWindowFromOne)
+    val shortcuts = defaultShortcuts.sortedBy { terminalView.shortcutRowOrder(tab.id, defaultShortcuts).indexOf(shortcutRowId(it)) }
+    LaunchedEffect(tab.id, defaultShortcuts) { shortcutOrder = terminalView.shortcutRowOrder(tab.id, defaultShortcuts) }
     val activeShortcuts = shortcuts.filterIndexed { index, shortcut -> shortcutRevision; terminalView.shortcutRowActive(tab.id, shortcut, index < 4) }
     val inactiveShortcuts = shortcuts.filterIndexed { index, shortcut -> shortcutRevision; !terminalView.shortcutRowActive(tab.id, shortcut, index < 4) }
     SettingsScaffold(tab.title, tokens, onBack) {
@@ -2122,7 +2125,7 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
             if (activeShortcuts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
             } else {
-                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens) { terminalView.setShortcutRowActive(tab.id, shortcut, false); shortcutRevision++ } }
+                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens, onMove = { delta -> shortcutOrder = moveShortcutRow(terminalView.shortcutRowOrder(tab.id, defaultShortcuts), shortcutRowId(shortcut), delta); terminalView.setShortcutRowOrder(tab.id, shortcutOrder, defaultShortcuts); shortcutRevision++ }) { terminalView.setShortcutRowActive(tab.id, shortcut, false); shortcutRevision++ } }
             }
         }
         item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
@@ -2146,14 +2149,15 @@ private fun RowScope.TmuxPrefixChoice(label: String, selected: Boolean, tokens: 
 }
 
 @Composable
-private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onDelete: (() -> Unit)? = null, onToggle: () -> Unit = {}) {
+private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onDelete: (() -> Unit)? = null, onMove: (Int) -> Unit = {}, onToggle: () -> Unit = {}) {
+    var dragOffset by remember { mutableStateOf(0f) }
     Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(if (active) "⊖" else "⊕", color = if (active) Color(0xffd62d5a) else tokens.accent, fontSize = 25.sp, modifier = Modifier.width(42.dp).semantics { contentDescription = if (active) "Disable $hint shortcut" else "Enable $hint shortcut" }.clickable { hapticClick(); onToggle() })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Text(sequence, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
             Text(hint, color = tokens.secondary, fontSize = captionSize())
         }
-        if (active) Text("⠿", color = tokens.secondary, fontSize = 22.sp) else Icon(painterResource(R.drawable.ic_feather_trash_2), null, tint = Color(0xffd62d5a), modifier = Modifier.size(20.dp).semantics { contentDescription = "Delete $hint shortcut" }.clickable(enabled = onDelete != null) { hapticClick(); onDelete?.invoke() })
+        if (active) Text("⠿", color = tokens.secondary, fontSize = 22.sp, modifier = Modifier.width(44.dp).semantics { contentDescription = "Move $hint shortcut" }.clickable { hapticClick(); onMove(1) }.pointerInput(sequence) { var movedInDrag = false; detectVerticalDragGestures(onDragStart = { dragOffset = 0f; movedInDrag = false }, onDragEnd = { dragOffset = 0f }, onDragCancel = { dragOffset = 0f }) { change, dragAmount -> if (!movedInDrag) { dragOffset += dragAmount; when { dragOffset <= -38f -> { change.consume(); dragOffset = 0f; movedInDrag = true; hapticClick(); onMove(-1) }; dragOffset >= 38f -> { change.consume(); dragOffset = 0f; movedInDrag = true; hapticClick(); onMove(1) } } } } }, textAlign = TextAlign.Center) else Icon(painterResource(R.drawable.ic_feather_trash_2), null, tint = Color(0xffd62d5a), modifier = Modifier.size(20.dp).semantics { contentDescription = "Delete $hint shortcut" }.clickable(enabled = onDelete != null) { hapticClick(); onDelete?.invoke() })
     }
 }
 

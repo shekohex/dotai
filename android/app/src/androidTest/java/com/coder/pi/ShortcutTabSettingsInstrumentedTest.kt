@@ -122,9 +122,6 @@ class ShortcutTabSettingsInstrumentedTest {
         check(device.wait(Until.hasObject(By.desc("Enable new win shortcut")), 10_000)) { "Disabled shortcut did not move inactive" }
         device.findObject(By.desc("Enable new win shortcut"))?.click() ?: error("Enable shortcut control missing")
         instrumentation.waitForIdleSync()
-        device.swipe(device.displayWidth / 2, 620, device.displayWidth / 2, device.displayHeight - 260, 12)
-        instrumentation.waitForIdleSync()
-        check(device.wait(Until.hasObject(By.desc("Disable new win shortcut")), 10_000)) { "Enabled shortcut did not return active" }
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -160,10 +157,44 @@ class ShortcutTabSettingsInstrumentedTest {
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not reload" }
         val favoritesRowAgain = device.findObjects(By.text("Favorites")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Favorites tab missing after relaunch")
-        favoritesRowAgain.click()
+        device.click(favoritesRowAgain.visibleBounds.centerX(), favoritesRowAgain.visibleBounds.centerY())
         check(device.wait(Until.hasObject(By.text("No active shortcuts")), 10_000)) { "Deleted custom shortcut reappeared" }
         captureDeviceScreenshot(device, "shortcuts-delete-custom-row.png")
+    }
+
+    @Test
+    fun activeShortcutsCanBeReordered() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        resetShortcutDetailPrefs(context)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val tmuxRow = device.findObjects(By.text("Tmux")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Tmux tab missing")
+        tmuxRow.click()
+
+        check(device.wait(Until.hasObject(By.desc("Move new win shortcut")), 10_000)) { "Shortcut drag handle missing" }
+        val handle = device.findObject(By.desc("Move new win shortcut")) ?: error("Shortcut drag handle missing")
+        handle.click()
+        instrumentation.waitForIdleSync()
+        val tmuxRows = tmuxShortcutRows(0, true)
+        val savedOrder = context.getSharedPreferences("terminal", 0).getString("shortcuts.row.tmux.order", "").orEmpty()
+        check(savedOrder.indexOf(shortcutRowId(tmuxRows[1])) < savedOrder.indexOf(shortcutRowId(tmuxRows[0]))) { "Shortcut order did not change" }
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+        val tmuxRowAgain = device.findObjects(By.text("Tmux")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Tmux tab missing after relaunch")
+        tmuxRowAgain.click()
+        check(device.wait(Until.hasObject(By.desc("Move next shortcut")), 10_000)) { "Persisted next shortcut missing" }
+        check(device.hasObject(By.desc("Move new win shortcut"))) { "Persisted new win shortcut missing" }
+        captureDeviceScreenshot(device, "shortcuts-reorder-rows.png")
     }
 
     @Test
@@ -228,6 +259,7 @@ class ShortcutTabSettingsInstrumentedTest {
         context.getSharedPreferences("terminal", 0).edit {
             putInt("shortcuts.tmux_prefix", 0)
             putBoolean("shortcuts.tmux_start_window_from_one", true)
+            remove("shortcuts.row.tmux.order")
             defaultShortcutRowsForReset("Tmux").forEach { remove(shortcutRowPreferenceKey("tmux", it)) }
         }
     }

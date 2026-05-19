@@ -59,6 +59,24 @@ fun shortcutTabPreferenceKey(tabId: String): String = "shortcuts.tab.$tabId.acti
 
 fun shortcutRowPreferenceKey(tabId: String, shortcut: ShortcutRowDefinition): String = "shortcuts.row.$tabId.${shortcut.sequence.hashCode()}.active"
 
+fun shortcutRowId(shortcut: ShortcutRowDefinition): String = shortcut.sequence.hashCode().toString()
+
+fun normalizeShortcutRowOrder(value: String?, shortcuts: List<ShortcutRowDefinition>): List<String> {
+    val defaultOrder = shortcuts.map(::shortcutRowId)
+    return (value.orEmpty().split(",") + defaultOrder).filter { it in defaultOrder }.distinct()
+}
+
+fun moveShortcutRow(order: List<String>, rowId: String, delta: Int): List<String> {
+    val index = order.indexOf(rowId)
+    if (index < 0) return order
+    val nextIndex = (index + delta).coerceIn(0, order.lastIndex)
+    if (index == nextIndex) return order
+    return order.toMutableList().also {
+        it.removeAt(index)
+        it.add(nextIndex, rowId)
+    }
+}
+
 val defaultShortcutTabOrder = listOf("favorites", "tmux", "ctrl", "pi")
 
 fun normalizeShortcutTabOrder(value: String?): List<String> = (value.orEmpty().split(",") + defaultShortcutTabOrder).filter { it in defaultShortcutTabOrder }.distinct()

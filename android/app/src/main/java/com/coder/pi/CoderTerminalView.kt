@@ -870,6 +870,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             putString("shortcuts.tab.order", defaultShortcutTabOrder.joinToString(","))
             defaultShortcutTabOrder.forEach { putBoolean(shortcutTabPreferenceKey(it), true) }
             listOf("Tmux" to "tmux", "Ctrl" to "ctrl", "Pi" to "pi").forEach { (title, id) ->
+                remove("shortcuts.row.$id.order")
                 defaultShortcutRowsForReset(title).forEach { remove(shortcutRowPreferenceKey(id, it)) }
             }
             putInt("shortcuts.tmux_prefix", 0)
@@ -884,6 +885,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun shortcutRowActive(tabId: String, shortcut: ShortcutRowDefinition, defaultActive: Boolean): Boolean = preferences.getBoolean(shortcutRowPreferenceKey(tabId, shortcut), defaultActive)
+
+    fun shortcutRowOrder(tabId: String, shortcuts: List<ShortcutRowDefinition>): List<String> = normalizeShortcutRowOrder(preferences.getString("shortcuts.row.$tabId.order", null), shortcuts)
+
+    fun setShortcutRowOrder(tabId: String, order: List<String>, shortcuts: List<ShortcutRowDefinition>) {
+        preferences.edit { putString("shortcuts.row.$tabId.order", normalizeShortcutRowOrder(order.joinToString(","), shortcuts).joinToString(",")) }
+        notifyToolbarActionsChanged()
+    }
 
     fun setTmuxPrefixIndex(index: Int) {
         preferences.edit { putInt("shortcuts.tmux_prefix", index.coerceIn(0, 2)) }

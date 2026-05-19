@@ -73,6 +73,15 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutRowOrderNormalizesAndMoves() {
+        val rows = tmuxShortcutRows(0, true).take(3)
+        val ids = rows.map(::shortcutRowId)
+
+        assertEquals(listOf(ids[1], ids[0], ids[2]), normalizeShortcutRowOrder("${ids[1]},${ids[0]}", rows))
+        assertEquals(listOf(ids[1], ids[0], ids[2]), moveShortcutRow(ids, ids[0], 1))
+    }
+
+    @Test
     fun shortcutRowDefinitionsCanRepresentCustomShortcuts() {
         val shortcut = TerminalShortcut("demo", "/gsd:progress")
 

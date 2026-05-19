@@ -141,7 +141,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -1444,6 +1444,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     var placeholderTitle by remember { mutableStateOf("Settings") }
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
+    var selectedShortcutTab by remember { mutableStateOf(shortcutOverviewTabs(emptyList()).first()) }
     LaunchedEffect(deepLinkRevision) {
         deepLinkSettingsPage?.let { page = it }
     }
@@ -1454,6 +1455,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
                 SettingsPage.ROOT
             }
             SettingsPage.TEXT -> SettingsPage.FONTS
+            SettingsPage.SHORTCUT_TAB -> SettingsPage.SHORTCUTS
             SettingsPage.SHORTCUT -> shortcutBackPage
             SettingsPage.DEBUG_LOGS -> SettingsPage.CONNECTION
             else -> SettingsPage.ROOT
@@ -1470,8 +1472,9 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.THEME -> ThemePickerScreen(tokens, ::navigateBack, onThemeChanged)
         SettingsPage.FONTS -> FontsScreen(terminalView, tokens, onTerminalFontSelected, onTerminalFontSizeSelected, onFontChanged, { page = SettingsPage.TEXT }, ::navigateBack)
         SettingsPage.TEXT -> TextCustomizationScreen(terminalView, tokens, ::navigateBack)
-        SettingsPage.TOOLBAR -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
-        SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.TOOLBAR -> ShortcutsSettingsScreen(terminalView, tokens, { tab -> selectedShortcutTab = tab; page = SettingsPage.SHORTCUT_TAB }, { shortcutBackPage = SettingsPage.TOOLBAR; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUTS -> ShortcutsSettingsScreen(terminalView, tokens, { tab -> selectedShortcutTab = tab; page = SettingsPage.SHORTCUT_TAB }, { shortcutBackPage = SettingsPage.SHORTCUTS; page = SettingsPage.SHORTCUT }, ::navigateBack)
+        SettingsPage.SHORTCUT_TAB -> ShortcutTabSettingsScreen(selectedShortcutTab, terminalView, tokens, { shortcutBackPage = SettingsPage.SHORTCUT_TAB; page = SettingsPage.SHORTCUT }, ::navigateBack)
         SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -1955,14 +1958,14 @@ private fun ToolbarButtonRow(title: String, icon: Int?, visible: Boolean, tokens
 }
 
 @Composable
-private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
+private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onOpenTab: (ShortcutOverviewTab) -> Unit, onAddShortcut: () -> Unit, onBack: () -> Unit) {
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var hideTitles by remember { mutableStateOf(terminalView.shortcutTabTitlesHidden()) }
     var uploads by remember { mutableStateOf(terminalView.uploadsPanelVisible()) }
     LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts() } }
     SettingsScaffold("Shortcuts", tokens, onBack) {
         item { ShortcutsOverviewPreview(tokens, shortcuts, hideTitles, uploads) }
-        SettingsSection("PANEL TABS", tokens) { shortcutOverviewTabs(shortcuts).forEach { tab -> ShortcutPanelTabRow(tab, true, tokens) {} } }
+        SettingsSection("PANEL TABS", tokens) { shortcutOverviewTabs(shortcuts).forEach { tab -> ShortcutPanelTabRow(tab, true, tokens) { onOpenTab(tab) } } }
         item { Text("Tap − to hide, + to show. Drag to reorder. Tap a row to configure shortcuts.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         SettingsSection("SETTINGS", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_type, "Hide Title on Tabs", hideTitles, tokens) { hideTitles = it; terminalView.setShortcutTabTitlesHidden(it) }
@@ -2036,6 +2039,46 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
         }
         if (reorderable) Text("⠿", color = tokens.secondary, fontSize = 22.sp)
     }
+}
+
+@Composable
+private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
+    val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { it.sequence to it.label } else defaultShortcutRows(tab.title)
+    SettingsScaffold(tab.title, tokens, onBack) {
+        SettingsSection("ACTIVE", tokens) {
+            if (shortcuts.isEmpty()) {
+                Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
+            } else {
+                shortcuts.take(4).forEach { shortcut -> ShortcutDetailRow(shortcut.first, shortcut.second, true, tokens) }
+            }
+        }
+        item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        item {
+            Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(56.dp).clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
+                Text("+  Add Shortcut", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
+            }
+        }
+        item { Box(Modifier.fillMaxWidth().height(46.dp).clickable { hapticClick() }, contentAlignment = Alignment.Center) { Text("↻  Reset", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
+    }
+}
+
+@Composable
+private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens) {
+    Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(if (active) "⊖" else "⊕", color = if (active) Color(0xffd62d5a) else Color(0xff3dae4b), fontSize = 25.sp, modifier = Modifier.width(42.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+            Text(sequence, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
+            Text(hint, color = tokens.secondary, fontSize = captionSize())
+        }
+        Text("⠿", color = tokens.secondary, fontSize = 22.sp)
+    }
+}
+
+private fun defaultShortcutRows(tab: String): List<Pair<String, String>> = when (tab) {
+    "Tmux" -> listOf("^ b,c" to "new win", "^ b,n" to "next", "^ b,p" to "prev", "^ b,d" to "detach")
+    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear")
+    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate")
+    else -> emptyList()
 }
 
 @Composable

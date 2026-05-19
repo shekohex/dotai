@@ -1350,9 +1350,10 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         }
     }
     pendingHyperlink?.let { uri ->
+        val tokens = uiTokens(theme)
         ThemedAlertDialog(
             onDismissRequest = { pendingHyperlink = null },
-            tokens = uiTokens(theme),
+            tokens = tokens,
             title = { Text("Open link?") },
             text = { Text(uri, fontFamily = FontFamily.Monospace, fontSize = captionSize()) },
             confirmButton = {
@@ -1361,11 +1362,11 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
                         terminalOscHyperlinkHost(uri)?.let { terminalSetLinkHostAllowed(context, it, true) }
                         pendingHyperlink = null
                         openTerminalHyperlink(context, uri)
-                    }) { Text("Always", color = theme.selectionBackground.toComposeColor()) }
-                    TextButton(onClick = { pendingHyperlink = null; openTerminalHyperlink(context, uri) }) { Text("Open", color = theme.selectionBackground.toComposeColor()) }
+                    }) { Text("Always", color = tokens.accent) }
+                    TextButton(onClick = { pendingHyperlink = null; openTerminalHyperlink(context, uri) }) { Text("Open", color = tokens.accent) }
                 }
             },
-            dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = theme.foreground.toComposeColor()) } },
+            dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = tokens.text) } },
         )
     }
 }
@@ -1481,9 +1482,10 @@ fun TerminalSurface(
         }
     }
     pendingHyperlink?.let { uri ->
+        val tokens = uiTokens(theme)
         ThemedAlertDialog(
             onDismissRequest = { pendingHyperlink = null },
-            tokens = uiTokens(theme),
+            tokens = tokens,
             title = { Text("Open link?") },
             text = { Text(uri, fontFamily = FontFamily.Monospace, fontSize = captionSize()) },
             confirmButton = {
@@ -1492,11 +1494,11 @@ fun TerminalSurface(
                         terminalOscHyperlinkHost(uri)?.let { terminalSetLinkHostAllowed(context, it, true) }
                         pendingHyperlink = null
                         openTerminalHyperlink(context, uri)
-                    }) { Text("Always", color = theme.selectionBackground.toComposeColor()) }
-                    TextButton(onClick = { pendingHyperlink = null; openTerminalHyperlink(context, uri) }) { Text("Open", color = theme.selectionBackground.toComposeColor()) }
+                    }) { Text("Always", color = tokens.accent) }
+                    TextButton(onClick = { pendingHyperlink = null; openTerminalHyperlink(context, uri) }) { Text("Open", color = tokens.accent) }
                 }
             },
-            dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = theme.foreground.toComposeColor()) } },
+            dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = tokens.text) } },
         )
     }
 }

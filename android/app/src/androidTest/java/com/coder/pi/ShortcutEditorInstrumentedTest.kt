@@ -128,6 +128,40 @@ class ShortcutEditorInstrumentedTest {
         check(saved.contains("echo hi\techo hi")) { "Custom text shortcut did not persist unchanged" }
     }
 
+    @Test
+    fun optionalHintLabelsSavedShortcut() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("MODIFIERS")), 10_000)) { "New Shortcut editor did not load" }
+        device.click(device.displayWidth / 2, (device.displayHeight * 0.63f).toInt())
+        Thread.sleep(500)
+        typeShortcutCommand(device, "echo hi")
+        Thread.sleep(500)
+        device.pressBack()
+        check(device.wait(Until.hasObject(By.text("New Shortcut")), 10_000)) { "Shortcut editor closed before hint entry" }
+        device.click(device.displayWidth / 2, (device.displayHeight * 0.75f).toInt())
+        Thread.sleep(500)
+        typeShortcutCommand(device, "submit")
+        Thread.sleep(500)
+        check(device.wait(Until.hasObject(By.text("submit")), 10_000)) { "Hint text was not entered" }
+        captureDeviceScreenshot(device, "shortcuts-optional-hint.png")
+
+        device.pressBack()
+        check(device.wait(Until.hasObject(By.text("New Shortcut")), 10_000)) { "Shortcut editor closed before save" }
+        device.findObject(By.desc("Save"))?.click() ?: error("Save button missing")
+        check(device.wait(Until.gone(By.text("MODIFIERS")), 10_000)) { "Save did not leave editor" }
+        val saved = context.getSharedPreferences("terminal", 0).getString("toolbar.shortcuts", "").orEmpty()
+        check(saved.contains("submit\techo hi")) { "Hint label did not persist for shortcut" }
+    }
+
     private fun typeShortcutCommand(device: UiDevice, text: String) {
         text.forEach { char ->
             when (char) {

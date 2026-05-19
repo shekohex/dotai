@@ -349,6 +349,10 @@ function waitForContinuationRetry(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 75));
 }
 
+function waitForCompactionResume(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 175));
+}
+
 describe("goal extension", () => {
   test("bundled definitions include goal extension", () => {
     expect(groupedExtensionsC.some((definition) => definition.id === "goal")).toBe(true);
@@ -713,14 +717,13 @@ describe("goal extension", () => {
     expect(harness.sentMessages).toHaveLength(0);
   });
 
-  test("does not continue during compaction but resumes after compaction when usage is unknown", async () => {
+  test("does not continue during compaction but resumes from session compact when usage is unknown", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
     await harness.runCommand("ship it");
     harness.sentMessages.length = 0;
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
     await harness.emit("session_before_compact", { type: "session_before_compact" });
-    await harness.emit("compaction_start", { type: "compaction_start", reason: "overflow" });
     await harness.emit("agent_end", {
       type: "agent_end",
       messages: [assistantMessage("stop", { input: 30, output: 12 })],
@@ -734,12 +737,7 @@ describe("goal extension", () => {
       compactionEntry: {},
       fromExtension: false,
     });
-    await harness.emit("compaction_end", {
-      type: "compaction_end",
-      reason: "overflow",
-      aborted: false,
-      willRetry: false,
-    });
+    await waitForCompactionResume();
 
     expect(harness.sentMessages).toHaveLength(1);
     expect(harness.sentMessages[0]?.message.details).toEqual({

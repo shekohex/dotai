@@ -46,6 +46,7 @@ interface GoalStatusContext {
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
 const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
 const GOAL_TOOL_NAME = "goal";
+const COMPACTION_RESUME_DELAY_MS = 150;
 
 function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
   const parts = [lastAssistantMessageText(ctx) ?? "Goal complete"];
@@ -63,9 +64,11 @@ class GoalRuntime {
   private toolRegistered = false;
   private toolEnabled = false;
   private isCompacting = false;
+  private continuationPendingAfterCompaction = false;
   private continuationQueuedFor: string | null = null;
   private continuationScheduledFor: string | null = null;
   private continuationTimer: ReturnType<typeof setTimeout> | null = null;
+  private compactionResumeTimer: ReturnType<typeof setTimeout> | null = null;
   private statusContext: GoalStatusContext | null = null;
   private statusRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private readonly accounting: GoalAccountingState = {
@@ -169,8 +172,17 @@ class GoalRuntime {
     this.continuationScheduledFor = null;
   }
 
+  private clearCompactionResumeTimer(): void {
+    if (this.compactionResumeTimer !== null) {
+      clearTimeout(this.compactionResumeTimer);
+      this.compactionResumeTimer = null;
+    }
+  }
+
   private clearContinuationState(): void {
     this.clearContinuationTimer();
+    this.clearCompactionResumeTimer();
+    this.continuationPendingAfterCompaction = false;
     this.continuationQueuedFor = null;
   }
 
@@ -337,6 +349,7 @@ class GoalRuntime {
   }
 
   private sendContinuation(goal: ThreadGoal): void {
+    this.continuationPendingAfterCompaction = false;
     this.continuationQueuedFor = goal.goalId;
     this.pi.sendMessage(
       {
@@ -359,8 +372,11 @@ class GoalRuntime {
     }
 
     if (this.isCompacting || this.isContextNearLimit(ctx)) {
+      this.continuationPendingAfterCompaction = true;
       return;
     }
+
+    this.continuationPendingAfterCompaction = false;
 
     const goalId = this.goal.goalId;
     if (!ctx.isIdle() || ctx.hasPendingMessages()) {
@@ -384,6 +400,20 @@ class GoalRuntime {
     }
 
     this.sendContinuation(this.goal);
+  }
+
+  private scheduleContinuationAfterCompaction(ctx: ExtensionContext): void {
+    if (!this.continuationPendingAfterCompaction || this.compactionResumeTimer !== null) {
+      return;
+    }
+
+    this.compactionResumeTimer = setTimeout(() => {
+      this.compactionResumeTimer = null;
+      // Pi exposes successful compaction completion to extensions via session_compact, not compaction_end.
+      // Delay one beat so Pi can finish emitting session-level compaction_end and kick any internal retry first.
+      this.maybeContinue(ctx);
+    }, COMPACTION_RESUME_DELAY_MS);
+    this.compactionResumeTimer.unref?.();
   }
 
   private isContextNearLimit(ctx: ExtensionContext): boolean {
@@ -503,6 +533,7 @@ class GoalRuntime {
       this.persistGoal(this.goal, "runtime");
     }
     this.refreshUi(ctx);
+    this.scheduleContinuationAfterCompaction(ctx);
   }
 
   private handleCompactionEnd(
@@ -511,19 +542,18 @@ class GoalRuntime {
   ): void {
     this.isCompacting = false;
     if (event.aborted === true || event.willRetry === true || event.errorMessage !== undefined) {
+      this.clearCompactionResumeTimer();
       return;
     }
 
     this.clearContinuationTimer();
-    // session_compact fires before compaction_end while Pi can still be rebuilding UI/queues.
-    // Resume goal work only after successful compaction_end, and clear stale retry state first.
-    this.maybeContinue(ctx);
+    this.scheduleContinuationAfterCompaction(ctx);
   }
 
   private handleSessionShutdown(_event: object, ctx: ExtensionContext): void {
     this.isCompacting = false;
     this.accountProgress(ctx, 0);
-    this.clearContinuationTimer();
+    this.clearContinuationState();
     this.stopStatusRefresh();
   }
 

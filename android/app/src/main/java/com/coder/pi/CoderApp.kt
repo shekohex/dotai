@@ -2003,7 +2003,7 @@ private fun ShortcutsOverviewPreview(tokens: UiTokens, shortcuts: List<TerminalS
                 ShortcutPreviewIcon(R.drawable.ic_feather_message_circle, tokens)
                 ShortcutPreviewIcon(R.drawable.ic_feather_keyboard, tokens)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().semantics { contentDescription = if (hideTitles) "Shortcut preview tabs icon only" else "Shortcut preview tabs with titles" }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 shortcutOverviewTabs(shortcuts).take(4).forEach { tab -> ShortcutPreviewTab(tab, hideTitles, tokens) }
             }
         }

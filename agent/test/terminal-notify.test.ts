@@ -44,6 +44,10 @@ afterEach(() => {
   }
 });
 
+test("formatNotification returns ready title when no assistant text exists", () => {
+  expect(formatNotification(null)).toEqual({ title: "Ready for input", body: "" });
+});
+
 test("formatNotification strips markdown and truncates body", () => {
   const formatted = formatNotification(
     "# Hi\n\n**bold** and [link](https://example.com)\n\n```ts\nconst x = 1\n```\n" +
@@ -102,7 +106,7 @@ test("notify writes passthrough sequence to tmux pane tty", () => {
   const writeFileSyncSpy = vi
     .spyOn(terminalNotifyRuntime, "writeFileSync")
     .mockImplementation(() => undefined);
-  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
 
   notify("π", "done");
 
@@ -123,7 +127,7 @@ test("notify prefers direct client tty writes inside tmux over SSH", () => {
   const writeFileSyncSpy = vi
     .spyOn(terminalNotifyRuntime, "writeFileSync")
     .mockImplementation(() => undefined);
-  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
 
   notify("π", "done");
 
@@ -146,7 +150,7 @@ test("notify falls back to client tty passthrough after direct client tty failur
       throw new Error("client tty direct failed");
     })
     .mockImplementation(() => undefined);
-  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
 
   notify("π", "done");
 
@@ -171,9 +175,18 @@ test("notify falls back to stdout when tmux write fails", () => {
   vi.spyOn(terminalNotifyRuntime, "writeFileSync").mockImplementation(() => {
     throw new Error("no tty");
   });
-  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
 
   notify("π", "done");
 
   expect(stdoutSpy).toHaveBeenCalledWith("\u001b]777;notify;π;done\u0007");
+});
+
+test("notify writes ready for input OSC sequence through runtime stdout", () => {
+  delete process.env.TMUX;
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+
+  notify("Ready for input", "");
+
+  expect(stdoutSpy).toHaveBeenCalledWith("\u001b]777;notify;Ready for input;\u0007");
 });

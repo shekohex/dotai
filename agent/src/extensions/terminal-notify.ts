@@ -21,6 +21,7 @@ const OSC_CONTROL_CHARACTERS = /\p{Cc}/gu;
 
 export const terminalNotifyRuntime = {
   execFileSync,
+  stdoutWrite: (sequence: string) => process.stdout.write(sequence),
   writeFileSync,
 };
 
@@ -91,7 +92,7 @@ export const notify = (title: string, body: string): void => {
     }
   }
 
-  process.stdout.write(sequence);
+  terminalNotifyRuntime.stdoutWrite(sequence);
 };
 
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>

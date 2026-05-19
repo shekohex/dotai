@@ -830,7 +830,7 @@ private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalVi
             item { CoderHeaderActions("Workspaces", tokens, metrics, onOpenSettings) }
             if (lastRefreshedAt > 0L || refreshInFlight) item { Text(if (refreshInFlight) "Refreshing..." else "Updated ${relativeSessionTime(lastRefreshedAt)}", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 4.dp)) }
             if (refreshInFlight) item { CoderShimmerBox(tokens, Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 6.dp).height(3.dp).clip(RoundedCornerShape(3.dp))) }
-            item { ActiveCoderSessionSection(activeTerminals, sessionStore, tokens, metrics, onResumeTerminal, onCloseTerminal) }
+            item { ActiveCoderSessionSection(activeTerminals, tokens, metrics, onResumeTerminal, onCloseTerminal) }
             if (error != null) item { Text(error ?: "", color = tokens.accent, modifier = Modifier.padding(horizontal = spacingLarge())) }
             if (loadingWorkspaces && workspaces.isEmpty()) item { WorkspaceLoadingSection(tokens, metrics) }
             WorkspaceSection("RUNNING WORKSPACES", running, session, sessionStore, api, tokens, metrics, workspaceIconRevision, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace -> openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, { tmuxLoading = null; tmuxPicker = it }) }, { refresh() })
@@ -868,7 +868,7 @@ private fun WorkspaceLoadingSection(tokens: UiTokens, metrics: CoderUiMetrics) {
 }
 
 @Composable
-private fun ActiveCoderSessionSection(activeTerminals: List<ManagedTerminalSession>, sessionStore: CoderSessionStore, tokens: UiTokens, metrics: CoderUiMetrics, onResumeTerminal: (ManagedTerminalSession) -> Unit, onCloseTerminal: (ManagedTerminalSession) -> Unit) {
+private fun ActiveCoderSessionSection(activeTerminals: List<ManagedTerminalSession>, tokens: UiTokens, metrics: CoderUiMetrics, onResumeTerminal: (ManagedTerminalSession) -> Unit, onCloseTerminal: (ManagedTerminalSession) -> Unit) {
     val context = LocalContext.current
     val holdToClose = remember(context) { context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("gesture.hold_to_close", true) }
     Column {

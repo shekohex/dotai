@@ -10,6 +10,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -87,7 +90,7 @@ class TerminalActivity : AppCompatActivity() {
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
-                TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).imePadding(), showMetadataOverlay = false)
+                TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout).background(renderedTheme.background.toComposeColor()).imePadding(), showMetadataOverlay = false)
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
                     if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"), detached = true))

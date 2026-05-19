@@ -60,6 +60,20 @@ class KeyboardSettingsInstrumentedTest {
         check(triggeredShortcut == "show_shortcuts") { "Cmd+K did not trigger show_shortcuts action" }
     }
 
+    @Test
+    fun terminalControlKeyDoesNotTriggerApplicationAction() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+        var triggeredShortcut: String? = null
+        terminalView.onApplicationShortcut = { shortcutId -> triggeredShortcut = shortcutId; true }
+
+        val handled = terminalView.onKeyDown(KeyEvent.KEYCODE_K, KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_K, 0, KeyEvent.META_CTRL_ON))
+
+        check(handled) { "Terminal control key was not handled" }
+        check(triggeredShortcut == null) { "Ctrl+K incorrectly triggered application shortcut" }
+    }
+
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {
         val directory = File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")

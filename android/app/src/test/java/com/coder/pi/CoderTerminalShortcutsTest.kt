@@ -76,6 +76,7 @@ class CoderTerminalShortcutsTest {
         assertEquals("paste", applicationShortcutIdForKey(KeyEvent.KEYCODE_V, KeyEvent.META_META_ON))
         assertEquals(null, applicationShortcutIdForKey(KeyEvent.KEYCODE_K, 0))
         assertEquals(null, applicationShortcutIdForKey(KeyEvent.KEYCODE_K, KeyEvent.META_CTRL_ON))
+        assertEquals(null, applicationShortcutIdForKey(KeyEvent.KEYCODE_V, KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON))
     }
 
     @Test
@@ -179,6 +180,7 @@ class CoderTerminalShortcutsTest {
     @Test
     fun modifiedKeyBytesApplyCtrlShiftAndAlt() {
         assertArrayEquals(byteArrayOf(3), terminalModifiedKeyBytes(KeyEvent.KEYCODE_C, 'c'.code, KeyEvent.META_CTRL_ON))
+        assertArrayEquals(byteArrayOf(11), terminalModifiedKeyBytes(KeyEvent.KEYCODE_K, 'k'.code, KeyEvent.META_CTRL_ON))
         assertArrayEquals(byteArrayOf(27, 3), terminalModifiedKeyBytes(KeyEvent.KEYCODE_C, 'c'.code, KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON))
         assertArrayEquals("A".toByteArray(), terminalModifiedKeyBytes(KeyEvent.KEYCODE_A, 'a'.code, KeyEvent.META_SHIFT_ON))
         assertArrayEquals(byteArrayOf(27, 9), terminalModifiedKeyBytes(KeyEvent.KEYCODE_TAB, 0, KeyEvent.META_ALT_ON))

@@ -62,6 +62,15 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun applicationShortcutsListGlobalNavigationChords() {
+        assertEquals(
+            listOf("Show Shortcuts", "Switch Session", "Open Switcher", "New Connection", "Close Session", "Paste"),
+            applicationShortcutDefinitions.map { it.title },
+        )
+        assertEquals(listOf("Cmd+K", "Cmd+J", "Cmd+O", "Cmd+N", "Cmd+W", "Cmd+V"), applicationShortcutDefinitions.map { it.chord })
+    }
+
+    @Test
     fun shortcutTabOrderNormalizesAndMovesKnownTabs() {
         assertEquals(listOf("tmux", "favorites", "ctrl", "pi"), normalizeShortcutTabOrder("tmux,favorites,unknown"))
         assertEquals(listOf("favorites", "ctrl", "tmux", "pi"), moveShortcutTab(defaultShortcutTabOrder, "tmux", 1))

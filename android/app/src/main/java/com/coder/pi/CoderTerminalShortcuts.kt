@@ -8,6 +8,8 @@ data class ShortcutRowDefinition(val sequence: String, val hint: String)
 
 data class ShortcutTabDefinition(val id: String, val title: String, val subtitle: String, val active: Boolean)
 
+data class ApplicationShortcutDefinition(val title: String, val chord: String, val description: String)
+
 val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "copy", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
 data class ToolbarSlotDefinition(val id: String, val label: String, val removable: Boolean = true)
@@ -24,6 +26,15 @@ val toolbarSlotDefinitions = listOf(
     ToolbarSlotDefinition("undo", "Undo"),
     ToolbarSlotDefinition("chat", "Chat"),
     ToolbarSlotDefinition("keyboard", "Keyboard", false),
+)
+
+val applicationShortcutDefinitions = listOf(
+    ApplicationShortcutDefinition("Show Shortcuts", "Cmd+K", "Open or close the shortcuts panel."),
+    ApplicationShortcutDefinition("Switch Session", "Cmd+J", "Move focus to the next active terminal session."),
+    ApplicationShortcutDefinition("Open Switcher", "Cmd+O", "Open the session switcher."),
+    ApplicationShortcutDefinition("New Connection", "Cmd+N", "Start a new workspace connection."),
+    ApplicationShortcutDefinition("Close Session", "Cmd+W", "Close the current terminal session."),
+    ApplicationShortcutDefinition("Paste", "Cmd+V", "Paste clipboard text or image into the terminal."),
 )
 
 fun toolbarSlotLabel(id: String): String = toolbarSlotDefinitions.firstOrNull { it.id == id }?.label ?: id

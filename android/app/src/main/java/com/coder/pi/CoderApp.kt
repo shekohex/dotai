@@ -2347,6 +2347,9 @@ private fun KeyboardSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
             SettingsValueRow(R.drawable.ic_feather_keyboard, "Paste Shortcut", "Cmd+V or Ctrl+Shift+V", null, tokens) {}
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Keys", "Esc, Tab, Enter, arrows, Home, End, PgUp, PgDn", null, tokens) {}
         }
+        SettingsSection("APPLICATION SHORTCUTS", tokens) {
+            applicationShortcutDefinitions.forEach { shortcut -> SettingsValueRow(R.drawable.ic_feather_command, shortcut.title, shortcut.description, shortcut.chord, tokens) {} }
+        }
         SettingsSection("DEVICE KEYS", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_type, "Volume Font Size", volumeFontSize, tokens) { volumeFontSize = it; terminalView.setVolumeFontSizeEnabled(it) }
             SettingsValueRow(R.drawable.ic_feather_type, "Volume Up", "Increase terminal font size", null, tokens) {}

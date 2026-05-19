@@ -368,20 +368,16 @@ class ShortcutTabSettingsInstrumentedTest {
         val piRow = device.findObjects(By.text("Pi")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Pi tab missing")
         piRow.click()
 
-        check(device.wait(Until.hasObject(By.text("/gsd:new-project")), 10_000)) { "GSD new project shortcut missing" }
-        check(device.hasObject(By.text("/gsd:execute-phase"))) { "GSD execute shortcut missing" }
-        device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 560, 12)
-        instrumentation.waitForIdleSync()
-        check(device.wait(Until.hasObject(By.text("/gsd:progress")), 10_000)) { "GSD progress shortcut missing" }
-        check(device.hasObject(By.text("/plannotator-review"))) { "Plannotator review shortcut missing" }
-        repeat(3) {
-            if (!device.hasObject(By.text("/plannotator-last"))) {
-                device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 560, 12)
+        check(device.wait(Until.hasObject(By.text("/model")), 10_000)) { "Model shortcut missing" }
+        check(device.hasObject(By.text("/mode"))) { "Mode shortcut missing" }
+        repeat(5) {
+            if (!device.hasObject(By.text("/plannotator review"))) {
+                device.swipe(device.displayWidth / 2, device.displayHeight - 220, device.displayWidth / 2, 460, 16)
                 instrumentation.waitForIdleSync()
             }
         }
-        check(device.wait(Until.hasObject(By.text("/plannotator-archive")), 10_000)) { "Plannotator archive shortcut missing" }
-        check(device.hasObject(By.text("/plannotator-last"))) { "Plannotator last shortcut missing" }
+        check(device.hasObject(By.text("/copy"))) { "Copy shortcut missing" }
+        check(device.wait(Until.hasObject(By.text("/plannotator review")), 10_000)) { "Plannotator review shortcut missing after scroll" }
         captureDeviceScreenshot(device, "shortcuts-pi-commands.png")
     }
 

@@ -3,6 +3,7 @@ package com.coder.pi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import android.view.KeyEvent
+import java.io.File
 import org.junit.Test
 
 class CoderTerminalShortcutsTest {
@@ -137,27 +138,37 @@ class CoderTerminalShortcutsTest {
     fun piShortcutRowsIncludeBundledAgentCommands() {
         val rows = defaultShortcutRowsForReset("Pi")
 
-        assertEquals(15, rows.size)
+        assertEquals(10, rows.size)
         assertEquals(
             listOf(
-                "/gsd:new-project",
-                "/gsd:new-milestone",
-                "/gsd:plan-phase",
-                "/gsd:execute-phase",
-                "/gsd:validate-phase",
-                "/gsd:secure-phase",
-                "/gsd:verify-work",
-                "/gsd:complete-milestone",
-                "/gsd:milestone-summary",
-                "/gsd:progress",
-                "/gsd:debug",
-                "/plannotator-review",
-                "/plannotator-annotate",
-                "/plannotator-archive",
-                "/plannotator-last",
+                "/model",
+                "/mode",
+                "/mode ask",
+                "/mode build",
+                "/mode review",
+                "/copy",
+                "/resume",
+                "/new",
+                "/compact",
+                "/plannotator review",
             ),
             rows.map { it.sequence },
         )
+    }
+
+    @Test
+    fun piShortcutRowsStayAlignedWithLocalAgentCommandInventory() {
+        val agentRoot = sequenceOf("../agent", "../../agent", "../../../agent").map { File(it).canonicalFile }.first { it.exists() }
+        val gsdHandlers = agentRoot.resolve("src/extensions/gsd/handlers.ts").readText()
+        val plannotatorCommands = agentRoot.resolve("src/extensions/plannotator/index.ts").readText()
+        val rows = defaultShortcutRowsForReset("Pi").map { it.sequence }
+
+        rows.filter { it.startsWith("/gsd:") }.map { it.removePrefix("/gsd:") }.forEach { command ->
+            check(gsdHandlers.contains("$command:") || gsdHandlers.contains("\"$command\":")) { "Missing local GSD command inventory entry: $command" }
+        }
+        rows.filter { it.startsWith("/plannotator-") }.map { it.removePrefix("/plannotator-") }.forEach { command ->
+            check(plannotatorCommands.contains("value: \"$command\"")) { "Missing local Plannotator command inventory entry: $command" }
+        }
     }
 
     @Test

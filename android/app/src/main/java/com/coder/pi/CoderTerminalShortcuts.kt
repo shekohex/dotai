@@ -85,7 +85,7 @@ fun defaultShortcutTabs(favoritesCount: Int, isActive: (String) -> Boolean): Lis
     ShortcutTabDefinition("favorites", "Favorites", "$favoritesCount shortcuts", isActive("favorites")),
     ShortcutTabDefinition("tmux", "Tmux", "8 shortcuts", isActive("tmux")),
     ShortcutTabDefinition("ctrl", "Ctrl", "8 shortcuts", isActive("ctrl")),
-    ShortcutTabDefinition("pi", "Pi", "15 shortcuts", isActive("pi")),
+    ShortcutTabDefinition("pi", "Pi", "10 shortcuts", isActive("pi")),
 )
 
 fun shortcutTabPreferenceKey(tabId: String): String = "shortcuts.tab.$tabId.active"
@@ -157,21 +157,16 @@ fun defaultShortcutRowsForReset(tab: String): List<ShortcutRowDefinition> = when
     "Tmux" -> tmuxShortcutRows(0, true)
     "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line").map { ShortcutRowDefinition(it.first, it.second) }
     "Pi" -> listOf(
-        "/gsd:new-project" to "new project",
-        "/gsd:new-milestone" to "new milestone",
-        "/gsd:plan-phase" to "plan phase",
-        "/gsd:execute-phase" to "execute phase",
-        "/gsd:validate-phase" to "validate phase",
-        "/gsd:secure-phase" to "secure phase",
-        "/gsd:verify-work" to "verify work",
-        "/gsd:complete-milestone" to "complete milestone",
-        "/gsd:milestone-summary" to "milestone summary",
-        "/gsd:progress" to "progress",
-        "/gsd:debug" to "debug",
-        "/plannotator-review" to "review",
-        "/plannotator-annotate" to "annotate",
-        "/plannotator-archive" to "archive",
-        "/plannotator-last" to "last",
+        "/model" to "pick model",
+        "/mode" to "select mode",
+        "/mode ask" to "ask mode",
+        "/mode build" to "build mode",
+        "/mode review" to "review mode",
+        "/copy" to "copy last message",
+        "/resume" to "resume a session",
+        "/new" to "new session",
+        "/compact" to "compact the session",
+        "/plannotator review" to "live review",
     ).map { ShortcutRowDefinition(it.first, it.second) }
     else -> emptyList()
 }

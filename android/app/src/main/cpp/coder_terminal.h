@@ -43,12 +43,14 @@ public:
     void writeUtf8(const char* data, int length);
     void feed(const uint8_t* data, size_t length);
     void key(int keyCode, int unicodeChar, int metaState);
-    void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength);
+    void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
     std::vector<uint8_t> scrollInput(int rowDelta, float x, float y);
     bool mouseTracking() const;
     std::vector<uint8_t> mouse(int action, float x, float y, int button, int metaState);
     bool screenPositionFromViewport(int row, int col, int& screenRow, int& screenCol);
+    void setSelection(bool active, int startRow, int startCol, int endRow, int endCol);
+    std::string copySelection();
     std::string title();
     std::string pwd();
     uint64_t bellCount();
@@ -105,6 +107,14 @@ private:
     MouseEventHandle mouseEvent_;
     bool mouseButtonPressed_ = false;
 
+    struct SelectionState {
+        bool active = false;
+        int startRow = 0;
+        int startCol = 0;
+        int endRow = 0;
+        int endCol = 0;
+    } selection_;
+
     std::mutex mutex_;
     int ptyFd_ = -1;
     int childPid_ = -1;
@@ -122,6 +132,7 @@ private:
     std::vector<std::string> oscEvents_;
     uint64_t bellCount_ = 0;
     GhosttyColorScheme colorScheme_ = GHOSTTY_COLOR_SCHEME_DARK;
+    uint32_t selectionBackground_ = 0x3a3a4a;
     bool oscMetadataEsc_ = false;
     bool oscMetadataActive_ = false;
     bool oscMetadataStEsc_ = false;

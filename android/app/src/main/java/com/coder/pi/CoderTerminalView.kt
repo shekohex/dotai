@@ -19,6 +19,7 @@ import android.os.VibratorManager
 import android.opengl.GLSurfaceView
 import android.util.AttributeSet
 import android.util.Base64
+import android.util.TypedValue
 import android.text.InputType
 import android.widget.Toast
 import android.view.MotionEvent
@@ -42,6 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount: Long)
 data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "", val terminalId: String = "")
+data class TerminalGestureAction(val id: String, val label: String, val description: String)
 
 private const val TerminalOscNotificationChannelId = TerminalNotificationFormat.defaultOscChannelId
 private const val TerminalOscProgressNotificationChannelId = TerminalNotificationFormat.defaultProgressChannelId
@@ -54,7 +56,8 @@ const val TerminalNotificationIdKey = "notification_id"
 
 class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, attachedEngine: TerminalEngine? = null) : GLSurfaceView(context, attrs), GLSurfaceView.Renderer, CoderTerminalEndpoint {
     private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
-    private var cellHeight = selectedTerminalFontSizePixels(context)
+    private var fontSizeSp = selectedTerminalFontSizeSp(context)
+    private var cellHeight = terminalCellHeightForFontSize(context, fontSizeSp)
     private var cellWidth = terminalCellWidthForFontSize(cellHeight)
     internal val terminalEngine = attachedEngine ?: TerminalEngine(80, 24, cellWidth, cellHeight)
     private val engine = terminalEngine
@@ -72,6 +75,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var mouseTouchStartX = 0f
     private var mouseTouchStartY = 0f
     private var mouseTouchMoved = false
+    private var touchStartX = 0f
+    private var touchStartY = 0f
+    private var touchMoved = false
+    private var scrollDownGestureTriggered = false
+    private var lastTapUpMillis = 0L
+    private var tapCount = 0
+    private var pendingTapAction: Runnable? = null
+    private var copyMode = false
+    private var copySelectionStart: TerminalCellPosition? = null
+    private var copySelectionEnd: TerminalCellPosition? = null
     private var accumulatedScrollY = 0f
     private var smoothScrollAnimator: ValueAnimator? = null
     private var smoothScrollPendingPixels = 0f
@@ -192,7 +205,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         requestFocus()
-        if (!gestureEnabled("drag_scroll")) return super.onTouchEvent(event)
         if (event.pointerCount >= 2 && gestureEnabled("pinch_font_size")) {
             val distance = pointerDistance(event)
             when (event.actionMasked) {
@@ -223,8 +235,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = event.x
                 lastTouchY = event.y
+                touchStartX = event.x
+                touchStartY = event.y
+                touchMoved = false
+                scrollDownGestureTriggered = false
                 accumulatedScrollY = 0f
                 beginSmoothScrollGesture()
+                if (copyMode) {
+                    val start = screenPositionAt(event.x, event.y) ?: return true
+                    copySelectionStart = start
+                    copySelectionEnd = start
+                    updateNativeSelection()
+                    return true
+                }
                 if (terminalMouseTrackingActive()) {
                     mouseTrackingTouch = true
                     mouseTouchStartX = event.x
@@ -236,6 +259,20 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
             MotionEvent.ACTION_MOVE -> {
                 val deltaY = event.y - lastTouchY
+                val totalDeltaX = event.x - touchStartX
+                val totalDeltaY = event.y - touchStartY
+                if (totalDeltaX * totalDeltaX + totalDeltaY * totalDeltaY > touchSlop * touchSlop) touchMoved = true
+                if (!scrollDownGestureTriggered && totalDeltaY > touchSlop * 5 && kotlin.math.abs(totalDeltaY) > kotlin.math.abs(totalDeltaX) * 1.4f) {
+                    scrollDownGestureTriggered = true
+                    performGestureAction(selectedGestureAction("scroll_down", "dismiss_keyboard"))
+                }
+                if (copyMode) {
+                    val edgeRows = copyModeEdgeScrollRows(event.y)
+                    if (edgeRows != 0) scrollViewportRows(edgeRows)
+                    copySelectionEnd = screenPositionAt(event.x, event.y) ?: copySelectionEnd
+                    updateNativeSelection()
+                    return true
+                }
                 if (mouseTrackingTouch) {
                     val distanceX = event.x - mouseTouchStartX
                     val distanceY = event.y - mouseTouchStartY
@@ -254,6 +291,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                     }
                     return true
                 }
+                if (!gestureEnabled("drag_scroll")) return true
                 lastTouchX = event.x
                 lastTouchY = event.y
                 if (smoothScrollEnabled()) {
@@ -271,8 +309,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 pinchDistance = 0f
                 pinchAccumulatedZoom = 1f
+                if (copyMode) {
+                    if (event.actionMasked == MotionEvent.ACTION_UP) copySelectionEnd = screenPositionAt(event.x, event.y) ?: copySelectionEnd
+                    updateNativeSelection()
+                    endSmoothScrollGesture()
+                    return true
+                }
                 if (mouseTrackingTouch) {
-                    if (mouseTouchMoved) endSmoothScrollGesture() else {
+                    if (mouseTouchMoved) endSmoothScrollGesture() else if (event.actionMasked == MotionEvent.ACTION_UP && openHyperlinkAt(event.x, event.y)) {
+                        endSmoothScrollGesture()
+                    } else {
                         sendMouseEvent(0, mouseTouchStartX, mouseTouchStartY, 1, event.metaState)
                         sendMouseEvent(1, event.x, event.y, 1, event.metaState)
                     }
@@ -280,7 +326,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
                     mouseTouchMoved = false
                     return true
                 }
-                if (event.actionMasked == MotionEvent.ACTION_UP && openHyperlinkAt(event.x, event.y)) return true
+                if (event.actionMasked == MotionEvent.ACTION_UP && !touchMoved && openHyperlinkAt(event.x, event.y)) return true
+                if (event.actionMasked == MotionEvent.ACTION_UP && !touchMoved) handleTerminalTap()
+                if (event.actionMasked == MotionEvent.ACTION_UP && touchMoved) handleTerminalSwipe(event.x - touchStartX, event.y - touchStartY)
                 endSmoothScrollGesture()
                 return true
             }
@@ -293,6 +341,89 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val deltaX = event.getX(0) - event.getX(1)
         val deltaY = event.getY(0) - event.getY(1)
         return sqrt(deltaX * deltaX + deltaY * deltaY)
+    }
+
+    fun handleTerminalTap() {
+        val now = System.currentTimeMillis()
+        if (now - lastTapUpMillis > ViewConfiguration.getDoubleTapTimeout()) tapCount = 0
+        lastTapUpMillis = now
+        tapCount++
+        pendingTapAction?.let { removeCallbacks(it) }
+        pendingTapAction = null
+        when (tapCount) {
+            1 -> {
+                val action = Runnable {
+                    performGestureAction(selectedGestureAction("single_tap", "no_action"))
+                    tapCount = 0
+                    pendingTapAction = null
+                }
+                pendingTapAction = action
+                postDelayed(action, ViewConfiguration.getDoubleTapTimeout().toLong())
+            }
+            2 -> {
+                performGestureAction(selectedGestureAction("double_tap", "paste"))
+                pendingTapAction = null
+            }
+            else -> {
+                performGestureAction(selectedGestureAction("triple_tap", "no_action"))
+                tapCount = 0
+                pendingTapAction = null
+            }
+        }
+    }
+
+    fun handleTerminalSwipe(deltaX: Float, deltaY: Float) {
+        if (kotlin.math.abs(deltaX) < touchSlop * 6 || kotlin.math.abs(deltaX) < kotlin.math.abs(deltaY) * 1.35f) return
+        when (selectedGestureAction("swipe", "switch_tmux_window")) {
+            "switch_tmux_window" -> sendText(if (deltaX < 0f) "\u0002n" else "\u0002p")
+            else -> performGestureAction(selectedGestureAction("swipe", "switch_tmux_window"))
+        }
+    }
+
+    fun copyModeActive(): Boolean = copyMode
+
+    fun setCopyModeActive(active: Boolean) {
+        copyMode = active
+        if (!active) clearCopySelection()
+        context.getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(windowToken, 0)
+        clearFocus()
+    }
+
+    fun toggleCopyMode(): Boolean {
+        setCopyModeActive(!copyMode)
+        return copyMode
+    }
+
+    fun clearCopySelection() {
+        copySelectionStart = null
+        copySelectionEnd = null
+        if (handle != 0L) native.nativeSetSelection(handle, false, 0, 0, 0, 0)
+        requestRender()
+    }
+
+    fun copySelectionToClipboard(): Boolean {
+        if (handle == 0L || copySelectionStart == null || copySelectionEnd == null) return false
+        val selectedText = native.nativeCopySelection(handle).trimEnd()
+        if (selectedText.isBlank()) return false
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
+        setCopyModeActive(false)
+        return true
+    }
+
+    private fun screenPositionAt(x: Float, y: Float): TerminalCellPosition? {
+        if (handle == 0L) return null
+        val position = cellAt(x, y)
+        val result = native.nativeScreenPositionFromViewport(handle, position.row, position.col)
+        if (result.size < 2 || result[0] < 0 || result[1] < 0) return null
+        return TerminalCellPosition(result[0], result[1])
+    }
+
+    private fun updateNativeSelection() {
+        val start = copySelectionStart ?: return
+        val end = copySelectionEnd ?: start
+        if (handle != 0L) native.nativeSetSelection(handle, true, start.row, start.col, end.row, end.col)
+        requestRender()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -397,19 +528,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (smooth && smoothScrollEnabled()) scrollPixels(-rowDelta * cellHeight.toFloat()) else scrollTerminal(rowDelta, lastTouchX, lastTouchY)
     }
 
-    fun scrollViewportRows(rowDelta: Int) {
+    fun scrollRowHeight(): Int = cellHeight.coerceAtLeast(1)
+
+    private fun scrollViewportRows(rowDelta: Int) {
         if (handle == 0L || rowDelta == 0) return
         native.nativeScroll(handle, rowDelta.coerceIn(-12, 12))
     }
 
-    fun scrollRowHeight(): Int = cellHeight.coerceAtLeast(1)
-
-    fun selectionEdgeScrollRows(y: Float, height: Float): Int {
+    private fun copyModeEdgeScrollRows(y: Float): Int {
         val rowHeight = scrollRowHeight().toFloat()
         val edgeSize = (rowHeight * 1.5f).coerceAtLeast(48f)
         return when {
             y < edgeSize -> -((((edgeSize - y) / rowHeight).toInt() + 1).coerceIn(1, 6))
-            y > height - edgeSize -> ((((y - (height - edgeSize)) / rowHeight).toInt() + 1).coerceIn(1, 6))
+            surfaceHeight > 0 && y > surfaceHeight - edgeSize -> ((((y - (surfaceHeight - edgeSize)) / rowHeight).toInt() + 1).coerceIn(1, 6))
             else -> 0
         }
     }
@@ -495,10 +626,6 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return handle != 0L && remoteInput != null && native.nativeMouseTracking(handle)
     }
 
-    fun sendTerminalMouseEvent(action: Int, x: Float, y: Float, button: Int = 1, metaState: Int = 0): Boolean {
-        return sendMouseEvent(action, x, y, button, metaState)
-    }
-
     override fun terminalColumns(): Int = if (cellWidth > 0) surfaceWidth / cellWidth else 0
 
     override fun terminalRows(): Int = if (cellHeight > 0) surfaceHeight / cellHeight else 0
@@ -509,51 +636,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return TerminalCellPosition(row, col)
     }
 
-    fun selectedText(start: TerminalCellPosition, end: TerminalCellPosition): String {
-        if (handle == 0L) return ""
-        val lines = native.nativeSnapshotText(handle)
-        val range = TerminalSelectionRange(start, end).normalized()
-        return (range.start.row..range.end.row).joinToString("\n") { row ->
-            val line = lines.getOrNull(row).orEmpty()
-            val startCol = if (row == range.start.row) range.start.col else 0
-            val endCol = if (row == range.end.row) range.end.col + 1 else line.length
-            line.substring(startCol.coerceIn(0, line.length), endCol.coerceIn(0, line.length))
-        }.trimEnd()
-    }
-
-    fun screenPositionAt(position: TerminalCellPosition): TerminalCellPosition? {
-        if (handle == 0L) return null
-        val result = native.nativeScreenPositionFromViewport(handle, position.row, position.col)
-        if (result.size < 2 || result[0] < 0 || result[1] < 0) return null
-        return TerminalCellPosition(result[0], result[1])
-    }
-
     fun hyperlinkUriAt(position: TerminalCellPosition): String {
         if (handle == 0L) return ""
         return native.nativeHyperlinkUriAt(handle, position.row, position.col)
-    }
-
-    fun selectedScreenText(start: TerminalCellPosition, end: TerminalCellPosition): String {
-        if (handle == 0L) return ""
-        return native.nativeSelectedText(handle, start.row, start.col, end.row, end.col).trimEnd()
-    }
-
-    fun wordRangeAt(position: TerminalCellPosition): TerminalSelectionRange {
-        if (handle == 0L) return TerminalSelectionRange(position, position)
-        val line = native.nativeSnapshotText(handle).getOrNull(position.row).orEmpty()
-        if (line.isBlank()) return TerminalSelectionRange(position, position)
-        val col = position.col.coerceIn(0, (line.length - 1).coerceAtLeast(0))
-        val targetCol = when {
-            line.getOrNull(col)?.isTerminalWordChar() == true -> col
-            col > 0 && line.getOrNull(col - 1)?.isTerminalWordChar() == true -> col - 1
-            else -> col
-        }
-        if (line.getOrNull(targetCol)?.isTerminalWordChar() != true) return TerminalSelectionRange(position, position)
-        var start = targetCol
-        while (start > 0 && line[start - 1].isTerminalWordChar()) start--
-        var end = targetCol
-        while (end + 1 < line.length && line[end + 1].isTerminalWordChar()) end++
-        return TerminalSelectionRange(TerminalCellPosition(position.row, start), TerminalCellPosition(position.row, end))
     }
 
     fun snapshotText(): List<String> {
@@ -590,11 +675,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun adjustFontSize(delta: Int) {
-        val maxHeight = if (surfaceHeight > 0) (surfaceHeight / 8).coerceAtLeast(8) else 32
-        val nextHeight = (cellHeight + delta).coerceIn(8, maxHeight.coerceAtMost(32))
+        val nextSizeSp = (fontSizeSp + delta).coerceIn(8, 32)
+        val maxHeight = if (surfaceHeight > 0) (surfaceHeight / 8).coerceAtLeast(8) else Int.MAX_VALUE
+        val nextHeight = terminalCellHeightForFontSize(context, nextSizeSp).coerceAtMost(maxHeight)
+        fontSizeSp = nextSizeSp
         cellHeight = nextHeight
         cellWidth = terminalCellWidthForFontSize(nextHeight)
-        preferences.edit { putInt("fontSizePx", cellHeight).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
+        preferences.edit { putInt("fontSizeSp", fontSizeSp).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
             queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
@@ -602,15 +689,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun fontSizePoints(): Int {
-        return cellHeight.coerceIn(8, 32)
+        return fontSizeSp.coerceIn(8, 32)
     }
 
     fun setFontSizePoints(points: Int) {
-        val nextHeight = points.coerceIn(8, 32)
+        val nextSizeSp = points.coerceIn(8, 32)
+        val nextHeight = terminalCellHeightForFontSize(context, nextSizeSp)
         val nextWidth = terminalCellWidthForFontSize(nextHeight)
+        fontSizeSp = nextSizeSp
         cellHeight = nextHeight
         cellWidth = nextWidth
-        preferences.edit { putInt("fontSizePx", cellHeight).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
+        preferences.edit { putInt("fontSizeSp", fontSizeSp).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
             queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
             notifyTerminalSizeChanged()
@@ -658,7 +747,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun applyTheme(theme: CoderTheme) {
-        if (handle != 0L) native.nativeSetTerminalTheme(handle, theme.foreground, theme.background, theme.cursor, theme.palette)
+        if (handle != 0L) native.nativeSetTerminalTheme(handle, theme.foreground, theme.background, theme.cursor, theme.selectionBackground, theme.palette)
         if (rendererHandle != 0L) native.nativeRendererSetTheme(rendererHandle, theme.background, theme.cursor, theme.cursorText)
     }
 
@@ -739,6 +828,46 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun gestureEnabled(gesture: String): Boolean = preferences.getBoolean("gesture.$gesture", true)
 
+    fun selectedGestureAction(gesture: String, defaultAction: String): String = preferences.getString("gesture.action.$gesture", defaultAction).orEmpty().ifBlank { defaultAction }
+
+    fun setGestureAction(gesture: String, action: String) {
+        preferences.edit { putString("gesture.action.$gesture", action) }
+        when (gesture to action) {
+            "swipe" to "switch_tmux_window" -> setGestureEnabled("swipe_session_switch", true)
+            "swipe" to "no_action" -> setGestureEnabled("swipe_session_switch", false)
+            "pinch" to "adjust_font_size" -> setGestureEnabled("pinch_font_size", true)
+            "pinch" to "no_action" -> setGestureEnabled("pinch_font_size", false)
+            "scroll_down" to "dismiss_keyboard" -> setGestureEnabled("drag_scroll", true)
+        }
+    }
+
+    fun performGestureAction(action: String): Boolean {
+        return when (action) {
+            "paste" -> pasteFromClipboard()
+            "dismiss_keyboard" -> {
+                context.getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(windowToken, 0)
+                clearFocus()
+                true
+            }
+            "send_escape" -> { sendKey(KeyEvent.KEYCODE_ESCAPE); true }
+            "send_tab" -> { sendKey(KeyEvent.KEYCODE_TAB); true }
+            "send_enter" -> { sendKey(KeyEvent.KEYCODE_ENTER); true }
+            "backspace" -> { sendKey(KeyEvent.KEYCODE_DEL); true }
+            "ctrl_c" -> { sendKey(KeyEvent.KEYCODE_C, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON); true }
+            "tmux_pane_zoom" -> { sendText("\u0002z"); true }
+            "switch_tmux_window" -> { sendText("\u0002n"); true }
+            "lock_ctrl" -> { toggleCtrlLatch(); true }
+            "toggle_keyboard" -> false
+            "open_switcher" -> false
+            "minimize_session" -> false
+            "toggle_shortcuts_panel" -> false
+            "lock_shortcuts_panel" -> false
+            "open_speech_settings" -> false
+            "custom_shortcut", "session_switcher", "adjust_font_size", "hide", "no_action" -> false
+            else -> false
+        }
+    }
+
     fun setChatModeEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("chat_mode", enabled) }
         setToolbarActionVisible("chat", enabled)
@@ -746,11 +875,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun chatModeEnabled(): Boolean = preferences.getBoolean("chat_mode", true)
 
-    fun setCopyOnSelectEnabled(enabled: Boolean) {
-        preferences.edit { putBoolean("copy_on_select", enabled) }
+    fun setChatAutoSendEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("chat_auto_send", enabled) }
     }
 
-    fun copyOnSelectEnabled(): Boolean = preferences.getBoolean("copy_on_select", false)
+    fun chatAutoSendEnabled(): Boolean = preferences.getBoolean("chat_auto_send", true)
 
     fun setKeyboardPasteEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("keyboard_paste", enabled) }
@@ -1198,14 +1327,23 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private fun nextTerminalNotificationId(): Int = terminalNotificationIdCounter.updateAndGet { if (it == Int.MAX_VALUE) 1 else it + 1 }
 
     private fun openHyperlinkAt(x: Float, y: Float): Boolean {
-        val uri = hyperlinkUriAt(cellAt(x, y))
+        val position = cellAt(x, y)
+        val uri = hyperlinkUriAt(position).ifBlank { plainUrlAt(position) }
         terminalOscHyperlinkUri(uri) ?: return false
         onHyperlinkActivated?.invoke(uri)
         return true
     }
 
+    private fun plainUrlAt(position: TerminalCellPosition): String {
+        val line = snapshotText().getOrNull(position.row).orEmpty()
+        if (line.isBlank()) return ""
+        val match = PlainUrlRegex.findAll(line).firstOrNull { position.col in it.range } ?: return ""
+        return match.value.trimEnd('.', ',', ';', ':', ')', ']', '}', '>', '"', '\'')
+    }
+
     companion object {
         private val terminalNotificationIdCounter = AtomicInteger((System.currentTimeMillis() and 0x3fffffff).toInt())
+        private val PlainUrlRegex = Regex("https?://\\S+")
         private val terminalNotificationTargets = mutableMapOf<String, WeakReference<CoderTerminalView>>()
 
         private val terminalViews = mutableListOf<WeakReference<CoderTerminalView>>()
@@ -1256,13 +1394,15 @@ fun terminalAllowedLinkHosts(context: Context): Set<String> {
     return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getStringSet("osc.allowed_link_hosts", emptySet()).orEmpty()
 }
 
-fun selectedTerminalFontSizePixels(context: Context): Int {
+fun selectedTerminalFontSizeSp(context: Context): Int {
     val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
-    if (preferences.contains("fontSizePx")) return preferences.getInt("fontSizePx", 18).coerceIn(8, 32)
+    if (preferences.contains("fontSizeSp")) return preferences.getInt("fontSizeSp", 14).coerceIn(8, 32)
     return (preferences.getInt("cellHeight", 36) / 2).coerceIn(8, 32)
 }
 
-fun terminalCellWidthForFontSize(fontSizePixels: Int): Int = (fontSizePixels * 0.55f).roundToInt().coerceIn(5, 24)
+fun terminalCellHeightForFontSize(context: Context, fontSizeSp: Int): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSizeSp.coerceIn(8, 32).toFloat(), context.resources.displayMetrics).roundToInt().coerceAtLeast(8)
+
+fun terminalCellWidthForFontSize(fontSizePixels: Int): Int = (fontSizePixels * 0.55f).roundToInt().coerceIn(5, 80)
 
 fun terminalSetLinkHostAllowed(context: Context, host: String, allowed: Boolean) {
     val normalized = terminalNormalizeLinkHostPattern(host) ?: return
@@ -1281,14 +1421,4 @@ fun terminalOscHyperlinkAllowed(context: Context, value: String): Boolean {
     }
 }
 
-private fun Char.isTerminalWordChar(): Boolean = isLetterOrDigit() || this in setOf('_', '-', '.', '/', ':', '@')
-
 data class TerminalCellPosition(val row: Int, val col: Int)
-
-data class TerminalSelectionRange(val start: TerminalCellPosition, val end: TerminalCellPosition) {
-    fun normalized(): TerminalSelectionRange {
-        return if (start.row < end.row || (start.row == end.row && start.col <= end.col)) this else TerminalSelectionRange(end, start)
-    }
-}
-
-data class TerminalSelectionState(val viewport: TerminalSelectionRange, val screen: TerminalSelectionRange)

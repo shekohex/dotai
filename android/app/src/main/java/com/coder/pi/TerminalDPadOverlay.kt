@@ -56,11 +56,13 @@ fun TerminalDPadOverlay(expanded: Boolean, tokens: UiTokens, terminalView: Coder
 @Composable
 private fun TerminalDPad(tokens: UiTokens, terminalView: CoderTerminalView, modifier: Modifier, onOffsetChanged: (IntOffset) -> Unit, onDragFinished: () -> Unit) {
     val destructive = tokens.accent.copy(alpha = 0.42f)
+    val topLeftAction = terminalView.selectedGestureAction("dpad_top_left", "backspace")
+    val topRightAction = terminalView.selectedGestureAction("dpad_top_right", "ctrl_c")
     Column(modifier.width(212.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            AcceleratingDPadButton(R.drawable.ic_feather_delete, tokens.text, destructive) { terminalView.sendKey(KeyEvent.KEYCODE_DEL) }
+            if (topLeftAction != "hide") AcceleratingDPadButton(R.drawable.ic_feather_delete, tokens.text, destructive) { terminalView.performGestureAction(topLeftAction) }
             DPadIconButton(R.drawable.ic_feather_chevron_up, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_UP) }
-            DPadIconButton(R.drawable.ic_feather_trash_2, tokens.text, destructive) { terminalView.sendKey(KeyEvent.KEYCODE_W, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON) }
+            if (topRightAction != "hide") DPadIconButton(R.drawable.ic_feather_trash_2, tokens.text, destructive) { terminalView.performGestureAction(topRightAction) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             DPadIconButton(R.drawable.ic_feather_chevron_left, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_LEFT) }

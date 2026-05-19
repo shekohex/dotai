@@ -46,7 +46,6 @@ data class CoderTheme(
 
 object CoderThemes {
     val darkOptions = listOf(
-        CoderThemeOption("Moshi", CoderThemeMode.DARK, R.raw.flexoki_dark, listOf(0x100f0f, 0xcecdc3, 0xd14d41, 0x3aa99f, 0x4385be)),
         CoderThemeOption("Dracula", CoderThemeMode.DARK, R.raw.dracula, listOf(0x282a36, 0xf8f8f2, 0xff5555, 0x50fa7b, 0xbd93f9)),
         CoderThemeOption("Nord", CoderThemeMode.DARK, R.raw.nord, listOf(0x2e3440, 0xd8dee9, 0xbf616a, 0xa3be8c, 0x81a1c1)),
         CoderThemeOption("Solarized Dark", CoderThemeMode.DARK, R.raw.solarized_dark, listOf(0x002b36, 0x839496, 0xdc322f, 0x859900, 0x268bd2)),
@@ -88,8 +87,8 @@ object CoderThemes {
     fun selectedThemeName(context: Context): String {
         return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("themeName", null) ?: when (resolvedMode(context)) {
             CoderThemeMode.LIGHT -> "Solarized Light"
-            CoderThemeMode.DARK -> "Moshi"
-            CoderThemeMode.SYSTEM -> "Moshi"
+            CoderThemeMode.DARK -> "Dracula"
+            CoderThemeMode.SYSTEM -> "Dracula"
         }
     }
 

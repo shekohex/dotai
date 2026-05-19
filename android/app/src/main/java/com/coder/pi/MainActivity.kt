@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
                     applySystemBars(currentTheme ?: CoderThemes.current(this))
                 }
                 "fontFamily" -> terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
-                "fontSizePx", "cellHeight", "cellWidth" -> terminalView.setFontSizePoints(selectedTerminalFontSizePixels(this))
+                "fontSizeSp", "cellHeight", "cellWidth" -> terminalView.setFontSizePoints(selectedTerminalFontSizeSp(this))
                 "keep_screen_awake" -> applyKeepScreenAwake()
             }
         }
@@ -117,6 +117,7 @@ class MainActivity : AppCompatActivity() {
             "shortcuts" -> SettingsPage.SHORTCUTS
             "keyboard" -> SettingsPage.KEYBOARD
             "gestures" -> SettingsPage.GESTURES
+            "chat", "chat-mode" -> SettingsPage.CHAT
             "speech" -> SettingsPage.SPEECH
             "links", "link-allowlist", "allowed-links" -> SettingsPage.LINKS
             "links/add", "link-allowlist/add", "allowed-links/add" -> SettingsPage.LINKS_ADD
@@ -175,7 +176,7 @@ class MainActivity : AppCompatActivity() {
         currentTheme = CoderThemes.current(this)
         terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
         terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
-        terminalView.setFontSizePoints(selectedTerminalFontSizePixels(this))
+        terminalView.setFontSizePoints(selectedTerminalFontSizeSp(this))
         terminalView.post { terminalView.forceRefreshSurface() }
         applySystemBars(currentTheme ?: CoderThemes.current(this))
         applyKeepScreenAwake()
@@ -189,7 +190,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun releaseKeepScreenAwake() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
     override fun onPause() {
+        releaseKeepScreenAwake()
         terminalView.onPause()
         super.onPause()
     }

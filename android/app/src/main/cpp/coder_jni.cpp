@@ -91,10 +91,10 @@ Java_com_coder_pi_CoderNative_nativeRendererSetShaderCacheDir(JNIEnv* env, jobje
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetTerminalTheme(JNIEnv* env, jobject, jlong terminalHandle, jint foreground, jint background, jint cursor, jintArray palette) {
+Java_com_coder_pi_CoderNative_nativeSetTerminalTheme(JNIEnv* env, jobject, jlong terminalHandle, jint foreground, jint background, jint cursor, jint selectionBackground, jintArray palette) {
     jsize length = env->GetArrayLength(palette);
     jint* data = env->GetIntArrayElements(palette, nullptr);
-    terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
+    terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), static_cast<uint32_t>(selectionBackground), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
     env->ReleaseIntArrayElements(palette, data, JNI_ABORT);
 }
 
@@ -197,6 +197,17 @@ Java_com_coder_pi_CoderNative_nativeScreenPositionFromViewport(JNIEnv* env, jobj
     }
     env->SetIntArrayRegion(result, 0, 2, values);
     return result;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeSetSelection(JNIEnv*, jobject, jlong handle, jboolean active, jint startRow, jint startCol, jint endRow, jint endCol) {
+    terminal(reinterpret_cast<NativeTerminal*>(handle))->setSelection(active == JNI_TRUE, startRow, startCol, endRow, endCol);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_coder_pi_CoderNative_nativeCopySelection(JNIEnv* env, jobject, jlong handle) {
+    auto text = terminal(reinterpret_cast<NativeTerminal*>(handle))->copySelection();
+    return env->NewStringUTF(text.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL

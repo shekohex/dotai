@@ -85,7 +85,7 @@ class TerminalActivity : AppCompatActivity() {
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
-                TerminalSurface(terminalView, renderedTheme, terminalView.gestureEnabled("long_press_selection"), { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).imePadding())
+                TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).imePadding())
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
                     if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"), detached = true))
@@ -110,6 +110,7 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        releaseKeepScreenAwake()
         terminalView.onPause()
         super.onPause()
     }
@@ -165,7 +166,7 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun selectedTerminalFontSizePoints(): Int {
-        return selectedTerminalFontSizePixels(this)
+        return selectedTerminalFontSizeSp(this)
     }
 
     private fun applyKeepScreenAwake() {
@@ -174,6 +175,10 @@ class TerminalActivity : AppCompatActivity() {
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    private fun releaseKeepScreenAwake() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun persistTerminalState(detached: Boolean) {

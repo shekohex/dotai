@@ -272,9 +272,11 @@ private fun AttachmentDetailsDialog(attachment: ChatImageAttachment, tokens: UiT
     var caption by remember(attachment.uri) { mutableStateOf(attachment.caption) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = tokens.background,
+        containerColor = tokens.surfaceHigh,
         titleContentColor = tokens.text,
-        textContentColor = tokens.text,
+        textContentColor = tokens.secondary,
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 0.dp,
         title = { Text("Image") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

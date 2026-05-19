@@ -1,7 +1,5 @@
 package com.coder.pi
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Rect
@@ -38,12 +36,9 @@ import io.ktor.http.HttpStatusCode
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -105,10 +100,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -142,10 +134,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
-import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS, DEBUG_RENDER }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 private enum class TerminalUiMode { SHEET }
 
 private sealed interface AuthState {
@@ -246,8 +237,8 @@ fun CoderApp(
                     terminalView.setPreviewFontFamily(fontKey)
                     terminalSessions.forEach { it.terminalView.setPreviewFontFamily(fontKey) }
                 }
-                "fontSizePx", "cellHeight", "cellWidth" -> {
-                    val points = selectedTerminalFontSizePixels(context)
+                "fontSizeSp", "cellHeight", "cellWidth" -> {
+                    val points = selectedTerminalFontSizeSp(context)
                     terminalView.setFontSizePoints(points)
                     terminalSessions.forEach { it.terminalView.setFontSizePoints(points) }
                 }
@@ -646,12 +637,26 @@ private fun configureTerminalNotificationContext(terminalView: CoderTerminalView
 }
 
 @Composable
-private fun ConfirmCloseTerminalDialog(tokens: UiTokens, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+private fun ThemedAlertDialog(onDismissRequest: () -> Unit, tokens: UiTokens, title: @Composable () -> Unit, text: @Composable () -> Unit, confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onDismissRequest,
         containerColor = tokens.surfaceHigh,
         titleContentColor = tokens.text,
         textContentColor = tokens.secondary,
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 0.dp,
+        title = title,
+        text = text,
+        confirmButton = confirmButton,
+        dismissButton = dismissButton,
+    )
+}
+
+@Composable
+private fun ConfirmCloseTerminalDialog(tokens: UiTokens, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    ThemedAlertDialog(
+        onDismissRequest = onDismiss,
+        tokens = tokens,
         title = { Text("Close terminal?") },
         text = { Text("This stops the active Coder terminal connection. Minimize keeps it running in the background.") },
         confirmButton = { TextButton(onClick = { hapticClick(); onConfirm() }) { Text("Close", color = Color(0xffff5c7a)) } },
@@ -1049,11 +1054,9 @@ private fun WorkspaceEditSheet(workspace: CoderWorkspace, session: CoderSession,
             Spacer(Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp))
         }
         if (showDiscardDialog) {
-            AlertDialog(
+            ThemedAlertDialog(
                 onDismissRequest = { showDiscardDialog = false },
-                containerColor = tokens.background,
-                titleContentColor = tokens.text,
-                textContentColor = tokens.secondary,
+                tokens = tokens,
                 title = { Text("Discard changes?") },
                 text = { Text("Local alias has unsaved changes.") },
                 confirmButton = { TextButton(onClick = { showDiscardDialog = false; onDismiss() }) { Text("Discard", color = tokens.accent) } },
@@ -1283,7 +1286,7 @@ private fun TerminalPane(
     onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
-    TerminalSurface(terminalView, theme, terminalView.gestureEnabled("long_press_selection"), { onShowKeyboard(terminalView) }, onHideKeyboard, Modifier.fillMaxSize().imePadding())
+    TerminalSurface(terminalView, theme, { onShowKeyboard(terminalView) }, onHideKeyboard, Modifier.fillMaxSize().imePadding())
 }
 
 @Composable
@@ -1347,11 +1350,9 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         }
     }
     pendingHyperlink?.let { uri ->
-        AlertDialog(
+        ThemedAlertDialog(
             onDismissRequest = { pendingHyperlink = null },
-            containerColor = theme.background.toComposeColor(),
-            titleContentColor = theme.foreground.toComposeColor(),
-            textContentColor = theme.foreground.toComposeColor(),
+            tokens = uiTokens(theme),
             title = { Text("Open link?") },
             text = { Text(uri, fontFamily = FontFamily.Monospace, fontSize = captionSize()) },
             confirmButton = {
@@ -1413,199 +1414,6 @@ private fun debugWorkingIndicatorFrameBytes(index: Int): ByteArray {
 }
 
 @Composable
-private fun TerminalSelectionOverlay(terminalView: CoderTerminalView, theme: CoderTheme, enabled: Boolean, selection: TerminalSelectionState?, onSelectionChange: (TerminalSelectionState?) -> Unit, onCopy: () -> Unit) {
-    fun wordSelectionState(position: TerminalCellPosition): TerminalSelectionState {
-        val viewport = terminalView.wordRangeAt(position)
-        val screenStart = terminalView.screenPositionAt(viewport.start) ?: viewport.start
-        val screenEnd = terminalView.screenPositionAt(viewport.end) ?: viewport.end
-        return TerminalSelectionState(viewport, TerminalSelectionRange(screenStart, screenEnd))
-    }
-
-    fun selectionStateFromScreenStart(start: TerminalCellPosition, screenStart: TerminalCellPosition, end: TerminalCellPosition): TerminalSelectionState {
-        val screenEnd = terminalView.screenPositionAt(end) ?: end
-        return TerminalSelectionState(TerminalSelectionRange(start, end), TerminalSelectionRange(screenStart, screenEnd))
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(terminalView, enabled, terminalView.copyOnSelectEnabled()) {
-                    if (!enabled) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val startOffset = down.position
-                        if (terminalView.terminalMouseTrackingActive()) {
-                            var lastPosition = startOffset
-                            var moved = false
-                            var released = false
-                            val longPressed = enabled && withTimeoutOrNull(280L) {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull() ?: return@withTimeoutOrNull false
-                                    lastPosition = change.position
-                                    if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
-                                        released = true
-                                        return@withTimeoutOrNull false
-                                    }
-                                    if ((change.position - startOffset).getDistance() > viewConfiguration.touchSlop) {
-                                        moved = true
-                                        return@withTimeoutOrNull false
-                                    }
-                                }
-                            } == null
-                            when {
-                                longPressed -> {
-                                    val start = terminalView.cellAt(startOffset.x, startOffset.y)
-                                    val screenStart = terminalView.screenPositionAt(start) ?: start
-                                    var dragged = false
-                                    onSelectionChange(wordSelectionState(start))
-                                    hapticClick()
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        if (event.changes.all { it.changedToUpIgnoreConsumed() }) break
-                                        event.changes.forEach { change ->
-                                            dragged = true
-                                            val edgeRows = terminalView.selectionEdgeScrollRows(change.position.y, size.height.toFloat())
-                                            if (edgeRows != 0) terminalView.scrollViewportRows(edgeRows)
-                                            onSelectionChange(selectionStateFromScreenStart(start, screenStart, terminalView.cellAt(change.position.x, change.position.y)))
-                                            change.consume()
-                                        }
-                                    }
-                                    if (dragged && terminalView.copyOnSelectEnabled()) onCopy()
-                                }
-                                released -> {
-                                    terminalView.sendTerminalMouseEvent(0, startOffset.x, startOffset.y)
-                                    terminalView.sendTerminalMouseEvent(1, lastPosition.x, lastPosition.y)
-                                }
-                                moved -> {
-                                    var lastY = startOffset.y
-                                    var accumulatedScrollY = 0f
-                                    val rowHeight = terminalView.scrollRowHeight().toFloat()
-                                    terminalView.beginSmoothScrollGesture()
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull() ?: break
-                                        if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
-                                            terminalView.endSmoothScrollGesture()
-                                            break
-                                        }
-                                        val deltaY = change.position.y - lastY
-                                        lastY = change.position.y
-                                        if (terminalView.smoothScrollEnabled()) {
-                                            terminalView.scrollPixels(deltaY)
-                                            change.consume()
-                                            continue
-                                        }
-                                        accumulatedScrollY += deltaY
-                                        val rows = (accumulatedScrollY / rowHeight).toInt()
-                                        if (rows != 0) {
-                                            terminalView.scrollRows(-rows)
-                                            accumulatedScrollY -= rows * rowHeight
-                                            change.consume()
-                                        }
-                                    }
-                                }
-                                else -> {
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull() ?: break
-                                        if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
-                                            terminalView.sendTerminalMouseEvent(0, startOffset.x, startOffset.y)
-                                            terminalView.sendTerminalMouseEvent(1, change.position.x, change.position.y)
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                            return@awaitEachGesture
-                        }
-                        var cancelled = false
-                        withTimeoutOrNull(850L) {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                if (event.changes.all { it.changedToUpIgnoreConsumed() }) {
-                                    cancelled = true
-                                    return@withTimeoutOrNull
-                                }
-                                if (event.changes.any { (it.position - startOffset).getDistance() > viewConfiguration.touchSlop }) {
-                                    cancelled = true
-                                    var lastY = event.changes.first().position.y
-                                    var accumulatedScrollY = 0f
-                                    val rowHeight = terminalView.scrollRowHeight().toFloat()
-                                    terminalView.beginSmoothScrollGesture()
-                                    while (true) {
-                                        val scrollEvent = awaitPointerEvent()
-                                        val change = scrollEvent.changes.firstOrNull() ?: break
-                                        if (scrollEvent.changes.all { it.changedToUpIgnoreConsumed() }) {
-                                            terminalView.endSmoothScrollGesture()
-                                            break
-                                        }
-                                        val deltaY = change.position.y - lastY
-                                        lastY = change.position.y
-                                        if (terminalView.smoothScrollEnabled()) {
-                                            terminalView.scrollPixels(deltaY)
-                                            change.consume()
-                                            continue
-                                        }
-                                        accumulatedScrollY += deltaY
-                                        val rows = (accumulatedScrollY / rowHeight).toInt()
-                                        if (rows != 0) {
-                                            terminalView.scrollRows(-rows)
-                                            accumulatedScrollY -= rows * rowHeight
-                                            change.consume()
-                                        }
-                                    }
-                                    return@withTimeoutOrNull
-                                }
-                            }
-                        }
-                        if (cancelled) return@awaitEachGesture
-                        val start = terminalView.cellAt(startOffset.x, startOffset.y)
-                        val screenStart = terminalView.screenPositionAt(start) ?: start
-                        var dragged = false
-                        onSelectionChange(wordSelectionState(start))
-                        hapticClick()
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            if (event.changes.all { it.changedToUpIgnoreConsumed() }) break
-                            event.changes.forEach { change ->
-                                dragged = true
-                                val edgeRows = terminalView.selectionEdgeScrollRows(change.position.y, size.height.toFloat())
-                                if (edgeRows != 0) terminalView.scrollViewportRows(edgeRows)
-                                onSelectionChange(selectionStateFromScreenStart(start, screenStart, terminalView.cellAt(change.position.x, change.position.y)))
-                                change.consume()
-                            }
-                        }
-                        if (dragged && terminalView.copyOnSelectEnabled()) onCopy()
-                    }
-                },
-        ) {
-            val range = selection?.viewport?.normalized() ?: return@Canvas
-            val columns = terminalView.terminalColumns().coerceAtLeast(1)
-            val rows = terminalView.terminalRows().coerceAtLeast(1)
-            val cellWidth = size.width / columns
-            val cellHeight = size.height / rows
-            for (row in range.start.row..range.end.row) {
-                val startCol = if (row == range.start.row) range.start.col else 0
-                val endCol = if (row == range.end.row) range.end.col else columns - 1
-                drawRect(
-                    color = theme.selectionBackground.toComposeColor().copy(alpha = 0.55f),
-                    topLeft = Offset(startCol * cellWidth, row * cellHeight),
-                    size = Size((endCol - startCol + 1) * cellWidth, cellHeight),
-                )
-            }
-        }
-        if (selection != null) {
-            Row(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(18.dp)).background(theme.background.toComposeColor().copy(alpha = 0.92f)).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("COPY", color = theme.foreground.toComposeColor(), fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(theme.selectionBackground.toComposeColor()).clickable { onCopy() }.padding(horizontal = 14.dp, vertical = 8.dp))
-                Text("CLEAR", color = theme.foreground.toComposeColor(), fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onSelectionChange(null) }.padding(horizontal = 14.dp, vertical = 8.dp))
-            }
-        }
-    }
-}
-
-@Composable
 fun TerminalPinchFontOverlay(terminalView: CoderTerminalView) {
 }
 
@@ -1613,32 +1421,26 @@ fun TerminalPinchFontOverlay(terminalView: CoderTerminalView) {
 fun TerminalSurface(
     terminalView: CoderTerminalView,
     theme: CoderTheme,
-    selectionEnabled: Boolean,
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
     statusContent: @Composable BoxScope.() -> Unit = {},
 ) {
-    var selection by remember { mutableStateOf<TerminalSelectionState?>(null) }
+    var copyModeActive by remember { mutableStateOf(terminalView.copyModeActive()) }
     var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     DisposableEffect(terminalView) {
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
+        terminalView.onResume()
+        terminalView.post { terminalView.forceRefreshSurface() }
         terminalView.onOscMetadataChanged = metadataHandler
         terminalView.onHyperlinkActivated = hyperlinkHandler
         onDispose {
             if (terminalView.onOscMetadataChanged === metadataHandler) terminalView.onOscMetadataChanged = null
             if (terminalView.onHyperlinkActivated === hyperlinkHandler) terminalView.onHyperlinkActivated = null
-        }
-    }
-    fun copySelection() {
-        val selectedText = selection?.let { terminalView.selectedScreenText(it.screen.start, it.screen.end) }.orEmpty()
-        if (selectedText.isNotBlank()) {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("Terminal selection", selectedText))
-            selection = null
+            terminalView.onPause()
         }
     }
     Column(modifier.background(theme.background.toComposeColor())) {
@@ -1652,10 +1454,6 @@ fun TerminalSurface(
                 },
             )
             TerminalPinchFontOverlay(terminalView)
-            TerminalSelectionOverlay(terminalView, theme, selectionEnabled, selection, {
-                if (it != null && selection == null) onHideKeyboard()
-                selection = it
-            }) { copySelection() }
             if (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank()) {
                 Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
                     if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
@@ -1664,14 +1462,28 @@ fun TerminalSurface(
             }
             statusContent()
         }
-        TerminalAccessory(theme, terminalView, selection != null, { copySelection() }, { selection = null }, onShowKeyboard, onHideKeyboard)
+        TerminalAccessory(
+            theme,
+            terminalView,
+            copyModeActive,
+            {
+                if (terminalView.copySelectionToClipboard()) copyModeActive = false
+            },
+            {
+                terminalView.setCopyModeActive(false)
+                copyModeActive = false
+            },
+            onShowKeyboard,
+            onHideKeyboard,
+        ) { active ->
+            terminalView.setCopyModeActive(active)
+            copyModeActive = active
+        }
     }
     pendingHyperlink?.let { uri ->
-        AlertDialog(
+        ThemedAlertDialog(
             onDismissRequest = { pendingHyperlink = null },
-            containerColor = theme.background.toComposeColor(),
-            titleContentColor = theme.foreground.toComposeColor(),
-            textContentColor = theme.foreground.toComposeColor(),
+            tokens = uiTokens(theme),
             title = { Text("Open link?") },
             text = { Text(uri, fontFamily = FontFamily.Monospace, fontSize = captionSize()) },
             confirmButton = {
@@ -1740,7 +1552,6 @@ private fun CoderTerminalBottomSheet(
             TerminalSurface(
                 terminalView = terminalView,
                 theme = theme,
-                selectionEnabled = terminalView.gestureEnabled("long_press_selection") && !terminalStatusIsRecoverable(status),
                 onShowKeyboard = onShowKeyboard,
                 onHideKeyboard = onHideKeyboard,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1764,7 +1575,7 @@ private fun CoderTerminalBottomSheet(
 }
 
 @Composable
-fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
+fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, selectionActive: Boolean, onCopySelection: () -> Unit, onClearSelection: () -> Unit, onShowKeyboard: () -> Unit, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier, onCopyModeChanged: (Boolean) -> Unit = {}) {
     var chatMode by remember { mutableStateOf(false) }
     var dpadExpanded by remember { mutableStateOf(false) }
     var dpadOffset by remember { mutableStateOf(IntOffset.Zero) }
@@ -1840,7 +1651,10 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             onReplaceAttachment = { index -> replacingAttachmentIndex = index; imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             onCaptionAttachment = { index, caption -> chatAttachments = chatAttachments.mapIndexed { currentIndex, attachment -> if (currentIndex == index) attachment.copy(caption = caption) else attachment } },
             onClear = { chatDraft = ""; chatAttachments = emptyList() },
-            onSubmit = { terminalView.sendText(if ('\n' in it) it else "$it\n") },
+            onSubmit = {
+                terminalView.sendText(it)
+                if (terminalView.chatAutoSendEnabled()) terminalView.sendKey(KeyEvent.KEYCODE_ENTER)
+            },
             onReturn = { terminalView.sendKey(KeyEvent.KEYCODE_ENTER) },
         ) {
             onShowKeyboard()
@@ -1865,6 +1679,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
                         "alt" -> ToolbarTextButton("alt", text, if (altActive) active else uiTokens(theme).surface) { terminalView.toggleAltLatch() }
                         "esc" -> ToolbarTextButton("esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
                         "tab" -> ToolbarTextButton("tab", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_TAB) }
+                        "copy" -> ToolbarTextButton("copy", text, uiTokens(theme).surface) { onCopyModeChanged(true) }
                         "dpad" -> ToolbarTextButton("✣", text, if (dpadExpanded) active else uiTokens(theme).surface) { dpadExpanded = !dpadExpanded }
                         "empty" -> Unit
                         "paste" -> if (showPaste) ToolbarIconButton(R.drawable.ic_feather_clipboard, text, uiTokens(theme).surface) { terminalView.pasteFromClipboard() } else EmptyToolbarSlot(uiTokens(theme).surface)
@@ -1932,7 +1747,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
     BackHandler { navigateBack() }
     when (page) {
         SettingsPage.ROOT -> SettingsRootScreen(session, terminalView, theme, tokens, uiRevision, ::navigateBack, { page = SettingsPage.THEME }, { page = SettingsPage.FONTS }, { page = SettingsPage.NOTIFICATIONS }) {
-            if (it == "Toolbar") page = SettingsPage.TOOLBAR else if (it == "Shortcuts") page = SettingsPage.SHORTCUTS else if (it == "Keyboard") page = SettingsPage.KEYBOARD else if (it == "Gestures") page = SettingsPage.GESTURES else if (it == "Speech") page = SettingsPage.SPEECH else if (it == "Links") page = SettingsPage.LINKS else if (it == "Coder Connection") page = SettingsPage.CONNECTION else {
+            if (it == "Toolbar") page = SettingsPage.TOOLBAR else if (it == "Shortcuts") page = SettingsPage.SHORTCUTS else if (it == "Keyboard") page = SettingsPage.KEYBOARD else if (it == "Gestures") page = SettingsPage.GESTURES else if (it == "Chat Mode") page = SettingsPage.CHAT else if (it == "Speech") page = SettingsPage.SPEECH else if (it == "Links") page = SettingsPage.LINKS else if (it == "Coder Connection") page = SettingsPage.CONNECTION else {
                 placeholderTitle = it
                 page = SettingsPage.PLACEHOLDER
             }
@@ -1945,6 +1760,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.SHORTCUT -> ShortcutEditorScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.CHAT -> ChatModeSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
         SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
@@ -1960,18 +1776,20 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
     val context = LocalContext.current
     var cursorBlink by remember { mutableStateOf(terminalView.cursorBlinkEnabled()) }
     var cursorMode by remember { mutableIntStateOf(terminalView.cursorMode()) }
-    var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
     var keepScreenAwake by remember { mutableStateOf(terminalView.keepScreenAwakeEnabled()) }
     var oscNotifications by remember { mutableStateOf(terminalView.oscNotificationsEnabled()) }
     var hapticFeedback by remember { mutableStateOf(context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)) }
     val appPreferences = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE) }
     var backgroundTerminals by remember { mutableStateOf(appPreferences.getBoolean("background_terminals", false)) }
-    var fileSync by remember { mutableStateOf(appPreferences.getBoolean("file_sync", false)) }
-    var syncCredentials by remember { mutableStateOf(appPreferences.getBoolean("sync_credentials", false)) }
     SettingsScaffold("Settings", tokens, onBack) {
         SettingsSection("TERMINAL", tokens) {
             SettingsValueRow(R.drawable.ic_feather_palette, "Theme", null, theme.name, tokens, pro = true, chevron = true, onClick = onTheme)
             SettingsValueRow(R.drawable.ic_feather_type, "Fonts & Size", null, CoderFonts.selectedName(LocalContext.current).also { uiRevision.hashCode() }, tokens, chevron = true, onClick = onFonts)
+            SettingsToggleRow(R.drawable.ic_feather_terminal, "Background Terminals", backgroundTerminals, tokens) {
+                backgroundTerminals = it
+                appPreferences.edit { putBoolean("background_terminals", it) }
+                if (it) TerminalCatchUpWorker.schedule(context) else TerminalCatchUpWorker.cancel(context)
+            }
             SettingsSegmentedControlRow(R.drawable.ic_feather_type, "Cursor Mode", tokens, cursorMode) { cursorMode = it; terminalView.setCursorMode(it) }
             SettingsToggleRow(R.drawable.ic_feather_circle, "Cursor Blink", cursorBlink, tokens) { cursorBlink = it; terminalView.setCursorBlinkEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_power, "Keep Screen Awake", keepScreenAwake, tokens) { keepScreenAwake = it; terminalView.setKeepScreenAwakeEnabled(it) }
@@ -1983,25 +1801,11 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
         }
         SettingsSection("INPUT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_sliders, "Toolbar", null, null, tokens, chevron = true) { onPlaceholder("Toolbar") }
-            listOf("Shortcuts" to R.drawable.ic_feather_box, "Keyboard" to R.drawable.ic_feather_keyboard, "Gestures" to R.drawable.ic_feather_hand, "Speech" to R.drawable.ic_feather_mic).forEach { (title, icon) -> SettingsValueRow(icon, title, null, null, tokens, chevron = true) { onPlaceholder(title) } }
-            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Chat Mode", chatMode, tokens) { chatMode = it; terminalView.setChatModeEnabled(it) }
+            listOf("Shortcuts" to R.drawable.ic_feather_box, "Keyboard" to R.drawable.ic_feather_keyboard, "Gestures" to R.drawable.ic_feather_hand, "Chat Mode" to R.drawable.ic_feather_message_circle, "Speech" to R.drawable.ic_feather_mic).forEach { (title, icon) -> SettingsValueRow(icon, title, null, null, tokens, chevron = true) { onPlaceholder(title) } }
         }
         SettingsSection("INTEGRATIONS", tokens) {
             SettingsValueRow(R.drawable.ic_feather_globe, "Links", "Allowed OSC 8 link hosts", null, tokens, chevron = true) { onPlaceholder("Links") }
             SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "OSC 9 alerts and progress", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
-            SettingsToggleRow(R.drawable.ic_feather_terminal, "Background Terminals", backgroundTerminals, tokens) {
-                backgroundTerminals = it
-                appPreferences.edit { putBoolean("background_terminals", it) }
-                if (it) TerminalCatchUpWorker.schedule(context) else TerminalCatchUpWorker.cancel(context)
-            }
-            SettingsValueRow(R.drawable.ic_feather_box, "Inbox & Usage", null, null, tokens, chevron = true) { onPlaceholder("Inbox & Usage") }
-            SettingsValueRow(R.drawable.ic_feather_folder, "File Sharing", null, null, tokens, pro = true, chevron = true) { onPlaceholder("File Sharing") }
-            SettingsValueRow(R.drawable.ic_feather_terminal, "Shell", null, null, tokens, pro = true, chevron = true) { onPlaceholder("Shell") }
-        }
-        SettingsSection("SECURITY & SYNC", tokens) {
-            SettingsToggleRow(R.drawable.ic_feather_shield, "File Sync", fileSync, tokens) { fileSync = it; appPreferences.edit { putBoolean("file_sync", it) } }
-            SettingsToggleRow(R.drawable.ic_feather_shield, "Sync Credentials", syncCredentials, tokens) { syncCredentials = it; appPreferences.edit { putBoolean("sync_credentials", it) } }
-            SettingsValueRow(R.drawable.ic_feather_folder, "Sync Folder", null, "Not Set", tokens, chevron = true) { onPlaceholder("Sync Folder") }
         }
         SettingsSection("GENERAL", tokens) { SettingsValueRow(R.drawable.ic_feather_globe, "Language", null, "Auto", tokens, chevron = true) { onPlaceholder("Language") } }
         if (session != null) {
@@ -2010,7 +1814,9 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             }
         }
         SettingsSection("HELP", tokens) {
-            listOf("Docs" to R.drawable.ic_feather_book, "Discover Moshi" to R.drawable.ic_feather_box, "Support" to R.drawable.ic_feather_mail, "What's New" to R.drawable.ic_feather_bell, "Open Source Licenses" to R.drawable.ic_feather_book).forEach { (title, icon) -> SettingsValueRow(icon, title, null, null, tokens, chevron = true) { onPlaceholder(title) } }
+            SettingsValueRow(R.drawable.ic_feather_github, "GitHub", "shekohex/dotai", null, tokens, chevron = true) { CustomTabsIntent.Builder().build().launchUrl(context, "https://github.com/shekohex/dotai".toUri()) }
+            SettingsValueRow(R.drawable.ic_feather_mail, "Support", "Open GitHub issues", null, tokens, chevron = true) { CustomTabsIntent.Builder().build().launchUrl(context, "https://github.com/shekohex/dotai/issues".toUri()) }
+            SettingsValueRow(R.drawable.ic_feather_book, "Open Source Licenses", null, null, tokens, chevron = true) { onPlaceholder("Open Source Licenses") }
         }
         item { Text("Version 2.11.1", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 28.dp), textAlign = TextAlign.Center) }
     }
@@ -2132,11 +1938,9 @@ private fun LinkAllowlistSettingsScreen(tokens: UiTokens, showAddOnOpen: Boolean
         }
     }
     if (addDialog) {
-        AlertDialog(
+        ThemedAlertDialog(
             onDismissRequest = { addDialog = false; addError = null },
-            containerColor = tokens.surfaceHigh,
-            titleContentColor = tokens.text,
-            textContentColor = tokens.text,
+            tokens = tokens,
             title = { Text("Allow link host") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2244,7 +2048,7 @@ private fun FontsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onTer
                 SettingsValueRow(R.drawable.ic_feather_type, option.name, option.subtitle, null, tokens, pro = option.pro) {}
             }
         }
-        item { Text("Download curated fonts or import your own from Files. Imported fonts are stored inside Moshi and registered with the same renderer used by the terminal.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+        item { Text("Download curated fonts or import your own from Files. Imported fonts are stored locally and registered with the same renderer used by the terminal.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
     }
 }
 
@@ -2375,7 +2179,7 @@ private fun ToolbarSettingsPreview(tokens: UiTokens, order: List<String>, chat: 
     Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(22.dp)).background(tokens.surfaceHigh).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         order.forEach { slot ->
             when (slot) {
-                "ctrl", "shift", "alt", "esc", "tab" -> Text(toolbarSlotLabel(slot).replaceFirstChar { it.uppercaseChar() }, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(end = 16.dp))
+                "ctrl", "shift", "alt", "esc", "tab", "copy" -> Text(toolbarSlotLabel(slot).replaceFirstChar { it.uppercaseChar() }, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, modifier = Modifier.padding(end = 16.dp))
                 "empty" -> Box(Modifier.padding(end = 10.dp).size(34.dp).clip(RoundedCornerShape(14.dp)).background(tokens.surface))
                 "paste" -> if (paste) Icon(painterResource(R.drawable.ic_feather_upload), null, tint = tokens.text, modifier = Modifier.padding(end = 14.dp).size(19.dp))
                 "theme" -> if (theme) Icon(painterResource(R.drawable.ic_feather_rotate_ccw), null, tint = tokens.text, modifier = Modifier.padding(end = 14.dp).size(19.dp))
@@ -2501,39 +2305,127 @@ private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiToke
 
 @Composable
 private fun GesturesSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
-    var swipeSessionSwitch by remember { mutableStateOf(terminalView.gestureEnabled("swipe_session_switch")) }
-    var pinchFontSize by remember { mutableStateOf(terminalView.gestureEnabled("pinch_font_size")) }
-    var longPressSelection by remember { mutableStateOf(terminalView.gestureEnabled("long_press_selection")) }
-    var copyOnSelect by remember { mutableStateOf(terminalView.copyOnSelectEnabled()) }
-    var dragScroll by remember { mutableStateOf(terminalView.gestureEnabled("drag_scroll")) }
-    var smoothScroll by remember { mutableStateOf(terminalView.smoothScrollEnabled()) }
-    var scrollSpeedPercent by remember { mutableIntStateOf(terminalView.scrollSpeedPercent()) }
-    var holdToClose by remember { mutableStateOf(terminalView.gestureEnabled("hold_to_close")) }
+    var revision by remember { mutableIntStateOf(0) }
     SettingsScaffold("Gestures", tokens, onBack) {
-        SettingsSection("TERMINAL", tokens) {
-            SettingsToggleRow(R.drawable.ic_feather_hand, "Swipe Session Switch", swipeSessionSwitch, tokens) { swipeSessionSwitch = it; terminalView.setGestureEnabled("swipe_session_switch", it) }
-            SettingsToggleRow(R.drawable.ic_feather_type, "Pinch Font Size", pinchFontSize, tokens) { pinchFontSize = it; terminalView.setGestureEnabled("pinch_font_size", it) }
-            SettingsToggleRow(R.drawable.ic_feather_edit_3, "Long-press Selection", longPressSelection, tokens) { longPressSelection = it; terminalView.setGestureEnabled("long_press_selection", it) }
-            SettingsToggleRow(R.drawable.ic_feather_edit_3, "Copy on Select", copyOnSelect, tokens) { copyOnSelect = it; terminalView.setCopyOnSelectEnabled(it) }
-            SettingsToggleRow(R.drawable.ic_feather_sliders, "Drag Scroll", dragScroll, tokens) { dragScroll = it; terminalView.setGestureEnabled("drag_scroll", it) }
-            SettingsToggleRow(R.drawable.ic_feather_sliders, "Smooth Scroll", smoothScroll, tokens) { smoothScroll = it; terminalView.setSmoothScrollEnabled(it) }
-            SettingsValueRow(R.drawable.ic_feather_sliders, "Scroll Speed", "Affects smooth drag acceleration and inertia", "$scrollSpeedPercent%", tokens) {
-                scrollSpeedPercent = when (scrollSpeedPercent) {
-                    50 -> 75
-                    75 -> 100
-                    100 -> 125
-                    125 -> 150
-                    150 -> 200
-                    200 -> 250
-                    250 -> 300
-                    else -> 50
-                }
-                terminalView.setScrollSpeedPercent(scrollSpeedPercent)
-            }
-            SettingsToggleRow(R.drawable.ic_feather_power, "Hold to Close", holdToClose, tokens) { holdToClose = it; terminalView.setGestureEnabled("hold_to_close", it) }
-        }
-        item { Text("Gesture changes apply to new terminal interactions immediately.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+        GestureSettingsSection("TERMINAL", terminalGestureSpecs(), terminalView, tokens, revision) { revision++ }
+        item { Text("These gestures run directly on the terminal surface.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        GestureSettingsSection("HEADER", headerGestureSpecs(), terminalView, tokens, revision) { revision++ }
+        item { Text("Soft and hard drags let you split the short pull from the long pull.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        GestureSettingsSection("TOOLBAR SWIPES", toolbarSwipeGestureSpecs(), terminalView, tokens, revision) { revision++ }
+        item { Text("Swipe gestures on the floating input bar.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        GestureSettingsSection("TOOLBAR BUTTONS", toolbarButtonGestureSpecs(), terminalView, tokens, revision) { revision++ }
+        item { Text("Configure the keyboard, mic, Ctrl, Shortcuts, and D-Pad toolbar buttons.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        GestureSettingsSection("D-PAD", dpadGestureSpecs(), terminalView, tokens, revision) { revision++ }
+        item { Text("Configure the D-Pad corner buttons.", color = tokens.secondary, fontSize = captionSize(), modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        item { Box(Modifier.fillMaxWidth().padding(vertical = 18.dp).clickable { resetGestureActions(terminalView); revision++ }, contentAlignment = Alignment.Center) { Text("↻  Reset to Defaults", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
     }
+}
+
+private data class GestureSettingSpec(val icon: Int, val title: String, val key: String, val defaultAction: String, val actions: List<TerminalGestureAction>, val subtitle: String? = null)
+
+private fun LazyListScope.GestureSettingsSection(title: String, specs: List<GestureSettingSpec>, terminalView: CoderTerminalView, tokens: UiTokens, revision: Int, onChanged: () -> Unit) {
+    SettingsSection(title, tokens) {
+        specs.forEach { spec -> GestureActionRow(spec, terminalView, tokens, revision, onChanged) }
+    }
+}
+
+@Composable
+private fun GestureActionRow(spec: GestureSettingSpec, terminalView: CoderTerminalView, tokens: UiTokens, revision: Int, onChanged: () -> Unit) {
+    var expanded by remember(spec.key) { mutableStateOf(false) }
+    val selectedActionId = remember(revision, spec.key) { terminalView.selectedGestureAction(spec.key, spec.defaultAction) }
+    val selected = spec.actions.firstOrNull { it.id == selectedActionId } ?: gestureAction(spec.defaultAction)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(0.dp)).background(tokens.surface).clickable { expanded = !expanded }.padding(horizontal = spacingLarge(), vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(spec.icon), null, tint = tokens.secondary, modifier = Modifier.size(20.dp))
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text(spec.title, color = tokens.text, fontSize = rowTitleSize())
+                if (spec.subtitle != null) Text(spec.subtitle, color = tokens.secondary, fontSize = captionSize())
+            }
+            Text(selected.label, color = if (selected.id == "no_action") tokens.secondary else tokens.text, fontSize = valueSize(), maxLines = 1)
+            Text(if (expanded) "⌃" else "⌄", color = tokens.secondary, fontSize = 18.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        if (expanded) {
+            spec.actions.forEach { action ->
+                Row(Modifier.fillMaxWidth().padding(top = 18.dp).clickable { terminalView.setGestureAction(spec.key, action.id); expanded = false; onChanged() }, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (selected.id == action.id) "✓" else "", color = tokens.accent, fontSize = bodySize(), modifier = Modifier.width(34.dp))
+                    Column {
+                        Text(action.label, color = if (selected.id == action.id) tokens.accent else tokens.text, fontSize = bodySize(), fontWeight = if (selected.id == action.id) FontWeight.Bold else FontWeight.Normal)
+                        Text(action.description, color = tokens.secondary, fontSize = captionSize(), lineHeight = 16.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun terminalGestureSpecs(): List<GestureSettingSpec> = listOf(
+    GestureSettingSpec(R.drawable.ic_feather_circle, "Single Tap", "single_tap", "no_action", terminalTapActions()),
+    GestureSettingSpec(R.drawable.ic_feather_circle, "Double Tap", "double_tap", "paste", terminalTapActions()),
+    GestureSettingSpec(R.drawable.ic_feather_circle, "Triple Tap", "triple_tap", "no_action", terminalTapActions()),
+    GestureSettingSpec(R.drawable.ic_feather_sliders, "Scroll Down", "scroll_down", "dismiss_keyboard", actions("dismiss_keyboard", "no_action")),
+    GestureSettingSpec(R.drawable.ic_feather_hand, "Swipe", "swipe", "switch_tmux_window", actions("switch_tmux_window", "session_switcher", "no_action")),
+    GestureSettingSpec(R.drawable.ic_feather_maximize_2, "Pinch", "pinch", "adjust_font_size", actions("adjust_font_size", "tmux_pane_zoom", "custom_shortcut", "no_action")),
+)
+
+private fun headerGestureSpecs(): List<GestureSettingSpec> = listOf(
+    GestureSettingSpec(R.drawable.ic_feather_arrow_up, "Drag Down Soft", "header_drag_down_soft", "open_switcher", actions("open_switcher", "minimize_session", "no_action")),
+    GestureSettingSpec(R.drawable.ic_feather_arrow_up, "Drag Down Hard", "header_drag_down_hard", "minimize_session", actions("open_switcher", "minimize_session", "no_action")),
+)
+
+private fun toolbarSwipeGestureSpecs(): List<GestureSettingSpec> = listOf(
+    GestureSettingSpec(R.drawable.ic_feather_arrow_up, "Swipe Up", "toolbar_swipe_up", "open_switcher", actions("open_switcher", "dismiss_keyboard", "no_action")),
+    GestureSettingSpec(R.drawable.ic_feather_arrow_up, "Swipe Down", "toolbar_swipe_down", "dismiss_keyboard", actions("dismiss_keyboard", "no_action")),
+)
+
+private fun toolbarButtonGestureSpecs(): List<GestureSettingSpec> = listOf(
+    GestureSettingSpec(R.drawable.ic_feather_keyboard, "Keyboard Tap", "keyboard_tap", "toggle_keyboard", toolbarButtonActions()),
+    GestureSettingSpec(R.drawable.ic_feather_keyboard, "Keyboard Double Tap", "keyboard_double_tap", "send_enter", toolbarButtonActions()),
+    GestureSettingSpec(R.drawable.ic_feather_keyboard, "Keyboard Long Press", "keyboard_long_press", "no_action", toolbarButtonActions()),
+    GestureSettingSpec(R.drawable.ic_feather_mic, "Mic Long Press", "mic_long_press", "open_speech_settings", toolbarButtonActions()),
+    GestureSettingSpec(R.drawable.ic_feather_chevron_up, "Ctrl Double Tap", "ctrl_double_tap", "lock_ctrl", toolbarButtonActions()),
+    GestureSettingSpec(R.drawable.ic_feather_chevron_up, "Ctrl Long Press", "ctrl_long_press", "toggle_shortcuts_panel", toolbarButtonActions()),
+    GestureSettingSpec(R.drawable.ic_feather_box, "Shortcuts Double Tap", "shortcuts_double_tap", "lock_shortcuts_panel", toolbarButtonActions()),
+)
+
+private fun dpadGestureSpecs(): List<GestureSettingSpec> = listOf(
+    GestureSettingSpec(R.drawable.ic_feather_delete, "Top Left", "dpad_top_left", "backspace", dpadCornerActions(), "Upper-left D-Pad button"),
+    GestureSettingSpec(R.drawable.ic_feather_command, "Top Right", "dpad_top_right", "ctrl_c", dpadCornerActions(), "Upper-right D-Pad button"),
+)
+
+private fun terminalTapActions(): List<TerminalGestureAction> = actions("paste", "send_escape", "send_tab", "custom_shortcut", "no_action")
+
+private fun toolbarButtonActions(): List<TerminalGestureAction> = actions("toggle_keyboard", "send_enter", "lock_ctrl", "toggle_shortcuts_panel", "lock_shortcuts_panel", "open_speech_settings", "no_action")
+
+private fun dpadCornerActions(): List<TerminalGestureAction> = actions("backspace", "ctrl_c", "custom_shortcut", "hide")
+
+private fun actions(vararg ids: String): List<TerminalGestureAction> = ids.map(::gestureAction)
+
+private fun gestureAction(id: String): TerminalGestureAction = when (id) {
+    "paste" -> TerminalGestureAction(id, "Paste", "Paste the current clipboard into the terminal.")
+    "send_escape" -> TerminalGestureAction(id, "Send Escape", "Send an Escape key press to the terminal.")
+    "send_tab" -> TerminalGestureAction(id, "Send Tab", "Send a Tab key press to the terminal.")
+    "send_enter" -> TerminalGestureAction(id, "Send Enter", "Send an Enter key press to the terminal.")
+    "dismiss_keyboard" -> TerminalGestureAction(id, "Dismiss Keyboard", "Hide the keyboard when it is visible.")
+    "switch_tmux_window" -> TerminalGestureAction(id, "Switch Tmux Window", "Swipe left or right to move between tmux windows when tmux is active.")
+    "session_switcher" -> TerminalGestureAction(id, "Session Switcher", "Swipe into the switcher and land on the adjacent session card.")
+    "adjust_font_size" -> TerminalGestureAction(id, "Adjust Font Size", "Change the terminal font size with a pinch gesture.")
+    "tmux_pane_zoom" -> TerminalGestureAction(id, "Tmux Pane Zoom", "Send the tmux pane zoom shortcut (prefix + z).")
+    "open_switcher" -> TerminalGestureAction(id, "Open Switcher", "Open the terminal session switcher.")
+    "minimize_session" -> TerminalGestureAction(id, "Minimize Session", "Detach the terminal into a background session.")
+    "toggle_keyboard" -> TerminalGestureAction(id, "Toggle Keyboard", "Show or hide the software keyboard.")
+    "lock_ctrl" -> TerminalGestureAction(id, "Lock Ctrl", "Keep Ctrl latched for the next terminal input.")
+    "toggle_shortcuts_panel" -> TerminalGestureAction(id, "Toggle Shortcuts Panel", "Show or hide the shortcuts panel.")
+    "lock_shortcuts_panel" -> TerminalGestureAction(id, "Lock Shortcuts Panel", "Keep the shortcuts panel open.")
+    "open_speech_settings" -> TerminalGestureAction(id, "Open Speech Settings", "Open speech input settings.")
+    "backspace" -> TerminalGestureAction(id, "Backspace", "Send Backspace from this D-Pad corner.")
+    "ctrl_c" -> TerminalGestureAction(id, "Ctrl+C", "Send Ctrl+C from this D-Pad corner.")
+    "custom_shortcut" -> TerminalGestureAction(id, "Custom Shortcut", "Open the shortcut builder and bind a custom shortcut.")
+    "hide" -> TerminalGestureAction(id, "Hide", "Hide this D-Pad corner button.")
+    else -> TerminalGestureAction("no_action", "No Action", "Leave this gesture unassigned.")
+}
+
+private fun resetGestureActions(terminalView: CoderTerminalView) {
+    (terminalGestureSpecs() + headerGestureSpecs() + toolbarSwipeGestureSpecs() + toolbarButtonGestureSpecs() + dpadGestureSpecs()).forEach { terminalView.setGestureAction(it.key, it.defaultAction) }
 }
 
 @Composable
@@ -2556,12 +2448,22 @@ private fun KeyboardSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
 }
 
 @Composable
-private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
+private fun ChatModeSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
     var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
+    var autoSend by remember { mutableStateOf(terminalView.chatAutoSendEnabled()) }
+    SettingsScaffold("Chat Mode", tokens, onBack) {
+        SettingsSection("CHAT INPUT", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Enable Chat Mode", chatMode, tokens) { chatMode = it; terminalView.setChatModeEnabled(it) }
+            SettingsToggleRow(R.drawable.ic_feather_send, "Auto Send", autoSend, tokens) { autoSend = it; terminalView.setChatAutoSendEnabled(it) }
+        }
+        item { Text("When Auto Send is enabled, submitting chat input sends the prompt plus Return/Enter to the terminal. Disable it to paste the prompt without executing it.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+    }
+}
+
+@Composable
+private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
-            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Chat Input Mode", chatMode, tokens) { chatMode = it; terminalView.setChatModeEnabled(it) }
-            SettingsValueRow(R.drawable.ic_feather_keyboard, "Enter Behavior", "Enter inserts newline; send button submits", null, tokens) {}
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
         }
         SettingsSection("BEHAVIOR", tokens) {

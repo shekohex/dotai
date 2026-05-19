@@ -4,7 +4,7 @@ import android.view.KeyEvent
 
 data class TerminalShortcut(val label: String, val sequence: String)
 
-val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "shift", "alt", "paste", "undo", "chat", "keyboard")
+val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "copy", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
 data class ToolbarSlotDefinition(val id: String, val label: String, val removable: Boolean = true)
 
@@ -13,6 +13,7 @@ val toolbarSlotDefinitions = listOf(
     ToolbarSlotDefinition("ctrl", "Ctrl", false),
     ToolbarSlotDefinition("tab", "Tab", false),
     ToolbarSlotDefinition("dpad", "D-pad", false),
+    ToolbarSlotDefinition("copy", "Copy"),
     ToolbarSlotDefinition("shift", "Shift"),
     ToolbarSlotDefinition("alt", "Alt"),
     ToolbarSlotDefinition("paste", "Paste"),

@@ -167,7 +167,7 @@ void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
     if (result == GHOSTTY_SUCCESS && written > 0) writePty(reinterpret_cast<const uint8_t*>(output.data()), written);
 }
 
-void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, const uint32_t* palette, size_t paletteLength) {
+void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength) {
     std::lock_guard lock(mutex_);
     if (!terminal_ || !renderState_) return;
     auto makeColor = [](uint32_t color) -> GhosttyColorRgb {
@@ -180,6 +180,7 @@ void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t 
     GhosttyColorRgb foregroundColor = makeColor(foreground);
     GhosttyColorRgb backgroundColor = makeColor(background);
     GhosttyColorRgb cursorColor = makeColor(cursor);
+    selectionBackground_ = selectionBackground;
     const int luminance = static_cast<int>(backgroundColor.r) * 299 + static_cast<int>(backgroundColor.g) * 587 + static_cast<int>(backgroundColor.b) * 114;
     colorScheme_ = luminance > 127000 ? GHOSTTY_COLOR_SCHEME_LIGHT : GHOSTTY_COLOR_SCHEME_DARK;
     std::array<GhosttyColorRgb, 256> ghosttyPalette{};
@@ -308,6 +309,29 @@ bool CoderTerminal::screenPositionFromViewport(int row, int col, int& screenRow,
     screenCol = static_cast<int>(screen.x);
     screenRow = static_cast<int>(screen.y);
     return true;
+}
+
+void CoderTerminal::setSelection(bool active, int startRow, int startCol, int endRow, int endCol) {
+    std::lock_guard lock(mutex_);
+    selection_.active = active;
+    selection_.startRow = std::max(0, startRow);
+    selection_.startCol = std::clamp(startCol, 0, std::max(0, cols_ - 1));
+    selection_.endRow = std::max(0, endRow);
+    selection_.endCol = std::clamp(endCol, 0, std::max(0, cols_ - 1));
+    if (renderState_) {
+        GhosttyRenderStateDirty dirty = GHOSTTY_RENDER_STATE_DIRTY_FULL;
+        ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &dirty);
+    }
+}
+
+std::string CoderTerminal::copySelection() {
+    SelectionState selection;
+    {
+        std::lock_guard lock(mutex_);
+        selection = selection_;
+    }
+    if (!selection.active) return {};
+    return selectedText(selection.startRow, selection.startCol, selection.endRow, selection.endCol);
 }
 
 std::string CoderTerminal::title() {
@@ -511,6 +535,32 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
     }
     cols = cols_;
     rows = rows_;
+    if (selection_.active) {
+        int startRow = selection_.startRow;
+        int startCol = selection_.startCol;
+        int endRow = selection_.endRow;
+        int endCol = selection_.endCol;
+        if (startRow > endRow || (startRow == endRow && startCol > endCol)) {
+            std::swap(startRow, endRow);
+            std::swap(startCol, endCol);
+        }
+        for (int viewportRow = 0; viewportRow < rows_; viewportRow++) {
+            int screenRow = 0;
+            GhosttyPoint point{};
+            point.tag = GHOSTTY_POINT_TAG_VIEWPORT;
+            point.value.coordinate.x = 0;
+            point.value.coordinate.y = static_cast<uint32_t>(viewportRow);
+            GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+            if (ghostty_terminal_grid_ref(terminal_.get(), point, &ref) != GHOSTTY_SUCCESS) continue;
+            GhosttyPointCoordinate screen{};
+            if (ghostty_terminal_point_from_grid_ref(terminal_.get(), &ref, GHOSTTY_POINT_TAG_SCREEN, &screen) != GHOSTTY_SUCCESS) continue;
+            screenRow = static_cast<int>(screen.y);
+            if (screenRow < startRow || screenRow > endRow) continue;
+            const int rowStartCol = screenRow == startRow ? startCol : 0;
+            const int rowEndCol = screenRow == endRow ? endCol : cols_ - 1;
+            for (int col = std::max(0, rowStartCol); col <= std::min(cols_ - 1, rowEndCol); col++) cells_[viewportRow * cols_ + col].background = selectionBackground_;
+        }
+    }
     cursor = cursor_;
     return cells_;
 }

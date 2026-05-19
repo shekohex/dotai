@@ -2044,15 +2044,20 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
 @Composable
 private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
     val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { it.sequence to it.label } else defaultShortcutRows(tab.title)
+    val activeShortcuts = shortcuts.take(4)
+    val inactiveShortcuts = shortcuts.drop(4)
     SettingsScaffold(tab.title, tokens, onBack) {
         SettingsSection("ACTIVE", tokens) {
-            if (shortcuts.isEmpty()) {
+            if (activeShortcuts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
             } else {
-                shortcuts.take(4).forEach { shortcut -> ShortcutDetailRow(shortcut.first, shortcut.second, true, tokens) }
+                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.first, shortcut.second, true, tokens) }
             }
         }
         item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        if (inactiveShortcuts.isNotEmpty()) {
+            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.first, shortcut.second, false, tokens) } }
+        }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(56.dp).clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
                 Text("+  Add Shortcut", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
@@ -2070,14 +2075,14 @@ private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, t
             Text(sequence, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
             Text(hint, color = tokens.secondary, fontSize = captionSize())
         }
-        Text("⠿", color = tokens.secondary, fontSize = 22.sp)
+        if (active) Text("⠿", color = tokens.secondary, fontSize = 22.sp) else Icon(painterResource(R.drawable.ic_feather_trash_2), null, tint = Color(0xffd62d5a), modifier = Modifier.size(20.dp))
     }
 }
 
 private fun defaultShortcutRows(tab: String): List<Pair<String, String>> = when (tab) {
-    "Tmux" -> listOf("^ b,c" to "new win", "^ b,n" to "next", "^ b,p" to "prev", "^ b,d" to "detach")
-    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear")
-    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate")
+    "Tmux" -> listOf("^ b,c" to "new win", "^ b,n" to "next", "^ b,p" to "prev", "^ b,d" to "detach", "^ b,w" to "windows", "^ b,z" to "zoom", "^ b,x" to "kill", "^ b,l" to "last")
+    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line")
+    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate", "/gsd:new-project" to "new project", "/gsd:plan-phase" to "plan", "/gsd:execute-phase" to "execute", "/gsd:verify-work" to "verify")
     else -> emptyList()
 }
 

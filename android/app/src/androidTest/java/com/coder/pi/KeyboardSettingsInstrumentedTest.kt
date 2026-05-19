@@ -32,6 +32,7 @@ class KeyboardSettingsInstrumentedTest {
         instrumentation.waitForIdleSync()
 
         check(device.wait(Until.hasObject(By.text("APPLICATION SHORTCUTS")), 10_000)) { "Application shortcuts section missing" }
+        check(device.hasObject(By.text("Option as Meta"))) { "Option as Meta toggle missing" }
         check(device.hasObject(By.text("Show Shortcuts"))) { "Show Shortcuts row missing" }
         check(device.hasObject(By.text("Cmd+K"))) { "Show Shortcuts chord missing" }
         check(device.hasObject(By.text("Switch Session"))) { "Switch Session row missing" }
@@ -72,6 +73,19 @@ class KeyboardSettingsInstrumentedTest {
 
         check(handled) { "Terminal control key was not handled" }
         check(triggeredShortcut == null) { "Ctrl+K incorrectly triggered application shortcut" }
+    }
+
+    @Test
+    fun optionAsMetaPreferenceTogglesTerminalAltMetaHandling() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+
+        terminalView.setOptionAsMetaEnabled(false)
+        check(terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, terminalView.optionAsMetaEnabled()) == 0) { "Disabled Option as Meta kept Alt meta" }
+
+        terminalView.setOptionAsMetaEnabled(true)
+        check(terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, terminalView.optionAsMetaEnabled()) == KeyEvent.META_ALT_ON) { "Enabled Option as Meta stripped Alt meta" }
     }
 
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {

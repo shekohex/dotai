@@ -248,6 +248,10 @@ fun terminalModifiedKeyBytes(keyCode: Int, unicodeChar: Int, metaState: Int): By
     return (if ((metaState and KeyEvent.META_ALT_ON) != 0) byteArrayOf(0x1b) else byteArrayOf()) + bytes
 }
 
+fun terminalMetaStateForOptionAsMeta(metaState: Int, optionAsMetaEnabled: Boolean): Int {
+    return if (optionAsMetaEnabled) metaState else metaState and KeyEvent.META_ALT_MASK.inv()
+}
+
 fun terminalControlByte(char: Char): Byte? {
     return when (char) {
         in 'a'..'z' -> ((char.uppercaseChar().code - '@'.code) and 0x1f).toByte()

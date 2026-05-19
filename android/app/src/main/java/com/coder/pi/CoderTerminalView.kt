@@ -498,7 +498,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun sendKey(keyCode: Int, metaState: Int = 0, unicodeChar: Int = 0) {
         if (handle == 0L) return
-        var nextMetaState = metaState
+        var nextMetaState = terminalMetaStateForOptionAsMeta(metaState, optionAsMetaEnabled())
         if (shiftLatch) nextMetaState = nextMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
         if (ctrlLatch) nextMetaState = nextMetaState or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
         if (altLatch) nextMetaState = nextMetaState or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
@@ -990,6 +990,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun keyboardPasteEnabled(): Boolean = preferences.getBoolean("keyboard_paste", true)
+
+    fun setOptionAsMetaEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("option_as_meta", enabled) }
+    }
+
+    fun optionAsMetaEnabled(): Boolean = preferences.getBoolean("option_as_meta", true)
 
     fun setOscNotificationsEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("osc.notifications", enabled) }

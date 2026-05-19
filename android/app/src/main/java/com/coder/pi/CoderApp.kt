@@ -2350,10 +2350,12 @@ private fun resetGestureActions(terminalView: CoderTerminalView) {
 @Composable
 private fun KeyboardSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
     var keyboardPaste by remember { mutableStateOf(terminalView.keyboardPasteEnabled()) }
+    var optionAsMeta by remember { mutableStateOf(terminalView.optionAsMetaEnabled()) }
     var volumeFontSize by remember { mutableStateOf(terminalView.volumeFontSizeEnabled()) }
     SettingsScaffold("Keyboard", tokens, onBack) {
         SettingsSection("HARDWARE KEYBOARD", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_upload, "Keyboard Paste", keyboardPaste, tokens) { keyboardPaste = it; terminalView.setKeyboardPasteEnabled(it) }
+            SettingsToggleRow(R.drawable.ic_feather_command, "Option as Meta", optionAsMeta, tokens) { optionAsMeta = it; terminalView.setOptionAsMetaEnabled(it) }
             SettingsValueRow(R.drawable.ic_feather_keyboard, "Paste Shortcut", "Cmd+V or Ctrl+Shift+V", null, tokens) {}
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Keys", "Esc, Tab, Enter, arrows, Home, End, PgUp, PgDn", null, tokens) {}
         }

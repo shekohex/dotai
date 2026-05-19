@@ -187,6 +187,13 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun optionAsMetaStripsHardwareAltWhenDisabled() {
+        assertEquals(KeyEvent.META_ALT_ON, terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, true))
+        assertEquals(0, terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, false))
+        assertEquals(KeyEvent.META_SHIFT_ON, terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON or KeyEvent.META_SHIFT_ON, false))
+    }
+
+    @Test
     fun terminalControlBytesMapLettersAndSymbols() {
         assertEquals(3.toByte(), terminalControlByte('c'))
         assertEquals(27.toByte(), terminalControlByte('['))

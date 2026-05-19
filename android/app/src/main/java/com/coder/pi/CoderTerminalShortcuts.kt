@@ -205,6 +205,24 @@ private fun typedShortcutSequence(ctrl: Boolean, opt: Boolean, shift: Boolean, t
 
 fun isShortcutInputValid(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, customText: String): Boolean = shortcutSequence(ctrl, opt, shift, key, customText).isNotEmpty()
 
+fun terminalShortcutSequenceBytes(sequence: String): ByteArray? {
+    if (sequence.isBlank()) return null
+    val parts = sequence.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    if (parts.size > 1 || parts.any { it.startsWith("^") }) {
+        return parts.mapNotNull(::terminalShortcutPartBytes).fold(byteArrayOf()) { acc, bytes -> acc + bytes }.takeIf { it.isNotEmpty() }
+    }
+    return sequence.toByteArray(Charsets.UTF_8)
+}
+
+private fun terminalShortcutPartBytes(part: String): ByteArray? {
+    if (!part.startsWith("^")) return part.toByteArray(Charsets.UTF_8)
+    val key = part.removePrefix("^").trim().ifBlank { return null }
+    return when (key.lowercase()) {
+        "space" -> byteArrayOf(0)
+        else -> terminalControlByte(key.first())?.let { byteArrayOf(it) }
+    }
+}
+
 fun hardwareShortcutLabel(keyCode: Int): String? {
     return when (keyCode) {
         KeyEvent.KEYCODE_ESCAPE -> "Esc"

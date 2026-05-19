@@ -119,6 +119,20 @@ class KeyboardSettingsInstrumentedTest {
         check(pastedImageUri == imageUri) { "Image paste shortcut did not route clipboard image" }
     }
 
+    @Test
+    fun terminalShortcutEngineSendsBytesToActiveTerminal() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+        val sent = mutableListOf<ByteArray>()
+        terminalView.attachRemote { sent.add(it) }
+
+        val handled = terminalView.executeTerminalShortcut("^ b,c")
+
+        check(handled) { "Terminal shortcut was not handled" }
+        check(sent.single().contentEquals(byteArrayOf(2, 99))) { "Terminal shortcut did not send expected bytes" }
+    }
+
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {
         val directory = File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")

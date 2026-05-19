@@ -491,6 +491,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         notifyModifierLatchChanged()
     }
 
+    fun executeTerminalShortcut(sequence: String): Boolean {
+        val bytes = terminalShortcutSequenceBytes(sequence) ?: return false
+        sendInput(bytes)
+        return true
+    }
+
     fun pasteFromClipboard(): Boolean {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip ?: return false

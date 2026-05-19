@@ -187,6 +187,15 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutSequenceBytesMatchTerminalKeys() {
+        assertArrayEquals("/gsd:progress".toByteArray(), terminalShortcutSequenceBytes("/gsd:progress"))
+        assertArrayEquals(byteArrayOf(3), terminalShortcutSequenceBytes("^ c"))
+        assertArrayEquals(byteArrayOf(2, 99), terminalShortcutSequenceBytes("^ b,c"))
+        assertArrayEquals(byteArrayOf(0), terminalShortcutSequenceBytes("^ Space"))
+        assertEquals(null, terminalShortcutSequenceBytes(""))
+    }
+
+    @Test
     fun optionAsMetaStripsHardwareAltWhenDisabled() {
         assertEquals(KeyEvent.META_ALT_ON, terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, true))
         assertEquals(0, terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, false))

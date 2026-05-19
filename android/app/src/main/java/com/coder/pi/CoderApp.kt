@@ -1424,7 +1424,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
                     }
                 }
                 if (!selectionActive && "dpad" !in toolbarOrder) ToolbarTextButton("✣", text, if (dpadExpanded) active else uiTokens(theme).surface) { dpadExpanded = !dpadExpanded }
-                if (!selectionActive) shortcuts.forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.sendText(shortcut.sequence) } }
+                if (!selectionActive) shortcuts.forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.executeTerminalShortcut(shortcut.sequence) } }
             }
             Spacer(Modifier.width(5.dp))
             Row(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {

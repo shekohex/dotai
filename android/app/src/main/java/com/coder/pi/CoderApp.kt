@@ -231,17 +231,14 @@ fun CoderApp(
                 "themeMode", "themeName" -> {
                     val nextTheme = CoderThemes.current(context)
                     terminalView.applyTheme(nextTheme)
-                    terminalSessions.forEach { it.terminalView.applyTheme(nextTheme) }
                 }
                 "fontFamily" -> {
                     val fontKey = CoderFonts.selectedKey(context)
                     terminalView.setPreviewFontFamily(fontKey)
-                    terminalSessions.forEach { it.terminalView.setPreviewFontFamily(fontKey) }
                 }
                 "fontSizeSp", "cellHeight", "cellWidth" -> {
                     val points = selectedTerminalFontSizeSp(context)
                     terminalView.setFontSizePoints(points)
-                    terminalSessions.forEach { it.terminalView.setFontSizePoints(points) }
                 }
             }
         }
@@ -534,11 +531,9 @@ fun CoderApp(
                 AppDestination.DEBUG_RENDER -> DebugRenderPlayground(theme, tokens) { destination = AppDestination.HOME }
                 AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
-                    terminalSessions.forEach { it.terminalView.setFontFamily(key) }
                     onFontChanged()
                 }, { points ->
                     terminalView.setFontSizePoints(points)
-                    terminalSessions.forEach { it.terminalView.setFontSizePoints(points) }
                     onFontChanged()
                 }, onFontChanged) { destination = AppDestination.HOME }
             }

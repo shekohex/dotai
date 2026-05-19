@@ -123,7 +123,23 @@ fun tmuxShortcutRows(prefixIndex: Int, startWindowFromOne: Boolean): List<Shortc
 fun defaultShortcutRowsForReset(tab: String): List<ShortcutRowDefinition> = when (tab) {
     "Tmux" -> tmuxShortcutRows(0, true)
     "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line").map { ShortcutRowDefinition(it.first, it.second) }
-    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate", "/gsd:new-project" to "new project", "/gsd:plan-phase" to "plan", "/gsd:execute-phase" to "execute", "/gsd:verify-work" to "verify").map { ShortcutRowDefinition(it.first, it.second) }
+    "Pi" -> listOf(
+        "/gsd:new-project" to "new project",
+        "/gsd:new-milestone" to "new milestone",
+        "/gsd:plan-phase" to "plan phase",
+        "/gsd:execute-phase" to "execute phase",
+        "/gsd:validate-phase" to "validate phase",
+        "/gsd:secure-phase" to "secure phase",
+        "/gsd:verify-work" to "verify work",
+        "/gsd:complete-milestone" to "complete milestone",
+        "/gsd:milestone-summary" to "milestone summary",
+        "/gsd:progress" to "progress",
+        "/gsd:debug" to "debug",
+        "/plannotator-review" to "review",
+        "/plannotator-annotate" to "annotate",
+        "/plannotator-archive" to "archive",
+        "/plannotator-last" to "last",
+    ).map { ShortcutRowDefinition(it.first, it.second) }
     else -> emptyList()
 }
 

@@ -105,6 +105,33 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun piShortcutRowsIncludeBundledAgentCommands() {
+        val rows = defaultShortcutRowsForReset("Pi")
+
+        assertEquals(15, rows.size)
+        assertEquals(
+            listOf(
+                "/gsd:new-project",
+                "/gsd:new-milestone",
+                "/gsd:plan-phase",
+                "/gsd:execute-phase",
+                "/gsd:validate-phase",
+                "/gsd:secure-phase",
+                "/gsd:verify-work",
+                "/gsd:complete-milestone",
+                "/gsd:milestone-summary",
+                "/gsd:progress",
+                "/gsd:debug",
+                "/plannotator-review",
+                "/plannotator-annotate",
+                "/plannotator-archive",
+                "/plannotator-last",
+            ),
+            rows.map { it.sequence },
+        )
+    }
+
+    @Test
     fun tmuxPrefixSequenceMapsConfiguredPrefixBytes() {
         assertEquals("\u0002", tmuxPrefixSequence(0))
         assertEquals("\u0001", tmuxPrefixSequence(1))

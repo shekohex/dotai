@@ -352,6 +352,39 @@ class ShortcutTabSettingsInstrumentedTest {
         captureDeviceScreenshot(device, "shortcuts-tmux-start-window.png")
     }
 
+    @Test
+    fun piTabShowsBundledAgentCommands() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        resetShortcutDetailPrefs(context)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val piRow = device.findObjects(By.text("Pi")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Pi tab missing")
+        piRow.click()
+
+        check(device.wait(Until.hasObject(By.text("/gsd:new-project")), 10_000)) { "GSD new project shortcut missing" }
+        check(device.hasObject(By.text("/gsd:execute-phase"))) { "GSD execute shortcut missing" }
+        device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 560, 12)
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.text("/gsd:progress")), 10_000)) { "GSD progress shortcut missing" }
+        check(device.hasObject(By.text("/plannotator-review"))) { "Plannotator review shortcut missing" }
+        repeat(3) {
+            if (!device.hasObject(By.text("/plannotator-last"))) {
+                device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 560, 12)
+                instrumentation.waitForIdleSync()
+            }
+        }
+        check(device.wait(Until.hasObject(By.text("/plannotator-archive")), 10_000)) { "Plannotator archive shortcut missing" }
+        check(device.hasObject(By.text("/plannotator-last"))) { "Plannotator last shortcut missing" }
+        captureDeviceScreenshot(device, "shortcuts-pi-commands.png")
+    }
+
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {
         val directory = File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")
@@ -364,7 +397,9 @@ class ShortcutTabSettingsInstrumentedTest {
             putBoolean("shortcuts.tmux_start_window_from_one", true)
             remove("toolbar.shortcuts")
             remove("shortcuts.row.tmux.order")
+            remove("shortcuts.row.pi.order")
             defaultShortcutRowsForReset("Tmux").forEach { remove(shortcutRowPreferenceKey("tmux", it)) }
+            defaultShortcutRowsForReset("Pi").forEach { remove(shortcutRowPreferenceKey("pi", it)) }
         }
     }
 

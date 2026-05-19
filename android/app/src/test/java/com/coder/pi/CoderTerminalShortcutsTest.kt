@@ -73,6 +73,13 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutRowDefinitionsCanRepresentCustomShortcuts() {
+        val shortcut = TerminalShortcut("demo", "/gsd:progress")
+
+        assertEquals(ShortcutRowDefinition("/gsd:progress", "demo"), ShortcutRowDefinition(shortcut.sequence, shortcut.label))
+    }
+
+    @Test
     fun tmuxShortcutRowsFollowPrefixAndWindowNumbering() {
         assertEquals("^ b,c", tmuxShortcutRows(0, true).first().sequence)
         assertEquals("^ a,c", tmuxShortcutRows(1, true).first().sequence)

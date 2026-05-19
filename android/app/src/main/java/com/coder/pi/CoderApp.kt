@@ -2127,7 +2127,7 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
         }
         item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         if (inactiveShortcuts.isNotEmpty()) {
-            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens) { terminalView.setShortcutRowActive(tab.id, shortcut, true); shortcutRevision++ } } }
+            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens, onDelete = if (tab.id == "favorites") ({ terminalView.removeCustomShortcut(shortcut); shortcutRevision++ }) else null) { terminalView.setShortcutRowActive(tab.id, shortcut, true); shortcutRevision++ } } }
         }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(56.dp).clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
@@ -2146,14 +2146,14 @@ private fun RowScope.TmuxPrefixChoice(label: String, selected: Boolean, tokens: 
 }
 
 @Composable
-private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onToggle: () -> Unit = {}) {
+private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onDelete: (() -> Unit)? = null, onToggle: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(if (active) "⊖" else "⊕", color = if (active) Color(0xffd62d5a) else tokens.accent, fontSize = 25.sp, modifier = Modifier.width(42.dp).semantics { contentDescription = if (active) "Disable $hint shortcut" else "Enable $hint shortcut" }.clickable { hapticClick(); onToggle() })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Text(sequence, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
             Text(hint, color = tokens.secondary, fontSize = captionSize())
         }
-        if (active) Text("⠿", color = tokens.secondary, fontSize = 22.sp) else Icon(painterResource(R.drawable.ic_feather_trash_2), null, tint = Color(0xffd62d5a), modifier = Modifier.size(20.dp))
+        if (active) Text("⠿", color = tokens.secondary, fontSize = 22.sp) else Icon(painterResource(R.drawable.ic_feather_trash_2), null, tint = Color(0xffd62d5a), modifier = Modifier.size(20.dp).semantics { contentDescription = "Delete $hint shortcut" }.clickable(enabled = onDelete != null) { hapticClick(); onDelete?.invoke() })
     }
 }
 

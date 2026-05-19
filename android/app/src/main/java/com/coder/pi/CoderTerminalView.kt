@@ -1066,6 +1066,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         notifyToolbarActionsChanged()
     }
 
+    fun removeCustomShortcut(shortcut: ShortcutRowDefinition) {
+        val next = customShortcuts().filterNot { it.sequence == shortcut.sequence && it.label == shortcut.hint }.joinToString("\n") { "${it.label}\t${it.sequence}" }
+        preferences.edit { putString("toolbar.shortcuts", next) }
+        preferences.edit { remove(shortcutRowPreferenceKey("favorites", shortcut)) }
+        notifyToolbarActionsChanged()
+    }
+
     fun notifyToolbarActionsChanged() {
         notifyAllTerminalToolbarsChanged()
     }

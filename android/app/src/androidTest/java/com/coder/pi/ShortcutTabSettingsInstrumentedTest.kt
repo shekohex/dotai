@@ -135,6 +135,38 @@ class ShortcutTabSettingsInstrumentedTest {
     }
 
     @Test
+    fun inactiveCustomShortcutCanBeDeleted() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        context.getSharedPreferences("terminal", 0).edit { putString("toolbar.shortcuts", "demo\t/gsd:progress") }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val favoritesRow = device.findObjects(By.text("Favorites")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Favorites tab missing")
+        favoritesRow.click()
+
+        check(device.wait(Until.hasObject(By.desc("Disable demo shortcut")), 10_000)) { "Custom shortcut disable control missing" }
+        device.findObject(By.desc("Disable demo shortcut"))?.click() ?: error("Custom shortcut disable control missing")
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Delete demo shortcut")), 10_000)) { "Custom shortcut delete control missing" }
+        device.findObject(By.desc("Delete demo shortcut"))?.click() ?: error("Custom shortcut delete control missing")
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.text("No active shortcuts")), 10_000)) { "Custom shortcut was not deleted" }
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+        val favoritesRowAgain = device.findObjects(By.text("Favorites")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Favorites tab missing after relaunch")
+        favoritesRowAgain.click()
+        check(device.wait(Until.hasObject(By.text("No active shortcuts")), 10_000)) { "Deleted custom shortcut reappeared" }
+        captureDeviceScreenshot(device, "shortcuts-delete-custom-row.png")
+    }
+
+    @Test
     fun tmuxPrefixSelectorUpdatesEffectivePreview() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

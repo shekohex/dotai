@@ -184,7 +184,7 @@ fun appTypography(fontFamily: FontFamily): Typography {
     )
 }
 
-fun CoderTerminalView.detachFromCurrentParent(): CoderTerminalView {
+fun CoderTerminalView.prepareForComposeHost(): CoderTerminalView {
     (parent as? ViewGroup)?.removeView(this)
     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     visibility = android.view.View.VISIBLE
@@ -404,8 +404,7 @@ fun CoderApp(
             if (index < 0) return@showTerminalSheet
             val managed = terminalSessions[index]
             val now = System.currentTimeMillis()
-            selectedTerminalHost?.terminalView?.detachFromCurrentParent()
-            selectedTerminalHost?.terminalView?.dispose()
+            selectedTerminalHost.disposeHost()
             val (nextTerminalView, terminalSession) = createTerminalHostView(context, managed.copy(updatedAtMillis = now), theme, sessionStore, { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }, { status ->
                 val statusIndex = terminalSessions.indexOfFirst { it.id == terminalId }
                 if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
@@ -453,8 +452,7 @@ fun CoderApp(
                         sessionStore.clearSession()
                         sessionStore.clearActiveTerminals(state.session.baseUrl, state.session.user.id)
                         TerminalConnectionManager.stopAll()
-                            selectedTerminalHost?.terminalView?.detachFromCurrentParent()
-                            selectedTerminalHost?.terminalView?.dispose()
+                            selectedTerminalHost.disposeHost()
                             selectedTerminalHost = null
                             terminalSessions.clear()
                             selectedTerminalId = null
@@ -531,8 +529,7 @@ fun CoderApp(
                         val index = terminalSessions.indexOfFirst { it.id == managed.id }
                         if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null, session = null)
                         val refreshed = terminalSessions.getOrNull(index) ?: return@retry
-                        selectedTerminalHost?.terminalView?.detachFromCurrentParent()
-                        selectedTerminalHost?.terminalView?.dispose()
+                        selectedTerminalHost.disposeHost()
                         val (nextTerminalView, terminalSession) = createTerminalHostView(context, refreshed, theme, sessionStore, { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }, { status ->
                             sessionStore.appendDebugLog("terminal ${launch.title} $status")
                             val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
@@ -549,7 +546,7 @@ fun CoderApp(
                     onHideKeyboard()
                     sheetTerminalView.setSoftwareKeyboardAllowed(false)
                     TerminalConnectionManager.detachRenderer(managed.id)
-                    sheetTerminalView.detachFromCurrentParent()
+                    sheetTerminalView.prepareForComposeHost()
                     sheetTerminalView.dispose()
                     selectedTerminalHost = null
                     selectedTerminalId = null
@@ -569,7 +566,7 @@ fun CoderApp(
                         onDetach = {
                             val index = terminalSessions.indexOfFirst { it.id == managed.id }
                             TerminalConnectionManager.detachRenderer(managed.id)
-                            sheetTerminalView.detachFromCurrentParent()
+                            sheetTerminalView.prepareForComposeHost()
                             sheetTerminalView.dispose()
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(detached = true, updatedAtMillis = System.currentTimeMillis())
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true, workspaceIconUrl = managed.launch.workspaceIconUrl))
@@ -592,8 +589,7 @@ fun CoderApp(
                         TerminalConnectionManager.stop(terminalId)
                         managed?.let { sessionStore.removeActiveTerminal(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command) }
                         if (selectedTerminalHost?.terminalId == terminalId) {
-                            selectedTerminalHost?.terminalView?.detachFromCurrentParent()
-                            selectedTerminalHost?.terminalView?.dispose()
+                            selectedTerminalHost.disposeHost()
                             selectedTerminalHost = null
                         }
                         terminalSessions.removeAll { it.id == terminalId }
@@ -615,6 +611,11 @@ data class TerminalIdentity(val baseUrl: String, val userId: String, val workspa
 private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val detached: Boolean, val errorDetail: String?)
 
 private data class SelectedTerminalHost(val terminalId: String, val terminalView: CoderTerminalView, val session: CoderTerminalSession)
+
+private fun SelectedTerminalHost?.disposeHost() {
+    this?.terminalView?.prepareForComposeHost()
+    this?.terminalView?.dispose()
+}
 
 private const val MaxActiveTerminalSessions = 10
 
@@ -1322,7 +1323,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
     }
     Box(Modifier.fillMaxSize().background(theme.background.toComposeColor())) {
         AndroidView(
-            factory = { playgroundTerminalView.detachFromCurrentParent() },
+            factory = { playgroundTerminalView.prepareForComposeHost() },
             modifier = Modifier.fillMaxSize(),
             update = {
                 it.applyTheme(theme)
@@ -1450,7 +1451,7 @@ fun TerminalSurface(
     Column(modifier.background(theme.background.toComposeColor())) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(
-                factory = { terminalView.detachFromCurrentParent() },
+                factory = { terminalView.prepareForComposeHost() },
                 modifier = Modifier.fillMaxSize().onSizeChanged { terminalView.post { terminalView.forceRefreshSurface() } },
                 update = {
                     it.applyTheme(theme)

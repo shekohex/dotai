@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import java.io.File
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,6 +59,26 @@ class DebugWorkflowInstrumentedTest {
 
         check(notifications.contains("OSC notification smoke")) { "OSC alert notification missing\n$notifications" }
         check(notifications.contains("terminal_osc_progress")) { "OSC progress notification missing\n$notifications" }
+    }
+
+    @Test
+    fun longPressCtrlOpensRuntimeShortcutsPanel() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Terminal Ctrl button")), 10_000)) { "Runtime Ctrl toolbar button missing" }
+
+        val ctrlBounds = device.findObject(By.desc("Terminal Ctrl button")).visibleBounds
+        device.executeShellCommand("input swipe ${ctrlBounds.centerX()} ${ctrlBounds.centerY()} ${ctrlBounds.centerX()} ${ctrlBounds.centerY()} 1200")
+
+        check(device.wait(Until.hasObject(By.desc("Terminal shortcuts panel")), 10_000)) { "Runtime shortcuts panel did not open" }
+        device.executeShellCommand("mkdir -p /data/local/tmp/pi-test-screenshots")
+        device.takeScreenshot(File("/data/local/tmp/pi-test-screenshots/terminal-shortcuts-panel.png"))
     }
 
     private fun shell(command: String): String {

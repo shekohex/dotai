@@ -1145,6 +1145,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
                 if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
             }
         }
+        TerminalAccessory(theme, playgroundTerminalView, false, {}, {}, {}, {}, Modifier.align(Alignment.BottomCenter))
     }
     pendingHyperlink?.let { uri ->
         val tokens = uiTokens(theme)
@@ -1311,6 +1312,8 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     var altActive by remember { mutableStateOf(false) }
     var showChat by remember { mutableStateOf(terminalView.toolbarActionVisible("chat")) }
     var showPaste by remember { mutableStateOf(terminalView.toolbarActionVisible("paste")) }
+    var shortcutsPanelExpanded by remember { mutableStateOf(false) }
+    var selectedShortcutPanelTab by remember { mutableStateOf<String?>(null) }
     var chatDraft by remember { mutableStateOf("") }
     var chatAttachments by remember { mutableStateOf<List<ChatImageAttachment>>(emptyList()) }
     var replacingAttachmentIndex by remember { mutableStateOf<Int?>(null) }
@@ -1327,6 +1330,8 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     val toolbarHiddenForHardwareKeyboard = terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), hardwareKeyboardAvailable, selectionActive, chatMode)
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+    val shortcutPanelTabs = remember(shortcuts, toolbarOrder, shortcutsPanelExpanded) { terminalShortcutPanelTabs(terminalView) }
+    val selectedPanelTab = shortcutPanelTabs.firstOrNull { it.id == selectedShortcutPanelTab } ?: shortcutPanelTabs.firstOrNull { it.rows.isNotEmpty() } ?: shortcutPanelTabs.firstOrNull()
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         val replaceIndex = replacingAttachmentIndex
         replacingAttachmentIndex = null
@@ -1357,6 +1362,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             showPaste = terminalView.toolbarActionVisible("paste")
             shortcuts = terminalView.customShortcuts()
             toolbarOrder = terminalView.toolbarOrder()
+            selectedShortcutPanelTab = null
         }
     }
     DisposableEffect(terminalView) {
@@ -1405,14 +1411,15 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     if (toolbarHiddenForHardwareKeyboard) return
     TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
     Box(modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
-        Row(Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(30.dp)).background(uiTokens(theme).surfaceHigh).border(BorderStroke(0.7.dp, uiTokens(theme).separator), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(uiTokens(theme).surfaceHigh).border(BorderStroke(0.7.dp, uiTokens(theme).separator), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).fillMaxHeight().clipToBounds().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 if (selectionActive) {
-                    ToolbarTextButton("Copy", text, uiTokens(theme).surface, onCopySelection)
-                    ToolbarTextButton("Clear", text, uiTokens(theme).surface, onClearSelection)
+                    ToolbarTextButton("Copy", text, uiTokens(theme).surface, onClick = onCopySelection)
+                    ToolbarTextButton("Clear", text, uiTokens(theme).surface, onClick = onClearSelection)
                 } else toolbarOrder.filterNot { it == "keyboard" || it == "chat" }.forEach { slot ->
                     when (slot) {
-                        "ctrl" -> ToolbarTextButton("ctrl", text, if (ctrlActive) active else uiTokens(theme).surface) { terminalView.toggleCtrlLatch() }
+                        "ctrl" -> ToolbarTextButton("ctrl", text, if (ctrlActive || shortcutsPanelExpanded) active else uiTokens(theme).surface, contentDescription = "Terminal Ctrl button", onClick = { if (shortcutsPanelExpanded) shortcutsPanelExpanded = false else terminalView.toggleCtrlLatch() }, onLongClick = { shortcutsPanelExpanded = true; selectedShortcutPanelTab = null })
                         "shift" -> ToolbarTextButton("⇧", text, if (shiftActive) active else uiTokens(theme).surface) { terminalView.toggleShiftLatch() }
                         "alt" -> ToolbarTextButton("alt", text, if (altActive) active else uiTokens(theme).surface) { terminalView.toggleAltLatch() }
                         "esc" -> ToolbarTextButton("esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
@@ -1433,6 +1440,45 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
                 if (!keyboardVisible) ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
             }
         }
+            if (shortcutsPanelExpanded && selectedPanelTab != null) TerminalShortcutPanel(selectedPanelTab, shortcutPanelTabs, terminalView, text, uiTokens(theme), { selectedShortcutPanelTab = it }) { shortcutsPanelExpanded = false }
+        }
+    }
+}
+
+private data class TerminalShortcutPanelTab(val id: String, val title: String, val rows: List<ShortcutRowDefinition>)
+
+private fun terminalShortcutPanelTabs(terminalView: CoderTerminalView): List<TerminalShortcutPanelTab> {
+    return terminalView.shortcutTabOrder().filter { terminalView.shortcutTabActive(it) }.map { tabId ->
+        val title = when (tabId) {
+            "favorites" -> "Favorites"
+            "tmux" -> "Tmux"
+            "ctrl" -> "Ctrl"
+            else -> "Pi"
+        }
+        val rows = if (tabId == "favorites") terminalView.customShortcuts().map { ShortcutRowDefinition(it.sequence, it.label) } else defaultShortcutRows(title, terminalView.tmuxPrefixIndex(), terminalView.tmuxStartWindowFromOne())
+        val orderedRows = rows.sortedBy { terminalView.shortcutRowOrder(tabId, rows).indexOf(shortcutRowId(it)) }
+        TerminalShortcutPanelTab(tabId, title, orderedRows.filterIndexed { index, shortcut -> terminalView.shortcutRowActive(tabId, shortcut, index < 4) })
+    }
+}
+
+@Composable
+private fun TerminalShortcutPanel(selectedTab: TerminalShortcutPanelTab, tabs: List<TerminalShortcutPanelTab>, terminalView: CoderTerminalView, text: Color, tokens: UiTokens, onSelectTab: (String) -> Unit, onShortcutExecuted: () -> Unit) {
+    Column(Modifier.fillMaxWidth().semantics { contentDescription = "Terminal shortcuts panel" }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            tabs.forEach { tab ->
+                Box(Modifier.height(32.dp).clip(RoundedCornerShape(12.dp)).background(if (tab.id == selectedTab.id) tokens.accent.copy(alpha = 0.24f) else tokens.surface).clickable { hapticClick(); onSelectTab(tab.id) }.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                    Text(tab.title, color = text, fontSize = captionSize(), maxLines = 1)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            selectedTab.rows.take(8).forEach { shortcut ->
+                ToolbarTextButton(shortcut.hint.ifBlank { shortcut.sequence }, text, tokens.surface) {
+                    terminalView.executeTerminalShortcut(shortcut.sequence)
+                    onShortcutExecuted()
+                }
+            }
+        }
     }
 }
 
@@ -1444,8 +1490,10 @@ private fun RowScope.AccessoryKey(label: String, color: Color, background: Color
 }
 
 @Composable
-private fun RowScope.ToolbarTextButton(label: String, color: Color, background: Color, onClick: () -> Unit) {
-    Box(Modifier.padding(end = 4.dp).height(32.dp).clip(RoundedCornerShape(12.dp)).background(background).clickable { hapticClick(); onClick() }.padding(horizontal = 7.dp), contentAlignment = Alignment.Center) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun RowScope.ToolbarTextButton(label: String, color: Color, background: Color, contentDescription: String? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    val semanticsModifier = if (contentDescription == null) Modifier else Modifier.semantics { this.contentDescription = contentDescription }
+    Box(Modifier.padding(end = 4.dp).height(32.dp).then(semanticsModifier).clip(RoundedCornerShape(12.dp)).background(background).combinedClickable(onClick = { hapticClick(); onClick() }, onLongClick = onLongClick?.let { { hapticClick(); it() } }).padding(horizontal = 7.dp), contentAlignment = Alignment.Center) {
         Text(label, color = color, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
     }
 }

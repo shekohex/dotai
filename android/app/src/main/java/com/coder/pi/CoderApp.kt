@@ -1175,7 +1175,6 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}[2J${esc}[H")
         append("${esc}]2;DotAI OSC $fontName${'\u0007'}")
         append("${esc}]7;file://coder.example/home/coder/dotai${'\u0007'}")
-        append("${esc}]52;c;Y2xpcGJvYXJkLXNtb2tl${'\u0007'}")
         append("${esc}]9;OSC notification smoke${'\u0007'}")
         append("${esc}]9;4;1;42${'\u0007'}")
         append("${esc}[1mDotAI renderer playground · $fontName${esc}[0m\r\n")
@@ -1473,7 +1472,8 @@ private fun TerminalShortcutPanel(selectedTab: TerminalShortcutPanelTab, tabs: L
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             selectedTab.rows.take(8).forEach { shortcut ->
-                ToolbarTextButton(shortcut.hint.ifBlank { shortcut.sequence }, text, tokens.surface) {
+                val shortcutLabel = shortcut.hint.ifBlank { shortcut.sequence }
+                ToolbarTextButton(shortcutLabel, text, tokens.surface, contentDescription = "Terminal shortcut $shortcutLabel") {
                     terminalView.executeTerminalShortcut(shortcut.sequence)
                     onShortcutExecuted()
                 }

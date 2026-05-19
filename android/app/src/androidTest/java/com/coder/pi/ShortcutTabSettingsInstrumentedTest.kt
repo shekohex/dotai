@@ -2,6 +2,7 @@ package com.coder.pi
 
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -222,6 +223,48 @@ class ShortcutTabSettingsInstrumentedTest {
     }
 
     @Test
+    fun commandShortcutCanBeAddedFromFavoritesTab() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        resetShortcutDetailPrefs(context)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val favoritesRow = device.findObjects(By.text("Favorites")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Favorites tab missing")
+        favoritesRow.click()
+        check(device.wait(Until.hasObject(By.text("+  Add Shortcut")), 10_000)) { "Add Shortcut action missing" }
+        device.findObject(By.text("+  Add Shortcut"))?.click() ?: error("Add Shortcut action missing")
+
+        check(device.wait(Until.hasObject(By.text("New Shortcut")), 10_000)) { "Shortcut editor did not open" }
+        check(device.hasObject(By.desc("Shortcut command"))) { "Shortcut command field missing" }
+        device.click(device.displayWidth / 2, (device.displayHeight * 0.63f).toInt())
+        Thread.sleep(500)
+        typeShortcutCommand(device, "/gsd:progress")
+        Thread.sleep(500)
+        check(device.wait(Until.hasObject(By.text("/gsd:progress")), 10_000)) { "Command text was not entered" }
+        device.pressBack()
+        check(device.wait(Until.hasObject(By.text("New Shortcut")), 10_000)) { "Shortcut editor closed before save" }
+        device.findObject(By.desc("Save"))?.click() ?: error("Save button missing")
+
+        check(device.wait(Until.hasObject(By.desc("Edit /gsd:progress shortcut")), 10_000)) { "Saved command shortcut row missing" }
+        check(device.hasObject(By.text("/gsd:progress"))) { "Saved command sequence missing" }
+        val saved = context.getSharedPreferences("terminal", 0).getString("toolbar.shortcuts", "").orEmpty()
+        check(saved.contains("/gsd:progress\t/gsd:progress")) { "Command shortcut did not persist" }
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+        val favoritesRowAgain = device.findObjects(By.text("Favorites")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Favorites tab missing after relaunch")
+        favoritesRowAgain.click()
+        check(device.wait(Until.hasObject(By.desc("Edit /gsd:progress shortcut")), 10_000)) { "Saved command shortcut did not persist after relaunch" }
+        captureDeviceScreenshot(device, "shortcuts-add-command.png")
+    }
+
+    @Test
     fun tmuxPrefixSelectorUpdatesEffectivePreview() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -286,6 +329,16 @@ class ShortcutTabSettingsInstrumentedTest {
             remove("toolbar.shortcuts")
             remove("shortcuts.row.tmux.order")
             defaultShortcutRowsForReset("Tmux").forEach { remove(shortcutRowPreferenceKey("tmux", it)) }
+        }
+    }
+
+    private fun typeShortcutCommand(device: UiDevice, text: String) {
+        text.forEach { char ->
+            when (char) {
+                '/' -> device.pressKeyCode(KeyEvent.KEYCODE_SLASH)
+                ':' -> device.pressKeyCode(KeyEvent.KEYCODE_SEMICOLON, KeyEvent.META_SHIFT_ON)
+                else -> device.pressKeyCode(KeyEvent.keyCodeFromString("KEYCODE_${char.uppercaseChar()}"))
+            }
         }
     }
 }

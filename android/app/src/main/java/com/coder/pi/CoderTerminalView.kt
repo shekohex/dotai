@@ -33,6 +33,8 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
@@ -861,6 +863,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return when (action) {
             "paste" -> pasteFromClipboard()
             "dismiss_keyboard" -> {
+                if (!imeVisible()) return false
                 cancelSmoothScrollState()
                 context.getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(windowToken, 0)
                 clearFocus()
@@ -886,6 +889,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             "custom_shortcut", "session_switcher", "adjust_font_size", "hide", "no_action" -> false
             else -> false
         }
+    }
+
+    private fun imeVisible(): Boolean {
+        return ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) == true
     }
 
     fun setChatModeEnabled(enabled: Boolean) {

@@ -138,7 +138,6 @@ import kotlin.math.abs
 
 enum class AppDestination { HOME, TERMINAL, SETTINGS, DEBUG_RENDER }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
-private enum class TerminalUiMode { SHEET }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -215,7 +214,6 @@ fun CoderApp(
     var authState by remember { mutableStateOf<AuthState>(AuthState.Loading) }
     val terminalSessions = remember { mutableStateListOf<ManagedTerminalSession>() }
     var selectedTerminalId by remember { mutableStateOf<String?>(null) }
-    var terminalUiMode by remember { mutableStateOf(TerminalUiMode.SHEET) }
     var confirmCloseTerminalId by remember { mutableStateOf<String?>(null) }
     var hydratedSessionKey by remember { mutableStateOf<String?>(null) }
     val tokens = remember(theme) { uiTokens(theme) }
@@ -323,7 +321,6 @@ fun CoderApp(
                     TerminalWindowLauncher.open(context, it.launch, it.identity)
                 } else {
                     selectedTerminalId = it.id
-                    terminalUiMode = TerminalUiMode.SHEET
                 }
             }
         }
@@ -424,7 +421,6 @@ fun CoderApp(
             terminalSessions[index] = managed.copy(terminalView = nextTerminalView, session = terminalSession, updatedAtMillis = now, detached = false)
             selectedTerminalId = terminalId
             preparedSheetTerminalId = terminalId
-            terminalUiMode = TerminalUiMode.SHEET
         }
         LaunchedEffect(selectedTerminalId) {
             val terminalId = selectedTerminalId ?: return@LaunchedEffect
@@ -463,7 +459,6 @@ fun CoderApp(
                         TerminalConnectionManager.stopAll()
                             terminalSessions.clear()
                             selectedTerminalId = null
-                            terminalUiMode = TerminalUiMode.SHEET
                             authState = AuthState.LoggedOut
                             destination = AppDestination.HOME
                         },
@@ -523,7 +518,6 @@ fun CoderApp(
                             val index = terminalSessions.indexOfFirst { it.id == id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
                             selectedTerminalId = id
-                            terminalUiMode = TerminalUiMode.SHEET
                         },
                     )
                 }
@@ -571,7 +565,6 @@ fun CoderApp(
                     managed.terminalView.detachFromCurrentParent()
                     managed.terminalView.dispose()
                     selectedTerminalId = null
-                    terminalUiMode = TerminalUiMode.SHEET
                 }
                 CoderTerminalBottomSheet(
                         terminalView = managed.terminalView,

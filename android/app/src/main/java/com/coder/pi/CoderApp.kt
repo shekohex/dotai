@@ -411,6 +411,22 @@ fun CoderApp(
     HapticTarget.enabled = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true) }
     val appTypography = remember(uiRevision) { appTypography(CoderFonts.uiFontFamily(context)) }
     MaterialTheme(typography = appTypography) {
+        val showTerminalSheet: (String) -> Unit = showTerminalSheet@{ terminalId ->
+            val index = terminalSessions.indexOfFirst { it.id == terminalId }
+            if (index < 0) return@showTerminalSheet
+            val managed = terminalSessions[index]
+            val now = System.currentTimeMillis()
+            val (nextTerminalView, terminalSession) = replaceTerminalHostView(context, managed.copy(updatedAtMillis = now), theme, sessionStore, { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }, { status ->
+                val statusIndex = terminalSessions.indexOfFirst { it.id == terminalId }
+                if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
+            }, { safeError ->
+                val errorIndex = terminalSessions.indexOfFirst { it.id == terminalId }
+                if (errorIndex >= 0) terminalSessions[errorIndex] = terminalSessions[errorIndex].copy(errorDetail = safeError)
+            })
+            terminalSessions[index] = managed.copy(terminalView = nextTerminalView, session = terminalSession, updatedAtMillis = now, detached = false)
+            selectedTerminalId = terminalId
+            terminalUiMode = TerminalUiMode.SHEET
+        }
         Box(Modifier.fillMaxSize().background(tokens.background)) {
             when (destination) {
                 AppDestination.HOME -> when (val state = authState) {
@@ -459,8 +475,7 @@ fun CoderApp(
                             if (detached) {
                                 TerminalWindowLauncher.open(context, it.launch, it.identity)
                             } else {
-                                selectedTerminalId = it.id
-                                terminalUiMode = TerminalUiMode.SHEET
+                                showTerminalSheet(it.id)
                             }
                         },
                         onCloseTerminal = {
@@ -476,8 +491,7 @@ fun CoderApp(
                                 if (sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)) {
                                     TerminalWindowLauncher.open(context, it.launch, it.identity)
                                 } else {
-                                    selectedTerminalId = it.id
-                                    terminalUiMode = TerminalUiMode.SHEET
+                                    showTerminalSheet(it.id)
                                 }
                                 return@CoderHomeScreen
                             }
@@ -529,7 +543,7 @@ fun CoderApp(
                         terminalSessions[index] = it.copy(updatedAtMillis = now)
                         val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
                         sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached, workspaceIconUrl = it.launch.workspaceIconUrl))
-                        selectedTerminalId = it.id
+                        if (detached) TerminalWindowLauncher.open(context, it.launch, it.identity) else showTerminalSheet(it.id)
                     } }
                 val retry: () -> Unit = {
                         val launch = managed.launch
@@ -635,6 +649,19 @@ private fun configureTerminalNotificationContext(terminalView: CoderTerminalView
             terminalId = id,
         )
     )
+}
+
+private fun replaceTerminalHostView(context: Context, managed: ManagedTerminalSession, theme: CoderTheme, sessionStore: CoderSessionStore, onNotificationPermissionNeeded: () -> Unit, onStatusChanged: (String) -> Unit, onErrorChanged: (String?) -> Unit): Pair<CoderTerminalView, CoderTerminalSession> {
+    managed.terminalView.detachFromCurrentParent()
+    managed.terminalView.dispose()
+    val nextTerminalView = createTerminalView(context, managed.id).also {
+        it.setFontFamily(CoderFonts.selectedKey(context))
+        it.applyTheme(theme)
+        configureTerminalNotificationContext(it, managed.launch, managed.identity, sessionStore)
+        it.onNotificationPermissionNeeded = onNotificationPermissionNeeded
+    }
+    val terminalSession = TerminalConnectionManager.startVisible(managed.id, managed.launch, nextTerminalView, onStatusChanged, onErrorChanged)
+    return nextTerminalView to terminalSession
 }
 
 @Composable
@@ -1191,7 +1218,7 @@ private fun CoderResizableBottomSheet(tokens: UiTokens, metrics: CoderUiMetrics,
     }
     Box(Modifier.fillMaxSize()) {
         SheetScrim(onDismiss)
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(animatedSheetHeightFraction).alignBottomSheet(tokens, expanded).padding(metrics.sheetPadding)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(animatedSheetHeightFraction).alignBottomSheet(tokens, expanded, clipContent = label != "terminal-sheet-height").padding(metrics.sheetPadding)) {
             val expandSheet = { expanded = true; sheetHeightFraction = 1f }
             if (header == null) SheetHandle(tokens, expandSheet, sheetDragModifier) else header(sheetDragModifier, expandSheet)
             content()

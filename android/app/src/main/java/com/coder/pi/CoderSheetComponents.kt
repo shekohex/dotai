@@ -368,8 +368,10 @@ fun ColumnScope.SheetHandle(tokens: UiTokens, onClick: (() -> Unit)? = null, dra
     Box(modifier, contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
 }
 
-fun Modifier.alignBottomSheet(tokens: UiTokens, expanded: Boolean = false): Modifier {
-    return fillMaxWidth().clip(RoundedCornerShape(topStart = if (expanded) 0.dp else 24.dp, topEnd = if (expanded) 0.dp else 24.dp)).background(tokens.background)
+fun Modifier.alignBottomSheet(tokens: UiTokens, expanded: Boolean = false, clipContent: Boolean = true): Modifier {
+    val base = fillMaxWidth()
+    if (!clipContent) return base.background(tokens.background)
+    return base.clip(RoundedCornerShape(topStart = if (expanded) 0.dp else 24.dp, topEnd = if (expanded) 0.dp else 24.dp)).background(tokens.background)
 }
 
 fun LazyListScope.HomeSection(title: String, tokens: UiTokens, trailing: String? = null, content: @Composable ColumnScope.() -> Unit) {

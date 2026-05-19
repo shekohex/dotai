@@ -77,7 +77,7 @@ class TerminalActivity : AppCompatActivity() {
             it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
             it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
         }
-        terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), detached = true, workspaceIconUrl = launch.workspaceIconUrl)
+        terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), workspaceIconUrl = launch.workspaceIconUrl)
         terminalStore?.saveActiveTerminal(terminalMetadata ?: return)
         terminalSession = TerminalConnectionManager.startVisible(terminalId, launch, terminalView, { status ->
             terminalStatus = status
@@ -93,7 +93,7 @@ class TerminalActivity : AppCompatActivity() {
                 TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).windowInsetsPadding(WindowInsets.displayCutout).imePadding(), showMetadataOverlay = false)
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
-                    if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"), detached = true))
+                    if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n")))
                     onDispose {}
                 }
             }
@@ -111,7 +111,7 @@ class TerminalActivity : AppCompatActivity() {
             finish()
             return
         }
-        terminalMetadata?.let { terminalStore?.saveActiveTerminal(it.copy(updatedAtMillis = System.currentTimeMillis(), detached = true)) }
+        terminalMetadata?.let { terminalStore?.saveActiveTerminal(it.copy(updatedAtMillis = System.currentTimeMillis())) }
     }
 
     override fun onPause() {
@@ -123,7 +123,7 @@ class TerminalActivity : AppCompatActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        terminalMetadata?.let { terminalStore?.saveActiveTerminal(it.copy(updatedAtMillis = System.currentTimeMillis(), detached = true)) }
+        terminalMetadata?.let { terminalStore?.saveActiveTerminal(it.copy(updatedAtMillis = System.currentTimeMillis())) }
     }
 
     override fun onDestroy() {
@@ -132,7 +132,7 @@ class TerminalActivity : AppCompatActivity() {
             TerminalConnectionManager.detachRenderer(terminalId)
         } else {
             TerminalConnectionManager.stop(terminalId)
-            terminalMetadata?.let { terminalStore?.updateActiveTerminalDetached(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command, false) }
+            terminalMetadata?.let { terminalStore?.removeActiveTerminal(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command) }
         }
         if (::terminalView.isInitialized) terminalView.dispose()
         terminalActivities.removeAll { it.get() == null || it.get() === this }
@@ -143,7 +143,7 @@ class TerminalActivity : AppCompatActivity() {
         previewJob?.cancel()
         previewJob = CoroutineScope(SupervisorJob() + Dispatchers.Main).launch {
             while (true) {
-                persistTerminalState(true)
+                persistTerminalState()
                 applyCurrentSettings()
                 delay(1000)
             }
@@ -186,12 +186,11 @@ class TerminalActivity : AppCompatActivity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    private fun persistTerminalState(detached: Boolean) {
+    private fun persistTerminalState() {
         val metadata = terminalMetadata ?: return
         val nextMetadata = metadata.copy(
             updatedAtMillis = System.currentTimeMillis(),
             preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"),
-            detached = detached,
         )
         terminalMetadata = nextMetadata
         terminalStore?.saveActiveTerminal(nextMetadata)

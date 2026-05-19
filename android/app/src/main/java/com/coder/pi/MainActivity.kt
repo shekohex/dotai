@@ -28,7 +28,6 @@ class MainActivity : AppCompatActivity() {
     private var deepLinkRevision by mutableIntStateOf(0)
     private var deepLinkTerminalId by mutableStateOf<String?>(null)
     private var debugPlaygroundRevision by mutableIntStateOf(0)
-    private var keyboardTerminalView: CoderTerminalView? = null
     private var terminalPreferences: SharedPreferences? = null
     private var terminalPreferencesListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
@@ -72,18 +71,10 @@ class MainActivity : AppCompatActivity() {
                     applySystemBars(currentTheme ?: CoderThemes.current(this))
                 },
                 onFontChanged = { uiRevision++ },
-                onShowKeyboard = { targetTerminalView ->
-                    keyboardTerminalView?.setSoftwareKeyboardAllowed(false)
-                    keyboardTerminalView = targetTerminalView
-                    targetTerminalView.setSoftwareKeyboardAllowed(true)
-                    showTerminalKeyboard(targetTerminalView)
-                },
                 onHideKeyboard = {
-                    val targetTerminalView = keyboardTerminalView ?: terminalView
-                    targetTerminalView.setSoftwareKeyboardAllowed(false)
-                    keyboardTerminalView = null
-                    WindowInsetsControllerCompat(window, targetTerminalView).hide(WindowInsetsCompat.Type.ime())
-                    getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(targetTerminalView.windowToken, 0)
+                    terminalView.setSoftwareKeyboardAllowed(false)
+                    WindowInsetsControllerCompat(window, terminalView).hide(WindowInsetsCompat.Type.ime())
+                    getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(terminalView.windowToken, 0)
                     WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
                 },
             )
@@ -126,27 +117,6 @@ class MainActivity : AppCompatActivity() {
             else -> SettingsPage.ROOT
         }
         deepLinkRevision++
-    }
-
-    private fun showTerminalKeyboard(targetTerminalView: CoderTerminalView) {
-        val inputMethodManager = getSystemService<InputMethodManager>() ?: return
-        fun requestKeyboard() {
-            targetTerminalView.requestFocus()
-            targetTerminalView.requestFocusFromTouch()
-            inputMethodManager.restartInput(targetTerminalView)
-            WindowInsetsControllerCompat(window, targetTerminalView).show(WindowInsetsCompat.Type.ime())
-            inputMethodManager.showSoftInput(targetTerminalView, InputMethodManager.SHOW_IMPLICIT)
-        }
-        requestKeyboard()
-        targetTerminalView.post {
-            requestKeyboard()
-            targetTerminalView.postDelayed({
-                requestKeyboard()
-                @Suppress("DEPRECATION")
-                inputMethodManager.showSoftInput(targetTerminalView, InputMethodManager.SHOW_FORCED)
-                WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
-            }, 120)
-        }
     }
 
     private fun applySystemBars(theme: CoderTheme) {

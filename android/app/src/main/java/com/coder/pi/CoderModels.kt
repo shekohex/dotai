@@ -110,6 +110,5 @@ data class CoderActiveTerminalMetadata(
     val reconnectId: String,
     val updatedAtMillis: Long,
     val preview: String = "",
-    val detached: Boolean = false,
     val workspaceIconUrl: String? = null,
 )

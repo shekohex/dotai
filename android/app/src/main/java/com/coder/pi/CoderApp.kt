@@ -136,7 +136,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
-enum class AppDestination { HOME, TERMINAL, SETTINGS, DEBUG_RENDER }
+enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
@@ -207,13 +207,11 @@ fun CoderApp(
     debugPlaygroundRevision: Int,
     onThemeChanged: () -> Unit,
     onFontChanged: () -> Unit,
-    onShowKeyboard: (CoderTerminalView) -> Unit,
     onHideKeyboard: () -> Unit,
 ) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
     var authState by remember { mutableStateOf<AuthState>(AuthState.Loading) }
-    val terminalSessions = remember { mutableStateListOf<ManagedTerminalSession>() }
-    var selectedTerminalId by remember { mutableStateOf<String?>(null) }
+    val terminalSessions = remember { mutableStateListOf<ActiveTerminalWindow>() }
     var confirmCloseTerminalId by remember { mutableStateOf<String?>(null) }
     var hydratedSessionKey by remember { mutableStateOf<String?>(null) }
     val tokens = remember(theme) { uiTokens(theme) }
@@ -221,7 +219,6 @@ fun CoderApp(
     val sessionStore = remember(context) { CoderSessionStore(context) }
     val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    var networkAvailable by remember { mutableStateOf(true) }
     DisposableEffect(context, terminalView, terminalSessions) {
         val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -272,24 +269,20 @@ fun CoderApp(
             val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
             return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         }
-        networkAvailable = hasValidatedNetwork()
+        hasValidatedNetwork()
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 mainHandler.post {
-                    networkAvailable = true
                     sessionStore.appendDebugLog("network available")
-                    terminalSessions.forEach { it.session?.networkAvailable() }
                 }
             }
 
             override fun onLost(network: Network) {
                 mainHandler.post {
-                    networkAvailable = hasValidatedNetwork()
-                    if (!networkAvailable) {
+                    if (!hasValidatedNetwork()) {
                         sessionStore.appendDebugLog("network lost")
                         terminalSessions.forEachIndexed { index, managed ->
-                            managed.session?.networkLost()
-                            terminalSessions[index] = managed.copy(sheet = managed.sheet.copy(status = TerminalConnectionStatus.Reconnecting.wireName), errorDetail = "Network unavailable")
+                            terminalSessions[index] = managed.copy(updatedAtMillis = System.currentTimeMillis())
                         }
                     }
                 }
@@ -317,11 +310,7 @@ fun CoderApp(
             val terminalId = deepLinkTerminalId ?: return@LaunchedEffect
             terminalSessions.firstOrNull { it.id == terminalId }?.let {
                 destination = AppDestination.HOME
-                if (it.detached) {
-                    TerminalWindowLauncher.open(context, it.launch, it.identity)
-                } else {
-                    selectedTerminalId = it.id
-                }
+                TerminalWindowLauncher.open(context, it.launch, it.identity)
             }
         }
         val sessionKey = "${session.baseUrl}|${session.user.id}"
@@ -334,22 +323,8 @@ fun CoderApp(
                 val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
                 val id = terminalSessionKey(identity)
                 if (terminalSessions.any { it.id == id }) return@forEach
-                val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null)
+                val managed = ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis)
                 terminalSessions.add(managed)
-                if (metadata.detached) return@forEach
-                val local = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId)
-                val terminalSession = TerminalConnectionManager.startHeadless(context, launch, identity, TerminalNotificationContext(metadata.workspaceId, metadata.workspaceName, local.alias ?: metadata.workspaceName, "pi://terminal?id=${Uri.encode(id)}", local.iconUri.orEmpty(), metadata.workspaceIconUrl.orEmpty(), id))
-                terminalSession?.updateCallbacks({ status ->
-                    sessionStore.appendDebugLog("terminal ${launch.title} $status")
-                    val index = terminalSessions.indexOfFirst { it.id == id }
-                    if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = terminalSessions[index].sheet.copy(status = status))
-                }, { safeError ->
-                    val index = terminalSessions.indexOfFirst { it.id == id }
-                    if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(errorDetail = safeError)
-                    safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
-                })
-                val index = terminalSessions.indexOfFirst { it.id == id }
-                if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
             }
         }
         LaunchedEffect(sessionKey) {
@@ -364,31 +339,12 @@ fun CoderApp(
                     val workspaceLabel = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId).alias ?: metadata.workspaceName
                     val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, workspaceLabel, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
                     val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
-                    terminalSessions.add(ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), null, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, metadata.detached, null))
+                    terminalSessions.add(ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis))
                 }
                 terminalSessions.forEachIndexed { index, managed ->
                     val metadata = metadataById[managed.id] ?: return@forEachIndexed
                     val previewLines = metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5)
-                    if (!metadata.detached && managed.session == null) {
-                        val local = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId)
-                        val terminalSession = TerminalConnectionManager.startHeadless(context, managed.launch.copy(baseUrl = session.baseUrl, token = session.token), managed.identity, TerminalNotificationContext(metadata.workspaceId, metadata.workspaceName, local.alias ?: metadata.workspaceName, "pi://terminal?id=${Uri.encode(managed.id)}", local.iconUri.orEmpty(), metadata.workspaceIconUrl.orEmpty(), managed.id))
-                        terminalSession?.updateCallbacks({ status ->
-                            sessionStore.appendDebugLog("terminal ${managed.launch.title} $status")
-                            val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
-                            if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
-                        }, { safeError ->
-                            val errorIndex = terminalSessions.indexOfFirst { it.id == managed.id }
-                            if (errorIndex >= 0) terminalSessions[errorIndex] = terminalSessions[errorIndex].copy(errorDetail = safeError)
-                            safeError?.let { sessionStore.appendDebugLog("terminal ${managed.launch.title} error $it") }
-                        })
-                        terminalSessions[index] = managed.copy(session = terminalSession, previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis, detached = false)
-                        return@forEachIndexed
-                    }
-                    terminalSessions[index] = managed.copy(
-                        previewLines = previewLines,
-                        updatedAtMillis = metadata.updatedAtMillis,
-                        detached = metadata.detached,
-                    )
+                    terminalSessions[index] = managed.copy(previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis)
                 }
             }
         }
@@ -397,30 +353,6 @@ fun CoderApp(
     HapticTarget.enabled = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true) }
     val appTypography = remember(uiRevision) { appTypography(CoderFonts.uiFontFamily(context)) }
     MaterialTheme(typography = appTypography) {
-        var preparedSheetTerminalId by remember { mutableStateOf<String?>(null) }
-        var selectedTerminalHost by remember { mutableStateOf<SelectedTerminalHost?>(null) }
-        val showTerminalSheet: (String) -> Unit = showTerminalSheet@{ terminalId ->
-            val index = terminalSessions.indexOfFirst { it.id == terminalId }
-            if (index < 0) return@showTerminalSheet
-            val managed = terminalSessions[index]
-            val now = System.currentTimeMillis()
-            selectedTerminalHost.disposeHost()
-            val (nextTerminalView, terminalSession) = createTerminalHostView(context, managed.copy(updatedAtMillis = now), theme, sessionStore, { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }, { status ->
-                val statusIndex = terminalSessions.indexOfFirst { it.id == terminalId }
-                if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
-            }, { safeError ->
-                val errorIndex = terminalSessions.indexOfFirst { it.id == terminalId }
-                if (errorIndex >= 0) terminalSessions[errorIndex] = terminalSessions[errorIndex].copy(errorDetail = safeError)
-            })
-            selectedTerminalHost = SelectedTerminalHost(terminalId, nextTerminalView, terminalSession)
-            terminalSessions[index] = managed.copy(session = terminalSession, updatedAtMillis = now, detached = false)
-            selectedTerminalId = terminalId
-            preparedSheetTerminalId = terminalId
-        }
-        LaunchedEffect(selectedTerminalId) {
-            val terminalId = selectedTerminalId ?: return@LaunchedEffect
-            if (preparedSheetTerminalId != terminalId) showTerminalSheet(terminalId)
-        }
         Box(Modifier.fillMaxSize().background(tokens.background)) {
             when (destination) {
                 AppDestination.HOME -> when (val state = authState) {
@@ -451,11 +383,8 @@ fun CoderApp(
                         TerminalActivity.finishDetachedTerminals(state.session.baseUrl, state.session.user.id)
                         sessionStore.clearSession()
                         sessionStore.clearActiveTerminals(state.session.baseUrl, state.session.user.id)
-                        TerminalConnectionManager.stopAll()
-                            selectedTerminalHost.disposeHost()
-                            selectedTerminalHost = null
+                            TerminalConnectionManager.stopAll()
                             terminalSessions.clear()
-                            selectedTerminalId = null
                             authState = AuthState.LoggedOut
                             destination = AppDestination.HOME
                         },
@@ -465,13 +394,8 @@ fun CoderApp(
                             val now = System.currentTimeMillis()
                             val index = terminalSessions.indexOfFirst { session -> session.id == it.id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(updatedAtMillis = now)
-                            val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached, workspaceIconUrl = it.launch.workspaceIconUrl))
-                            if (detached) {
-                                TerminalWindowLauncher.open(context, it.launch, it.identity)
-                            } else {
-                                showTerminalSheet(it.id)
-                            }
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), workspaceIconUrl = it.launch.workspaceIconUrl))
+                            TerminalWindowLauncher.open(context, it.launch, it.identity)
                         },
                         onCloseTerminal = {
                             confirmCloseTerminalId = it.id
@@ -483,11 +407,7 @@ fun CoderApp(
                             val identity = TerminalIdentity(state.session.baseUrl, state.session.user.id, workspace.id, agent.id, command)
                             val id = terminalSessionKey(identity)
                             terminalSessions.firstOrNull { it.id == id }?.let {
-                                if (sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)) {
-                                    TerminalWindowLauncher.open(context, it.launch, it.identity)
-                                } else {
-                                    showTerminalSheet(it.id)
-                                }
+                                TerminalWindowLauncher.open(context, it.launch, it.identity)
                                 return@CoderHomeScreen
                             }
                             if (terminalSessions.size >= MaxActiveTerminalSessions) {
@@ -495,13 +415,12 @@ fun CoderApp(
                                 return@CoderHomeScreen
                             }
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis(), workspaceIconUrl = workspace.templateIcon))
-                            val managed = ManagedTerminalSession(id, launch, identity, TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Connecting.wireName), null, emptyList(), System.currentTimeMillis(), false, null)
+                            val managed = ActiveTerminalWindow(id, launch, identity, emptyList(), System.currentTimeMillis())
                             terminalSessions.add(managed)
-                            showTerminalSheet(id)
+                            TerminalWindowLauncher.open(context, launch, identity)
                         },
                     )
                 }
-                AppDestination.TERMINAL -> TerminalPane(terminalView, theme, onShowKeyboard, onHideKeyboard)
                 AppDestination.DEBUG_RENDER -> DebugRenderPlayground(theme, tokens) { destination = AppDestination.HOME }
                 AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
@@ -510,74 +429,6 @@ fun CoderApp(
                     terminalView.setFontSizePoints(points)
                     onFontChanged()
                 }, onFontChanged) { destination = AppDestination.HOME }
-            }
-            terminalSessions.firstOrNull { it.id == selectedTerminalId }?.let { managed ->
-                val sheetHost = selectedTerminalHost?.takeIf { it.terminalId == managed.id } ?: return@let
-                val sheetTerminalView = sheetHost.terminalView
-                val selectedIndex = terminalSessions.indexOfFirst { it.id == managed.id }.coerceAtLeast(0)
-                val selectSession: (Int) -> Unit = { index -> terminalSessions.getOrNull(index)?.let {
-                        val now = System.currentTimeMillis()
-                        terminalSessions[index] = it.copy(updatedAtMillis = now)
-                        val detached = sessionStore.isActiveTerminalDetached(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command)
-                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), detached, workspaceIconUrl = it.launch.workspaceIconUrl))
-                        if (detached) TerminalWindowLauncher.open(context, it.launch, it.identity) else showTerminalSheet(it.id)
-                    } }
-                val retry: () -> Unit = retry@{
-                        val launch = managed.launch
-                        TerminalConnectionManager.stop(managed.id)
-                        sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, launch.title, managed.identity.agentId, launch.badge, managed.identity.command, launch.reconnectId, System.currentTimeMillis(), detached = managed.detached, workspaceIconUrl = launch.workspaceIconUrl))
-                        val index = terminalSessions.indexOfFirst { it.id == managed.id }
-                        if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(sheet = TerminalSheetState(launch.title, launch.badge, TerminalConnectionStatus.Reconnecting.wireName), errorDetail = null, session = null)
-                        val refreshed = terminalSessions.getOrNull(index) ?: return@retry
-                        selectedTerminalHost.disposeHost()
-                        val (nextTerminalView, terminalSession) = createTerminalHostView(context, refreshed, theme, sessionStore, { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }, { status ->
-                            sessionStore.appendDebugLog("terminal ${launch.title} $status")
-                            val statusIndex = terminalSessions.indexOfFirst { it.id == managed.id }
-                            if (statusIndex >= 0) terminalSessions[statusIndex] = terminalSessions[statusIndex].copy(sheet = terminalSessions[statusIndex].sheet.copy(status = status))
-                        }, { safeError ->
-                            val errorIndex = terminalSessions.indexOfFirst { it.id == managed.id }
-                            if (errorIndex >= 0) terminalSessions[errorIndex] = terminalSessions[errorIndex].copy(errorDetail = safeError)
-                            safeError?.let { sessionStore.appendDebugLog("terminal ${launch.title} error $it") }
-                        })
-                        selectedTerminalHost = SelectedTerminalHost(managed.id, nextTerminalView, terminalSession)
-                        if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(session = terminalSession)
-                    }
-                val dismiss: () -> Unit = {
-                    onHideKeyboard()
-                    sheetTerminalView.setSoftwareKeyboardAllowed(false)
-                    TerminalConnectionManager.detachRenderer(managed.id)
-                    sheetTerminalView.prepareForComposeHost()
-                    sheetTerminalView.dispose()
-                    selectedTerminalHost = null
-                    selectedTerminalId = null
-                }
-                CoderTerminalBottomSheet(
-                        terminalView = sheetTerminalView,
-                        theme = theme,
-                        tokens = tokens,
-                        title = managed.sheet.title,
-                        badge = managed.sheet.badge,
-                        sessionLabel = tmuxSessionLabel(managed.identity.command),
-                        status = managed.sheet.status,
-                        errorDetail = managed.errorDetail,
-                        networkAvailable = networkAvailable,
-                        onRetry = retry,
-                        onDismiss = dismiss,
-                        onDetach = {
-                            val index = terminalSessions.indexOfFirst { it.id == managed.id }
-                            TerminalConnectionManager.detachRenderer(managed.id)
-                            sheetTerminalView.prepareForComposeHost()
-                            sheetTerminalView.dispose()
-                            if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(detached = true, updatedAtMillis = System.currentTimeMillis())
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true, workspaceIconUrl = managed.launch.workspaceIconUrl))
-                            selectedTerminalId = null
-                            selectedTerminalHost = null
-                            onHideKeyboard()
-                            TerminalWindowLauncher.open(context, managed.launch, managed.identity)
-                        },
-                        onShowKeyboard = { onShowKeyboard(sheetTerminalView) },
-                        onHideKeyboard = onHideKeyboard,
-                )
             }
             confirmCloseTerminalId?.let { terminalId ->
                 ConfirmCloseTerminalDialog(
@@ -588,12 +439,7 @@ fun CoderApp(
                         val managed = terminalSessions.firstOrNull { it.id == terminalId }
                         TerminalConnectionManager.stop(terminalId)
                         managed?.let { sessionStore.removeActiveTerminal(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.identity.agentId, it.identity.command) }
-                        if (selectedTerminalHost?.terminalId == terminalId) {
-                            selectedTerminalHost.disposeHost()
-                            selectedTerminalHost = null
-                        }
                         terminalSessions.removeAll { it.id == terminalId }
-                        if (selectedTerminalId == terminalId) selectedTerminalId = null
                         onHideKeyboard()
                     },
                 )
@@ -602,53 +448,13 @@ fun CoderApp(
     }
 }
 
-private data class TerminalSheetState(val title: String, val badge: String, val status: String)
-
 data class TerminalLaunchRequest(val baseUrl: String, val token: String, val agentId: String, val reconnectId: String, val command: String, val title: String, val badge: String, val workspaceName: String = title, val workspaceIconUrl: String? = null)
 
 data class TerminalIdentity(val baseUrl: String, val userId: String, val workspaceId: String, val agentId: String, val command: String)
 
-private data class ManagedTerminalSession(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val sheet: TerminalSheetState, val session: CoderTerminalSession?, val previewLines: List<String>, val updatedAtMillis: Long, val detached: Boolean, val errorDetail: String?)
-
-private data class SelectedTerminalHost(val terminalId: String, val terminalView: CoderTerminalView, val session: CoderTerminalSession)
-
-private fun SelectedTerminalHost?.disposeHost() {
-    this?.terminalView?.prepareForComposeHost()
-    this?.terminalView?.dispose()
-}
+private data class ActiveTerminalWindow(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val previewLines: List<String>, val updatedAtMillis: Long)
 
 private const val MaxActiveTerminalSessions = 10
-
-private fun createTerminalView(context: Context, terminalId: String): CoderTerminalView {
-    return CoderTerminalView(context, attachedEngine = TerminalConnectionManager.engineFor(terminalId))
-}
-
-private fun configureTerminalNotificationContext(terminalView: CoderTerminalView, launch: TerminalLaunchRequest, identity: TerminalIdentity, sessionStore: CoderSessionStore) {
-    val id = terminalSessionKey(identity)
-    val local = sessionStore.workspaceState(identity.baseUrl, identity.userId, identity.workspaceId)
-    terminalView.setNotificationContext(
-        TerminalNotificationContext(
-            workspaceId = identity.workspaceId,
-            workspaceName = launch.workspaceName,
-            workspaceDisplayName = local.alias ?: launch.title,
-            deepLink = "pi://terminal?id=${Uri.encode(id)}",
-            iconUri = local.iconUri.orEmpty(),
-            iconUrl = launch.workspaceIconUrl.orEmpty(),
-            terminalId = id,
-        )
-    )
-}
-
-private fun createTerminalHostView(context: Context, managed: ManagedTerminalSession, theme: CoderTheme, sessionStore: CoderSessionStore, onNotificationPermissionNeeded: () -> Unit, onStatusChanged: (String) -> Unit, onErrorChanged: (String?) -> Unit): Pair<CoderTerminalView, CoderTerminalSession> {
-    val nextTerminalView = createTerminalView(context, managed.id).also {
-        it.setFontFamily(CoderFonts.selectedKey(context))
-        it.applyTheme(theme)
-        configureTerminalNotificationContext(it, managed.launch, managed.identity, sessionStore)
-        it.onNotificationPermissionNeeded = onNotificationPermissionNeeded
-    }
-    val terminalSession = TerminalConnectionManager.startVisible(managed.id, managed.launch, nextTerminalView, onStatusChanged, onErrorChanged)
-    return nextTerminalView to terminalSession
-}
 
 @Composable
 private fun ThemedAlertDialog(onDismissRequest: () -> Unit, tokens: UiTokens, title: @Composable () -> Unit, text: @Composable () -> Unit, confirmButton: @Composable () -> Unit, dismissButton: @Composable () -> Unit) {
@@ -676,23 +482,6 @@ private fun ConfirmCloseTerminalDialog(tokens: UiTokens, onDismiss: () -> Unit, 
         confirmButton = { TextButton(onClick = { hapticClick(); onConfirm() }) { Text("Close", color = Color(0xffff5c7a)) } },
         dismissButton = { TextButton(onClick = { hapticClick(); onDismiss() }) { Text("Cancel", color = tokens.accent) } },
     )
-}
-
-@Composable
-private fun ReplaceTerminalSheet(launch: TerminalLaunchRequest, tokens: UiTokens, onKeepCurrent: () -> Unit, onReplace: () -> Unit) {
-    Box(Modifier.fillMaxSize()) {
-        SheetScrim(onKeepCurrent)
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().alignBottomSheet(tokens).padding(20.dp)) {
-            SheetHandle(tokens)
-            Text("Active terminal running", color = tokens.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text("Opening ${launch.title} will close current connection. Keep current terminal minimized, or replace it.", color = tokens.secondary, fontSize = bodySize(), lineHeight = 20.sp)
-            Spacer(Modifier.height(18.dp))
-            CoderPrimaryButton("Keep current", tokens, onKeepCurrent)
-            Spacer(Modifier.height(10.dp))
-            CoderSecondaryButton("Replace terminal", tokens, onReplace)
-        }
-    }
 }
 
 @Composable
@@ -744,7 +533,7 @@ private fun TokenScreen(tokens: UiTokens, baseUrl: String, onReopen: (String) ->
 }
 
 @Composable
-private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, sessionStore: CoderSessionStore, activeTerminals: List<ManagedTerminalSession>, onResumeTerminal: (ManagedTerminalSession) -> Unit, onCloseTerminal: (ManagedTerminalSession) -> Unit, onSessionExpired: () -> Unit, onOpenSettings: () -> Unit, onOpenTerminal: (CoderWorkspace, CoderWorkspaceAgent, String) -> Unit) {
+private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, sessionStore: CoderSessionStore, activeTerminals: List<ActiveTerminalWindow>, onResumeTerminal: (ActiveTerminalWindow) -> Unit, onCloseTerminal: (ActiveTerminalWindow) -> Unit, onSessionExpired: () -> Unit, onOpenSettings: () -> Unit, onOpenTerminal: (CoderWorkspace, CoderWorkspaceAgent, String) -> Unit) {
     val scope = rememberCoroutineScope()
     val api = remember(session) { CoderApi(session.baseUrl, session.token) }
     val context = LocalContext.current
@@ -868,7 +657,7 @@ private fun WorkspaceLoadingSection(tokens: UiTokens, metrics: CoderUiMetrics) {
 }
 
 @Composable
-private fun ActiveCoderSessionSection(activeTerminals: List<ManagedTerminalSession>, tokens: UiTokens, metrics: CoderUiMetrics, onResumeTerminal: (ManagedTerminalSession) -> Unit, onCloseTerminal: (ManagedTerminalSession) -> Unit) {
+private fun ActiveCoderSessionSection(activeTerminals: List<ActiveTerminalWindow>, tokens: UiTokens, metrics: CoderUiMetrics, onResumeTerminal: (ActiveTerminalWindow) -> Unit, onCloseTerminal: (ActiveTerminalWindow) -> Unit) {
     val context = LocalContext.current
     val holdToClose = remember(context) { context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("gesture.hold_to_close", true) }
     Column {
@@ -899,15 +688,14 @@ private fun connectionHostLabel(baseUrl: String): String = runCatching { baseUrl
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, tokens: UiTokens, metrics: CoderUiMetrics, holdToClose: Boolean, onResume: () -> Unit, onClose: () -> Unit) {
-    val session = managed.sheet
+private fun ActiveCoderSessionCard(managed: ActiveTerminalWindow, tokens: UiTokens, metrics: CoderUiMetrics, holdToClose: Boolean, onResume: () -> Unit, onClose: () -> Unit) {
     var updatedAtMillis by remember { mutableStateOf(managed.updatedAtMillis) }
     var relativeTime by remember { mutableStateOf(relativeSessionTime(updatedAtMillis)) }
     LaunchedEffect(managed.updatedAtMillis) {
         updatedAtMillis = managed.updatedAtMillis
         relativeTime = relativeSessionTime(updatedAtMillis)
     }
-    LaunchedEffect(session.status) {
+    LaunchedEffect(Unit) {
         while (true) {
             relativeTime = relativeSessionTime(updatedAtMillis)
             delay(1000)
@@ -926,16 +714,16 @@ private fun ActiveCoderSessionCard(managed: ManagedTerminalSession, tokens: UiTo
                 Box(Modifier.size(6.dp).clip(CircleShape).background(tokens.accent))
             }
             tmuxSessionLabel(managed.identity.command)?.let { tmuxLabel ->
-                Text(tmuxLabel, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 7.dp).clip(RoundedCornerShape(8.dp)).background(if (terminalStatusFromWireName(session.status) == TerminalConnectionStatus.Connected) tokens.accent else Color(0xffff9f43)).padding(horizontal = 8.dp, vertical = 3.dp))
+                Text(tmuxLabel, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 7.dp).clip(RoundedCornerShape(8.dp)).background(tokens.accent).padding(horizontal = 8.dp, vertical = 3.dp))
             }
             Column(Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 25.dp, end = 8.dp)) {
-                val lines = managed.previewLines.ifEmpty { listOf("› ${session.status}") }
+                val lines = managed.previewLines.ifEmpty { listOf("› terminal window") }
                 lines.forEach { line -> Text(line, color = Color(0xffd8d8ea), fontSize = 9.sp, lineHeight = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(session.title, color = tokens.text, fontSize = metrics.bodySize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(if (terminalStatusIsRecoverable(session.status)) session.status else relativeTime, color = if (terminalStatusIsRecoverable(session.status)) Color(0xffff9f43) else tokens.secondary, fontSize = smallCaptionSize(), maxLines = 1)
+        Text(managed.launch.title, color = tokens.text, fontSize = metrics.bodySize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(relativeTime, color = tokens.secondary, fontSize = smallCaptionSize(), maxLines = 1)
     }
 }
 
@@ -1193,7 +981,7 @@ private fun CoderResizableBottomSheet(tokens: UiTokens, metrics: CoderUiMetrics,
     }
     Box(Modifier.fillMaxSize()) {
         SheetScrim(onDismiss)
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(animatedSheetHeightFraction).alignBottomSheet(tokens, expanded, clipContent = label != "terminal-sheet-height").padding(metrics.sheetPadding)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(animatedSheetHeightFraction).alignBottomSheet(tokens, expanded).padding(metrics.sheetPadding)) {
             val expandSheet = { expanded = true; sheetHeightFraction = 1f }
             if (header == null) SheetHandle(tokens, expandSheet, sheetDragModifier) else header(sheetDragModifier, expandSheet)
             content()
@@ -1280,16 +1068,6 @@ private fun HostSheetRow(title: String, subtitle: String, tokens: UiTokens, onCl
         Text(title, color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
         Text(subtitle, color = tokens.secondary, fontSize = captionSize())
     }
-}
-
-@Composable
-private fun TerminalPane(
-    terminalView: CoderTerminalView,
-    theme: CoderTheme,
-    onShowKeyboard: (CoderTerminalView) -> Unit,
-    onHideKeyboard: () -> Unit,
-) {
-    TerminalSurface(terminalView, theme, { onShowKeyboard(terminalView) }, onHideKeyboard, Modifier.fillMaxSize().imePadding())
 }
 
 @Composable
@@ -1504,79 +1282,6 @@ fun TerminalSurface(
             },
             dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = tokens.text) } },
         )
-    }
-}
-
-@Composable
-private fun CoderTerminalBottomSheet(
-    terminalView: CoderTerminalView,
-    theme: CoderTheme,
-    tokens: UiTokens,
-    title: String,
-    badge: String,
-    sessionLabel: String?,
-    status: String,
-    errorDetail: String?,
-    networkAvailable: Boolean,
-    onRetry: () -> Unit,
-    onDismiss: () -> Unit,
-    onDetach: () -> Unit,
-    onShowKeyboard: () -> Unit,
-    onHideKeyboard: () -> Unit,
-) {
-    LaunchedEffect(Unit) {
-        delay(80)
-        terminalView.refreshSurface()
-    }
-    BackHandler { onDismiss() }
-    val metrics = rememberCoderUiMetrics()
-    CoderResizableBottomSheet(
-        tokens = tokens,
-        metrics = metrics,
-        onDismiss = onDismiss,
-        label = "terminal-sheet-height",
-        initialHeightFraction = 0.68f,
-        minHeightFraction = 0.42f,
-        header = { dragModifier, expandSheet ->
-            Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Box(Modifier.weight(1f).height(28.dp).then(dragModifier).clickable { hapticClick(); expandSheet() }, contentAlignment = Alignment.Center) { Box(Modifier.width(44.dp).height(4.dp).clip(CircleShape).background(tokens.separator)) }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    if (sessionLabel != null) {
-                        Text(sessionLabel, color = tokens.accent, fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 10.dp, vertical = 4.dp))
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    if (!networkAvailable) {
-                        Text("offline", color = Color(0xffff9f43), fontSize = smallCaptionSize(), modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tokens.surface).padding(horizontal = 8.dp, vertical = 4.dp))
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    ToolbarIconButton(R.drawable.ic_feather_maximize, tokens.text, Color.Transparent) { hapticClick(); onDetach() }
-                }
-            }
-        },
-    ) {
-            TerminalSurface(
-                terminalView = terminalView,
-                theme = theme,
-                onShowKeyboard = onShowKeyboard,
-                onHideKeyboard = onHideKeyboard,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            ) {
-                if (terminalStatusIsRecoverable(status)) {
-                    Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(tokens.background.copy(alpha = 0.92f)).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(if (terminalStatusFromWireName(status) == TerminalConnectionStatus.Failed) "Terminal failed" else "Terminal disconnected", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
-                        if (!errorDetail.isNullOrBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(errorDetail, color = tokens.secondary, fontSize = captionSize(), lineHeight = 17.sp)
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Retry", color = tokens.background, fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(tokens.accent).clickable { hapticClick(); onRetry() }.padding(horizontal = 14.dp, vertical = 8.dp))
-                            Text("Close", color = tokens.text, fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(tokens.surface).clickable { hapticClick(); onDismiss() }.padding(horizontal = 14.dp, vertical = 8.dp))
-                        }
-                    }
-                }
-            }
     }
 }
 

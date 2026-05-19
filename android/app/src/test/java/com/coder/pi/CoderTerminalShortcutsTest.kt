@@ -116,6 +116,7 @@ class CoderTerminalShortcutsTest {
         assertEquals("\u0003", shortcutSequence(true, false, false, "", "c"))
         assertEquals("\u001bc", shortcutSequence(false, true, false, "", "c"))
         assertEquals("C", shortcutSequence(false, false, true, "", "c"))
+        assertEquals("echo hi", shortcutSequence(false, false, false, "", "echo hi"))
     }
 
     @Test

@@ -99,9 +99,39 @@ class ShortcutEditorInstrumentedTest {
         check(saved.contains("⇧ Tab\t\u001b[Z")) { "Visual Shift+Tab shortcut did not persist terminal bytes" }
     }
 
+    @Test
+    fun customTextCanBeEnteredManually() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("MODIFIERS")), 10_000)) { "New Shortcut editor did not load" }
+        check(device.hasObject(By.desc("Shortcut command"))) { "Shortcut command field missing" }
+        device.click(device.displayWidth / 2, (device.displayHeight * 0.63f).toInt())
+        Thread.sleep(500)
+        typeShortcutCommand(device, "echo hi")
+        Thread.sleep(500)
+        check(device.wait(Until.hasObject(By.desc("Shortcut editor preview echo hi")), 10_000)) { "Custom text preview did not update" }
+        captureDeviceScreenshot(device, "shortcuts-custom-text.png")
+
+        device.pressBack()
+        check(device.wait(Until.hasObject(By.text("New Shortcut")), 10_000)) { "Shortcut editor closed before save" }
+        device.findObject(By.desc("Save"))?.click() ?: error("Save button missing")
+        check(device.wait(Until.gone(By.text("MODIFIERS")), 10_000)) { "Save did not leave editor" }
+        val saved = context.getSharedPreferences("terminal", 0).getString("toolbar.shortcuts", "").orEmpty()
+        check(saved.contains("echo hi\techo hi")) { "Custom text shortcut did not persist unchanged" }
+    }
+
     private fun typeShortcutCommand(device: UiDevice, text: String) {
         text.forEach { char ->
             when (char) {
+                ' ' -> device.pressKeyCode(KeyEvent.KEYCODE_SPACE)
                 ',' -> device.pressKeyCode(KeyEvent.KEYCODE_COMMA)
                 else -> device.pressKeyCode(KeyEvent.keyCodeFromString("KEYCODE_${char.uppercaseChar()}"))
             }

@@ -51,4 +51,5 @@ Role: [Define the agent's job, operating context, and responsibility in 1-2 sent
 EOF
 fi
 
-printf '%s\n' "$draft_path"
+printf 'File: %s\n' "$draft_path"
+printf 'Plannotator: /plannotator annotate %s\n' "$draft_path"

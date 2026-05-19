@@ -48,4 +48,5 @@ Role: [Define the agent's job, operating context, and responsibility in 1-2 sent
 '@ | Set-Content -LiteralPath $draftPath -Encoding utf8
 }
 
-Write-Output $draftPath
+Write-Output "File: $draftPath"
+Write-Output "Plannotator: /plannotator annotate $draftPath"

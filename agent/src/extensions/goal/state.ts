@@ -43,40 +43,12 @@ export function validateObjective(objective: string): string | null {
   return null;
 }
 
-export function validateTokenBudget(tokenBudget: number | null | undefined): string | null {
-  if (tokenBudget === null || tokenBudget === undefined) {
-    return null;
-  }
-
-  if (!Number.isInteger(tokenBudget) || tokenBudget <= 0) {
-    return "Token budget must be a positive integer.";
-  }
-
-  return null;
-}
-
-export function statusAfterBudgetLimit(
-  status: GoalStatus,
-  tokensUsed: number,
-  tokenBudget: number | null,
-): GoalStatus {
-  if (status === "active" && tokenBudget !== null && tokensUsed >= tokenBudget) {
-    return "budgetLimited";
-  }
-
-  return status;
-}
-
-export function createThreadGoal(
-  objective: string,
-  tokenBudget?: number | null,
-  now = unixSeconds(),
-): ThreadGoal {
+export function createThreadGoal(objective: string, now = unixSeconds()): ThreadGoal {
   return {
     goalId: randomUUID(),
     objective: objective.trim(),
     status: "active",
-    tokenBudget: tokenBudget ?? null,
+    tokenBudget: null,
     usage: {
       tokensUsed: 0,
       activeSeconds: 0,
@@ -149,11 +121,7 @@ export function reconstructGoal(entries: Iterable<SessionEntryLike>): GoalSnapsh
   };
 }
 
-export function createGoal(
-  current: ThreadGoal | null,
-  objective: string,
-  tokenBudget?: number | null,
-): GoalResult {
+export function createGoal(current: ThreadGoal | null, objective: string): GoalResult {
   if (current !== null && current.status !== "complete") {
     return {
       ok: false,
@@ -168,33 +136,23 @@ export function createGoal(
     return { ok: false, message: objectiveError, goal: null };
   }
 
-  const budgetError = validateTokenBudget(tokenBudget);
-  if (budgetError !== null) {
-    return { ok: false, message: budgetError, goal: null };
-  }
-
   return {
     ok: true,
     message: "Goal created.",
-    goal: createThreadGoal(objective, tokenBudget),
+    goal: createThreadGoal(objective),
   };
 }
 
-export function replaceGoal(objective: string, tokenBudget?: number | null): GoalResult {
+export function replaceGoal(objective: string): GoalResult {
   const objectiveError = validateObjective(objective);
   if (objectiveError !== null) {
     return { ok: false, message: objectiveError, goal: null };
   }
 
-  const budgetError = validateTokenBudget(tokenBudget);
-  if (budgetError !== null) {
-    return { ok: false, message: budgetError, goal: null };
-  }
-
   return {
     ok: true,
     message: "Goal set.",
-    goal: createThreadGoal(objective, tokenBudget),
+    goal: createThreadGoal(objective),
   };
 }
 
@@ -208,11 +166,7 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus)
   }
 
   const goal = cloneGoal(current);
-  if (current.status === "budgetLimited" && (status === "active" || status === "paused")) {
-    goal.status = "budgetLimited";
-  } else {
-    goal.status = statusAfterBudgetLimit(status, goal.usage.tokensUsed, goal.tokenBudget);
-  }
+  goal.status = status;
   goal.updatedAt = unixSeconds();
 
   return {
@@ -227,9 +181,9 @@ export function applyUsage(
   tokensDelta: number,
   activeSecondsDelta: number,
   options: ApplyUsageOptions = {},
-): { goal: ThreadGoal | null; changed: boolean; crossedBudget: boolean } {
+): { goal: ThreadGoal | null; changed: boolean } {
   if (!current) {
-    return { goal: current, changed: false, crossedBudget: false };
+    return { goal: current, changed: false };
   }
 
   if (
@@ -237,36 +191,28 @@ export function applyUsage(
     options.expectedGoalId !== null &&
     current.goalId !== options.expectedGoalId
   ) {
-    return { goal: current, changed: false, crossedBudget: false };
+    return { goal: current, changed: false };
   }
 
   const canAccount =
     current.status === "active" ||
     (options.accountBudgetLimited === true && current.status === "budgetLimited");
   if (!canAccount) {
-    return { goal: current, changed: false, crossedBudget: false };
+    return { goal: current, changed: false };
   }
 
   const tokens = Math.max(0, Math.trunc(tokensDelta));
   const seconds = Math.max(0, Math.trunc(activeSecondsDelta));
   if (tokens === 0 && seconds === 0) {
-    return { goal: current, changed: false, crossedBudget: false };
+    return { goal: current, changed: false };
   }
 
   const goal = cloneGoal(current);
-  const wasUnderBudget = goal.tokenBudget === null || goal.usage.tokensUsed < goal.tokenBudget;
   goal.usage.tokensUsed += tokens;
   goal.usage.activeSeconds += seconds;
-  goal.status = statusAfterBudgetLimit(goal.status, goal.usage.tokensUsed, goal.tokenBudget);
   goal.updatedAt = unixSeconds();
 
-  const crossedBudget =
-    current.status === "active" &&
-    wasUnderBudget &&
-    goal.tokenBudget !== null &&
-    goal.usage.tokensUsed >= goal.tokenBudget;
-
-  return { goal, changed: true, crossedBudget };
+  return { goal, changed: true };
 }
 
 export function goalWithLiveUsage(

@@ -7,12 +7,7 @@ import {
 import { emitNotifyPublish } from "../notify/index.js";
 import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { registerGoalCommand } from "./commands.js";
-import {
-  completionBudgetReport,
-  formatDuration,
-  formatFooterStatus,
-  formatInteger,
-} from "./format.js";
+import { completionUsageReport, formatFooterStatus } from "./format.js";
 import {
   assistantTurnTokens,
   isAbortedAssistantMessage,
@@ -20,7 +15,7 @@ import {
   lastAssistantMessageText,
   type AssistantMessageLike,
 } from "./messages.js";
-import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import { continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
 import { queuedGoalWorkMessageId, staleGoalContinuationMessage } from "./queued-messages.js";
 import {
   applyUsage,
@@ -42,7 +37,6 @@ import {
 interface GoalAccountingState {
   activeGoalId: string | null;
   lastAccountedAt: number | null;
-  budgetWarningSentFor: string | null;
 }
 
 interface GoalStatusContext {
@@ -55,28 +49,9 @@ const GOAL_TOOL_NAME = "goal";
 
 function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
   const parts = [lastAssistantMessageText(ctx) ?? "Goal complete"];
-  const budgetReport = completionBudgetReport(goal);
-  if (budgetReport !== null) {
-    parts.push(budgetReport);
-  }
-  return parts.join("\n\n");
-}
-
-function goalUnmetNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
-  const parts = [lastAssistantMessageText(ctx) ?? "Goal budget exhausted"];
-  const usageParts: string[] = [];
-  if (goal.usage.activeSeconds > 0) {
-    usageParts.push(`time used: ${formatDuration(goal.usage.activeSeconds)}.`);
-  }
-  if (goal.tokenBudget !== null) {
-    usageParts.push(
-      `tokens used: ${formatInteger(goal.usage.tokensUsed)} of ${formatInteger(goal.tokenBudget)}.`,
-    );
-  } else if (goal.usage.tokensUsed > 0) {
-    usageParts.push(`tokens used: ${formatInteger(goal.usage.tokensUsed)}.`);
-  }
-  if (usageParts.length > 0) {
-    parts.push(`Goal unmet. ${usageParts.join(" ")}`);
+  const usageReport = completionUsageReport(goal);
+  if (usageReport !== null) {
+    parts.push(usageReport);
   }
   return parts.join("\n\n");
 }
@@ -96,7 +71,6 @@ class GoalRuntime {
   private readonly accounting: GoalAccountingState = {
     activeGoalId: null,
     lastAccountedAt: null,
-    budgetWarningSentFor: null,
   };
 
   constructor(private readonly pi: ExtensionAPI) {}
@@ -243,7 +217,6 @@ class GoalRuntime {
     const previousGoalId = this.goal?.goalId ?? null;
     this.goal = nextGoal;
     if (previousGoalId !== nextGoal.goalId) {
-      this.accounting.budgetWarningSentFor = null;
       this.clearStoppedRuntimeState();
     }
 
@@ -251,10 +224,6 @@ class GoalRuntime {
       this.clearStoppedRuntimeState();
     } else if (nextGoal.status === "budgetLimited") {
       this.clearContinuationState();
-    }
-
-    if (nextGoal.status !== "budgetLimited") {
-      this.accounting.budgetWarningSentFor = null;
     }
 
     this.pi.appendEntry(GOAL_EXTENSION_ENTRY_TYPE, setEntry(nextGoal, source));
@@ -318,15 +287,8 @@ class GoalRuntime {
     this.accounting.lastAccountedAt = Date.now();
   }
 
-  private accountProgress(
-    ctx: ExtensionContext,
-    allowBudgetSteering: boolean,
-    completedTurnTokens = 0,
-    accountBudgetLimited = false,
-  ): void {
-    const canAccount =
-      this.goal?.status === "active" ||
-      (accountBudgetLimited && this.goal?.status === "budgetLimited");
+  private accountProgress(ctx: ExtensionContext, completedTurnTokens = 0): void {
+    const canAccount = this.goal?.status === "active" || this.goal?.status === "budgetLimited";
     if (this.goal === null || this.accounting.activeGoalId !== this.goal.goalId || !canAccount) {
       this.beginAccounting();
       return;
@@ -341,7 +303,7 @@ class GoalRuntime {
 
     const result = applyUsage(this.goal, completedTurnTokens, elapsed, {
       expectedGoalId: this.accounting.activeGoalId,
-      accountBudgetLimited,
+      accountBudgetLimited: true,
     });
     if (!result.changed || result.goal === null) {
       return;
@@ -349,38 +311,10 @@ class GoalRuntime {
 
     this.persistGoal(result.goal, "runtime");
     this.refreshUi(ctx);
-
-    if (
-      allowBudgetSteering &&
-      result.crossedBudget &&
-      this.accounting.budgetWarningSentFor !== result.goal.goalId
-    ) {
-      this.accounting.budgetWarningSentFor = result.goal.goalId;
-      emitNotifyPublish(this.pi, {
-        topic: NOTIFY_DEFAULT_TOPIC,
-        title: "Goal unmet",
-        message: goalUnmetNotificationMessage(result.goal, ctx),
-        tags: ["goal", "unmet", "budget"],
-        meta: {
-          sourceExtension: "goal",
-          eventName: "goal:budget_exhausted",
-          correlationId: result.goal.goalId,
-        },
-      });
-      this.pi.sendMessage(
-        {
-          customType: GOAL_EXTENSION_ENTRY_TYPE,
-          content: budgetLimitPrompt(result.goal),
-          display: false,
-          details: { kind: "budget_limit", goalId: result.goal.goalId },
-        },
-        { triggerTurn: true, deliverAs: "steer" },
-      );
-    }
   }
 
   private completeGoal(source: GoalEntrySource, ctx: ExtensionContext): GoalResult {
-    this.accountProgress(ctx, false, 0, true);
+    this.accountProgress(ctx, 0);
     const result = updateGoalStatus(this.goal, "complete");
     if (!result.ok || result.goal === null) {
       return result;
@@ -525,12 +459,12 @@ class GoalRuntime {
   }
 
   private handleToolExecutionEnd(_event: object, ctx: ExtensionContext): void {
-    this.accountProgress(ctx, true, 0, true);
+    this.accountProgress(ctx, 0);
   }
 
   private handleTurnEnd(event: { message: AssistantMessageLike }, ctx: ExtensionContext): void {
     const completedTurnTokens = assistantTurnTokens(event.message);
-    this.accountProgress(ctx, true, completedTurnTokens);
+    this.accountProgress(ctx, completedTurnTokens);
     if (isAbortedAssistantMessage(event.message)) {
       this.pauseForAbort(ctx);
       return;
@@ -549,7 +483,7 @@ class GoalRuntime {
       (sum, message) => sum + assistantTurnTokens(message),
       0,
     );
-    this.accountProgress(ctx, false, abortedTurnTokens, true);
+    this.accountProgress(ctx, abortedTurnTokens);
     if (abortedMessages.length > 0) {
       this.pauseForAbort(ctx);
       return;
@@ -560,7 +494,7 @@ class GoalRuntime {
 
   private handleSessionBeforeCompact(_event: object, ctx: ExtensionContext): void {
     this.isCompacting = true;
-    this.accountProgress(ctx, false, 0, true);
+    this.accountProgress(ctx, 0);
   }
 
   private handleSessionCompact(_event: object, ctx: ExtensionContext): void {
@@ -588,7 +522,7 @@ class GoalRuntime {
 
   private handleSessionShutdown(_event: object, ctx: ExtensionContext): void {
     this.isCompacting = false;
-    this.accountProgress(ctx, false, 0, true);
+    this.accountProgress(ctx, 0);
     this.clearContinuationTimer();
     this.stopStatusRefresh();
   }

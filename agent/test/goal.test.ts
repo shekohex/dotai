@@ -1,8 +1,14 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  ThemeColor,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "vitest";
 import { groupedExtensionsC } from "../src/extensions/definitions-group-c.js";
 import goalExtension from "../src/extensions/goal/index.js";
@@ -16,6 +22,24 @@ interface SentGoalMessage {
   options: Parameters<ExtensionAPI["sendMessage"]>[1];
 }
 
+interface GoalRenderCallContext {
+  lastComponent: unknown;
+  state: unknown;
+  isPartial: boolean;
+  argsComplete: boolean;
+  expanded: boolean;
+  isError: boolean;
+  cwd: string;
+}
+
+interface GoalRenderableTool {
+  renderCall?: (
+    args: Record<string, unknown>,
+    theme: ExtensionCommandContext["ui"]["theme"],
+    context: GoalRenderCallContext,
+  ) => unknown;
+}
+
 function createGoalHarness(
   options: {
     idle?: boolean;
@@ -25,6 +49,7 @@ function createGoalHarness(
     contextUsageTokens?: number | null;
     contextWindow?: number;
     initialEntries?: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]>;
+    notify?: (message: string, level?: string) => void;
   } = {},
 ) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [
@@ -34,6 +59,7 @@ function createGoalHarness(
   const sentMessages: SentGoalMessage[] = [];
   const emittedEvents: Array<{ eventName: string; data: unknown }> = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
+  const registeredTools = new Map<string, GoalRenderableTool>();
   let activeTools: string[] = [];
   const runtime = {
     abortCount: 0,
@@ -95,6 +121,7 @@ function createGoalHarness(
     registerProvider() {},
     registerShortcut() {},
     registerTool(tool) {
+      registeredTools.set(tool.name, tool as GoalRenderableTool);
       tools.set(tool.name, (params) =>
         tool.execute("tool-call", params as never, undefined, undefined, ctx),
       );
@@ -142,7 +169,7 @@ function createGoalHarness(
     getTheme: () => undefined,
     getToolsExpanded: () => false,
     input: async () => undefined,
-    notify() {},
+    notify: options.notify ?? (() => {}),
     onTerminalInput: () => () => {},
     pasteToEditor() {},
     select: async () => undefined,
@@ -229,6 +256,7 @@ function createGoalHarness(
     entries,
     runCommand,
     runTool,
+    registeredTools,
     sentMessages,
     setIdle(idle: boolean) {
       runtime.idle = idle;
@@ -250,6 +278,42 @@ function createGoalHarness(
       return activeTools;
     },
   };
+}
+
+function goalTestTheme(): ExtensionCommandContext["ui"]["theme"] {
+  const format = (_token: ThemeColor, text: string) => text;
+  return {
+    fg: format,
+    bg: format,
+    bold: (value: string) => value,
+    dim: (value: string) => value,
+    italic: (value: string) => value,
+    underline: (value: string) => value,
+    inverse: (value: string) => value,
+    strikethrough: (value: string) => value,
+  } as ExtensionCommandContext["ui"]["theme"];
+}
+
+function renderGoalCallText(
+  tool: GoalRenderableTool,
+  args: Record<string, unknown>,
+  lastComponent?: unknown,
+): string {
+  const component = tool.renderCall?.(args, goalTestTheme(), {
+    lastComponent,
+    state: {},
+    isPartial: true,
+    argsComplete: false,
+    expanded: false,
+    isError: false,
+    cwd: "/tmp",
+  });
+
+  if (!(component instanceof Text)) {
+    throw new Error("expected text component");
+  }
+
+  return component.render(200).join("\n");
 }
 
 function assistantMessage(
@@ -345,11 +409,10 @@ describe("goal extension", () => {
     const created = (await harness.runTool({
       action: "create",
       objective: "ship it",
-      token_budget: 20,
     })) as { details: Record<string, unknown>; content: Array<{ text: string }> };
 
     expect((created.details.goal as { objective?: string }).objective).toBe("ship it");
-    expect((created.details.goal as { tokenBudget?: number }).tokenBudget).toBe(20);
+    expect(created.details.goal).not.toHaveProperty("tokenBudget");
 
     const got = (await harness.runTool({ action: "get" })) as { details: Record<string, unknown> };
     expect((got.details.goal as { objective?: string }).objective).toBe("ship it");
@@ -357,9 +420,78 @@ describe("goal extension", () => {
     const completed = (await harness.runTool({ action: "update", status: "complete" })) as {
       details: Record<string, unknown>;
     };
-    expect(String(completed.details.completionBudgetReport)).toMatch(
-      /^Goal achieved\. Report final budget usage to the user:/,
+    expect(completed.details.completionUsageReport).toBeNull();
+  });
+
+  test("goal tool creates goal from absolute objective file", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("on");
+    const directory = mkdtempSync(join(tmpdir(), "agent-goal-objective-"));
+    const objectiveFile = join(directory, "objective.md");
+    writeFileSync(objectiveFile, "ship it exactly\nwith next line");
+
+    const created = (await harness.runTool({
+      action: "create",
+      objectiveFile,
+    })) as { details: Record<string, unknown> };
+
+    expect((created.details.goal as { objective?: string }).objective).toBe(
+      "ship it exactly\nwith next line",
     );
+  });
+
+  test("goal tool rejects ambiguous or relative objective file inputs", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("on");
+
+    const both = (await harness.runTool({
+      action: "create",
+      objective: "ship it",
+      objectiveFile: "/tmp/objective.md",
+    })) as { details: Record<string, unknown>; content: Array<{ text: string }> };
+    expect(both.content[0]?.text).toContain("Provide exactly one objective source");
+
+    const relative = (await harness.runTool({
+      action: "create",
+      objectiveFile: "objective.md",
+    })) as { details: Record<string, unknown>; content: Array<{ text: string }> };
+    expect(relative.content[0]?.text).toContain("objectiveFile must be an absolute path");
+  });
+
+  test("goal tool rejects objective files over objective character limit", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("on");
+    const directory = mkdtempSync(join(tmpdir(), "agent-goal-objective-"));
+    const objectiveFile = join(directory, "objective.md");
+    writeFileSync(objectiveFile, "x".repeat(8001));
+
+    const created = (await harness.runTool({
+      action: "create",
+      objectiveFile,
+    })) as { content: Array<{ text: string }> };
+
+    expect(created.content[0]?.text).toContain(
+      "objectiveFile content must be 8000 characters or fewer",
+    );
+  });
+
+  test("goal tool render call previews recent objective lines and line count", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("on");
+    const tool = harness.registeredTools.get("goal");
+    if (tool === undefined) {
+      throw new Error("goal tool not registered");
+    }
+
+    const text = renderGoalCallText(tool, {
+      action: "create",
+      objective: ["one", "two", "three", "four", "five", "six"].join("\n"),
+    });
+
+    expect(text).toContain("creating 6 lines");
+    expect(text).not.toContain("one");
+    expect(text).toContain("two");
+    expect(text).toContain("six");
   });
 
   test("goal tool can create new goal after previous goal is complete", async () => {
@@ -380,7 +512,7 @@ describe("goal extension", () => {
     const harness = createGoalHarness();
     await harness.runCommand("on");
 
-    await harness.runTool({ action: "create", objective: "ship it", token_budget: 10 });
+    await harness.runTool({ action: "create", objective: "ship it" });
     harness.entries.push({
       type: "message",
       id: "assistant-1",
@@ -397,8 +529,7 @@ describe("goal extension", () => {
       harness.emittedEvents.find((event) => event.eventName === "notify:publish")?.data,
     ).toMatchObject({
       title: "Goal complete",
-      message:
-        "Final shipped summary\n\nGoal achieved. Report final budget usage to the user: tokens used: 0 of 10.",
+      message: "Final shipped summary",
       meta: {
         sourceExtension: "goal",
         eventName: "goal:complete",
@@ -420,6 +551,35 @@ describe("goal extension", () => {
     expect(harness.entries.some((entry) => parseGoalCustomEntry(entry.data)?.kind === "set")).toBe(
       true,
     );
+  });
+
+  test("goal command reads objective from at-prefixed file", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "agent-goal-command-objective-"));
+    const objectiveFile = join(directory, "objective.md");
+    writeFileSync(objectiveFile, "ship from file\nwith exact content");
+    const harness = createGoalHarness();
+
+    await harness.runCommand(`@${objectiveFile}`);
+
+    expect(harness.snapshot().goal?.objective).toBe("ship from file\nwith exact content");
+  });
+
+  test("goal command rejects oversized at-prefixed objective files", async () => {
+    const notifications: Array<{ message: string; level?: string }> = [];
+    const directory = mkdtempSync(join(tmpdir(), "agent-goal-command-objective-"));
+    const objectiveFile = join(directory, "objective.md");
+    writeFileSync(objectiveFile, "x".repeat(8001));
+    const harness = createGoalHarness({
+      notify: (message, level) => notifications.push({ message, level }),
+    });
+
+    await harness.runCommand(`@${objectiveFile}`);
+
+    expect(harness.snapshot().goal).toBeNull();
+    expect(notifications).toContainEqual({
+      message: "Objective file content must be 8000 characters or fewer.",
+      level: "error",
+    });
   });
 
   test("completed turns account tokens and continue active goals", async () => {
@@ -460,10 +620,14 @@ describe("goal extension", () => {
     expect(harness.sentMessages).toHaveLength(0);
   });
 
-  test("budget crossing sends one hidden steering message", async () => {
+  test("completed turns keep accounting without enforcing token budgets", async () => {
     const harness = createGoalHarness();
     await harness.runCommand("on");
-    await harness.runTool({ action: "create", objective: "ship it", token_budget: 10 });
+    const created = (await harness.runTool({ action: "create", objective: "ship it" })) as {
+      details: Record<string, unknown>;
+    };
+
+    expect(created.details.goal).not.toHaveProperty("tokenBudget");
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
     await harness.emit("turn_end", {
@@ -473,23 +637,9 @@ describe("goal extension", () => {
       toolResults: [],
     });
 
-    expect(harness.snapshot().goal?.status).toBe("budgetLimited");
-    expect(harness.sentMessages).toHaveLength(1);
-    expect(harness.sentMessages[0]?.message.details).toEqual({
-      kind: "budget_limit",
-      goalId: harness.snapshot().goal?.goalId,
-    });
-    expect(
-      harness.emittedEvents.find((event) => event.eventName === "notify:publish")?.data,
-    ).toMatchObject({
-      title: "Goal unmet",
-      message: "Goal budget exhausted\n\nGoal unmet. tokens used: 11 of 10.",
-      tags: ["goal", "unmet", "budget"],
-      meta: {
-        sourceExtension: "goal",
-        eventName: "goal:budget_exhausted",
-      },
-    });
+    expect(harness.snapshot().goal?.status).toBe("active");
+    expect(harness.snapshot().goal?.usage.tokensUsed).toBe(11);
+    expect(harness.sentMessages).toHaveLength(0);
 
     await harness.emit("tool_execution_end", {
       type: "tool_execution_end",
@@ -500,7 +650,7 @@ describe("goal extension", () => {
       isError: false,
     });
 
-    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages).toHaveLength(0);
   });
 
   test("stale queued continuation aborts before start", async () => {

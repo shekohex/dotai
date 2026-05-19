@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
+
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
@@ -11,45 +14,26 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createTextComponent, formatToolRail, renderToolError } from "../coreui/tools.js";
 import {
-  completionBudgetReport,
+  completionUsageReport,
   formatDuration,
   formatTokenValue,
-  remainingTokens,
   toToolGoal,
   type GoalToolRecord,
 } from "./format.js";
 import { GOAL_TOOL_PROMPT_GUIDELINES } from "./prompts.js";
 import { createGoal } from "./state.js";
-import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
+import {
+  GOAL_MAX_OBJECTIVE_CHARS,
+  type GoalEntrySource,
+  type GoalResult,
+  type ThreadGoal,
+} from "./types.js";
 
 const GoalToolActionSchema = Type.Union([
   Type.Literal("get"),
   Type.Literal("create"),
   Type.Literal("update"),
 ]);
-
-const GoalToolParams = Type.Object(
-  {
-    action: GoalToolActionSchema,
-    objective: Type.Optional(
-      Type.String({
-        description: "Concrete objective to pursue until completion.",
-      }),
-    ),
-    token_budget: Type.Optional(
-      Type.Integer({
-        description: "Optional positive integer token budget.",
-        minimum: 1,
-      }),
-    ),
-    status: Type.Optional(
-      StringEnum(["complete"] as const, {
-        description: "Only complete is accepted. Do not call this until no required work remains.",
-      }),
-    ),
-  },
-  { additionalProperties: false },
-);
 
 const GoalGetActionObjectSchema = Type.Object(
   {
@@ -62,7 +46,14 @@ const GoalCreateActionObjectSchema = Type.Object(
   {
     action: Type.Literal("create"),
     objective: Type.String(),
-    token_budget: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+);
+
+const GoalCreateFromFileActionObjectSchema = Type.Object(
+  {
+    action: Type.Literal("create"),
+    objectiveFile: Type.String(),
   },
   { additionalProperties: false },
 );
@@ -70,13 +61,40 @@ const GoalCreateActionObjectSchema = Type.Object(
 const GoalUpdateActionObjectSchema = Type.Object(
   {
     action: Type.Literal("update"),
-    status: Type.Literal("complete"),
+    status: StringEnum(["complete"] as const, {
+      description: "Only complete is accepted. Do not call this until no required work remains.",
+    }),
+  },
+  { additionalProperties: false },
+);
+
+const GoalToolParams = Type.Object(
+  {
+    action: GoalToolActionSchema,
+    objective: Type.Optional(
+      Type.String({
+        description:
+          "Concrete objective to pursue until completion. Mutually exclusive with objectiveFile.",
+      }),
+    ),
+    objectiveFile: Type.Optional(
+      Type.String({
+        description:
+          "Absolute path to a file containing the objective to use exactly as written. Mutually exclusive with objective.",
+      }),
+    ),
+    status: Type.Optional(
+      StringEnum(["complete"] as const, {
+        description: "Only complete is accepted. Do not call this until no required work remains.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
 
 type GoalGetActionParams = Static<typeof GoalGetActionObjectSchema>;
 type GoalCreateActionParams = Static<typeof GoalCreateActionObjectSchema>;
+type GoalCreateFromFileActionParams = Static<typeof GoalCreateFromFileActionObjectSchema>;
 type GoalUpdateActionParams = Static<typeof GoalUpdateActionObjectSchema>;
 type GoalToolParamsInput = Static<typeof GoalToolParams>;
 
@@ -90,7 +108,6 @@ const GoalToolRecordSchema = Type.Object(
       Type.Literal("budgetLimited"),
       Type.Literal("complete"),
     ]),
-    tokenBudget: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     tokensUsed: Type.Integer({ minimum: 0 }),
     timeUsedSeconds: Type.Integer({ minimum: 0 }),
     createdAt: Type.Integer({ minimum: 0 }),
@@ -103,8 +120,7 @@ const GoalToolDetailsSchema = Type.Object(
   {
     action: GoalToolActionSchema,
     goal: Type.Union([GoalToolRecordSchema, Type.Null()]),
-    remainingTokens: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
-    completionBudgetReport: Type.Union([Type.String(), Type.Null()]),
+    completionUsageReport: Type.Union([Type.String(), Type.Null()]),
     error: Type.Union([Type.String(), Type.Null()]),
   },
   { additionalProperties: false },
@@ -116,6 +132,8 @@ type GoalToolTheme = {
   bold: (value: string) => string;
   italic: (value: string) => string;
 };
+
+type ObjectiveResult = { ok: true; objective: string } | { ok: false; message: string };
 
 export interface GoalToolHost {
   getGoal(): ThreadGoal | null;
@@ -132,8 +150,7 @@ function buildGoalToolDetails(
   return {
     action,
     goal: goal ? toToolGoal(goal) : null,
-    remainingTokens: remainingTokens(goal),
-    completionBudgetReport: includeCompletionSummary ? completionBudgetReport(goal) : null,
+    completionUsageReport: includeCompletionSummary ? completionUsageReport(goal) : null,
     error,
   };
 }
@@ -168,8 +185,28 @@ function isGoalCreateActionParams(params: GoalToolParamsInput): params is GoalCr
   return Value.Check(GoalCreateActionObjectSchema, params);
 }
 
+function isGoalCreateFromFileActionParams(
+  params: GoalToolParamsInput,
+): params is GoalCreateFromFileActionParams {
+  return Value.Check(GoalCreateFromFileActionObjectSchema, params);
+}
+
 function isGoalUpdateActionParams(params: GoalToolParamsInput): params is GoalUpdateActionParams {
   return Value.Check(GoalUpdateActionObjectSchema, params);
+}
+
+function invalidCreateObjectiveSourceMessage(params: GoalToolParamsInput): string | null {
+  if (params.action !== "create") {
+    return null;
+  }
+
+  const sourceCount =
+    Number(params.objective !== undefined) + Number(params.objectiveFile !== undefined);
+  if (sourceCount === 1) {
+    return null;
+  }
+
+  return "Provide exactly one objective source: objective or objectiveFile.";
 }
 
 function getGoalStatusTone(
@@ -182,7 +219,7 @@ function getGoalStatusTone(
     case "paused":
       return theme.bold(theme.fg("warning", "paused"));
     case "budgetLimited":
-      return theme.bold(theme.fg("warning", "budget limited"));
+      return theme.bold(theme.fg("warning", "paused"));
     case "active":
       return theme.bold(theme.fg("accent", "active"));
     case "failed":
@@ -224,18 +261,12 @@ function buildExpandedMarkdown(details: GoalToolDetails): string {
     lines.push(`- Objective: ${details.goal.objective}`);
     lines.push(`- Time used: ${formatDuration(details.goal.timeUsedSeconds)}`);
     lines.push(`- Tokens used: ${formatTokenValue(details.goal.tokensUsed)}`);
-    lines.push(
-      `- Token budget: ${details.goal.tokenBudget === null ? "none" : formatTokenValue(details.goal.tokenBudget)}`,
-    );
-    lines.push(
-      `- Remaining tokens: ${details.remainingTokens === null ? "unbounded" : formatTokenValue(details.remainingTokens)}`,
-    );
   }
-  if (details.completionBudgetReport !== null) {
+  if (details.completionUsageReport !== null) {
     lines.push("");
     lines.push("## Completion");
     lines.push("");
-    lines.push(details.completionBudgetReport);
+    lines.push(details.completionUsageReport);
   }
   if (details.error !== null) {
     lines.push("");
@@ -245,6 +276,67 @@ function buildExpandedMarkdown(details: GoalToolDetails): string {
   }
 
   return lines.join("\n");
+}
+
+function objectiveLinePreview(objective: string): string[] {
+  return objective.split(/\r?\n/).slice(-5);
+}
+
+function lineCount(value: string): number {
+  return value.length === 0 ? 0 : value.split(/\r?\n/).length;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function formatGoalCall(args: GoalToolParamsInput, theme: GoalToolTheme): string {
+  if (args.action !== "create") {
+    return `${theme.fg("muted", "goal")} ${theme.fg("accent", args.action)}`;
+  }
+
+  if (args.objective !== undefined) {
+    const objective = args.objective;
+    const preview = objectiveLinePreview(objective).map((line) => `  ${line}`);
+    return [
+      `${theme.fg("muted", "goal")} ${theme.fg("accent", "creating")} ${theme.fg("muted", `${lineCount(objective)} lines`)}`,
+      ...preview,
+    ].join("\n");
+  }
+
+  if (args.objectiveFile !== undefined) {
+    return `${theme.fg("muted", "goal")} ${theme.fg("accent", "creating")} ${theme.fg("muted", `from ${args.objectiveFile}`)}`;
+  }
+
+  return `${theme.fg("muted", "goal")} ${theme.fg("accent", "creating")} ${theme.fg("muted", "...")}`;
+}
+
+async function resolveObjective(
+  params: GoalCreateActionParams | GoalCreateFromFileActionParams,
+): Promise<ObjectiveResult> {
+  if ("objective" in params) {
+    return { ok: true, objective: params.objective };
+  }
+
+  if (!isAbsolute(params.objectiveFile)) {
+    return { ok: false, message: "objectiveFile must be an absolute path." };
+  }
+
+  let objective: string;
+  try {
+    objective = await readFile(params.objectiveFile, "utf8");
+  } catch (error) {
+    return { ok: false, message: `Failed to read objectiveFile: ${errorMessage(error)}` };
+  }
+
+  if (Array.from(objective.trim()).length > GOAL_MAX_OBJECTIVE_CHARS) {
+    return {
+      ok: false,
+      message: `objectiveFile content must be ${GOAL_MAX_OBJECTIVE_CHARS} characters or fewer.`,
+    };
+  }
+
+  return { ok: true, objective };
 }
 
 export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
@@ -257,8 +349,9 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
       "Use action get to inspect goal, action create to start one active goal, and action update only to mark completed goal complete.",
     promptGuidelines: [...GOAL_TOOL_PROMPT_GUIDELINES],
     parameters: GoalToolParams,
-    renderCall(_args, _theme, context) {
-      return createTextComponent(context.lastComponent, "");
+    renderCall(args, theme, context) {
+      const rail = formatToolRail(theme, context);
+      return createTextComponent(context.lastComponent, `${rail}${formatGoalCall(args, theme)}`);
     },
     renderResult(result, options, theme, context) {
       const details = parseGoalToolDetails(result.details);
@@ -298,41 +391,49 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
       container.addChild(new Text(`${rail}${formatGoalSummary(theme, details.goal, false)}`, 1, 0));
       return container;
     },
-    execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!Value.Check(GoalToolParams, params)) {
-        return Promise.resolve(textResult("get", null, "Invalid goal tool parameters."));
+        return textResult("get", null, "Invalid goal tool parameters.");
       }
 
       const actionParams = Value.Parse(GoalToolParams, params);
-
-      if (isGoalGetActionParams(actionParams)) {
-        return Promise.resolve(textResult("get", host.getGoal(), null));
+      const objectiveSourceError = invalidCreateObjectiveSourceMessage(actionParams);
+      if (objectiveSourceError !== null) {
+        return textResult("create", null, objectiveSourceError);
       }
 
-      if (isGoalCreateActionParams(actionParams)) {
-        const result = createGoal(
-          host.getGoal(),
-          actionParams.objective,
-          actionParams.token_budget ?? null,
-        );
+      if (isGoalGetActionParams(actionParams)) {
+        return textResult("get", host.getGoal(), null);
+      }
+
+      if (
+        isGoalCreateActionParams(actionParams) ||
+        isGoalCreateFromFileActionParams(actionParams)
+      ) {
+        const objectiveResult = await resolveObjective(actionParams);
+        if (!objectiveResult.ok) {
+          return textResult("create", null, objectiveResult.message);
+        }
+
+        const result = createGoal(host.getGoal(), objectiveResult.objective);
         if (!result.ok || result.goal === null) {
-          return Promise.resolve(textResult("create", result.goal, result.message));
+          return textResult("create", result.goal, result.message);
         }
 
         host.setGoal(result.goal, "tool", ctx);
-        return Promise.resolve(textResult("create", result.goal, null));
+        return textResult("create", result.goal, null);
       }
 
       if (!isGoalUpdateActionParams(actionParams)) {
-        return Promise.resolve(textResult("get", null, "Invalid goal tool parameters."));
+        return textResult("get", null, "Invalid goal tool parameters.");
       }
 
       const result = host.completeGoal("tool", ctx);
       if (!result.ok || result.goal === null) {
-        return Promise.resolve(textResult("update", result.goal, result.message));
+        return textResult("update", result.goal, result.message);
       }
 
-      return Promise.resolve(textResult("update", result.goal, null, true));
+      return textResult("update", result.goal, null, true);
     },
   });
 

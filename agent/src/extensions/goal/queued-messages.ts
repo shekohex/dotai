@@ -18,7 +18,6 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
         Type.Literal("continuation"),
         Type.Literal("command_start"),
         Type.Literal("command_resume"),
-        Type.Literal("budget_limit"),
         Type.Literal("stale_continuation"),
       ]),
     ),

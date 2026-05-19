@@ -11,7 +11,6 @@ export interface GoalToolRecord {
   goalId: string;
   objective: string;
   status: GoalStatus;
-  tokenBudget: number | null;
   tokensUsed: number;
   timeUsedSeconds: number;
   createdAt: number;
@@ -20,8 +19,7 @@ export interface GoalToolRecord {
 
 export interface GoalToolResponse {
   goal: GoalToolRecord | null;
-  remainingTokens: number | null;
-  completionBudgetReport: string | null;
+  completionUsageReport: string | null;
 }
 
 export function formatDuration(seconds: number): string {
@@ -91,7 +89,7 @@ export function formatTokenValue(value: number): string {
 }
 
 function statusLabel(status: GoalStatus): string {
-  return status === "budgetLimited" ? "limited by budget" : status;
+  return status === "budgetLimited" ? "paused" : status;
 }
 
 function commandHint(status: GoalStatus): string {
@@ -116,21 +114,10 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
     `Objective: ${goal.objective}`,
     `Time used: ${formatDuration(goal.usage.activeSeconds)}`,
     `Tokens used: ${formatTokenValue(goal.usage.tokensUsed)}`,
+    `Hint: ${commandHint(goal.status)}`,
   ];
 
-  if (goal.tokenBudget !== null) {
-    lines.push(`Token budget: ${formatTokenValue(goal.tokenBudget)}`);
-  }
-
-  lines.push(`Hint: ${commandHint(goal.status)}`);
   return lines.join("\n");
-}
-
-function compactBudgetUsage(goal: ThreadGoal): string {
-  if (goal.tokenBudget === null) {
-    return `${formatCompactTokenValue(goal.usage.tokensUsed)} tokens`;
-  }
-  return `${formatCompactTokenValue(goal.usage.tokensUsed)} / ${formatCompactTokenValue(goal.tokenBudget)}`;
 }
 
 export function formatFooterStatus(goal: ThreadGoal | null): string | undefined {
@@ -139,10 +126,6 @@ export function formatFooterStatus(goal: ThreadGoal | null): string | undefined 
   }
 
   if (goal.status === "active") {
-    if (goal.tokenBudget !== null) {
-      return `Pursuing goal (${compactBudgetUsage(goal)})`;
-    }
-
     if (goal.usage.activeSeconds > 0) {
       return `Pursuing goal (${formatDuration(goal.usage.activeSeconds)})`;
     }
@@ -155,14 +138,7 @@ export function formatFooterStatus(goal: ThreadGoal | null): string | undefined 
   }
 
   if (goal.status === "budgetLimited") {
-    if (goal.tokenBudget !== null) {
-      return `Goal unmet (${compactBudgetUsage(goal)} tokens)`;
-    }
-    return "Goal abandoned";
-  }
-
-  if (goal.tokenBudget !== null) {
-    return `Goal achieved (${formatCompactTokenValue(goal.usage.tokensUsed)} tokens)`;
+    return "Goal paused (/goal resume)";
   }
 
   if (goal.usage.activeSeconds > 0) {
@@ -177,7 +153,6 @@ export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
     goalId: goal.goalId,
     objective: goal.objective,
     status: goal.status,
-    tokenBudget: goal.tokenBudget,
     tokensUsed: goal.usage.tokensUsed,
     timeUsedSeconds: goal.usage.activeSeconds,
     createdAt: goal.createdAt,
@@ -185,19 +160,12 @@ export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
   };
 }
 
-export function remainingTokens(goal: ThreadGoal | null): number | null {
-  if (!goal || goal.tokenBudget === null) {
-    return null;
-  }
-  return Math.max(0, goal.tokenBudget - goal.usage.tokensUsed);
-}
-
-export function completionBudgetReport(goal: ThreadGoal | null): string | null {
+export function completionUsageReport(goal: ThreadGoal | null): string | null {
   if (!goal || goal.status !== "complete") {
     return null;
   }
 
-  if (goal.tokenBudget === null && goal.usage.activeSeconds <= 0) {
+  if (goal.usage.tokensUsed <= 0 && goal.usage.activeSeconds <= 0) {
     return null;
   }
 
@@ -206,28 +174,23 @@ export function completionBudgetReport(goal: ThreadGoal | null): string | null {
     parts.push(`time used: ${formatDuration(goal.usage.activeSeconds)}.`);
   }
 
-  if (goal.tokenBudget !== null) {
-    parts.push(
-      `tokens used: ${formatInteger(goal.usage.tokensUsed)} of ${formatInteger(goal.tokenBudget)}.`,
-    );
-  } else if (goal.usage.tokensUsed > 0) {
+  if (goal.usage.tokensUsed > 0) {
     parts.push(`tokens used: ${formatInteger(goal.usage.tokensUsed)}.`);
   }
 
-  return `Goal achieved. Report final budget usage to the user: ${parts.join(" ")}`;
+  return `Goal achieved. Report final usage to the user: ${parts.join(" ")}`;
 }
 
 export function goalToolResponse(
   goal: ThreadGoal | null,
-  includeCompletionBudgetReport = false,
+  includeCompletionUsageReport = false,
 ): GoalToolResponse {
   return {
     goal: goal ? toToolGoal(goal) : null,
-    remainingTokens: remainingTokens(goal),
-    completionBudgetReport: includeCompletionBudgetReport ? completionBudgetReport(goal) : null,
+    completionUsageReport: includeCompletionUsageReport ? completionUsageReport(goal) : null,
   };
 }
 
-export function toToolText(goal: ThreadGoal | null, includeCompletionBudgetReport = false): string {
-  return JSON.stringify(goalToolResponse(goal, includeCompletionBudgetReport), null, 2);
+export function toToolText(goal: ThreadGoal | null, includeCompletionUsageReport = false): string {
+  return JSON.stringify(goalToolResponse(goal, includeCompletionUsageReport), null, 2);
 }

@@ -23,6 +23,7 @@ class ShortcutEditorInstrumentedTest {
     fun newShortcutSaveIsDisabledUntilShortcutIsValid() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
         val device = UiDevice.getInstance(instrumentation)
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -33,9 +34,12 @@ class ShortcutEditorInstrumentedTest {
         check(device.wait(Until.hasObject(By.text("MODIFIERS")), 10_000)) { "New Shortcut editor did not load" }
 
         val disabledSave = device.findObject(By.desc("Save")) ?: error("Save button missing")
+        captureDeviceScreenshot(device, "shortcuts-invalid-save-disabled.png")
         disabledSave.click()
         instrumentation.waitForIdleSync()
         check(device.hasObject(By.text("MODIFIERS"))) { "Invalid save should not leave editor" }
+        val invalidSaved = context.getSharedPreferences("terminal", 0).getString("toolbar.shortcuts", "").orEmpty()
+        check(invalidSaved.isEmpty()) { "Invalid save persisted shortcut" }
 
         device.findObject(By.text("Tab"))?.click() ?: error("Tab key button missing")
         instrumentation.waitForIdleSync()

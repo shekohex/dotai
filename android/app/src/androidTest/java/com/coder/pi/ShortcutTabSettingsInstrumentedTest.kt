@@ -63,6 +63,38 @@ class ShortcutTabSettingsInstrumentedTest {
     }
 
     @Test
+    fun activeShortcutCanBeDisabledAndPersists() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val tmuxRow = device.findObjects(By.text("Tmux")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Tmux tab missing")
+        tmuxRow.click()
+
+        check(device.wait(Until.hasObject(By.desc("Disable new win shortcut")), 10_000)) { "Disable shortcut control missing" }
+        device.findObject(By.desc("Disable new win shortcut"))?.click() ?: error("Disable shortcut control missing")
+        instrumentation.waitForIdleSync()
+        device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 620, 12)
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Enable new win shortcut")), 10_000)) { "Disabled shortcut did not move inactive" }
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+        val tmuxRowAgain = device.findObjects(By.text("Tmux")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Tmux tab missing after relaunch")
+        tmuxRowAgain.click()
+        device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 620, 12)
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Enable new win shortcut")), 10_000)) { "Disabled shortcut did not persist" }
+        captureDeviceScreenshot(device, "shortcuts-disable-row.png")
+    }
+
+    @Test
     fun tmuxPrefixSelectorUpdatesEffectivePreview() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

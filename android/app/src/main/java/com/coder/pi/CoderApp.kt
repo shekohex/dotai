@@ -2094,9 +2094,10 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
 private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
     var tmuxPrefixIndex by remember { mutableIntStateOf(terminalView.tmuxPrefixIndex()) }
     var tmuxStartWindowFromOne by remember { mutableStateOf(terminalView.tmuxStartWindowFromOne()) }
+    var shortcutRevision by remember { mutableIntStateOf(0) }
     val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { ShortcutRowDefinition(it.sequence, it.label) } else defaultShortcutRows(tab.title, tmuxPrefixIndex, tmuxStartWindowFromOne)
-    val activeShortcuts = shortcuts.take(4)
-    val inactiveShortcuts = shortcuts.drop(4)
+    val activeShortcuts = shortcuts.filterIndexed { index, shortcut -> shortcutRevision; terminalView.shortcutRowActive(tab.id, shortcut, index < 4) }
+    val inactiveShortcuts = shortcuts.filterIndexed { index, shortcut -> shortcutRevision; !terminalView.shortcutRowActive(tab.id, shortcut, index < 4) }
     SettingsScaffold(tab.title, tokens, onBack) {
         if (tab.title == "Tmux") {
             SettingsSection("SETTINGS", tokens) {
@@ -2121,12 +2122,12 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
             if (activeShortcuts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
             } else {
-                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens) }
+                activeShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, true, tokens) { terminalView.setShortcutRowActive(tab.id, shortcut, false); shortcutRevision++ } }
             }
         }
         item { Text("Tap − to disable, + to enable, or trash to delete inactive shortcuts. Drag to reorder. Tap a row to edit.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         if (inactiveShortcuts.isNotEmpty()) {
-            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens) } }
+            SettingsSection("INACTIVE", tokens) { inactiveShortcuts.forEach { shortcut -> ShortcutDetailRow(shortcut.sequence, shortcut.hint, false, tokens) { terminalView.setShortcutRowActive(tab.id, shortcut, true); shortcutRevision++ } } }
         }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(56.dp).clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
@@ -2145,9 +2146,9 @@ private fun RowScope.TmuxPrefixChoice(label: String, selected: Boolean, tokens: 
 }
 
 @Composable
-private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens) {
+private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, tokens: UiTokens, onToggle: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(if (active) "⊖" else "⊕", color = if (active) Color(0xffd62d5a) else Color(0xff3dae4b), fontSize = 25.sp, modifier = Modifier.width(42.dp))
+        Text(if (active) "⊖" else "⊕", color = if (active) Color(0xffd62d5a) else tokens.accent, fontSize = 25.sp, modifier = Modifier.width(42.dp).semantics { contentDescription = if (active) "Disable $hint shortcut" else "Enable $hint shortcut" }.clickable { hapticClick(); onToggle() })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Text(sequence, color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
             Text(hint, color = tokens.secondary, fontSize = captionSize())
@@ -2158,9 +2159,7 @@ private fun ShortcutDetailRow(sequence: String, hint: String, active: Boolean, t
 
 private fun defaultShortcutRows(tab: String, tmuxPrefixIndex: Int, tmuxStartWindowFromOne: Boolean): List<ShortcutRowDefinition> = when (tab) {
     "Tmux" -> tmuxShortcutRows(tmuxPrefixIndex, tmuxStartWindowFromOne)
-    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line").map { ShortcutRowDefinition(it.first, it.second) }
-    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate", "/gsd:new-project" to "new project", "/gsd:plan-phase" to "plan", "/gsd:execute-phase" to "execute", "/gsd:verify-work" to "verify").map { ShortcutRowDefinition(it.first, it.second) }
-    else -> emptyList()
+    else -> defaultShortcutRowsForReset(tab)
 }
 
 @Composable

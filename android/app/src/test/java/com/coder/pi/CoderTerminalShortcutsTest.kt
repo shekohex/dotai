@@ -68,6 +68,11 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutRowPreferenceKeyIncludesTabAndSequence() {
+        assertEquals("shortcuts.row.tmux.${"^ b,c".hashCode()}.active", shortcutRowPreferenceKey("tmux", ShortcutRowDefinition("^ b,c", "new win")))
+    }
+
+    @Test
     fun tmuxShortcutRowsFollowPrefixAndWindowNumbering() {
         assertEquals("^ b,c", tmuxShortcutRows(0, true).first().sequence)
         assertEquals("^ a,c", tmuxShortcutRows(1, true).first().sequence)

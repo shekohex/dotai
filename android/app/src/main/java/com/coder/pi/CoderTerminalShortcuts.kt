@@ -57,6 +57,8 @@ fun defaultShortcutTabs(favoritesCount: Int, isActive: (String) -> Boolean): Lis
 
 fun shortcutTabPreferenceKey(tabId: String): String = "shortcuts.tab.$tabId.active"
 
+fun shortcutRowPreferenceKey(tabId: String, shortcut: ShortcutRowDefinition): String = "shortcuts.row.$tabId.${shortcut.sequence.hashCode()}.active"
+
 val defaultShortcutTabOrder = listOf("favorites", "tmux", "ctrl", "pi")
 
 fun normalizeShortcutTabOrder(value: String?): List<String> = (value.orEmpty().split(",") + defaultShortcutTabOrder).filter { it in defaultShortcutTabOrder }.distinct()
@@ -98,6 +100,13 @@ fun tmuxShortcutRows(prefixIndex: Int, startWindowFromOne: Boolean): List<Shortc
         ShortcutRowDefinition("$prefix,x", "kill"),
         ShortcutRowDefinition("$prefix,$firstWindow", "first win"),
     )
+}
+
+fun defaultShortcutRowsForReset(tab: String): List<ShortcutRowDefinition> = when (tab) {
+    "Tmux" -> tmuxShortcutRows(0, true)
+    "Ctrl" -> listOf("^ c" to "interrupt", "^ d" to "eof", "^ z" to "suspend", "^ l" to "clear", "^ a" to "line start", "^ e" to "line end", "^ u" to "clear line", "^ k" to "kill line").map { ShortcutRowDefinition(it.first, it.second) }
+    "Pi" -> listOf("/gsd:progress" to "progress", "/gsd:debug" to "debug", "/plannotator-review" to "review", "/plannotator-annotate" to "annotate", "/gsd:new-project" to "new project", "/gsd:plan-phase" to "plan", "/gsd:execute-phase" to "execute", "/gsd:verify-work" to "verify").map { ShortcutRowDefinition(it.first, it.second) }
+    else -> emptyList()
 }
 
 fun shortcutPreview(ctrl: Boolean, opt: Boolean, shift: Boolean, key: String, customText: String): String {

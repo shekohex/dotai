@@ -869,11 +869,21 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             putBoolean("shortcuts.uploads_panel", true)
             putString("shortcuts.tab.order", defaultShortcutTabOrder.joinToString(","))
             defaultShortcutTabOrder.forEach { putBoolean(shortcutTabPreferenceKey(it), true) }
+            listOf("Tmux" to "tmux", "Ctrl" to "ctrl", "Pi" to "pi").forEach { (title, id) ->
+                defaultShortcutRowsForReset(title).forEach { remove(shortcutRowPreferenceKey(id, it)) }
+            }
             putInt("shortcuts.tmux_prefix", 0)
             putBoolean("shortcuts.tmux_start_window_from_one", true)
         }
         notifyToolbarActionsChanged()
     }
+
+    fun setShortcutRowActive(tabId: String, shortcut: ShortcutRowDefinition, active: Boolean) {
+        preferences.edit { putBoolean(shortcutRowPreferenceKey(tabId, shortcut), active) }
+        notifyToolbarActionsChanged()
+    }
+
+    fun shortcutRowActive(tabId: String, shortcut: ShortcutRowDefinition, defaultActive: Boolean): Boolean = preferences.getBoolean(shortcutRowPreferenceKey(tabId, shortcut), defaultActive)
 
     fun setTmuxPrefixIndex(index: Int) {
         preferences.edit { putInt("shortcuts.tmux_prefix", index.coerceIn(0, 2)) }

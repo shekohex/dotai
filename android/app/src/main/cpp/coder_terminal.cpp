@@ -535,7 +535,8 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
     }
     cols = cols_;
     rows = rows_;
-    if (selection_.active) {
+    auto outputCells = cells_;
+    if (selection_.active && terminal_) {
         int startRow = selection_.startRow;
         int startCol = selection_.startCol;
         int endRow = selection_.endRow;
@@ -558,11 +559,11 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
             if (screenRow < startRow || screenRow > endRow) continue;
             const int rowStartCol = screenRow == startRow ? startCol : 0;
             const int rowEndCol = screenRow == endRow ? endCol : cols_ - 1;
-            for (int col = std::max(0, rowStartCol); col <= std::min(cols_ - 1, rowEndCol); col++) cells_[viewportRow * cols_ + col].background = selectionBackground_;
+            for (int col = std::max(0, rowStartCol); col <= std::min(cols_ - 1, rowEndCol); col++) outputCells[viewportRow * cols_ + col].background = selectionBackground_;
         }
     }
     cursor = cursor_;
-    return cells_;
+    return outputCells;
 }
 
 uint32_t CoderTerminal::rgb(GhosttyColorRgb color) const {

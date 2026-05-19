@@ -574,6 +574,9 @@ fun CoderApp(
                 val dismiss: () -> Unit = {
                     onHideKeyboard()
                     managed.terminalView.setSoftwareKeyboardAllowed(false)
+                    TerminalConnectionManager.detachRenderer(managed.id)
+                    managed.terminalView.detachFromCurrentParent()
+                    managed.terminalView.dispose()
                     selectedTerminalId = null
                     terminalUiMode = TerminalUiMode.SHEET
                 }
@@ -593,6 +596,7 @@ fun CoderApp(
                             val index = terminalSessions.indexOfFirst { it.id == managed.id }
                             TerminalConnectionManager.detachRenderer(managed.id)
                             managed.terminalView.detachFromCurrentParent()
+                            managed.terminalView.dispose()
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(detached = true, updatedAtMillis = System.currentTimeMillis())
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(managed.identity.baseUrl, managed.identity.userId, managed.identity.workspaceId, managed.launch.title, managed.identity.agentId, managed.launch.badge, managed.identity.command, managed.launch.reconnectId, System.currentTimeMillis(), managed.previewLines.joinToString("\n"), detached = true, workspaceIconUrl = managed.launch.workspaceIconUrl))
                             selectedTerminalId = null

@@ -194,6 +194,15 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun autoHideToolbarRequiresHardwareKeyboardAndIdleTerminal() {
+        assertEquals(true, terminalToolbarHiddenForHardwareKeyboard(true, true, false, false))
+        assertEquals(false, terminalToolbarHiddenForHardwareKeyboard(false, true, false, false))
+        assertEquals(false, terminalToolbarHiddenForHardwareKeyboard(true, false, false, false))
+        assertEquals(false, terminalToolbarHiddenForHardwareKeyboard(true, true, true, false))
+        assertEquals(false, terminalToolbarHiddenForHardwareKeyboard(true, true, false, true))
+    }
+
+    @Test
     fun terminalControlBytesMapLettersAndSymbols() {
         assertEquals(3.toByte(), terminalControlByte('c'))
         assertEquals(27.toByte(), terminalControlByte('['))

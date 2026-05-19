@@ -997,6 +997,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun optionAsMetaEnabled(): Boolean = preferences.getBoolean("option_as_meta", true)
 
+    fun setAutoHideToolbarEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("auto_hide_toolbar", enabled) }
+    }
+
+    fun autoHideToolbarEnabled(): Boolean = preferences.getBoolean("auto_hide_toolbar", false)
+
     fun setOscNotificationsEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("osc.notifications", enabled) }
     }

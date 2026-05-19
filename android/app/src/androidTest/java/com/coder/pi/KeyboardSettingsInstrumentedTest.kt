@@ -32,6 +32,7 @@ class KeyboardSettingsInstrumentedTest {
         instrumentation.waitForIdleSync()
 
         check(device.wait(Until.hasObject(By.text("APPLICATION SHORTCUTS")), 10_000)) { "Application shortcuts section missing" }
+        check(device.hasObject(By.text("Auto-hide Toolbar"))) { "Auto-hide Toolbar toggle missing" }
         check(device.hasObject(By.text("Option as Meta"))) { "Option as Meta toggle missing" }
         check(device.hasObject(By.text("Show Shortcuts"))) { "Show Shortcuts row missing" }
         check(device.hasObject(By.text("Cmd+K"))) { "Show Shortcuts chord missing" }
@@ -86,6 +87,20 @@ class KeyboardSettingsInstrumentedTest {
 
         terminalView.setOptionAsMetaEnabled(true)
         check(terminalMetaStateForOptionAsMeta(KeyEvent.META_ALT_ON, terminalView.optionAsMetaEnabled()) == KeyEvent.META_ALT_ON) { "Enabled Option as Meta stripped Alt meta" }
+    }
+
+    @Test
+    fun autoHideToolbarPreferenceControlsHardwareToolbarVisibility() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+
+        terminalView.setAutoHideToolbarEnabled(true)
+        check(terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), true, false, false)) { "Enabled auto-hide did not hide idle hardware toolbar" }
+        check(!terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), true, true, false)) { "Auto-hide hid selection toolbar" }
+
+        terminalView.setAutoHideToolbarEnabled(false)
+        check(!terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), true, false, false)) { "Disabled auto-hide hid toolbar" }
     }
 
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {

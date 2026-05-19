@@ -252,6 +252,10 @@ fun terminalMetaStateForOptionAsMeta(metaState: Int, optionAsMetaEnabled: Boolea
     return if (optionAsMetaEnabled) metaState else metaState and KeyEvent.META_ALT_MASK.inv()
 }
 
+fun terminalToolbarHiddenForHardwareKeyboard(autoHideToolbarEnabled: Boolean, hardwareKeyboardAvailable: Boolean, selectionActive: Boolean, chatMode: Boolean): Boolean {
+    return autoHideToolbarEnabled && hardwareKeyboardAvailable && !selectionActive && !chatMode
+}
+
 fun terminalControlByte(char: Char): Byte? {
     return when (char) {
         in 'a'..'z' -> ((char.uppercaseChar().code - '@'.code) and 0x1f).toByte()

@@ -1,6 +1,7 @@
 package com.coder.pi
 
 import android.content.Context
+import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
 import android.graphics.Rect
 import android.net.Uri
@@ -1321,6 +1322,8 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     var keyboardVisible by remember { mutableStateOf(false) }
+    val hardwareKeyboardAvailable = configuration.keyboard != Configuration.KEYBOARD_NOKEYS
+    val toolbarHiddenForHardwareKeyboard = terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), hardwareKeyboardAvailable, selectionActive, chatMode)
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
@@ -1390,6 +1393,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
         }
         return
     }
+    if (toolbarHiddenForHardwareKeyboard) return
     TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
     Box(modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
         Row(Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(30.dp)).background(uiTokens(theme).surfaceHigh).border(BorderStroke(0.7.dp, uiTokens(theme).separator), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2351,9 +2355,11 @@ private fun resetGestureActions(terminalView: CoderTerminalView) {
 private fun KeyboardSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
     var keyboardPaste by remember { mutableStateOf(terminalView.keyboardPasteEnabled()) }
     var optionAsMeta by remember { mutableStateOf(terminalView.optionAsMetaEnabled()) }
+    var autoHideToolbar by remember { mutableStateOf(terminalView.autoHideToolbarEnabled()) }
     var volumeFontSize by remember { mutableStateOf(terminalView.volumeFontSizeEnabled()) }
     SettingsScaffold("Keyboard", tokens, onBack) {
         SettingsSection("HARDWARE KEYBOARD", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_minimize_2, "Auto-hide Toolbar", autoHideToolbar, tokens) { autoHideToolbar = it; terminalView.setAutoHideToolbarEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_upload, "Keyboard Paste", keyboardPaste, tokens) { keyboardPaste = it; terminalView.setKeyboardPasteEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_command, "Option as Meta", optionAsMeta, tokens) { optionAsMeta = it; terminalView.setOptionAsMetaEnabled(it) }
             SettingsValueRow(R.drawable.ic_feather_keyboard, "Paste Shortcut", "Cmd+V or Ctrl+Shift+V", null, tokens) {}

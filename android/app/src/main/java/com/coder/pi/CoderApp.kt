@@ -1962,10 +1962,14 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var hideTitles by remember { mutableStateOf(terminalView.shortcutTabTitlesHidden()) }
     var uploads by remember { mutableStateOf(terminalView.uploadsPanelVisible()) }
-    LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts() } }
+    var tabRevision by remember { mutableIntStateOf(0) }
+    val tabs = shortcutOverviewTabs(shortcuts) { tabRevision; terminalView.shortcutTabActive(it) }
+    LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts(); tabRevision++ } }
     SettingsScaffold("Shortcuts", tokens, onBack) {
-        item { ShortcutsOverviewPreview(tokens, shortcuts, hideTitles, uploads) }
-        SettingsSection("PANEL TABS", tokens) { shortcutOverviewTabs(shortcuts).forEach { tab -> ShortcutPanelTabRow(tab, true, tokens) { onOpenTab(tab) } } }
+        item { ShortcutsOverviewPreview(tokens, tabs, hideTitles, uploads) }
+        SettingsSection("PANEL TABS", tokens) { tabs.filter { it.active }.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, false); tabRevision++ }) { onOpenTab(tab) } } }
+        val inactiveTabs = tabs.filterNot { it.active }
+        if (inactiveTabs.isNotEmpty()) SettingsSection("INACTIVE TABS", tokens) { inactiveTabs.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, true); tabRevision++ }) { onOpenTab(tab) } } }
         item { Text("Tap − to hide, + to show. Drag to reorder. Tap a row to configure shortcuts.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         SettingsSection("SETTINGS", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_type, "Hide Title on Tabs", hideTitles, tokens) { hideTitles = it; terminalView.setShortcutTabTitlesHidden(it) }
@@ -1980,17 +1984,19 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
     }
 }
 
-private data class ShortcutOverviewTab(val title: String, val subtitle: String, val icon: Int?, val active: Boolean)
+private data class ShortcutOverviewTab(val id: String, val title: String, val subtitle: String, val icon: Int?, val active: Boolean)
 
-private fun shortcutOverviewTabs(shortcuts: List<TerminalShortcut>): List<ShortcutOverviewTab> = listOf(
-    ShortcutOverviewTab("Favorites", "${shortcuts.size} shortcuts", R.drawable.ic_feather_star, true),
-    ShortcutOverviewTab("Tmux", "8 shortcuts", R.drawable.ic_feather_terminal, true),
-    ShortcutOverviewTab("Ctrl", "8 shortcuts", R.drawable.ic_feather_chevron_up, true),
-    ShortcutOverviewTab("Pi", "15 shortcuts", null, true),
-)
+private fun shortcutOverviewTabs(shortcuts: List<TerminalShortcut>, isActive: (String) -> Boolean = { true }): List<ShortcutOverviewTab> = defaultShortcutTabs(shortcuts.size, isActive).map { tab ->
+    ShortcutOverviewTab(tab.id, tab.title, tab.subtitle, when (tab.id) {
+        "favorites" -> R.drawable.ic_feather_star
+        "tmux" -> R.drawable.ic_feather_terminal
+        "ctrl" -> R.drawable.ic_feather_chevron_up
+        else -> null
+    }, tab.active)
+}
 
 @Composable
-private fun ShortcutsOverviewPreview(tokens: UiTokens, shortcuts: List<TerminalShortcut>, hideTitles: Boolean, uploads: Boolean) {
+private fun ShortcutsOverviewPreview(tokens: UiTokens, tabs: List<ShortcutOverviewTab>, hideTitles: Boolean, uploads: Boolean) {
     Column(Modifier.fillMaxWidth().height(280.dp).background(tokens.accent.copy(alpha = 0.28f)).padding(horizontal = spacingLarge(), vertical = 24.dp), verticalArrangement = Arrangement.Bottom) {
         Text("Long-press Ctrl to open the shortcuts bar. Tap Ctrl to close.", color = tokens.secondary, fontSize = bodySize(), lineHeight = 21.sp, modifier = Modifier.align(Alignment.CenterHorizontally).weight(1f).padding(top = 46.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2003,8 +2009,8 @@ private fun ShortcutsOverviewPreview(tokens: UiTokens, shortcuts: List<TerminalS
                 ShortcutPreviewIcon(R.drawable.ic_feather_message_circle, tokens)
                 ShortcutPreviewIcon(R.drawable.ic_feather_keyboard, tokens)
             }
-            Row(Modifier.fillMaxWidth().semantics { contentDescription = if (hideTitles) "Shortcut preview tabs icon only" else "Shortcut preview tabs with titles" }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                shortcutOverviewTabs(shortcuts).take(4).forEach { tab -> ShortcutPreviewTab(tab, hideTitles, tokens) }
+            Row(Modifier.fillMaxWidth().semantics { contentDescription = "Shortcut preview active tabs ${tabs.count { it.active }} ${if (hideTitles) "icon only" else "with titles"}" }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                tabs.filter { it.active }.take(4).forEach { tab -> ShortcutPreviewTab(tab, hideTitles, tokens) }
             }
         }
     }
@@ -2034,9 +2040,9 @@ private fun ShortcutTabIcon(tab: ShortcutOverviewTab, tokens: UiTokens, tint: Co
 }
 
 @Composable
-private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, tokens: UiTokens, onClick: () -> Unit) {
+private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, tokens: UiTokens, onToggle: () -> Unit = {}, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(72.dp).clickable { hapticClick(); onClick() }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(if (tab.active) "⊖" else "⊕", color = if (tab.active) Color(0xffd62d5a) else Color(0xff3dae4b), fontSize = 25.sp, modifier = Modifier.width(36.dp))
+        Text(if (tab.active) "⊖" else "⊕", color = if (tab.active) Color(0xffd62d5a) else tokens.accent, fontSize = 25.sp, modifier = Modifier.width(36.dp).semantics { contentDescription = if (tab.active) "Hide ${tab.title} tab" else "Show ${tab.title} tab" }.clickable { hapticClick(); onToggle() })
         ShortcutTabIcon(tab, tokens, tokens.secondary, Modifier.size(22.dp))
         Column(Modifier.padding(start = 18.dp).weight(1f), verticalArrangement = Arrangement.Center) {
             Text(tab.title, color = tokens.text, fontSize = rowTitleSize(), maxLines = 1)

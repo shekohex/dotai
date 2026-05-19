@@ -848,6 +848,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun uploadsPanelVisible(): Boolean = preferences.getBoolean("shortcuts.uploads_panel", true)
 
+    fun setShortcutTabActive(tabId: String, active: Boolean) {
+        preferences.edit { putBoolean(shortcutTabPreferenceKey(tabId), active) }
+        notifyToolbarActionsChanged()
+    }
+
+    fun shortcutTabActive(tabId: String): Boolean = preferences.getBoolean(shortcutTabPreferenceKey(tabId), true)
+
     fun setTmuxPrefixIndex(index: Int) {
         preferences.edit { putInt("shortcuts.tmux_prefix", index.coerceIn(0, 2)) }
         notifyToolbarActionsChanged()

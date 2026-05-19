@@ -6,6 +6,8 @@ data class TerminalShortcut(val label: String, val sequence: String)
 
 data class ShortcutRowDefinition(val sequence: String, val hint: String)
 
+data class ShortcutTabDefinition(val id: String, val title: String, val subtitle: String, val active: Boolean)
+
 val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "copy", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
 data class ToolbarSlotDefinition(val id: String, val label: String, val removable: Boolean = true)
@@ -45,6 +47,15 @@ fun moveToolbarSlot(order: List<String>, slot: String, delta: Int): List<String>
 }
 
 fun terminalSessionKey(identity: TerminalIdentity): String = listOf(identity.baseUrl, identity.userId, identity.workspaceId, identity.agentId, identity.command).joinToString("|")
+
+fun defaultShortcutTabs(favoritesCount: Int, isActive: (String) -> Boolean): List<ShortcutTabDefinition> = listOf(
+    ShortcutTabDefinition("favorites", "Favorites", "$favoritesCount shortcuts", isActive("favorites")),
+    ShortcutTabDefinition("tmux", "Tmux", "8 shortcuts", isActive("tmux")),
+    ShortcutTabDefinition("ctrl", "Ctrl", "8 shortcuts", isActive("ctrl")),
+    ShortcutTabDefinition("pi", "Pi", "15 shortcuts", isActive("pi")),
+)
+
+fun shortcutTabPreferenceKey(tabId: String): String = "shortcuts.tab.$tabId.active"
 
 fun tmuxPrefixPreview(index: Int): String = when (index.coerceIn(0, 2)) {
     1 -> "^ a"

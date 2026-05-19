@@ -45,6 +45,16 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun defaultShortcutTabsApplyActiveLookup() {
+        val tabs = defaultShortcutTabs(2) { it != "tmux" }
+
+        assertEquals(listOf("favorites", "tmux", "ctrl", "pi"), tabs.map { it.id })
+        assertEquals("2 shortcuts", tabs.first().subtitle)
+        assertEquals(false, tabs.first { it.id == "tmux" }.active)
+        assertEquals(true, tabs.first { it.id == "ctrl" }.active)
+    }
+
+    @Test
     fun tmuxShortcutRowsFollowPrefixAndWindowNumbering() {
         assertEquals("^ b,c", tmuxShortcutRows(0, true).first().sequence)
         assertEquals("^ a,c", tmuxShortcutRows(1, true).first().sequence)

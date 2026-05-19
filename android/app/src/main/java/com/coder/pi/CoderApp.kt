@@ -466,7 +466,7 @@ fun CoderApp(
                             confirmCloseTerminalId = it.id
                         },
                         onOpenTerminal = { workspace, agent, command ->
-                            val reconnect = sessionStore.reconnectToken(state.session.baseUrl, state.session.user.id, workspace.id, agent.id)
+                            val reconnect = sessionStore.reconnectToken(state.session.baseUrl, state.session.user.id, workspace.id, agent.id, command)
                             val workspaceLabel = sessionStore.workspaceState(state.session.baseUrl, state.session.user.id, workspace.id).alias ?: workspace.name
                             val launch = TerminalLaunchRequest(state.session.baseUrl, state.session.token, agent.id, reconnect.id, command, workspaceLabel, agent.name, workspace.name, workspace.templateIcon)
                             val identity = TerminalIdentity(state.session.baseUrl, state.session.user.id, workspace.id, agent.id, command)

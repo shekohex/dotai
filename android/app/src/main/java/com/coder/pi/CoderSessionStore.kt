@@ -48,8 +48,8 @@ class CoderSessionStore(context: Context) {
         localPreferences.edit { putString("${stateKey(baseUrl, userId, workspaceId)}.icon", uri) }
     }
 
-    fun reconnectToken(baseUrl: String, userId: String, workspaceId: String, agentId: String, ttlMillis: Long = reconnectTokenTtlMillis): CoderReconnectToken {
-        val key = reconnectKey(baseUrl, userId, workspaceId, agentId)
+    fun reconnectToken(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String, ttlMillis: Long = reconnectTokenTtlMillis): CoderReconnectToken {
+        val key = reconnectKey(baseUrl, userId, workspaceId, agentId, command)
         val now = System.currentTimeMillis()
         val existingId = localPreferences.getString("$key.id", null)
         val lastUsedAt = localPreferences.getLong("$key.last_used_at", 0L)
@@ -183,7 +183,7 @@ class CoderSessionStore(context: Context) {
 
     private fun stateKey(baseUrl: String, userId: String, workspaceId: String) = "${baseUrl.hashCode()}.$userId.$workspaceId"
 
-    private fun reconnectKey(baseUrl: String, userId: String, workspaceId: String, agentId: String) = "${stateKey(baseUrl, userId, workspaceId)}.$agentId.reconnect"
+    private fun reconnectKey(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) = "${stateKey(baseUrl, userId, workspaceId)}.$agentId.${command.hashCode()}.reconnect"
 
     private fun activeTerminalKeys(): Set<String> = localPreferences.getString("active_terminals", "").orEmpty().lines().filter { it.isNotBlank() }.toSet()
 

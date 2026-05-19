@@ -1041,7 +1041,7 @@ private fun CoderTextField(value: String, onValueChange: (String) -> Unit, place
 
 @Composable
 private fun CoderPrimaryButton(label: String, tokens: UiTokens, onClick: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp)).background(tokens.accent).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) { Text(label, color = tokens.background, fontSize = bodySize(), fontWeight = FontWeight.Bold) }
+    Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp)).background(tokens.accent).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) { Text(label, color = contentColorFor(tokens.accent), fontSize = bodySize(), fontWeight = FontWeight.Bold) }
 }
 
 @Composable
@@ -1973,7 +1973,7 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
         }
         item {
             Box(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 18.dp).height(52.dp).clip(RoundedCornerShape(18.dp)).background(tokens.accent).clickable { hapticClick(); onAddShortcut() }, contentAlignment = Alignment.Center) {
-                Text("+  New Shortcut", color = tokens.background, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
+                Text("+  New Shortcut", color = contentColorFor(tokens.accent), fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
             }
         }
         item { Box(Modifier.fillMaxWidth().padding(bottom = 18.dp).height(44.dp).clickable { hapticClick() }, contentAlignment = Alignment.Center) { Text("↻  Reset", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
@@ -1994,7 +1994,7 @@ private fun ShortcutsOverviewPreview(tokens: UiTokens, shortcuts: List<TerminalS
     Column(Modifier.fillMaxWidth().height(280.dp).background(tokens.accent.copy(alpha = 0.28f)).padding(horizontal = spacingLarge(), vertical = 24.dp), verticalArrangement = Arrangement.Bottom) {
         Text("Long-press Ctrl to open the shortcuts bar. Tap Ctrl to close.", color = tokens.secondary, fontSize = bodySize(), lineHeight = 21.sp, modifier = Modifier.align(Alignment.CenterHorizontally).weight(1f).padding(top = 46.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(tokens.surfaceHigh).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().semantics { contentDescription = if (uploads) "Shortcut preview uploads shown" else "Shortcut preview uploads hidden" }, verticalAlignment = Alignment.CenterVertically) {
                 listOf("Ctrl", "Esc", "Tab").forEach { label -> ShortcutPreviewTextButton(label, tokens) }
                 ShortcutPreviewIcon(R.drawable.ic_feather_move, tokens)
                 if (uploads) ShortcutPreviewIcon(R.drawable.ic_feather_clipboard, tokens)
@@ -2150,7 +2150,7 @@ private fun ShortcutEditorScreen(terminalView: CoderTerminalView, tokens: UiToke
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ShortcutFooterButton("Cancel", tokens.surfaceHigh, tokens.text, Modifier.weight(1f), onClick = onBack)
-                ShortcutFooterButton("Save", tokens.accent, tokens.background, Modifier.weight(1f), canSave) {
+                ShortcutFooterButton("Save", tokens.accent, contentColorFor(tokens.accent), Modifier.weight(1f), canSave) {
                     val sequence = shortcutSequence(ctrl, opt, shift, selectedKey, customText)
                     val label = hint.ifBlank { shortcutPreview(ctrl, opt, shift, selectedKey, customText) }.take(14)
                     if (sequence.isNotEmpty()) terminalView.addCustomShortcut(TerminalShortcut(label, sequence))
@@ -2465,6 +2465,8 @@ private fun uiTokens(theme: CoderTheme): UiTokens {
     val secondary = blend(background, foreground, if (light) 0.58f else 0.68f)
     return UiTokens(light, background, surface, surfaceHigh, separator, foreground, secondary, accent, selection, blend(background, accent, 0.18f), accent, blend(background, foreground, 0.25f))
 }
+
+fun contentColorFor(background: Color): Color = if (background.luminance() > 0.5f) Color(0xff111111) else Color.White
 
 private fun blend(base: Color, overlay: Color, amount: Float): Color {
     val ratio = amount.coerceIn(0f, 1f)

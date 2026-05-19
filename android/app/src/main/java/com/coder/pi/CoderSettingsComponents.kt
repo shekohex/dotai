@@ -71,7 +71,18 @@ fun SettingsValueRow(icon: Int?, title: String, subtitle: String?, value: String
 @Composable
 fun SettingsToggleRow(icon: Int?, title: String, checked: Boolean, tokens: UiTokens, onCheckedChange: (Boolean) -> Unit) {
     SettingsRow(icon, title, null, tokens, { onCheckedChange(!checked) }) {
-        Switch(checked = checked, onCheckedChange = { hapticClick(); onCheckedChange(it) }, colors = SwitchDefaults.colors(checkedTrackColor = tokens.success, checkedThumbColor = tokens.background, uncheckedTrackColor = tokens.separator, uncheckedThumbColor = tokens.surface))
+        Switch(
+            checked = checked,
+            onCheckedChange = { hapticClick(); onCheckedChange(it) },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = contentColorFor(tokens.accent),
+                checkedTrackColor = tokens.accent,
+                checkedBorderColor = tokens.accent,
+                uncheckedThumbColor = tokens.secondary,
+                uncheckedTrackColor = tokens.surface,
+                uncheckedBorderColor = tokens.separator,
+            ),
+        )
     }
 }
 

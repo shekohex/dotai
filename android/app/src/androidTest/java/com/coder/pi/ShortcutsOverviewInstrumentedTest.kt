@@ -2,6 +2,7 @@ package com.coder.pi
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -10,6 +11,7 @@ import androidx.test.uiautomator.Until
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class ShortcutsOverviewInstrumentedTest {
@@ -44,6 +46,7 @@ class ShortcutsOverviewInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
+        context.getSharedPreferences("terminal", 0).edit { putBoolean("shortcuts.hide_tab_titles", false) }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
@@ -60,5 +63,61 @@ class ShortcutsOverviewInstrumentedTest {
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
         check(device.wait(Until.hasObject(By.desc("Shortcut preview tabs icon only")), 10_000)) { "Icon-only shortcut preview did not persist" }
+    }
+
+    @Test
+    fun showUploadsPanelToggleUpdatesPreview() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        context.getSharedPreferences("terminal", 0).edit { putBoolean("shortcuts.uploads_panel", true) }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview uploads shown")), 10_000)) { "Uploads preview missing" }
+        device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 620, 12)
+        instrumentation.waitForIdleSync()
+        device.findObject(By.text("Show Uploads Panel"))?.click() ?: error("Show Uploads Panel setting missing")
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview uploads hidden")), 10_000)) { "Uploads preview did not hide" }
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+        check(device.wait(Until.hasObject(By.desc("Shortcut preview uploads hidden")), 10_000)) { "Uploads preview hidden state did not persist" }
+    }
+
+    @Test
+    fun shortcutTogglesRenderAcrossLightAndDarkThemes() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        listOf("Solarized Light" to "shortcuts-toggles-solarized-light.png", "Dracula" to "shortcuts-toggles-dracula-dark.png").forEach { (themeName, screenshotName) ->
+            val theme = CoderThemes.allOptions.first { it.name == themeName }
+            CoderThemes.setSelectedTheme(context, theme)
+            context.getSharedPreferences("terminal", 0).edit {
+                putBoolean("shortcuts.uploads_panel", true)
+                putBoolean("shortcuts.hide_tab_titles", false)
+            }
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+            context.startActivity(intent)
+            instrumentation.waitForIdleSync()
+
+            check(device.wait(Until.hasObject(By.desc("Shortcut preview uploads shown")), 10_000)) { "$themeName shortcuts preview missing" }
+            device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 620, 12)
+            instrumentation.waitForIdleSync()
+            check(device.wait(Until.hasObject(By.text("Show Uploads Panel")), 10_000)) { "$themeName uploads toggle missing" }
+            captureDeviceScreenshot(device, screenshotName)
+        }
+    }
+
+    private fun captureDeviceScreenshot(device: UiDevice, name: String) {
+        val directory = File("/data/local/tmp/pi-test-screenshots")
+        device.executeShellCommand("mkdir -p ${directory.absolutePath}")
+        device.takeScreenshot(File(directory, name))
     }
 }

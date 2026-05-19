@@ -1962,14 +1962,15 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var hideTitles by remember { mutableStateOf(terminalView.shortcutTabTitlesHidden()) }
     var uploads by remember { mutableStateOf(terminalView.uploadsPanelVisible()) }
+    var tabOrder by remember { mutableStateOf(terminalView.shortcutTabOrder()) }
     var tabRevision by remember { mutableIntStateOf(0) }
-    val tabs = shortcutOverviewTabs(shortcuts) { tabRevision; terminalView.shortcutTabActive(it) }
-    LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts(); tabRevision++ } }
+    val tabs = shortcutOverviewTabs(shortcuts, tabOrder) { tabRevision; terminalView.shortcutTabActive(it) }
+    LaunchedEffect(Unit) { terminalView.onToolbarActionsChanged = { shortcuts = terminalView.customShortcuts(); tabOrder = terminalView.shortcutTabOrder(); tabRevision++ } }
     SettingsScaffold("Shortcuts", tokens, onBack) {
         item { ShortcutsOverviewPreview(tokens, tabs, hideTitles, uploads) }
-        SettingsSection("PANEL TABS", tokens) { tabs.filter { it.active }.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, false); tabRevision++ }) { onOpenTab(tab) } } }
+        SettingsSection("PANEL TABS", tokens) { tabs.filter { it.active }.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, false); tabRevision++ }, onMove = { delta -> tabOrder = moveShortcutTab(tabOrder, tab.id, delta); terminalView.setShortcutTabOrder(tabOrder) }) { onOpenTab(tab) } } }
         val inactiveTabs = tabs.filterNot { it.active }
-        if (inactiveTabs.isNotEmpty()) SettingsSection("INACTIVE TABS", tokens) { inactiveTabs.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, true); tabRevision++ }) { onOpenTab(tab) } } }
+        if (inactiveTabs.isNotEmpty()) SettingsSection("INACTIVE TABS", tokens) { inactiveTabs.forEach { tab -> ShortcutPanelTabRow(tab, true, tokens, onToggle = { terminalView.setShortcutTabActive(tab.id, true); tabRevision++ }, onMove = { delta -> tabOrder = moveShortcutTab(tabOrder, tab.id, delta); terminalView.setShortcutTabOrder(tabOrder) }) { onOpenTab(tab) } } }
         item { Text("Tap − to hide, + to show. Drag to reorder. Tap a row to configure shortcuts.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
         SettingsSection("SETTINGS", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_type, "Hide Title on Tabs", hideTitles, tokens) { hideTitles = it; terminalView.setShortcutTabTitlesHidden(it) }
@@ -1986,7 +1987,7 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
 
 private data class ShortcutOverviewTab(val id: String, val title: String, val subtitle: String, val icon: Int?, val active: Boolean)
 
-private fun shortcutOverviewTabs(shortcuts: List<TerminalShortcut>, isActive: (String) -> Boolean = { true }): List<ShortcutOverviewTab> = defaultShortcutTabs(shortcuts.size, isActive).map { tab ->
+private fun shortcutOverviewTabs(shortcuts: List<TerminalShortcut>, order: List<String> = defaultShortcutTabOrder, isActive: (String) -> Boolean = { true }): List<ShortcutOverviewTab> = defaultShortcutTabs(shortcuts.size, isActive).sortedBy { normalizeShortcutTabOrder(order.joinToString(",")).indexOf(it.id) }.map { tab ->
     ShortcutOverviewTab(tab.id, tab.title, tab.subtitle, when (tab.id) {
         "favorites" -> R.drawable.ic_feather_star
         "tmux" -> R.drawable.ic_feather_terminal
@@ -2009,7 +2010,7 @@ private fun ShortcutsOverviewPreview(tokens: UiTokens, tabs: List<ShortcutOvervi
                 ShortcutPreviewIcon(R.drawable.ic_feather_message_circle, tokens)
                 ShortcutPreviewIcon(R.drawable.ic_feather_keyboard, tokens)
             }
-            Row(Modifier.fillMaxWidth().semantics { contentDescription = "Shortcut preview active tabs ${tabs.count { it.active }} ${if (hideTitles) "icon only" else "with titles"}" }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().semantics { contentDescription = "Shortcut preview active tabs ${tabs.count { it.active }} ${tabs.filter { it.active }.joinToString(" ") { it.title }} ${if (hideTitles) "icon only" else "with titles"}" }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 tabs.filter { it.active }.take(4).forEach { tab -> ShortcutPreviewTab(tab, hideTitles, tokens) }
             }
         }
@@ -2040,7 +2041,8 @@ private fun ShortcutTabIcon(tab: ShortcutOverviewTab, tokens: UiTokens, tint: Co
 }
 
 @Composable
-private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, tokens: UiTokens, onToggle: () -> Unit = {}, onClick: () -> Unit) {
+private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, tokens: UiTokens, onToggle: () -> Unit = {}, onMove: (Int) -> Unit = {}, onClick: () -> Unit) {
+    var dragOffset by remember { mutableStateOf(0f) }
     Row(Modifier.fillMaxWidth().height(72.dp).clickable { hapticClick(); onClick() }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(if (tab.active) "⊖" else "⊕", color = if (tab.active) Color(0xffd62d5a) else tokens.accent, fontSize = 25.sp, modifier = Modifier.width(36.dp).semantics { contentDescription = if (tab.active) "Hide ${tab.title} tab" else "Show ${tab.title} tab" }.clickable { hapticClick(); onToggle() })
         ShortcutTabIcon(tab, tokens, tokens.secondary, Modifier.size(22.dp))
@@ -2048,7 +2050,35 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
             Text(tab.title, color = tokens.text, fontSize = rowTitleSize(), maxLines = 1)
             Text(tab.subtitle, color = tokens.secondary, fontSize = captionSize(), maxLines = 1)
         }
-        if (reorderable) Text("⠿", color = tokens.secondary, fontSize = 22.sp)
+        if (reorderable) Text(
+            "⠿",
+            color = tokens.secondary,
+            fontSize = 22.sp,
+            modifier = Modifier.width(56.dp).semantics { contentDescription = "Move ${tab.title} tab" }.pointerInput(tab.id) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragOffset = 0f },
+                    onDragEnd = { dragOffset = 0f },
+                    onDragCancel = { dragOffset = 0f },
+                ) { change, dragAmount ->
+                    dragOffset += dragAmount
+                    when {
+                        dragOffset <= -38f -> {
+                            change.consume()
+                            dragOffset = 0f
+                            hapticClick()
+                            onMove(-1)
+                        }
+                        dragOffset >= 38f -> {
+                            change.consume()
+                            dragOffset = 0f
+                            hapticClick()
+                            onMove(1)
+                        }
+                    }
+                }
+            },
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

@@ -855,6 +855,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun shortcutTabActive(tabId: String): Boolean = preferences.getBoolean(shortcutTabPreferenceKey(tabId), true)
 
+    fun shortcutTabOrder(): List<String> = normalizeShortcutTabOrder(preferences.getString("shortcuts.tab.order", null))
+
+    fun setShortcutTabOrder(order: List<String>) {
+        preferences.edit { putString("shortcuts.tab.order", normalizeShortcutTabOrder(order.joinToString(",")).joinToString(",")) }
+        notifyToolbarActionsChanged()
+    }
+
     fun setTmuxPrefixIndex(index: Int) {
         preferences.edit { putInt("shortcuts.tmux_prefix", index.coerceIn(0, 2)) }
         notifyToolbarActionsChanged()

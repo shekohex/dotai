@@ -57,6 +57,22 @@ fun defaultShortcutTabs(favoritesCount: Int, isActive: (String) -> Boolean): Lis
 
 fun shortcutTabPreferenceKey(tabId: String): String = "shortcuts.tab.$tabId.active"
 
+val defaultShortcutTabOrder = listOf("favorites", "tmux", "ctrl", "pi")
+
+fun normalizeShortcutTabOrder(value: String?): List<String> = (value.orEmpty().split(",") + defaultShortcutTabOrder).filter { it in defaultShortcutTabOrder }.distinct()
+
+fun moveShortcutTab(order: List<String>, tabId: String, delta: Int): List<String> {
+    val normalizedOrder = normalizeShortcutTabOrder(order.joinToString(","))
+    val index = normalizedOrder.indexOf(tabId)
+    if (index < 0) return normalizedOrder
+    val nextIndex = (index + delta).coerceIn(0, normalizedOrder.lastIndex)
+    if (index == nextIndex) return normalizedOrder
+    return normalizedOrder.toMutableList().also {
+        it.removeAt(index)
+        it.add(nextIndex, tabId)
+    }
+}
+
 fun tmuxPrefixPreview(index: Int): String = when (index.coerceIn(0, 2)) {
     1 -> "^ a"
     2 -> "^ Space"

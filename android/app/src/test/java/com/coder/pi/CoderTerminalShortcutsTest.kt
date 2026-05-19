@@ -55,6 +55,13 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun shortcutTabOrderNormalizesAndMovesKnownTabs() {
+        assertEquals(listOf("tmux", "favorites", "ctrl", "pi"), normalizeShortcutTabOrder("tmux,favorites,unknown"))
+        assertEquals(listOf("favorites", "ctrl", "tmux", "pi"), moveShortcutTab(defaultShortcutTabOrder, "tmux", 1))
+        assertEquals(defaultShortcutTabOrder, moveShortcutTab(defaultShortcutTabOrder, "favorites", -1))
+    }
+
+    @Test
     fun tmuxShortcutRowsFollowPrefixAndWindowNumbering() {
         assertEquals("^ b,c", tmuxShortcutRows(0, true).first().sequence)
         assertEquals("^ a,c", tmuxShortcutRows(1, true).first().sequence)

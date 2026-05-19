@@ -8,7 +8,7 @@ data class ShortcutRowDefinition(val sequence: String, val hint: String)
 
 data class ShortcutTabDefinition(val id: String, val title: String, val subtitle: String, val active: Boolean)
 
-data class ApplicationShortcutDefinition(val title: String, val chord: String, val description: String)
+data class ApplicationShortcutDefinition(val id: String, val title: String, val chord: String, val description: String, val keyCode: Int)
 
 val defaultToolbarSlots = listOf("esc", "ctrl", "tab", "dpad", "copy", "shift", "alt", "paste", "undo", "chat", "keyboard")
 
@@ -29,13 +29,18 @@ val toolbarSlotDefinitions = listOf(
 )
 
 val applicationShortcutDefinitions = listOf(
-    ApplicationShortcutDefinition("Show Shortcuts", "Cmd+K", "Open or close the shortcuts panel."),
-    ApplicationShortcutDefinition("Switch Session", "Cmd+J", "Move focus to the next active terminal session."),
-    ApplicationShortcutDefinition("Open Switcher", "Cmd+O", "Open the session switcher."),
-    ApplicationShortcutDefinition("New Connection", "Cmd+N", "Start a new workspace connection."),
-    ApplicationShortcutDefinition("Close Session", "Cmd+W", "Close the current terminal session."),
-    ApplicationShortcutDefinition("Paste", "Cmd+V", "Paste clipboard text or image into the terminal."),
+    ApplicationShortcutDefinition("show_shortcuts", "Show Shortcuts", "Cmd+K", "Open or close the shortcuts panel.", KeyEvent.KEYCODE_K),
+    ApplicationShortcutDefinition("switch_session", "Switch Session", "Cmd+J", "Move focus to the next active terminal session.", KeyEvent.KEYCODE_J),
+    ApplicationShortcutDefinition("open_switcher", "Open Switcher", "Cmd+O", "Open the session switcher.", KeyEvent.KEYCODE_O),
+    ApplicationShortcutDefinition("new_connection", "New Connection", "Cmd+N", "Start a new workspace connection.", KeyEvent.KEYCODE_N),
+    ApplicationShortcutDefinition("close_session", "Close Session", "Cmd+W", "Close the current terminal session.", KeyEvent.KEYCODE_W),
+    ApplicationShortcutDefinition("paste", "Paste", "Cmd+V", "Paste clipboard text or image into the terminal.", KeyEvent.KEYCODE_V),
 )
+
+fun applicationShortcutIdForKey(keyCode: Int, metaState: Int): String? {
+    if ((metaState and KeyEvent.META_META_ON) == 0) return null
+    return applicationShortcutDefinitions.firstOrNull { it.keyCode == keyCode }?.id
+}
 
 fun toolbarSlotLabel(id: String): String = toolbarSlotDefinitions.firstOrNull { it.id == id }?.label ?: id
 

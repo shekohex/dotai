@@ -214,6 +214,7 @@ fun CoderApp(
     onHideKeyboard: () -> Unit,
 ) {
     var destination by remember { mutableStateOf(AppDestination.HOME) }
+    var appShortcutSettingsPage by remember { mutableStateOf<SettingsPage?>(null) }
     var authState by remember { mutableStateOf<AuthState>(AuthState.Loading) }
     val terminalSessions = remember { mutableStateListOf<ActiveTerminalWindow>() }
     var confirmCloseTerminalId by remember { mutableStateOf<String?>(null) }
@@ -243,7 +244,16 @@ fun CoderApp(
         }
         preferences.registerOnSharedPreferenceChangeListener(listener)
         terminalView.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
-        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+        terminalView.onApplicationShortcut = { shortcutId ->
+            when (shortcutId) {
+                "show_shortcuts" -> { appShortcutSettingsPage = SettingsPage.SHORTCUTS; destination = AppDestination.SETTINGS; onHideKeyboard(); true }
+                "open_switcher", "switch_session" -> { destination = AppDestination.HOME; onHideKeyboard(); true }
+                "new_connection" -> { destination = AppDestination.HOME; onHideKeyboard(); true }
+                "close_session" -> { terminalSessions.lastOrNull()?.let { confirmCloseTerminalId = it.id }; true }
+                else -> false
+            }
+        }
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener); terminalView.onApplicationShortcut = null }
     }
     DisposableEffect(context, lifecycleOwner, terminalSessions) {
         if (lifecycleOwner == null) return@DisposableEffect onDispose { }
@@ -426,13 +436,13 @@ fun CoderApp(
                     )
                 }
                 AppDestination.DEBUG_RENDER -> DebugRenderPlayground(theme, tokens) { destination = AppDestination.HOME }
-                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
+                AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, appShortcutSettingsPage ?: deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
                     onFontChanged()
                 }, { points ->
                     terminalView.setFontSizePoints(points)
                     onFontChanged()
-                }, onFontChanged) { destination = AppDestination.HOME }
+                }, onFontChanged) { appShortcutSettingsPage = null; destination = AppDestination.HOME }
             }
             confirmCloseTerminalId?.let { terminalId ->
                 ConfirmCloseTerminalDialog(

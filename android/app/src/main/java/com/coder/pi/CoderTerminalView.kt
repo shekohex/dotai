@@ -120,6 +120,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onHyperlinkActivated: ((String) -> Unit)? = null
     var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
     var onToolbarActionsChanged: (() -> Unit)? = null
+    var onApplicationShortcut: ((String) -> Boolean)? = null
     var onNotificationPermissionNeeded: (() -> Unit)? = null
 
     override fun onResume() {
@@ -441,6 +442,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        applicationShortcutIdForKey(keyCode, event.metaState)?.let { shortcutId ->
+            if (shortcutId == "paste") {
+                pasteFromClipboard()
+                return true
+            }
+            if (onApplicationShortcut?.invoke(shortcutId) == true) return true
+        }
         if (volumeFontSizeEnabled() && keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             adjustFontSize(1)
             return true

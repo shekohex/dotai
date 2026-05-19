@@ -71,6 +71,14 @@ class CoderTerminalShortcutsTest {
     }
 
     @Test
+    fun applicationShortcutResolverRequiresCommandModifier() {
+        assertEquals("show_shortcuts", applicationShortcutIdForKey(KeyEvent.KEYCODE_K, KeyEvent.META_META_ON))
+        assertEquals("paste", applicationShortcutIdForKey(KeyEvent.KEYCODE_V, KeyEvent.META_META_ON))
+        assertEquals(null, applicationShortcutIdForKey(KeyEvent.KEYCODE_K, 0))
+        assertEquals(null, applicationShortcutIdForKey(KeyEvent.KEYCODE_K, KeyEvent.META_CTRL_ON))
+    }
+
+    @Test
     fun shortcutTabOrderNormalizesAndMovesKnownTabs() {
         assertEquals(listOf("tmux", "favorites", "ctrl", "pi"), normalizeShortcutTabOrder("tmux,favorites,unknown"))
         assertEquals(listOf("favorites", "ctrl", "tmux", "pi"), moveShortcutTab(defaultShortcutTabOrder, "tmux", 1))

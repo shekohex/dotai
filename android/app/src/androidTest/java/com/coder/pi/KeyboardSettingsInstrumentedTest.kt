@@ -2,6 +2,7 @@ package com.coder.pi
 
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -43,6 +44,20 @@ class KeyboardSettingsInstrumentedTest {
         check(device.hasObject(By.text("Paste"))) { "Paste row missing" }
         check(device.hasObject(By.text("Cmd+V"))) { "Paste chord missing" }
         captureDeviceScreenshot(device, "keyboard-application-shortcuts.png")
+    }
+
+    @Test
+    fun commandKeyShortcutTriggersApplicationAction() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val terminalView = CoderTerminalView(context)
+        var triggeredShortcut: String? = null
+        terminalView.onApplicationShortcut = { shortcutId -> triggeredShortcut = shortcutId; true }
+
+        val handled = terminalView.onKeyDown(KeyEvent.KEYCODE_K, KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_K, 0, KeyEvent.META_META_ON))
+
+        check(handled) { "Application shortcut key was not handled" }
+        check(triggeredShortcut == "show_shortcuts") { "Cmd+K did not trigger show_shortcuts action" }
     }
 
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {

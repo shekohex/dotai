@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import java.io.File
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,5 +59,38 @@ class ShortcutTabSettingsInstrumentedTest {
         check(device.hasObject(By.text("new win"))) { "Active tmux shortcut missing" }
         check(device.hasObject(By.text("INACTIVE"))) { "Inactive section missing" }
         check(device.hasObject(By.text("windows"))) { "Inactive tmux shortcut missing" }
+    }
+
+    @Test
+    fun tmuxPrefixSelectorUpdatesEffectivePreview() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val tmuxRow = device.findObjects(By.text("Tmux")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Tmux tab missing")
+        tmuxRow.click()
+
+        check(device.wait(Until.hasObject(By.text("Prefix Key")), 10_000)) { "Tmux prefix setting missing" }
+        check(device.hasObject(By.text("Ctrl+B"))) { "Ctrl+B option missing" }
+        check(device.hasObject(By.text("Ctrl+Space"))) { "Ctrl+Space option missing" }
+        val ctrlA = device.findObject(By.text("Ctrl+A")) ?: error("Ctrl+A option missing")
+        if (!device.hasObject(By.text("^ a"))) {
+            device.click(ctrlA.visibleBounds.centerX(), ctrlA.visibleBounds.centerY())
+            check(device.wait(Until.hasObject(By.text("^ a")), 10_000)) { "Tmux prefix preview did not update" }
+        }
+        check(device.hasObject(By.text("^ a"))) { "Tmux prefix preview did not update" }
+        captureDeviceScreenshot(device, "shortcuts-tmux-prefix.png")
+    }
+
+    private fun captureDeviceScreenshot(device: UiDevice, name: String) {
+        val directory = File("/sdcard/Download/pi-test-screenshots")
+        directory.mkdirs()
+        check(device.takeScreenshot(File(directory, name))) { "Screenshot capture failed: $name" }
     }
 }

@@ -1980,13 +1980,13 @@ private fun ShortcutsSettingsScreen(terminalView: CoderTerminalView, tokens: UiT
     }
 }
 
-private data class ShortcutOverviewTab(val title: String, val subtitle: String, val icon: Int, val active: Boolean)
+private data class ShortcutOverviewTab(val title: String, val subtitle: String, val icon: Int?, val active: Boolean)
 
 private fun shortcutOverviewTabs(shortcuts: List<TerminalShortcut>): List<ShortcutOverviewTab> = listOf(
     ShortcutOverviewTab("Favorites", "${shortcuts.size} shortcuts", R.drawable.ic_feather_star, true),
     ShortcutOverviewTab("Tmux", "8 shortcuts", R.drawable.ic_feather_terminal, true),
     ShortcutOverviewTab("Ctrl", "8 shortcuts", R.drawable.ic_feather_chevron_up, true),
-    ShortcutOverviewTab("Pi", "15 shortcuts", R.drawable.ic_feather_command, true),
+    ShortcutOverviewTab("Pi", "15 shortcuts", null, true),
 )
 
 @Composable
@@ -2023,16 +2023,21 @@ private fun ShortcutPreviewIcon(icon: Int, tokens: UiTokens) {
 @Composable
 private fun ShortcutPreviewTab(tab: ShortcutOverviewTab, hideTitles: Boolean, tokens: UiTokens) {
     Row(Modifier.height(34.dp).clip(RoundedCornerShape(13.dp)).background(tokens.surface).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(tab.icon), null, tint = tokens.text, modifier = Modifier.size(16.dp))
+        ShortcutTabIcon(tab, tokens, tokens.text, Modifier.size(16.dp))
         if (!hideTitles) Text(tab.title, color = tokens.text, fontSize = captionSize(), modifier = Modifier.padding(start = 6.dp), maxLines = 1)
     }
+}
+
+@Composable
+private fun ShortcutTabIcon(tab: ShortcutOverviewTab, tokens: UiTokens, tint: Color, modifier: Modifier) {
+    if (tab.icon == null) PiLogo(tokens, tab.title, modifier, tint) else Icon(painterResource(tab.icon), null, tint = tint, modifier = modifier)
 }
 
 @Composable
 private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, tokens: UiTokens, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(72.dp).clickable { hapticClick(); onClick() }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(if (tab.active) "⊖" else "⊕", color = if (tab.active) Color(0xffd62d5a) else Color(0xff3dae4b), fontSize = 25.sp, modifier = Modifier.width(36.dp))
-        Icon(painterResource(tab.icon), null, tint = tokens.secondary, modifier = Modifier.size(22.dp))
+        ShortcutTabIcon(tab, tokens, tokens.secondary, Modifier.size(22.dp))
         Column(Modifier.padding(start = 18.dp).weight(1f), verticalArrangement = Arrangement.Center) {
             Text(tab.title, color = tokens.text, fontSize = rowTitleSize(), maxLines = 1)
             Text(tab.subtitle, color = tokens.secondary, fontSize = captionSize(), maxLines = 1)
@@ -2043,10 +2048,25 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
 
 @Composable
 private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
+    var tmuxPrefixIndex by remember { mutableIntStateOf(terminalView.tmuxPrefixIndex()) }
     val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { it.sequence to it.label } else defaultShortcutRows(tab.title)
     val activeShortcuts = shortcuts.take(4)
     val inactiveShortcuts = shortcuts.drop(4)
     SettingsScaffold(tab.title, tokens, onBack) {
+        if (tab.title == "Tmux") {
+            SettingsSection("SETTINGS", tokens) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Prefix Key", color = tokens.text, fontSize = rowTitleSize(), modifier = Modifier.weight(1f))
+                        Text(tmuxPrefixPreview(tmuxPrefixIndex), color = tokens.text, fontSize = valueSize(), fontFamily = FontFamily.Monospace)
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Ctrl+B", "Ctrl+A", "Ctrl+Space").forEachIndexed { index, label -> TmuxPrefixChoice(label, tmuxPrefixIndex == index, tokens) { tmuxPrefixIndex = index; terminalView.setTmuxPrefixIndex(index) } }
+                    }
+                }
+            }
+            item { Text("If you changed tmux from Ctrl+B to Ctrl+A or Ctrl+Space, set it here so the quick actions match.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+        }
         SettingsSection("ACTIVE", tokens) {
             if (activeShortcuts.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) { Text("No active shortcuts", color = tokens.secondary, fontSize = bodySize()) }
@@ -2065,6 +2085,19 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
         }
         item { Box(Modifier.fillMaxWidth().height(46.dp).clickable { hapticClick() }, contentAlignment = Alignment.Center) { Text("↻  Reset", color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold) } }
     }
+}
+
+@Composable
+private fun RowScope.TmuxPrefixChoice(label: String, selected: Boolean, tokens: UiTokens, onClick: () -> Unit) {
+    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).border(2.dp, if (selected) tokens.accent else Color.Transparent, RoundedCornerShape(12.dp)).background(tokens.surface).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) {
+        Text(label, color = if (selected) tokens.accent else tokens.text, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+    }
+}
+
+private fun tmuxPrefixPreview(index: Int): String = when (index.coerceIn(0, 2)) {
+    1 -> "^ a"
+    2 -> "^ Space"
+    else -> "^ b"
 }
 
 @Composable

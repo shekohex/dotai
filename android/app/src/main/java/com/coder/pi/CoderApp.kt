@@ -1425,6 +1425,7 @@ fun TerminalSurface(
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
+    showMetadataOverlay: Boolean = true,
     statusContent: @Composable BoxScope.() -> Unit = {},
 ) {
     var copyModeActive by remember { mutableStateOf(terminalView.copyModeActive()) }
@@ -1455,7 +1456,7 @@ fun TerminalSurface(
                 },
             )
             TerminalPinchFontOverlay(terminalView)
-            if (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank()) {
+            if (showMetadataOverlay && (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank())) {
                 Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
                     if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
                     if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)

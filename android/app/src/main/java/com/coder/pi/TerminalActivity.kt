@@ -85,7 +85,7 @@ class TerminalActivity : AppCompatActivity() {
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
-                TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).imePadding())
+                TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).imePadding(), showMetadataOverlay = false)
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
                     if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"), detached = true))

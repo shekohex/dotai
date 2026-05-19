@@ -855,6 +855,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun tmuxPrefixIndex(): Int = preferences.getInt("shortcuts.tmux_prefix", 0).coerceIn(0, 2)
 
+    fun setTmuxStartWindowFromOne(enabled: Boolean) {
+        preferences.edit { putBoolean("shortcuts.tmux_start_window_from_one", enabled) }
+        notifyToolbarActionsChanged()
+    }
+
+    fun tmuxStartWindowFromOne(): Boolean = preferences.getBoolean("shortcuts.tmux_start_window_from_one", true)
+
     fun toolbarOrder(): List<String> = normalizeToolbarOrder(preferences.getString("toolbar.order", null))
 
     fun setToolbarOrder(order: List<String>) {

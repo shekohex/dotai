@@ -2049,6 +2049,7 @@ private fun ShortcutPanelTabRow(tab: ShortcutOverviewTab, reorderable: Boolean, 
 @Composable
 private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: CoderTerminalView, tokens: UiTokens, onAddShortcut: () -> Unit, onBack: () -> Unit) {
     var tmuxPrefixIndex by remember { mutableIntStateOf(terminalView.tmuxPrefixIndex()) }
+    var tmuxStartWindowFromOne by remember { mutableStateOf(terminalView.tmuxStartWindowFromOne()) }
     val shortcuts = if (tab.title == "Favorites") terminalView.customShortcuts().map { it.sequence to it.label } else defaultShortcutRows(tab.title)
     val activeShortcuts = shortcuts.take(4)
     val inactiveShortcuts = shortcuts.drop(4)
@@ -2066,6 +2067,11 @@ private fun ShortcutTabSettingsScreen(tab: ShortcutOverviewTab, terminalView: Co
                 }
             }
             item { Text("If you changed tmux from Ctrl+B to Ctrl+A or Ctrl+Space, set it here so the quick actions match.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 10.dp)) }
+            item {
+                Column(Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp).clip(RoundedCornerShape(14.dp)).background(tokens.surfaceHigh)) {
+                    SettingsToggleRow(null, "Start window from 1", tmuxStartWindowFromOne, tokens) { tmuxStartWindowFromOne = it; terminalView.setTmuxStartWindowFromOne(it) }
+                }
+            }
         }
         SettingsSection("ACTIVE", tokens) {
             if (activeShortcuts.isEmpty()) {

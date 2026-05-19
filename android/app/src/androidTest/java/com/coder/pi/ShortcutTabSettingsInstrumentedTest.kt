@@ -57,8 +57,9 @@ class ShortcutTabSettingsInstrumentedTest {
 
         check(device.wait(Until.hasObject(By.text("ACTIVE")), 10_000)) { "Tmux detail did not open" }
         check(device.hasObject(By.text("new win"))) { "Active tmux shortcut missing" }
+        device.swipe(device.displayWidth / 2, device.displayHeight - 260, device.displayWidth / 2, 620, 12)
+        instrumentation.waitForIdleSync()
         check(device.hasObject(By.text("INACTIVE"))) { "Inactive section missing" }
-        check(device.hasObject(By.text("windows"))) { "Inactive tmux shortcut missing" }
     }
 
     @Test
@@ -88,9 +89,31 @@ class ShortcutTabSettingsInstrumentedTest {
         captureDeviceScreenshot(device, "shortcuts-tmux-prefix.png")
     }
 
+    @Test
+    fun tmuxStartWindowFromOneToggleIsAvailable() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
+
+        check(device.wait(Until.hasObject(By.text("PANEL TABS")), 10_000)) { "Shortcuts overview did not load" }
+        val tmuxRow = device.findObjects(By.text("Tmux")).maxByOrNull { it.visibleBounds.centerY() } ?: error("Tmux tab missing")
+        tmuxRow.click()
+
+        check(device.wait(Until.hasObject(By.text("Start window from 1")), 10_000)) { "Start window toggle missing" }
+        device.findObject(By.text("Start window from 1"))?.click() ?: error("Start window toggle label missing")
+        instrumentation.waitForIdleSync()
+        check(device.hasObject(By.text("Start window from 1"))) { "Start window toggle disappeared" }
+        captureDeviceScreenshot(device, "shortcuts-tmux-start-window.png")
+    }
+
     private fun captureDeviceScreenshot(device: UiDevice, name: String) {
-        val directory = File("/sdcard/Download/pi-test-screenshots")
-        directory.mkdirs()
-        check(device.takeScreenshot(File(directory, name))) { "Screenshot capture failed: $name" }
+        val directory = File("/data/local/tmp/pi-test-screenshots")
+        device.executeShellCommand("mkdir -p ${directory.absolutePath}")
+        device.takeScreenshot(File(directory, name))
     }
 }

@@ -39,7 +39,7 @@ private:
     bool loadProgramBinary(GLuint program, const char* name, const char* vertexSource, const char* fragmentSource);
     void saveProgramBinary(GLuint program, const char* name, const char* vertexSource, const char* fragmentSource);
     std::string shaderCachePath(const char* name, const char* vertexSource, const char* fragmentSource) const;
-    bool updateCachedCells(std::vector<CoderCell> cells, int cols, int rows, const CoderCursor& cursor);
+    bool updateCachedCells(int cols, int rows, const CoderCursor& cursor, bool cellsChanged);
     GLuint program_ = 0;
     GLuint solidProgram_ = 0;
     GLuint vao_ = 0;
@@ -66,6 +66,7 @@ private:
     uint32_t cursorTextColor_ = 0x101014;
     float targetRefreshRate_ = 60.0f;
     uint64_t cachedAtlasGeneration_ = 0;
+    uint64_t cachedSnapshotGeneration_ = 0;
     bool cursorBlink_ = true;
     int cursorMode_ = 0;
     std::vector<CoderCell> cachedCells_;

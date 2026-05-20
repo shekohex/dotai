@@ -64,6 +64,7 @@ public:
     std::string selectedText(int startRow, int startCol, int endRow, int endCol);
     std::vector<CoderCell> snapshot(int& cols, int& rows, int& cursorCol, int& cursorRow);
     std::vector<CoderCell> snapshot(int& cols, int& rows, CoderCursor& cursor);
+    bool snapshot(int& cols, int& rows, CoderCursor& cursor, std::vector<CoderCell>& outputCells, uint64_t& generation, std::vector<uint8_t>* dirtyRows = nullptr);
 
 private:
     void pumpLocked();
@@ -133,6 +134,9 @@ private:
     CoderCursor cursor_;
     std::vector<CoderCell> cells_;
     std::vector<uint32_t> preeditCodepoints_;
+    uint64_t snapshotGeneration_ = 1;
+    int snapshotPreeditCursorRow_ = -1;
+    int snapshotPreeditCursorCol_ = -1;
     std::string title_;
     std::string pwd_;
     std::string oscMetadataBuffer_;

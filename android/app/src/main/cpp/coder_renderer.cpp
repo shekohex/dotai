@@ -210,21 +210,16 @@ int CoderRenderer::cellHeight() const {
     return font_.glyphHeight();
 }
 
-bool CoderRenderer::updateCachedCells(std::vector<CoderCell> cells, int cols, int rows, const CoderCursor& cursor) {
-    const bool dimensionsChanged = cachedCols_ != cols || cachedRows_ != rows || cachedCells_.size() != cells.size();
-    dirtyRows_.assign(static_cast<size_t>(std::max(rows, 0)), dimensionsChanged ? 1 : 0);
+bool CoderRenderer::updateCachedCells(int cols, int rows, const CoderCursor& cursor, bool cellsChanged) {
+    const bool dimensionsChanged = cachedCols_ != cols || cachedRows_ != rows || cachedCells_.size() != static_cast<size_t>(std::max(cols, 0) * std::max(rows, 0));
+    if (dimensionsChanged || !cellsChanged || dirtyRows_.size() != static_cast<size_t>(std::max(rows, 0))) dirtyRows_.assign(static_cast<size_t>(std::max(rows, 0)), dimensionsChanged ? 1 : 0);
     bool changed = dimensionsChanged || cachedCursorCol_ != cursor.col || cachedCursorRow_ != cursor.row || cachedCursorBlinking_ != cursor.blinking || cachedCursorColorHasValue_ != cursor.colorHasValue || cachedCursorColor_ != cursor.color || cachedCursorVisualStyle_ != cursor.visualStyle;
-    if (!dimensionsChanged) {
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < cols; col++) {
-                size_t index = static_cast<size_t>(row * cols + col);
-                if (!(cachedCells_[index] == cells[index])) {
-                    dirtyRows_[static_cast<size_t>(row)] = 1;
-                    changed = true;
-                    break;
-                }
-            }
-        }
+    if (!dimensionsChanged && cellsChanged) {
+        for (int row = 0; row < rows; row++) if (dirtyRows_[static_cast<size_t>(row)] != 0) changed = true;
+        if (cachedCursorRow_ >= 0 && cachedCursorRow_ < rows) dirtyRows_[static_cast<size_t>(cachedCursorRow_)] = 1;
+        if (cursor.row >= 0 && cursor.row < rows) dirtyRows_[static_cast<size_t>(cursor.row)] = 1;
+    }
+    if (!cellsChanged && !dimensionsChanged) {
         if (cachedCursorRow_ >= 0 && cachedCursorRow_ < rows) dirtyRows_[static_cast<size_t>(cachedCursorRow_)] = 1;
         if (cursor.row >= 0 && cursor.row < rows) dirtyRows_[static_cast<size_t>(cursor.row)] = 1;
     }
@@ -237,7 +232,6 @@ bool CoderRenderer::updateCachedCells(std::vector<CoderCell> cells, int cols, in
     cachedCursorColorHasValue_ = cursor.colorHasValue;
     cachedCursorColor_ = cursor.color;
     cachedCursorVisualStyle_ = cursor.visualStyle;
-    cachedCells_ = std::move(cells);
     return true;
 }
 
@@ -252,12 +246,12 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     }
     int cols, rows;
     CoderCursor cursor;
-    auto cells = terminal.snapshot(cols, rows, cursor);
+    const bool cellsChanged = terminal.snapshot(cols, rows, cursor, cachedCells_, cachedSnapshotGeneration_, &dirtyRows_);
     auto now = std::chrono::steady_clock::now();
     bool blinkPhase = (std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 550) % 2 == 0;
     bool cursorVisible = cursor.visible && (!cursor.blinking || !cursorBlink_ || (std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 550) % 2 == 0);
     bool hasBlinkingCells = false;
-    for (const auto& cell : cells) {
+    for (const auto& cell : cachedCells_) {
         if ((cell.flags & 512u) != 0u) {
             hasBlinkingCells = true;
             break;
@@ -265,7 +259,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     }
     const bool atlasChanged = cachedAtlasGeneration_ != font_.atlasGeneration();
     const bool blinkChanged = hasBlinkingCells && cachedBlinkPhase_ != blinkPhase;
-    bool shouldUploadBuffers = updateCachedCells(std::move(cells), cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || atlasChanged || blinkChanged;
+    bool shouldUploadBuffers = updateCachedCells(cols, rows, cursor, cellsChanged) || cachedCursorVisible_ != cursorVisible || atlasChanged || blinkChanged;
     const auto& renderCells = cachedCells_;
     cachedCursorVisible_ = cursorVisible;
     cachedBlinkPhase_ = blinkPhase;

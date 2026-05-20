@@ -464,15 +464,20 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `REVISIT-RENDER-SNAPSHOT-COPY-STILL-FULL`
-  State: Open
+- [x] `REVISIT-RENDER-SNAPSHOT-COPY-STILL-FULL`
+  State: Fixed
   Source: `review-render-performance-retry`
   Related item: `PERF-RENDER-FULL-SNAPSHOT-COPY-EVERY-FRAME`
   Severity: Medium
   Finding: Current fix removes second renderer-cache copy, but draw still calls `terminal.snapshot(...)` every frame and `CoderTerminal::snapshot` still copies full `cells_` into `outputCells` before overlays.
   Evidence: `app/src/main/cpp/coder_renderer.cpp:247`; `app/src/main/cpp/coder_terminal.cpp:645`.
   Suggested validation: Add allocation/copy counters for clean and one-row-dirty frames.
-  Next action: Revisit snapshot API to return retained cells plus dirty rows/overlay deltas without full-vector copy on clean frames.
+  Resolution: Renderer now passes its retained cell buffer and snapshot generation into `CoderTerminal::snapshot`; terminal copies cells into that buffer only when the terminal snapshot generation changes. Clean frames still refresh cursor/render-state metadata, but skip the full `cells_` to output vector copy. Dirty rows are exported from the snapshot path so renderer no longer needs a full-grid cell comparison on changed frames.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; no new screenshot captured for native-only snapshot retention.
+  Performance proof: Before: every draw executed `auto outputCells = cells_`, copying `cols * rows * sizeof(CoderCell)` bytes even on clean frames. After: clean frames return when caller generation matches and avoid that vector copy; changed frames copy once into renderer-retained storage and carry dirty-row flags structurally.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-RENDER-ROW-DIRTY-GPU-UPLOAD-STILL-MONOLITHIC`
   State: Open

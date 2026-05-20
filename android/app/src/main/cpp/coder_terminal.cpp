@@ -254,6 +254,7 @@ void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
 
 void CoderTerminal::setPreedit(const char* data, size_t length) {
     std::lock_guard lock(mutex_);
+    const auto previous = preeditCodepoints_;
     preeditCodepoints_.clear();
     for (size_t index = 0; index < length;) {
         unsigned char first = static_cast<unsigned char>(data[index]);
@@ -278,6 +279,7 @@ void CoderTerminal::setPreedit(const char* data, size_t length) {
         if (codepoint >= 0x20 && codepoint != 0x7f) preeditCodepoints_.push_back(codepoint);
         index += width;
     }
+    if (preeditCodepoints_ != previous) snapshotGeneration_++;
 }
 
 void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength) {
@@ -435,6 +437,7 @@ bool CoderTerminal::screenPositionFromViewport(int row, int col, int& screenRow,
 
 void CoderTerminal::setSelection(bool active, int startRow, int startCol, int endRow, int endCol) {
     std::lock_guard lock(mutex_);
+    const SelectionState previous = selection_;
     selection_.active = active;
     selection_.startRow = std::max(0, startRow);
     selection_.startCol = std::clamp(startCol, 0, std::max(0, cols_ - 1));
@@ -444,6 +447,7 @@ void CoderTerminal::setSelection(bool active, int startRow, int startCol, int en
         GhosttyRenderStateDirty dirty = GHOSTTY_RENDER_STATE_DIRTY_FULL;
         ghostty_render_state_set(renderState_.get(), GHOSTTY_RENDER_STATE_OPTION_DIRTY, &dirty);
     }
+    if (selection_.active != previous.active || selection_.startRow != previous.startRow || selection_.startCol != previous.startCol || selection_.endRow != previous.endRow || selection_.endCol != previous.endCol) snapshotGeneration_++;
 }
 
 std::string CoderTerminal::copySelection() {
@@ -539,7 +543,16 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, int& cursor
 }
 
 std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor) {
+    std::vector<CoderCell> outputCells;
+    uint64_t generation = 0;
+    snapshot(cols, rows, cursor, outputCells, generation);
+    return outputCells;
+}
+
+bool CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor, std::vector<CoderCell>& outputCells, uint64_t& generation, std::vector<uint8_t>* dirtyRows) {
     std::lock_guard lock(mutex_);
+    bool cellsUpdated = false;
+    if (dirtyRows) dirtyRows->clear();
     if (terminal_ && renderState_) {
         ghostty_render_state_update(renderState_.get(), terminal_.get());
         uint16_t renderCols = 0;
@@ -554,8 +567,10 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
         cols_ = renderCols;
         rows_ = renderRows;
         const bool fullRedraw = dimensionsChanged || dirtyState == GHOSTTY_RENDER_STATE_DIRTY_FULL;
+        if (dirtyRows) dirtyRows->assign(static_cast<size_t>(renderRows), fullRedraw ? 1 : 0);
         if (fullRedraw) {
             cells_.assign(cols_ * rows_, CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0});
+            cellsUpdated = true;
         }
         GhosttyRenderStateRowIterator rowIterator = rowIterator_.get();
         ghostty_render_state_get(renderState_.get(), GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &rowIterator);
@@ -569,6 +584,8 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
                 row++;
                 continue;
             }
+            if (dirtyRows && row >= 0 && row < static_cast<int>(dirtyRows->size())) (*dirtyRows)[static_cast<size_t>(row)] = 1;
+            cellsUpdated = true;
             for (int col = 0; col < cols_; col++) {
                 cells_[row * cols_ + col] = CoderCell{{}, 0, rgb(colors.foreground), rgb(colors.background), rgb(colors.foreground), 0, GHOSTTY_CELL_WIDE_NARROW};
             }
@@ -657,7 +674,22 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
     }
     cols = cols_;
     rows = rows_;
-    auto outputCells = cells_;
+    if (cellsUpdated) snapshotGeneration_++;
+    cursor = cursor_;
+    if (!preeditCodepoints_.empty() && (snapshotPreeditCursorRow_ != cursor_.row || snapshotPreeditCursorCol_ != cursor_.col)) {
+        snapshotPreeditCursorRow_ = cursor_.row;
+        snapshotPreeditCursorCol_ = cursor_.col;
+        snapshotGeneration_++;
+    } else if (preeditCodepoints_.empty() && (snapshotPreeditCursorRow_ != -1 || snapshotPreeditCursorCol_ != -1)) {
+        snapshotPreeditCursorRow_ = -1;
+        snapshotPreeditCursorCol_ = -1;
+        snapshotGeneration_++;
+    }
+    if (generation == snapshotGeneration_ && outputCells.size() == cells_.size()) return false;
+    const bool overlayOnlySnapshotChange = !cellsUpdated && generation != snapshotGeneration_;
+    outputCells = cells_;
+    if (dirtyRows && dirtyRows->empty()) dirtyRows->assign(static_cast<size_t>(rows_), 1);
+    if (dirtyRows && overlayOnlySnapshotChange) dirtyRows->assign(static_cast<size_t>(rows_), 1);
     if (selection_.active && terminal_) {
         int startRow = selection_.startRow;
         int startCol = selection_.startCol;
@@ -681,11 +713,12 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
             if (screenRow < startRow || screenRow > endRow) continue;
             const int rowStartCol = screenRow == startRow ? startCol : 0;
             const int rowEndCol = screenRow == endRow ? endCol : cols_ - 1;
+            if (dirtyRows && viewportRow < static_cast<int>(dirtyRows->size())) (*dirtyRows)[static_cast<size_t>(viewportRow)] = 1;
             for (int col = std::max(0, rowStartCol); col <= std::min(cols_ - 1, rowEndCol); col++) outputCells[viewportRow * cols_ + col].background = selectionBackground_;
         }
     }
-    cursor = cursor_;
     if (!preeditCodepoints_.empty() && cursor_.row >= 0 && cursor_.row < rows_ && cursor_.col >= 0 && cursor_.col < cols_) {
+        if (dirtyRows && cursor_.row < static_cast<int>(dirtyRows->size())) (*dirtyRows)[static_cast<size_t>(cursor_.row)] = 1;
         int col = cursor_.col;
         for (uint32_t codepoint : preeditCodepoints_) {
             if (col >= cols_) break;
@@ -708,7 +741,8 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
             }
         }
     }
-    return outputCells;
+    generation = snapshotGeneration_;
+    return true;
 }
 
 uint32_t CoderTerminal::rgb(GhosttyColorRgb color) const {

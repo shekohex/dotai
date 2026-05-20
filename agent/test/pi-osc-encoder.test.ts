@@ -29,6 +29,25 @@ const fixtureEnvelope: PiOscEnvelope = {
 const fixturePayload =
   "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MSwiZXh0ZW5zaW9uIjoicGktb3NjIiwidmVyc2lvbiI6MX19";
 
+const fixturePayloadByEvent: Record<PiOscV1Event, string> = {
+  hello:
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MSwiZXh0ZW5zaW9uIjoicGktb3NjIiwidmVyc2lvbiI6MX19",
+  "agent.session":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJzdGF0ZSI6InN0YXJ0ZWQiLCJyZWFzb24iOiJzdGFydHVwIn19",
+  "agent.run":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJzdGF0ZSI6InJ1bm5pbmcifX0",
+  "agent.turn":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJzdGF0ZSI6InJ1bm5pbmciLCJ0dXJuSW5kZXgiOjF9fQ",
+  "agent.progress":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJzdGF0ZSI6ImFjdGl2ZSJ9fQ",
+  "agent.tool":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJ0b29sQ2FsbElkIjoidG9vbC0xIiwidG9vbE5hbWUiOiJiYXNoIiwic3RhdGUiOiJydW5uaW5nIn19",
+  "agent.alert":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJraW5kIjoicHJvdmlkZXIiLCJ0aXRsZSI6IlByb3ZpZGVyIHJhdGUgbGltaXQiLCJib2R5IjoiUHJvdmlkZXIgcmV0dXJuZWQgSFRUUCA0MjkuIiwic2V2ZXJpdHkiOiJ3YXJuaW5nIiwic3RhdHVzQ29kZSI6NDI5fX0",
+  "agent.compaction":
+    "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJzdGF0ZSI6InByZXBhcmluZyJ9fQ",
+};
+
 const payloadByEvent: Record<PiOscV1Event, PiOscEnvelope["data"]> = {
   hello: { protocol: 1, extension: "pi-osc", version: 1 },
   "agent.session": { state: "started", reason: "startup" },
@@ -83,6 +102,30 @@ test("event wrapper functions emit every V1 event", () => {
   );
   expect(createPiOscAgentCompactionSequence(envelopeFor("agent.compaction"))).toContain(
     "]6767;pi;1;agent.compaction;",
+  );
+});
+
+test("event wrapper functions emit exact ST-terminated V1 fixtures", () => {
+  const expected: Record<PiOscV1Event, string> = Object.fromEntries(
+    Object.entries(fixturePayloadByEvent).map(([eventName, payload]) => [
+      eventName,
+      `\u001b]6767;pi;1;${eventName};${payload}\u001b\\`,
+    ]),
+  ) as Record<PiOscV1Event, string>;
+
+  expect(createPiOscHelloSequence(envelopeFor("hello"))).toBe(expected.hello);
+  expect(createPiOscAgentSessionSequence(envelopeFor("agent.session"))).toBe(
+    expected["agent.session"],
+  );
+  expect(createPiOscAgentRunSequence(envelopeFor("agent.run"))).toBe(expected["agent.run"]);
+  expect(createPiOscAgentTurnSequence(envelopeFor("agent.turn"))).toBe(expected["agent.turn"]);
+  expect(createPiOscAgentProgressSequence(envelopeFor("agent.progress"))).toBe(
+    expected["agent.progress"],
+  );
+  expect(createPiOscAgentToolSequence(envelopeFor("agent.tool"))).toBe(expected["agent.tool"]);
+  expect(createPiOscAgentAlertSequence(envelopeFor("agent.alert"))).toBe(expected["agent.alert"]);
+  expect(createPiOscAgentCompactionSequence(envelopeFor("agent.compaction"))).toBe(
+    expected["agent.compaction"],
   );
 });
 

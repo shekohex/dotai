@@ -652,9 +652,21 @@ Commit:
 
 ## PIOSC-12: Final Integration Review And Cleanup
 
-Status: not-started
+Status: building
 
 Research:
+
+- Checklist shows PIOSC-1 through PIOSC-11 done with Review and Commit sections filled.
+- Agent encoder has exact fixture coverage for `hello`, but final success criteria requires exact OSC fixtures for all V1 events.
+- Android parser validates allowlisted event names, base64url payload shape, strict UTF-8, bounded root fields, event-specific payload keys, and drops malformed frames as `Ignored`.
+- Android presentation sanitizes alert title/body via `TerminalNotificationFormat.cleanText`, bounds notification strings, and maps Pi progress through existing progress notification behavior.
+- Debug-only Pi OSC frames are intentionally kept in `pi://debug/render` and covered by `DebugRenderPlaygroundTest`.
+
+Plan:
+
+- Add exact ST-terminated fixture assertions for every V1 agent encoder event.
+- Re-run cross-repo validation gates.
+- Record final privacy/bounds/spam/backward-compatibility audit in docs and checklist.
 
 Checklist:
 

@@ -879,7 +879,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             }
             if (clusterHasEmoji && clusterEndCol > col && clusterCodepointCount > cell.codepointCount) {
                 int clusterCellSpan = clusterEndCol - col + 1;
-                int collapsedCellSpan = clusterHasEmoji ? 2 : clusterCellSpan;
+                int collapsedCellSpan = clusterCellSpan;
                 auto clusterGlyphs = font_.shape(clusterCodepoints.data(), clusterCodepointCount, cell.flags, collapsedCellSpan * font_.glyphWidth());
                 bool clusterRenderable = !clusterGlyphs.empty();
                 for (const auto& shapedGlyph : clusterGlyphs) {

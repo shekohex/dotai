@@ -448,6 +448,128 @@ Required proof schema:
   Commit: HEAD (this commit).
   User action needed: Test on a physical Android device or test setup that can transition Wi-Fi to cellular while a terminal WebSocket is active, plus backend/session credentials for reproducible reconnect testing.
 
+## Revisit Findings From Parallel Review
+
+- [ ] `REVISIT-RENDER-SYNCED-OUTPUT-BLANK-FRAME`
+  State: Open
+  Source: `review-native-render-safety`
+  Related item: `BUG-RENDER-SYNCED-OUTPUT-MODE-IGNORED`
+  Severity: Medium
+  Finding: Synced output suppression depends on `cachedGlyphVertexCount_ > 0`, so a fresh or blank terminal with zero glyph vertices can still render first partial output during `DECSET 2026` before `DECRST 2026`.
+  Evidence: `app/src/main/cpp/coder_renderer.cpp:244`.
+  Suggested validation: Start from blank terminal, feed `\x1b[?2026hpartial`, force one draw before `\x1b[?2026l`, and assert partial text is not presented.
+  Next action: Revisit skip condition so it tracks previously presented frame availability rather than glyph vertex count.
+
+- [ ] `REVISIT-RENDER-SNAPSHOT-COPY-STILL-FULL`
+  State: Open
+  Source: `review-render-performance-retry`
+  Related item: `PERF-RENDER-FULL-SNAPSHOT-COPY-EVERY-FRAME`
+  Severity: Medium
+  Finding: Current fix removes second renderer-cache copy, but draw still calls `terminal.snapshot(...)` every frame and `CoderTerminal::snapshot` still copies full `cells_` into `outputCells` before overlays.
+  Evidence: `app/src/main/cpp/coder_renderer.cpp:247`; `app/src/main/cpp/coder_terminal.cpp:645`.
+  Suggested validation: Add allocation/copy counters for clean and one-row-dirty frames.
+  Next action: Revisit snapshot API to return retained cells plus dirty rows/overlay deltas without full-vector copy on clean frames.
+
+- [ ] `REVISIT-RENDER-ROW-DIRTY-GPU-UPLOAD-STILL-MONOLITHIC`
+  State: Open
+  Source: `review-render-performance-retry`
+  Related item: `PERF-RENDER-ROW-DIRTY-GPU-BUFFERS`
+  Severity: Medium
+  Finding: Current implementation retains per-row CPU vertex vectors, but clean rows are copied back into monolithic staging vectors and full solid/glyph buffers are replaced with `glBufferData` on upload frames. It is not row-wise dirty GPU buffering yet.
+  Evidence: `app/src/main/cpp/coder_renderer.cpp:282-283`, `:608`, `:618`.
+  Suggested validation: Report uploaded bytes and rows rebuilt for clean, cursor-only, and one-row-dirty frames.
+  Next action: Revisit retained row GPU ranges or `glBufferSubData`/mapped persistent buffers.
+
+- [ ] `REVISIT-TERMINAL-MUTEX-SNAPSHOT-LOCK-MEASUREMENT`
+  State: Open
+  Source: `review-render-performance-retry`
+  Related item: `PERF-TERMINAL-MUTEX-CONTENTION-RENDER-FEED`
+  Severity: Low
+  Finding: Lock acquisitions dropped, but render still enters `snapshot` every frame under `mutex_`, updates render state, copies full cells, and applies overlays. Existing proof lacks wait/hold-time measurement for remaining dominant critical section.
+  Evidence: `app/src/main/cpp/coder_terminal.cpp:526-527`.
+  Suggested validation: Measure render/feed lock wait and hold time under high output.
+  Next action: Revisit shorter snapshot critical section or dirty-row export outside terminal mutex.
+
+- [ ] `REVISIT-ATLAS-GENERATION-CHANGES-DURING-REBUILD`
+  State: Open
+  Source: `review-font-atlas-symbols`
+  Related items: `PERF-RENDER-ATLAS-GROW-PRESERVE-DATA`, `PERF-RENDER-ATLAS-NO-EVICTION`
+  Severity: High
+  Finding: `draw()` samples atlas generation before rebuilding rows, but glyph allocation can grow/reset atlas during row rebuild. Earlier vertices can keep old UVs, then renderer accepts new `cachedAtlasGeneration_`, avoiding the promised full rebuild next frame.
+  Evidence: `app/src/main/cpp/coder_renderer.cpp:602`.
+  Suggested validation: Add glyph-pressure stress coverage that triggers atlas growth/reset mid-frame and verifies UV correctness.
+  Next action: Detect atlas generation changes during row rebuild and restart or force full vertex rebuild before accepting new generation.
+
+- [ ] `REVISIT-SYMBOL-CONSTRAINTS-NEIGHBOR-SPANNING`
+  State: Open
+  Source: `review-font-atlas-symbols`
+  Related item: `UX-RENDER-SYMBOL-CONSTRAINTS-MISSING`
+  Severity: Medium
+  Finding: Current symbol work classifies ranges and clamps symbols to one cell, but does not inspect neighboring cells/backgrounds to allow Ghostty-style span decisions for Powerline/box/block glyphs.
+  Evidence: `app/src/main/cpp/coder_renderer.cpp:307`.
+  Suggested validation: Add Powerline/box samples where expected output requires neighbor-aware spanning.
+  Next action: Implement neighbor-aware constraint width/spanning logic or downgrade original item wording to single-cell clamping.
+
+- [ ] `REVISIT-OSC-C1-CONTROLS-UNSUPPORTED`
+  State: Open
+  Source: `review-input-protocol-ux`
+  Related item: `BUG-OSC-PARSER-ADHOC-BYTE-SNIFFING`
+  Severity: Medium
+  Finding: OSC scanner handles 7-bit `ESC ]` plus BEL/ST, but does not enter OSC on 8-bit C1 OSC `0x9d` or terminate on 8-bit ST `0x9c`, which are valid terminal byte streams.
+  Evidence: `app/src/main/cpp/coder_terminal.cpp:706`.
+  Suggested validation: Add parser tests for `0x9d` OSC start and `0x9c` ST termination.
+  Next action: Support 8-bit C1 controls or explicitly document them unsupported by Android bridge.
+
+- [ ] `REVISIT-IME-PREEDIT-WIDE-CELLS`
+  State: Open
+  Source: `review-input-protocol-ux`
+  Related item: `UX-IME-PREEDIT-NOT-RENDERED`
+  Severity: Medium
+  Finding: Preedit overlay writes each composing codepoint into one cell and forces `GHOSTTY_CELL_WIDE_NARROW`, so wide CJK/emoji composing text can overlap or advance incorrectly.
+  Evidence: `app/src/main/cpp/coder_terminal.cpp:682`.
+  Suggested validation: Add multi-codepoint CJK/emoji preedit tests that verify wide/tail cells.
+  Next action: Make preedit overlay width-aware for East Asian wide and emoji codepoints.
+
+- [ ] `REVISIT-GESTURE-REGRESSION-COVERAGE`
+  State: Open
+  Source: `review-input-protocol-ux`
+  Related item: `UX-GESTURES-CUSTOM-TOUCH-STATE-MACHINE`
+  Severity: Low
+  Finding: Recorded validation exercises shortcut panel behavior, but not terminal tap, double-tap paste, swipe, drag scroll, pinch, copy-mode drag, or mouse-tracking touch branches.
+  Evidence: `docs/audit_and_roadmap.md:339`.
+  Suggested validation: Add targeted UIAutomator coverage for terminal gestures before relying on non-actionable decision as fully reviewed.
+  Next action: Track gesture regression test matrix separately from the non-actionable migration decision.
+
+- [ ] `REVISIT-CODERAPI-NONTERMINAL-CLIENTS-NOT-CLOSED`
+  State: Open
+  Source: `review-network-persistence-a11y`
+  Related item: `BUG-NETWORK-CODERAPI-HTTPCLIENT-NOT-CLOSED`
+  Severity: Medium
+  Finding: Terminal-session APIs are closed, but non-terminal `CoderApi` owners remain unclosed, including `CoderHomeScreen` remembered API and one-shot auth probes.
+  Evidence: `app/src/main/java/com/coder/pi/CoderApp.kt:554`.
+  Suggested validation: Add lifecycle regression for session change/logout/composable disposal and auth probes.
+  Next action: Revisit `CoderApi` ownership outside terminal sessions with `DisposableEffect` or scoped close handling.
+
+- [ ] `REVISIT-A11Y-VIRTUAL-LINE-BOUNDS-COLLAPSE-BLANKS`
+  State: Open
+  Source: `review-network-persistence-a11y`
+  Related item: `A11Y-TERMINAL-NO-SCREEN-READER-VIRTUAL-NODES`
+  Severity: Medium
+  Finding: `accessibleLines()` filters blank rows before assigning virtual IDs, but bounds/hit testing treat virtual ID as original terminal row. Leading/interspersed blanks can make TalkBack read wrong line for touch coordinates.
+  Evidence: `app/src/main/java/com/coder/pi/CoderTerminalView.kt:753`.
+  Suggested validation: Test accessibility snapshot with leading and interspersed blank rows.
+  Next action: Preserve original terminal row indices in accessibility virtual nodes.
+
+- [ ] `REVISIT-NETWORK-HANDOVER-FIXED-WITHOUT-REAL-DEVICE-PROOF`
+  State: Open
+  Source: `review-network-persistence-a11y`
+  Related item: `INVESTIGATE-NETWORK-KTOR-CIO-HANDOVER`
+  Severity: Low
+  Finding: Checklist now marks handover item fixed after OkHttp/HTTP3 preference switch, but real Wi-Fi/cellular handover and HTTP/3 negotiation validation remain user-side.
+  Evidence: `docs/audit_and_roadmap.md:435`.
+  Suggested validation: Physical-device test with active terminal WebSocket across Wi-Fi to cellular transition and protocol negotiation evidence.
+  Next action: Consider marking implementation fixed but validation pending, or keep this revisit item open until real-device proof exists.
+
 ## Not Filed As Issues
 
 - [x] `NOBUG-HARFBUZZ-FONT-CHANGED-ON-RESIZE`

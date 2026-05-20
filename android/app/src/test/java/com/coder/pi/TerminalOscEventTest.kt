@@ -51,8 +51,15 @@ class TerminalOscEventTest {
     fun dropsInvalidPiOscPayloadShape() {
         val missingState = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZGF0YSI6e319"
         val wrongSource = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6InRlc3QiLCJkYXRhIjp7InN0YXRlIjoicnVubmluZyJ9fQ"
+        val numericId = "eyJpZCI6MSwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZGF0YSI6eyJzdGF0ZSI6InJ1bm5pbmcifX0"
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$missingState"))
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$wrongSource"))
+        assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$numericId"))
+    }
+
+    @Test
+    fun dropsInvalidPiOscUtf8() {
+        assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t${"eyJpZCI6Iv8ifQ"}"))
     }
 
     @Test

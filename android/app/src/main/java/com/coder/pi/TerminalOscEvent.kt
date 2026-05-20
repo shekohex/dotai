@@ -1,11 +1,15 @@
 package com.coder.pi
 
 import java.util.Base64
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -51,7 +55,7 @@ private fun parsePiOscEvent(versionText: String, eventName: String, payload: Str
     if (version != 1 || eventName !in piOscEvents || payload.isBlank() || payload.length > 8192 || !piOscPayloadPattern.matches(payload)) return TerminalOscEvent.Ignored
     val bytes = Base64.getUrlDecoder().decode(paddedBase64Url(payload))
     if (bytes.size > 8192) return TerminalOscEvent.Ignored
-    val root = piOscJson.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+    val root = piOscJson.parseToJsonElement(strictUtf8(bytes)).jsonObject
     val envelope = parsePiOscEnvelope(root) ?: return TerminalOscEvent.Ignored
     if (!isValidPiOscPayload(eventName, envelope.data)) return TerminalOscEvent.Ignored
     TerminalOscEvent.Pi(version, eventName, envelope)
@@ -79,9 +83,21 @@ private fun parsePiOscEnvelope(root: JsonObject): PiOscEnvelope? {
     )
 }
 
+private fun strictUtf8(bytes: ByteArray): String = try {
+    StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+} catch (_: CharacterCodingException) {
+    throw IllegalArgumentException("Invalid UTF-8")
+}
+
 private fun JsonObject.stringField(name: String, maxLength: Int, required: Boolean = true): String? {
     val value = this[name] ?: return if (required) null else null
-    val text = value.jsonPrimitive.content
+    val primitive = value as? JsonPrimitive ?: return null
+    if (!primitive.isString) return null
+    val text = primitive.contentOrNull ?: return null
     return text.takeIf { it.isNotBlank() && it.length <= maxLength }
 }
 

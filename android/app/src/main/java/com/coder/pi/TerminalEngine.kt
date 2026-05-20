@@ -15,7 +15,7 @@ class TerminalEngine(
         return synchronized(lock) {
             if (handle == 0L) return@synchronized TerminalEngineUpdate(emptyList(), "")
             native.nativeFeed(handle, bytes)
-            TerminalEngineUpdate(native.nativeConsumeOscEvents(handle).toList(), native.nativeTitle(handle))
+            TerminalEngineUpdate(native.nativeConsumeOscEvents(handle).toTerminalOscEvents(), native.nativeTitle(handle))
         }
     }
 
@@ -25,7 +25,7 @@ class TerminalEngine(
 
     fun bellCount(): Long = synchronized(lock) { if (handle == 0L) 0L else native.nativeBellCount(handle) }
 
-    fun consumeOscEvents(): List<String> = synchronized(lock) { if (handle == 0L) emptyList() else native.nativeConsumeOscEvents(handle).toList() }
+    fun consumeOscEvents(): List<TerminalOscEvent> = synchronized(lock) { if (handle == 0L) emptyList() else native.nativeConsumeOscEvents(handle).toTerminalOscEvents() }
 
     fun write(bytes: ByteArray) = synchronized(lock) { if (handle != 0L) native.nativeWrite(handle, bytes) }
 
@@ -39,4 +39,4 @@ class TerminalEngine(
     }
 }
 
-data class TerminalEngineUpdate(val oscEvents: List<String>, val title: String)
+data class TerminalEngineUpdate(val oscEvents: List<TerminalOscEvent>, val title: String)

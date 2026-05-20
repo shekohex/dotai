@@ -267,15 +267,26 @@ Commit:
 
 ## PIOSC-5: Replace Android Tab-String OSC Bridge With Typed Events
 
-Status: not-started
+Status: building
 
 Research:
 
+- Native currently emits bounded tab-separated strings from `CoderTerminal::finishOscMetadata`: `clipboard\t<kind>\t<data>`, `notification\t<title>\t<body>`, and `progress\t<state>\t<value>`.
+- `CoderTerminalView.notifyOscMetadataChanged` consumes raw strings directly and dispatches to clipboard, notification, and progress handlers.
+- `TerminalNotificationRouter` consumes the same raw string shape for headless terminals; `CoderHeadlessTerminalEndpoint` forwards `TerminalEngineUpdate.oscEvents` to the router.
+- `TerminalEngine` returns raw `List<String>` from JNI, so this ticket can preserve native/JNI behavior while adding a Kotlin typed conversion boundary immediately after consumption.
+
+Plan:
+
+- Add a sealed `TerminalOscEvent` model with clipboard, notification, progress, Pi placeholder, and ignored cases plus a parser from native raw strings.
+- Update `TerminalEngine`, `CoderTerminalView`, `CoderHeadlessTerminalEndpoint`, and `TerminalNotificationRouter` to pass typed events instead of raw tab strings.
+- Add unit tests for raw conversion of OSC 52 clipboard, OSC 9/777 notification, OSC 9;4 progress, malformed strings, and future Pi placeholder events.
+
 Checklist:
 
-- [ ] Introduce typed Android-side OSC event model.
-- [ ] Convert existing `clipboard`, `notification`, and `progress` internal events to typed values.
-- [ ] Preserve current OSC 52, OSC 9, and OSC 777 behavior.
+- [x] Introduce typed Android-side OSC event model.
+- [x] Convert existing `clipboard`, `notification`, and `progress` internal events to typed values.
+- [x] Preserve current OSC 52, OSC 9, and OSC 777 behavior.
 
 User story:
 

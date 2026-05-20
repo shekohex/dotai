@@ -18,11 +18,13 @@ class TerminalNotificationRouter(
     private val context: Context,
     private val notificationContext: TerminalNotificationContext,
 ) {
-    fun handleOscEvent(event: String, terminalTitle: String) {
-        val parts = event.split("\t", limit = 3)
-        when (parts.getOrNull(0)) {
-            "notification" -> postNotification(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
-            "progress" -> postProgress(terminalTitle, parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
+    fun handleOscEvent(event: TerminalOscEvent, terminalTitle: String) {
+        when (event) {
+            is TerminalOscEvent.Notification -> postNotification(event.title, event.body)
+            is TerminalOscEvent.Progress -> postProgress(terminalTitle, event.stateText, event.valueText)
+            is TerminalOscEvent.Clipboard -> Unit
+            is TerminalOscEvent.Pi -> Unit
+            TerminalOscEvent.Ignored -> Unit
         }
     }
 

@@ -1292,16 +1292,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
             lastBellCount = metadata.bellCount
         }
-        native.nativeConsumeOscEvents(handle).forEach { handleOscEvent(it) }
+        native.nativeConsumeOscEvents(handle).toTerminalOscEvents().forEach { handleOscEvent(it) }
         onOscMetadataChanged?.invoke(metadata)
     }
 
-    private fun handleOscEvent(event: String) {
-        val parts = event.split("\t", limit = 3)
-        when (parts.getOrNull(0)) {
-            "clipboard" -> handleOscClipboard(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
-            "notification" -> handleOscNotification(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
-            "progress" -> handleOscProgress(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
+    private fun handleOscEvent(event: TerminalOscEvent) {
+        when (event) {
+            is TerminalOscEvent.Clipboard -> handleOscClipboard(event.kind, event.data)
+            is TerminalOscEvent.Notification -> handleOscNotification(event.title, event.body)
+            is TerminalOscEvent.Progress -> handleOscProgress(event.stateText, event.valueText)
+            is TerminalOscEvent.Pi -> Unit
+            TerminalOscEvent.Ignored -> Unit
         }
     }
 

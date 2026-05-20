@@ -652,6 +652,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
     std::vector<ShapedGlyph> shaped;
     if (!font || codepointCount == 0) return shaped;
     hb_buffer_t* buffer = hb_buffer_create();
+    hb_buffer_set_content_type(buffer, HB_BUFFER_CONTENT_TYPE_UNICODE);
     hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_CHARACTERS);
     for (uint32_t index = 0; index < codepointCount; index++) hb_buffer_add(buffer, codepoints[index], index);
     hb_buffer_guess_segment_properties(buffer);

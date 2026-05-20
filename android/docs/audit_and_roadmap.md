@@ -261,8 +261,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `BUG-OSC-PARSER-ADHOC-BYTE-SNIFFING`
-  State: Open
+- [x] `BUG-OSC-PARSER-ADHOC-BYTE-SNIFFING`
+  State: Non-actionable
   Type: Bug report, protocol correctness
   Summary: OSC 52, 9, 777, and OSC 7 forwarding are parsed with ad-hoc byte state.
   Impact: Fragmented, ST-terminated, or unusual valid OSC sequences can diverge from Ghostty parsing, affecting PWD, clipboard, notification, and progress events.
@@ -270,6 +270,11 @@ Required proof schema:
   Goal: Use Ghostty OSC parser where it supports needed commands, or prove current parser handles required forms.
   Deliverables: Parser integration or targeted parser tests for BEL/ST/fragments; preserved existing OSC 9/52/777 behavior.
   Validation plan: Native/unit parser tests if possible; instrumentation OSC notification smoke if feasible; UI screenshot.
+  Resolution: No code change. `app/libs/include/ghostty/vt/osc.h` only exposes typed data extraction for window title (`GHOSTTY_OSC_DATA_CHANGE_WINDOW_TITLE_STR`), not OSC 7, 52, 9/9;4, or 777 payloads used by Android forwarding. Current scanner already preserves state across fragments, terminates on BEL and ESC `\`, and keeps existing OSC 7/52/9/777 forwarding behavior.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; debug OSC notification appeared in smoke proof.
+  UI proof: Smoke screenshot `docs/reference/bug-osc-parser-adhoc-byte-sniffing-smoke.png` captured with `android screen capture`; notification `OSC notification smoke` visible.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `UX-GESTURES-CUSTOM-TOUCH-STATE-MACHINE`
   State: Open

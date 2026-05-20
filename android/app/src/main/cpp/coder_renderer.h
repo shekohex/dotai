@@ -43,9 +43,9 @@ private:
     GLuint program_ = 0;
     GLuint solidProgram_ = 0;
     GLuint vao_ = 0;
-    GLuint vbo_ = 0;
     GLuint solidVao_ = 0;
-    GLuint solidVbo_ = 0;
+    std::vector<GLuint> rowGlyphVbos_;
+    std::vector<GLuint> rowSolidVbos_;
     int width_ = 1;
     int height_ = 1;
     int cachedCols_ = 0;
@@ -76,6 +76,8 @@ private:
     std::vector<uint8_t> dirtyRows_;
     std::vector<std::vector<Vertex>> rowGlyphVertices_;
     std::vector<std::vector<SolidVertex>> rowSolidVertices_;
+    std::vector<GLsizei> rowGlyphVertexCounts_;
+    std::vector<GLsizei> rowSolidVertexCounts_;
     std::string shaderCacheDir_;
     CoderFont font_;
 };

@@ -92,14 +92,16 @@ CoderRenderer::~CoderRenderer() {
 }
 
 void CoderRenderer::releaseGlResources() {
-    if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
-    if (solidVbo_ != 0) glDeleteBuffers(1, &solidVbo_);
+    if (!rowGlyphVbos_.empty()) glDeleteBuffers(static_cast<GLsizei>(rowGlyphVbos_.size()), rowGlyphVbos_.data());
+    if (!rowSolidVbos_.empty()) glDeleteBuffers(static_cast<GLsizei>(rowSolidVbos_.size()), rowSolidVbos_.data());
     if (vao_ != 0) glDeleteVertexArrays(1, &vao_);
     if (solidVao_ != 0) glDeleteVertexArrays(1, &solidVao_);
     if (program_ != 0) glDeleteProgram(program_);
     if (solidProgram_ != 0) glDeleteProgram(solidProgram_);
-    vbo_ = 0;
-    solidVbo_ = 0;
+    rowGlyphVbos_.clear();
+    rowSolidVbos_.clear();
+    rowGlyphVertexCounts_.clear();
+    rowSolidVertexCounts_.clear();
     vao_ = 0;
     solidVao_ = 0;
     program_ = 0;
@@ -127,25 +129,15 @@ bool CoderRenderer::init() {
         __android_log_print(ANDROID_LOG_ERROR, "CoderRenderer", "terminal link=%d %s solid link=%d %s", terminalLinked, terminalLog, solidLinked, solidLog);
     }
     glGenVertexArrays(1, &vao_);
-    glGenBuffers(1, &vbo_);
     glGenVertexArrays(1, &solidVao_);
-    glGenBuffers(1, &solidVbo_);
     glBindVertexArray(vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(0));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 2));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, r)));
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, br)));
     glBindVertexArray(solidVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, solidVbo_);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(SolidVertex), reinterpret_cast<void*>(0));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(SolidVertex), reinterpret_cast<void*>(sizeof(float) * 2));
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     return program_ != 0 && solidProgram_ != 0 && font_.init();
@@ -281,6 +273,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
         frameSkipText_.assign(renderCells.size(), 0);
         const uint64_t rowBuildAtlasGeneration = font_.atlasGeneration();
         const bool rebuildAllRows = rowGlyphVertices_.size() != static_cast<size_t>(rows) || rowSolidVertices_.size() != static_cast<size_t>(rows) || cachedAtlasGeneration_ != rowBuildAtlasGeneration || blinkChanged;
+        if (rebuildAllRows) dirtyRows_.assign(static_cast<size_t>(std::max(rows, 0)), 1);
         if (rowGlyphVertices_.size() != static_cast<size_t>(rows)) rowGlyphVertices_.assign(static_cast<size_t>(rows), {});
         if (rowSolidVertices_.size() != static_cast<size_t>(rows)) rowSolidVertices_.assign(static_cast<size_t>(rows), {});
         for (int row = 0; row < rows; row++) {
@@ -581,6 +574,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             goto drawCachedBuffers;
         }
         if (cursorVisible && cursor.col >= 0 && cursor.row >= 0 && cursor.col < cols && cursor.row < rows) {
+            const size_t cursorSolidStart = frameSolidVertices_.size();
             int cursorCol = cursor.wideTail && cursor.col > 0 ? cursor.col - 1 : cursor.col;
             const auto& cursorCell = renderCells[cursor.row * cols + cursorCol];
             bool cursorWide = cursor.wideTail || cursorCell.wide == GHOSTTY_CELL_WIDE_WIDE;
@@ -611,30 +605,63 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             } else {
                 addSolidQuad(frameSolidVertices_, x0, y0, x1, y1, cr, cg, cb, alpha);
             }
+            auto& cursorRowSolidVertices = rowSolidVertices_[static_cast<size_t>(cursor.row)];
+            cursorRowSolidVertices.insert(cursorRowSolidVertices.end(), frameSolidVertices_.begin() + static_cast<std::ptrdiff_t>(cursorSolidStart), frameSolidVertices_.end());
         }
         cachedGlyphVertexCount_ = static_cast<GLsizei>(frameVertices_.size());
         cachedSolidVertexCount_ = static_cast<GLsizei>(frameSolidVertices_.size());
         cachedAtlasGeneration_ = font_.atlasGeneration();
     }
 drawCachedBuffers:
+    bool uploadAllRows = false;
+    if (rowGlyphVbos_.size() != static_cast<size_t>(std::max(rows, 0))) {
+        if (!rowGlyphVbos_.empty()) glDeleteBuffers(static_cast<GLsizei>(rowGlyphVbos_.size()), rowGlyphVbos_.data());
+        rowGlyphVbos_.assign(static_cast<size_t>(std::max(rows, 0)), 0);
+        if (!rowGlyphVbos_.empty()) glGenBuffers(static_cast<GLsizei>(rowGlyphVbos_.size()), rowGlyphVbos_.data());
+        rowGlyphVertexCounts_.assign(rowGlyphVbos_.size(), 0);
+        shouldUploadBuffers = true;
+        uploadAllRows = true;
+    }
+    if (rowSolidVbos_.size() != static_cast<size_t>(std::max(rows, 0))) {
+        if (!rowSolidVbos_.empty()) glDeleteBuffers(static_cast<GLsizei>(rowSolidVbos_.size()), rowSolidVbos_.data());
+        rowSolidVbos_.assign(static_cast<size_t>(std::max(rows, 0)), 0);
+        if (!rowSolidVbos_.empty()) glGenBuffers(static_cast<GLsizei>(rowSolidVbos_.size()), rowSolidVbos_.data());
+        rowSolidVertexCounts_.assign(rowSolidVbos_.size(), 0);
+        shouldUploadBuffers = true;
+        uploadAllRows = true;
+    }
     glUseProgram(solidProgram_);
     glBindVertexArray(solidVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, solidVbo_);
-    if (shouldUploadBuffers) {
-        glBufferData(GL_ARRAY_BUFFER, frameSolidVertices_.size() * sizeof(SolidVertex), frameSolidVertices_.data(), GL_DYNAMIC_DRAW);
-    }
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDrawArrays(GL_TRIANGLES, 0, cachedSolidVertexCount_);
+    for (int row = 0; row < rows; row++) {
+        glBindBuffer(GL_ARRAY_BUFFER, rowSolidVbos_[static_cast<size_t>(row)]);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(SolidVertex), reinterpret_cast<void*>(0));
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(SolidVertex), reinterpret_cast<void*>(sizeof(float) * 2));
+        if (shouldUploadBuffers && (uploadAllRows || dirtyRows_.empty() || dirtyRows_[static_cast<size_t>(row)] != 0)) {
+            const auto& rowVertices = rowSolidVertices_[static_cast<size_t>(row)];
+            glBufferData(GL_ARRAY_BUFFER, rowVertices.size() * sizeof(SolidVertex), rowVertices.data(), GL_DYNAMIC_DRAW);
+            rowSolidVertexCounts_[static_cast<size_t>(row)] = static_cast<GLsizei>(rowVertices.size());
+        }
+        glDrawArrays(GL_TRIANGLES, 0, rowSolidVertexCounts_[static_cast<size_t>(row)]);
+    }
     glUseProgram(program_);
     glBindVertexArray(vao_);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, font_.texture());
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    if (shouldUploadBuffers) {
-        glBufferData(GL_ARRAY_BUFFER, frameVertices_.size() * sizeof(Vertex), frameVertices_.data(), GL_DYNAMIC_DRAW);
-    }
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glDrawArrays(GL_TRIANGLES, 0, cachedGlyphVertexCount_);
+    for (int row = 0; row < rows; row++) {
+        glBindBuffer(GL_ARRAY_BUFFER, rowGlyphVbos_[static_cast<size_t>(row)]);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(0));
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 2));
+        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, r)));
+        glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, br)));
+        if (shouldUploadBuffers && (uploadAllRows || dirtyRows_.empty() || dirtyRows_[static_cast<size_t>(row)] != 0)) {
+            const auto& rowVertices = rowGlyphVertices_[static_cast<size_t>(row)];
+            glBufferData(GL_ARRAY_BUFFER, rowVertices.size() * sizeof(Vertex), rowVertices.data(), GL_DYNAMIC_DRAW);
+            rowGlyphVertexCounts_[static_cast<size_t>(row)] = static_cast<GLsizei>(rowVertices.size());
+        }
+        glDrawArrays(GL_TRIANGLES, 0, rowGlyphVertexCounts_[static_cast<size_t>(row)]);
+    }
     hasPresentedFrame_ = true;
     static auto lastReport = std::chrono::steady_clock::now();
     static int frameCount = 0;

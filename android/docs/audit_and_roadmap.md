@@ -479,15 +479,20 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `REVISIT-RENDER-ROW-DIRTY-GPU-UPLOAD-STILL-MONOLITHIC`
-  State: Open
+- [x] `REVISIT-RENDER-ROW-DIRTY-GPU-UPLOAD-STILL-MONOLITHIC`
+  State: Fixed
   Source: `review-render-performance-retry`
   Related item: `PERF-RENDER-ROW-DIRTY-GPU-BUFFERS`
   Severity: Medium
   Finding: Current implementation retains per-row CPU vertex vectors, but clean rows are copied back into monolithic staging vectors and full solid/glyph buffers are replaced with `glBufferData` on upload frames. It is not row-wise dirty GPU buffering yet.
   Evidence: `app/src/main/cpp/coder_renderer.cpp:282-283`, `:608`, `:618`.
   Suggested validation: Report uploaded bytes and rows rebuilt for clean, cursor-only, and one-row-dirty frames.
-  Next action: Revisit retained row GPU ranges or `glBufferSubData`/mapped persistent buffers.
+  Resolution: Renderer now allocates per-row glyph and solid VBOs, uploads only rows marked dirty by the snapshot/renderer dirty-row path, and draws cached row buffers independently. Monolithic `frameVertices_`/`frameSolidVertices_` remain CPU staging/count helpers, but upload no longer replaces full glyph/solid GPU buffers on every upload frame.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing debug render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; no new screenshot captured for native-only buffer layout change.
+  Performance proof: Before: upload frames called two full `glBufferData` operations sized `frameSolidVertices_.size() * sizeof(SolidVertex)` and `frameVertices_.size() * sizeof(Vertex)`. After: upload path loops rows and calls `glBufferData` only for dirty rows, sized by that row's retained vertex vector; clean rows draw from existing row VBOs with zero upload bytes.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `REVISIT-TERMINAL-MUTEX-SNAPSHOT-LOCK-MEASUREMENT`
   State: Fixed

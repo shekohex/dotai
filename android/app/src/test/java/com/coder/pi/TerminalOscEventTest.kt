@@ -52,9 +52,15 @@ class TerminalOscEventTest {
         val missingState = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZGF0YSI6e319"
         val wrongSource = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6InRlc3QiLCJkYXRhIjp7InN0YXRlIjoicnVubmluZyJ9fQ"
         val numericId = "eyJpZCI6MSwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZGF0YSI6eyJzdGF0ZSI6InJ1bm5pbmcifX0"
+        val numericSessionId = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoxLCJkYXRhIjp7InN0YXRlIjoicnVubmluZyJ9fQ"
+        val stringSeq = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2VxIjoiMSIsImRhdGEiOnsic3RhdGUiOiJydW5uaW5nIn19"
+        val extraRoot = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZXh0cmEiOnRydWUsImRhdGEiOnsic3RhdGUiOiJydW5uaW5nIn19"
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$missingState"))
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$wrongSource"))
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$numericId"))
+        assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$numericSessionId"))
+        assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$stringSeq"))
+        assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t$extraRoot"))
     }
 
     @Test

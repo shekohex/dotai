@@ -67,18 +67,23 @@ private fun paddedBase64Url(value: String): String {
 }
 
 private fun parsePiOscEnvelope(root: JsonObject): PiOscEnvelope? {
+    val allowedKeys = setOf("id", "ts", "source", "sessionId", "cwd", "seq", "data")
+    if (!allowedKeys.containsAll(root.keys)) return null
     val id = root.stringField("id", 128) ?: return null
-    val ts = root["ts"]?.jsonPrimitive?.longOrNull ?: return null
+    val ts = root.longField("ts") ?: return null
     val source = root.stringField("source", 32) ?: return null
     if (source != "agent") return null
     val data = root["data"] as? JsonObject ?: return null
+    if (root["sessionId"] != null && root.stringField("sessionId", 256, required = false) == null) return null
+    if (root["cwd"] != null && root.stringField("cwd", 1024, required = false) == null) return null
+    if (root["seq"] != null && root.longField("seq") == null) return null
     return PiOscEnvelope(
         id = id,
         ts = ts,
         source = source,
         sessionId = root.stringField("sessionId", 256, required = false),
         cwd = root.stringField("cwd", 1024, required = false),
-        seq = root["seq"]?.jsonPrimitive?.longOrNull,
+        seq = root.longField("seq"),
         data = data,
     )
 }
@@ -102,10 +107,10 @@ private fun JsonObject.stringField(name: String, maxLength: Int, required: Boole
 }
 
 private fun isValidPiOscPayload(eventName: String, data: JsonObject): Boolean = when (eventName) {
-    "hello" -> data.intField("protocol") == 1 && data.stringEquals("extension", "pi-osc") && data["version"]?.jsonPrimitive?.longOrNull != null && data.keys == setOf("protocol", "extension", "version")
+    "hello" -> data.intField("protocol") == 1 && data.stringEquals("extension", "pi-osc") && data.longField("version") != null && data.keys == setOf("protocol", "extension", "version")
     "agent.session" -> data.stringEquals("state", "started") && data.stringIn("reason", setOf("startup", "reload", "new", "resume", "fork")) && data.keys == setOf("state", "reason")
     "agent.run" -> data.stringIn("state", setOf("running", "idle")) && data.keys == setOf("state")
-    "agent.turn" -> data.stringIn("state", setOf("running", "complete")) && data["turnIndex"]?.jsonPrimitive?.longOrNull != null && data.keys == setOf("state", "turnIndex")
+    "agent.turn" -> data.stringIn("state", setOf("running", "complete")) && data.longField("turnIndex") != null && data.keys == setOf("state", "turnIndex")
     "agent.progress" -> data.stringIn("state", setOf("active", "clear")) && data.keys == setOf("state")
     "agent.tool" -> isValidPiOscToolPayload(data)
     "agent.alert" -> isValidPiOscAlertPayload(data)
@@ -127,7 +132,7 @@ private fun isValidPiOscAlertPayload(data: JsonObject): Boolean {
     val allowed = setOf("kind", "title", "body", "severity", "statusCode")
     if (!allowed.containsAll(data.keys)) return false
     if (!data.stringIn("kind", setOf("provider", "runtime")) || data.stringField("title", 128) == null || data.stringField("body", 512) == null || !data.stringIn("severity", setOf("info", "warning", "error"))) return false
-    if (data["statusCode"] != null && data["statusCode"]?.jsonPrimitive?.intOrNull == null) return false
+    if (data["statusCode"] != null && data.intField("statusCode") == null) return false
     return true
 }
 
@@ -135,4 +140,14 @@ private fun JsonObject.stringEquals(name: String, expected: String): Boolean = s
 
 private fun JsonObject.stringIn(name: String, values: Set<String>): Boolean = stringField(name, values.maxOf { it.length }) in values
 
-private fun JsonObject.intField(name: String): Int? = (this[name] as? JsonPrimitive)?.intOrNull
+private fun JsonObject.longField(name: String): Long? {
+    val primitive = this[name] as? JsonPrimitive ?: return null
+    if (primitive.isString) return null
+    return primitive.longOrNull
+}
+
+private fun JsonObject.intField(name: String): Int? {
+    val primitive = this[name] as? JsonPrimitive ?: return null
+    if (primitive.isString) return null
+    return primitive.intOrNull
+}

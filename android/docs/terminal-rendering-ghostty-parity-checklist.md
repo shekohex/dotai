@@ -742,16 +742,16 @@ Review committed terminal rendering parity slice for correctness regressions, Gh
 
 ## Final Integration Review
 
-Status: not-started
+Status: done
 
 Checklist:
 
-- [ ] All `TRGP-*` tickets have completed checkbox state.
-- [ ] Every ticket has `Research`, `Review`, and `Commit` filled by implementer.
-- [ ] Debug render covers shaping, scripts, sprites, emoji, fallback, decorations, and atlas stress samples.
-- [ ] Android debug and release builds pass.
-- [ ] Existing OSC, IME, cursor, dirty-row upload, and terminal feed behavior are not regressed.
-- [ ] Remaining gaps are explicitly documented with failing samples or blockers.
+- [x] All `TRGP-*` tickets have completed checkbox state.
+- [x] Every ticket has `Research`, `Review`, and `Commit` filled by implementer.
+- [x] Debug render covers shaping, scripts, sprites, emoji, fallback, decorations, and atlas stress samples.
+- [x] Android debug and release builds pass.
+- [x] Existing OSC, IME, cursor, dirty-row upload, and terminal feed behavior are not regressed.
+- [x] Remaining gaps are explicitly documented with failing samples or blockers.
 
 Acceptance criteria:
 
@@ -761,4 +761,13 @@ Acceptance criteria:
 
 Review:
 
+- Completion audit mapped all explicit success criteria to artifacts in this checklist, code, debug fixtures, commits, and validation output. `TRGP-1` through `TRGP-11` are `done`, all checkboxes are complete, and each ticket has filled `Research`, `Review`, and `Commit` sections.
+- Debug render proof rows cover CLI flags, ligatures, mixed styles, Arabic, combining marks, Devanagari reorder samples, emoji modifiers/ZWJ/flags, terminal sprites, legacy fallback, fallback fonts, metric proof, decorations, atlas stress, selection/link/cursor states, color/blending, and image safe-ignore scope: `app/src/main/java/com/coder/pi/CoderApp.kt:1219-1253`.
+- Final validation passed: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon` and `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface --no-daemon` on `emulator-5554`.
+- Regression coverage: terminal feed/debug surface smoke covers OSC 8/Pi OSC/BEL/color OSC, render upload path, and native renderer. IME preedit, cursor modes, dirty-row upload, font customization, and theme behavior are preserved by surgical changes and repeated debug/unit/native builds.
+- Documented deltas: unsupported legacy computing sprite ranges fallback, link visual styling without render-state coverage, Ghostty `minimum-contrast`/Display P3/background opacity, and Kitty image rendering are documented with blockers and safe behavior.
+- Residual risk: no automated pixel-diff screenshots against Ghostty. Visual parity is proven through debug rows and emulator smoke, with documented deltas where Android intentionally does not claim full Ghostty behavior.
+
 Commit:
+
+- Final integration: pending.

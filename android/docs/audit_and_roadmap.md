@@ -518,15 +518,19 @@ Required proof schema:
   Suggested validation: Add Powerline/box samples where expected output requires neighbor-aware spanning.
   Next action: Implement neighbor-aware constraint width/spanning logic or downgrade original item wording to single-cell clamping.
 
-- [ ] `REVISIT-OSC-C1-CONTROLS-UNSUPPORTED`
-  State: Open
+- [x] `REVISIT-OSC-C1-CONTROLS-UNSUPPORTED`
+  State: Fixed
   Source: `review-input-protocol-ux`
   Related item: `BUG-OSC-PARSER-ADHOC-BYTE-SNIFFING`
   Severity: Medium
   Finding: OSC scanner handles 7-bit `ESC ]` plus BEL/ST, but does not enter OSC on 8-bit C1 OSC `0x9d` or terminate on 8-bit ST `0x9c`, which are valid terminal byte streams.
   Evidence: `app/src/main/cpp/coder_terminal.cpp:706`.
   Suggested validation: Add parser tests for `0x9d` OSC start and `0x9c` ST termination.
-  Next action: Support 8-bit C1 controls or explicitly document them unsupported by Android bridge.
+  Resolution: OSC metadata scanner now enters OSC on 8-bit C1 `0x9d` and terminates active OSC on 8-bit ST `0x9c` in addition to BEL and 7-bit `ESC \\` ST.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.OscC1ControlsInstrumentedTest` passed with 3 tests on `emulator-5554`; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing OSC debug render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; parser-specific proof covered by `OscC1ControlsInstrumentedTest`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-IME-PREEDIT-WIDE-CELLS`
   State: Open

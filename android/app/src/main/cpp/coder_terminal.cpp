@@ -708,6 +708,10 @@ void CoderTerminal::processOscMetadata(const uint8_t* data, size_t length) {
     for (size_t index = 0; index < length; index++) {
         const uint8_t byte = data[index];
         if (oscMetadataActive_) {
+            if (byte == 0x9c) {
+                finishOscMetadata();
+                continue;
+            }
             if (oscMetadataStEsc_) {
                 if (byte == '\\') {
                     finishOscMetadata();
@@ -739,6 +743,13 @@ void CoderTerminal::processOscMetadata(const uint8_t* data, size_t length) {
                 oscMetadataBuffer_.clear();
                 continue;
             }
+        }
+        if (byte == 0x9d) {
+            oscMetadataActive_ = true;
+            oscMetadataStEsc_ = false;
+            oscMetadataBuffer_.clear();
+            oscMetadataEsc_ = false;
+            continue;
         }
         oscMetadataEsc_ = byte == 0x1b;
     }

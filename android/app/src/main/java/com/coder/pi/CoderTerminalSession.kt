@@ -136,6 +136,7 @@ class CoderTerminalSession(
         socket = null
         scope.launch {
             terminalSocket?.close()
+            api.close()
             scope.cancel()
         }
         mainScope.launch {

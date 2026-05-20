@@ -231,8 +231,8 @@ Required proof schema:
   Deliverables: Capability check, visual comparison, or non-actionable decision with evidence; no broad color change without screenshots.
   Validation plan: Device/emulator GL capability log; before/after screenshots if changed; UIAutomator smoke.
 
-- [ ] `BUG-NETWORK-CODERAPI-HTTPCLIENT-NOT-CLOSED`
-  State: Open
+- [x] `BUG-NETWORK-CODERAPI-HTTPCLIENT-NOT-CLOSED`
+  State: Fixed
   Type: Bug report, resource lifecycle
   Summary: Each `CoderApi` owns a Ktor `HttpClient`, but no close path exists when terminal sessions stop.
   Impact: Repeated terminal/session creation can leak network client resources.
@@ -240,6 +240,11 @@ Required proof schema:
   Goal: Ensure each owned `HttpClient` is closed exactly once at session/manager shutdown.
   Deliverables: `CoderApi.close()` or `Closeable`; ownership wired into `CoderTerminalSession.stop()`/manager; lifecycle test if feasible.
   Validation plan: Unit tests; `./gradlew testDebugUnitTest`; UIAutomator smoke screenshot if device available.
+  Resolution: Made `CoderApi` implement idempotent `Closeable`, wired `CoderTerminalSession.stop()` to close its owned API after closing the terminal socket, and added a close-once regression test.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Before smoke `docs/reference/bug-network-coderapi-httpclient-not-closed-before.png`; after smoke `docs/reference/bug-network-coderapi-httpclient-not-closed-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `BUG-STORE-BASEURL-HASHCODE-COLLISION`
   State: Open

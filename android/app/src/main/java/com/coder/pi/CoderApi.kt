@@ -24,15 +24,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-class CoderApi(private val baseUrl: String, private val token: String) {
+class CoderApi(private val baseUrl: String, private val token: String, private val onClose: () -> Unit = {}) : Closeable {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(json) }
         install(WebSockets)
     }
+    private val closed = AtomicBoolean(false)
 
     suspend fun me(): CoderUser = client.get(url("/api/v2/users/me")) { auth() }.body<CoderUserDto>().toModel()
 
@@ -112,6 +115,11 @@ class CoderApi(private val baseUrl: String, private val token: String) {
 
     private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        client.close()
+        onClose()
+    }
 
     companion object {
         private const val sessionTokenHeader = "Coder-Session-Token"

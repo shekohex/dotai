@@ -47,6 +47,7 @@ public:
     void scroll(int rowDelta);
     std::vector<uint8_t> scrollInput(int rowDelta, float x, float y);
     bool mouseTracking() const;
+    bool synchronizedOutput() const;
     std::vector<uint8_t> mouse(int action, float x, float y, int button, int metaState);
     bool screenPositionFromViewport(int row, int col, int& screenRow, int& screenCol);
     void setSelection(bool active, int startRow, int startCol, int endRow, int endCol);

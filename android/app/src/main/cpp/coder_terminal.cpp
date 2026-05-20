@@ -286,6 +286,14 @@ bool CoderTerminal::mouseTracking() const {
     return enabled;
 }
 
+bool CoderTerminal::synchronizedOutput() const {
+    std::lock_guard lock(mutex_);
+    if (!terminal_) return false;
+    bool enabled = false;
+    ghostty_terminal_mode_get(terminal_.get(), GHOSTTY_MODE_SYNC_OUTPUT, &enabled);
+    return enabled;
+}
+
 std::vector<uint8_t> CoderTerminal::mouse(int action, float x, float y, int button, int metaState) {
     std::lock_guard lock(mutex_);
     if (!terminal_ || !mouseEncoder_ || !mouseEvent_) return {};

@@ -182,8 +182,8 @@ Required proof schema:
   Deliverables: Shorter critical sections, copy reduction, or instrumentation proof; avoid unproven double-buffering unless needed.
   Validation plan: Native build; render/feed smoke; trace or reasoned measurement.
 
-- [ ] `BUG-RENDER-SYNCED-OUTPUT-MODE-IGNORED`
-  State: Open
+- [x] `BUG-RENDER-SYNCED-OUTPUT-MODE-IGNORED`
+  State: Fixed
   Type: Bug report, terminal protocol UX
   Summary: Renderer does not honor synchronized output mode (`DECSET 2026`) to pause intermediate renders during bulk updates.
   Impact: Full-screen TUIs that use synchronized output can still show partial/intermediate frames, causing flicker and worse perceived performance.
@@ -192,6 +192,11 @@ Required proof schema:
   Goal: Avoid rendering intermediate frames while synchronized output is active, without starving final frame after mode exits.
   Deliverables: Native mode check exposed to renderer or snapshot path; draw skip/present-last behavior; test sequence using DECSET/DECRST 2026 if feasible.
   Validation plan: Native build; terminal smoke screenshot; protocol smoke test or documented manual sequence.
+  Resolution: Added locked `CoderTerminal::synchronizedOutput()` mode accessor and made `CoderRenderer::draw()` return immediately after `pump()` while `GHOSTTY_MODE_SYNC_OUTPUT` is active, preserving the last presented frame until mode exits.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; structural proof is renderer checks mode after pump and before snapshot/upload/draw.
+  UI proof: Before `docs/reference/bug-render-synced-output-mode-ignored-before.png`; after `docs/reference/bug-render-synced-output-mode-ignored-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `PERF-RENDER-SHAPER-RUN-CACHE-MISSING`
   State: Open

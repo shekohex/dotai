@@ -541,7 +541,7 @@ Commit:
 
 ## TRGP-9: Render Selection, Links, Cursor, And Highlights With Full Theme Semantics
 
-Status: building
+Status: done
 
 Research:
 
@@ -563,12 +563,12 @@ Plan:
 
 Checklist:
 
-- [ ] Pass `selectionForeground` through `CoderNative.nativeSetTerminalTheme` and native theme state.
-- [ ] Apply selection foreground to selected cells without losing original foreground after selection clears.
-- [ ] Verify inverse, faint, blink, bold, wide cells, emoji, and shaped runs under selection.
-- [ ] Add visual indication for OSC 8 links if link coverage is available from Ghostty state.
-- [ ] Add bounded plain URL link highlighting only if it does not require scanning full scrollback every frame.
-- [ ] Align block, underline, and bar cursor geometry with cell metrics and wide-tail behavior.
+- [x] Pass `selectionForeground` through `CoderNative.nativeSetTerminalTheme` and native theme state.
+- [x] Apply selection foreground to selected cells without losing original foreground after selection clears.
+- [x] Verify inverse, faint, blink, bold, wide cells, emoji, and shaped runs under selection.
+- [x] Add visual indication for OSC 8 links if link coverage is available from Ghostty state.
+- [x] Add bounded plain URL link highlighting only if it does not require scanning full scrollback every frame.
+- [x] Align block, underline, and bar cursor geometry with cell metrics and wide-tail behavior.
 
 User story:
 
@@ -590,7 +590,16 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-9`.
+- Findings: no blocking regressions found. Selection foreground/background now apply only to snapshot `outputCells`, so clearing selection restores original terminal colors. Kotlin/JNI/native theme signatures are aligned, and debug render smoke passes.
+- Link visuals: explicitly out of scope for this slice because available Android API only resolves OSC 8/plain links at tap time, and adding bounded visual highlighting without render-state coverage would require per-frame viewport scans. Existing tap-to-open behavior and OSC 8 debug fixture are preserved.
+- Cursor: current block/underline/bar primitives remain unchanged; wide-tail handling and cursor text color path were preserved. Cursor sprite parity remains limited to existing local primitives.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed. `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface --no-daemon` passed on `emulator-5554`.
+
 Commit:
+
+- Implementation: `96511b8a85dd6cd2488e887c40adeb6d5652f628` (`fix(renderer): apply selection foreground theme`).
+- Review fix: none.
 
 ## TRGP-10: Audit Color, Contrast, And Blending Pipeline
 

@@ -212,7 +212,7 @@ Commit:
 
 ## PIOSC-4: Define V1 Agent Event Payload Schemas
 
-Status: building
+Status: done
 
 Research:
 
@@ -255,7 +255,15 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-4 commits c7e4bc2 and 2cb5a7c. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Findings fixed: updated protocol fixture to match `hello` schema, and bounded emitted `agent.tool` `toolCallId`/`toolName` fields before schema validation.
+- Final review result: no findings. Residual risks: no connected instrumentation run for OSC 9/52/777; target commits do not touch Android OSC scanner. Schema tightening is intentional for V1 and rejects old incomplete `hello` payloads.
+- Validation: `cd ../agent && npm test -- --run ./test/pi-osc-encoder.test.ts ./test/pi-osc-extension.test.ts` passed with 32 tests. `cd ../agent && npm run lint -- src/extensions/pi-osc/encoder.ts src/extensions/pi-osc/schemas.ts src/extensions/pi-osc/extension.ts src/extensions/pi-osc/index.ts test/pi-osc-encoder.test.ts test/pi-osc-extension.test.ts` passed. `cd ../agent && npx oxfmt --check src/extensions/pi-osc/encoder.ts src/extensions/pi-osc/schemas.ts src/extensions/pi-osc/extension.ts src/extensions/pi-osc/index.ts test/pi-osc-encoder.test.ts test/pi-osc-extension.test.ts docs/pi-agent-osc-protocol.md` passed. `cd ../agent && npm run typecheck` remains blocked by unrelated missing `@xterm/addon-serialize`, `@xterm/headless`, and `zigpty` type/module errors in `src/subagent-sdk/pty.ts`.
+
 Commit:
+
+- Implementation: `c7e4bc2` (`feat(pi-osc): validate v1 payload schemas`)
+- Review fix: `2cb5a7c` (`fix(pi-osc): bound emitted tool fields`)
 
 ## PIOSC-5: Replace Android Tab-String OSC Bridge With Typed Events
 

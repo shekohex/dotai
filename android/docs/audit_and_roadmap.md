@@ -595,14 +595,19 @@ Required proof schema:
   Commit: HEAD (this commit).
 
 - [ ] `REVISIT-NETWORK-HANDOVER-FIXED-WITHOUT-REAL-DEVICE-PROOF`
-  State: Open
+  State: Blocked
   Source: `review-network-persistence-a11y`
   Related item: `INVESTIGATE-NETWORK-KTOR-CIO-HANDOVER`
   Severity: Low
   Finding: Checklist now marks handover item fixed after OkHttp/HTTP3 preference switch, but real Wi-Fi/cellular handover and HTTP/3 negotiation validation remain user-side.
   Evidence: `docs/audit_and_roadmap.md:435`.
   Suggested validation: Physical-device test with active terminal WebSocket across Wi-Fi to cellular transition and protocol negotiation evidence.
-  Next action: Consider marking implementation fixed but validation pending, or keep this revisit item open until real-device proof exists.
+  Resolution: Implementation remains in place, but requested proof requires a physical Android device with Wi-Fi and cellular radios plus a reachable Coder workspace/session. Current attached device inventory only contains `emulator-5554`, which cannot validate real Wi-Fi-to-cellular handover or carrier protocol negotiation.
+  Validation: `adb devices -l` showed only `emulator-5554`; `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed.
+  UI proof: Blocked by missing physical device with cellular data; emulator cannot produce required handover proof.
+  Review: No findings.
+  Commit: HEAD (this commit).
+  Smallest user action needed: Connect a physical Android device with active Wi-Fi and cellular data plus test Coder credentials/workspace, then rerun handover validation.
 
 ## Not Filed As Issues
 

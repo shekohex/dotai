@@ -117,6 +117,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var activeProgressState: Int? = null
     private var activeProgressValue = 0
     private var activeProgressIndeterminate = true
+    private var activeProgressStatusText: String? = null
     private var progressStatusIndex = 0
     private var notificationContext = TerminalNotificationContext()
     private val agentState = TerminalAgentState()
@@ -1317,8 +1318,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         onAgentStateChanged?.invoke(snapshot)
         when (event.eventName) {
             "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { handleOscNotification(it.title, it.body) }
-            "agent.progress" -> snapshot.progress?.progressPresentation()?.let { handleOscProgress(it.stateText, it.valueText) }
-            "agent.run" -> snapshot.run?.progressPresentation()?.let { handleOscProgress(it.stateText, it.valueText) }
+            "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { handleOscProgress(it.stateText, it.valueText, it.body) }
         }
     }
 
@@ -1353,10 +1353,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun formatNotificationText(text: String): String = TerminalNotificationFormat.cleanText(text)
 
-    private fun handleOscProgress(stateText: String, valueText: String) {
+    private fun handleOscProgress(stateText: String, valueText: String, statusText: String? = null) {
         if (!oscNotificationsEnabled() || !oscNotificationProgressEnabled()) return
         val state = stateText.toIntOrNull() ?: return
         if (state == 0) {
+            activeProgressStatusText = null
             stopProgressStatusUpdates()
             NotificationManagerCompat.from(context).cancel(oscProgressNotificationId())
             return
@@ -1366,7 +1367,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         activeProgressState = state
         activeProgressValue = value
         activeProgressIndeterminate = indeterminate
-        postOscProgressNotification(currentTerminalTitle(), nextProgressStatusText(), state, value, indeterminate)
+        activeProgressStatusText = statusText?.takeIf { it.isNotBlank() }
+        postOscProgressNotification(currentTerminalTitle(), activeProgressStatusText ?: nextProgressStatusText(), state, value, indeterminate)
         scheduleProgressStatusUpdate()
         scheduleProgressHapticPulse()
     }
@@ -1389,7 +1391,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         progressStatusRunnable?.let { removeCallbacks(it) }
         val runnable = Runnable {
             val state = activeProgressState ?: return@Runnable
-            postOscProgressNotification(currentTerminalTitle(), nextProgressStatusText(), state, activeProgressValue, activeProgressIndeterminate)
+            postOscProgressNotification(currentTerminalTitle(), activeProgressStatusText ?: nextProgressStatusText(), state, activeProgressValue, activeProgressIndeterminate)
             scheduleProgressStatusUpdate()
         }
         progressStatusRunnable = runnable
@@ -1402,6 +1404,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         progressStatusRunnable = null
         progressHapticRunnable = null
         activeProgressState = null
+        activeProgressStatusText = null
     }
 
     private fun scheduleProgressHapticPulse() {

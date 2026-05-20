@@ -34,8 +34,7 @@ class TerminalNotificationRouter(
         val snapshot = agentState.apply(event)
         when (event.eventName) {
             "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body) }
-            "agent.progress" -> snapshot.progress?.progressPresentation()?.let { postProgress(terminalTitle, it.stateText, it.valueText) }
-            "agent.run" -> snapshot.run?.progressPresentation()?.let { postProgress(terminalTitle, it.stateText, it.valueText) }
+            "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { postProgress(terminalTitle, it.stateText, it.valueText, it.body) }
         }
     }
 
@@ -68,7 +67,7 @@ class TerminalNotificationRouter(
         notifySafely(notificationId, notification)
     }
 
-    private fun postProgress(title: String, stateText: String, valueText: String) {
+    private fun postProgress(title: String, stateText: String, valueText: String, statusText: String = "") {
         val state = stateText.toIntOrNull() ?: return
         val notificationId = progressNotificationId()
         if (state == 0) {
@@ -83,7 +82,7 @@ class TerminalNotificationRouter(
         notifySafely(notificationId, NotificationCompat.Builder(context, oscProgressNotificationChannelId())
             .setSmallIcon(R.drawable.pi_logo_mark)
             .setContentTitle(title.ifBlank { "Terminal" }.take(128))
-            .setContentText(WhimsicalStatusMessages.working[nextNotificationId().mod(WhimsicalStatusMessages.working.size)])
+            .setContentText(statusText.ifBlank { WhimsicalStatusMessages.working[nextNotificationId().mod(WhimsicalStatusMessages.working.size)] })
             .setSubText(workspaceLabel())
             .setContentIntent(pendingIntent)
             .setOngoing(state == 1 || state == 3 || state == 4)

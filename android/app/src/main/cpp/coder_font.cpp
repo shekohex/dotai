@@ -429,7 +429,7 @@ bool CoderFont::glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph) {
         for (size_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
             auto& fallback = fallbackFaces_[fallbackIndex];
             glyphIndex = FT_Get_Char_Index(fallback.face, static_cast<FT_ULong>(codepoint));
-            if (glyphIndex != 0 && allocateGlyph((static_cast<uint64_t>(fallbackIndex + 8) << 56u) | codepoint, fallback.face, glyphIndex, outGlyph, true)) {
+            if (glyphIndex != 0 && allocateGlyph((static_cast<uint64_t>(fallbackIndex + 64) << 56u) | codepoint, fallback.face, glyphIndex, outGlyph, true)) {
                 glyphs_[key] = outGlyph;
                 return true;
             }
@@ -1034,7 +1034,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
     if (fallbackMetrics) normalizeFallbackGlyph(glyph);
     if (loggedCodepoint >= 0x1f000 && glyph.width > 0 && glyph.height > 0) {
         __android_log_print(ANDROID_LOG_INFO, "CoderFont", "emoji glyph key=%llu cp=U+%04X size=%dx%d bearing=%d,%d advance=%d color=%d pixel_mode=%d", static_cast<unsigned long long>(key), loggedCodepoint, glyph.width, glyph.height, glyph.bearingLeft, glyph.bearingTop, glyph.advance, glyph.color ? 1 : 0, slot->bitmap.pixel_mode);
-    } else if (key >= (8ULL << 56u) && glyph.width > 0 && glyph.height > 0) {
+    } else if (fallbackMetrics && glyph.width > 0 && glyph.height > 0) {
         static std::unordered_set<uint64_t> loggedFallbackGlyphs;
         if (loggedFallbackGlyphs.size() < 24 && loggedFallbackGlyphs.count(key) == 0) {
             loggedFallbackGlyphs.insert(key);

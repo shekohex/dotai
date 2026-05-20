@@ -536,7 +536,7 @@ Commit:
 
 ## PIOSC-10: Add End-To-End Debug Smoke Flow
 
-Status: building
+Status: done
 
 Research:
 
@@ -554,9 +554,9 @@ Plan:
 
 Checklist:
 
-- [ ] Add debug fixture bytes for Pi OSC events.
-- [ ] Document manual validation path.
-- [ ] Capture or describe expected UI states.
+- [x] Add debug fixture bytes for Pi OSC events.
+- [x] Document manual validation path.
+- [x] Capture or describe expected UI states.
 
 User story:
 
@@ -577,7 +577,16 @@ Acceptance criteria:
 
 Review:
 
+- Implementation review found the initial fixture test only asserted substring presence and did not prove Pi smoke frames decode as typed events.
+- Added test coverage that extracts debug Pi frames and runs them through `parseTerminalOscEvent`, asserting `hello`, running `agent.run`, active/clear `agent.progress`, completed `agent.tool`, and `agent.alert` decode successfully.
+- Second review found no PIOSC-10 regressions. Debug fixture only changes debug playground bytes and docs; existing OSC 9/52/777 parser/runtime paths are unchanged and still present in the debug fixture.
+- `./gradlew testDebugUnitTest --tests com.coder.pi.DebugRenderPlaygroundTest --tests com.coder.pi.TerminalOscEventTest --no-daemon` passes.
+- `./gradlew compileDebugKotlin --no-daemon` passes.
+
 Commit:
+
+- `7b0bb6f` `feat(pi-osc): add debug smoke fixtures`
+- `70bc647` `test(pi-osc): decode debug smoke frames`
 
 ## PIOSC-11: Add Cross-Repo Validation
 

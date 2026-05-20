@@ -4,6 +4,10 @@ Status: reviewed against current code on 2026-05-20.
 
 Each item is an issue report. During execution, update each touched item with `State`, `Resolution`, `Validation`, `UI proof`, `Review`, and `Commit` before moving to another item.
 
+Android device, UIAutomator, layout, deployment, emulator, and screenshot work must use the `android-cli` skill. Capture screenshot proof with `android screen capture` when available.
+
+Screenshot proof must include before and after images for each visual or UI-affecting fix when a device/emulator is available. For non-visual fixes, capture a before/after terminal smoke pair when practical; otherwise record the exact reason before proof is unavailable.
+
 Required final states: `Fixed`, `Blocked`, `Non-actionable`.
 
 Required proof schema:
@@ -38,9 +42,9 @@ Required proof schema:
   Validation plan: Native build; targeted bitmap conversion test if feasible; UIAutomator terminal smoke screenshot.
   Resolution: Added signed `bitmapRow` helper and routed `blendMask`, `blendMaskFill`, and `bitmapBuffer` through it so negative pitch reads rows in top-to-bottom glyph order.
   Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
-  UI proof: `docs/reference/bug-native-negative-pitch-bitmap-read-smoke.png` captured with `android screen capture` after UI smoke.
+  UI proof: After screenshot `docs/reference/bug-native-negative-pitch-bitmap-read-smoke.png` captured with `android screen capture` after UI smoke; before screenshot unavailable because requirement was added after `261ca39` was already committed.
   Review: No findings.
-  Commit: HEAD (this commit).
+  Commit: `261ca39`.
 
 - [ ] `BUG-RENDER-GLYPH-SNAP-WIDTH-DISTORTION`
   State: Open

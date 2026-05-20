@@ -156,15 +156,26 @@ Commit:
 
 ## PIOSC-3: Implement Agent OSC Emitter Extension
 
-Status: not-started
+Status: building
 
 Research:
 
+- Extension event types are available in `../agent/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`; relevant supported events include `session_start`, `agent_start`, `agent_end`, `turn_start`, `turn_end`, `tool_execution_start`, `tool_execution_end`, `session_before_compact`, `session_compact`, and `after_provider_response`.
+- `ToolExecutionStartEvent` and `ToolExecutionEndEvent` include tool call id/name plus args/result, but PIOSC-3 should not emit args/results because PIOSC-4 owns payload schemas and privacy constraints.
+- Existing tmux/SSH terminal write behavior is exported from `terminal-notify.ts`: `createTmuxPassthroughSequence`, `getTmuxPaneTty`, `getTmuxClientTty`, `isSshSession`, and `terminalNotifyRuntime`.
+- Bundled extensions are registered in `../agent/src/extensions/definitions-group-c.ts`; `terminal-notify` and `terminal-tmux-ui` already live there.
+
+Plan:
+
+- Add `../agent/src/extensions/pi-osc/extension.ts` with runtime hooks for id/time generation, stdout/file writes, and selected lifecycle event handlers.
+- Emit compact V1 events for `hello`, `agent.session`, `agent.run`, `agent.turn`, `agent.progress`, `agent.tool`, `agent.alert`, and `agent.compaction`, using existing Pi OSC encoder and tmux passthrough helpers.
+- Register extension in grouped bundled definitions and add Vitest coverage for direct stdout, tmux passthrough, every V1 event, compact tool payloads, and provider 429 alert emission.
+
 Checklist:
 
-- [ ] Add bundled extension that subscribes to selected Pi lifecycle events.
-- [ ] Emit `hello`, `agent.session`, `agent.run`, `agent.turn`, `agent.progress`, `agent.tool`, `agent.alert`, and `agent.compaction`.
-- [ ] Write to stdout or tmux passthrough using existing terminal helpers.
+- [x] Add bundled extension that subscribes to selected Pi lifecycle events.
+- [x] Emit `hello`, `agent.session`, `agent.run`, `agent.turn`, `agent.progress`, `agent.tool`, `agent.alert`, and `agent.compaction`.
+- [x] Write to stdout or tmux passthrough using existing terminal helpers.
 
 User story:
 

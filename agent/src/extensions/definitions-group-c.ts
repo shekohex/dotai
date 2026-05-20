@@ -5,6 +5,7 @@ import gsdExtension from "./gsd/index.js";
 import interviewExtension from "./interview/index.js";
 import mermaidExtension from "./mermaid.js";
 import notifyExtension from "./notify/index.js";
+import piOscExtension from "./pi-osc/extension.js";
 import plannotatorExtension from "./plannotator.js";
 import promptStashExtension from "./prompt-stash.js";
 import terminalNotifyExtension from "./terminal-notify.js";
@@ -22,5 +23,6 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "gsd", factory: gsdExtension },
   { id: "terminal-notify", factory: terminalNotifyExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
+  { id: "pi-osc", factory: piOscExtension },
   { id: "executor", factory: executorExtension },
 ];

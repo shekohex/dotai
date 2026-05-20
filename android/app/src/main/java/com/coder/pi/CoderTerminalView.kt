@@ -119,6 +119,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var activeProgressIndeterminate = true
     private var progressStatusIndex = 0
     private var notificationContext = TerminalNotificationContext()
+    private val agentState = TerminalAgentState()
     private var terminalViewForeground = false
     private var workspaceIconRequestInFlight = false
     private var workspaceIconCacheKey = ""
@@ -858,6 +859,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun dispose() {
+        agentState.clear()
         unregisterTerminalView(this)
         if (rendererHandle != 0L) {
             val handleToDispose = rendererHandle
@@ -874,6 +876,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun disposeManagerOwnedEngine() {
+        agentState.clear()
         managerOwnsEngine = false
         engine.dispose()
         nativeFontKey = null
@@ -1181,6 +1184,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun notificationContextSnapshot(): TerminalNotificationContext? = notificationContext.takeIf { it.terminalId.isNotBlank() }
 
+    fun agentStateSnapshot(): TerminalAgentStateSnapshot = agentState.snapshot()
+
     fun setVolumeFontSizeEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("volume_font_size", enabled) }
     }
@@ -1301,7 +1306,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             is TerminalOscEvent.Clipboard -> handleOscClipboard(event.kind, event.data)
             is TerminalOscEvent.Notification -> handleOscNotification(event.title, event.body)
             is TerminalOscEvent.Progress -> handleOscProgress(event.stateText, event.valueText)
-            is TerminalOscEvent.Pi -> Unit
+            is TerminalOscEvent.Pi -> agentState.apply(event)
             TerminalOscEvent.Ignored -> Unit
         }
     }

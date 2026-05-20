@@ -429,15 +429,26 @@ Commit:
 
 ## PIOSC-8: Implement Android Agent State Store
 
-Status: not-started
+Status: done
 
 Research:
 
+- `TerminalOscEvent.Pi` is now validated and carries decoded `PiOscEnvelope` with event-specific `data`; `CoderTerminalView.handleOscEvent` currently ignores it.
+- `CoderTerminalView.dispose()` and `disposeManagerOwnedEngine()` are the active cleanup paths for terminal views and engine/session replacement.
+- There is no existing agent state model, and PIOSC-8 does not require persistence or UI rendering, so a small pure Kotlin `TerminalAgentState` can be unit-tested without Android dependencies.
+- Headless `TerminalNotificationRouter` still ignores Pi events; PIOSC-9 owns notification/UI surfacing.
+
+Plan:
+
+- Add `TerminalAgentState` and immutable snapshot data classes to track handshake/session/run/turn/progress/tools/alerts/compaction in memory with bounded tool and alert histories.
+- Update `CoderTerminalView` to own one `TerminalAgentState`, apply validated Pi events, expose a snapshot for later UI, and clear it on disposal/session replacement.
+- Add unit tests for all V1 state transitions, bounded histories, session isolation via separate state instances, and cleanup.
+
 Checklist:
 
-- [ ] Add per-terminal in-memory state for latest Pi agent session/run/progress/tool events.
-- [ ] Keep state scoped to terminal session.
-- [ ] Clear state on terminal close or session replacement.
+- [x] Add per-terminal in-memory state for latest Pi agent session/run/progress/tool events.
+- [x] Keep state scoped to terminal session.
+- [x] Clear state on terminal close or session replacement.
 
 User story:
 
@@ -458,6 +469,10 @@ Acceptance criteria:
 - State cleanup occurs on view/session disposal.
 
 Review:
+
+- Targeted unit tests cover all V1 state updates, bounded tool and alert histories, isolated instances, and cleanup.
+- State stores parsed fields plus event metadata only; it does not retain raw envelope `data`.
+- `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalAgentStateTest --no-daemon` passes.
 
 Commit:
 

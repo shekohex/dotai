@@ -135,8 +135,8 @@ Required proof schema:
   Deliverables: Retained vector/buffer capacity, no fresh allocation on steady-state clean or small-dirty frames, measurement/proof of allocation reduction.
   Validation plan: Native build; UIAutomator smoke screenshot; allocation/count proof or structural proof.
 
-- [ ] `BUG-RENDER-ATLAS-PADDING-UNINITIALIZED`
-  State: Open
+- [x] `BUG-RENDER-ATLAS-PADDING-UNINITIALIZED`
+  State: Fixed
   Type: Bug report, rendering determinism
   Summary: Glyph atlas allocation leaves padding/border texels undefined.
   Impact: Future filtering or texture sampling changes can show garbage halos; current output depends on driver memory contents.
@@ -144,6 +144,11 @@ Required proof schema:
   Goal: Make atlas initial contents deterministic transparent black.
   Deliverables: Zero-filled allocation or clear path; no regressions to glyph upload; minimal memory overhead.
   Validation plan: Native build; terminal screenshot; optional GL/debug proof if practical.
+  Resolution: Allocated a zero-filled RGBA buffer for atlas creation and passed it to `glTexImage2D`, making all padding and unused texels transparent black.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Before `docs/reference/bug-render-atlas-padding-uninitialized-before.png`; after `docs/reference/bug-render-atlas-padding-uninitialized-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `PERF-RENDER-ATLAS-NO-EVICTION`
   State: Open

@@ -620,7 +620,8 @@ bool CoderFont::rebuildAtlas() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasWidth_, atlasHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    std::vector<uint8_t> emptyAtlas(static_cast<size_t>(atlasWidth_) * static_cast<size_t>(atlasHeight_) * 4u, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasWidth_, atlasHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, emptyAtlas.data());
     return texture_ != 0;
 }
 

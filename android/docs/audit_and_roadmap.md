@@ -129,8 +129,8 @@ Required proof schema:
   Deliverables: Packed color attributes; updated GL attribute declarations; byte-size comparison before/after.
   Validation plan: Native build; screenshot comparison/smoke; report old/new stride and upload byte reduction.
 
-- [ ] `PERF-RENDER-FRAME-ALLOCATION-CHURN`
-  State: Open
+- [x] `PERF-RENDER-FRAME-ALLOCATION-CHURN`
+  State: Fixed
   Type: Performance issue, CPU allocation
   Summary: Draw path allocates fresh foreground/background vectors every frame that needs upload.
   Impact: High-output or blinking sessions can cause avoidable heap churn and frame-time spikes.
@@ -139,6 +139,11 @@ Required proof schema:
   Goal: Reuse CPU and GPU buffers across frames.
   Deliverables: Retained vector/buffer capacity, no fresh allocation on steady-state clean or small-dirty frames, measurement/proof of allocation reduction.
   Validation plan: Native build; UIAutomator smoke screenshot; allocation/count proof or structural proof.
+  Resolution: Moved draw staging vectors into `CoderRenderer` members (`frameVertices_`, `frameSolidVertices_`, `frameSkipText_`) and clear/reuse them across uploads instead of constructing fresh vectors in `draw`.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: old upload path constructed 3 local vectors per upload frame (`vertices`, `solidVertices`, `skipText`) and reallocated capacity from zero; new path keeps 3 renderer-owned vectors, `clear()`/`assign()` reuse capacity after first growth, so steady-state upload frames allocate 0 new staging-vector buffers unless terminal size/content exceeds prior capacity.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-frame-allocation-churn-after.png` captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `BUG-RENDER-ATLAS-PADDING-UNINITIALIZED`
   State: Fixed

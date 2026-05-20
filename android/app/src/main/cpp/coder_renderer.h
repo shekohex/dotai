@@ -10,6 +10,9 @@
 #include <string>
 #include <vector>
 
+struct Vertex { float x, y, u, v, r, g, b, br, bg, bb, colorGlyph; };
+struct SolidVertex { float x, y, r, g, b, a; };
+
 class CoderRenderer {
 public:
     CoderRenderer();
@@ -64,6 +67,9 @@ private:
     bool cursorBlink_ = true;
     int cursorMode_ = 0;
     std::vector<CoderCell> cachedCells_;
+    std::vector<Vertex> frameVertices_;
+    std::vector<SolidVertex> frameSolidVertices_;
+    std::vector<uint8_t> frameSkipText_;
     std::string shaderCacheDir_;
     CoderFont font_;
 };

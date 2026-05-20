@@ -603,12 +603,15 @@ Commit:
 
 ## TRGP-10: Audit Color, Contrast, And Blending Pipeline
 
-Status: not-started
+Status: building
 
 Research:
 
 - Android glyph shader uses a custom sRGB-ish coverage correction and pre-multiplied output path: `app/src/main/cpp/shaders/terminal.frag:1-45`.
 - Android terminal renderer uses `GL_ONE, GL_ONE_MINUS_SRC_ALPHA` for glyphs and `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA` for solid quads: `app/src/main/cpp/coder_renderer.cpp:927-949`.
+- Android currently renders theme-exact colors with no minimum contrast adjustment; faint is implemented as `0.50` text alpha before glyph shader output: `app/src/main/cpp/coder_renderer.cpp:589-596`.
+- Android color glyphs bypass monochrome coverage correction when `cellBackgroundColor.a > 0.5` in the shader and output atlas RGBA multiplied by text alpha: `app/src/main/cpp/shaders/terminal.frag:28-32`.
+- Failing/proof samples are debug-render low-contrast foreground, faint text, bright foreground, light-background text, and emoji over non-default background rows in `app/src/main/java/com/coder/pi/CoderApp.kt`.
 - Ghostty exposes `minimum-contrast`: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/config/Config.zig:764-775`.
 - Ghostty renderer config includes background opacity, selection colors, bold color, and colorspace: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:608-643`.
 - Ghostty shaders apply minimum contrast before text output: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/shaders/glsl/cell_text.v.glsl:130-135`.
@@ -617,7 +620,7 @@ Research:
 Plan:
 
 - Document current Android blending math and compare screenshots against Ghostty for low-contrast text, faint text, color glyphs, and bright themes.
-- Decide whether to add configurable minimum contrast or keep theme-exact rendering.
+- Keep theme-exact rendering for this ticket and document `minimum-contrast` as unsupported Android delta until screenshot evidence justifies a user-facing setting.
 - Verify sRGB/linear assumptions on Android GLES surfaces and glyph atlas formats.
 - Add test/debug rows for low contrast and color glyph blending.
 

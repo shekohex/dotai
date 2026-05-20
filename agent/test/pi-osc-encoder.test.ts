@@ -138,6 +138,17 @@ test("nested JSON payload values are accepted", () => {
   ).toContain("]6767;pi;1;agent.tool;");
 });
 
+test("shared acyclic payload values are accepted", () => {
+  const shared = { name: "bash" };
+
+  expect(
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: { start: shared, end: shared },
+    }),
+  ).toContain("]6767;pi;1;agent.tool;");
+});
+
 test("oversized frames are rejected", () => {
   expect(() =>
     createPiOscSequence("agent.tool", {

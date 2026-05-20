@@ -72,11 +72,15 @@ const normalizePiOscJsonObject = (
   }
 
   seen.add(value);
-  const normalized: PiOscJsonObject = {};
-  for (const [key, item] of Object.entries(value)) {
-    normalized[key] = normalizePiOscJsonValue(item, seen);
+  try {
+    const normalized: PiOscJsonObject = {};
+    for (const [key, item] of Object.entries(value)) {
+      normalized[key] = normalizePiOscJsonValue(item, seen);
+    }
+    return normalized;
+  } finally {
+    seen.delete(value);
   }
-  return normalized;
 };
 
 const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): PiOscJsonValue => {
@@ -102,7 +106,11 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
     }
 
     seen.add(value);
-    return value.map((item) => normalizePiOscJsonValue(item, seen));
+    try {
+      return value.map((item) => normalizePiOscJsonValue(item, seen));
+    } finally {
+      seen.delete(value);
+    }
   }
 
   if (typeof value === "object") {

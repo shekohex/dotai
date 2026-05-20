@@ -76,8 +76,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `BUG-NATIVE-STARTUP-LEAKS-ON-PARTIAL-FAILURE`
-  State: Open
+- [x] `BUG-NATIVE-STARTUP-LEAKS-ON-PARTIAL-FAILURE`
+  State: Fixed
   Type: Bug report, resource lifecycle
   Summary: `CoderTerminal::start()` can leak Ghostty handles if a later allocation fails before RAII assignment.
   Impact: Rare initialization failures can leak native resources and make future terminal starts less reliable.
@@ -85,6 +85,11 @@ Required proof schema:
   Goal: Make startup exception/early-return safe.
   Deliverables: Local RAII wrappers or immediate member ownership; unchanged successful startup behavior; allocation-failure path considered.
   Validation plan: Native build; targeted unit/fake failure test if practical; UIAutomator smoke screenshot.
+  Resolution: Replaced raw startup handles with local RAII handle wrappers that take ownership immediately after each successful allocation and move into member handles only after all allocations succeed.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Before smoke `docs/reference/bug-native-startup-leaks-on-partial-failure-before.png`; after smoke `docs/reference/bug-native-startup-leaks-on-partial-failure-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `PERF-RENDER-FULL-SNAPSHOT-COPY-EVERY-FRAME`
   State: Open

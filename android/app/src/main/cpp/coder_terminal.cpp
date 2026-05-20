@@ -10,6 +10,7 @@
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <utility>
 #include <unistd.h>
 #include <android/log.h>
 
@@ -54,30 +55,46 @@ bool CoderTerminal::start(int cols, int rows, int cellWidth, int cellHeight) {
     cells_.assign(cols_ * rows_, CoderCell{{}, 0, 0xffd0d0d0, 0xff101014, 0xffd0d0d0, 0});
 
     GhosttyTerminalOptions options = { .cols = static_cast<uint16_t>(cols_), .rows = static_cast<uint16_t>(rows_), .max_scrollback = 1000 };
-    GhosttyTerminal terminal = nullptr;
-    GhosttyRenderState renderState = nullptr;
-    GhosttyRenderStateRowIterator rowIterator = nullptr;
-    GhosttyRenderStateRowCells rowCells = nullptr;
-    GhosttyKeyEncoder keyEncoder = nullptr;
-    GhosttyKeyEvent keyEvent = nullptr;
-    GhosttyMouseEncoder mouseEncoder = nullptr;
-    GhosttyMouseEvent mouseEvent = nullptr;
-    if (ghostty_terminal_new(nullptr, &terminal, options) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_render_state_new(nullptr, &renderState) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_render_state_row_iterator_new(nullptr, &rowIterator) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_render_state_row_cells_new(nullptr, &rowCells) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_key_encoder_new(nullptr, &keyEncoder) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_key_event_new(nullptr, &keyEvent) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_mouse_encoder_new(nullptr, &mouseEncoder) != GHOSTTY_SUCCESS) return false;
-    if (ghostty_mouse_event_new(nullptr, &mouseEvent) != GHOSTTY_SUCCESS) return false;
-    terminal_.reset(terminal);
-    renderState_.reset(renderState);
-    rowIterator_.reset(rowIterator);
-    rowCells_.reset(rowCells);
-    keyEncoder_.reset(keyEncoder);
-    keyEvent_.reset(keyEvent);
-    mouseEncoder_.reset(mouseEncoder);
-    mouseEvent_.reset(mouseEvent);
+    TerminalHandle terminal;
+    RenderStateHandle renderState;
+    RowIteratorHandle rowIterator;
+    RowCellsHandle rowCells;
+    KeyEncoderHandle keyEncoder;
+    KeyEventHandle keyEvent;
+    MouseEncoderHandle mouseEncoder;
+    MouseEventHandle mouseEvent;
+    GhosttyTerminal rawTerminal = nullptr;
+    GhosttyRenderState rawRenderState = nullptr;
+    GhosttyRenderStateRowIterator rawRowIterator = nullptr;
+    GhosttyRenderStateRowCells rawRowCells = nullptr;
+    GhosttyKeyEncoder rawKeyEncoder = nullptr;
+    GhosttyKeyEvent rawKeyEvent = nullptr;
+    GhosttyMouseEncoder rawMouseEncoder = nullptr;
+    GhosttyMouseEvent rawMouseEvent = nullptr;
+    if (ghostty_terminal_new(nullptr, &rawTerminal, options) != GHOSTTY_SUCCESS) return false;
+    terminal.reset(rawTerminal);
+    if (ghostty_render_state_new(nullptr, &rawRenderState) != GHOSTTY_SUCCESS) return false;
+    renderState.reset(rawRenderState);
+    if (ghostty_render_state_row_iterator_new(nullptr, &rawRowIterator) != GHOSTTY_SUCCESS) return false;
+    rowIterator.reset(rawRowIterator);
+    if (ghostty_render_state_row_cells_new(nullptr, &rawRowCells) != GHOSTTY_SUCCESS) return false;
+    rowCells.reset(rawRowCells);
+    if (ghostty_key_encoder_new(nullptr, &rawKeyEncoder) != GHOSTTY_SUCCESS) return false;
+    keyEncoder.reset(rawKeyEncoder);
+    if (ghostty_key_event_new(nullptr, &rawKeyEvent) != GHOSTTY_SUCCESS) return false;
+    keyEvent.reset(rawKeyEvent);
+    if (ghostty_mouse_encoder_new(nullptr, &rawMouseEncoder) != GHOSTTY_SUCCESS) return false;
+    mouseEncoder.reset(rawMouseEncoder);
+    if (ghostty_mouse_event_new(nullptr, &rawMouseEvent) != GHOSTTY_SUCCESS) return false;
+    mouseEvent.reset(rawMouseEvent);
+    terminal_ = std::move(terminal);
+    renderState_ = std::move(renderState);
+    rowIterator_ = std::move(rowIterator);
+    rowCells_ = std::move(rowCells);
+    keyEncoder_ = std::move(keyEncoder);
+    keyEvent_ = std::move(keyEvent);
+    mouseEncoder_ = std::move(mouseEncoder);
+    mouseEvent_ = std::move(mouseEvent);
 
     ghostty_terminal_resize(terminal_.get(), static_cast<uint16_t>(cols_), static_cast<uint16_t>(rows_), static_cast<uint32_t>(cellWidth), static_cast<uint32_t>(cellHeight));
     ghostty_terminal_set(terminal_.get(), GHOSTTY_TERMINAL_OPT_USERDATA, this);

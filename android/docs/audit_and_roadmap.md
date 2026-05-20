@@ -311,8 +311,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `UX-GESTURES-CUSTOM-TOUCH-STATE-MACHINE`
-  State: Open
+- [x] `UX-GESTURES-CUSTOM-TOUCH-STATE-MACHINE`
+  State: Non-actionable
   Type: UX issue, maintainability
   Summary: Terminal gestures are one large custom touch state machine.
   Impact: Tap/double-tap/swipe/fling behavior can drift from Android conventions and is hard to regression-test.
@@ -320,6 +320,11 @@ Required proof schema:
   Goal: Improve maintainability/standard behavior without breaking terminal-specific mouse tracking and copy mode.
   Deliverables: Either safe `GestureDetectorCompat` adoption for tap/fling or documented non-actionable reason; UIAutomator gesture coverage.
   Validation plan: UIAutomator tests for tap/double-tap/swipe/scroll/copy/mouse where feasible; screenshots.
+  Resolution: No code change. The current touch state machine coordinates terminal mouse reporting, selection, pinch zoom, toolbar swipe shortcuts, tap counting, and drag scroll against shared pointer state. Partial `GestureDetectorCompat` adoption for only tap/fling would split ownership of the same events and risks regressions in terminal-specific modes. A safe migration needs a product-level gesture spec and broader test matrix, not a surgical fix.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#runtimeShortcutsPanelOpensClosesAndHidesAfterShortcutTap` passed on `emulator-5554`.
+  UI proof: Gesture smoke screenshot `docs/reference/ux-gestures-custom-touch-state-machine-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `UX-HAPTICS-INCONSISTENT-POLICY`
   State: Fixed

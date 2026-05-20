@@ -64,6 +64,7 @@ private:
     uint32_t cursorColor_ = 0xe5e5e5;
     uint32_t cursorTextColor_ = 0x101014;
     float targetRefreshRate_ = 60.0f;
+    uint64_t cachedAtlasGeneration_ = 0;
     bool cursorBlink_ = true;
     int cursorMode_ = 0;
     std::vector<CoderCell> cachedCells_;

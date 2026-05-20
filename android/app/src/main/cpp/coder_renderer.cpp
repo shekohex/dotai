@@ -215,7 +215,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             break;
         }
     }
-    bool shouldUploadBuffers = updateCachedCells(std::move(cells), cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || (hasBlinkingCells && cachedBlinkPhase_ != blinkPhase);
+    bool shouldUploadBuffers = updateCachedCells(std::move(cells), cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || cachedAtlasGeneration_ != font_.atlasGeneration() || (hasBlinkingCells && cachedBlinkPhase_ != blinkPhase);
     const auto& renderCells = cachedCells_;
     cachedCursorVisible_ = cursorVisible;
     cachedBlinkPhase_ = blinkPhase;
@@ -543,6 +543,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
         }
         cachedGlyphVertexCount_ = static_cast<GLsizei>(frameVertices_.size());
         cachedSolidVertexCount_ = static_cast<GLsizei>(frameSolidVertices_.size());
+        cachedAtlasGeneration_ = font_.atlasGeneration();
     }
     glUseProgram(solidProgram_);
     glBindVertexArray(solidVao_);

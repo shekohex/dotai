@@ -19,6 +19,8 @@ public:
         float v0 = 0.0f;
         float u1 = 0.0f;
         float v1 = 0.0f;
+        int atlasX = 0;
+        int atlasY = 0;
         int width = 0;
         int height = 0;
         int bearingLeft = 0;
@@ -56,6 +58,7 @@ public:
     int glyphHeight() const { return glyphHeight_; }
     int atlasWidth() const { return atlasWidth_; }
     int atlasHeight() const { return atlasHeight_; }
+    uint64_t atlasGeneration() const { return atlasGeneration_; }
     int baseline() const { return baseline_; }
 
 private:
@@ -95,9 +98,11 @@ private:
     int atlasMaxSize_ = 4096;
     bool atlasFullReported_ = false;
     bool atlasGrowing_ = false;
+    uint64_t atlasGeneration_ = 0;
     int shelfX_ = 1;
     int shelfY_ = 1;
     int shelfHeight_ = 0;
+    std::vector<uint8_t> atlasPixels_;
     FT_Library library_ = nullptr;
     std::array<FontFace, 4> primaryFaces_;
     std::vector<uint8_t> bundledFallbackData_;

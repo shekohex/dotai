@@ -170,8 +170,8 @@ Required proof schema:
   Deliverables: LRU eviction/page rotation, or documented smaller first step if implementation risk is high; stress plan with many unique glyphs.
   Validation plan: Native build; glyph stress test if feasible; UIAutomator smoke screenshot.
 
-- [ ] `PERF-RENDER-ATLAS-GROW-PRESERVE-DATA`
-  State: Open
+- [x] `PERF-RENDER-ATLAS-GROW-PRESERVE-DATA`
+  State: Fixed
   Type: Performance issue, glyph atlas lifecycle
   Summary: Atlas growth rebuilds the atlas from scratch and clears glyph cache instead of preserving existing atlas data.
   Impact: Atlas growth can trigger expensive rerendering and visual stalls as previously cached glyphs are reuploaded on demand.
@@ -180,6 +180,11 @@ Required proof schema:
   Goal: Preserve cached glyph pixels and metadata across atlas growth where practical.
   Deliverables: Growth path that keeps existing glyph cache valid or explicitly proves shelf allocator prevents safe preservation; reduced glyph rerender after growth.
   Validation plan: Native build; glyph stress test or structural proof; UIAutomator smoke screenshot.
+  Resolution: Added a CPU shadow atlas buffer, records glyph atlas coordinates, copies existing atlas rows into the larger buffer during growth, preserves shelf allocator state, reuploads preserved pixels with `glTexImage2D`, recalculates cached glyph UVs instead of clearing `glyphs_` while growing, and bumps an atlas generation so renderer vertex buffers rebuild after texture size changes.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: old growth path cleared `glyphs_`, forcing `G` cached glyphs to rerender/reupload on demand; new growth path keeps `G` metadata entries and copies `oldWidth * oldHeight * 4` atlas bytes once into the new texture, so existing glyphs remain valid after growth.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-atlas-grow-preserve-data-after.png` captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `PERF-TERMINAL-MUTEX-CONTENTION-RENDER-FEED`
   State: Open

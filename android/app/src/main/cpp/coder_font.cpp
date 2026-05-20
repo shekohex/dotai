@@ -8,6 +8,7 @@
 #include <cmath>
 #include <unordered_set>
 #include <string>
+#include <utility>
 #include <vector>
 
 CoderFont::CoderFont() = default;
@@ -599,7 +600,10 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
 
 bool CoderFont::rebuildAtlas() {
     baseline_ = static_cast<int>(glyphHeight_ * 0.78f);
-    glyphs_.clear();
+    int previousShelfX = shelfX_;
+    int previousShelfY = shelfY_;
+    int previousShelfHeight = shelfHeight_;
+    if (!atlasGrowing_) glyphs_.clear();
     shelfX_ = 1;
     shelfY_ = 1;
     shelfHeight_ = 0;
@@ -620,8 +624,27 @@ bool CoderFont::rebuildAtlas() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    std::vector<uint8_t> emptyAtlas(static_cast<size_t>(atlasWidth_) * static_cast<size_t>(atlasHeight_) * 4u, 0);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasWidth_, atlasHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, emptyAtlas.data());
+    if (atlasGrowing_ && !atlasPixels_.empty()) {
+        std::vector<uint8_t> grown(static_cast<size_t>(atlasWidth_) * static_cast<size_t>(atlasHeight_) * 4u, 0);
+        int oldSize = static_cast<int>(std::sqrt(static_cast<double>(atlasPixels_.size() / 4u)));
+        for (int row = 0; row < oldSize; row++) {
+            std::copy_n(atlasPixels_.data() + static_cast<size_t>(row) * static_cast<size_t>(oldSize) * 4u, static_cast<size_t>(oldSize) * 4u, grown.data() + static_cast<size_t>(row) * static_cast<size_t>(atlasWidth_) * 4u);
+        }
+        atlasPixels_ = std::move(grown);
+        for (auto& entry : glyphs_) {
+            Glyph& glyph = entry.second;
+            glyph.u0 = static_cast<float>(glyph.atlasX) / static_cast<float>(atlasWidth_);
+            glyph.v0 = static_cast<float>(glyph.atlasY) / static_cast<float>(atlasHeight_);
+            glyph.u1 = static_cast<float>(glyph.atlasX + glyph.width) / static_cast<float>(atlasWidth_);
+            glyph.v1 = static_cast<float>(glyph.atlasY + glyph.height) / static_cast<float>(atlasHeight_);
+        }
+        shelfX_ = previousShelfX;
+        shelfY_ = previousShelfY;
+        shelfHeight_ = previousShelfHeight;
+    } else {
+        atlasPixels_.assign(static_cast<size_t>(atlasWidth_) * static_cast<size_t>(atlasHeight_) * 4u, 0);
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasWidth_, atlasHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels_.data());
     return texture_ != 0;
 }
 
@@ -631,6 +654,7 @@ bool CoderFont::growAtlas() {
     atlasTargetSize_ = std::min(atlasMaxSize_, std::max(atlasWidth_ + 1, atlasWidth_ * 2));
     __android_log_print(ANDROID_LOG_WARN, "CoderFont", "growing glyph atlas next_size=%d max_texture_size=%d", atlasTargetSize_, atlasMaxSize_);
     bool rebuilt = rebuildAtlas();
+    if (rebuilt) atlasGeneration_++;
     atlasGrowing_ = false;
     return rebuilt;
 }
@@ -805,7 +829,12 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
             glBindTexture(GL_TEXTURE_2D, texture_);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
             glTexSubImage2D(GL_TEXTURE_2D, 0, atlasX, atlasY, bitmapWidth, bitmapHeight, GL_RGBA, GL_UNSIGNED_BYTE, colrPixels.data());
+            for (int row = 0; row < bitmapHeight; row++) {
+                std::copy_n(colrPixels.data() + static_cast<size_t>(row) * static_cast<size_t>(bitmapWidth) * 4u, static_cast<size_t>(bitmapWidth) * 4u, atlasPixels_.data() + (static_cast<size_t>(atlasY + row) * static_cast<size_t>(atlasWidth_) + static_cast<size_t>(atlasX)) * 4u);
+            }
             Glyph glyph;
+            glyph.atlasX = atlasX;
+            glyph.atlasY = atlasY;
             glyph.u0 = static_cast<float>(atlasX) / static_cast<float>(atlasWidth_);
             glyph.v0 = static_cast<float>(atlasY) / static_cast<float>(atlasHeight_);
             glyph.u1 = static_cast<float>(atlasX + bitmapWidth) / static_cast<float>(atlasWidth_);
@@ -855,8 +884,13 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
         glBindTexture(GL_TEXTURE_2D, texture_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexSubImage2D(GL_TEXTURE_2D, 0, atlasX, atlasY, bitmapWidth, bitmapHeight, GL_RGBA, GL_UNSIGNED_BYTE, uploadBuffer);
+        for (int row = 0; row < bitmapHeight; row++) {
+            std::copy_n(uploadBuffer + static_cast<size_t>(row) * static_cast<size_t>(bitmapWidth) * 4u, static_cast<size_t>(bitmapWidth) * 4u, atlasPixels_.data() + (static_cast<size_t>(atlasY + row) * static_cast<size_t>(atlasWidth_) + static_cast<size_t>(atlasX)) * 4u);
+        }
     }
     Glyph glyph;
+    glyph.atlasX = atlasX;
+    glyph.atlasY = atlasY;
     glyph.u0 = static_cast<float>(atlasX) / static_cast<float>(atlasWidth_);
     glyph.v0 = static_cast<float>(atlasY) / static_cast<float>(atlasHeight_);
     glyph.u1 = static_cast<float>(atlasX + bitmapWidth) / static_cast<float>(atlasWidth_);

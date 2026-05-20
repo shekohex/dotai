@@ -64,6 +64,17 @@ class TerminalOscEventTest {
     }
 
     @Test
+    fun acceptsBlankOptionalPiOscEnvelopeFields() {
+        val payload = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoiIiwiY3dkIjoiIiwiZGF0YSI6eyJzdGF0ZSI6InJ1bm5pbmcifX0"
+        val event = parseTerminalOscEvent("pi\t1\tagent.run\t$payload")
+
+        assertTrue(event is TerminalOscEvent.Pi)
+        val pi = event as TerminalOscEvent.Pi
+        assertEquals("", pi.envelope.sessionId)
+        assertEquals("", pi.envelope.cwd)
+    }
+
+    @Test
     fun dropsInvalidPiOscUtf8() {
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t1\tagent.run\t${"eyJpZCI6Iv8ifQ"}"))
     }

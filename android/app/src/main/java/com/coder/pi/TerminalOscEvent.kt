@@ -74,15 +74,15 @@ private fun parsePiOscEnvelope(root: JsonObject): PiOscEnvelope? {
     val source = root.stringField("source", 32) ?: return null
     if (source != "agent") return null
     val data = root["data"] as? JsonObject ?: return null
-    if (root["sessionId"] != null && root.stringField("sessionId", 256, required = false) == null) return null
-    if (root["cwd"] != null && root.stringField("cwd", 1024, required = false) == null) return null
+    if (root["sessionId"] != null && root.optionalStringField("sessionId", 256) == null) return null
+    if (root["cwd"] != null && root.optionalStringField("cwd", 1024) == null) return null
     if (root["seq"] != null && root.longField("seq") == null) return null
     return PiOscEnvelope(
         id = id,
         ts = ts,
         source = source,
-        sessionId = root.stringField("sessionId", 256, required = false),
-        cwd = root.stringField("cwd", 1024, required = false),
+        sessionId = root.optionalStringField("sessionId", 256),
+        cwd = root.optionalStringField("cwd", 1024),
         seq = root.longField("seq"),
         data = data,
     )
@@ -104,6 +104,14 @@ private fun JsonObject.stringField(name: String, maxLength: Int, required: Boole
     if (!primitive.isString) return null
     val text = primitive.contentOrNull ?: return null
     return text.takeIf { it.isNotBlank() && it.length <= maxLength }
+}
+
+private fun JsonObject.optionalStringField(name: String, maxLength: Int): String? {
+    val value = this[name] ?: return null
+    val primitive = value as? JsonPrimitive ?: return null
+    if (!primitive.isString) return null
+    val text = primitive.contentOrNull ?: return null
+    return text.takeIf { it.length <= maxLength }
 }
 
 private fun isValidPiOscPayload(eventName: String, data: JsonObject): Boolean = when (eventName) {

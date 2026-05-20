@@ -212,15 +212,26 @@ Commit:
 
 ## PIOSC-4: Define V1 Agent Event Payload Schemas
 
-Status: not-started
+Status: building
 
 Research:
 
+- Current Pi OSC encoder validates the shared envelope and JSON-serializable `data`, but `data` is still `Record<string, unknown>` and not event-specific.
+- Current emitter payloads are compact: hello protocol metadata, session started reason, run running/idle, turn running/complete with `turnIndex`, progress active/clear, tool call id/name/state/isError, alert provider warning/status, and compaction preparing/complete.
+- `PIOSC-4` should not expand event scope; it should codify current emitter payloads with TypeBox and make `createPiOscSequence` reject mismatched event data before encoding.
+- Protocol docs exist in `../agent/docs/pi-agent-osc-protocol.md` and need payload semantics aligned with emitted V1 events.
+
+Plan:
+
+- Add `../agent/src/extensions/pi-osc/schemas.ts` with TypeBox schemas and inferred types for every V1 payload.
+- Wire `createPiOscSequence` to validate `envelope.data` against the schema for `eventName` after JSON normalization and before base64url encoding.
+- Add schema/encoder tests for valid emitted payloads and invalid tool, alert, and progress payloads; update protocol docs with compact payload semantics.
+
 Checklist:
 
-- [ ] Add TypeBox schemas for all V1 payloads.
-- [ ] Keep payloads compact and privacy-safe.
-- [ ] Add schema tests for valid and invalid payloads.
+- [x] Add TypeBox schemas for all V1 payloads.
+- [x] Keep payloads compact and privacy-safe.
+- [x] Add schema tests for valid and invalid payloads.
 
 User story:
 

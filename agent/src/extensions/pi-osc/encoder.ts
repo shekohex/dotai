@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { isValidPiOscPayload } from "./schemas.js";
 
 const ESC = "\u001B";
 const ST = `${ESC}\\`;
@@ -243,6 +244,10 @@ export const createPiOscSequence = (
   }
 
   const serializableEnvelope = normalizePiOscEnvelope(envelope);
+  if (!isValidPiOscPayload(eventName, serializableEnvelope.data)) {
+    throw new PiOscEncodingError("Invalid Pi OSC payload");
+  }
+
   const payload = Buffer.from(JSON.stringify(serializableEnvelope), "utf8").toString("base64url");
   const sequence = `${ESC}]6767;pi;1;${eventName};${payload}${terminator === "bel" ? BEL : ST}`;
 

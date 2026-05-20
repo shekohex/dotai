@@ -10,8 +10,10 @@ import {
   createPiOscAgentTurnSequence,
   createPiOscHelloSequence,
   createPiOscSequence,
+  isValidPiOscPayload,
   isPiOscV1Event,
   type PiOscEnvelope,
+  type PiOscV1Event,
 } from "../src/extensions/pi-osc/index.js";
 
 const fixtureEnvelope: PiOscEnvelope = {
@@ -21,11 +23,33 @@ const fixtureEnvelope: PiOscEnvelope = {
   sessionId: "session-1",
   cwd: "/workspace",
   seq: 1,
-  data: { protocol: 1 },
+  data: { protocol: 1, extension: "pi-osc", version: 1 },
 };
 
 const fixturePayload =
-  "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MX19";
+  "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MSwiZXh0ZW5zaW9uIjoicGktb3NjIiwidmVyc2lvbiI6MX19";
+
+const payloadByEvent: Record<PiOscV1Event, PiOscEnvelope["data"]> = {
+  hello: { protocol: 1, extension: "pi-osc", version: 1 },
+  "agent.session": { state: "started", reason: "startup" },
+  "agent.run": { state: "running" },
+  "agent.turn": { state: "running", turnIndex: 1 },
+  "agent.progress": { state: "active" },
+  "agent.tool": { toolCallId: "tool-1", toolName: "bash", state: "running" },
+  "agent.alert": {
+    kind: "provider",
+    title: "Provider rate limit",
+    body: "Provider returned HTTP 429.",
+    severity: "warning",
+    statusCode: 429,
+  },
+  "agent.compaction": { state: "preparing" },
+};
+
+const envelopeFor = (eventName: PiOscV1Event): PiOscEnvelope => ({
+  ...fixtureEnvelope,
+  data: payloadByEvent[eventName],
+});
 
 test("createPiOscSequence emits exact ST-terminated fixture", () => {
   expect(createPiOscSequence("hello", fixtureEnvelope)).toBe(
@@ -41,19 +65,29 @@ test("createPiOscSequence supports BEL terminator", () => {
 
 test("event wrapper functions emit every V1 event", () => {
   expect(createPiOscHelloSequence(fixtureEnvelope)).toContain("]6767;pi;1;hello;");
-  expect(createPiOscAgentSessionSequence(fixtureEnvelope)).toContain("]6767;pi;1;agent.session;");
-  expect(createPiOscAgentRunSequence(fixtureEnvelope)).toContain("]6767;pi;1;agent.run;");
-  expect(createPiOscAgentTurnSequence(fixtureEnvelope)).toContain("]6767;pi;1;agent.turn;");
-  expect(createPiOscAgentProgressSequence(fixtureEnvelope)).toContain("]6767;pi;1;agent.progress;");
-  expect(createPiOscAgentToolSequence(fixtureEnvelope)).toContain("]6767;pi;1;agent.tool;");
-  expect(createPiOscAgentAlertSequence(fixtureEnvelope)).toContain("]6767;pi;1;agent.alert;");
-  expect(createPiOscAgentCompactionSequence(fixtureEnvelope)).toContain(
+  expect(createPiOscAgentSessionSequence(envelopeFor("agent.session"))).toContain(
+    "]6767;pi;1;agent.session;",
+  );
+  expect(createPiOscAgentRunSequence(envelopeFor("agent.run"))).toContain("]6767;pi;1;agent.run;");
+  expect(createPiOscAgentTurnSequence(envelopeFor("agent.turn"))).toContain(
+    "]6767;pi;1;agent.turn;",
+  );
+  expect(createPiOscAgentProgressSequence(envelopeFor("agent.progress"))).toContain(
+    "]6767;pi;1;agent.progress;",
+  );
+  expect(createPiOscAgentToolSequence(envelopeFor("agent.tool"))).toContain(
+    "]6767;pi;1;agent.tool;",
+  );
+  expect(createPiOscAgentAlertSequence(envelopeFor("agent.alert"))).toContain(
+    "]6767;pi;1;agent.alert;",
+  );
+  expect(createPiOscAgentCompactionSequence(envelopeFor("agent.compaction"))).toContain(
     "]6767;pi;1;agent.compaction;",
   );
 });
 
 test("payload uses base64url alphabet", () => {
-  const sequence = createPiOscSequence("agent.run", fixtureEnvelope);
+  const sequence = createPiOscSequence("agent.run", envelopeFor("agent.run"));
   const payload = sequence.slice(sequence.lastIndexOf(";") + 1, -2);
 
   expect(payload).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -65,7 +99,12 @@ test("payload uses base64url alphabet", () => {
 test("semicolons and controls inside JSON cannot break OSC fields", () => {
   const sequence = createPiOscSequence("agent.alert", {
     ...fixtureEnvelope,
-    data: { title: "a;b", body: "line\nnext\u0007tail\u001b\\" },
+    data: {
+      kind: "provider",
+      title: "a;b",
+      body: "line\nnext\u0007tail\u001b\\",
+      severity: "warning",
+    },
   });
   const fields = sequence.slice(2, -2).split(";");
 
@@ -84,6 +123,35 @@ test("invalid envelopes are rejected", () => {
     createPiOscSequence("hello", {
       ...fixtureEnvelope,
       source: "test",
+    }),
+  ).toThrow(PiOscEncodingError);
+});
+
+test("event payloads validate against V1 schemas", () => {
+  for (const [eventName, payload] of Object.entries(payloadByEvent)) {
+    expect(isValidPiOscPayload(eventName as PiOscV1Event, payload)).toBeTruthy();
+  }
+});
+
+test("invalid tool, alert, and progress payloads are rejected", () => {
+  expect(() =>
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: { toolCallId: "tool-1", toolName: "bash", state: "running", result: "secret" },
+    }),
+  ).toThrow(PiOscEncodingError);
+
+  expect(() =>
+    createPiOscSequence("agent.alert", {
+      ...fixtureEnvelope,
+      data: { kind: "provider", title: "x", body: "y", severity: "critical" },
+    }),
+  ).toThrow(PiOscEncodingError);
+
+  expect(() =>
+    createPiOscSequence("agent.progress", {
+      ...fixtureEnvelope,
+      data: { state: "running", percent: 50 },
     }),
   ).toThrow(PiOscEncodingError);
 });
@@ -248,35 +316,40 @@ test("array subclass payload values are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
-test("nested JSON payload values are accepted", () => {
+test("schema-supported optional payload values are accepted", () => {
   expect(
     createPiOscSequence("agent.tool", {
       ...fixtureEnvelope,
-      data: { tool: { name: "bash", args: ["echo", "ok"], result: null } },
+      data: {
+        toolCallId: "tool-1",
+        toolName: "bash",
+        state: "complete",
+        isError: false,
+        label: "Bash",
+        summary: "Completed",
+      },
     }),
   ).toContain("]6767;pi;1;agent.tool;");
 });
 
-test("shared acyclic payload values are accepted", () => {
+test("unsupported nested payload values are rejected", () => {
   const shared = { name: "bash" };
 
-  expect(
+  expect(() =>
     createPiOscSequence("agent.tool", {
       ...fixtureEnvelope,
       data: { start: shared, end: shared },
     }),
-  ).toContain("]6767;pi;1;agent.tool;");
+  ).toThrow(PiOscEncodingError);
 });
 
-test("__proto__ payload keys are preserved", () => {
-  const sequence = createPiOscSequence("agent.tool", {
-    ...fixtureEnvelope,
-    data: JSON.parse('{"__proto__":{"name":"bash"}}'),
-  });
-  const payload = sequence.slice(sequence.lastIndexOf(";") + 1, -2);
-  const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-
-  expect(decoded.data.__proto__).toEqual({ name: "bash" });
+test("unsupported __proto__ payload keys are rejected", () => {
+  expect(() =>
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: JSON.parse('{"__proto__":{"name":"bash"}}'),
+    }),
+  ).toThrow(PiOscEncodingError);
 });
 
 test("oversized frames are rejected", () => {

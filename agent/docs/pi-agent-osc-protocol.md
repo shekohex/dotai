@@ -22,13 +22,13 @@ Android also accepts BEL terminated frames:
 
 Fields:
 
-| Field | Value |
-| --- | --- |
-| OSC command | `6767` |
-| Namespace | `pi` |
-| Version | `1` |
-| Event name | V1 event routing key |
-| Payload | UTF-8 JSON envelope encoded with base64url, no padding required |
+| Field       | Value                                                           |
+| ----------- | --------------------------------------------------------------- |
+| OSC command | `6767`                                                          |
+| Namespace   | `pi`                                                            |
+| Version     | `1`                                                             |
+| Event name  | V1 event routing key                                            |
+| Payload     | UTF-8 JSON envelope encoded with base64url, no padding required |
 
 Default terminator is `ST` (`ESC \`). Android accepts `BEL` for compatibility.
 
@@ -37,7 +37,15 @@ Default terminator is `ST` (`ESC \`). Android accepts `BEL` for compatibility.
 Envelope JSON:
 
 ```json
-{"id":"evt-1","ts":1779200000000,"source":"agent","sessionId":"session-1","cwd":"/workspace","seq":1,"data":{"protocol":1}}
+{
+  "id": "evt-1",
+  "ts": 1779200000000,
+  "source": "agent",
+  "sessionId": "session-1",
+  "cwd": "/workspace",
+  "seq": 1,
+  "data": { "protocol": 1 }
+}
 ```
 
 Encoded frame:
@@ -70,20 +78,20 @@ Every V1 payload is a JSON object:
 
 Required fields:
 
-| Field | Type | Rule |
-| --- | --- | --- |
-| `id` | string | Stable event id, bounded display-safe string |
-| `ts` | number | Unix epoch milliseconds |
-| `source` | string | Must be `agent` |
-| `data` | object | Event-specific compact payload |
+| Field    | Type   | Rule                                         |
+| -------- | ------ | -------------------------------------------- |
+| `id`     | string | Stable event id, bounded display-safe string |
+| `ts`     | number | Unix epoch milliseconds                      |
+| `source` | string | Must be `agent`                              |
+| `data`   | object | Event-specific compact payload               |
 
 Optional fields:
 
-| Field | Type | Rule |
-| --- | --- | --- |
-| `sessionId` | string | Agent session id when available |
-| `cwd` | string | Current working directory when available |
-| `seq` | number | Monotonic per-session sequence when available |
+| Field       | Type   | Rule                                          |
+| ----------- | ------ | --------------------------------------------- |
+| `sessionId` | string | Agent session id when available               |
+| `cwd`       | string | Current working directory when available      |
+| `seq`       | number | Monotonic per-session sequence when available |
 
 Do not include full prompts, assistant messages, raw tool output, clipboard contents, provider payloads, secrets, or unbounded strings.
 
@@ -91,16 +99,16 @@ Do not include full prompts, assistant messages, raw tool output, clipboard cont
 
 Allowed event names:
 
-| Event | Purpose |
-| --- | --- |
-| `hello` | Protocol handshake and extension metadata |
-| `agent.session` | Session lifecycle metadata |
-| `agent.run` | Agent run start/end state |
-| `agent.turn` | Turn start/end state |
-| `agent.progress` | Bounded progress state |
-| `agent.tool` | Tool execution start/end summary |
-| `agent.alert` | Terminal-worthy alert |
-| `agent.compaction` | Context compaction lifecycle |
+| Event              | Purpose                                   | Payload                                                             |
+| ------------------ | ----------------------------------------- | ------------------------------------------------------------------- |
+| `hello`            | Protocol handshake and extension metadata | `protocol`, `extension`, `version`                                  |
+| `agent.session`    | Session lifecycle metadata                | `state`, `reason`                                                   |
+| `agent.run`        | Agent run start/end state                 | `state`                                                             |
+| `agent.turn`       | Turn start/end state                      | `state`, `turnIndex`                                                |
+| `agent.progress`   | Bounded progress state                    | `state`                                                             |
+| `agent.tool`       | Tool execution start/end summary          | `toolCallId`, `toolName`, `state`, `isError?`, `label?`, `summary?` |
+| `agent.alert`      | Terminal-worthy alert                     | `kind`, `title`, `body`, `severity`, `statusCode?`                  |
+| `agent.compaction` | Context compaction lifecycle              | `state`                                                             |
 
 Unknown event names are invalid for V1. Android discards them and never renders raw OSC data.
 

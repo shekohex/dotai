@@ -8,6 +8,7 @@ import {
   terminalNotifyRuntime,
 } from "../terminal-notify.js";
 import { createPiOscSequence, type PiOscEnvelope, type PiOscV1Event } from "./encoder.js";
+import type { PiOscV1Payload } from "./schemas.js";
 
 export const piOscRuntime = {
   now: () => Date.now(),
@@ -51,7 +52,7 @@ const writePiOscSequence = (sequence: string): void => {
 export const createPiOscEnvelope = (
   ctx: ExtensionContext,
   seq: number,
-  data: PiOscEnvelope["data"],
+  data: PiOscV1Payload,
 ): PiOscEnvelope => ({
   id: piOscRuntime.randomId(),
   ts: piOscRuntime.now(),
@@ -66,18 +67,14 @@ export const emitPiOscEvent = (
   eventName: PiOscV1Event,
   ctx: ExtensionContext,
   seq: number,
-  data: PiOscEnvelope["data"],
+  data: PiOscV1Payload,
 ): void => {
   writePiOscSequence(createPiOscSequence(eventName, createPiOscEnvelope(ctx, seq, data)));
 };
 
 export default function piOscExtension(pi: ExtensionAPI): void {
   let seq = 0;
-  const emit = (
-    eventName: PiOscV1Event,
-    ctx: ExtensionContext,
-    data: PiOscEnvelope["data"],
-  ): void => {
+  const emit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload): void => {
     seq += 1;
     emitPiOscEvent(eventName, ctx, seq, data);
   };

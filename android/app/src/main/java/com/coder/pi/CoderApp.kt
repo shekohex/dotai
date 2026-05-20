@@ -1230,6 +1230,8 @@ internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("Styled: ${esc}[31m-${esc}[32m>${esc}[0m ${esc}[34m=${esc}[35m>${esc}[0m cursor sample --foo\r\n\r\n")
         append("Nerd: 󰊢  λ 󰢱 󰊠 󰘳\r\n")
         append("Powerline:      Box: ┌─┬─┐ ╔═╦═╗ █ ░ ▒ ▓\r\n")
+        append("Sprites: ▁▂▃▄▅▆▇█ ▏▎▍▌▋▊▉ ⣿⣀⠿ ◆ ■ ▲ ▼ ●\r\n")
+        append("Legacy sprites: 🬀🬋🮋 Powerline branch:  \r\n")
         append("Box joins: ├─┼─┤ └─┴─┘ ╠═╬═╣ ╚═╩═╝\r\n")
         append("Box dash: ┄┄┄ ┅┅┅ ┆┆┆ ┇┇┇ ╱╲╳\r\n")
         append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡️\r\n\r\n")

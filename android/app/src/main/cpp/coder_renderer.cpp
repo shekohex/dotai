@@ -260,6 +260,77 @@ static void addSolidQuad(std::vector<SolidVertex>& vertices, float x0, float y0,
     vertices.insert(vertices.end(), {{x0,y0,r,g,b,a},{x1,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y1,r,g,b,a}});
 }
 
+static void addSolidTriangle(std::vector<SolidVertex>& vertices, float x0, float y0, float x1, float y1, float x2, float y2, float r, float g, float b, float a) {
+    vertices.insert(vertices.end(), {{x0,y0,r,g,b,a},{x1,y1,r,g,b,a},{x2,y2,r,g,b,a}});
+}
+
+static bool drawTerminalSprite(std::vector<SolidVertex>& vertices, uint32_t codepoint, float x0, float y0, float x1, float y1, float r, float g, float b, float a) {
+    float width = x1 - x0;
+    float height = y1 - y0;
+    auto quad = [&](float left, float bottom, float right, float top, float alpha) {
+        addSolidQuad(vertices, x0 + width * left, y0 + height * bottom, x0 + width * right, y0 + height * top, r, g, b, a * alpha);
+    };
+    if (codepoint >= 0x2581 && codepoint <= 0x2588) {
+        float fill = static_cast<float>(codepoint - 0x2580) / 8.0f;
+        quad(0.0f, 0.0f, 1.0f, fill, 1.0f);
+        return true;
+    }
+    if (codepoint >= 0x2589 && codepoint <= 0x258f) {
+        float fill = static_cast<float>(0x2590 - codepoint) / 8.0f;
+        quad(0.0f, 0.0f, fill, 1.0f, 1.0f);
+        return true;
+    }
+    switch (codepoint) {
+        case 0x2580: quad(0.0f, 0.5f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x2590: quad(0.5f, 0.0f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x2591: quad(0.0f, 0.0f, 1.0f, 1.0f, 0.25f); return true;
+        case 0x2592: quad(0.0f, 0.0f, 1.0f, 1.0f, 0.50f); return true;
+        case 0x2593: quad(0.0f, 0.0f, 1.0f, 1.0f, 0.75f); return true;
+        case 0x2594: quad(0.0f, 0.875f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x2595: quad(0.875f, 0.0f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x2596: quad(0.0f, 0.0f, 0.5f, 0.5f, 1.0f); return true;
+        case 0x2597: quad(0.5f, 0.0f, 1.0f, 0.5f, 1.0f); return true;
+        case 0x2598: quad(0.0f, 0.5f, 0.5f, 1.0f, 1.0f); return true;
+        case 0x2599: quad(0.0f, 0.0f, 0.5f, 1.0f, 1.0f); quad(0.5f, 0.0f, 1.0f, 0.5f, 1.0f); return true;
+        case 0x259a: quad(0.0f, 0.5f, 0.5f, 1.0f, 1.0f); quad(0.5f, 0.0f, 1.0f, 0.5f, 1.0f); return true;
+        case 0x259b: quad(0.0f, 0.0f, 0.5f, 1.0f, 1.0f); quad(0.5f, 0.5f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x259c: quad(0.0f, 0.5f, 1.0f, 1.0f, 1.0f); quad(0.5f, 0.0f, 1.0f, 0.5f, 1.0f); return true;
+        case 0x259d: quad(0.5f, 0.5f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x259e: quad(0.0f, 0.0f, 0.5f, 0.5f, 1.0f); quad(0.5f, 0.5f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x259f: quad(0.0f, 0.0f, 1.0f, 0.5f, 1.0f); quad(0.5f, 0.5f, 1.0f, 1.0f, 1.0f); return true;
+        case 0x25a0: case 0x25aa: quad(0.18f, 0.18f, 0.82f, 0.82f, 1.0f); return true;
+        case 0x25ac: quad(0.10f, 0.35f, 0.90f, 0.65f, 1.0f); return true;
+        case 0x25b2: addSolidTriangle(vertices, x0 + width * 0.5f, y1, x0 + width * 0.12f, y0 + height * 0.16f, x1 - width * 0.12f, y0 + height * 0.16f, r, g, b, a); return true;
+        case 0x25bc: addSolidTriangle(vertices, x0 + width * 0.5f, y0, x0 + width * 0.12f, y1 - height * 0.16f, x1 - width * 0.12f, y1 - height * 0.16f, r, g, b, a); return true;
+        case 0x25c6: addSolidTriangle(vertices, x0 + width * 0.5f, y1, x0 + width * 0.12f, y0 + height * 0.5f, x0 + width * 0.5f, y0, r, g, b, a); addSolidTriangle(vertices, x0 + width * 0.5f, y1, x1 - width * 0.12f, y0 + height * 0.5f, x0 + width * 0.5f, y0, r, g, b, a); return true;
+        case 0x25cf: quad(0.20f, 0.12f, 0.80f, 0.88f, 1.0f); quad(0.12f, 0.24f, 0.88f, 0.76f, 1.0f); return true;
+        case 0xe0b0: addSolidTriangle(vertices, x0, y0, x0, y1, x1, y0 + height * 0.5f, r, g, b, a); return true;
+        case 0xe0b2: addSolidTriangle(vertices, x1, y0, x1, y1, x0, y0 + height * 0.5f, r, g, b, a); return true;
+        case 0xe0b1: quad(0.46f, 0.0f, 0.54f, 1.0f, 1.0f); return true;
+        case 0xe0b3: quad(0.46f, 0.0f, 0.54f, 1.0f, 1.0f); return true;
+        case 0xe0a0: quad(0.35f, 0.18f, 0.65f, 0.82f, 1.0f); quad(0.18f, 0.42f, 0.82f, 0.58f, 1.0f); return true;
+        default: break;
+    }
+    if (codepoint >= 0x2800 && codepoint <= 0x28ff) {
+        float dotWidth = width * 0.28f;
+        float dotHeight = height * 0.15f;
+        for (int dot = 0; dot < 8; dot++) {
+            if ((codepoint & (1u << dot)) == 0u) continue;
+            bool rightColumn = dot >= 4;
+            int row = dot >= 4 ? dot - 4 : dot;
+            float left = rightColumn ? 0.58f : 0.14f;
+            float bottom = 0.78f - static_cast<float>(row) * 0.22f;
+            quad(left, bottom, left + dotWidth / width, bottom + dotHeight / height, 1.0f);
+        }
+        return true;
+    }
+    if (codepoint >= 0x1fb00 && codepoint <= 0x1fbff) {
+        quad(0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+        return true;
+    }
+    return false;
+}
+
 static void addSolidLine(std::vector<SolidVertex>& vertices, float x0, float y0, float x1, float y1, float thicknessPixels, int width, int height, float r, float g, float b, float a) {
     float dx = x1 - x0;
     float dy = y1 - y0;
@@ -567,6 +638,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             if (blinkHidden || cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) continue;
             if (cell.codepointCount == 0) continue;
             if (frameSkipText_[static_cast<size_t>(row * cols + col)] != 0) continue;
+            if (cell.codepointCount == 1 && drawTerminalSprite(frameSolidVertices_, cell.codepoints[0], gridX0, y0, gridX1, y1, r, g, b, textAlpha)) continue;
             if (cell.codepointCount == 1 && isBoxDrawingCodepoint(cell.codepoints[0])) {
                 BoxDrawingGlyph boxGlyph = boxDrawingGlyph(cell.codepoints[0]);
                 if (boxGlyph.supported) {

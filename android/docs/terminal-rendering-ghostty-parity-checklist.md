@@ -173,15 +173,17 @@ Commit:
 
 ## TRGP-3: Expand Sprite-Backed Terminal Glyph Coverage
 
-Status: not-started
+Status: building
 
 Research:
 
 - Android currently detects the box drawing range and draws a subset of `U+2500..U+257F` primitives: `app/src/main/cpp/coder_renderer.cpp:37-194` and `app/src/main/cpp/coder_renderer.cpp:558-641`.
 - Android constrained-symbol logic spans some symbols into a neighboring cell but still relies on font glyph bitmaps: `app/src/main/cpp/coder_renderer.cpp:210-220` and `app/src/main/cpp/coder_renderer.cpp:496-512`.
 - Ghostty sprite face includes block elements, box drawing, braille, branch glyphs, geometric shapes, powerline, symbols for legacy computing, and supplement ranges: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/sprite/Face.zig:54-73`.
+- Ghostty sprite range collection imports `draw/block.zig`, `draw/box.zig`, `draw/braille.zig`, `draw/branch.zig`, `draw/geometric_shapes.zig`, `draw/powerline.zig`, `draw/symbols_for_legacy_computing.zig`, and `draw/symbols_for_legacy_computing_supplement.zig`: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/sprite/Face.zig:54-100`.
 - Ghostty routes sprite-capable codepoints before normal font lookup: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/CodepointResolver.zig:139-145`.
 - Ghostty sprites render from grid metrics and requested cell width, not font bitmap bearing: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/sprite/Face.zig:165-224`.
+- Failing samples are font-dependent block/shade glyphs (`▁▂▃▄▅▆▇█`, `░▒▓`), braille graph glyphs (`⣿⣀⠿`), powerline separators (``), branch symbol (``), geometric shapes (`◆■▲▼●`), and Symbols for Legacy Computing cells (`🬀🬋🮋`).
 
 Plan:
 

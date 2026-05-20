@@ -1106,6 +1106,11 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         return
     }
     val debugFonts = remember { CoderFonts.builtInOptions().filter { it.key in setOf("jetbrains", "geist", "ibm_plex", "iosevka", "maple") } }
+    val debugFontSizes = remember { listOf(12, 14, 16, 18, 20, 22) }
+    var selectedDebugFontIndex by remember { mutableIntStateOf(debugFonts.indexOfFirst { it.key == "maple" }.takeIf { it >= 0 } ?: 0) }
+    var selectedDebugFontSizeIndex by remember { mutableIntStateOf(debugFontSizes.indexOf(16).takeIf { it >= 0 } ?: 0) }
+    val selectedDebugFont = debugFonts[selectedDebugFontIndex.coerceIn(debugFonts.indices)]
+    val selectedDebugFontSize = debugFontSizes[selectedDebugFontSizeIndex.coerceIn(debugFontSizes.indices)]
     var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     var debugFramesScheduled by remember { mutableStateOf(false) }
@@ -1127,6 +1132,13 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
             playgroundTerminalView.dispose()
         }
     }
+    LaunchedEffect(selectedDebugFont.key, selectedDebugFontSize, theme) {
+        playgroundTerminalView.applyTheme(theme)
+        playgroundTerminalView.setFontSizePoints(selectedDebugFontSize)
+        playgroundTerminalView.setPreviewFontFamily(selectedDebugFont.key)
+        playgroundTerminalView.feedRemoteOutput(debugRenderPlaygroundBytes("${selectedDebugFont.name} ${selectedDebugFontSize}pt"))
+        playgroundTerminalView.post { playgroundTerminalView.refreshSurface() }
+    }
     Box(Modifier.fillMaxSize().background(theme.background.toComposeColor())) {
         AndroidView(
             factory = { playgroundTerminalView.prepareForComposeHost() },
@@ -1134,16 +1146,9 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
             update = {
                 it.applyTheme(theme)
                 it.post { it.refreshSurface() }
-                it.setFontSizePoints(16)
+                it.setFontSizePoints(selectedDebugFontSize)
                 if (debugFramesScheduled) return@AndroidView
                 debugFramesScheduled = true
-                debugFonts.forEachIndexed { index, font ->
-                    val delayMillis = index * 900L
-                    it.postDelayed({
-                        it.setPreviewFontFamily(font.key)
-                        it.feedRemoteOutput(debugRenderPlaygroundBytes(font.name))
-                    }, delayMillis)
-                }
                 repeat(96) { frameIndex ->
                     it.postDelayed({ it.feedRemoteOutput(debugWorkingIndicatorFrameBytes(frameIndex)) }, 4500L + frameIndex * 80L)
                 }
@@ -1156,6 +1161,10 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
                 it.postDelayed({ it.feedRemoteOutput("\u001b]9;4;0;0\u0007".toByteArray(Charsets.UTF_8)) }, 9000L)
             },
         )
+        Row(Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 96.dp).clip(RoundedCornerShape(14.dp)).background(tokens.surfaceHigh.copy(alpha = 0.94f)).padding(horizontal = 6.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { selectedDebugFontIndex = (selectedDebugFontIndex + 1) % debugFonts.size }) { Text(selectedDebugFont.name, color = tokens.accent, fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            TextButton(onClick = { selectedDebugFontSizeIndex = (selectedDebugFontSizeIndex + 1) % debugFontSizes.size }) { Text("${selectedDebugFontSize}pt", color = tokens.accent, fontSize = captionSize()) }
+        }
         if (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank()) {
             Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
                 if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
@@ -1208,7 +1217,8 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}[58:2::255:120:80;4mColored underline${esc}[0m\r\n\r\n")
         append("Ligatures: -> => != <= >= === !== && || :: ...\r\n\r\n")
         append("Nerd: 󰊢  λ 󰢱 󰊠 󰘳\r\n")
-        append("Powerline:      Box: ┌─┐ █ ░ ▒ ▓\r\n")
+        append("Powerline:      Box: ┌─┬─┐ ╔═╦═╗ █ ░ ▒ ▓\r\n")
+        append("Box joins: ├─┼─┤ └─┴─┘ ╠═╬═╣ ╚═╩═╝\r\n")
         append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡️\r\n\r\n")
         append("CJK: こんにちは 世界 你好 世界 안녕하세요\r\n")
         append("Arabic: مرحبا بالعالم\r\n")

@@ -34,6 +34,144 @@ static bool isConstrainedSymbolCodepoint(uint32_t codepoint) {
         (codepoint >= 0xf000 && codepoint <= 0xf8ff);
 }
 
+static bool isBoxDrawingCodepoint(uint32_t codepoint) {
+    return codepoint >= 0x2500 && codepoint <= 0x257f;
+}
+
+enum class BoxLineStyle : uint8_t { none, light, heavy, doubleLine };
+
+struct BoxDrawingGlyph {
+    BoxLineStyle up = BoxLineStyle::none;
+    BoxLineStyle right = BoxLineStyle::none;
+    BoxLineStyle down = BoxLineStyle::none;
+    BoxLineStyle left = BoxLineStyle::none;
+    bool supported = false;
+};
+
+static BoxDrawingGlyph boxGlyph(BoxLineStyle up = BoxLineStyle::none, BoxLineStyle right = BoxLineStyle::none, BoxLineStyle down = BoxLineStyle::none, BoxLineStyle left = BoxLineStyle::none) {
+    return BoxDrawingGlyph{up, right, down, left, true};
+}
+
+static BoxDrawingGlyph boxDrawingGlyph(uint32_t codepoint) {
+    using S = BoxLineStyle;
+    switch (codepoint) {
+        case 0x2500: return boxGlyph(S::none, S::light, S::none, S::light);
+        case 0x2501: return boxGlyph(S::none, S::heavy, S::none, S::heavy);
+        case 0x2502: return boxGlyph(S::light, S::none, S::light, S::none);
+        case 0x2503: return boxGlyph(S::heavy, S::none, S::heavy, S::none);
+        case 0x250c: return boxGlyph(S::none, S::light, S::light, S::none);
+        case 0x250d: return boxGlyph(S::none, S::heavy, S::light, S::none);
+        case 0x250e: return boxGlyph(S::none, S::light, S::heavy, S::none);
+        case 0x250f: return boxGlyph(S::none, S::heavy, S::heavy, S::none);
+        case 0x2510: return boxGlyph(S::none, S::none, S::light, S::light);
+        case 0x2511: return boxGlyph(S::none, S::none, S::light, S::heavy);
+        case 0x2512: return boxGlyph(S::none, S::none, S::heavy, S::light);
+        case 0x2513: return boxGlyph(S::none, S::none, S::heavy, S::heavy);
+        case 0x2514: return boxGlyph(S::light, S::light, S::none, S::none);
+        case 0x2515: return boxGlyph(S::light, S::heavy, S::none, S::none);
+        case 0x2516: return boxGlyph(S::heavy, S::light, S::none, S::none);
+        case 0x2517: return boxGlyph(S::heavy, S::heavy, S::none, S::none);
+        case 0x2518: return boxGlyph(S::light, S::none, S::none, S::light);
+        case 0x2519: return boxGlyph(S::light, S::none, S::none, S::heavy);
+        case 0x251a: return boxGlyph(S::heavy, S::none, S::none, S::light);
+        case 0x251b: return boxGlyph(S::heavy, S::none, S::none, S::heavy);
+        case 0x251c: return boxGlyph(S::light, S::light, S::light, S::none);
+        case 0x251d: return boxGlyph(S::light, S::heavy, S::light, S::none);
+        case 0x251e: return boxGlyph(S::heavy, S::light, S::light, S::none);
+        case 0x251f: return boxGlyph(S::light, S::light, S::heavy, S::none);
+        case 0x2520: return boxGlyph(S::heavy, S::light, S::heavy, S::none);
+        case 0x2521: return boxGlyph(S::heavy, S::heavy, S::light, S::none);
+        case 0x2522: return boxGlyph(S::light, S::heavy, S::heavy, S::none);
+        case 0x2523: return boxGlyph(S::heavy, S::heavy, S::heavy, S::none);
+        case 0x2524: return boxGlyph(S::light, S::none, S::light, S::light);
+        case 0x2525: return boxGlyph(S::light, S::none, S::light, S::heavy);
+        case 0x2526: return boxGlyph(S::heavy, S::none, S::light, S::light);
+        case 0x2527: return boxGlyph(S::light, S::none, S::heavy, S::light);
+        case 0x2528: return boxGlyph(S::heavy, S::none, S::heavy, S::light);
+        case 0x2529: return boxGlyph(S::heavy, S::none, S::light, S::heavy);
+        case 0x252a: return boxGlyph(S::light, S::none, S::heavy, S::heavy);
+        case 0x252b: return boxGlyph(S::heavy, S::none, S::heavy, S::heavy);
+        case 0x252c: return boxGlyph(S::none, S::light, S::light, S::light);
+        case 0x252d: return boxGlyph(S::none, S::light, S::light, S::heavy);
+        case 0x252e: return boxGlyph(S::none, S::heavy, S::light, S::light);
+        case 0x252f: return boxGlyph(S::none, S::heavy, S::light, S::heavy);
+        case 0x2530: return boxGlyph(S::none, S::light, S::heavy, S::light);
+        case 0x2531: return boxGlyph(S::none, S::light, S::heavy, S::heavy);
+        case 0x2532: return boxGlyph(S::none, S::heavy, S::heavy, S::light);
+        case 0x2533: return boxGlyph(S::none, S::heavy, S::heavy, S::heavy);
+        case 0x2534: return boxGlyph(S::light, S::light, S::none, S::light);
+        case 0x2535: return boxGlyph(S::light, S::light, S::none, S::heavy);
+        case 0x2536: return boxGlyph(S::light, S::heavy, S::none, S::light);
+        case 0x2537: return boxGlyph(S::light, S::heavy, S::none, S::heavy);
+        case 0x2538: return boxGlyph(S::heavy, S::light, S::none, S::light);
+        case 0x2539: return boxGlyph(S::heavy, S::light, S::none, S::heavy);
+        case 0x253a: return boxGlyph(S::heavy, S::heavy, S::none, S::light);
+        case 0x253b: return boxGlyph(S::heavy, S::heavy, S::none, S::heavy);
+        case 0x253c: return boxGlyph(S::light, S::light, S::light, S::light);
+        case 0x253d: return boxGlyph(S::light, S::light, S::light, S::heavy);
+        case 0x253e: return boxGlyph(S::light, S::heavy, S::light, S::light);
+        case 0x253f: return boxGlyph(S::light, S::heavy, S::light, S::heavy);
+        case 0x2540: return boxGlyph(S::heavy, S::light, S::light, S::light);
+        case 0x2541: return boxGlyph(S::light, S::light, S::heavy, S::light);
+        case 0x2542: return boxGlyph(S::heavy, S::light, S::heavy, S::light);
+        case 0x2543: return boxGlyph(S::heavy, S::light, S::light, S::heavy);
+        case 0x2544: return boxGlyph(S::heavy, S::heavy, S::light, S::light);
+        case 0x2545: return boxGlyph(S::light, S::light, S::heavy, S::heavy);
+        case 0x2546: return boxGlyph(S::light, S::heavy, S::heavy, S::light);
+        case 0x2547: return boxGlyph(S::heavy, S::heavy, S::light, S::heavy);
+        case 0x2548: return boxGlyph(S::light, S::heavy, S::heavy, S::heavy);
+        case 0x2549: return boxGlyph(S::heavy, S::light, S::heavy, S::heavy);
+        case 0x254a: return boxGlyph(S::heavy, S::heavy, S::heavy, S::light);
+        case 0x254b: return boxGlyph(S::heavy, S::heavy, S::heavy, S::heavy);
+        case 0x2550: return boxGlyph(S::none, S::doubleLine, S::none, S::doubleLine);
+        case 0x2551: return boxGlyph(S::doubleLine, S::none, S::doubleLine, S::none);
+        case 0x2552: return boxGlyph(S::none, S::doubleLine, S::light, S::none);
+        case 0x2553: return boxGlyph(S::none, S::light, S::doubleLine, S::none);
+        case 0x2554: return boxGlyph(S::none, S::doubleLine, S::doubleLine, S::none);
+        case 0x2555: return boxGlyph(S::none, S::none, S::light, S::doubleLine);
+        case 0x2556: return boxGlyph(S::none, S::none, S::doubleLine, S::light);
+        case 0x2557: return boxGlyph(S::none, S::none, S::doubleLine, S::doubleLine);
+        case 0x2558: return boxGlyph(S::light, S::doubleLine, S::none, S::none);
+        case 0x2559: return boxGlyph(S::doubleLine, S::light, S::none, S::none);
+        case 0x255a: return boxGlyph(S::doubleLine, S::doubleLine, S::none, S::none);
+        case 0x255b: return boxGlyph(S::light, S::none, S::none, S::doubleLine);
+        case 0x255c: return boxGlyph(S::doubleLine, S::none, S::none, S::light);
+        case 0x255d: return boxGlyph(S::doubleLine, S::none, S::none, S::doubleLine);
+        case 0x255e: return boxGlyph(S::light, S::doubleLine, S::light, S::none);
+        case 0x255f: return boxGlyph(S::doubleLine, S::light, S::doubleLine, S::none);
+        case 0x2560: return boxGlyph(S::doubleLine, S::doubleLine, S::doubleLine, S::none);
+        case 0x2561: return boxGlyph(S::light, S::none, S::light, S::doubleLine);
+        case 0x2562: return boxGlyph(S::doubleLine, S::none, S::doubleLine, S::light);
+        case 0x2563: return boxGlyph(S::doubleLine, S::none, S::doubleLine, S::doubleLine);
+        case 0x2564: return boxGlyph(S::none, S::doubleLine, S::light, S::doubleLine);
+        case 0x2565: return boxGlyph(S::none, S::light, S::doubleLine, S::light);
+        case 0x2566: return boxGlyph(S::none, S::doubleLine, S::doubleLine, S::doubleLine);
+        case 0x2567: return boxGlyph(S::light, S::doubleLine, S::none, S::doubleLine);
+        case 0x2568: return boxGlyph(S::doubleLine, S::light, S::none, S::light);
+        case 0x2569: return boxGlyph(S::doubleLine, S::doubleLine, S::none, S::doubleLine);
+        case 0x256a: return boxGlyph(S::light, S::doubleLine, S::light, S::doubleLine);
+        case 0x256b: return boxGlyph(S::doubleLine, S::light, S::doubleLine, S::light);
+        case 0x256c: return boxGlyph(S::doubleLine, S::doubleLine, S::doubleLine, S::doubleLine);
+        case 0x256d: return boxGlyph(S::none, S::light, S::light, S::none);
+        case 0x256e: return boxGlyph(S::none, S::none, S::light, S::light);
+        case 0x256f: return boxGlyph(S::light, S::none, S::none, S::light);
+        case 0x2570: return boxGlyph(S::light, S::light, S::none, S::none);
+        case 0x2574: return boxGlyph(S::none, S::none, S::none, S::light);
+        case 0x2575: return boxGlyph(S::light, S::none, S::none, S::none);
+        case 0x2576: return boxGlyph(S::none, S::light, S::none, S::none);
+        case 0x2577: return boxGlyph(S::none, S::none, S::light, S::none);
+        case 0x2578: return boxGlyph(S::none, S::none, S::none, S::heavy);
+        case 0x2579: return boxGlyph(S::heavy, S::none, S::none, S::none);
+        case 0x257a: return boxGlyph(S::none, S::heavy, S::none, S::none);
+        case 0x257b: return boxGlyph(S::none, S::none, S::heavy, S::none);
+        case 0x257c: return boxGlyph(S::none, S::heavy, S::none, S::light);
+        case 0x257d: return boxGlyph(S::light, S::none, S::heavy, S::none);
+        case 0x257e: return boxGlyph(S::none, S::light, S::none, S::heavy);
+        case 0x257f: return boxGlyph(S::heavy, S::none, S::light, S::none);
+        default: return {};
+    }
+}
+
 static bool isConstrainedSymbolCell(const CoderCell& cell) {
     if (cell.codepointCount == 0) return false;
     for (uint32_t index = 0; index < cell.codepointCount; index++) {
@@ -365,6 +503,54 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             if (blinkHidden || cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) continue;
             if (cell.codepointCount == 0) continue;
             if (frameSkipText_[static_cast<size_t>(row * cols + col)] != 0) continue;
+            if (cell.codepointCount == 1 && isBoxDrawingCodepoint(cell.codepoints[0])) {
+                BoxDrawingGlyph boxGlyph = boxDrawingGlyph(cell.codepoints[0]);
+                if (boxGlyph.supported) {
+                    float pixelX = 2.0f / static_cast<float>(width_);
+                    float pixelY = 2.0f / static_cast<float>(height_);
+                    float centerX = snapX((gridX0 + gridX1) * 0.5f);
+                    float centerY = snapY((y0 + y1) * 0.5f);
+                    float lightThickness = std::max(1.0f, std::round(static_cast<float>(font_.glyphWidth()) * 0.07f));
+                    float heavyThickness = std::max(2.0f, std::round(static_cast<float>(font_.glyphWidth()) * 0.14f));
+                    float doubleOffsetX = lightThickness * pixelX;
+                    float doubleOffsetY = lightThickness * pixelY;
+                    auto drawHorizontalSegment = [&](float startX, float endX, BoxLineStyle style) {
+                        if (style == BoxLineStyle::none) return;
+                        float thickness = style == BoxLineStyle::heavy ? heavyThickness : lightThickness;
+                        float halfThicknessY = thickness * pixelY * 0.5f;
+                        if (style == BoxLineStyle::doubleLine) {
+                            addSolidQuad(frameSolidVertices_, startX, centerY - doubleOffsetY - halfThicknessY, endX, centerY - doubleOffsetY + halfThicknessY, r, g, b, textAlpha);
+                            addSolidQuad(frameSolidVertices_, startX, centerY + doubleOffsetY - halfThicknessY, endX, centerY + doubleOffsetY + halfThicknessY, r, g, b, textAlpha);
+                            return;
+                        }
+                        addSolidQuad(frameSolidVertices_, startX, centerY - halfThicknessY, endX, centerY + halfThicknessY, r, g, b, textAlpha);
+                    };
+                    auto drawVerticalSegment = [&](float startY, float endY, BoxLineStyle style) {
+                        if (style == BoxLineStyle::none) return;
+                        float thickness = style == BoxLineStyle::heavy ? heavyThickness : lightThickness;
+                        float halfThicknessX = thickness * pixelX * 0.5f;
+                        if (style == BoxLineStyle::doubleLine) {
+                            addSolidQuad(frameSolidVertices_, centerX - doubleOffsetX - halfThicknessX, startY, centerX - doubleOffsetX + halfThicknessX, endY, r, g, b, textAlpha);
+                            addSolidQuad(frameSolidVertices_, centerX + doubleOffsetX - halfThicknessX, startY, centerX + doubleOffsetX + halfThicknessX, endY, r, g, b, textAlpha);
+                            return;
+                        }
+                        addSolidQuad(frameSolidVertices_, centerX - halfThicknessX, startY, centerX + halfThicknessX, endY, r, g, b, textAlpha);
+                    };
+                    float horizontalJoinPadding = heavyThickness * pixelX * 0.5f;
+                    float verticalJoinPadding = heavyThickness * pixelY * 0.5f;
+                    if (boxGlyph.left != BoxLineStyle::none && boxGlyph.right != BoxLineStyle::none && boxGlyph.left == boxGlyph.right) drawHorizontalSegment(gridX0, gridX1, boxGlyph.left);
+                    else {
+                        drawHorizontalSegment(gridX0, centerX + horizontalJoinPadding, boxGlyph.left);
+                        drawHorizontalSegment(centerX - horizontalJoinPadding, gridX1, boxGlyph.right);
+                    }
+                    if (boxGlyph.up != BoxLineStyle::none && boxGlyph.down != BoxLineStyle::none && boxGlyph.up == boxGlyph.down) drawVerticalSegment(y0, y1, boxGlyph.up);
+                    else {
+                        drawVerticalSegment(centerY - verticalJoinPadding, y1, boxGlyph.up);
+                        drawVerticalSegment(y0, centerY + verticalJoinPadding, boxGlyph.down);
+                    }
+                    continue;
+                }
+            }
             if (isNarrowPrintableAsciiCell(cell)) {
                 int runEndCol = col + 1;
                 while (runEndCol < cols) {

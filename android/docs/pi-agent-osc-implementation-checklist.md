@@ -102,15 +102,26 @@ Commit:
 
 ## PIOSC-2: Add Agent OSC Encoding Library
 
-Status: not-started
+Status: building
 
 Research:
 
+- Agent is ESM TypeScript with Vitest; terminal OSC tests live at `../agent/test/terminal-notify.test.ts` and `../agent/test/terminal-tmux-ui.test.ts`.
+- Existing OSC helpers export constants indirectly through `createOsc777Sequence` and `createTmuxPassthroughSequence`, but Pi OSC needs a separate safe encoder because its payload is base64url JSON and event names must be allowlisted.
+- `typebox` and `typebox/value` are already dependencies; existing code uses `Type`, `Static`, and `Value.Check` for boundary schemas.
+- `PIOSC-4` owns event-specific payload schemas, so this ticket should validate the shared envelope shape and V1 event allowlist without expanding payload semantics.
+
+Plan:
+
+- Add `../agent/src/extensions/pi-osc/encoder.ts` with constants, V1 event allowlist, TypeBox envelope schema, `createPiOscSequence`, and small event-specific wrapper functions.
+- Enforce base64url JSON encoding, `ST` default terminator, allowlisted event names, and full-frame byte cap below `8192`.
+- Add Vitest coverage for exact fixture bytes, base64url alphabet, semicolon/control isolation, allowlist rejection, envelope validation, BEL option, and oversized rejection.
+
 Checklist:
 
-- [ ] Add TypeScript helpers to encode Pi OSC events.
-- [ ] Add payload sanitization, byte-size checks, and base64url encoding.
-- [ ] Add unit tests with exact byte fixtures.
+- [x] Add TypeScript helpers to encode Pi OSC events.
+- [x] Add payload sanitization, byte-size checks, and base64url encoding.
+- [x] Add unit tests with exact byte fixtures.
 
 User story:
 

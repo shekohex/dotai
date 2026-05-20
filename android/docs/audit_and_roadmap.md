@@ -452,22 +452,44 @@ Required proof schema:
 
 - [x] `NOBUG-HARFBUZZ-FONT-CHANGED-ON-RESIZE`
   State: Non-actionable
-  Result: Denied as current bug.
+  Type: Non-issue, font lifecycle
+  Summary: HarfBuzz font changed-on-resize concern is not present in current native font lifecycle.
   Evidence: `setCellSize` releases faces before rebuilding, and `hb_ft_font_create_referenced` is called after `configureFaceSize` in `app/src/main/cpp/coder_font.cpp:639-644`, `:655-656`, `:688-689`.
-  Keep in mind: If future code changes face size without recreating `hb_font_t`, call `hb_ft_font_changed`.
+  Resolution: Denied as current bug. Current resize path recreates HarfBuzz font objects after face size configuration rather than mutating an existing `hb_font_t` without notification.
+  Validation: Source audit only; no code change required. Keep in mind: if future code changes face size without recreating `hb_font_t`, call `hb_ft_font_changed`.
+  UI proof: Not applicable; source-lifecycle non-issue.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `NOBUG-PROCESS-DEATH-RECONNECT-ID-PERSISTENCE`
   State: Non-actionable
-  Result: Denied as current bug.
+  Type: Non-issue, persistence
+  Summary: Process-death reconnect ID persistence is already implemented locally.
   Evidence: Active terminal metadata and `reconnect_id` persist in `CoderSessionStore.saveActiveTerminal` at `app/src/main/java/com/coder/pi/CoderSessionStore.kt:85-100`; loaded in `CoderApp.kt:336-358`; saved from `TerminalActivity.kt:82`, `:202`.
-  Keep in mind: Buffer continuity after process death depends on remote backend behavior, not local persistence alone.
+  Resolution: Denied as current bug. Local reconnect metadata persistence exists; buffer continuity after process death depends on remote backend behavior, not local persistence alone.
+  Validation: Source audit only; no code change required.
+  UI proof: Not applicable; persistence non-issue with source evidence.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `NOBUG-GHOSTTY-TITLE-CALLBACK-MISSING`
   State: Non-actionable
-  Result: Denied as current bug.
+  Type: Non-issue, terminal metadata
+  Summary: Ghostty title callback is already registered.
   Evidence: Title callback is registered via `GHOSTTY_TERMINAL_OPT_TITLE_CHANGED` in `app/src/main/cpp/coder_terminal.cpp:85`.
+  Resolution: Denied as current bug. Current native terminal setup already wires the title changed callback.
+  Validation: Source audit only; no code change required.
+  UI proof: Not applicable; callback registration non-issue with source evidence.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `NOBUG-HAPTIC-ENGINE-ABSENT`
   State: Non-actionable
-  Result: Denied as current bug.
+  Type: Non-issue, haptics
+  Summary: Haptic engine absence is not a current bug.
   Evidence: Bell and OSC progress haptics exist. Remaining work tracked by `UX-HAPTICS-INCONSISTENT-POLICY`.
+  Resolution: Denied as current bug. Terminal haptic call sites exist, and inconsistent policy was handled separately by `UX-HAPTICS-INCONSISTENT-POLICY`.
+  Validation: Source audit only; no code change required.
+  UI proof: Not applicable; haptic existence non-issue with source evidence.
+  Review: No findings.
+  Commit: HEAD (this commit).

@@ -38,6 +38,19 @@ class TerminalOscEventTest {
     }
 
     @Test
+    fun decodesAgentEncoderHelloFixture() {
+        val payload = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MSwiZXh0ZW5zaW9uIjoicGktb3NjIiwidmVyc2lvbiI6MX19"
+        val event = parseTerminalOscEvent("pi\t1\thello\t$payload")
+
+        assertTrue(event is TerminalOscEvent.Pi)
+        val pi = event as TerminalOscEvent.Pi
+        assertEquals("hello", pi.eventName)
+        assertEquals("evt-1", pi.envelope.id)
+        assertEquals("session-1", pi.envelope.sessionId)
+        assertEquals("1", pi.envelope.data["version"].toString())
+    }
+
+    @Test
     fun dropsInvalidPiOscFrames() {
         val valid = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZGF0YSI6eyJzdGF0ZSI6InJ1bm5pbmcifX0"
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("pi\t2\tagent.run\t$valid"))

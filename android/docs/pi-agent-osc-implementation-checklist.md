@@ -590,9 +590,27 @@ Commit:
 
 ## PIOSC-11: Add Cross-Repo Validation
 
-Status: not-started
+Status: building
 
 Research:
+
+- Agent encoder tests define an exact `hello` ST fixture in `../agent/test/pi-osc-encoder.test.ts` using payload `eyJpZCI6ImV2dC0x...`.
+- Android `TerminalOscEventTest` already decodes Pi OSC payloads, but the test name did not tie the payload to the agent encoder fixture and there was no documented copy process.
+- PIOSC-11 needs command-level validation across `../agent` and Android plus proof Android accepts an agent-generated fixture.
+- Agent `npm run typecheck`, full `npm test`, and full `npm run lint` are currently blocked by pre-existing missing `@xterm/*` / `zigpty` dependency errors in `../agent/src/subagent-sdk/pty.ts`; focused Pi OSC agent checks pass.
+
+Plan:
+
+- Document the exact shared `hello` fixture and copy process in the checklist.
+- Add an Android unit test that decodes the exact agent encoder fixture payload from `../agent/test/pi-osc-encoder.test.ts`.
+- Run required agent checks from `../agent` and Android checks from `android`, recording results.
+
+Shared fixture:
+
+- Source: `../agent/test/pi-osc-encoder.test.ts` `fixturePayload` in `createPiOscSequence emits exact ST-terminated fixture`.
+- Android consumer: `app/src/test/java/com/coder/pi/TerminalOscEventTest.kt` `decodesAgentEncoderHelloFixture`.
+- Fixture payload: `eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoic2Vzc2lvbi0xIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MSwiZXh0ZW5zaW9uIjoicGktb3NjIiwidmVyc2lvbiI6MX19`.
+- Copy process: when changing the agent fixture envelope, copy the updated `fixturePayload` into `decodesAgentEncoderHelloFixture` and keep both tests green.
 
 Checklist:
 

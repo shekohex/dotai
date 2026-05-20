@@ -126,7 +126,10 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
       throw new PiOscEncodingError("Invalid Pi OSC envelope data");
     }
 
-    const allowedProperties = new Set(["length", ...Object.keys(value)]);
+    const allowedProperties = new Set(["length"]);
+    for (let index = 0; index < value.length; index += 1) {
+      allowedProperties.add(String(index));
+    }
     if (Object.getOwnPropertyNames(value).some((property) => !allowedProperties.has(property))) {
       throw new PiOscEncodingError("Invalid Pi OSC envelope data");
     }

@@ -201,6 +201,15 @@ test("array toJSON payload values are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
+test("extra array payload properties are rejected", () => {
+  const items: Array<string> & { extra?: unknown } = ["safe"];
+  items.extra = () => "bad";
+
+  expect(() =>
+    createPiOscSequence("agent.progress", { ...fixtureEnvelope, data: { items } }),
+  ).toThrow(PiOscEncodingError);
+});
+
 test("nested JSON payload values are accepted", () => {
   expect(
     createPiOscSequence("agent.tool", {

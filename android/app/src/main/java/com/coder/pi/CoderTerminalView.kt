@@ -896,7 +896,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         applyTextOptions()
     }
 
-    fun contextualAlternatesEnabled(): Boolean = preferences.getBoolean("contextualAlternates", true)
+    fun contextualAlternatesEnabled(): Boolean = preferences.getBoolean("contextualAlternates", false)
 
     fun setSlashedZeroEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("slashedZero", enabled) }

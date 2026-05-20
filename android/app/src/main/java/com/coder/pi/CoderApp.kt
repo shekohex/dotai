@@ -1207,7 +1207,7 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("Real CoderTerminalView + libghostty-vt + native GLES renderer\r\n\r\n")
         append("OSC 8: ${esc}]8;;https://example.com${'\u0007'}tap link${esc}]8;;${'\u0007'}  BEL:${'\u0007'}  Color:${esc}]10;#ff5c7a${'\u0007'}fg override${esc}]110${'\u0007'}\r\n\r\n")
         append("Working: ⣾ CoreUI indicator\r\n\r\n")
-        append("Shimmer SGR: ${esc}[1;97mrendering${esc}[22;39m ${esc}[37mterminal${esc}[22;39m ${esc}[2mfonts${esc}[22m\r\n\r\n")
+        append("Shimmer SGR: ${esc}[97mrendering${esc}[39m ${esc}[37mterminal${esc}[39m ${esc}[2mfonts${esc}[22m\r\n\r\n")
         append("${esc}[1mBold${esc}[0m   ${esc}[3mItalic${esc}[0m   ${esc}[1;3mBoldItalic${esc}[0m\r\n")
         append("${esc}[2mFaint${esc}[0m   ${esc}[5mBlink${esc}[25m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")
         append("${esc}[4mSingle underline${esc}[0m\r\n")
@@ -1215,6 +1215,7 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}[4:3mCurly underline${esc}[0m\r\n")
         append("${esc}[4:4mDotted underline${esc}[0m   ${esc}[4:5mDashed underline${esc}[0m\r\n")
         append("${esc}[58:2::255:120:80;4mColored underline${esc}[0m\r\n\r\n")
+        append("CLI flags: --foo --help -vv --features=ligatures\r\n")
         append("Ligatures: -> => != <= >= === !== && || :: ...\r\n\r\n")
         append("Nerd: 󰊢  λ 󰢱 󰊠 󰘳\r\n")
         append("Powerline:      Box: ┌─┬─┐ ╔═╦═╗ █ ░ ▒ ▓\r\n")
@@ -1253,7 +1254,7 @@ private fun debugShimmerFrameBytes(index: Int): ByteArray {
             } else {
                 val distance = kotlin.math.abs(charIndex - highlight)
                 val style = when (distance) {
-                    0 -> "${esc}[1;97m"
+                    0 -> "${esc}[97m"
                     1 -> "${esc}[37m"
                     else -> "${esc}[2m"
                 }
@@ -1923,7 +1924,7 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
                 ligatures = it
                 terminalView.setLigaturesEnabled(it)
             }
-            SettingsToggleRow(R.drawable.ic_feather_sliders, "Contextual Alternates", contextualAlternates, tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_sliders, "Programming Ligatures", contextualAlternates, tokens) {
                 contextualAlternates = it
                 terminalView.setContextualAlternatesEnabled(it)
             }
@@ -1943,7 +1944,7 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
                 characterVariant1 = it
                 terminalView.setCharacterVariant1Enabled(it)
             }
-            SettingsValueRow(R.drawable.ic_feather_sliders, "Feature Tags", "liga, calt, zero, ss01, ss02, cv01", "Native", tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_sliders, "Feature Tags", "liga, calt, zero, ss01, ss02, cv01", if (contextualAlternates) "calt on" else "calt off", tokens) {}
         }
         SettingsSection("STYLE", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_type, "Bold Font Style", boldFontStyle, tokens) {

@@ -6,7 +6,7 @@ Each item is an issue report. During execution, update each touched item with `S
 
 Android device, UIAutomator, layout, deployment, emulator, and screenshot work must use the `android-cli` skill. Capture screenshot proof with `android screen capture` when available.
 
-Screenshot proof must include before and after images for each visual or UI-affecting fix when a device/emulator is available. For non-visual fixes, capture a before/after terminal smoke pair when practical; otherwise record the exact reason before proof is unavailable.
+Screenshot proof must include before and after images for each visual or UI-affecting fix when a device/emulator is available. UIAutomator tests may save screenshots on the device; pull them with `adb pull`, store them under `docs/reference/` or a documented temp path, then read and compare them before accepting proof. For non-visual fixes, capture a before/after terminal smoke pair when practical; otherwise record the exact reason before proof is unavailable.
 
 Required final states: `Fixed`, `Blocked`, `Non-actionable`.
 

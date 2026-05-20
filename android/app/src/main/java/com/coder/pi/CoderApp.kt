@@ -1632,6 +1632,7 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
     var progress by remember { mutableStateOf(terminalView.oscNotificationProgressEnabled()) }
     var toasts by remember { mutableStateOf(terminalView.oscNotificationToastsEnabled()) }
     var iconStyle by remember { mutableStateOf(terminalView.oscNotificationIconStyle()) }
+    var sound by remember { mutableStateOf(terminalView.oscNotificationSound()) }
     var hapticPattern by remember { mutableStateOf(terminalView.oscProgressHapticPattern()) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     SettingsScaffold("Terminal Notifications", tokens, onBack) {
@@ -1650,6 +1651,15 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
                 SettingsValueRow(R.drawable.ic_feather_bell, label, null, if (iconStyle == value) "✓" else null, tokens) {
                     iconStyle = value
                     terminalView.setOscNotificationIconStyle(value)
+                }
+            }
+        }
+        SettingsSection("SOUND", tokens) {
+            TerminalNotificationSounds.options.forEach { option ->
+                SettingsValueRow(R.drawable.ic_feather_bell, option.label, "Tap to preview and select", if (sound == option.id) "✓" else null, tokens) {
+                    sound = option.id
+                    terminalView.setOscNotificationSound(option.id)
+                    TerminalNotificationSounds.playPreview(context, option.id)
                 }
             }
         }

@@ -1119,6 +1119,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun oscNotificationIconStyle(): String = preferences.getString("osc.notifications.icon", "pi").orEmpty().ifBlank { "pi" }
 
+    fun setOscNotificationSound(soundId: String) {
+        preferences.edit { putString("osc.notifications.sound", TerminalNotificationSounds.option(soundId).id) }
+    }
+
+    fun oscNotificationSound(): String = TerminalNotificationSounds.option(preferences.getString("osc.notifications.sound", TerminalNotificationSounds.defaultSoundId).orEmpty()).id
+
     fun setOscProgressHapticPattern(pattern: String) {
         preferences.edit { putString("osc.progress.haptic.pattern", pattern) }
     }
@@ -1486,7 +1492,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun ensureOscNotificationChannel() {
         if (Build.VERSION.SDK_INT < 26) return
-        TerminalNotificationBehavior.ensureAlertChannel(context, oscNotificationChannelId(), oscNotificationChannelName())
+        TerminalNotificationBehavior.ensureAlertChannel(context, oscNotificationChannelId(), oscNotificationChannelName(), oscNotificationSound())
     }
 
     private fun ensureOscProgressNotificationChannel() {
@@ -1504,7 +1510,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
-    private fun oscNotificationChannelId(): String = TerminalNotificationFormat.oscChannelId(notificationContext)
+    private fun oscNotificationChannelId(): String = "${TerminalNotificationFormat.oscChannelId(notificationContext)}.${TerminalNotificationSounds.channelSuffix(oscNotificationSound())}"
 
     private fun oscProgressNotificationChannelId(): String = TerminalNotificationFormat.progressChannelId(notificationContext)
 

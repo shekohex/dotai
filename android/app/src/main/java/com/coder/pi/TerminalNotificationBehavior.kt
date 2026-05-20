@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Color
 import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
@@ -13,12 +12,12 @@ import androidx.core.app.NotificationCompat
 object TerminalNotificationBehavior {
     private val vibrationPattern = longArrayOf(0, 80, 50, 160, 80, 240)
 
-    fun ensureAlertChannel(context: Context, id: String, name: String) {
+    fun ensureAlertChannel(context: Context, id: String, name: String, soundId: String) {
         if (Build.VERSION.SDK_INT < 26) return
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val existingChannel = notificationManager.getNotificationChannel(id)
         if (existingChannel != null) return
-        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val soundUri = TerminalNotificationSounds.uri(context, soundId)
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

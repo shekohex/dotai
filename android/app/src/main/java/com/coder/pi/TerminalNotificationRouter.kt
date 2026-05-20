@@ -97,7 +97,7 @@ class TerminalNotificationRouter(
         }
     }
 
-    private fun ensureAlertChannel(id: String, name: String) = TerminalNotificationBehavior.ensureAlertChannel(context, id, name)
+    private fun ensureAlertChannel(id: String, name: String) = TerminalNotificationBehavior.ensureAlertChannel(context, id, name, TerminalNotificationSounds.selectedId(context))
 
     private fun replyAction(notificationId: Int): NotificationCompat.Action {
         val input = RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()
@@ -118,7 +118,7 @@ class TerminalNotificationRouter(
 
     private fun groupKey(): String = TerminalNotificationFormat.groupKey(notificationContext, context.packageName)
 
-    private fun oscNotificationChannelId(): String = TerminalNotificationFormat.oscChannelId(notificationContext)
+    private fun oscNotificationChannelId(): String = "${TerminalNotificationFormat.oscChannelId(notificationContext)}.${TerminalNotificationSounds.channelSuffix(TerminalNotificationSounds.selectedId(context))}"
 
     private fun oscProgressNotificationChannelId(): String = TerminalNotificationFormat.progressChannelId(notificationContext)
 

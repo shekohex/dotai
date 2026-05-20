@@ -17,7 +17,19 @@ type Handler = (event: Record<string, unknown>, ctx: ReturnType<typeof createCon
 
 const createPi = () => {
   const handlers = new Map<string, Handler>();
+  const eventHandlers = new Map<string, Array<(data: unknown) => void>>();
   return {
+    events: {
+      emit: (eventName: string, data: unknown) => {
+        for (const handler of eventHandlers.get(eventName) ?? []) {
+          handler(data);
+        }
+      },
+      on: (eventName: string, handler: (data: unknown) => void) => {
+        eventHandlers.set(eventName, [...(eventHandlers.get(eventName) ?? []), handler]);
+        return () => {};
+      },
+    },
     on: (eventName: string, handler: Handler) => {
       handlers.set(eventName, handler);
     },
@@ -163,6 +175,29 @@ test("tool fields are bounded before emission", () => {
   const decoded = decodeSequence(stdoutSpy.mock.calls[0]?.[0] ?? "");
   expect(decoded.envelope.data.toolCallId).toHaveLength(128);
   expect(decoded.envelope.data.toolName).toHaveLength(128);
+});
+
+test("goal progress event emits elapsed progress payload", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("session_start", { type: "session_start", reason: "startup" });
+  pi.events.emit("goal:progress", {
+    status: "active",
+    sessionId: "session-1",
+    cwd: "/workspace",
+    timeUsedSeconds: 65,
+  });
+
+  const decoded = decodeSequence(stdoutSpy.mock.calls[2]?.[0] ?? "");
+  expect(decoded.eventName).toBe("agent.progress");
+  expect(decoded.envelope.data).toEqual({
+    state: "active",
+    elapsedSeconds: 65,
+  });
 });
 
 test("tmux writes passthrough sequence to pane tty", () => {

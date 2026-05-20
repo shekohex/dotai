@@ -1,5 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
+import { Value } from "typebox/value";
+import { isRecord, readNumber, readString } from "../../utils/unknown-data.js";
+import { GOAL_PROGRESS_EVENT, GoalProgressEventSchema } from "../goal/types.js";
 import {
   createTmuxPassthroughSequence,
   getTmuxClientTty,
@@ -17,6 +20,33 @@ export const piOscRuntime = {
 
 const boundedText = (value: string, maxLength: number): string =>
   value.length <= maxLength ? value : value.slice(0, maxLength);
+
+const isHttpUrl = (value: string): boolean =>
+  value.startsWith("http://") || value.startsWith("https://");
+
+const interviewDetailsFromResult = (
+  value: unknown,
+): { url: string; title: string; totalQuestions: number | undefined } | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const details = value.details;
+  if (!isRecord(details)) {
+    return undefined;
+  }
+  if (readString(details.status) !== "queued") {
+    return undefined;
+  }
+  const url = readString(details.url);
+  if (url === undefined || !isHttpUrl(url)) {
+    return undefined;
+  }
+  return {
+    url: boundedText(url, 2048),
+    title: boundedText(readString(details.title) ?? "Interview", 128),
+    totalQuestions: readNumber(details.totalQuestions),
+  };
+};
 
 const writePiOscSequence = (sequence: string): void => {
   const paneTty = getTmuxPaneTty();
@@ -77,10 +107,36 @@ export const emitPiOscEvent = (
 
 export default function piOscExtension(pi: ExtensionAPI): void {
   let seq = 0;
+  const notifiedInterviewUrls = new Set<string>();
   const emit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload): void => {
     seq += 1;
     emitPiOscEvent(eventName, ctx, seq, data);
   };
+
+  pi.events.on(GOAL_PROGRESS_EVENT, (event) => {
+    if (!Value.Check(GoalProgressEventSchema, event)) {
+      return;
+    }
+    const goalProgress = Value.Parse(GoalProgressEventSchema, event);
+    seq += 1;
+    writePiOscSequence(
+      createPiOscSequence("agent.progress", {
+        id: piOscRuntime.randomId(),
+        ts: piOscRuntime.now(),
+        source: "agent",
+        sessionId: goalProgress.sessionId,
+        cwd: goalProgress.cwd,
+        seq,
+        data:
+          goalProgress.status === "active"
+            ? {
+                state: "active",
+                elapsedSeconds: goalProgress.timeUsedSeconds ?? 0,
+              }
+            : { state: "clear" },
+      }),
+    );
+  });
 
   pi.on("session_start", (event, ctx) => {
     emit("hello", ctx, { protocol: 1, extension: "pi-osc", version: 1 });
@@ -119,6 +175,28 @@ export default function piOscExtension(pi: ExtensionAPI): void {
       toolName: boundedText(event.toolName, 128),
       state: "complete",
       isError: event.isError,
+    });
+  });
+
+  pi.on("tool_execution_update", (event, ctx) => {
+    if (event.toolName !== "interview") {
+      return;
+    }
+    const interview = interviewDetailsFromResult(event.partialResult);
+    if (interview === undefined || notifiedInterviewUrls.has(interview.url)) {
+      return;
+    }
+    notifiedInterviewUrls.add(interview.url);
+    const questionCount =
+      interview.totalQuestions === undefined
+        ? ""
+        : ` · ${interview.totalQuestions} question${interview.totalQuestions === 1 ? "" : "s"}`;
+    emit("agent.alert", ctx, {
+      kind: "interview",
+      severity: "info",
+      title: "Interview ready",
+      body: boundedText(`${interview.title}${questionCount}. Tap to answer.`, 512),
+      url: interview.url,
     });
   });
 

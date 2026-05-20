@@ -23,7 +23,7 @@ class TerminalNotificationRouter(
     fun handleOscEvent(event: TerminalOscEvent, terminalTitle: String) {
         when (event) {
             is TerminalOscEvent.Notification -> postNotification(event.title, event.body)
-            is TerminalOscEvent.Progress -> postProgress(terminalTitle, event.stateText, event.valueText)
+            is TerminalOscEvent.Progress -> Unit
             is TerminalOscEvent.Clipboard -> Unit
             is TerminalOscEvent.Pi -> handlePiOscEvent(event, terminalTitle)
             TerminalOscEvent.Ignored -> Unit
@@ -33,8 +33,8 @@ class TerminalNotificationRouter(
     private fun handlePiOscEvent(event: TerminalOscEvent.Pi, terminalTitle: String) {
         val snapshot = agentState.apply(event)
         when (event.eventName) {
-            "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body) }
-            "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { postProgress(terminalTitle, it.stateText, it.valueText, it.body) }
+            "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body, it.url) }
+            "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { postPiAgentProgress(terminalTitle, it) }
         }
     }
 
@@ -44,14 +44,14 @@ class TerminalNotificationRouter(
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
     }
 
-    private fun postNotification(title: String, body: String) {
+    private fun postNotification(title: String, body: String, launchUrl: String? = null) {
         val cleanTitle = TerminalNotificationFormat.cleanText(title).ifBlank { notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.ifBlank { "Terminal" } }
         val cleanBody = TerminalNotificationFormat.cleanText(body).ifBlank { cleanTitle }
         if (!canPostNotifications()) return
         ensureAlertChannel(oscNotificationChannelId(), oscNotificationChannelName())
         val notificationId = nextNotificationId()
-        val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = TerminalNotificationBehavior.applyAlertDefaults(NotificationCompat.Builder(context, oscNotificationChannelId())
+        val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent(launchUrl), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val builder = NotificationCompat.Builder(context, oscNotificationChannelId())
             .setSmallIcon(R.drawable.pi_logo_mark)
             .setContentTitle(cleanTitle.take(128))
             .setContentText(cleanBody.take(512))
@@ -60,14 +60,22 @@ class TerminalNotificationRouter(
             .setAutoCancel(true)
             .setGroup(groupKey())
             .setStyle(NotificationCompat.BigTextStyle().bigText(cleanBody.take(512)))
-            .addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
-            .addAction(replyAction(notificationId)))
+        if (launchUrl != null) {
+            builder.addAction(R.drawable.ic_feather_terminal, "Open", pendingIntent)
+            builder.addAction(copyUrlAction(notificationId, launchUrl))
+        } else {
+            builder.addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
+            builder.addAction(replyAction(notificationId))
+        }
+        val notification = TerminalNotificationBehavior.applyAlertDefaults(builder)
             .build()
         TerminalNotificationBehavior.wakeScreen(context)
         notifySafely(notificationId, notification)
     }
 
     private fun postProgress(title: String, stateText: String, valueText: String, statusText: String = "") {
+        // Legacy OSC 9 progress is intentionally not wired from handleOscEvent.
+        // Pi agent progress now uses custom OSC 6767 agent.progress frames for bounded state and elapsed-time notifications.
         val state = stateText.toIntOrNull() ?: return
         val notificationId = progressNotificationId()
         if (state == 0) {
@@ -88,6 +96,29 @@ class TerminalNotificationRouter(
             .setOngoing(state == 1 || state == 3 || state == 4)
             .setAutoCancel(false)
             .setProgress(100, progress, indeterminate)
+            .setGroup(groupKey())
+            .addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
+            .build())
+    }
+
+    private fun postPiAgentProgress(title: String, progress: TerminalAgentProgressPresentation) {
+        val notificationId = piAgentProgressNotificationId()
+        if (!progress.active) {
+            NotificationManagerCompat.from(context).cancel(notificationId)
+            return
+        }
+        if (!canPostNotifications()) return
+        ensureChannel(oscProgressNotificationChannelId(), oscProgressNotificationChannelName(), silent = true)
+        val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        notifySafely(notificationId, NotificationCompat.Builder(context, oscProgressNotificationChannelId())
+            .setSmallIcon(R.drawable.pi_logo_mark)
+            .setContentTitle(title.ifBlank { "Terminal" }.take(128))
+            .setContentText(progress.body.ifBlank { WhimsicalStatusMessages.working[nextNotificationId().mod(WhimsicalStatusMessages.working.size)] })
+            .setSubText(workspaceLabel())
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setProgress(100, 0, true)
             .setGroup(groupKey())
             .addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
             .build())
@@ -122,7 +153,13 @@ class TerminalNotificationRouter(
         return NotificationCompat.Action.Builder(R.drawable.ic_feather_terminal, "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
     }
 
-    private fun launchIntent(): Intent = ((if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
+    private fun copyUrlAction(notificationId: Int, url: String): NotificationCompat.Action {
+        val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationCopyUrlAction).putExtra(TerminalNotificationUrlKey, url).putExtra(TerminalNotificationIdKey, notificationId)
+        val pendingIntent = PendingIntent.getBroadcast(context, notificationId xor 0x436f7079, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return NotificationCompat.Action.Builder(R.drawable.ic_feather_terminal, "Copy URL", pendingIntent).build()
+    }
+
+    private fun launchIntent(url: String? = null): Intent = ((url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { Intent(Intent.ACTION_VIEW, it.toUri()) } ?: if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
         flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -139,6 +176,8 @@ class TerminalNotificationRouter(
     private fun oscProgressNotificationChannelName(): String = TerminalNotificationFormat.progressChannelName(notificationContext)
 
     private fun progressNotificationId(): Int = TerminalNotificationFormat.progressNotificationId(notificationContext)
+
+    private fun piAgentProgressNotificationId(): Int = (progressNotificationId() xor 0x50694167) and 0x7fffffff
 
     private fun nextNotificationId(): Int = notificationIdCounter.updateAndGet { if (it == Int.MAX_VALUE) 1 else it + 1 }
 

@@ -45,6 +45,8 @@ export const PiOscAgentTurnPayloadSchema = Type.Object(
 export const PiOscAgentProgressPayloadSchema = Type.Object(
   {
     state: Type.Union([Type.Literal("active"), Type.Literal("clear")]),
+    label: Type.Optional(BoundedString(128)),
+    elapsedSeconds: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: false },
 );
@@ -63,11 +65,16 @@ export const PiOscAgentToolPayloadSchema = Type.Object(
 
 export const PiOscAgentAlertPayloadSchema = Type.Object(
   {
-    kind: Type.Union([Type.Literal("provider"), Type.Literal("runtime")]),
+    kind: Type.Union([
+      Type.Literal("provider"),
+      Type.Literal("runtime"),
+      Type.Literal("interview"),
+    ]),
     title: BoundedString(128),
     body: BoundedString(512),
     severity: Type.Union([Type.Literal("info"), Type.Literal("warning"), Type.Literal("error")]),
     statusCode: Type.Optional(Type.Number()),
+    url: Type.Optional(BoundedString(2048)),
   },
   { additionalProperties: false },
 );

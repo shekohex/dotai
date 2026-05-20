@@ -94,6 +94,7 @@ Optional fields:
 | `seq`       | number | Monotonic per-session sequence when available |
 
 Do not include full prompts, assistant messages, raw tool output, clipboard contents, provider payloads, secrets, or unbounded strings.
+Do not include goal objectives in progress payloads; objectives can be long user-provided text and must stay in goal state only.
 
 ## V1 Events
 
@@ -105,9 +106,9 @@ Allowed event names:
 | `agent.session`    | Session lifecycle metadata                | `state`, `reason`                                                   |
 | `agent.run`        | Agent run start/end state                 | `state`                                                             |
 | `agent.turn`       | Turn start/end state                      | `state`, `turnIndex`                                                |
-| `agent.progress`   | Bounded progress state                    | `state`                                                             |
+| `agent.progress`   | Bounded progress state                    | `state`, `label?`, `elapsedSeconds?`                                |
 | `agent.tool`       | Tool execution start/end summary          | `toolCallId`, `toolName`, `state`, `isError?`, `label?`, `summary?` |
-| `agent.alert`      | Terminal-worthy alert                     | `kind`, `title`, `body`, `severity`, `statusCode?`                  |
+| `agent.alert`      | Terminal-worthy alert                     | `kind`, `title`, `body`, `severity`, `statusCode?`, `url?`          |
 | `agent.compaction` | Context compaction lifecycle              | `state`                                                             |
 
 Unknown event names are invalid for V1. Android discards them and never renders raw OSC data.

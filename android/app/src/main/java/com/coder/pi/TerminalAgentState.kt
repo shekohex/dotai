@@ -21,9 +21,9 @@ data class AgentEventMetadata(val id: String, val ts: Long, val source: String, 
 data class AgentSessionState(val state: String, val reason: String, val event: AgentEventMetadata)
 data class AgentRunState(val state: String, val event: AgentEventMetadata)
 data class AgentTurnState(val state: String, val turnIndex: Long, val event: AgentEventMetadata)
-data class AgentProgressState(val state: String, val event: AgentEventMetadata)
+data class AgentProgressState(val state: String, val label: String?, val elapsedSeconds: Long?, val event: AgentEventMetadata)
 data class AgentToolState(val toolCallId: String, val toolName: String, val state: String, val isError: Boolean, val label: String?, val summary: String?, val event: AgentEventMetadata)
-data class AgentAlertState(val kind: String, val title: String, val body: String, val severity: String, val statusCode: Long?, val event: AgentEventMetadata)
+data class AgentAlertState(val kind: String, val title: String, val body: String, val severity: String, val statusCode: Long?, val url: String?, val event: AgentEventMetadata)
 data class AgentCompactionState(val state: String, val event: AgentEventMetadata)
 
 class TerminalAgentState(
@@ -46,7 +46,7 @@ class TerminalAgentState(
             "agent.session" -> current.copy(session = AgentSessionState(data.stringValue("state"), data.stringValue("reason"), metadata))
             "agent.run" -> current.copy(run = AgentRunState(data.stringValue("state"), metadata))
             "agent.turn" -> current.copy(turn = AgentTurnState(data.stringValue("state"), data.longValue("turnIndex"), metadata))
-            "agent.progress" -> current.copy(progress = AgentProgressState(data.stringValue("state"), metadata))
+            "agent.progress" -> current.copy(progress = AgentProgressState(data.stringValue("state"), data.optionalStringValue("label"), data["elapsedSeconds"]?.jsonPrimitive?.longOrNull, metadata))
             "agent.tool" -> current.copy(tools = upsertTool(data, metadata))
             "agent.alert" -> current.copy(alerts = appendAlert(data, metadata))
             "agent.compaction" -> current.copy(compaction = AgentCompactionState(data.stringValue("state"), metadata))
@@ -74,6 +74,7 @@ class TerminalAgentState(
         body = data.stringValue("body"),
         severity = data.stringValue("severity"),
         statusCode = data["statusCode"]?.jsonPrimitive?.longOrNull,
+        url = data.optionalStringValue("url"),
         event = metadata,
     )).takeLast(maxAlerts)
 }

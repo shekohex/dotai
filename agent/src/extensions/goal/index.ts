@@ -28,8 +28,10 @@ import {
 import { registerGoalTools } from "./tools.js";
 import {
   GOAL_EXTENSION_ENTRY_TYPE,
+  GOAL_PROGRESS_EVENT,
   GOAL_STATUS_KEY,
   type GoalEntrySource,
+  type GoalProgressEvent,
   type GoalResult,
   type ThreadGoal,
 } from "./types.js";
@@ -41,6 +43,8 @@ interface GoalAccountingState {
 
 interface GoalStatusContext {
   ui: Pick<ExtensionContext["ui"], "setStatus">;
+  cwd: string;
+  sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId">;
 }
 
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
@@ -209,6 +213,7 @@ class GoalRuntime {
         }
 
         this.statusContext.ui.setStatus(GOAL_STATUS_KEY, formatFooterStatus(this.goalForDisplay()));
+        this.emitGoalProgress(this.statusContext);
       }, GOAL_STATUS_REFRESH_INTERVAL_MS);
       this.statusRefreshTimer.unref?.();
       return;
@@ -222,7 +227,26 @@ class GoalRuntime {
   private refreshUi(ctx: GoalStatusContext): void {
     this.statusContext = ctx;
     ctx.ui.setStatus(GOAL_STATUS_KEY, formatFooterStatus(this.goalForDisplay()));
+    this.emitGoalProgress(ctx);
     this.syncStatusRefresh();
+  }
+
+  private emitGoalProgress(ctx: GoalStatusContext): void {
+    const goal = this.goalForDisplay();
+    const event: GoalProgressEvent =
+      goal?.status === "active"
+        ? {
+            status: "active",
+            sessionId: ctx.sessionManager.getSessionId(),
+            cwd: ctx.cwd,
+            timeUsedSeconds: goal.usage.activeSeconds,
+          }
+        : {
+            status: "clear",
+            sessionId: ctx.sessionManager.getSessionId(),
+            cwd: ctx.cwd,
+          };
+    this.pi.events.emit(GOAL_PROGRESS_EVENT, event);
   }
 
   private persistGoal(nextGoal: ThreadGoal, source: GoalEntrySource): void {

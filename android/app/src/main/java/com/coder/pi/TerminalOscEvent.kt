@@ -119,11 +119,20 @@ private fun isValidPiOscPayload(eventName: String, data: JsonObject): Boolean = 
     "agent.session" -> data.stringEquals("state", "started") && data.stringIn("reason", setOf("startup", "reload", "new", "resume", "fork")) && data.keys == setOf("state", "reason")
     "agent.run" -> data.stringIn("state", setOf("running", "idle")) && data.keys == setOf("state")
     "agent.turn" -> data.stringIn("state", setOf("running", "complete")) && data.longField("turnIndex") != null && data.keys == setOf("state", "turnIndex")
-    "agent.progress" -> data.stringIn("state", setOf("active", "clear")) && data.keys == setOf("state")
+    "agent.progress" -> isValidPiOscProgressPayload(data)
     "agent.tool" -> isValidPiOscToolPayload(data)
     "agent.alert" -> isValidPiOscAlertPayload(data)
     "agent.compaction" -> data.stringIn("state", setOf("preparing", "complete")) && data.keys == setOf("state")
     else -> false
+}
+
+private fun isValidPiOscProgressPayload(data: JsonObject): Boolean {
+    val allowed = setOf("state", "label", "elapsedSeconds")
+    if (!allowed.containsAll(data.keys)) return false
+    if (!data.stringIn("state", setOf("active", "clear"))) return false
+    if (data["label"] != null && data.stringField("label", 128) == null) return false
+    if (data["elapsedSeconds"] != null && data.longField("elapsedSeconds") == null) return false
+    return true
 }
 
 private fun isValidPiOscToolPayload(data: JsonObject): Boolean {
@@ -137,10 +146,11 @@ private fun isValidPiOscToolPayload(data: JsonObject): Boolean {
 }
 
 private fun isValidPiOscAlertPayload(data: JsonObject): Boolean {
-    val allowed = setOf("kind", "title", "body", "severity", "statusCode")
+    val allowed = setOf("kind", "title", "body", "severity", "statusCode", "url")
     if (!allowed.containsAll(data.keys)) return false
-    if (!data.stringIn("kind", setOf("provider", "runtime")) || data.stringField("title", 128) == null || data.stringField("body", 512) == null || !data.stringIn("severity", setOf("info", "warning", "error"))) return false
+    if (!data.stringIn("kind", setOf("provider", "runtime", "interview")) || data.stringField("title", 128) == null || data.stringField("body", 512) == null || !data.stringIn("severity", setOf("info", "warning", "error"))) return false
     if (data["statusCode"] != null && data.intField("statusCode") == null) return false
+    if (data["url"] != null && data.stringField("url", 2048) == null) return false
     return true
 }
 

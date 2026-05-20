@@ -209,7 +209,7 @@ Implemented in Android:
 - Link allowlist deep links: `pi://settings/links` opens the allowlist page and `pi://settings/links/add` opens the add-host dialog.
 - OSC 52 clipboard: Android bridges bounded OSC 52 events from the VT stream, handles clipboard write/clear/query on the UI side, and sends query responses back through the existing terminal input path.
 - Desktop notifications: Android bridges OSC 9 and rxvt `777;notify` payloads from the VT stream, posts native Android notifications through the `Terminal OSC` channel when permission is granted, and falls back to a rate-limited foreground toast when notifications are disabled or permission is missing.
-- OSC 9 progress: Android bridges `OSC 9;4;state;progress` into an ongoing native notification with determinate or indeterminate progress, and clears it on state `0`.
+- OSC 9 progress: parser support remains, but Android no longer routes legacy OSC 9 progress into notifications. Pi agent progress uses custom `OSC 6767;pi;1;agent.progress` frames instead.
 - Notification routing: real workspace terminals prefix notification titles with the workspace name and use `pi://terminal?id=<terminal-session-key>` deep links so tapping a notification resumes the matching terminal/workspace when it is still active.
 - Color scheme query: Android responds to Ghostty VT color-scheme requests from the active terminal theme background.
 - Debug smoke: `pi://debug/render` emits title, PWD, BEL, OSC 8 hyperlink, OSC 52 clipboard, OSC 9 notification/progress, OSC 777 notification, OSC color sequences, and Pi OSC V1 `hello`, `agent.run`, `agent.progress`, `agent.tool`, and `agent.alert` frames through real `CoderTerminalView.feedRemoteOutput`.
@@ -222,7 +222,8 @@ Expected Pi OSC states:
 
 - Top-right agent overlay appears briefly as `Pi agent` with running/progress/tool state.
 - `agent.alert` routes through the existing terminal notification behavior with sanitized title/body.
-- Pi progress active maps to the existing progress notification path; Pi progress clear cancels it.
+- Pi progress active maps to a Pi-owned progress notification; goal progress includes elapsed active time without objective text, and Pi progress clear cancels it.
+- Interview alerts can carry a safe `http` or `https` URL so tapping the Android notification opens the queued interview.
 - Existing OSC 9 notification/progress, OSC 52 clipboard clear, and OSC 777 notify smoke frames remain in the same fixture.
 
 Final Pi OSC validation:

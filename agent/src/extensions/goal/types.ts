@@ -3,6 +3,7 @@ import { Type, type Static } from "typebox";
 export const GOAL_EXTENSION_ENTRY_TYPE = "goal";
 export const GOAL_STATUS_KEY = "goal";
 export const GOAL_MAX_OBJECTIVE_CHARS = 8000;
+export const GOAL_PROGRESS_EVENT = "goal:progress";
 
 export const GoalStatusSchema = Type.Union([
   Type.Literal("active"),
@@ -62,11 +63,22 @@ export const GoalClearEntrySchema = Type.Object(
 
 export const GoalCustomEntrySchema = Type.Union([GoalSetEntrySchema, GoalClearEntrySchema]);
 
+export const GoalProgressEventSchema = Type.Object(
+  {
+    status: Type.Union([Type.Literal("active"), Type.Literal("clear")]),
+    sessionId: Type.String(),
+    cwd: Type.String(),
+    timeUsedSeconds: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+
 export type GoalStatus = Static<typeof GoalStatusSchema>;
 export type GoalUsage = Static<typeof GoalUsageSchema>;
 export type ThreadGoal = Static<typeof ThreadGoalSchema>;
 export type GoalEntrySource = Static<typeof GoalEntrySourceSchema>;
 export type GoalCustomEntry = Static<typeof GoalCustomEntrySchema>;
+export type GoalProgressEvent = Static<typeof GoalProgressEventSchema>;
 
 export interface GoalResult {
   ok: boolean;

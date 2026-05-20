@@ -417,6 +417,14 @@ describe("goal extension", () => {
 
     expect((created.details.goal as { objective?: string }).objective).toBe("ship it");
     expect(created.details.goal).not.toHaveProperty("tokenBudget");
+    expect(
+      harness.emittedEvents.find((event) => event.eventName === "goal:progress")?.data,
+    ).toMatchObject({
+      status: "active",
+      sessionId: "session",
+      cwd: "/tmp",
+      timeUsedSeconds: 0,
+    });
 
     const got = (await harness.runTool({ action: "get" })) as { details: Record<string, unknown> };
     expect((got.details.goal as { objective?: string }).objective).toBe("ship it");
@@ -425,6 +433,10 @@ describe("goal extension", () => {
       details: Record<string, unknown>;
     };
     expect(completed.details.completionUsageReport).toBeNull();
+    expect(harness.emittedEvents.at(-1)).toMatchObject({
+      eventName: "goal:progress",
+      data: { status: "clear", sessionId: "session", cwd: "/tmp" },
+    });
   });
 
   test("goal tool creates goal from absolute objective file", async () => {

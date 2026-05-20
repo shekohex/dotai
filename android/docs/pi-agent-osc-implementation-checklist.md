@@ -374,7 +374,7 @@ Commit:
 
 ## PIOSC-7: Decode And Validate Pi OSC Payloads In Kotlin
 
-Status: building
+Status: done
 
 Research:
 
@@ -417,7 +417,15 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-7 commits 1b77465, 25b9572, bc43af9, and 9995dd8. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Findings fixed: rejected non-string JSON primitives, decoded UTF-8 strictly, rejected malformed optional envelope metadata and unknown root fields, and accepted blank optional `sessionId`/`cwd` per shared schema.
+- Final review result: no findings. Residual risk: no native/JNI or connected Android instrumentation feeding raw OSC bytes through terminal lifecycle.
+- Validation: `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalOscEventTest` passed. `./gradlew compileDebugKotlin` passed. `./gradlew :app:externalNativeBuildDebug compileDebugKotlin` passed. `./gradlew testDebugUnitTest` passed.
+
 Commit:
+
+- Implementation: `1b77465` (`feat(pi-osc): validate kotlin payloads`)
+- Review fixes: `25b9572` (`fix(pi-osc): strictly validate kotlin payloads`), `bc43af9` (`fix(pi-osc): reject malformed envelope metadata`), `9995dd8` (`fix(pi-osc): accept blank optional metadata`)
 
 ## PIOSC-8: Implement Android Agent State Store
 

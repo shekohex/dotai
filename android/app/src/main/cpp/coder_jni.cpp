@@ -145,6 +145,14 @@ Java_com_coder_pi_CoderNative_nativePaste(JNIEnv* env, jobject, jlong handle, jb
     return result;
 }
 
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_coder_pi_CoderNative_nativeFocusEvent(JNIEnv* env, jobject, jlong handle, jboolean focused) {
+    std::vector<uint8_t> encoded = terminal(reinterpret_cast<NativeTerminal*>(handle))->encodeFocus(focused == JNI_TRUE);
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(encoded.size()));
+    if (!encoded.empty()) env->SetByteArrayRegion(result, 0, static_cast<jsize>(encoded.size()), reinterpret_cast<const jbyte*>(encoded.data()));
+    return result;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeFeed(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
     jsize length = env->GetArrayLength(bytes);

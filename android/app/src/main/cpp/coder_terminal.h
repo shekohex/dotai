@@ -42,6 +42,7 @@ public:
     void pump();
     void writeUtf8(const char* data, int length);
     std::vector<uint8_t> encodePaste(const uint8_t* data, size_t length);
+    std::vector<uint8_t> encodeFocus(bool focused);
     void feed(const uint8_t* data, size_t length);
     void key(int keyCode, int unicodeChar, int metaState);
     void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength);

@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <android/log.h>
 
+#include <ghostty/vt/focus.h>
 #include <ghostty/vt/modes.h>
 #include <ghostty/vt/paste.h>
 
@@ -175,6 +176,22 @@ std::vector<uint8_t> CoderTerminal::encodePaste(const uint8_t* data, size_t leng
     if (result != GHOSTTY_OUT_OF_SPACE || written == 0) return {};
     std::vector<uint8_t> output(written);
     result = ghostty_paste_encode(input.data(), input.size(), bracketed, reinterpret_cast<char*>(output.data()), output.size(), &written);
+    if (result != GHOSTTY_SUCCESS) return {};
+    output.resize(written);
+    return output;
+}
+
+std::vector<uint8_t> CoderTerminal::encodeFocus(bool focused) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_) return {};
+    bool enabled = false;
+    ghostty_terminal_mode_get(terminal_.get(), GHOSTTY_MODE_FOCUS_EVENT, &enabled);
+    if (!enabled) return {};
+    size_t written = 0;
+    GhosttyResult result = ghostty_focus_encode(focused ? GHOSTTY_FOCUS_GAINED : GHOSTTY_FOCUS_LOST, nullptr, 0, &written);
+    if (result != GHOSTTY_OUT_OF_SPACE || written == 0) return {};
+    std::vector<uint8_t> output(written);
+    result = ghostty_focus_encode(focused ? GHOSTTY_FOCUS_GAINED : GHOSTTY_FOCUS_LOST, reinterpret_cast<char*>(output.data()), output.size(), &written);
     if (result != GHOSTTY_SUCCESS) return {};
     output.resize(written);
     return output;

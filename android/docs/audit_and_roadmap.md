@@ -337,8 +337,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `BUG-TERMINAL-FOCUS-EVENT-MODE-IGNORED`
-  State: Open
+- [x] `BUG-TERMINAL-FOCUS-EVENT-MODE-IGNORED`
+  State: Fixed
   Type: Bug report, terminal protocol UX
   Summary: Focus reporting mode (`DECSET 1004`) is not wired to Android window/view focus changes.
   Impact: Editors and TUIs that rely on focus-in/focus-out cannot refresh state or suspend UI affordances correctly when the Android terminal gains or loses focus.
@@ -346,6 +346,11 @@ Required proof schema:
   Goal: Send correct focus gained/lost escape sequences only when terminal focus reporting mode is active.
   Deliverables: Native focus-event method using current mode 1004 and `ghostty_focus_encode`; Android view/activity focus hook; test or manual sequence proof.
   Validation plan: Native/unit focus-mode test if feasible; UIAutomator focus transition smoke; screenshot/log proof or exact automation blocker.
+  Resolution: Added `nativeFocusEvent` JNI path that checks `GHOSTTY_MODE_FOCUS_EVENT`, encodes focus gained/lost with `ghostty_focus_encode`, and hooked `MainActivity` plus `TerminalActivity` window focus changes through `CoderTerminalView.sendFocusEvent`.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#nativeFocusEventHonorsMode1004` passed on `emulator-5554` and verifies disabled mode emits empty, DECSET 1004 emits `CSI I`/`CSI O`, DECRST 1004 disables again; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Smoke screenshot `docs/reference/bug-terminal-focus-event-mode-ignored-after.png` captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `A11Y-TERMINAL-NO-SCREEN-READER-VIRTUAL-NODES`
   State: Open

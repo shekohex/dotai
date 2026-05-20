@@ -243,6 +243,7 @@ class TerminalActivity : AppCompatActivity() {
             WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
             terminalView.post { terminalView.forceRefreshSurface() }
         }
+        terminalView.sendFocusEvent(hasFocus)
     }
 
     private fun showTerminalKeyboard() {

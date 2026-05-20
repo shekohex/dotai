@@ -497,6 +497,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return true
     }
 
+    fun sendFocusEvent(focused: Boolean) {
+        if (handle == 0L) return
+        writeInput(native.nativeFocusEvent(handle, focused))
+    }
+
     fun pasteFromClipboard(): Boolean {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = clipboard.primaryClip ?: return false

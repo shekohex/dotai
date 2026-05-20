@@ -139,6 +139,7 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.navigationBars())
             terminalView.post { terminalView.forceRefreshSurface() }
         }
+        terminalView.sendFocusEvent(hasFocus)
     }
 
     override fun onResume() {

@@ -77,6 +77,22 @@ class DebugWorkflowInstrumentedTest {
     }
 
     @Test
+    fun nativeFocusEventHonorsMode1004() {
+        val native = CoderNative()
+        val handle = native.nativeInitTerminal(80, 24, 8, 16)
+        try {
+            check(native.nativeFocusEvent(handle, true).isEmpty())
+            native.nativeFeed(handle, "\u001b[?1004h".toByteArray())
+            check(String(native.nativeFocusEvent(handle, true)) == "\u001b[I")
+            check(String(native.nativeFocusEvent(handle, false)) == "\u001b[O")
+            native.nativeFeed(handle, "\u001b[?1004l".toByteArray())
+            check(native.nativeFocusEvent(handle, true).isEmpty())
+        } finally {
+            native.nativeDisposeTerminal(handle)
+        }
+    }
+
+    @Test
     fun runtimeShortcutsPanelOpensClosesAndHidesAfterShortcutTap() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -52,7 +52,7 @@ Ghostty reference paths:
 
 ## TRGP-1: Implement Cell-Indexed Shaped Runs
 
-Status: building
+Status: done
 
 Research:
 
@@ -72,11 +72,11 @@ Plan:
 
 Checklist:
 
-- [ ] Add cluster/cell metadata to native shaped glyphs.
-- [ ] Preserve codepoint index to terminal cell mapping through HarfBuzz.
-- [ ] Draw ligature glyphs at their owning cell instead of skipping a whole run by advance accumulation only.
-- [ ] Break shaping runs at cursor and selection boundaries.
-- [ ] Add regression samples for `--foo`, `->`, `=>`, `!=`, cursor inside ligature, and mixed style ligature boundaries.
+- [x] Add cluster/cell metadata to native shaped glyphs.
+- [x] Preserve codepoint index to terminal cell mapping through HarfBuzz.
+- [x] Draw ligature glyphs at their owning cell instead of skipping a whole run by advance accumulation only.
+- [x] Break shaping runs at cursor and selection boundaries.
+- [x] Add regression samples for `--foo`, `->`, `=>`, `!=`, cursor inside ligature, and mixed style ligature boundaries.
 
 User story:
 
@@ -100,7 +100,16 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-1`.
+- Finding: debug fixture duplicated the ligature row and used raw escape literals instead of existing `esc`; fixed in `311e09e`.
+- Finding: initial cluster-first check was overcomplicated for HarfBuzz character clusters; simplified to the Ghostty-relevant forward-cluster reset condition in `311e09e`.
+- Residual risk: no automated pixel assertion proves visual ligature placement; proof is debug fixture plus successful native/Kotlin build gates. Full complex-script reorder behavior remains scoped to `TRGP-2`.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest --no-daemon` passed before review fix. `./gradlew :app:assembleDebug --no-daemon` passed before review fix. `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed after review fix.
+
 Commit:
+
+- Implementation: `d6929684cb3fb4b4803d2e411b488ed77030492c` (`fix(renderer): preserve shaped glyph cell ownership`).
+- Review fix: `311e09e70f59dcdf028f6c0d8dbd2b88adfe0c08` (`fix(renderer): tighten shaped run fixture cleanup`).
 
 ## TRGP-2: Replace Complex Script Heuristics With Unified Run Shaping
 

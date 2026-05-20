@@ -666,21 +666,25 @@ Commit:
 
 ## TRGP-11: Decide Scope For Terminal Image Layers
 
-Status: not-started
+Status: building
 
 Research:
 
 - Ghostty renderer updates Kitty image state before drawing when image data is dirty: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:1224-1236`.
 - Ghostty draws image layers behind text, between backgrounds/text, in front of text, and as overlays: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:1602-1688`.
 - Ghostty has image data byte limits in config: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/config/Config.zig:2391`.
-- Android renderer currently has only solid background/cell quads and glyph atlas paths; no image texture path exists in `CoderRenderer`.
+- Ghostty C API exposes Kitty graphics storage/placement/image access through `ghostty_terminal_get(... GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS ...)` and `ghostty_kitty_graphics_*`: `~/.cache/checkouts/github.com/ghostty-org/ghostty/include/ghostty/vt/kitty_graphics.h:34-84` and `~/.cache/checkouts/github.com/ghostty-org/ghostty/include/ghostty/vt/terminal.h:870`.
+- Ghostty C API requires non-zero `GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT` and `GHOSTTY_SYS_OPT_DECODE_PNG` before PNG Kitty images can be accepted: `~/.cache/checkouts/github.com/ghostty-org/ghostty/include/ghostty/vt/kitty_graphics.h:37-42` and `~/.cache/checkouts/github.com/ghostty-org/ghostty/include/ghostty/vt/sys.h:141-144`.
+- Android terminal setup does not include `ghostty/vt/kitty_graphics.h`, does not set `GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT`, and does not install a PNG decoder callback, so image data is rejected/ignored by terminal state before rendering: `app/src/main/cpp/coder_terminal.cpp:1-18`.
+- Android renderer currently has only solid background/cell quads and glyph atlas paths; no image texture path exists in `CoderRenderer`: `app/src/main/cpp/coder_renderer.cpp:560-949`.
+- Debug render now carries an explicit Android image-scope row so parity claims do not imply inline image support: `app/src/main/java/com/coder/pi/CoderApp.kt`.
 
 Plan:
 
 - Verify whether `ghostty-vt` exposes Kitty graphics/image state through the C API used by Android.
-- Decide whether images are in product scope or explicitly deferred.
-- If in scope, design separate bounded image texture/cache path before implementation tickets.
-- If out of scope, add graceful behavior and debug docs so image escape sequences do not corrupt text rendering.
+- Explicitly defer image rendering for Android until a bounded texture/cache/layer implementation is approved.
+- Keep current safe behavior: no storage limit and no PNG decoder callback, so image bytes do not enter renderer-owned GPU resources.
+- Add debug/docs row so users and future tickets know terminal text remains authoritative and image parity is not claimed.
 
 Checklist:
 

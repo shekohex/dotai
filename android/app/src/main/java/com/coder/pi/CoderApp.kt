@@ -1224,6 +1224,7 @@ internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}[2mFaint${esc}[0m   ${esc}[5mBlink${esc}[25m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")
         append("Blend: ${esc}[38;2;64;64;72mnear bg${esc}[39m ${esc}[2m${esc}[38;2;180;180;190mfaint text${esc}[22;39m ${esc}[48;2;40;44;52m😀 alpha on bg${esc}[0m\r\n")
         append("Contrast: ${esc}[38;2;48;52;60m#30343c on bg${esc}[39m ${esc}[38;2;245;245;250mbright fg${esc}[39m ${esc}[48;2;255;245;220m${esc}[38;2;90;80;70mlight theme sample${esc}[0m\r\n\r\n")
+        append("Images: Kitty graphics unsupported on Android; text grid remains authoritative\r\n\r\n")
         append("${esc}[4mSingle underline${esc}[0m\r\n")
         append("${esc}[4:2mDouble underline${esc}[0m\r\n")
         append("${esc}[4:3mCurly underline${esc}[0m\r\n")

@@ -478,9 +478,22 @@ Commit:
 
 ## PIOSC-9: Add Android UI And Notification Handling For V1 Events
 
-Status: not-started
+Status: building
 
 Research:
+
+- `CoderTerminalView.handleOscEvent` now applies Pi events but does not notify Compose or route alerts/progress.
+- `TerminalSurface` already has `statusContent` overlay support and owns Compose state for OSC metadata.
+- Existing visible notification paths are `handleOscNotification` and `handleOscProgress`; reusing them preserves permissions, throttling, foreground suppression, haptics, and notification channels.
+- Headless terminals route OSC through `TerminalNotificationRouter`, which currently ignores Pi events and can own a small `TerminalAgentState` instance.
+- PIOSC-9 should not add preferences; OSC notification toggles and notification permission behavior already exist.
+
+Plan:
+
+- Add pure presentation helpers that map `TerminalAgentStateSnapshot` and Pi alerts/progress to bounded UI/notification strings.
+- Update `CoderTerminalView` to publish agent state changes to Compose, show compact overlay via `TerminalSurface`, and route Pi alerts/progress through existing notification methods.
+- Update `TerminalNotificationRouter` to maintain headless agent state and route Pi alerts/progress through existing notification methods.
+- Add unit tests for presentation mapping and run focused Android validation.
 
 Checklist:
 

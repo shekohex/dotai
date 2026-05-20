@@ -1285,18 +1285,22 @@ fun TerminalSurface(
 ) {
     var copyModeActive by remember { mutableStateOf(terminalView.copyModeActive()) }
     var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
+    var agentStatus by remember { mutableStateOf(terminalView.agentStateSnapshot().statusPresentation()) }
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     DisposableEffect(terminalView) {
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
+        val agentStateHandler: (TerminalAgentStateSnapshot) -> Unit = { agentStatus = it.statusPresentation() }
         terminalView.onResume()
         terminalView.post { terminalView.forceRefreshSurface() }
         terminalView.onOscMetadataChanged = metadataHandler
         terminalView.onHyperlinkActivated = hyperlinkHandler
+        terminalView.onAgentStateChanged = agentStateHandler
         onDispose {
             if (terminalView.onOscMetadataChanged === metadataHandler) terminalView.onOscMetadataChanged = null
             if (terminalView.onHyperlinkActivated === hyperlinkHandler) terminalView.onHyperlinkActivated = null
+            if (terminalView.onAgentStateChanged === agentStateHandler) terminalView.onAgentStateChanged = null
             terminalView.onPause()
         }
     }
@@ -1315,6 +1319,12 @@ fun TerminalSurface(
                 Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
                     if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
                     if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                }
+            }
+            agentStatus?.let { status ->
+                Column(Modifier.align(Alignment.TopEnd).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.88f)).padding(horizontal = 10.dp, vertical = 7.dp), horizontalAlignment = Alignment.End) {
+                    Text(status.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                    Text(status.subtitle, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
                 }
             }
             statusContent()

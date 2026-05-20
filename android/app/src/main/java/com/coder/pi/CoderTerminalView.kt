@@ -136,6 +136,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onApplicationShortcut: ((String) -> Boolean)? = null
     var onClipboardImagePaste: ((Uri) -> Boolean)? = null
     var onNotificationPermissionNeeded: (() -> Unit)? = null
+    var onAgentStateChanged: ((TerminalAgentStateSnapshot) -> Unit)? = null
 
     override fun onResume() {
         terminalViewForeground = true
@@ -1306,8 +1307,18 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             is TerminalOscEvent.Clipboard -> handleOscClipboard(event.kind, event.data)
             is TerminalOscEvent.Notification -> handleOscNotification(event.title, event.body)
             is TerminalOscEvent.Progress -> handleOscProgress(event.stateText, event.valueText)
-            is TerminalOscEvent.Pi -> agentState.apply(event)
+            is TerminalOscEvent.Pi -> handlePiOscEvent(event)
             TerminalOscEvent.Ignored -> Unit
+        }
+    }
+
+    private fun handlePiOscEvent(event: TerminalOscEvent.Pi) {
+        val snapshot = agentState.apply(event)
+        onAgentStateChanged?.invoke(snapshot)
+        when (event.eventName) {
+            "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { handleOscNotification(it.title, it.body) }
+            "agent.progress" -> snapshot.progress?.progressPresentation()?.let { handleOscProgress(it.stateText, it.valueText) }
+            "agent.run" -> snapshot.run?.progressPresentation()?.let { handleOscProgress(it.stateText, it.valueText) }
         }
     }
 

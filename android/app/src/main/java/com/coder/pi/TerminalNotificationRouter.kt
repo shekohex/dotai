@@ -18,13 +18,24 @@ class TerminalNotificationRouter(
     private val context: Context,
     private val notificationContext: TerminalNotificationContext,
 ) {
+    private val agentState = TerminalAgentState()
+
     fun handleOscEvent(event: TerminalOscEvent, terminalTitle: String) {
         when (event) {
             is TerminalOscEvent.Notification -> postNotification(event.title, event.body)
             is TerminalOscEvent.Progress -> postProgress(terminalTitle, event.stateText, event.valueText)
             is TerminalOscEvent.Clipboard -> Unit
-            is TerminalOscEvent.Pi -> Unit
+            is TerminalOscEvent.Pi -> handlePiOscEvent(event, terminalTitle)
             TerminalOscEvent.Ignored -> Unit
+        }
+    }
+
+    private fun handlePiOscEvent(event: TerminalOscEvent.Pi, terminalTitle: String) {
+        val snapshot = agentState.apply(event)
+        when (event.eventName) {
+            "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body) }
+            "agent.progress" -> snapshot.progress?.progressPresentation()?.let { postProgress(terminalTitle, it.stateText, it.valueText) }
+            "agent.run" -> snapshot.run?.progressPresentation()?.let { postProgress(terminalTitle, it.stateText, it.valueText) }
         }
     }
 

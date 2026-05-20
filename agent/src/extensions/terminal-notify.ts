@@ -152,7 +152,9 @@ const simpleMarkdown = (text: string, width = 80): string => {
 };
 
 export const formatNotification = (text: string | null): { title: string; body: string } | null => {
-  const simplified = text !== null && text.length > 0 ? simpleMarkdown(text) : "";
+  const withoutLinkUrls = text?.replaceAll(/\[([^\]]+)\]\([^)]*\)/gu, "$1") ?? null;
+  const simplified =
+    withoutLinkUrls !== null && withoutLinkUrls.length > 0 ? simpleMarkdown(withoutLinkUrls) : "";
   const normalized = simplified.replaceAll(/\s+/g, " ").trim();
   if (!normalized) {
     return null;

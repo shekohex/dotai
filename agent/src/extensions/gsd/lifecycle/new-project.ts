@@ -203,6 +203,17 @@ function resolveGitTopLevel(cwd: string): string | undefined {
   }
 }
 
+function equivalentPath(first: string | undefined, second: string | undefined): boolean {
+  if (first === undefined || second === undefined) {
+    return first === second;
+  }
+  return normalizeMacTmpPath(first) === normalizeMacTmpPath(second);
+}
+
+function normalizeMacTmpPath(value: string): string {
+  return value.startsWith("/private/var/") ? value.slice("/private".length) : value;
+}
+
 function resolveEnclosingGitTopLevel(cwd: string): string | undefined {
   const parentDir = join(cwd, "..");
   return resolveGitTopLevel(parentDir);
@@ -322,9 +333,9 @@ function buildNewProjectInitMetadata(cwd: string): NewProjectInitMetadata {
   const enclosingGitRootPath = resolveEnclosingGitTopLevel(cwd);
   const hasAccidentalNestedGitRepo =
     existsSync(join(cwd, ".git")) &&
-    gitRootPath === cwd &&
+    equivalentPath(gitRootPath, cwd) &&
     enclosingGitRootPath !== undefined &&
-    enclosingGitRootPath !== gitRootPath &&
+    !equivalentPath(enclosingGitRootPath, gitRootPath) &&
     !repoHasCommits(cwd) &&
     !repoHasRemotes(cwd);
   return {
@@ -333,8 +344,8 @@ function buildNewProjectInitMetadata(cwd: string): NewProjectInitMetadata {
     hasCodebaseMap: codebaseMapPresent,
     needsCodebaseMap: brownfield && !codebaseMapPresent,
     gitWorktreeReady: isInsideGitWorktree(cwd),
-    gitRootPath,
-    enclosingGitRootPath,
+    gitRootPath: normalizeMacTmpPath(gitRootPath ?? "") || undefined,
+    enclosingGitRootPath: normalizeMacTmpPath(enclosingGitRootPath ?? "") || undefined,
     hasAccidentalNestedGitRepo,
   };
 }

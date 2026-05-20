@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "vitest";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -73,6 +74,8 @@ const TEST_TIMEOUT_MS = 15_000;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 initTheme("dark");
 setKeybindings(KeybindingsManager.create());
@@ -1685,7 +1688,7 @@ timedTest("TmuxAdapter sendText wraps multi-line text in bracketed paste markers
   expect(calls[0]?.args[0]).toBe("load-buffer");
   expect(calls[0]?.args[1]).toBe("-b");
   expect(calls[0]?.args[2]).toMatch(/^pi-subagent-1-/);
-  expect(calls[0]?.args[3]).toMatch(/^\/tmp\//);
+  expect(calls[0]?.args[3]).toMatch(new RegExp(`^${escapeRegExp(os.tmpdir())}/`));
   // paste-buffer with -p flag for bracketed paste
   expect(calls[1]?.args).toEqual(["paste-buffer", "-p", "-b", calls[0]?.args[2], "-d", "-t", "%1"]);
   // send-keys submit

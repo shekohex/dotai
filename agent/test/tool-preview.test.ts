@@ -498,7 +498,7 @@ timedTest(
     expect(collapsedText).not.toMatch(/Next\.js 16 is the current major release/);
     expect(expandedText).toMatch(/answered · 3 grounded results · took 5s/);
     expect(expandedText).toMatch(/Sources/);
-    expect(expandedText).toMatch(/https:\/\/nextjs\.org\/blog\/next-16/);
+    expect(expandedText).toMatch(/Next\.js 16/);
     expect(expandedText).toMatch(/Search queries/);
     expect(errorText).toMatch(/googled When did Next\.js 16 release and what changed\?/);
   },

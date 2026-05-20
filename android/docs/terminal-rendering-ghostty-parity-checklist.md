@@ -825,4 +825,4 @@ Validation:
 
 Commit:
 
-- Re-audit: pending.
+- Re-audit: `6583264d5f08e9e86123d5ac02841f72f2872977` (`docs(renderer): audit terminal parity strategy`).

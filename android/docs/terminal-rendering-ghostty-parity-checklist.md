@@ -770,4 +770,4 @@ Review:
 
 Commit:
 
-- Final integration: pending.
+- Final integration: `c2a5fc33cd0bcd3c3a68755635e1589f9d4c7c0c` (`docs(renderer): complete terminal parity audit`).

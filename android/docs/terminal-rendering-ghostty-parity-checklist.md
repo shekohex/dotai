@@ -113,13 +113,15 @@ Commit:
 
 ## TRGP-2: Replace Complex Script Heuristics With Unified Run Shaping
 
-Status: not-started
+Status: building
 
 Research:
 
 - Android Arabic rendering starts only when first cell codepoint is in a hand-maintained Arabic range: `app/src/main/cpp/coder_renderer.cpp:691-739`.
 - Android emoji cluster collection is separate and bounded to 32 codepoints: `app/src/main/cpp/coder_renderer.cpp:741-789`.
 - Android terminal snapshot stores up to 8 codepoints per cell from Ghostty grapheme buffers: `app/src/main/cpp/coder_terminal.cpp:660-667`.
+- Android single-cell shaping only passes `cell.codepoints` without a separate codepoint-to-cell cluster map, so combining marks in one cell can shape but multi-cell complex runs cannot preserve original terminal cell ownership before `TRGP-2`: `app/src/main/cpp/coder_renderer.cpp:805-833` and `app/src/main/cpp/coder_font.cpp:607-656`.
+- Failing samples for this ticket are debug-render visible Arabic joining (`مرحبا بالعالم`), combining marks (`café`, `áô`), Devanagari reordered vowel (`कि`, `नमस्ते`), emoji modifier/ZWJ (`👩🏽‍🚀`, `🧑🏿‍💻`), and mixed Latin/script rows.
 - Ghostty run iteration asks the grid for a font that supports every grapheme codepoint, ignoring only presentation modifiers and ZWJ where appropriate: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/shaper/run.zig:318-389`.
 - Ghostty forces HarfBuzz cluster level to characters to preserve granular cluster mapping: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/shaper/harfbuzz.zig:265-280`.
 

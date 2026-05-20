@@ -244,6 +244,18 @@ static bool isEmojiClusterContinuation(const CoderCell& cell) {
     return codepoint == 0x200d || (codepoint >= 0xfe00 && codepoint <= 0xfe0f) || (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff);
 }
 
+static bool isComplexShapingCell(const CoderCell& cell) {
+    if (cell.wide != GHOSTTY_CELL_WIDE_NARROW && cell.wide != GHOSTTY_CELL_WIDE_WIDE) return false;
+    if (cell.codepointCount == 0 || isConstrainedSymbolCell(cell)) return false;
+    if (cell.codepointCount > 1) return true;
+    uint32_t codepoint = cell.codepoints[0];
+    return codepoint >= 0x80 || isZeroWidthCodepoint(codepoint);
+}
+
+static bool isComplexRunCell(const CoderCell& cell) {
+    return isComplexShapingCell(cell) || (cell.wide == GHOSTTY_CELL_WIDE_NARROW && cell.codepointCount == 1 && cell.codepoints[0] == ' ');
+}
+
 static void addSolidQuad(std::vector<SolidVertex>& vertices, float x0, float y0, float x1, float y1, float r, float g, float b, float a) {
     vertices.insert(vertices.end(), {{x0,y0,r,g,b,a},{x1,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y1,r,g,b,a}});
 }
@@ -656,6 +668,56 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     uint32_t runCodepointCount = 0;
                     for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = renderCells[row * cols + runCol].codepoints[0];
                     auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags, (runEndCol - col) * font_.glyphWidth());
+                    bool runRenderable = !runGlyphs.empty();
+                    for (const auto& shapedGlyph : runGlyphs) {
+                        CoderFont::Glyph glyph;
+                        bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
+                        if (shapedGlyph.glyphId == 0 || !loaded) {
+                            runRenderable = false;
+                            break;
+                        }
+                    }
+                    if (runRenderable) {
+                        for (int skippedCol = col + 1; skippedCol < runEndCol; skippedCol++) frameSkipText_[static_cast<size_t>(row * cols + skippedCol)] = 1;
+                        for (const auto& shapedGlyph : runGlyphs) {
+                            CoderFont::Glyph glyph;
+                            bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
+                            if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
+                            auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(shapedGlyph.cellX) * font_.glyphWidth());
+                            float glyphX0 = glyphX[0];
+                            float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
+                            float glyphX1 = glyphX[1];
+                            float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
+                            float colorGlyph = glyph.color ? 1.0f : 0.0f;
+                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (isComplexShapingCell(cell)) {
+                int runEndCol = col + 1;
+                while (runEndCol < cols) {
+                    const auto& runCell = renderCells[row * cols + runEndCol];
+                    if (!isComplexRunCell(runCell)) break;
+                    if (runCell.flags != cell.flags || runCell.foreground != cell.foreground) break;
+                    if (row == cursor.row && cursor.col >= col && cursor.col <= runEndCol) break;
+                    runEndCol++;
+                }
+                while (runEndCol > col && renderCells[row * cols + runEndCol - 1].codepointCount == 1 && renderCells[row * cols + runEndCol - 1].codepoints[0] == ' ') runEndCol--;
+                if (runEndCol - col > 0) {
+                    std::array<uint32_t, 128> runCodepoints{};
+                    std::array<uint32_t, 128> runClusters{};
+                    uint32_t runCodepointCount = 0;
+                    for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) {
+                        const auto& runCell = renderCells[row * cols + runCol];
+                        for (uint32_t codepointIndex = 0; codepointIndex < runCell.codepointCount && runCodepointCount < runCodepoints.size(); codepointIndex++) {
+                            runCodepoints[runCodepointCount] = runCell.codepoints[codepointIndex];
+                            runClusters[runCodepointCount] = static_cast<uint32_t>(runCol - col);
+                            runCodepointCount++;
+                        }
+                    }
+                    auto runGlyphs = font_.shape(runCodepoints.data(), runClusters.data(), runCodepointCount, cell.flags, (runEndCol - col) * font_.glyphWidth());
                     bool runRenderable = !runGlyphs.empty();
                     for (const auto& shapedGlyph : runGlyphs) {
                         CoderFont::Glyph glyph;

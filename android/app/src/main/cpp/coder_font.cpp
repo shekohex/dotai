@@ -473,18 +473,23 @@ bool CoderFont::shouldSynthesizeBold(uint32_t flags) const {
 }
 
 std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance) {
+    return shape(codepoints, nullptr, codepointCount, flags, targetAdvance);
+}
+
+std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t flags, int targetAdvance) {
     if (codepointCount < 2) return {};
     ShapeCacheKey key;
     key.flags = flags;
     key.targetAdvance = targetAdvance;
     key.codepoints.assign(codepoints, codepoints + codepointCount);
+    if (clusters) key.clusters.assign(clusters, clusters + codepointCount);
     auto existing = shapeCache_.find(key);
     if (existing != shapeCache_.end()) {
         shapeCacheOrder_.splice(shapeCacheOrder_.begin(), shapeCacheOrder_, existing->second.second);
         existing->second.second = shapeCacheOrder_.begin();
         return existing->second.first;
     }
-    auto shaped = shapeUncached(codepoints, codepointCount, flags, targetAdvance);
+    auto shaped = shapeUncached(codepoints, clusters, codepointCount, flags, targetAdvance);
     shapeCacheOrder_.push_front(std::move(key));
     shapeCache_[shapeCacheOrder_.front()] = {shaped, shapeCacheOrder_.begin()};
     while (shapeCache_.size() > 256) {
@@ -494,7 +499,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
     return shaped;
 }
 
-std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance) {
+std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t flags, int targetAdvance) {
     if (codepointCount < 2) return {};
     bool asciiOnly = true;
     bool emojiCluster = false;
@@ -507,7 +512,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
     uint32_t index = styleIndex(flags);
     if (!loadPrimaryFace(index)) index = 0;
     if (!primaryFaces_[index].harfbuzzFont) return {};
-    auto shaped = shapeWithFont(primaryFaces_[index].harfbuzzFont, codepoints, codepointCount, UINT32_MAX, index, targetAdvance);
+    auto shaped = shapeWithFont(primaryFaces_[index].harfbuzzFont, codepoints, clusters, codepointCount, UINT32_MAX, index, targetAdvance);
     bool primaryRenderable = !shaped.empty();
     for (const auto& shapedGlyph : shaped) {
         Glyph glyph;
@@ -520,7 +525,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
     if (!loadFallbackFaces()) return shaped;
     if (emojiCluster) {
         for (uint32_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
-            auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, codepointCount, fallbackIndex, UINT32_MAX, targetAdvance);
+            auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, clusters, codepointCount, fallbackIndex, UINT32_MAX, targetAdvance);
             bool fallbackRenderable = !fallbackShaped.empty();
             for (const auto& shapedGlyph : fallbackShaped) {
                 Glyph glyph;
@@ -556,10 +561,19 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
             if (nextFont.harfbuzzFont != runFont.harfbuzzFont || nextFont.fallbackIndex != runFont.fallbackIndex || nextFont.primaryIndex != runFont.primaryIndex) break;
             runEnd++;
         }
-        int runTargetAdvance = targetAdvance > 0 ? std::max(1, static_cast<int>(std::round(static_cast<float>(targetAdvance) * static_cast<float>(runEnd - runStart) / static_cast<float>(codepointCount)))) : 0;
-        auto runShaped = shapeWithFont(runFont.harfbuzzFont, codepoints + runStart, runEnd - runStart, runFont.fallbackIndex, runFont.primaryIndex, runTargetAdvance);
+        int runTargetAdvance = 0;
+        if (targetAdvance > 0) {
+            if (clusters) {
+                uint32_t totalCells = clusters[codepointCount - 1] - clusters[0] + 1;
+                uint32_t runCells = clusters[runEnd - 1] - clusters[runStart] + 1;
+                runTargetAdvance = std::max(1, static_cast<int>(std::round(static_cast<float>(targetAdvance) * static_cast<float>(runCells) / static_cast<float>(std::max(1u, totalCells)))));
+            } else {
+                runTargetAdvance = std::max(1, static_cast<int>(std::round(static_cast<float>(targetAdvance) * static_cast<float>(runEnd - runStart) / static_cast<float>(codepointCount))));
+            }
+        }
+        auto runShaped = shapeWithFont(runFont.harfbuzzFont, codepoints + runStart, clusters ? clusters + runStart : nullptr, runEnd - runStart, runFont.fallbackIndex, runFont.primaryIndex, runTargetAdvance);
         if (runShaped.empty()) return shaped;
-        for (auto& shapedGlyph : runShaped) {
+        if (!clusters) for (auto& shapedGlyph : runShaped) {
             shapedGlyph.cellX += runStart;
             shapedGlyph.cluster += runStart;
         }
@@ -577,7 +591,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
     }
     if (mixedRenderable) return mixedShaped;
     for (uint32_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
-        auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, codepointCount, fallbackIndex, UINT32_MAX, targetAdvance);
+        auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, clusters, codepointCount, fallbackIndex, UINT32_MAX, targetAdvance);
         bool fallbackRenderable = !fallbackShaped.empty();
         for (const auto& shapedGlyph : fallbackShaped) {
             Glyph glyph;
@@ -595,6 +609,7 @@ size_t CoderFont::ShapeCacheKeyHash::operator()(const ShapeCacheKey& key) const 
     size_t hash = std::hash<uint32_t>{}(key.flags);
     hash = (hash * 16777619u) ^ std::hash<int>{}(key.targetAdvance);
     for (uint32_t codepoint : key.codepoints) hash = (hash * 16777619u) ^ std::hash<uint32_t>{}(codepoint);
+    for (uint32_t cluster : key.clusters) hash = (hash * 16777619u) ^ std::hash<uint32_t>{}(cluster);
     return hash;
 }
 
@@ -603,13 +618,14 @@ void CoderFont::clearShapeCache() {
     shapeCacheOrder_.clear();
 }
 
-std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex, int targetAdvance) {
+std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex, int targetAdvance) {
     std::vector<ShapedGlyph> shaped;
     if (!font || codepointCount == 0) return shaped;
     hb_buffer_t* buffer = hb_buffer_create();
     hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_CHARACTERS);
-    hb_buffer_add_codepoints(buffer, codepoints, codepointCount, 0, codepointCount);
+    for (uint32_t index = 0; index < codepointCount; index++) hb_buffer_add(buffer, codepoints[index], index);
     hb_buffer_guess_segment_properties(buffer);
+    hb_buffer_set_direction(buffer, HB_DIRECTION_LTR);
     std::array<hb_feature_t, 6> features{{
         {HB_TAG('l', 'i', 'g', 'a'), ligaturesEnabled_ ? 1u : 0u, 0, UINT_MAX},
         {HB_TAG('c', 'a', 'l', 't'), contextualAlternatesEnabled_ ? 1u : 0u, 0, UINT_MAX},
@@ -630,7 +646,8 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
     uint32_t cellOffsetCluster = UINT32_MAX;
     int cellOffsetX = 0;
     for (unsigned int index = 0; index < glyphCount; index++) {
-        uint32_t cluster = std::min<uint32_t>(infos[index].cluster, codepointCount - 1);
+        uint32_t codepointIndex = std::min<uint32_t>(infos[index].cluster, codepointCount - 1);
+        uint32_t cluster = clusters ? clusters[codepointIndex] : codepointIndex;
         if (cellOffsetCluster != cluster) {
             bool afterGlyphFromCurrentOrNextCluster = cluster <= runOffsetCluster;
             if (!afterGlyphFromCurrentOrNextCluster) {
@@ -641,7 +658,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
         shaped.push_back(ShapedGlyph{
             infos[index].codepoint,
             cluster,
-            infos[index].cluster,
+            codepointIndex,
             hbPositionToPixel(positions[index].x_advance),
             runOffsetX - cellOffsetX + hbPositionToPixel(positions[index].x_offset),
             runOffsetY + hbPositionToPixel(positions[index].y_offset),

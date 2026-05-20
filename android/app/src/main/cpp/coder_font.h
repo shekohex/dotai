@@ -56,6 +56,7 @@ public:
     bool primaryGlyphByIndex(uint32_t glyphIndex, uint32_t primaryIndex, Glyph& outGlyph);
     bool fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex, Glyph& outGlyph);
     std::vector<ShapedGlyph> shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance);
+    std::vector<ShapedGlyph> shape(const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t flags, int targetAdvance);
     bool shouldSynthesizeBold(uint32_t flags) const;
     GLuint texture() const { return texture_; }
     int glyphWidth() const { return glyphWidth_; }
@@ -82,16 +83,17 @@ private:
     bool configureFaceSize(FT_Face face);
     void updateMetricsFromFace(FT_Face face);
     uint32_t styleIndex(uint32_t flags) const;
-    std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex, int targetAdvance);
+    std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex, int targetAdvance);
     bool allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph);
     const uint8_t* bitmapBuffer(const FT_Bitmap& bitmap, std::vector<uint8_t>& convertedBuffer, bool& color);
     void releaseFace();
 
     struct ShapeCacheKey {
         std::vector<uint32_t> codepoints;
+        std::vector<uint32_t> clusters;
         uint32_t flags = 0;
         int targetAdvance = 0;
-        bool operator==(const ShapeCacheKey& other) const { return flags == other.flags && targetAdvance == other.targetAdvance && codepoints == other.codepoints; }
+        bool operator==(const ShapeCacheKey& other) const { return flags == other.flags && targetAdvance == other.targetAdvance && codepoints == other.codepoints && clusters == other.clusters; }
     };
 
     struct ShapeCacheKeyHash {
@@ -99,7 +101,7 @@ private:
     };
 
     void clearShapeCache();
-    std::vector<ShapedGlyph> shapeUncached(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance);
+    std::vector<ShapedGlyph> shapeUncached(const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t flags, int targetAdvance);
 
     GLuint texture_ = 0;
     int glyphWidth_ = 18;

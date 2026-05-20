@@ -398,7 +398,7 @@ Required proof schema:
   Validation plan: Accessibility/UIAutomator smoke; screenshot; document TalkBack manual check if automation cannot assert speech.
 
 - [ ] `INVESTIGATE-NETWORK-KTOR-CIO-HANDOVER`
-  State: Open
+  State: Blocked
   Type: Investigation, network reliability
   Summary: API and terminal WebSockets use Ktor CIO; OkHttp may be better for mobile handover, but cause is unproven.
   Impact: Premature engine switch could add churn without improving reconnect reliability.
@@ -406,6 +406,12 @@ Required proof schema:
   Goal: Decide from evidence whether to keep CIO or switch to OkHttp.
   Deliverables: Handover test notes or blocker; decision record; code change only if evidence supports it.
   Validation plan: Wi-Fi/cellular or emulator network transition test if available; otherwise mark blocked with exact environment need.
+  Resolution: Blocked, no code change. Engine switch would be speculative without a reproducible handover failure or controlled network transition evidence.
+  Validation: Blocker: current environment exposes `emulator-5554` only and no Wi-Fi/cellular handover control, physical Android device, cellular data plan, or backend test harness for controlled network transitions. Closest local evidence confirms CIO is still wired only through `CoderApi` and terminal sessions close owned clients.
+  UI proof: Blocker: no meaningful UI proof can validate mobile network handover without physical/network transition setup.
+  Review: No findings.
+  Commit: HEAD (this commit).
+  User action needed: Provide physical Android device or test setup that can transition Wi-Fi to cellular while a terminal WebSocket is active, plus backend/session credentials for reproducible reconnect testing.
 
 ## Not Filed As Issues
 

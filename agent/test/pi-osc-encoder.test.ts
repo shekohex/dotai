@@ -111,6 +111,15 @@ test("non-JSON payload values are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
+test("nested JSON payload values are accepted", () => {
+  expect(
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: { tool: { name: "bash", args: ["echo", "ok"], result: null } },
+    }),
+  ).toContain("]6767;pi;1;agent.tool;");
+});
+
 test("oversized frames are rejected", () => {
   expect(() =>
     createPiOscSequence("agent.tool", {

@@ -4,7 +4,7 @@ import { Value } from "typebox/value";
 const ESC = "\u001B";
 const ST = `${ESC}\\`;
 const BEL = "\u0007";
-const PI_OSC_MAX_BYTES = 8191;
+const PI_OSC_MAX_BYTES = 8192;
 
 export const PiOscV1EventSchema = Type.Union([
   Type.Literal("hello"),
@@ -19,21 +19,12 @@ export const PiOscV1EventSchema = Type.Union([
 
 export type PiOscV1Event = Static<typeof PiOscV1EventSchema>;
 
-export const PiOscJsonValueSchema = Type.Union([
-  Type.Null(),
-  Type.Boolean(),
-  Type.Number(),
-  Type.String(),
-  Type.Array(Type.This()),
-  Type.Record(Type.String(), Type.This()),
-]);
-
 export const PiOscEnvelopeSchema = Type.Object(
   {
     id: Type.String({ minLength: 1, maxLength: 128 }),
     ts: Type.Number(),
     source: Type.Literal("agent"),
-    data: Type.Record(Type.String(), PiOscJsonValueSchema),
+    data: Type.Record(Type.String(), Type.Unknown()),
     sessionId: Type.Optional(Type.String({ maxLength: 256 })),
     cwd: Type.Optional(Type.String({ maxLength: 1024 })),
     seq: Type.Optional(Type.Number()),
@@ -55,6 +46,35 @@ export class PiOscEncodingError extends Error {
 export const isPiOscV1Event = (eventName: string): eventName is PiOscV1Event =>
   Value.Check(PiOscV1EventSchema, eventName);
 
+const isPiOscJsonValue = (value: unknown): boolean => {
+  if (value === null) {
+    return true;
+  }
+
+  if (typeof value === "string" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.every((item) => isPiOscJsonValue(item));
+  }
+
+  if (typeof value === "object") {
+    const prototype: unknown = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return false;
+    }
+
+    return Object.values(value).every((item) => isPiOscJsonValue(item));
+  }
+
+  return false;
+};
+
 export const createPiOscSequence = (
   eventName: string,
   envelope: unknown,
@@ -66,6 +86,10 @@ export const createPiOscSequence = (
 
   if (!Value.Check(PiOscEnvelopeSchema, envelope)) {
     throw new PiOscEncodingError("Invalid Pi OSC envelope");
+  }
+
+  if (!isPiOscJsonValue(envelope.data)) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
   }
 
   const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");

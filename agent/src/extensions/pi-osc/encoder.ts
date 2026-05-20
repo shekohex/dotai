@@ -74,9 +74,17 @@ const normalizePiOscJsonObject = (
   seen.add(value);
   try {
     const normalized: PiOscJsonObject = {};
-    for (const [key, item] of Object.entries(value)) {
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (
+        descriptor.enumerable !== true ||
+        descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+      }
+
       Object.defineProperty(normalized, key, {
-        value: normalizePiOscJsonValue(item, seen),
+        value: normalizePiOscJsonValue(descriptor.value, seen),
         enumerable: true,
         configurable: true,
         writable: true,
@@ -115,6 +123,18 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
       throw new PiOscEncodingError("Invalid Pi OSC envelope data");
     }
 
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    for (const key of Object.keys(value)) {
+      const descriptor = descriptors[key];
+      if (
+        descriptor === undefined ||
+        descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+      }
+    }
+
     for (let index = 0; index < value.length; index += 1) {
       if (!(index in value)) {
         throw new PiOscEncodingError("Invalid Pi OSC envelope data");
@@ -140,6 +160,14 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
   throw new PiOscEncodingError("Invalid Pi OSC envelope data");
 };
 
+const isPiOscEnvelope = (value: unknown): value is PiOscEnvelope => {
+  try {
+    return Value.Check(PiOscEnvelopeSchema, value);
+  } catch {
+    return false;
+  }
+};
+
 export const createPiOscSequence = (
   eventName: string,
   envelope: unknown,
@@ -149,7 +177,7 @@ export const createPiOscSequence = (
     throw new PiOscEncodingError(`Unsupported Pi OSC event: ${eventName}`);
   }
 
-  if (!Value.Check(PiOscEnvelopeSchema, envelope)) {
+  if (!isPiOscEnvelope(envelope)) {
     throw new PiOscEncodingError("Invalid Pi OSC envelope");
   }
 

@@ -146,6 +146,34 @@ test("toJSON payload values are rejected", () => {
   );
 });
 
+test("accessor payload values are rejected", () => {
+  const data: Record<string, unknown> = {};
+  Object.defineProperty(data, "bad", {
+    enumerable: true,
+    get: () => {
+      throw new Error("boom");
+    },
+  });
+
+  expect(() => createPiOscSequence("agent.alert", { ...fixtureEnvelope, data })).toThrow(
+    PiOscEncodingError,
+  );
+});
+
+test("array accessor payload values are rejected", () => {
+  const items = ["safe"];
+  Object.defineProperty(items, "0", {
+    enumerable: true,
+    get: () => {
+      throw new Error("boom");
+    },
+  });
+
+  expect(() =>
+    createPiOscSequence("agent.progress", { ...fixtureEnvelope, data: { items } }),
+  ).toThrow(PiOscEncodingError);
+});
+
 test("array toJSON payload values are rejected", () => {
   const items = ["safe"];
   Object.defineProperty(items, "toJSON", { value: () => ["bad"] });

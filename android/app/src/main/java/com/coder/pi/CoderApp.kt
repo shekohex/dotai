@@ -1226,6 +1226,8 @@ internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}[4:4mDotted underline${esc}[0m   ${esc}[4:5mDashed underline${esc}[0m\r\n")
         append("${esc}[58:2::255:120:80;4mColored underline${esc}[0m\r\n\r\n")
         append("CLI flags: --foo --help -vv --features=ligatures\r\n")
+        append("Ligatures: -> => != == === <= >= && || ::\r\n")
+        append("Styled: \u001b[31m-\u001b[32m>\u001b[0m \u001b[34m=\u001b[35m>\u001b[0m cursor sample --foo\r\n")
         append("Ligatures: -> => != <= >= === !== && || :: ...\r\n\r\n")
         append("Nerd: 󰊢  λ 󰢱 󰊠 󰘳\r\n")
         append("Powerline:      Box: ┌─┬─┐ ╔═╦═╗ █ ░ ▒ ▓\r\n")

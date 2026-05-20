@@ -32,6 +32,8 @@ public:
 
     struct ShapedGlyph {
         uint32_t glyphId = 0;
+        uint32_t cellX = 0;
+        uint32_t cluster = 0;
         int xAdvance = 0;
         int xOffset = 0;
         int yOffset = 0;

@@ -667,22 +667,17 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     }
                     if (runRenderable) {
                         for (int skippedCol = col + 1; skippedCol < runEndCol; skippedCol++) frameSkipText_[static_cast<size_t>(row * cols + skippedCol)] = 1;
-                        float runCursorX = x0;
                         for (const auto& shapedGlyph : runGlyphs) {
                             CoderFont::Glyph glyph;
                             bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
-                            if (!loaded || glyph.width <= 0 || glyph.height <= 0) {
-                                runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
-                                continue;
-                            }
-                            auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((runCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                            if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
+                            auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(shapedGlyph.cellX) * font_.glyphWidth());
                             float glyphX0 = glyphX[0];
                             float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
                             addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
-                            runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
                     }
@@ -714,22 +709,17 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     }
                     if (runRenderable) {
                         for (int skippedCol = col + 1; skippedCol < runEndCol; skippedCol++) frameSkipText_[static_cast<size_t>(row * cols + skippedCol)] = 1;
-                        float runCursorX = x0;
                         for (const auto& shapedGlyph : runGlyphs) {
                             CoderFont::Glyph glyph;
                             bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
-                            if (!loaded || glyph.width <= 0 || glyph.height <= 0) {
-                                runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
-                                continue;
-                            }
-                            auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((runCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                            if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
+                            auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(shapedGlyph.cellX) * font_.glyphWidth());
                             float glyphX0 = glyphX[0];
                             float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
                             addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
-                            runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
                     }
@@ -771,20 +761,18 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     }
                 }
                 if (clusterRenderable) {
-                    float clusterCursorX = x0;
                     for (int skippedCol = col + 1; skippedCol <= clusterEndCol; skippedCol++) frameSkipText_[static_cast<size_t>(row * cols + skippedCol)] = 1;
                     for (const auto& shapedGlyph : clusterGlyphs) {
                         CoderFont::Glyph glyph;
                         bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                         if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
-                        auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((clusterCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                        auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(shapedGlyph.cellX) * font_.glyphWidth());
                         float glyphX0 = glyphX[0];
                         float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
                         float glyphX1 = glyphX[1];
                         float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                         float colorGlyph = glyph.color ? 1.0f : 0.0f;
                         addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
-                        clusterCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                     }
                     if (clusterCellSpan > collapsedCellSpan) visualColumnShift += clusterCellSpan - collapsedCellSpan;
                     continue;
@@ -828,7 +816,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 CoderFont::Glyph glyph;
                 bool loaded = shapedGlyph.fallbackIndex != UINT32_MAX ? font_.fallbackGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.fallbackIndex, glyph) : font_.primaryGlyphByIndex(shapedGlyph.glyphId, shapedGlyph.primaryIndex, glyph);
                 if (!loaded || glyph.width <= 0 || glyph.height <= 0) continue;
-                auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(std::round((glyphCursorX - x0) * static_cast<float>(width_) * 0.5f)));
+                auto glyphX = glyphXBounds(glyph, glyph.bearingLeft + shapedGlyph.xOffset + static_cast<int>(shapedGlyph.cellX) * font_.glyphWidth());
                 float glyphX0 = glyphX[0];
                 float glyphY1 = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - glyph.bearingTop - shapedGlyph.yOffset) / static_cast<float>(height_));
                 float glyphX1 = glyphX[1];
@@ -839,7 +827,6 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     float boldOffset = 2.0f / static_cast<float>(width_);
                     addGlyphQuad(frameVertices_, glyphX0 + boldOffset, glyphY0, glyphX1 + boldOffset, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                 }
-                glyphCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
             }
             }
             rowGlyphVertices_[static_cast<size_t>(row)].assign(frameVertices_.begin() + static_cast<std::ptrdiff_t>(rowGlyphStart), frameVertices_.end());

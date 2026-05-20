@@ -559,6 +559,10 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
         int runTargetAdvance = targetAdvance > 0 ? std::max(1, static_cast<int>(std::round(static_cast<float>(targetAdvance) * static_cast<float>(runEnd - runStart) / static_cast<float>(codepointCount)))) : 0;
         auto runShaped = shapeWithFont(runFont.harfbuzzFont, codepoints + runStart, runEnd - runStart, runFont.fallbackIndex, runFont.primaryIndex, runTargetAdvance);
         if (runShaped.empty()) return shaped;
+        for (auto& shapedGlyph : runShaped) {
+            shapedGlyph.cellX += runStart;
+            shapedGlyph.cluster += runStart;
+        }
         mixedShaped.insert(mixedShaped.end(), runShaped.begin(), runShaped.end());
         runStart = runEnd;
     }
@@ -603,6 +607,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
     std::vector<ShapedGlyph> shaped;
     if (!font || codepointCount == 0) return shaped;
     hb_buffer_t* buffer = hb_buffer_create();
+    hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_CHARACTERS);
     hb_buffer_add_codepoints(buffer, codepoints, codepointCount, 0, codepointCount);
     hb_buffer_guess_segment_properties(buffer);
     std::array<hb_feature_t, 6> features{{
@@ -618,15 +623,40 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
     hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(buffer, &glyphCount);
     hb_glyph_position_t* positions = hb_buffer_get_glyph_positions(buffer, &glyphCount);
     shaped.reserve(glyphCount);
+    auto hbPositionToPixel = [](hb_position_t value) { return static_cast<int>((value + 32) >> 6); };
+    int runOffsetX = 0;
+    int runOffsetY = 0;
+    uint32_t runOffsetCluster = 0;
+    uint32_t cellOffsetCluster = UINT32_MAX;
+    int cellOffsetX = 0;
     for (unsigned int index = 0; index < glyphCount; index++) {
+        uint32_t cluster = std::min<uint32_t>(infos[index].cluster, codepointCount - 1);
+        if (cellOffsetCluster != cluster) {
+            bool afterGlyphFromCurrentOrNextCluster = cluster <= runOffsetCluster;
+            bool firstCodepointInCluster = true;
+            for (uint32_t codepointIndex = cluster; codepointIndex > 0; codepointIndex--) {
+                if (codepointIndex - 1 != cluster) break;
+                firstCodepointInCluster = false;
+                break;
+            }
+            if (firstCodepointInCluster && !afterGlyphFromCurrentOrNextCluster) {
+                cellOffsetCluster = cluster;
+                cellOffsetX = runOffsetX;
+            }
+        }
         shaped.push_back(ShapedGlyph{
             infos[index].codepoint,
-            static_cast<int>(positions[index].x_advance >> 6),
-            static_cast<int>(positions[index].x_offset >> 6),
-            static_cast<int>(positions[index].y_offset >> 6),
+            cluster,
+            infos[index].cluster,
+            hbPositionToPixel(positions[index].x_advance),
+            runOffsetX - cellOffsetX + hbPositionToPixel(positions[index].x_offset),
+            runOffsetY + hbPositionToPixel(positions[index].y_offset),
             fallbackIndex,
             primaryIndex,
         });
+        runOffsetX += hbPositionToPixel(positions[index].x_advance);
+        runOffsetY += hbPositionToPixel(positions[index].y_advance);
+        runOffsetCluster = std::max(runOffsetCluster, cluster);
     }
     int totalAdvance = 0;
     for (const auto& glyph : shaped) totalAdvance += glyph.xAdvance;

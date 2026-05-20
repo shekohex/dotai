@@ -633,13 +633,7 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, co
         uint32_t cluster = std::min<uint32_t>(infos[index].cluster, codepointCount - 1);
         if (cellOffsetCluster != cluster) {
             bool afterGlyphFromCurrentOrNextCluster = cluster <= runOffsetCluster;
-            bool firstCodepointInCluster = true;
-            for (uint32_t codepointIndex = cluster; codepointIndex > 0; codepointIndex--) {
-                if (codepointIndex - 1 != cluster) break;
-                firstCodepointInCluster = false;
-                break;
-            }
-            if (firstCodepointInCluster && !afterGlyphFromCurrentOrNextCluster) {
+            if (!afterGlyphFromCurrentOrNextCluster) {
                 cellOffsetCluster = cluster;
                 cellOffsetX = runOffsetX;
             }

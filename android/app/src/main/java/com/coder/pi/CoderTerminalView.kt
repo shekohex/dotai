@@ -1196,7 +1196,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val metadata = TerminalOscMetadata(native.nativeTitle(handle), native.nativePwd(handle), native.nativeBellCount(handle))
         if (metadata.bellCount > lastBellCount) {
             val now = System.currentTimeMillis()
-            if (now - lastBellFeedbackMillis >= 1000L) {
+            if (terminalHapticsEnabled() && now - lastBellFeedbackMillis >= 1000L) {
                 performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
                 lastBellFeedbackMillis = now
             }
@@ -1311,6 +1311,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun vibrateProgressPattern(pattern: String) {
+        if (!terminalHapticsEnabled()) return
         val vibrator = if (Build.VERSION.SDK_INT >= 31) {
             context.getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
@@ -1338,6 +1339,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         "typewriter" -> intArrayOf(0, 120, 0, 120, 0, 120, 0, 185)
         else -> intArrayOf(0, 80, 0, 135, 0, 190)
     }
+
+    private fun terminalHapticsEnabled(): Boolean = context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)
 
     private fun postNativeProgressNotification(title: String, body: String, state: Int, progress: Int, indeterminate: Boolean): Boolean {
         ensureOscProgressNotificationChannel()

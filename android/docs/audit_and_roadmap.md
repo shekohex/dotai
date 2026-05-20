@@ -321,8 +321,8 @@ Required proof schema:
   Deliverables: Either safe `GestureDetectorCompat` adoption for tap/fling or documented non-actionable reason; UIAutomator gesture coverage.
   Validation plan: UIAutomator tests for tap/double-tap/swipe/scroll/copy/mouse where feasible; screenshots.
 
-- [ ] `UX-HAPTICS-INCONSISTENT-POLICY`
-  State: Open
+- [x] `UX-HAPTICS-INCONSISTENT-POLICY`
+  State: Fixed
   Type: UX issue, haptics
   Summary: Bell haptics and OSC progress haptics use different policy paths.
   Impact: Users cannot predict/control all terminal haptic feedback consistently.
@@ -330,6 +330,11 @@ Required proof schema:
   Goal: One coherent settings/policy model for terminal haptics.
   Deliverables: Consistent enable/disable behavior; bell/progress pattern handling; settings/UI proof if changed.
   Validation plan: Unit/UI test where feasible; UIAutomator settings screenshot; manual proof fallback for vibration if emulator cannot vibrate.
+  Resolution: Added shared terminal haptics policy lookup using the existing app `haptic_feedback` preference. Bell haptics and OSC progress vibration now both skip feedback when global haptics are disabled; progress pattern selection remains unchanged when enabled.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Emulator vibration cannot prove physical haptic output, but code path now gates both bell and progress on same preference.
+  UI proof: Settings smoke screenshot `docs/reference/ux-haptics-inconsistent-policy-after.png` captured with `android screen capture`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `UX-IME-PREEDIT-NOT-RENDERED`
   State: Open

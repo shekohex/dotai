@@ -6,6 +6,8 @@ Remote PTY bytes flow through:
 
 `CoderTerminalSession` → `CoderTerminalSocket.onBytes` → `CoderTerminalView.feedRemoteOutput` → `CoderNative.nativeFeed` → `CoderTerminal::feed` → `ghostty_terminal_vt_write`.
 
+Pi agent custom OSC V1 contract is shared with the agent repo in `../agent/docs/pi-agent-osc-protocol.md`.
+
 Local terminal input flows through `CoderTerminalView.writeInput`. When a remote session is attached it writes bytes to the WebSocket. Without a remote session it uses `CoderNative.nativeWrite`, then Ghostty key/PTY plumbing.
 
 Native terminal state lives in `app/src/main/cpp/coder_terminal.cpp`. JNI surface is `app/src/main/cpp/coder_jni.cpp` and `app/src/main/java/com/coder/pi/CoderNative.kt`. Android UI and gestures live in `app/src/main/java/com/coder/pi/CoderTerminalView.kt` plus Compose sheet UI in `CoderApp.kt`.

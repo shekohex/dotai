@@ -1,0 +1,484 @@
+# Pi Agent OSC Implementation Checklist
+
+## Protocol Summary
+
+Custom OSC format:
+
+```text
+ESC ] 6767 ; pi ; 1 ; <event-name> ; <base64url-json> ST
+```
+
+Example:
+
+```text
+ESC ] 6767;pi;1;agent.run;eyJzdGF0ZSI6InJ1bm5pbmcifQ ESC \
+```
+
+Protocol rules:
+
+- `6767` is the private OSC command number for Pi agent events.
+- `pi` is the namespace guard.
+- `1` is the protocol version.
+- `<event-name>` is a small routing key.
+- `<base64url-json>` is a bounded UTF-8 JSON envelope encoded with base64url.
+- Emit unconditionally from the controlled agent extension.
+- Prefer `ST` terminator and accept `BEL` on Android.
+- Keep existing OSC 9, OSC 52, and OSC 777 behavior unchanged.
+- Avoid `message_update` and noisy `tool_execution_update` unless throttled.
+
+Base envelope:
+
+```json
+{
+  "id": "uuid-or-short-id",
+  "ts": 1779200000000,
+  "source": "agent",
+  "sessionId": "...",
+  "cwd": "...",
+  "seq": 42,
+  "data": {}
+}
+```
+
+V1 event names:
+
+- `hello`
+- `agent.session`
+- `agent.run`
+- `agent.turn`
+- `agent.progress`
+- `agent.tool`
+- `agent.alert`
+- `agent.compaction`
+
+## PIOSC-1: Specify Protocol Contract
+
+Status: building
+
+Research:
+
+- Existing agent OSC helpers are in `../agent/src/extensions/terminal-notify.ts` and `../agent/src/extensions/terminal-tmux-ui.ts`; they already define `ESC`, `BEL`, `ST`, OSC field sanitization, stdout writes, tmux passthrough, pane/client TTY selection, and SSH-aware tmux behavior.
+- Android currently captures OSC metadata in `CoderTerminal::finishOscMetadata` and preserves OSC 7, OSC 52, OSC 9 notification/progress, and OSC 777 notify by pushing bounded tab-separated strings through `nativeConsumeOscEvents`.
+- `docs/android-osc.md` already documents the terminal feed path and current OSC behavior, so the shared protocol contract should live in `../agent/docs` and be linked from Android docs/checklist for both implementers.
+
+Plan:
+
+- Add shared Pi OSC V1 protocol document under `../agent/docs` with exact wire format, fixtures, envelope, event names, bounds, malformed behavior, terminators, tmux passthrough, and compatibility notes.
+- Cross-link the protocol from `docs/android-osc.md`.
+- Mark PIOSC-1 checklist items complete after validation, commit, and review.
+
+Checklist:
+
+- [x] Add a concise protocol spec shared by Android and agent implementers.
+- [x] Define envelope schema, event names, payload size limits, terminators, and unknown-event behavior.
+- [x] Document tmux passthrough behavior and reuse existing agent helpers where possible.
+
+User story:
+
+As a terminal app and agent maintainer, I want one written protocol contract so both implementations can evolve without string-shape drift.
+
+Implementation guide:
+
+- Create protocol module/docs in `../agent/src/extensions` or `../agent/docs` and cross-link from `docs/android-osc.md`.
+- Use command number `6767`, namespace `pi`, and version `1`.
+- Encode payloads as base64url JSON, not raw JSON.
+- Include examples for `ST` and `BEL` terminated sequences.
+- Define Android behavior for malformed payloads: discard, never render raw data, optionally log sanitized debug reason in debug builds only.
+
+Acceptance criteria:
+
+- Spec contains exact wire format and at least one valid fixture.
+- Spec lists all V1 events and required envelope fields.
+- Spec states existing OSC 9/52/777 behavior remains unchanged.
+
+Review:
+
+Commit:
+
+## PIOSC-2: Add Agent OSC Encoding Library
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Add TypeScript helpers to encode Pi OSC events.
+- [ ] Add payload sanitization, byte-size checks, and base64url encoding.
+- [ ] Add unit tests with exact byte fixtures.
+
+User story:
+
+As an agent extension author, I want a small safe encoder so event handlers do not hand-build escape sequences.
+
+Implementation guide:
+
+- Add reusable helpers under `../agent/src/extensions/pi-osc` or similar.
+- Export `createPiOscSequence(eventName, envelope)` and typed builders for V1 events.
+- Reject event names outside the V1 allowlist.
+- Cap encoded OSC length below Android parser cap, currently `8192` bytes.
+- Use `ST` by default.
+- Add tests in `../agent/test` for format, escaping independence, base64url alphabet, and max-size rejection.
+
+Acceptance criteria:
+
+- Tests prove `ESC ] 6767;pi;1;<event>;<payload> ESC \\` format exactly.
+- Semicolons/control characters inside JSON cannot break the OSC frame.
+- Oversized payloads are dropped or rejected deterministically.
+
+Review:
+
+Commit:
+
+## PIOSC-3: Implement Agent OSC Emitter Extension
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Add bundled extension that subscribes to selected Pi lifecycle events.
+- [ ] Emit `hello`, `agent.session`, `agent.run`, `agent.turn`, `agent.progress`, `agent.tool`, `agent.alert`, and `agent.compaction`.
+- [ ] Write to stdout or tmux passthrough using existing terminal helpers.
+
+User story:
+
+As an Android terminal user, I want the controlled Pi agent to emit machine-readable state so the terminal can show native progress and agent UI affordances.
+
+Implementation guide:
+
+- Follow existing extension patterns in `../agent/src/extensions/terminal-notify.ts` and `../agent/src/extensions/terminal-tmux-ui.ts`.
+- Register the extension in `../agent/src/extensions/definitions-group-c.ts`.
+- Emit unconditionally when extension is loaded.
+- Use existing `createTmuxPassthroughSequence`, tmux pane/client TTY handling, and SSH logic where applicable.
+- Emit `hello` on `session_start` with protocol version and extension version.
+- Emit `agent.run` on `agent_start` and `agent_end`.
+- Emit `agent.turn` on `turn_start` and `turn_end`.
+- Emit `agent.tool` on `tool_execution_start` and `tool_execution_end`; throttle `tool_execution_update` if included.
+- Emit `agent.compaction` from upstream `session_before_compact` and `session_compact`.
+- Emit `agent.alert` for terminal-worthy alerts only, such as provider `429` or retryable provider failures.
+
+Acceptance criteria:
+
+- Extension is bundled and active through normal `pi` startup.
+- Agent tests verify emitted OSC fixtures for each V1 event.
+- Existing terminal notification and tmux UI behavior keep working.
+
+Review:
+
+Commit:
+
+## PIOSC-4: Define V1 Agent Event Payload Schemas
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Add TypeBox schemas for all V1 payloads.
+- [ ] Keep payloads compact and privacy-safe.
+- [ ] Add schema tests for valid and invalid payloads.
+
+User story:
+
+As an implementer, I want typed event payloads so Android and agent code share stable semantics instead of ad hoc maps.
+
+Implementation guide:
+
+- Use `typebox` per agent project rules.
+- Put schemas beside the agent OSC encoder and export inferred types.
+- Payloads should include only metadata needed by Android UI.
+- Do not include full assistant/user messages in V1.
+- Do not include secrets, raw provider payloads, full command output, clipboard contents, or unbounded tool results.
+- Keep tool payload fields compact: `toolCallId`, `toolName`, `state`, `isError?`, `label?`, `summary?`.
+- Keep alert payload fields compact: `kind`, `title`, `body`, `severity`, `statusCode?`.
+
+Acceptance criteria:
+
+- Every emitted V1 event validates against its schema before encoding.
+- Tests cover invalid tool, alert, and progress payloads.
+- Payload schema docs match emitted events.
+
+Review:
+
+Commit:
+
+## PIOSC-5: Replace Android Tab-String OSC Bridge With Typed Events
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Introduce typed Android-side OSC event model.
+- [ ] Convert existing `clipboard`, `notification`, and `progress` internal events to typed values.
+- [ ] Preserve current OSC 52, OSC 9, and OSC 777 behavior.
+
+User story:
+
+As an Android maintainer, I want a typed OSC bridge so new Pi events do not deepen tab-separated string parsing debt.
+
+Implementation guide:
+
+- Replace or wrap `nativeConsumeOscEvents(handle): Array<String>` with a typed Kotlin conversion boundary.
+- Keep native event queue simple if needed, but parse into sealed Kotlin event types before UI handling.
+- Update `CoderTerminalView.handleOscEvent` and `TerminalNotificationRouter.handleOscEvent` to consume typed events.
+- Consider JSON from native only if it simplifies JNI safely; otherwise use a small structured delimiter internally and convert immediately.
+- Add unit tests for conversion of existing clipboard, notification, and progress events.
+
+Acceptance criteria:
+
+- Existing OSC 52 clipboard works after refactor.
+- Existing OSC 9 alert/progress works after refactor.
+- Existing OSC 777 notification works after refactor.
+- New typed model has a dedicated case for Pi OSC events.
+
+Review:
+
+Commit:
+
+## PIOSC-6: Parse Pi OSC 6767 In Native Terminal Layer
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Extend native side parser to recognize `OSC 6767;pi;1;...`.
+- [ ] Bound payload size and sanitize event names.
+- [ ] Surface parsed Pi OSC frames to Kotlin as typed events.
+
+User story:
+
+As the Android terminal app, I want to detect Pi-specific OSC frames while all other terminals safely ignore them.
+
+Implementation guide:
+
+- Extend `CoderTerminal::finishOscMetadata` in `app/src/main/cpp/coder_terminal.cpp`.
+- Recognize prefix `6767;pi;1;`.
+- Split only protocol fields, not payload content.
+- Accept known event names from V1 allowlist.
+- Cap raw payload length and event name length.
+- Do not decode base64url in C++ unless that is clearly simpler; Kotlin decoding is easier to test.
+- Add debug smoke bytes to `pi://debug/render` fixture for at least `hello`, `agent.run`, and `agent.tool`.
+
+Acceptance criteria:
+
+- Valid Pi OSC frames reach Kotlin.
+- Malformed namespace/version/event/payload frames are ignored.
+- Existing OSC parsing behavior is unchanged.
+
+Review:
+
+Commit:
+
+## PIOSC-7: Decode And Validate Pi OSC Payloads In Kotlin
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Add Kotlin decoder for Pi OSC base64url JSON envelope.
+- [ ] Validate event name, version, envelope required fields, and event payload shape.
+- [ ] Drop invalid events safely.
+
+User story:
+
+As an Android UI implementer, I want validated Pi events so UI state cannot be corrupted by malformed terminal output.
+
+Implementation guide:
+
+- Add parser module near `TerminalEngine` or `CoderTerminalView` depending on existing test layout.
+- Use Kotlin serialization or existing JSON tooling already available in the app.
+- Enforce max decoded payload bytes.
+- Require `id`, `ts`, `source`, and `data` in the envelope.
+- Require `source == "agent"` for V1.
+- Keep unknown V1 event fields ignored unless security-relevant.
+- Add unit tests with byte fixtures from agent encoder tests.
+
+Acceptance criteria:
+
+- Android tests decode valid fixtures from agent tests.
+- Invalid base64url, invalid JSON, unsupported version, and oversized payloads are dropped.
+- Parser never throws into UI feed path.
+
+Review:
+
+Commit:
+
+## PIOSC-8: Implement Android Agent State Store
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Add per-terminal in-memory state for latest Pi agent session/run/progress/tool events.
+- [ ] Keep state scoped to terminal session.
+- [ ] Clear state on terminal close or session replacement.
+
+User story:
+
+As an Android terminal user, I want native UI to reflect current agent state without polluting terminal text rendering.
+
+Implementation guide:
+
+- Store state in `CoderTerminalView` or a small `TerminalAgentState` class.
+- Track protocol handshake, running state, active turn, active tools, progress, alerts, and compaction state.
+- Bound active/completed tool history.
+- Do not persist raw event payloads unless explicitly needed.
+- Do not log prompts, commands, tool output, provider payloads, or secrets.
+
+Acceptance criteria:
+
+- State updates from `hello`, `agent.run`, `agent.turn`, `agent.progress`, `agent.tool`, `agent.alert`, and `agent.compaction`.
+- State is isolated between terminal sessions.
+- State cleanup occurs on view/session disposal.
+
+Review:
+
+Commit:
+
+## PIOSC-9: Add Android UI And Notification Handling For V1 Events
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Surface agent running/progress state in existing terminal UI.
+- [ ] Route `agent.alert` to existing notification behavior.
+- [ ] Keep UI compact and non-disruptive.
+
+User story:
+
+As a mobile user, I want Pi agent activity to appear as native status, progress, and alerts so I can follow long-running work without reading terminal escape output.
+
+Implementation guide:
+
+- Reuse existing progress notification behavior where possible.
+- Map `agent.progress` to current progress notification channel.
+- Map `agent.alert` to current terminal notification channel with workspace context.
+- Show active tools and compaction only if there is an existing UI affordance or a small non-invasive panel.
+- Avoid adding new settings unless required by product behavior.
+- Preserve user notification permission handling and rate limits.
+
+Acceptance criteria:
+
+- Agent running state is visible in the active terminal UI.
+- Agent progress updates notification progress.
+- Agent alert posts a native notification when terminal is backgrounded or appropriate.
+- Foreground behavior does not spam toasts or notifications.
+
+Review:
+
+Commit:
+
+## PIOSC-10: Add End-To-End Debug Smoke Flow
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Add debug fixture bytes for Pi OSC events.
+- [ ] Document manual validation path.
+- [ ] Capture or describe expected UI states.
+
+User story:
+
+As a developer, I want one debug screen to validate Pi OSC handling through the real terminal parser and UI path.
+
+Implementation guide:
+
+- Use existing `pi://debug/render` path and `debugRenderPlaygroundBytes` in `CoderApp.kt`.
+- Include at least `hello`, running `agent.run`, active `agent.progress`, `agent.tool` start/end, `agent.alert`, and clear progress.
+- Keep debug-only content out of production behavior.
+- Document validation steps in `docs/android-osc.md` or this checklist.
+
+Acceptance criteria:
+
+- Debug render emits Pi OSC frames through `CoderTerminalView.feedRemoteOutput`.
+- UI receives decoded typed events.
+- Existing OSC 9/52/777 debug smokes still work.
+
+Review:
+
+Commit:
+
+## PIOSC-11: Add Cross-Repo Validation
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Run agent checks for encoder and extension changes.
+- [ ] Run Android checks for parser and UI changes.
+- [ ] Add shared fixtures or documented fixture copy process.
+
+User story:
+
+As a maintainer, I want proof that agent-emitted bytes are accepted by Android before the feature is considered complete.
+
+Implementation guide:
+
+- Agent validation from `../agent`: `npm run typecheck`, `npm test`, `npm run lint`, `npm run format:check`.
+- Android validation from `.`: `./gradlew testDebugUnitTest`, `./gradlew assembleDebug`.
+- Prefer shared fixture strings in docs or generated test fixtures so both sides test the same protocol examples.
+- If Android device is available, run a debug smoke with `pi://debug/render` and capture screenshot/log evidence.
+
+Acceptance criteria:
+
+- Agent checks pass.
+- Android checks pass.
+- At least one fixture emitted by the agent encoder is decoded by Android tests.
+
+Review:
+
+Commit:
+
+## PIOSC-12: Final Integration Review And Cleanup
+
+Status: not-started
+
+Research:
+
+Checklist:
+
+- [ ] Review feature for privacy, bounds, malformed input, and UI spam risks.
+- [ ] Remove temporary debug-only code not intentionally kept.
+- [ ] Update implementation docs with final event semantics and validation evidence.
+
+User story:
+
+As a product owner, I want the Pi OSC feature shipped with clear behavior, bounded risk, and no temporary implementation leftovers.
+
+Implementation guide:
+
+- Audit all OSC-derived strings for bounds and control-character handling.
+- Audit notification behavior for rate limits and permission checks.
+- Confirm no event emits secrets, prompts, raw tool output, provider payloads, or clipboard contents.
+- Confirm existing OSC 9/52/777 compatibility remains intact.
+- Fill every ticket `Review` and `Commit` section before final handoff.
+
+Acceptance criteria:
+
+- All checklist tickets have completed checkbox state.
+- Every ticket has Review and Commit filled by implementer.
+- Final docs match actual implementation.
+- No known high-risk malformed-input or privacy gaps remain.
+
+Review:
+
+Commit:

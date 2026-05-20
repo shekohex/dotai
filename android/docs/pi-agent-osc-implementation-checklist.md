@@ -267,7 +267,7 @@ Commit:
 
 ## PIOSC-5: Replace Android Tab-String OSC Bridge With Typed Events
 
-Status: building
+Status: done
 
 Research:
 
@@ -309,7 +309,13 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-5 commit 4dac8ed. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Result: no findings. Typed conversion preserves existing tab split semantics for OSC 52 clipboard, OSC 9 alert/progress, and OSC 777 notification. Residual risk: no connected instrumentation/JNI regression run for actual OSC 9/52/777 byte sequences.
+- Validation: `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalOscEventTest` passed. `./gradlew compileDebugKotlin` passed. `./gradlew testDebugUnitTest` passed.
+
 Commit:
+
+- Implementation: `4dac8ed` (`refactor(pi-osc): type android osc events`)
 
 ## PIOSC-6: Parse Pi OSC 6767 In Native Terminal Layer
 

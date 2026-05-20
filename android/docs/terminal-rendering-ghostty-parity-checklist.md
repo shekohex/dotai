@@ -297,7 +297,7 @@ Commit:
 
 ## TRGP-5: Normalize Fallback Font Metrics And Selection
 
-Status: review
+Status: done
 
 Research:
 
@@ -319,12 +319,12 @@ Plan:
 
 Checklist:
 
-- [ ] Document exact fallback priority for primary style, primary regular, bundled fallback, system emoji, system symbols, CJK, Arabic, and Droid fallback.
-- [ ] Normalize fallback glyph baseline against terminal cell metrics.
-- [ ] Normalize fallback advance for narrow and wide cells.
-- [ ] Add fallback cache key coverage for face id, glyph id, style, presentation, and size.
-- [ ] Add debug logs gated to rare first-use fallback decisions.
-- [ ] Add fixtures for Nerd Font, CJK, Arabic fallback, symbols fallback, and missing glyph replacement.
+- [x] Document exact fallback priority for primary style, primary regular, bundled fallback, system emoji, system symbols, CJK, Arabic, and Droid fallback.
+- [x] Normalize fallback glyph baseline against terminal cell metrics.
+- [x] Normalize fallback advance for narrow and wide cells.
+- [x] Add fallback cache key coverage for face id, glyph id, style, presentation, and size.
+- [x] Add debug logs gated to rare first-use fallback decisions.
+- [x] Add fixtures for Nerd Font, CJK, Arabic fallback, symbols fallback, and missing glyph replacement.
 
 User story:
 
@@ -346,7 +346,16 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-5`.
+- Finding: initial fallback normalization inferred fallback status from atlas key ranges, which would also affect primary shaped glyph keys. Fixed before implementation commit by passing explicit `fallbackMetrics` into `allocateGlyph`.
+- Finding: direct fallback keys used `fallbackIndex + 8`, which could overlap primary-by-index keys as fallback face count grows. Fixed in `93dc80d` by moving direct fallback cache namespace to `fallbackIndex + 64` and gating fallback logs on explicit fallback state.
+- Residual risk: Android still uses static fallback path order rather than Ghostty font discovery and `default_fallback_adjustment`; documented policy matches current platform constraints. Size is covered by atlas/cache rebuild invalidation rather than encoded in every glyph key. No screenshot captured; debug renderer provides fallback rows and selectable fonts.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed before review and after review fix.
+
 Commit:
+
+- Implementation: `58b8c40a61036effdabacd4aebd6c2a8d6142575` (`fix(renderer): normalize fallback glyph metrics`).
+- Review fix: `93dc80d8d9d25c64ffaf205965637144148d0489` (`fix(renderer): isolate fallback glyph cache keys`).
 
 ## TRGP-6: Render Decorations As Metric-Aware Sprites
 

@@ -479,7 +479,7 @@ Commit:
 
 ## TRGP-8: Align Kotlin Cell Metrics With Native FreeType Metrics
 
-Status: building
+Status: done
 
 Research:
 
@@ -500,12 +500,12 @@ Plan:
 
 Checklist:
 
-- [ ] Add debug metric dump comparing Kotlin cell width/height/pixel size to FreeType ascender, descender, advance, and baseline.
-- [ ] Verify built-in fonts at 12, 14, 16, 18, 20, and 22sp.
-- [ ] Verify imported font metrics path.
-- [ ] Decide whether native should report authoritative cell metrics to Kotlin.
-- [ ] Ensure terminal resize columns/rows match rendered grid with no clipped final row/column.
-- [ ] Add regression samples for font-size changes, font family changes, and surface rotation/resizes.
+- [x] Add debug metric dump comparing Kotlin cell width/height/pixel size to FreeType ascender, descender, advance, and baseline.
+- [x] Verify built-in fonts at 12, 14, 16, 18, 20, and 22sp.
+- [x] Verify imported font metrics path.
+- [x] Decide whether native should report authoritative cell metrics to Kotlin.
+- [x] Ensure terminal resize columns/rows match rendered grid with no clipped final row/column.
+- [x] Add regression samples for font-size changes, font family changes, and surface rotation/resizes.
 
 User story:
 
@@ -527,7 +527,17 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-8`.
+- Finding: first validation failed because JNI metric logging used `ANDROID_LOG_INFO` without including `<android/log.h>`; fixed before implementation commit.
+- Finding: emulator debug smoke exposed an existing HarfBuzz buffer content-type assertion in shaped-run rendering. Fixed in `cc1e282` by setting `HB_BUFFER_CONTENT_TYPE_UNICODE` before `hb_buffer_add`.
+- Decision: native should not become sizing authority in this ticket. Kotlin remains resize authority while native logs bounded deltas (`ft_advance_M`, ascender, descender, height, baseline, row/column remainders) for proof and future thresholding. This avoids JNI callback/resizing churn and preserves current terminal protocol/IME/cursor behavior.
+- Residual risk: imported-font metrics are covered by shared `terminalMetricTypeface` path and debug font selector, not by an automated imported-font fixture. No screenshot captured, but emulator debug render smoke passed after crash fix.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed. `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface --no-daemon` first failed with HarfBuzz assertion, then passed after `cc1e282`.
+
 Commit:
+
+- Implementation: `75eb61f7300b4af1840a8e08c2c55c9cb2db0687` (`fix(renderer): log native cell metric divergence`).
+- Review fix: `cc1e282b3a40e5ed340c5cff424d77a601b22017` (`fix(renderer): set harfbuzz buffer content type`).
 
 ## TRGP-9: Render Selection, Links, Cursor, And Highlights With Full Theme Semantics
 

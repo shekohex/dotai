@@ -603,7 +603,7 @@ Commit:
 
 ## TRGP-10: Audit Color, Contrast, And Blending Pipeline
 
-Status: building
+Status: done
 
 Research:
 
@@ -626,12 +626,12 @@ Plan:
 
 Checklist:
 
-- [ ] Add debug rows for low-contrast foreground/background pairs.
-- [ ] Compare glyph weight and color output against Ghostty on sRGB themes.
-- [ ] Verify color glyph alpha path and monochrome glyph coverage path independently.
-- [ ] Decide if `minimum-contrast` belongs in Android settings or fixed renderer behavior.
-- [ ] Audit faint, blink, inverse, selection, cursor, and color emoji blending.
-- [ ] Document whether Display P3/background opacity are out of Android scope.
+- [x] Add debug rows for low-contrast foreground/background pairs.
+- [x] Compare glyph weight and color output against Ghostty on sRGB themes.
+- [x] Verify color glyph alpha path and monochrome glyph coverage path independently.
+- [x] Decide if `minimum-contrast` belongs in Android settings or fixed renderer behavior.
+- [x] Audit faint, blink, inverse, selection, cursor, and color emoji blending.
+- [x] Document whether Display P3/background opacity are out of Android scope.
 
 User story:
 
@@ -653,7 +653,16 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-10`.
+- Findings: no blocking regressions found. This ticket intentionally adds visual audit fixtures and policy documentation only; shader math remains unchanged because no before/after screenshot evidence justified changing text weight or gamma behavior.
+- Policy: Android remains theme-exact for low-contrast text. Ghostty `minimum-contrast`, Display P3 colorspace handling, and background opacity are documented deltas/out of scope for this renderer slice until a user-facing setting and visual proof exist. Color glyph and monochrome glyph paths are separately represented in debug rows.
+- Residual risk: no Ghostty side-by-side screenshot captured; validation proves debug render path and existing shader pipeline remain stable, not visual equivalence.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed. `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface --no-daemon` passed on `emulator-5554`.
+
 Commit:
+
+- Implementation: `09448a091bd340e6f080391fdd83e74b0d440b0c` (`docs(renderer): add color blending audit fixtures`).
+- Review fix: none.
 
 ## TRGP-11: Decide Scope For Terminal Image Layers
 

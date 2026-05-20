@@ -666,7 +666,7 @@ Commit:
 
 ## TRGP-11: Decide Scope For Terminal Image Layers
 
-Status: review
+Status: done
 
 Research:
 
@@ -688,11 +688,11 @@ Plan:
 
 Checklist:
 
-- [ ] Determine C API availability for Kitty graphics/image state.
-- [ ] Add manual probe for common Kitty image output and observe current Android behavior.
-- [ ] Decide product scope: support, ignore safely, or defer.
-- [ ] If supporting, create follow-up implementation tickets for image decoding, texture upload, layering, limits, and cleanup.
-- [ ] If deferring, document unsupported behavior and ensure terminal text remains intact.
+- [x] Determine C API availability for Kitty graphics/image state.
+- [x] Add manual probe for common Kitty image output and observe current Android behavior.
+- [x] Decide product scope: support, ignore safely, or defer.
+- [x] If supporting, create follow-up implementation tickets for image decoding, texture upload, layering, limits, and cleanup.
+- [x] If deferring, document unsupported behavior and ensure terminal text remains intact.
 
 User story:
 
@@ -712,7 +712,16 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-11`.
+- Findings: initial review found missing proof for the checklist's common Kitty image output probe. Fixed by adding a tiny Kitty direct-transfer probe in debug render followed by visible `after probe` text, so current safe-ignore behavior is covered by emulator debug smoke.
+- Decision: Android terminal image layers are explicitly deferred. Ghostty C API support exists, but Android does not enable image storage, install a PNG decoder, or have image texture/layer upload/render/cleanup code. Current safe behavior keeps image bytes out of renderer-owned GPU resources and preserves text grid rendering.
+- Residual risk: no full Kitty image renderer exists. Future support requires explicit scoped work for byte limits, decoding, texture cache, z-layer composition, dirty invalidation, and cleanup.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed. `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface --no-daemon` passed on `emulator-5554` after implementation and after review fix.
+
 Commit:
+
+- Implementation: `864f937d7826d824bbc5a88b9ec492315315f409` (`docs(renderer): defer terminal image layers`).
+- Review fix: `8ef44514280891cf8e6f07189625e6c7dccb4192` (`test(renderer): add kitty image safe-ignore probe`).
 
 ## Cross-Cutting Validation
 

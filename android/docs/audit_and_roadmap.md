@@ -556,15 +556,19 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `REVISIT-GESTURE-REGRESSION-COVERAGE`
-  State: Open
+- [x] `REVISIT-GESTURE-REGRESSION-COVERAGE`
+  State: Fixed
   Source: `review-input-protocol-ux`
   Related item: `UX-GESTURES-CUSTOM-TOUCH-STATE-MACHINE`
   Severity: Low
   Finding: Recorded validation exercises shortcut panel behavior, but not terminal tap, double-tap paste, swipe, drag scroll, pinch, copy-mode drag, or mouse-tracking touch branches.
   Evidence: `docs/audit_and_roadmap.md:339`.
   Suggested validation: Add targeted UIAutomator coverage for terminal gestures before relying on non-actionable decision as fully reviewed.
-  Next action: Track gesture regression test matrix separately from the non-actionable migration decision.
+  Resolution: Added targeted instrumentation coverage for terminal gesture branches: double-tap configured action dispatch, horizontal swipe tmux switching, mouse-tracking tap press/release, copy-mode drag selection path, drag-scroll event consumption, and pinch-font-size event consumption.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.TerminalGestureRegressionInstrumentedTest --no-daemon` passed with 5 tests on `emulator-5554`; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Gesture regression proof is `TerminalGestureRegressionInstrumentedTest`; existing debug render smoke from `debugRenderDeepLinkShowsOscDebugSurface` also passed.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `REVISIT-CODERAPI-NONTERMINAL-CLIENTS-NOT-CLOSED`
   State: Fixed

@@ -2,7 +2,7 @@ package com.coder.pi
 
 data class TerminalAgentStatusPresentation(val title: String, val subtitle: String)
 data class TerminalAgentNotificationPresentation(val title: String, val body: String, val url: String? = null)
-data class TerminalAgentProgressPresentation(val active: Boolean, val body: String = "")
+data class TerminalAgentProgressPresentation(val active: Boolean, val body: String = "", val elapsedSeconds: Long? = null)
 
 fun TerminalAgentStateSnapshot.statusPresentation(): TerminalAgentStatusPresentation? {
     val tool = tools.lastOrNull { it.state == "running" }
@@ -28,7 +28,7 @@ fun AgentAlertState.notificationPresentation(): TerminalAgentNotificationPresent
 )
 
 fun AgentProgressState.progressPresentation(): TerminalAgentProgressPresentation = when (state) {
-    "active" -> TerminalAgentProgressPresentation(true)
+    "active" -> TerminalAgentProgressPresentation(true, elapsedSeconds = elapsedSeconds)
     else -> TerminalAgentProgressPresentation(false)
 }
 

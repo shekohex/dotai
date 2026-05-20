@@ -63,7 +63,7 @@ class TerminalAgentPresentationTest {
         val snapshot = TerminalAgentStateSnapshot(progress = AgentProgressState("active", null, 65, metadata()))
 
         assertEquals(TerminalAgentStatusPresentation("Pi agent", "Goal active · 1m 5s"), snapshot.statusPresentation())
-        assertEquals(TerminalAgentProgressPresentation(true, "Goal active · 1m 5s"), snapshot.progressPresentation())
+        assertEquals(TerminalAgentProgressPresentation(true, "Goal active · 1m 5s", 65), snapshot.progressPresentation())
     }
 
     @Test

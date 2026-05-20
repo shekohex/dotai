@@ -122,6 +122,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var activeProgressStatusText: String? = null
     private var piAgentProgressStatusRunnable: Runnable? = null
     private var activePiAgentProgressStatusText: String? = null
+    private var activePiAgentProgressElapsedSeconds: Long? = null
     private var progressStatusIndex = 0
     private var notificationContext = TerminalNotificationContext()
     private val agentState = TerminalAgentState()
@@ -1399,7 +1400,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             return
         }
         activePiAgentProgressStatusText = progress.body.takeIf { it.isNotBlank() }
-        postPiAgentProgressNotification(currentTerminalTitle(), activePiAgentProgressStatusText ?: nextProgressStatusText())
+        activePiAgentProgressElapsedSeconds = progress.elapsedSeconds
+        postPiAgentProgressNotification(currentTerminalTitle(), activePiAgentProgressStatusText ?: nextProgressStatusText(), activePiAgentProgressElapsedSeconds)
         schedulePiAgentProgressStatusUpdate()
     }
 
@@ -1417,13 +1419,15 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return postOscNotification(title, body, state == 1 || state == 3 || state == 4, progress, indeterminate, oscProgressNotificationId())
     }
 
-    private fun postPiAgentProgressNotification(title: String, body: String): Boolean {
+    private fun postPiAgentProgressNotification(title: String, body: String, elapsedSeconds: Long?): Boolean {
         ensureOscProgressNotificationChannel()
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             onNotificationPermissionNeeded?.invoke()
             return false
         }
         val notificationId = piAgentProgressNotificationId()
+        val notificationWhen = progressNotificationWhen(elapsedSeconds)
+        if (Build.VERSION.SDK_INT >= 36 && postNativePiAgentProgressNotification(notificationId, title, body, elapsedSeconds, notificationWhen)) return true
         val launchIntent = terminalNotificationLaunchIntent()
         val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notificationBody = body.ifBlank { title }.take(512)
@@ -1433,16 +1437,74 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .setContentText(notificationBody)
             .setSubText(workspaceNotificationLabel())
             .setContentIntent(pendingIntent)
+            .setColor(Color.rgb(125, 92, 255))
+            .setColorized(false)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setOnlyAlertOnce(true)
+            .setLocalOnly(true)
+            .setShowWhen(true)
+            .setWhen(notificationWhen)
+            .setUsesChronometer(elapsedSeconds != null)
             .setOngoing(true)
             .setAutoCancel(false)
             .setProgress(100, 0, true)
             .setGroup(terminalNotificationGroupKey())
-            .addAction(oscNotificationIconRes(), "Open terminal", pendingIntent)
+            .addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
             .addAction(replyNotificationAction(notificationId))
         workspaceIconBitmap(localOnly = true)?.let { builder.setLargeIcon(it) }
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         return true
     }
+
+    private fun postNativePiAgentProgressNotification(notificationId: Int, title: String, body: String, elapsedSeconds: Long?, notificationWhen: Long): Boolean {
+        val channelId = oscProgressNotificationChannelId()
+        val launchIntent = terminalNotificationLaunchIntent()
+        val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notificationBody = body.ifBlank { title }.take(512)
+        val style = android.app.Notification.ProgressStyle()
+            .setStyledByProgress(true)
+            .setProgressIndeterminate(true)
+            .setProgress(0)
+            .setProgressSegments(listOf(
+                android.app.Notification.ProgressStyle.Segment(28).setColor(Color.rgb(125, 92, 255)).setId(1),
+                android.app.Notification.ProgressStyle.Segment(36).setColor(Color.rgb(84, 174, 255)).setId(2),
+                android.app.Notification.ProgressStyle.Segment(36).setColor(Color.rgb(58, 211, 159)).setId(3),
+            ))
+            .setProgressPoints(listOf(
+                android.app.Notification.ProgressStyle.Point(28).setColor(Color.WHITE).setId(1),
+                android.app.Notification.ProgressStyle.Point(64).setColor(Color.WHITE).setId(2),
+            ))
+            .setProgressStartIcon(Icon.createWithResource(context, R.drawable.pi_logo_mark))
+            .setProgressTrackerIcon(Icon.createWithResource(context, R.drawable.pi_logo_mark))
+            .setProgressEndIcon(Icon.createWithResource(context, R.drawable.ic_feather_check))
+        val replyIntent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId).putExtra(TerminalNotificationTerminalIdKey, notificationContext.terminalId).putExtra(TerminalNotificationIdKey, notificationId)
+        val replyPendingIntent = PendingIntent.getBroadcast(context, notificationId, replyIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+        val builder = android.app.Notification.Builder(context, channelId)
+            .setSmallIcon(oscNotificationIconRes())
+            .setContentTitle(progressNotificationTitle(title))
+            .setContentText(notificationBody)
+            .setSubText(workspaceNotificationLabel())
+            .setContentIntent(pendingIntent)
+            .setColor(Color.rgb(125, 92, 255))
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .setLocalOnly(true)
+            .setShowWhen(true)
+            .setWhen(notificationWhen)
+            .setUsesChronometer(elapsedSeconds != null)
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(notificationBody.take(7))
+            .setStyle(style)
+            .addAction(android.app.Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_feather_terminal), "Open terminal", pendingIntent).build())
+            .addAction(android.app.Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_feather_message_circle), "Follow up", replyPendingIntent).addRemoteInput(android.app.RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()).setAllowGeneratedReplies(false).build())
+        builder.setLargeIcon(workspaceNotificationIcon())
+        NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+        return true
+    }
+
+    private fun progressNotificationWhen(elapsedSeconds: Long?): Long = elapsedSeconds?.takeIf { it >= 0 }?.let { System.currentTimeMillis() - it * 1000L } ?: System.currentTimeMillis()
 
     private fun scheduleProgressStatusUpdate() {
         progressStatusRunnable?.let { removeCallbacks(it) }
@@ -1458,7 +1520,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private fun schedulePiAgentProgressStatusUpdate() {
         piAgentProgressStatusRunnable?.let { removeCallbacks(it) }
         val runnable = Runnable {
-            postPiAgentProgressNotification(currentTerminalTitle(), activePiAgentProgressStatusText ?: nextProgressStatusText())
+            postPiAgentProgressNotification(currentTerminalTitle(), activePiAgentProgressStatusText ?: nextProgressStatusText(), activePiAgentProgressElapsedSeconds)
             schedulePiAgentProgressStatusUpdate()
         }
         piAgentProgressStatusRunnable = runnable
@@ -1478,6 +1540,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         piAgentProgressStatusRunnable?.let { removeCallbacks(it) }
         piAgentProgressStatusRunnable = null
         activePiAgentProgressStatusText = null
+        activePiAgentProgressElapsedSeconds = null
     }
 
     private fun scheduleProgressHapticPulse() {
@@ -1572,14 +1635,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .setContentText(notificationBody)
             .setSubText(workspaceNotificationLabel())
             .setContentIntent(pendingIntent)
+            .setColor(Color.rgb(125, 92, 255))
+            .setColorized(false)
+            .setLocalOnly(true)
+            .setShowWhen(true)
+            .setOnlyAlertOnce(ongoing)
             .setOngoing(ongoing)
             .setAutoCancel(true)
             .setGroup(terminalNotificationGroupKey())
         if (launchUrl != null) {
-            builder.addAction(oscNotificationIconRes(), "Open", pendingIntent)
+            builder.addAction(R.drawable.ic_feather_globe, "Open", pendingIntent)
             builder.addAction(copyUrlNotificationAction(notificationId, launchUrl))
         } else {
-            builder.addAction(oscNotificationIconRes(), "Open terminal", pendingIntent)
+            builder.addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
             builder.addAction(replyNotificationAction(notificationId))
         }
         if (!ongoing) TerminalNotificationBehavior.applyAlertDefaults(builder)
@@ -1594,13 +1662,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val input = androidx.core.app.RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()
         val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationReplyAction).putExtra(TerminalNotificationWorkspaceIdKey, notificationContext.workspaceId).putExtra(TerminalNotificationTerminalIdKey, notificationContext.terminalId).putExtra(TerminalNotificationIdKey, notificationId)
         val pendingIntent = PendingIntent.getBroadcast(context, notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
-        return NotificationCompat.Action.Builder(oscNotificationIconRes(), "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
+        return NotificationCompat.Action.Builder(R.drawable.ic_feather_message_circle, "Follow up", pendingIntent).addRemoteInput(input).setAllowGeneratedReplies(false).build()
     }
 
     private fun copyUrlNotificationAction(notificationId: Int, url: String): NotificationCompat.Action {
         val intent = Intent(context, TerminalNotificationReplyReceiver::class.java).setAction(TerminalNotificationCopyUrlAction).putExtra(TerminalNotificationUrlKey, url).putExtra(TerminalNotificationIdKey, notificationId)
         val pendingIntent = PendingIntent.getBroadcast(context, notificationId xor 0x436f7079, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Action.Builder(oscNotificationIconRes(), "Copy URL", pendingIntent).build()
+        return NotificationCompat.Action.Builder(R.drawable.ic_feather_clipboard, "Copy URL", pendingIntent).build()
     }
 
     private fun terminalNotificationLaunchIntent(url: String? = null): Intent = ((url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { Intent(Intent.ACTION_VIEW, it.toUri()) } ?: if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {

@@ -450,15 +450,19 @@ Required proof schema:
 
 ## Revisit Findings From Parallel Review
 
-- [ ] `REVISIT-RENDER-SYNCED-OUTPUT-BLANK-FRAME`
-  State: Open
+- [x] `REVISIT-RENDER-SYNCED-OUTPUT-BLANK-FRAME`
+  State: Fixed
   Source: `review-native-render-safety`
   Related item: `BUG-RENDER-SYNCED-OUTPUT-MODE-IGNORED`
   Severity: Medium
   Finding: Synced output suppression depends on `cachedGlyphVertexCount_ > 0`, so a fresh or blank terminal with zero glyph vertices can still render first partial output during `DECSET 2026` before `DECRST 2026`.
   Evidence: `app/src/main/cpp/coder_renderer.cpp:244`.
   Suggested validation: Start from blank terminal, feed `\x1b[?2026hpartial`, force one draw before `\x1b[?2026l`, and assert partial text is not presented.
-  Next action: Revisit skip condition so it tracks previously presented frame availability rather than glyph vertex count.
+  Resolution: Synchronized output now skips rendering whenever sync mode is active instead of checking prior glyph vertex count. On a fresh renderer with no presented frame, it clears to terminal background once and returns, preventing partial synced text from being presented while avoiding undefined initial surface contents.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; no new screenshot captured for native-only sync guard.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-RENDER-SNAPSHOT-COPY-STILL-FULL`
   State: Open

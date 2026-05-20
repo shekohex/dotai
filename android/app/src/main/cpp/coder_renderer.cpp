@@ -104,6 +104,7 @@ void CoderRenderer::releaseGlResources() {
     solidVao_ = 0;
     program_ = 0;
     solidProgram_ = 0;
+    hasPresentedFrame_ = false;
 }
 
 bool CoderRenderer::init() {
@@ -241,7 +242,14 @@ bool CoderRenderer::updateCachedCells(std::vector<CoderCell> cells, int cols, in
 }
 
 void CoderRenderer::draw(CoderTerminal& terminal) {
-    if (terminal.pumpAndSynchronizedOutput() && cachedGlyphVertexCount_ > 0) return;
+    if (terminal.pumpAndSynchronizedOutput()) {
+        if (!hasPresentedFrame_) {
+            glClearColor(((clearColor_ >> 16u) & 255u) / 255.0f, ((clearColor_ >> 8u) & 255u) / 255.0f, (clearColor_ & 255u) / 255.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            hasPresentedFrame_ = true;
+        }
+        return;
+    }
     int cols, rows;
     CoderCursor cursor;
     auto cells = terminal.snapshot(cols, rows, cursor);
@@ -633,6 +641,7 @@ drawCachedBuffers:
     }
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLES, 0, cachedGlyphVertexCount_);
+    hasPresentedFrame_ = true;
     static auto lastReport = std::chrono::steady_clock::now();
     static int frameCount = 0;
     frameCount++;

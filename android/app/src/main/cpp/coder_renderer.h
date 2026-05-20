@@ -56,6 +56,7 @@ private:
     bool cachedBlinkPhase_ = true;
     bool cachedCursorBlinking_ = true;
     bool cachedCursorColorHasValue_ = false;
+    bool hasPresentedFrame_ = false;
     uint32_t cachedCursorColor_ = 0;
     GhosttyRenderStateCursorVisualStyle cachedCursorVisualStyle_ = GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK;
     GLsizei cachedGlyphVertexCount_ = 0;

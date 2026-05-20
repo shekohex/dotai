@@ -479,7 +479,7 @@ Commit:
 
 ## TRGP-8: Align Kotlin Cell Metrics With Native FreeType Metrics
 
-Status: not-started
+Status: building
 
 Research:
 
@@ -487,6 +487,8 @@ Research:
 - JNI computes terminal columns/rows from Kotlin cell dimensions and passes those same dimensions to native renderer and terminal: `app/src/main/cpp/coder_jni.cpp:118-124`.
 - Native `CoderFont::setCellSize` accepts Kotlin cell dimensions and a separate font pixel size, then rebuilds FreeType faces: `app/src/main/cpp/coder_font.cpp:382-390`.
 - Native baseline is recalculated from FreeType face metrics after atlas rebuild: `app/src/main/cpp/coder_font.cpp:806-819`.
+- Native already keeps `fontPixelSize` separate from terminal cell height and exposes renderer `cellWidth()`/`cellHeight()` from `CoderFont`, so this ticket focuses on proof/logging rather than changing sizing authority: `app/src/main/cpp/coder_renderer.cpp:467-480`.
+- Failing samples are debug-render font family/size selector changes across 12, 14, 16, 18, 20, and 22pt, imported font path through `terminalMetricTypeface`, and surface resize rows/columns from `nativeRendererSurfaceChanged`.
 - Ghostty derives grid metrics and glyph rendering constraints from one font grid model, so cell width, glyph width, baseline, sprites, and atlas render options share metrics.
 
 Plan:

@@ -1217,6 +1217,7 @@ internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("Pi OSC: hello, run, progress, tool start/end, alert, clear progress\r\n")
         append("OSC 8: ${esc}]8;;https://example.com${'\u0007'}tap link${esc}]8;;${'\u0007'}  BEL:${'\u0007'}  Color:${esc}]10;#ff5c7a${'\u0007'}fg override${esc}]110${'\u0007'}\r\n\r\n")
         append("Working: ⣾ CoreUI indicator\r\n\r\n")
+        append("Metrics: size selector exercises 12/14/16/18/20/22pt native logs\r\n")
         append("Shimmer SGR: ${esc}[97mrendering${esc}[39m ${esc}[37mterminal${esc}[39m ${esc}[2mfonts${esc}[22m\r\n\r\n")
         append("${esc}[1mBold${esc}[0m   ${esc}[3mItalic${esc}[0m   ${esc}[1;3mBoldItalic${esc}[0m\r\n")
         append("${esc}[2mFaint${esc}[0m   ${esc}[5mBlink${esc}[25m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")

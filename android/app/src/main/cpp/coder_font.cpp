@@ -888,11 +888,14 @@ void CoderFont::updateMetricsFromFace(FT_Face face) {
     int ascender = static_cast<int>((face->size->metrics.ascender + 32) >> 6);
     int descender = static_cast<int>((face->size->metrics.descender - 32) >> 6);
     int measuredHeight = static_cast<int>((face->size->metrics.height + 32) >> 6);
+    int measuredAdvance = 0;
+    FT_UInt mGlyph = FT_Get_Char_Index(face, static_cast<FT_ULong>('M'));
+    if (mGlyph != 0 && FT_Load_Glyph(face, mGlyph, FT_LOAD_DEFAULT) == 0) measuredAdvance = static_cast<int>((face->glyph->advance.x + 32) >> 6);
     int inkHeight = std::max(1, ascender - descender);
     baseline_ = std::clamp(static_cast<int>(std::round(static_cast<float>(glyphHeight_) * static_cast<float>(ascender) / static_cast<float>(inkHeight))), glyphHeight_ / 2, std::max(1, glyphHeight_ - 1));
     static int loggedMetrics = 0;
-    if (loggedMetrics < 8) {
-        __android_log_print(ANDROID_LOG_INFO, "CoderFont", "font metrics cell=%dx%d ascender=%d descender=%d face_height=%d baseline=%d", glyphWidth_, glyphHeight_, ascender, descender, measuredHeight, baseline_);
+    if (loggedMetrics < 24) {
+        __android_log_print(ANDROID_LOG_INFO, "CoderFont", "font metrics kotlin_cell=%dx%d font_px=%d ft_advance_M=%d ft_ascender=%d ft_descender=%d ft_height=%d baseline=%d delta_width=%d delta_height=%d", glyphWidth_, glyphHeight_, fontPixelSize_, measuredAdvance, ascender, descender, measuredHeight, baseline_, measuredAdvance - glyphWidth_, measuredHeight - glyphHeight_);
         loggedMetrics++;
     }
 }

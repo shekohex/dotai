@@ -1,6 +1,7 @@
 #include "coder_renderer.h"
 #include "coder_terminal.h"
 
+#include <android/log.h>
 #include <algorithm>
 #include <jni.h>
 #include <memory>
@@ -118,6 +119,11 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeRendererSurfaceChanged(JNIEnv*, jobject, jlong terminalHandle, jlong rendererHandle, jint width, jint height, jint cellWidth, jint cellHeight, jint fontPixelSize) {
     const int columns = std::max(1, width / std::max(1, cellWidth));
     const int rows = std::max(1, height / std::max(1, cellHeight));
+    static int loggedSurfaceMetrics = 0;
+    if (loggedSurfaceMetrics < 24) {
+        __android_log_print(ANDROID_LOG_INFO, "CoderNative", "surface metrics surface=%dx%d kotlin_cell=%dx%d font_px=%d cols=%d rows=%d remainder=%dx%d", width, height, cellWidth, cellHeight, fontPixelSize, columns, rows, width - columns * cellWidth, height - rows * cellHeight);
+        loggedSurfaceMetrics++;
+    }
     renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setCellSize(cellWidth, cellHeight, fontPixelSize);
     renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->resize(width, height);
     terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->resize(columns, rows, cellWidth, cellHeight);

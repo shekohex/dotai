@@ -153,6 +153,10 @@ export const createPiOscSequence = (
     throw new PiOscEncodingError("Invalid Pi OSC envelope");
   }
 
+  if (!isPlainRecord(envelope.data)) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+  }
+
   const serializableEnvelope: PiOscEnvelope = {
     ...envelope,
     data: normalizePiOscJsonObject(envelope.data, new WeakSet<object>()),

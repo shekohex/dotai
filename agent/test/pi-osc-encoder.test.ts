@@ -88,6 +88,15 @@ test("invalid envelopes are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
+test("non-plain top-level data values are rejected", () => {
+  expect(() =>
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: new Date(0),
+    }),
+  ).toThrow(PiOscEncodingError);
+});
+
 test("non-JSON payload values are rejected", () => {
   expect(() =>
     createPiOscSequence("agent.tool", {

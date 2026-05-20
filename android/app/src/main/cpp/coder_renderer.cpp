@@ -39,17 +39,42 @@ static bool isBoxDrawingCodepoint(uint32_t codepoint) {
 }
 
 enum class BoxLineStyle : uint8_t { none, light, heavy, doubleLine };
+enum class BoxDrawingKind : uint8_t { lines, dashHorizontal, dashVertical, diagonalUp, diagonalDown, diagonalCross };
 
 struct BoxDrawingGlyph {
     BoxLineStyle up = BoxLineStyle::none;
     BoxLineStyle right = BoxLineStyle::none;
     BoxLineStyle down = BoxLineStyle::none;
     BoxLineStyle left = BoxLineStyle::none;
+    BoxDrawingKind kind = BoxDrawingKind::lines;
+    uint8_t dashCount = 0;
     bool supported = false;
 };
 
 static BoxDrawingGlyph boxGlyph(BoxLineStyle up = BoxLineStyle::none, BoxLineStyle right = BoxLineStyle::none, BoxLineStyle down = BoxLineStyle::none, BoxLineStyle left = BoxLineStyle::none) {
-    return BoxDrawingGlyph{up, right, down, left, true};
+    return BoxDrawingGlyph{up, right, down, left, BoxDrawingKind::lines, 0, true};
+}
+
+static BoxDrawingGlyph boxDashed(BoxDrawingKind kind, uint8_t count, BoxLineStyle style) {
+    BoxDrawingGlyph glyph{};
+    glyph.kind = kind;
+    glyph.dashCount = count;
+    glyph.supported = true;
+    if (kind == BoxDrawingKind::dashHorizontal) {
+        glyph.left = style;
+        glyph.right = style;
+    } else {
+        glyph.up = style;
+        glyph.down = style;
+    }
+    return glyph;
+}
+
+static BoxDrawingGlyph boxDiagonal(BoxDrawingKind kind) {
+    BoxDrawingGlyph glyph{};
+    glyph.kind = kind;
+    glyph.supported = true;
+    return glyph;
 }
 
 static BoxDrawingGlyph boxDrawingGlyph(uint32_t codepoint) {
@@ -59,6 +84,14 @@ static BoxDrawingGlyph boxDrawingGlyph(uint32_t codepoint) {
         case 0x2501: return boxGlyph(S::none, S::heavy, S::none, S::heavy);
         case 0x2502: return boxGlyph(S::light, S::none, S::light, S::none);
         case 0x2503: return boxGlyph(S::heavy, S::none, S::heavy, S::none);
+        case 0x2504: return boxDashed(BoxDrawingKind::dashHorizontal, 3, S::light);
+        case 0x2505: return boxDashed(BoxDrawingKind::dashHorizontal, 3, S::heavy);
+        case 0x2506: return boxDashed(BoxDrawingKind::dashVertical, 3, S::light);
+        case 0x2507: return boxDashed(BoxDrawingKind::dashVertical, 3, S::heavy);
+        case 0x2508: return boxDashed(BoxDrawingKind::dashHorizontal, 4, S::light);
+        case 0x2509: return boxDashed(BoxDrawingKind::dashHorizontal, 4, S::heavy);
+        case 0x250a: return boxDashed(BoxDrawingKind::dashVertical, 4, S::light);
+        case 0x250b: return boxDashed(BoxDrawingKind::dashVertical, 4, S::heavy);
         case 0x250c: return boxGlyph(S::none, S::light, S::light, S::none);
         case 0x250d: return boxGlyph(S::none, S::heavy, S::light, S::none);
         case 0x250e: return boxGlyph(S::none, S::light, S::heavy, S::none);
@@ -123,6 +156,10 @@ static BoxDrawingGlyph boxDrawingGlyph(uint32_t codepoint) {
         case 0x2549: return boxGlyph(S::heavy, S::light, S::heavy, S::heavy);
         case 0x254a: return boxGlyph(S::heavy, S::heavy, S::heavy, S::light);
         case 0x254b: return boxGlyph(S::heavy, S::heavy, S::heavy, S::heavy);
+        case 0x254c: return boxDashed(BoxDrawingKind::dashHorizontal, 2, S::light);
+        case 0x254d: return boxDashed(BoxDrawingKind::dashHorizontal, 2, S::heavy);
+        case 0x254e: return boxDashed(BoxDrawingKind::dashVertical, 2, S::light);
+        case 0x254f: return boxDashed(BoxDrawingKind::dashVertical, 2, S::heavy);
         case 0x2550: return boxGlyph(S::none, S::doubleLine, S::none, S::doubleLine);
         case 0x2551: return boxGlyph(S::doubleLine, S::none, S::doubleLine, S::none);
         case 0x2552: return boxGlyph(S::none, S::doubleLine, S::light, S::none);
@@ -152,10 +189,9 @@ static BoxDrawingGlyph boxDrawingGlyph(uint32_t codepoint) {
         case 0x256a: return boxGlyph(S::light, S::doubleLine, S::light, S::doubleLine);
         case 0x256b: return boxGlyph(S::doubleLine, S::light, S::doubleLine, S::light);
         case 0x256c: return boxGlyph(S::doubleLine, S::doubleLine, S::doubleLine, S::doubleLine);
-        case 0x256d: return boxGlyph(S::none, S::light, S::light, S::none);
-        case 0x256e: return boxGlyph(S::none, S::none, S::light, S::light);
-        case 0x256f: return boxGlyph(S::light, S::none, S::none, S::light);
-        case 0x2570: return boxGlyph(S::light, S::light, S::none, S::none);
+        case 0x2571: return boxDiagonal(BoxDrawingKind::diagonalUp);
+        case 0x2572: return boxDiagonal(BoxDrawingKind::diagonalDown);
+        case 0x2573: return boxDiagonal(BoxDrawingKind::diagonalCross);
         case 0x2574: return boxGlyph(S::none, S::none, S::none, S::light);
         case 0x2575: return boxGlyph(S::light, S::none, S::none, S::none);
         case 0x2576: return boxGlyph(S::none, S::light, S::none, S::none);
@@ -210,6 +246,22 @@ static bool isEmojiClusterContinuation(const CoderCell& cell) {
 
 static void addSolidQuad(std::vector<SolidVertex>& vertices, float x0, float y0, float x1, float y1, float r, float g, float b, float a) {
     vertices.insert(vertices.end(), {{x0,y0,r,g,b,a},{x1,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y1,r,g,b,a}});
+}
+
+static void addSolidLine(std::vector<SolidVertex>& vertices, float x0, float y0, float x1, float y1, float thicknessPixels, int width, int height, float r, float g, float b, float a) {
+    float dx = x1 - x0;
+    float dy = y1 - y0;
+    float length = std::sqrt(dx * dx + dy * dy);
+    if (length <= 0.0f) return;
+    float pixelX = 2.0f / static_cast<float>(std::max(1, width));
+    float pixelY = 2.0f / static_cast<float>(std::max(1, height));
+    float nx = -dy / length * thicknessPixels * pixelX * 0.5f;
+    float ny = dx / length * thicknessPixels * pixelY * 0.5f;
+    SolidVertex a0{x0 + nx, y0 + ny, r, g, b, a};
+    SolidVertex a1{x1 + nx, y1 + ny, r, g, b, a};
+    SolidVertex a2{x1 - nx, y1 - ny, r, g, b, a};
+    SolidVertex a3{x0 - nx, y0 - ny, r, g, b, a};
+    vertices.insert(vertices.end(), {a0, a1, a2, a0, a2, a3});
 }
 
 static uint8_t colorByte(float value) {
@@ -536,6 +588,45 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                         }
                         addSolidQuad(frameSolidVertices_, centerX - halfThicknessX, startY, centerX + halfThicknessX, endY, r, g, b, textAlpha);
                     };
+                    auto lineStyle = [&]() {
+                        if (boxGlyph.up == BoxLineStyle::heavy || boxGlyph.right == BoxLineStyle::heavy || boxGlyph.down == BoxLineStyle::heavy || boxGlyph.left == BoxLineStyle::heavy) return BoxLineStyle::heavy;
+                        return BoxLineStyle::light;
+                    };
+                    auto drawDashedHorizontal = [&](uint8_t count, BoxLineStyle style) {
+                        int segments = std::max(2, static_cast<int>(count));
+                        float desiredGap = style == BoxLineStyle::heavy ? heavyThickness : std::max(4.0f, lightThickness);
+                        float gapWidth = std::min(desiredGap * pixelX, (gridX1 - gridX0) / static_cast<float>(segments * 2));
+                        float totalDashWidth = (gridX1 - gridX0) - gapWidth * static_cast<float>(segments);
+                        float dashWidth = totalDashWidth / static_cast<float>(segments);
+                        float x = gridX0 + gapWidth * 0.5f;
+                        for (int dash = 0; dash < segments; dash++) {
+                            drawHorizontalSegment(x, x + dashWidth, style);
+                            x += dashWidth + gapWidth;
+                        }
+                    };
+                    auto drawDashedVertical = [&](uint8_t count, BoxLineStyle style) {
+                        int segments = std::max(2, static_cast<int>(count));
+                        float desiredGap = style == BoxLineStyle::heavy ? heavyThickness : std::max(4.0f, lightThickness);
+                        float gapHeight = std::min(desiredGap * pixelY, (y1 - y0) / static_cast<float>(segments * 2));
+                        float totalDashHeight = (y1 - y0) - gapHeight * static_cast<float>(segments);
+                        float dashHeight = totalDashHeight / static_cast<float>(segments);
+                        float y = y1 - dashHeight;
+                        for (int dash = 0; dash < segments; dash++) {
+                            drawVerticalSegment(y, y + dashHeight, style);
+                            y -= dashHeight + gapHeight;
+                        }
+                    };
+                    if (boxGlyph.kind == BoxDrawingKind::dashHorizontal) {
+                        drawDashedHorizontal(boxGlyph.dashCount, lineStyle());
+                        continue;
+                    }
+                    if (boxGlyph.kind == BoxDrawingKind::dashVertical) {
+                        drawDashedVertical(boxGlyph.dashCount, lineStyle());
+                        continue;
+                    }
+                    if (boxGlyph.kind == BoxDrawingKind::diagonalUp || boxGlyph.kind == BoxDrawingKind::diagonalCross) addSolidLine(frameSolidVertices_, gridX0 - pixelX * 0.5f, y0 - pixelY * 0.5f, gridX1 + pixelX * 0.5f, y1 + pixelY * 0.5f, lightThickness, width_, height_, r, g, b, textAlpha);
+                    if (boxGlyph.kind == BoxDrawingKind::diagonalDown || boxGlyph.kind == BoxDrawingKind::diagonalCross) addSolidLine(frameSolidVertices_, gridX0 - pixelX * 0.5f, y1 + pixelY * 0.5f, gridX1 + pixelX * 0.5f, y0 - pixelY * 0.5f, lightThickness, width_, height_, r, g, b, textAlpha);
+                    if (boxGlyph.kind == BoxDrawingKind::diagonalUp || boxGlyph.kind == BoxDrawingKind::diagonalDown || boxGlyph.kind == BoxDrawingKind::diagonalCross) continue;
                     float horizontalJoinPadding = heavyThickness * pixelX * 0.5f;
                     float verticalJoinPadding = heavyThickness * pixelY * 0.5f;
                     if (boxGlyph.left != BoxLineStyle::none && boxGlyph.right != BoxLineStyle::none && boxGlyph.left == boxGlyph.right) drawHorizontalSegment(gridX0, gridX1, boxGlyph.left);

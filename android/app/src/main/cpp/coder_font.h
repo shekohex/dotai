@@ -84,7 +84,8 @@ private:
     void updateMetricsFromFace(FT_Face face);
     uint32_t styleIndex(uint32_t flags) const;
     std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, const uint32_t* clusters, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex, int targetAdvance);
-    bool allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph);
+    bool allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph, bool fallbackMetrics = false);
+    void normalizeFallbackGlyph(Glyph& glyph) const;
     const uint8_t* bitmapBuffer(const FT_Bitmap& bitmap, std::vector<uint8_t>& convertedBuffer, bool& color);
     void releaseFace();
 

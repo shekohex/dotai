@@ -429,7 +429,7 @@ bool CoderFont::glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph) {
         for (size_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
             auto& fallback = fallbackFaces_[fallbackIndex];
             glyphIndex = FT_Get_Char_Index(fallback.face, static_cast<FT_ULong>(codepoint));
-            if (glyphIndex != 0 && allocateGlyph((static_cast<uint64_t>(fallbackIndex + 8) << 56u) | codepoint, fallback.face, glyphIndex, outGlyph)) {
+            if (glyphIndex != 0 && allocateGlyph((static_cast<uint64_t>(fallbackIndex + 8) << 56u) | codepoint, fallback.face, glyphIndex, outGlyph, true)) {
                 glyphs_[key] = outGlyph;
                 return true;
             }
@@ -463,7 +463,15 @@ bool CoderFont::fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex
         outGlyph = existing->second;
         return true;
     }
-    return loadFallbackFaces() && fallbackIndex < fallbackFaces_.size() && allocateGlyph(key, fallbackFaces_[fallbackIndex].face, glyphIndex, outGlyph);
+    return loadFallbackFaces() && fallbackIndex < fallbackFaces_.size() && allocateGlyph(key, fallbackFaces_[fallbackIndex].face, glyphIndex, outGlyph, true);
+}
+
+void CoderFont::normalizeFallbackGlyph(Glyph& glyph) const {
+    glyph.advance = glyphWidth_;
+    int maxBearingTop = std::max(1, baseline_);
+    int minBearingTop = glyph.height - std::max(1, glyphHeight_ - baseline_);
+    glyph.bearingTop = std::clamp(glyph.bearingTop, minBearingTop, maxBearingTop);
+    if (glyph.width > glyphWidth_ * 2) glyph.bearingLeft = std::min(glyph.bearingLeft, 0);
 }
 
 bool CoderFont::shouldSynthesizeBold(uint32_t flags) const {
@@ -847,6 +855,7 @@ bool CoderFont::loadFallbackFaces() {
             if (font.harfbuzzFont) fallbackFaces_.push_back(std::move(font)); else FT_Done_Face(font.face);
         }
     }
+    if (!fallbackFaces_.empty()) __android_log_print(ANDROID_LOG_INFO, "CoderFont", "fallback priority bundled=%d emoji/symbols/cjk/arabic/droid faces=%zu", bundledFallbackData_.empty() ? 0 : 1, fallbackFaces_.size());
     return !fallbackFaces_.empty();
 }
 
@@ -891,7 +900,7 @@ uint32_t CoderFont::styleIndex(uint32_t flags) const {
     return 0;
 }
 
-bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph) {
+bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph, bool fallbackMetrics) {
     if (!face) return false;
     if (!configureFaceSize(face)) return false;
     int loadResult = FT_Load_Glyph(face, glyphIndex, FT_LOAD_RENDER | FT_LOAD_TARGET_LIGHT | FT_LOAD_COLOR);
@@ -933,8 +942,8 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
                 shelfHeight_ = 0;
             }
             if (shelfY_ + paddedHeight >= atlasHeight_) {
-                if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph);
-                if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph);
+                if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
+                if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
                 if (!atlasFullReported_) {
                     __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu colr=1", atlasWidth_, atlasHeight_, glyphs_.size());
                     atlasFullReported_ = true;
@@ -964,6 +973,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
             glyph.bearingTop = colrBearingTop;
             glyph.advance = colrAdvance;
             glyph.color = true;
+            if (fallbackMetrics) normalizeFallbackGlyph(glyph);
             glyphs_[key] = glyph;
             outGlyph = glyph;
             return true;
@@ -984,8 +994,8 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
         shelfHeight_ = 0;
     }
     if (shelfY_ + paddedHeight >= atlasHeight_) {
-        if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph);
-        if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph);
+        if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
+        if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
         if (!atlasFullReported_) {
             __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu", atlasWidth_, atlasHeight_, glyphs_.size());
             atlasFullReported_ = true;
@@ -1021,6 +1031,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
     glyph.bearingTop = slot->bitmap_top;
     glyph.advance = static_cast<int>(slot->advance.x >> 6);
     glyph.color = slot->bitmap.pixel_mode == FT_PIXEL_MODE_BGRA;
+    if (fallbackMetrics) normalizeFallbackGlyph(glyph);
     if (loggedCodepoint >= 0x1f000 && glyph.width > 0 && glyph.height > 0) {
         __android_log_print(ANDROID_LOG_INFO, "CoderFont", "emoji glyph key=%llu cp=U+%04X size=%dx%d bearing=%d,%d advance=%d color=%d pixel_mode=%d", static_cast<unsigned long long>(key), loggedCodepoint, glyph.width, glyph.height, glyph.bearingLeft, glyph.bearingTop, glyph.advance, glyph.color ? 1 : 0, slot->bitmap.pixel_mode);
     } else if (key >= (8ULL << 56u) && glyph.width > 0 && glyph.height > 0) {

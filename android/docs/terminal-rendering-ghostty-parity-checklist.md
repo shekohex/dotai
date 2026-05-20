@@ -297,7 +297,7 @@ Commit:
 
 ## TRGP-5: Normalize Fallback Font Metrics And Selection
 
-Status: not-started
+Status: building
 
 Research:
 
@@ -305,6 +305,8 @@ Research:
 - Android mixed shaping splits runs by whichever face contains each codepoint: `app/src/main/cpp/coder_font.cpp:534-565`.
 - Android `configureFaceSize` selects fixed strikes by closest `y_ppem` or sets pixel size directly: `app/src/main/cpp/coder_font.cpp:790-801`.
 - Android baseline is derived from primary face metrics only during atlas rebuild: `app/src/main/cpp/coder_font.cpp:806-819`.
+- Android fallback atlas keys already include fallback face class and glyph id for direct fallback loads (`fallbackIndex + 8`) and shaped fallback glyph loads (`fallbackIndex + 32`), with size invalidated by atlas rebuild/cache clear rather than encoded into each key: `app/src/main/cpp/coder_font.cpp:429-433` and `app/src/main/cpp/coder_font.cpp:464-471`.
+- Failing samples are debug-render fallback rows for Nerd symbols (`󰊢`, ``), CJK (`表界`), Arabic (`م`), symbols (`⚡`, `◆`), and replacement glyph (`�`) across selectable debug fonts.
 - Ghostty's resolver prefers regular loaded fonts over styled fallback to avoid metric changes: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/CodepointResolver.zig:98-217`.
 - Ghostty adds discovered fallback faces with `default_fallback_adjustment`: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/CodepointResolver.zig:169-215`.
 

@@ -88,6 +88,29 @@ test("invalid envelopes are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
+test("non-JSON payload values are rejected", () => {
+  expect(() =>
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: { callback: () => 1 },
+    }),
+  ).toThrow(PiOscEncodingError);
+
+  expect(() =>
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: { missing: undefined },
+    }),
+  ).toThrow(PiOscEncodingError);
+
+  expect(() =>
+    createPiOscSequence("agent.tool", {
+      ...fixtureEnvelope,
+      data: { count: BigInt(1) },
+    }),
+  ).toThrow(PiOscEncodingError);
+});
+
 test("oversized frames are rejected", () => {
   expect(() =>
     createPiOscSequence("agent.tool", {

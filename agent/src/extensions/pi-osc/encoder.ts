@@ -19,12 +19,21 @@ export const PiOscV1EventSchema = Type.Union([
 
 export type PiOscV1Event = Static<typeof PiOscV1EventSchema>;
 
+export const PiOscJsonValueSchema = Type.Union([
+  Type.Null(),
+  Type.Boolean(),
+  Type.Number(),
+  Type.String(),
+  Type.Array(Type.This()),
+  Type.Record(Type.String(), Type.This()),
+]);
+
 export const PiOscEnvelopeSchema = Type.Object(
   {
     id: Type.String({ minLength: 1, maxLength: 128 }),
     ts: Type.Number(),
     source: Type.Literal("agent"),
-    data: Type.Record(Type.String(), Type.Unknown()),
+    data: Type.Record(Type.String(), PiOscJsonValueSchema),
     sessionId: Type.Optional(Type.String({ maxLength: 256 })),
     cwd: Type.Optional(Type.String({ maxLength: 1024 })),
     seq: Type.Optional(Type.Number()),

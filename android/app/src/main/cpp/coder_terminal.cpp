@@ -262,6 +262,7 @@ std::vector<uint8_t> CoderTerminal::scrollInput(int rowDelta, float x, float y) 
 }
 
 bool CoderTerminal::mouseTracking() const {
+    std::lock_guard lock(mutex_);
     if (!terminal_) return false;
     bool enabled = false;
     ghostty_terminal_get(terminal_.get(), GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING, &enabled);

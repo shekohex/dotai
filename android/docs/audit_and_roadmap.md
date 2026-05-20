@@ -61,8 +61,8 @@ Required proof schema:
   Review: No findings.
   Commit: `HEAD` (`fix(render): preserve glyph bitmap width`).
 
-- [ ] `BUG-NATIVE-MOUSE-TRACKING-DATA-RACE`
-  State: Open
+- [x] `BUG-NATIVE-MOUSE-TRACKING-DATA-RACE`
+  State: Fixed
   Type: Bug report, threading correctness
   Summary: `CoderTerminal::mouseTracking()` reads terminal state without `mutex_`.
   Impact: UI input can race render/feed/native terminal state, risking undefined behavior during mouse-tracking apps.
@@ -70,6 +70,11 @@ Required proof schema:
   Goal: Match locking discipline used by other `CoderTerminal` accessors.
   Deliverables: Lock added; no wider lock-order changes; stress or compile validation.
   Validation plan: Native build; unit/build checks; UIAutomator terminal smoke screenshot.
+  Resolution: Added `mutex_` locking to `mouseTracking()` and made the mutex mutable so the const accessor can follow the same locking discipline as other terminal state reads.
+  Validation: First `./gradlew :app:externalNativeBuildDebug` failed because `mouseTracking() const` could not lock non-mutable `mutex_`; after marking `mutex_` mutable, `./gradlew :app:externalNativeBuildDebug` passed, `./gradlew testDebugUnitTest` passed, and `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Before smoke `docs/reference/bug-native-mouse-tracking-data-race-before.png`; after smoke `docs/reference/bug-native-mouse-tracking-data-race-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `BUG-NATIVE-STARTUP-LEAKS-ON-PARTIAL-FAILURE`
   State: Open

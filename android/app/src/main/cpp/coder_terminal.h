@@ -115,7 +115,7 @@ private:
         int endCol = 0;
     } selection_;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     int ptyFd_ = -1;
     int childPid_ = -1;
     int cols_ = 80;

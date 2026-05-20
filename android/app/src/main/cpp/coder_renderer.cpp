@@ -2,6 +2,7 @@
 #include "coder_shaders.h"
 
 #include <android/log.h>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -48,6 +49,21 @@ static bool isEmojiClusterContinuation(const CoderCell& cell) {
 
 static void addSolidQuad(std::vector<SolidVertex>& vertices, float x0, float y0, float x1, float y1, float r, float g, float b, float a) {
     vertices.insert(vertices.end(), {{x0,y0,r,g,b,a},{x1,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y0,r,g,b,a},{x1,y1,r,g,b,a},{x0,y1,r,g,b,a}});
+}
+
+static uint8_t colorByte(float value) {
+    return static_cast<uint8_t>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
+}
+
+static void addGlyphQuad(std::vector<Vertex>& vertices, float x0, float y0, float x1, float y1, const CoderFont::Glyph& glyph, float r, float g, float b, float br, float bg, float bb, float colorGlyph) {
+    const uint8_t red = colorByte(r);
+    const uint8_t green = colorByte(g);
+    const uint8_t blue = colorByte(b);
+    const uint8_t alpha = colorByte(colorGlyph);
+    const uint8_t backgroundRed = colorByte(br);
+    const uint8_t backgroundGreen = colorByte(bg);
+    const uint8_t backgroundBlue = colorByte(bb);
+    vertices.insert(vertices.end(), {{x0,y0,glyph.u0,glyph.v1,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x1,y0,glyph.u1,glyph.v1,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x1,y1,glyph.u1,glyph.v0,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x0,y0,glyph.u0,glyph.v1,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x1,y1,glyph.u1,glyph.v0,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x0,y1,glyph.u0,glyph.v0,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0}});
 }
 
 CoderRenderer::CoderRenderer() = default;
@@ -101,11 +117,9 @@ bool CoderRenderer::init() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 2));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 4));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, r)));
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 7));
-    glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(sizeof(float) * 10));
+    glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, br)));
     glBindVertexArray(solidVao_);
     glBindBuffer(GL_ARRAY_BUFFER, solidVbo_);
     glEnableVertexAttribArray(0);
@@ -346,7 +360,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                            frameVertices_.insert(frameVertices_.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
+                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
                             runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
@@ -393,7 +407,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                            frameVertices_.insert(frameVertices_.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
+                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
                             runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
@@ -446,7 +460,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                         float glyphX1 = glyphX[1];
                         float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                         float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                        frameVertices_.insert(frameVertices_.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
+                        addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
                         clusterCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                     }
                     int clusterCellSpan = clusterEndCol - col + 1;
@@ -467,7 +481,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     float glyphX1 = glyphX[1];
                     float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                     float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                    frameVertices_.insert(frameVertices_.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
+                    addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
                     glyphCursorX += 2.0f * static_cast<float>(glyph.advance) / static_cast<float>(width_);
                 }
             };
@@ -499,10 +513,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 float glyphX1 = glyphX[1];
                 float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                 float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                frameVertices_.insert(frameVertices_.end(), {{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
+                addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
                 if (synthesizeBold && !glyph.color) {
                     float boldOffset = 2.0f / static_cast<float>(width_);
-                    frameVertices_.insert(frameVertices_.end(), {{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1 + boldOffset,glyphY0,glyph.u1,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0 + boldOffset,glyphY0,glyph.u0,glyph.v1,r,g,b,br,bg,bb,colorGlyph},{glyphX1 + boldOffset,glyphY1,glyph.u1,glyph.v0,r,g,b,br,bg,bb,colorGlyph},{glyphX0 + boldOffset,glyphY1,glyph.u0,glyph.v0,r,g,b,br,bg,bb,colorGlyph}});
+                    addGlyphQuad(frameVertices_, glyphX0 + boldOffset, glyphY0, glyphX1 + boldOffset, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
                 }
                 glyphCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
             }

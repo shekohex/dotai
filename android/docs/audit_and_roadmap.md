@@ -118,16 +118,21 @@ Required proof schema:
   Deliverables: Design/implementation for per-row retained glyph/background data, or first incremental step that removes per-frame vector churn; preserve cursor, selection, blinking, and decorations.
   Validation plan: Native build; UIAutomator terminal screenshot; structural proof showing clean rows skip rebuild or reduced allocations.
 
-- [ ] `PERF-RENDER-GLYPH-VERTEX-STRIDE-TOO-LARGE`
-  State: Open
+- [x] `PERF-RENDER-GLYPH-VERTEX-STRIDE-TOO-LARGE`
+  State: Fixed
   Type: Performance issue, GPU bandwidth
   Summary: Glyph vertex format uses 11 floats per vertex, 44-byte stride.
   Impact: Text-heavy frames upload excessive vertex data and consume avoidable GPU bandwidth.
-  Evidence: `struct Vertex` in `app/src/main/cpp/coder_renderer.cpp:12`.
+  Evidence: Original `struct Vertex` used 11 floats in `app/src/main/cpp/coder_renderer.h`; renderer configured foreground, background, and color-glyph as float attributes in `app/src/main/cpp/coder_renderer.cpp`.
   Upstream reference: Ghostty packs one cell-text instance into a compact 32-byte `CellText` struct using integer positions, byte color, atlas enum, and packed bools in `/Users/shady/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/opengl/shaders.zig:233-257`; backgrounds are `[4]u8` in `:259-260`.
   Goal: Reduce glyph vertex bandwidth without changing visual output.
   Deliverables: Packed color attributes; updated GL attribute declarations; byte-size comparison before/after.
   Validation plan: Native build; screenshot comparison/smoke; report old/new stride and upload byte reduction.
+  Resolution: Packed glyph foreground/background colors and the color-glyph flag into normalized `uint8_t` vertex attributes while keeping position and atlas coordinates as floats. Updated terminal vertex shader and GL attribute declarations to consume packed color attributes.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: old `Vertex` was 11 floats = 44 bytes; new `Vertex` is 4 floats + 8 bytes = 24 bytes, a 20-byte/vertex reduction. Each glyph quad uses 6 vertices, so upload drops from 264 bytes/glyph quad to 144 bytes/glyph quad, ~45.5% less glyph vertex bandwidth.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-glyph-vertex-stride-too-large-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `PERF-RENDER-FRAME-ALLOCATION-CHURN`
   State: Fixed

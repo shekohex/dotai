@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-struct Vertex { float x, y, u, v, r, g, b, br, bg, bb, colorGlyph; };
+struct Vertex { float x, y, u, v; uint8_t r, g, b, colorGlyph, br, bg, bb, padding; };
 struct SolidVertex { float x, y, r, g, b, a; };
 
 class CoderRenderer {

@@ -53,7 +53,7 @@ V1 event names:
 
 ## PIOSC-1: Specify Protocol Contract
 
-Status: building
+Status: done
 
 Research:
 
@@ -93,7 +93,12 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-1 commit fcf466c. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Result: no findings. Docs-only change; no Android/runtime code touched, so existing OSC 9/52/777 behavior preserved. Residual risk: no executable tests for docs-only contract; fixture was manually verified with Node base64url encoding.
+
 Commit:
+
+- Implementation: `fcf466c` (`docs(pi-osc): specify protocol contract`)
 
 ## PIOSC-2: Add Agent OSC Encoding Library
 

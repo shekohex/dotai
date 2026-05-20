@@ -489,15 +489,20 @@ Required proof schema:
   Suggested validation: Report uploaded bytes and rows rebuilt for clean, cursor-only, and one-row-dirty frames.
   Next action: Revisit retained row GPU ranges or `glBufferSubData`/mapped persistent buffers.
 
-- [ ] `REVISIT-TERMINAL-MUTEX-SNAPSHOT-LOCK-MEASUREMENT`
-  State: Open
+- [x] `REVISIT-TERMINAL-MUTEX-SNAPSHOT-LOCK-MEASUREMENT`
+  State: Fixed
   Source: `review-render-performance-retry`
   Related item: `PERF-TERMINAL-MUTEX-CONTENTION-RENDER-FEED`
   Severity: Low
   Finding: Lock acquisitions dropped, but render still enters `snapshot` every frame under `mutex_`, updates render state, copies full cells, and applies overlays. Existing proof lacks wait/hold-time measurement for remaining dominant critical section.
   Evidence: `app/src/main/cpp/coder_terminal.cpp:526-527`.
   Suggested validation: Measure render/feed lock wait and hold time under high output.
-  Next action: Revisit shorter snapshot critical section or dirty-row export outside terminal mutex.
+  Resolution: `snapshot` and `feed` now measure mutex wait and hold time with steady-clock sampling and emit aggregated `CoderTerminal` logcat reports every two seconds, including snapshot dimensions. This provides direct runtime proof for the remaining render/feed critical section after snapshot-copy reduction.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; measurement is logcat-only.
+  Performance proof: Runtime log format now reports `mutex snapshot samples=... avg_wait_us=... avg_hold_us=... cols=... rows=...` and `mutex feed samples=... avg_wait_us=... avg_hold_us=...`, enabling high-output measurement requested by the revisit.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `REVISIT-ATLAS-GENERATION-CHANGES-DURING-REBUILD`
   State: Fixed

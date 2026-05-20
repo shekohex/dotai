@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -50,6 +51,33 @@ static bool isWidePreeditCodepoint(uint32_t codepoint) {
             (codepoint >= 0xffe0 && codepoint <= 0xffe6) ||
             (codepoint >= 0x1f000 && codepoint <= 0x1fffd) ||
             (codepoint >= 0x20000 && codepoint <= 0x3fffd));
+}
+
+static void recordTerminalMutexMetric(const char* name, std::chrono::steady_clock::time_point waitStart, std::chrono::steady_clock::time_point holdStart, std::chrono::steady_clock::time_point end, int cols = 0, int rows = 0) {
+    struct MetricState {
+        std::chrono::steady_clock::time_point lastReport = std::chrono::steady_clock::now();
+        uint64_t samples = 0;
+        uint64_t waitMicros = 0;
+        uint64_t holdMicros = 0;
+    };
+    static std::mutex metricMutex;
+    static MetricState snapshot;
+    static MetricState feed;
+    std::lock_guard metricLock(metricMutex);
+    MetricState& state = std::strcmp(name, "snapshot") == 0 ? snapshot : feed;
+    state.samples++;
+    state.waitMicros += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(holdStart - waitStart).count());
+    state.holdMicros += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - holdStart).count());
+    if (std::chrono::duration_cast<std::chrono::seconds>(end - state.lastReport).count() < 2 || state.samples == 0) return;
+    if (std::strcmp(name, "snapshot") == 0) {
+        __android_log_print(ANDROID_LOG_INFO, "CoderTerminal", "mutex snapshot samples=%llu avg_wait_us=%llu avg_hold_us=%llu cols=%d rows=%d", static_cast<unsigned long long>(state.samples), static_cast<unsigned long long>(state.waitMicros / state.samples), static_cast<unsigned long long>(state.holdMicros / state.samples), cols, rows);
+    } else {
+        __android_log_print(ANDROID_LOG_INFO, "CoderTerminal", "mutex feed samples=%llu avg_wait_us=%llu avg_hold_us=%llu", static_cast<unsigned long long>(state.samples), static_cast<unsigned long long>(state.waitMicros / state.samples), static_cast<unsigned long long>(state.holdMicros / state.samples));
+    }
+    state.samples = 0;
+    state.waitMicros = 0;
+    state.holdMicros = 0;
+    state.lastReport = end;
 }
 
 CoderTerminal::CoderTerminal() = default;
@@ -226,11 +254,15 @@ std::vector<uint8_t> CoderTerminal::encodeFocus(bool focused) {
 }
 
 void CoderTerminal::feed(const uint8_t* data, size_t length) {
-    std::lock_guard lock(mutex_);
+    auto waitStart = std::chrono::steady_clock::now();
+    std::unique_lock lock(mutex_);
+    auto holdStart = std::chrono::steady_clock::now();
     if (!terminal_ || data == nullptr || length == 0) return;
     processOscMetadata(data, length);
     ghostty_terminal_vt_write(terminal_.get(), data, length);
     updatePwd();
+    auto end = std::chrono::steady_clock::now();
+    recordTerminalMutexMetric("feed", waitStart, holdStart, end);
 }
 
 void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
@@ -550,7 +582,9 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
 }
 
 bool CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor, std::vector<CoderCell>& outputCells, uint64_t& generation, std::vector<uint8_t>* dirtyRows) {
-    std::lock_guard lock(mutex_);
+    auto waitStart = std::chrono::steady_clock::now();
+    std::unique_lock lock(mutex_);
+    auto holdStart = std::chrono::steady_clock::now();
     bool cellsUpdated = false;
     if (dirtyRows) dirtyRows->clear();
     if (terminal_ && renderState_) {
@@ -685,7 +719,11 @@ bool CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor, std::vec
         snapshotPreeditCursorCol_ = -1;
         snapshotGeneration_++;
     }
-    if (generation == snapshotGeneration_ && outputCells.size() == cells_.size()) return false;
+    if (generation == snapshotGeneration_ && outputCells.size() == cells_.size()) {
+        auto end = std::chrono::steady_clock::now();
+        recordTerminalMutexMetric("snapshot", waitStart, holdStart, end, cols_, rows_);
+        return false;
+    }
     const bool overlayOnlySnapshotChange = !cellsUpdated && generation != snapshotGeneration_;
     outputCells = cells_;
     if (dirtyRows && dirtyRows->empty()) dirtyRows->assign(static_cast<size_t>(rows_), 1);
@@ -742,6 +780,8 @@ bool CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor, std::vec
         }
     }
     generation = snapshotGeneration_;
+    auto end = std::chrono::steady_clock::now();
+    recordTerminalMutexMetric("snapshot", waitStart, holdStart, end, cols_, rows_);
     return true;
 }
 

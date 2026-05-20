@@ -40,6 +40,7 @@ public:
     bool start(int cols, int rows, int cellWidth, int cellHeight);
     void resize(int cols, int rows, int cellWidth, int cellHeight);
     void pump();
+    bool pumpAndSynchronizedOutput();
     void writeUtf8(const char* data, int length);
     std::vector<uint8_t> encodePaste(const uint8_t* data, size_t length);
     std::vector<uint8_t> encodeFocus(bool focused);
@@ -64,6 +65,7 @@ public:
     std::vector<CoderCell> snapshot(int& cols, int& rows, CoderCursor& cursor);
 
 private:
+    void pumpLocked();
     void writePty(const uint8_t* data, size_t length);
     void processOscMetadata(const uint8_t* data, size_t length);
     void finishOscMetadata();

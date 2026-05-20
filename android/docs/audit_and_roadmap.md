@@ -191,8 +191,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `PERF-TERMINAL-MUTEX-CONTENTION-RENDER-FEED`
-  State: Open
+- [x] `PERF-TERMINAL-MUTEX-CONTENTION-RENDER-FEED`
+  State: Fixed
   Type: Performance issue, threading
   Summary: Render, feed, resize, selection, input, and getters share one terminal mutex.
   Impact: Continuous rendering can block input/feed and high-output sessions can stall frames.
@@ -201,6 +201,11 @@ Required proof schema:
   Goal: Reduce measured or obvious lock contention without unsafe concurrent terminal access.
   Deliverables: Shorter critical sections, copy reduction, or instrumentation proof; avoid unproven double-buffering unless needed.
   Validation plan: Native build; render/feed smoke; trace or reasoned measurement.
+  Resolution: Added `pumpAndSynchronizedOutput()` to pump PTY output and read synchronized-output mode under one terminal mutex, and updated render to use it. `pump()` remains for non-render callers.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: render frame terminal lock acquisitions on the normal path drop from three (`pump`, `synchronizedOutput`, `snapshot`) to two (`pumpAndSynchronizedOutput`, `snapshot`) without introducing concurrent Ghostty terminal access.
+  UI proof: Render/feed smoke screenshot `docs/reference/perf-terminal-mutex-contention-render-feed-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `BUG-RENDER-SYNCED-OUTPUT-MODE-IGNORED`
   State: Fixed

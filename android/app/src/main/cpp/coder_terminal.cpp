@@ -138,6 +138,19 @@ void CoderTerminal::resize(int cols, int rows, int cellWidth, int cellHeight) {
 
 void CoderTerminal::pump() {
     std::lock_guard lock(mutex_);
+    pumpLocked();
+}
+
+bool CoderTerminal::pumpAndSynchronizedOutput() {
+    std::lock_guard lock(mutex_);
+    pumpLocked();
+    if (!terminal_) return false;
+    bool enabled = false;
+    ghostty_terminal_mode_get(terminal_.get(), GHOSTTY_MODE_SYNC_OUTPUT, &enabled);
+    return enabled;
+}
+
+void CoderTerminal::pumpLocked() {
     if (ptyFd_ < 0) return;
     std::array<uint8_t, 4096> buffer{};
     for (;;) {

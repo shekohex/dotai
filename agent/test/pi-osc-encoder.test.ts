@@ -160,6 +160,15 @@ test("accessor payload values are rejected", () => {
   );
 });
 
+test("symbol-keyed payload values are rejected", () => {
+  const data: Record<string | symbol, unknown> = { title: "safe" };
+  data[Symbol("hidden")] = () => "bad";
+
+  expect(() => createPiOscSequence("agent.alert", { ...fixtureEnvelope, data })).toThrow(
+    PiOscEncodingError,
+  );
+});
+
 test("array accessor payload values are rejected", () => {
   const items = ["safe"];
   Object.defineProperty(items, "0", {
@@ -168,6 +177,15 @@ test("array accessor payload values are rejected", () => {
       throw new Error("boom");
     },
   });
+
+  expect(() =>
+    createPiOscSequence("agent.progress", { ...fixtureEnvelope, data: { items } }),
+  ).toThrow(PiOscEncodingError);
+});
+
+test("symbol-keyed array payload values are rejected", () => {
+  const items: Array<string> & Record<symbol, unknown> = ["safe"];
+  items[Symbol("hidden")] = () => "bad";
 
   expect(() =>
     createPiOscSequence("agent.progress", { ...fixtureEnvelope, data: { items } }),

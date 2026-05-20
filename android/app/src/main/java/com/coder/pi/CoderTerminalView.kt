@@ -6,7 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.graphics.Color
 import android.graphics.BitmapFactory
+import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.graphics.drawable.Icon
 import android.content.ClipData
 import android.content.ClipDescription
@@ -32,10 +34,12 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.InputConnection
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.core.content.edit
 import androidx.core.content.getSystemService
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
@@ -65,7 +69,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
     private var fontSizeSp = selectedTerminalFontSizeSp(context)
     private var cellHeight = terminalCellHeightForFontSize(context, fontSizeSp)
-    private var cellWidth = terminalCellWidthForFontSize(cellHeight)
+    private var cellWidth = terminalCellWidthForFontSize(context, fontSizeSp)
     internal val terminalEngine = attachedEngine ?: TerminalEngine(80, 24, cellWidth, cellHeight)
     private val engine = terminalEngine
     private var managerOwnsEngine = false
@@ -179,7 +183,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     override fun onSurfaceChanged(gl: javax.microedition.khronos.opengles.GL10?, width: Int, height: Int) {
         surfaceWidth = width
         surfaceHeight = height
-        if (handle != 0L && rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight)
+        if (handle != 0L && rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp))
         notifyTerminalSizeChanged()
     }
 
@@ -772,7 +776,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             }
             surfaceWidth = width
             surfaceHeight = height
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
             notifyTerminalSizeChanged()
             requestRender()
         }
@@ -782,7 +786,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle != 0L && width > 0 && height > 0) {
             surfaceWidth = width
             surfaceHeight = height
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
             notifyTerminalSizeChanged()
             requestRender()
         }
@@ -794,10 +798,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         val nextHeight = terminalCellHeightForFontSize(context, nextSizeSp).coerceAtMost(maxHeight)
         fontSizeSp = nextSizeSp
         cellHeight = nextHeight
-        cellWidth = terminalCellWidthForFontSize(nextHeight)
+        cellWidth = terminalCellWidthForFontSize(context, nextSizeSp)
         preferences.edit { putInt("fontSizeSp", fontSizeSp).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
             notifyTerminalSizeChanged()
         }
     }
@@ -809,13 +813,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     fun setFontSizePoints(points: Int) {
         val nextSizeSp = points.coerceIn(8, 32)
         val nextHeight = terminalCellHeightForFontSize(context, nextSizeSp)
-        val nextWidth = terminalCellWidthForFontSize(nextHeight)
+        val nextWidth = terminalCellWidthForFontSize(context, nextSizeSp)
         fontSizeSp = nextSizeSp
         cellHeight = nextHeight
         cellWidth = nextWidth
         preferences.edit { putInt("fontSizeSp", fontSizeSp).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
         if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight) }
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
             notifyTerminalSizeChanged()
         }
     }
@@ -823,10 +827,25 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     fun setFontFamily(key: String) {
         CoderFonts.setSelected(context, key)
         setNativeFont(key)
+        refreshCellMetricsForFont(key)
     }
 
     fun setPreviewFontFamily(key: String) {
         setNativeFont(key)
+        refreshCellMetricsForFont(key)
+    }
+
+    private fun refreshCellMetricsForFont(key: String) {
+        val nextHeight = terminalCellHeightForFontSize(context, fontSizeSp, key)
+        val nextWidth = terminalCellWidthForFontSize(context, fontSizeSp, key)
+        if (nextWidth == cellWidth && nextHeight == cellHeight) return
+        cellHeight = nextHeight
+        cellWidth = nextWidth
+        preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
+        if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
+            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
+            notifyTerminalSizeChanged()
+        }
     }
 
     private fun setNativeFont(key: String) {
@@ -906,6 +925,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun characterVariant1Enabled(): Boolean = preferences.getBoolean("characterVariant1", false)
+
+    fun setBoldFontStyleEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("boldFontStyle", enabled) }
+        applyTextOptions()
+    }
+
+    fun boldFontStyleEnabled(): Boolean = preferences.getBoolean("boldFontStyle", true)
 
     fun setCursorBlinkEnabled(enabled: Boolean) {
         preferences.edit { putBoolean("cursorBlink", enabled) }
@@ -1204,7 +1230,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun applyTextOptions() {
-        if (rendererHandle != 0L) native.nativeRendererSetTextOptions(rendererHandle, ligaturesEnabled(), contextualAlternatesEnabled(), slashedZeroEnabled(), stylisticSet1Enabled(), stylisticSet2Enabled(), characterVariant1Enabled(), cursorBlinkEnabled(), cursorMode())
+        if (rendererHandle != 0L) native.nativeRendererSetTextOptions(rendererHandle, ligaturesEnabled(), contextualAlternatesEnabled(), slashedZeroEnabled(), stylisticSet1Enabled(), stylisticSet2Enabled(), characterVariant1Enabled(), boldFontStyleEnabled(), cursorBlinkEnabled(), cursorMode())
     }
 
     override fun attachRemote(input: (ByteArray) -> Unit) {
@@ -1625,9 +1651,31 @@ fun selectedTerminalFontSizeSp(context: Context): Int {
     return (preferences.getInt("cellHeight", 36) / 2).coerceIn(8, 32)
 }
 
-fun terminalCellHeightForFontSize(context: Context, fontSizeSp: Int): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSizeSp.coerceIn(8, 32).toFloat(), context.resources.displayMetrics).roundToInt().coerceAtLeast(8)
+fun terminalFontPixelSize(context: Context, fontSizeSp: Int): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSizeSp.coerceIn(8, 32).toFloat(), context.resources.displayMetrics).roundToInt().coerceAtLeast(8)
 
-fun terminalCellWidthForFontSize(fontSizePixels: Int): Int = (fontSizePixels * 0.55f).roundToInt().coerceIn(5, 80)
+fun terminalCellHeightForFontSize(context: Context, fontSizeSp: Int, key: String = CoderFonts.selectedKey(context)): Int {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = terminalFontPixelSize(context, fontSizeSp).toFloat()
+        typeface = terminalMetricTypeface(context, key)
+    }
+    val metrics = paint.fontMetrics
+    return ceil(metrics.descent - metrics.ascent + metrics.leading).toInt().coerceAtLeast(8)
+}
+
+fun terminalCellWidthForFontSize(context: Context, fontSizeSp: Int, key: String = CoderFonts.selectedKey(context)): Int {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = terminalFontPixelSize(context, fontSizeSp).toFloat()
+        typeface = terminalMetricTypeface(context, key)
+    }
+    return ceil(paint.measureText("M")).toInt().coerceIn(5, 80)
+}
+
+private fun terminalMetricTypeface(context: Context, key: String): Typeface {
+    val option = CoderFonts.allOptions(context).firstOrNull { it.key == key } ?: CoderFonts.builtInOptions().first()
+    option.file?.let { file -> runCatching { return Typeface.createFromFile(file) } }
+    option.resourceId?.let { resourceId -> ResourcesCompat.getFont(context, resourceId)?.let { return it } }
+    return Typeface.MONOSPACE
+}
 
 fun terminalTextInputUsesUtf8(output: String, hasPrefix: Boolean, hasRemoteInput: Boolean): Boolean = hasPrefix || hasRemoteInput || output.length != 1 || output.any { it.code > 0x7f }
 

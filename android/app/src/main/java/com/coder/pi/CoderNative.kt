@@ -11,9 +11,9 @@ class CoderNative {
     external fun nativeRendererSetShaderCacheDir(rendererHandle: Long, path: String)
     external fun nativeSetTerminalTheme(terminalHandle: Long, foreground: Int, background: Int, cursor: Int, selectionBackground: Int, palette: IntArray)
     external fun nativeRendererSetTheme(rendererHandle: Long, background: Int, cursor: Int, cursorText: Int)
-    external fun nativeRendererSetTextOptions(rendererHandle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, cursorBlink: Boolean, cursorMode: Int)
+    external fun nativeRendererSetTextOptions(rendererHandle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, boldFontStyle: Boolean, cursorBlink: Boolean, cursorMode: Int)
     external fun nativeRendererSetRefreshRate(rendererHandle: Long, refreshRate: Float)
-    external fun nativeRendererSurfaceChanged(terminalHandle: Long, rendererHandle: Long, width: Int, height: Int, cellWidth: Int, cellHeight: Int)
+    external fun nativeRendererSurfaceChanged(terminalHandle: Long, rendererHandle: Long, width: Int, height: Int, cellWidth: Int, cellHeight: Int, fontPixelSize: Int)
     external fun nativeRendererDrawFrame(terminalHandle: Long, rendererHandle: Long)
     external fun nativeWrite(handle: Long, bytes: ByteArray)
     external fun nativePaste(handle: Long, bytes: ByteArray): ByteArray

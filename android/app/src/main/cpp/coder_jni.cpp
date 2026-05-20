@@ -105,8 +105,8 @@ Java_com_coder_pi_CoderNative_nativeRendererSetTheme(JNIEnv*, jobject, jlong ren
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeRendererSetTextOptions(JNIEnv*, jobject, jlong rendererHandle, jboolean ligatures, jboolean contextualAlternates, jboolean slashedZero, jboolean stylisticSet1, jboolean stylisticSet2, jboolean characterVariant1, jboolean cursorBlink, jint cursorMode) {
-    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setTextOptions(ligatures == JNI_TRUE, contextualAlternates == JNI_TRUE, slashedZero == JNI_TRUE, stylisticSet1 == JNI_TRUE, stylisticSet2 == JNI_TRUE, characterVariant1 == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
+Java_com_coder_pi_CoderNative_nativeRendererSetTextOptions(JNIEnv*, jobject, jlong rendererHandle, jboolean ligatures, jboolean contextualAlternates, jboolean slashedZero, jboolean stylisticSet1, jboolean stylisticSet2, jboolean characterVariant1, jboolean boldFontStyle, jboolean cursorBlink, jint cursorMode) {
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setTextOptions(ligatures == JNI_TRUE, contextualAlternates == JNI_TRUE, slashedZero == JNI_TRUE, stylisticSet1 == JNI_TRUE, stylisticSet2 == JNI_TRUE, characterVariant1 == JNI_TRUE, boldFontStyle == JNI_TRUE, cursorBlink == JNI_TRUE, cursorMode);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -115,10 +115,10 @@ Java_com_coder_pi_CoderNative_nativeRendererSetRefreshRate(JNIEnv*, jobject, jlo
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeRendererSurfaceChanged(JNIEnv*, jobject, jlong terminalHandle, jlong rendererHandle, jint width, jint height, jint cellWidth, jint cellHeight) {
+Java_com_coder_pi_CoderNative_nativeRendererSurfaceChanged(JNIEnv*, jobject, jlong terminalHandle, jlong rendererHandle, jint width, jint height, jint cellWidth, jint cellHeight, jint fontPixelSize) {
     const int columns = std::max(1, width / std::max(1, cellWidth));
     const int rows = std::max(1, height / std::max(1, cellHeight));
-    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setCellSize(cellWidth, cellHeight);
+    renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->setCellSize(cellWidth, cellHeight, fontPixelSize);
     renderer(reinterpret_cast<NativeRenderer*>(rendererHandle))->resize(width, height);
     terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->resize(columns, rows, cellWidth, cellHeight);
 }

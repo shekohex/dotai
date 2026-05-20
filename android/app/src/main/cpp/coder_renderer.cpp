@@ -78,15 +78,16 @@ static uint8_t colorByte(float value) {
     return static_cast<uint8_t>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
 }
 
-static void addGlyphQuad(std::vector<Vertex>& vertices, float x0, float y0, float x1, float y1, const CoderFont::Glyph& glyph, float r, float g, float b, float br, float bg, float bb, float colorGlyph) {
+static void addGlyphQuad(std::vector<Vertex>& vertices, float x0, float y0, float x1, float y1, const CoderFont::Glyph& glyph, float r, float g, float b, float alpha, float br, float bg, float bb, float colorGlyph) {
     const uint8_t red = colorByte(r);
     const uint8_t green = colorByte(g);
     const uint8_t blue = colorByte(b);
-    const uint8_t alpha = colorByte(colorGlyph);
+    const uint8_t foregroundAlpha = colorByte(alpha);
     const uint8_t backgroundRed = colorByte(br);
     const uint8_t backgroundGreen = colorByte(bg);
     const uint8_t backgroundBlue = colorByte(bb);
-    vertices.insert(vertices.end(), {{x0,y0,glyph.u0,glyph.v1,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x1,y0,glyph.u1,glyph.v1,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x1,y1,glyph.u1,glyph.v0,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x0,y0,glyph.u0,glyph.v1,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x1,y1,glyph.u1,glyph.v0,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0},{x0,y1,glyph.u0,glyph.v0,red,green,blue,alpha,backgroundRed,backgroundGreen,backgroundBlue,0}});
+    const uint8_t colorGlyphFlag = colorByte(colorGlyph);
+    vertices.insert(vertices.end(), {{x0,y0,glyph.u0,glyph.v1,red,green,blue,foregroundAlpha,backgroundRed,backgroundGreen,backgroundBlue,colorGlyphFlag},{x1,y0,glyph.u1,glyph.v1,red,green,blue,foregroundAlpha,backgroundRed,backgroundGreen,backgroundBlue,colorGlyphFlag},{x1,y1,glyph.u1,glyph.v0,red,green,blue,foregroundAlpha,backgroundRed,backgroundGreen,backgroundBlue,colorGlyphFlag},{x0,y0,glyph.u0,glyph.v1,red,green,blue,foregroundAlpha,backgroundRed,backgroundGreen,backgroundBlue,colorGlyphFlag},{x1,y1,glyph.u1,glyph.v0,red,green,blue,foregroundAlpha,backgroundRed,backgroundGreen,backgroundBlue,colorGlyphFlag},{x0,y1,glyph.u0,glyph.v0,red,green,blue,foregroundAlpha,backgroundRed,backgroundGreen,backgroundBlue,colorGlyphFlag}});
 }
 
 CoderRenderer::CoderRenderer() = default;
@@ -173,8 +174,9 @@ void CoderRenderer::setTheme(uint32_t background, uint32_t cursor, uint32_t curs
     cachedCells_.clear();
 }
 
-void CoderRenderer::setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool cursorBlink, int cursorMode) {
+void CoderRenderer::setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool boldFontStyle, bool cursorBlink, int cursorMode) {
     font_.setOpenTypeFeatures(ligatures, contextualAlternates, slashedZero, stylisticSet1, stylisticSet2, characterVariant1);
+    font_.setBoldStyleEnabled(boldFontStyle);
     cursorBlink_ = cursorBlink;
     cursorMode_ = cursorMode < 0 ? 0 : cursorMode > 2 ? 2 : cursorMode;
     cachedCells_.clear();
@@ -193,8 +195,8 @@ void CoderRenderer::resize(int width, int height) {
     glViewport(0, 0, width_, height_);
 }
 
-void CoderRenderer::setCellSize(int width, int height) {
-    font_.setCellSize(width, height);
+void CoderRenderer::setCellSize(int width, int height, int fontPixelSize) {
+    font_.setCellSize(width, height, fontPixelSize);
     cachedCells_.clear();
 }
 
@@ -323,16 +325,12 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float r = ((glyphColor >> 0) & 255) / 255.0f;
             float g = ((glyphColor >> 8) & 255) / 255.0f;
             float b = ((glyphColor >> 16) & 255) / 255.0f;
-            if ((cell.flags & 256u) != 0u) {
-                r = br + (r - br) * 0.50f;
-                g = bg + (g - bg) * 0.50f;
-                b = bb + (b - bb) * 0.50f;
-            }
+            float textAlpha = (cell.flags & 256u) != 0u ? 0.50f : 1.0f;
             const bool blinkHidden = (cell.flags & 512u) != 0u && !blinkPhase;
             bool synthesizeBold = font_.shouldSynthesizeBold(cell.flags);
             auto addDecorationColor = [&](float y, float thickness, float decorationR, float decorationG, float decorationB) {
                 float dy = thickness * ch;
-                addSolidQuad(frameSolidVertices_, x0, y, x1, y + dy, decorationR, decorationG, decorationB, 1.0f);
+                addSolidQuad(frameSolidVertices_, x0, y, x1, y + dy, decorationR, decorationG, decorationB, textAlpha);
             };
             auto addSegmentedDecorationColor = [&](float y, float thickness, float decorationR, float decorationG, float decorationB, int segments, bool alternating) {
                 float dy = thickness * ch;
@@ -341,7 +339,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     if (alternating && (segment % 2) != 0) continue;
                     float sx0 = x0 + static_cast<float>(segment) * segmentWidth;
                     float sx1 = sx0 + segmentWidth * (alternating ? 0.72f : 0.38f);
-                    addSolidQuad(frameSolidVertices_, sx0, y, sx1, y + dy, decorationR, decorationG, decorationB, 1.0f);
+                    addSolidQuad(frameSolidVertices_, sx0, y, sx1, y + dy, decorationR, decorationG, decorationB, textAlpha);
                 }
             };
             auto addDecoration = [&](float y, float thickness) { addDecorationColor(y, thickness, r, g, b); };
@@ -380,7 +378,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     std::array<uint32_t, 64> runCodepoints{};
                     uint32_t runCodepointCount = 0;
                     for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = renderCells[row * cols + runCol].codepoints[0];
-                    auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags);
+                    auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags, (runEndCol - col) * font_.glyphWidth());
                     bool runRenderable = !runGlyphs.empty();
                     for (const auto& shapedGlyph : runGlyphs) {
                         CoderFont::Glyph glyph;
@@ -406,7 +404,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
+                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                             runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
@@ -427,7 +425,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     std::array<uint32_t, 64> runCodepoints{};
                     uint32_t runCodepointCount = 0;
                     for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = renderCells[row * cols + runCol].codepoints[0];
-                    auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags);
+                    auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags, (runEndCol - col) * font_.glyphWidth());
                     bool runRenderable = !runGlyphs.empty();
                     for (const auto& shapedGlyph : runGlyphs) {
                         CoderFont::Glyph glyph;
@@ -453,7 +451,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                             float glyphX1 = glyphX[1];
                             float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                             float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
+                            addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                             runCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                         }
                         continue;
@@ -483,7 +481,9 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 appendCellCodepoints(nextCell);
             }
             if (clusterHasEmoji && clusterEndCol > col && clusterCodepointCount > cell.codepointCount) {
-                auto clusterGlyphs = font_.shape(clusterCodepoints.data(), clusterCodepointCount, cell.flags);
+                int clusterCellSpan = clusterEndCol - col + 1;
+                int collapsedCellSpan = clusterHasEmoji ? 2 : clusterCellSpan;
+                auto clusterGlyphs = font_.shape(clusterCodepoints.data(), clusterCodepointCount, cell.flags, collapsedCellSpan * font_.glyphWidth());
                 bool clusterRenderable = !clusterGlyphs.empty();
                 for (const auto& shapedGlyph : clusterGlyphs) {
                     CoderFont::Glyph glyph;
@@ -506,11 +506,9 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                         float glyphX1 = glyphX[1];
                         float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                         float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                        addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
+                        addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                         clusterCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
                     }
-                    int clusterCellSpan = clusterEndCol - col + 1;
-                    int collapsedCellSpan = clusterHasEmoji ? 2 : clusterCellSpan;
                     if (clusterCellSpan > collapsedCellSpan) visualColumnShift += clusterCellSpan - collapsedCellSpan;
                     continue;
                 }
@@ -527,11 +525,11 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     float glyphX1 = glyphX[1];
                     float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                     float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                    addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
+                    addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                     glyphCursorX += 2.0f * static_cast<float>(glyph.advance) / static_cast<float>(width_);
                 }
             };
-            auto shapedGlyphs = font_.shape(cell.codepoints.data(), cell.codepointCount, cell.flags);
+            auto shapedGlyphs = font_.shape(cell.codepoints.data(), cell.codepointCount, cell.flags, cellSpan * font_.glyphWidth());
             if (shapedGlyphs.empty()) {
                 drawCodepoints();
                 continue;
@@ -559,10 +557,10 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 float glyphX1 = glyphX[1];
                 float glyphY0 = snapY(glyphY1 - 2.0f * static_cast<float>(glyph.height) / static_cast<float>(height_));
                 float colorGlyph = glyph.color ? 1.0f : 0.0f;
-                addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
+                addGlyphQuad(frameVertices_, glyphX0, glyphY0, glyphX1, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                 if (synthesizeBold && !glyph.color) {
                     float boldOffset = 2.0f / static_cast<float>(width_);
-                    addGlyphQuad(frameVertices_, glyphX0 + boldOffset, glyphY0, glyphX1 + boldOffset, glyphY1, glyph, r, g, b, br, bg, bb, colorGlyph);
+                    addGlyphQuad(frameVertices_, glyphX0 + boldOffset, glyphY0, glyphX1 + boldOffset, glyphY1, glyph, r, g, b, textAlpha, br, bg, bb, colorGlyph);
                 }
                 glyphCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
             }

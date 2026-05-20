@@ -46,13 +46,14 @@ public:
     void setFontData(const uint8_t* data, size_t length);
     void setFontData(const uint8_t* regularData, size_t regularLength, const uint8_t* boldData, size_t boldLength, const uint8_t* italicData, size_t italicLength, const uint8_t* boldItalicData, size_t boldItalicLength);
     void setFallbackFontData(const uint8_t* data, size_t length);
-    void setCellSize(int width, int height);
+    void setCellSize(int width, int height, int fontPixelSize);
     void setOpenTypeFeatures(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1);
+    void setBoldStyleEnabled(bool enabled);
     bool glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph);
     bool glyphByIndex(uint32_t glyphIndex, uint32_t flags, Glyph& outGlyph);
     bool primaryGlyphByIndex(uint32_t glyphIndex, uint32_t primaryIndex, Glyph& outGlyph);
     bool fallbackGlyphByIndex(uint32_t glyphIndex, uint32_t fallbackIndex, Glyph& outGlyph);
-    std::vector<ShapedGlyph> shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags);
+    std::vector<ShapedGlyph> shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance);
     bool shouldSynthesizeBold(uint32_t flags) const;
     GLuint texture() const { return texture_; }
     int glyphWidth() const { return glyphWidth_; }
@@ -79,7 +80,7 @@ private:
     bool configureFaceSize(FT_Face face);
     void updateMetricsFromFace(FT_Face face);
     uint32_t styleIndex(uint32_t flags) const;
-    std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex);
+    std::vector<ShapedGlyph> shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex, int targetAdvance);
     bool allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, Glyph& outGlyph);
     const uint8_t* bitmapBuffer(const FT_Bitmap& bitmap, std::vector<uint8_t>& convertedBuffer, bool& color);
     void releaseFace();
@@ -87,7 +88,8 @@ private:
     struct ShapeCacheKey {
         std::vector<uint32_t> codepoints;
         uint32_t flags = 0;
-        bool operator==(const ShapeCacheKey& other) const { return flags == other.flags && codepoints == other.codepoints; }
+        int targetAdvance = 0;
+        bool operator==(const ShapeCacheKey& other) const { return flags == other.flags && targetAdvance == other.targetAdvance && codepoints == other.codepoints; }
     };
 
     struct ShapeCacheKeyHash {
@@ -95,11 +97,12 @@ private:
     };
 
     void clearShapeCache();
-    std::vector<ShapedGlyph> shapeUncached(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags);
+    std::vector<ShapedGlyph> shapeUncached(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance);
 
     GLuint texture_ = 0;
     int glyphWidth_ = 18;
     int glyphHeight_ = 36;
+    int fontPixelSize_ = 36;
     int baseline_ = 28;
     bool ligaturesEnabled_ = true;
     bool contextualAlternatesEnabled_ = true;
@@ -114,6 +117,7 @@ private:
     bool atlasFullReported_ = false;
     bool atlasGrowing_ = false;
     bool atlasResetting_ = false;
+    bool boldStyleEnabled_ = false;
     uint64_t atlasGeneration_ = 0;
     int shelfX_ = 1;
     int shelfY_ = 1;

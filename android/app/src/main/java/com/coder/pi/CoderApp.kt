@@ -1108,6 +1108,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
     val debugFonts = remember { CoderFonts.builtInOptions().filter { it.key in setOf("jetbrains", "geist", "ibm_plex", "iosevka", "maple") } }
     var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
+    var debugFramesScheduled by remember { mutableStateOf(false) }
     val playgroundTerminalView = remember(context) {
         CoderTerminalView(context).also {
             it.setFontSizePoints(16)
@@ -1134,6 +1135,8 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
                 it.applyTheme(theme)
                 it.post { it.refreshSurface() }
                 it.setFontSizePoints(16)
+                if (debugFramesScheduled) return@AndroidView
+                debugFramesScheduled = true
                 debugFonts.forEachIndexed { index, font ->
                     val delayMillis = index * 900L
                     it.postDelayed({
@@ -1143,6 +1146,9 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
                 }
                 repeat(96) { frameIndex ->
                     it.postDelayed({ it.feedRemoteOutput(debugWorkingIndicatorFrameBytes(frameIndex)) }, 4500L + frameIndex * 80L)
+                }
+                repeat(240) { frameIndex ->
+                    it.postDelayed({ it.feedRemoteOutput(debugShimmerFrameBytes(frameIndex)) }, 4500L + frameIndex * 80L)
                 }
                 listOf(0, 20, 45, 70, 100).forEachIndexed { index, progress ->
                     it.postDelayed({ it.feedRemoteOutput("\u001b]9;4;1;$progress\u0007".toByteArray(Charsets.UTF_8)) }, 5200L + index * 700L)
@@ -1192,6 +1198,7 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("Real CoderTerminalView + libghostty-vt + native GLES renderer\r\n\r\n")
         append("OSC 8: ${esc}]8;;https://example.com${'\u0007'}tap link${esc}]8;;${'\u0007'}  BEL:${'\u0007'}  Color:${esc}]10;#ff5c7a${'\u0007'}fg override${esc}]110${'\u0007'}\r\n\r\n")
         append("Working: ⣾ CoreUI indicator\r\n\r\n")
+        append("Shimmer SGR: ${esc}[1;97mrendering${esc}[22;39m ${esc}[37mterminal${esc}[22;39m ${esc}[2mfonts${esc}[22m\r\n\r\n")
         append("${esc}[1mBold${esc}[0m   ${esc}[3mItalic${esc}[0m   ${esc}[1;3mBoldItalic${esc}[0m\r\n")
         append("${esc}[2mFaint${esc}[0m   ${esc}[5mBlink${esc}[25m   ${esc}[9mStrike${esc}[0m   ${esc}[53mOverline${esc}[55m\r\n\r\n")
         append("${esc}[4mSingle underline${esc}[0m\r\n")
@@ -1221,6 +1228,30 @@ private fun debugWorkingIndicatorFrameBytes(index: Int): ByteArray {
     val frame = frames[index % frames.size]
     val color = colors[index % colors.size]
     return "\u001b[7;10H$color$frame\u001b[39m\u001b[999;1H".toByteArray(Charsets.UTF_8)
+}
+
+private fun debugShimmerFrameBytes(index: Int): ByteArray {
+    val esc = "\u001b"
+    val message = "rendering terminal fonts"
+    val highlight = index % message.length
+    val frame = buildString {
+        append("${esc}[9;1H${esc}[2KShimmer SGR: ")
+        message.forEachIndexed { charIndex, character ->
+            if (character == ' ') {
+                append(character)
+            } else {
+                val distance = kotlin.math.abs(charIndex - highlight)
+                val style = when (distance) {
+                    0 -> "${esc}[1;97m"
+                    1 -> "${esc}[37m"
+                    else -> "${esc}[2m"
+                }
+                append(style).append(character).append("${esc}[22;39m")
+            }
+        }
+        append("${esc}[999;1H")
+    }
+    return frame.toByteArray(Charsets.UTF_8)
 }
 
 @Composable
@@ -1872,6 +1903,7 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
     var stylisticSet1 by remember { mutableStateOf(terminalView.stylisticSet1Enabled()) }
     var stylisticSet2 by remember { mutableStateOf(terminalView.stylisticSet2Enabled()) }
     var characterVariant1 by remember { mutableStateOf(terminalView.characterVariant1Enabled()) }
+    var boldFontStyle by remember { mutableStateOf(terminalView.boldFontStyleEnabled()) }
     var cursorBlink by remember { mutableStateOf(terminalView.cursorBlinkEnabled()) }
     var cursorMode by remember { mutableIntStateOf(terminalView.cursorMode()) }
     SettingsScaffold("Customize Text", tokens, onBack) {
@@ -1902,6 +1934,13 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
             }
             SettingsValueRow(R.drawable.ic_feather_sliders, "Feature Tags", "liga, calt, zero, ss01, ss02, cv01", "Native", tokens) {}
         }
+        SettingsSection("STYLE", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_type, "Bold Font Style", boldFontStyle, tokens) {
+                boldFontStyle = it
+                terminalView.setBoldFontStyleEnabled(it)
+            }
+            item { Text("Off keeps SGR 1 from changing glyph weight. This avoids shimmer weight flicker while preserving terminal bold state.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+        }
         SettingsSection("CURSOR", tokens) {
             CursorSettingsPreview(tokens, cursorMode, cursorBlink)
             SettingsSegmentedControlRow(R.drawable.ic_feather_type, "Cursor Mode", tokens, cursorMode) {
@@ -1917,7 +1956,7 @@ private fun TextCustomizationScreen(terminalView: CoderTerminalView, tokens: UiT
             SettingsValueRow(R.drawable.ic_feather_globe, "CJK Fallback", "Use Android system fallback when glyph missing", "Native", tokens) {}
             SettingsValueRow(R.drawable.ic_feather_type, "Emoji Fallback", "Use Android color emoji fonts", "Native", tokens) {}
         }
-        item { Text("OpenType features, cursor mode, and cursor blink apply immediately to the native terminal renderer. CJK and emoji fallback use the native fallback stack.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+        item { Text("OpenType features, bold font style, cursor mode, and cursor blink apply immediately to the native terminal renderer. CJK and emoji fallback use the native fallback stack.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
     }
 }
 

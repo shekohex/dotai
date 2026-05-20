@@ -24,9 +24,9 @@ public:
     void setFallbackFontData(const uint8_t* data, size_t length);
     void setShaderCacheDir(std::string path);
     void setTheme(uint32_t background, uint32_t cursor, uint32_t cursorText);
-    void setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool cursorBlink, int cursorMode);
+    void setTextOptions(bool ligatures, bool contextualAlternates, bool slashedZero, bool stylisticSet1, bool stylisticSet2, bool characterVariant1, bool boldFontStyle, bool cursorBlink, int cursorMode);
     void setTargetRefreshRate(float refreshRate);
-    void setCellSize(int width, int height);
+    void setCellSize(int width, int height, int fontPixelSize);
     void resize(int width, int height);
     void draw(CoderTerminal& terminal);
     int cellWidth() const;

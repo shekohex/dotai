@@ -1,10 +1,11 @@
 #version 300 es
 
-precision mediump float;
+precision highp float;
+precision highp sampler2D;
 
 in vec2 atlasUv;
 in vec4 textColor;
-in vec3 cellBackgroundColor;
+in vec4 cellBackgroundColor;
 
 uniform sampler2D glyphAtlas;
 
@@ -28,18 +29,19 @@ vec3 linearize(vec3 color) {
 
 void main() {
     vec4 glyph = texture(glyphAtlas, atlasUv);
-    if (textColor.a > 0.5) {
+    if (cellBackgroundColor.a > 0.5) {
         if (glyph.a <= 0.01) discard;
-        fragmentColor = vec4(glyph.rgb * glyph.a, glyph.a);
+        fragmentColor = glyph * textColor.a;
         return;
     }
     float coverage = glyph.a;
     float foregroundLuminance = luminance(linearize(textColor.rgb));
-    float backgroundLuminance = luminance(linearize(cellBackgroundColor));
+    float backgroundLuminance = luminance(linearize(cellBackgroundColor.rgb));
     if (abs(foregroundLuminance - backgroundLuminance) > 0.001) {
         float blendedLuminance = linearize(unlinearize(foregroundLuminance) * coverage + unlinearize(backgroundLuminance) * (1.0 - coverage));
         coverage = clamp((blendedLuminance - backgroundLuminance) / (foregroundLuminance - backgroundLuminance), 0.0, 1.0);
     }
     if (coverage <= 0.01) discard;
-    fragmentColor = vec4(textColor.rgb * coverage, coverage);
+    float alpha = coverage * textColor.a;
+    fragmentColor = vec4(textColor.rgb * alpha, alpha);
 }

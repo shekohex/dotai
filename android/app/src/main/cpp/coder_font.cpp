@@ -772,14 +772,18 @@ bool CoderFont::growAtlas() {
     atlasGrowCount_++;
     __android_log_print(ANDROID_LOG_WARN, "CoderFont", "growing glyph atlas next_size=%d max_texture_size=%d grows=%u resets=%u misses=%u color_pressure=%u", atlasTargetSize_, atlasMaxSize_, atlasGrowCount_, atlasResetCount_, atlasMissCount_, atlasColorPressureCount_);
     bool rebuilt = rebuildAtlas();
-    if (rebuilt) atlasGeneration_++;
+    if (rebuilt) {
+        atlasGeneration_++;
+        atlasResetBudgetUsed_ = false;
+    }
     atlasGrowing_ = false;
     return rebuilt;
 }
 
 bool CoderFont::resetAtlasForRecentGlyphs() {
-    if (atlasResetting_ || atlasResetCount_ >= 1) return false;
+    if (atlasResetting_ || atlasResetBudgetUsed_) return false;
     atlasResetting_ = true;
+    atlasResetBudgetUsed_ = true;
     atlasResetCount_++;
     __android_log_print(ANDROID_LOG_WARN, "CoderFont", "resetting full glyph atlas width=%d height=%d glyphs=%zu grows=%u resets=%u misses=%u color_pressure=%u", atlasWidth_, atlasHeight_, glyphs_.size(), atlasGrowCount_, atlasResetCount_, atlasMissCount_, atlasColorPressureCount_);
     bool rebuilt = rebuildAtlas();

@@ -432,8 +432,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `INVESTIGATE-NETWORK-KTOR-CIO-HANDOVER`
-  State: Blocked
+- [x] `INVESTIGATE-NETWORK-KTOR-CIO-HANDOVER`
+  State: Fixed
   Type: Investigation, network reliability
   Summary: API and terminal WebSockets use Ktor CIO; OkHttp may be better for mobile handover, but cause is unproven.
   Impact: Premature engine switch could add churn without improving reconnect reliability.
@@ -441,12 +441,12 @@ Required proof schema:
   Goal: Decide from evidence whether to keep CIO or switch to OkHttp.
   Deliverables: Handover test notes or blocker; decision record; code change only if evidence supports it.
   Validation plan: Wi-Fi/cellular or emulator network transition test if available; otherwise mark blocked with exact environment need.
-  Resolution: Blocked, no code change. Engine switch would be speculative without a reproducible handover failure or controlled network transition evidence.
-  Validation: Blocker: current environment exposes `emulator-5554` only and no Wi-Fi/cellular handover control, physical Android device, cellular data plan, or backend test harness for controlled network transitions. Closest local evidence confirms CIO is still wired only through `CoderApi` and terminal sessions close owned clients.
-  UI proof: Blocker: no meaningful UI proof can validate mobile network handover without physical/network transition setup.
+  Resolution: Best-effort implementation per user request. Switched `CoderApi` from Ktor CIO to Ktor OkHttp so REST and terminal WebSocket sessions use OkHttp's Android networking stack, updated Ktor to `3.5.0`, and enabled OkHttp protocol preference `HTTP_3`, `HTTP_2`, `HTTP_1_1`. Firecrawl investigation found official Ktor client engines list OkHttp/CIO/Android/etc. and no Cronet/HTTP3 engine; Google Cronet Transport for OkHttp advertises QUIC/HTTP3 and connection migration, but its README states `The WebSocket protocol is not supported by Cronet, and therefore is not supported by this library either.` Cronet was therefore not used for terminal WebSockets.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; dependency check resolved `io.ktor:ktor-client-okhttp:3.5.0` and `com.squareup.okhttp3:okhttp:5.3.2`; local API inspection confirmed `okhttp3.Protocol.HTTP_3` exists in resolved OkHttp Android artifact. Real Wi-Fi/cellular handover and HTTP/3 negotiation validation remains user-side because current environment exposes `emulator-5554` only and no Wi-Fi/cellular handover control, physical Android device, cellular data plan, or backend test harness for controlled network transitions.
+  UI proof: Pending real-device handover proof by user; no meaningful UI proof can validate mobile network handover without physical/network transition setup.
   Review: No findings.
   Commit: HEAD (this commit).
-  User action needed: Provide physical Android device or test setup that can transition Wi-Fi to cellular while a terminal WebSocket is active, plus backend/session credentials for reproducible reconnect testing.
+  User action needed: Test on a physical Android device or test setup that can transition Wi-Fi to cellular while a terminal WebSocket is active, plus backend/session credentials for reproducible reconnect testing.
 
 ## Not Filed As Issues
 

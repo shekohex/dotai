@@ -1099,7 +1099,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     val playgroundTerminalView = remember(context) {
         CoderTerminalView(context).also {
-            it.setFontSizePoints(22)
+            it.setFontSizePoints(16)
             it.applyTheme(theme)
         }
     }
@@ -1122,7 +1122,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
             update = {
                 it.applyTheme(theme)
                 it.post { it.refreshSurface() }
-                it.setFontSizePoints(22)
+                it.setFontSizePoints(16)
                 debugFonts.forEachIndexed { index, font ->
                     val delayMillis = index * 900L
                     it.postDelayed({

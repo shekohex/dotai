@@ -490,15 +490,19 @@ Required proof schema:
   Suggested validation: Measure render/feed lock wait and hold time under high output.
   Next action: Revisit shorter snapshot critical section or dirty-row export outside terminal mutex.
 
-- [ ] `REVISIT-ATLAS-GENERATION-CHANGES-DURING-REBUILD`
-  State: Open
+- [x] `REVISIT-ATLAS-GENERATION-CHANGES-DURING-REBUILD`
+  State: Fixed
   Source: `review-font-atlas-symbols`
   Related items: `PERF-RENDER-ATLAS-GROW-PRESERVE-DATA`, `PERF-RENDER-ATLAS-NO-EVICTION`
   Severity: High
   Finding: `draw()` samples atlas generation before rebuilding rows, but glyph allocation can grow/reset atlas during row rebuild. Earlier vertices can keep old UVs, then renderer accepts new `cachedAtlasGeneration_`, avoiding the promised full rebuild next frame.
   Evidence: `app/src/main/cpp/coder_renderer.cpp:602`.
   Suggested validation: Add glyph-pressure stress coverage that triggers atlas growth/reset mid-frame and verifies UV correctness.
-  Next action: Detect atlas generation changes during row rebuild and restart or force full vertex rebuild before accepting new generation.
+  Resolution: Renderer now captures atlas generation before row rebuild and restarts full row vertex rebuild if glyph allocation changes atlas generation during that rebuild, clearing row vertex caches before retrying. If generation keeps changing after bounded retries, it skips the stale upload, preserves previous buffers, resets cached atlas generation, and forces a future rebuild instead of accepting stale UV vertices.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; no new screenshot captured for native-only atlas rebuild guard.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-SYMBOL-CONSTRAINTS-NEIGHBOR-SPANNING`
   State: Open

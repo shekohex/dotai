@@ -270,10 +270,15 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     auto snapX = [&](float x) { return -1.0f + std::round(((x + 1.0f) * 0.5f) * static_cast<float>(width_)) * 2.0f / static_cast<float>(width_); };
     auto snapY = [&](float y) { return -1.0f + std::round(((y + 1.0f) * 0.5f) * static_cast<float>(height_)) * 2.0f / static_cast<float>(height_); };
     if (shouldUploadBuffers) {
+        int atlasRebuildAttempts = 0;
+    rebuildFrameVertices:
+        frameVertices_.clear();
+        frameSolidVertices_.clear();
         frameVertices_.reserve(renderCells.size() * 6);
         frameSolidVertices_.reserve((renderCells.size() + 1) * 6);
         frameSkipText_.assign(renderCells.size(), 0);
-        const bool rebuildAllRows = rowGlyphVertices_.size() != static_cast<size_t>(rows) || rowSolidVertices_.size() != static_cast<size_t>(rows) || atlasChanged || blinkChanged;
+        const uint64_t rowBuildAtlasGeneration = font_.atlasGeneration();
+        const bool rebuildAllRows = rowGlyphVertices_.size() != static_cast<size_t>(rows) || rowSolidVertices_.size() != static_cast<size_t>(rows) || cachedAtlasGeneration_ != rowBuildAtlasGeneration || blinkChanged;
         if (rowGlyphVertices_.size() != static_cast<size_t>(rows)) rowGlyphVertices_.assign(static_cast<size_t>(rows), {});
         if (rowSolidVertices_.size() != static_cast<size_t>(rows)) rowSolidVertices_.assign(static_cast<size_t>(rows), {});
         for (int row = 0; row < rows; row++) {
@@ -565,6 +570,14 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             rowGlyphVertices_[static_cast<size_t>(row)].assign(frameVertices_.begin() + static_cast<std::ptrdiff_t>(rowGlyphStart), frameVertices_.end());
             rowSolidVertices_[static_cast<size_t>(row)].assign(frameSolidVertices_.begin() + static_cast<std::ptrdiff_t>(rowSolidStart), frameSolidVertices_.end());
         }
+        if (font_.atlasGeneration() != rowBuildAtlasGeneration) {
+            rowGlyphVertices_.assign(static_cast<size_t>(rows), {});
+            rowSolidVertices_.assign(static_cast<size_t>(rows), {});
+            if (atlasRebuildAttempts++ < 2) goto rebuildFrameVertices;
+            cachedAtlasGeneration_ = 0;
+            shouldUploadBuffers = false;
+            goto drawCachedBuffers;
+        }
         if (cursorVisible && cursor.col >= 0 && cursor.row >= 0 && cursor.col < cols && cursor.row < rows) {
             int cursorCol = cursor.wideTail && cursor.col > 0 ? cursor.col - 1 : cursor.col;
             const auto& cursorCell = renderCells[cursor.row * cols + cursorCol];
@@ -601,6 +614,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
         cachedSolidVertexCount_ = static_cast<GLsizei>(frameSolidVertices_.size());
         cachedAtlasGeneration_ = font_.atlasGeneration();
     }
+drawCachedBuffers:
     glUseProgram(solidProgram_);
     glBindVertexArray(solidVao_);
     glBindBuffer(GL_ARRAY_BUFFER, solidVbo_);

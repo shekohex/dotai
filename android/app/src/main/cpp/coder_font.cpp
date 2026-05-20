@@ -769,7 +769,8 @@ bool CoderFont::growAtlas() {
     if (atlasGrowing_ || atlasWidth_ >= atlasMaxSize_) return false;
     atlasGrowing_ = true;
     atlasTargetSize_ = std::min(atlasMaxSize_, std::max(atlasWidth_ + 1, atlasWidth_ * 2));
-    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "growing glyph atlas next_size=%d max_texture_size=%d", atlasTargetSize_, atlasMaxSize_);
+    atlasGrowCount_++;
+    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "growing glyph atlas next_size=%d max_texture_size=%d grows=%u resets=%u misses=%u color_pressure=%u", atlasTargetSize_, atlasMaxSize_, atlasGrowCount_, atlasResetCount_, atlasMissCount_, atlasColorPressureCount_);
     bool rebuilt = rebuildAtlas();
     if (rebuilt) atlasGeneration_++;
     atlasGrowing_ = false;
@@ -777,9 +778,10 @@ bool CoderFont::growAtlas() {
 }
 
 bool CoderFont::resetAtlasForRecentGlyphs() {
-    if (atlasResetting_) return false;
+    if (atlasResetting_ || atlasResetCount_ >= 1) return false;
     atlasResetting_ = true;
-    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "resetting full glyph atlas width=%d height=%d glyphs=%zu", atlasWidth_, atlasHeight_, glyphs_.size());
+    atlasResetCount_++;
+    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "resetting full glyph atlas width=%d height=%d glyphs=%zu grows=%u resets=%u misses=%u color_pressure=%u", atlasWidth_, atlasHeight_, glyphs_.size(), atlasGrowCount_, atlasResetCount_, atlasMissCount_, atlasColorPressureCount_);
     bool rebuilt = rebuildAtlas();
     if (rebuilt) atlasGeneration_++;
     atlasResetting_ = false;
@@ -943,9 +945,10 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
             }
             if (shelfY_ + paddedHeight >= atlasHeight_) {
                 if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
-                if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
+                atlasMissCount_++;
+                atlasColorPressureCount_++;
                 if (!atlasFullReported_) {
-                    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu colr=1", atlasWidth_, atlasHeight_, glyphs_.size());
+                    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu colr=1 grows=%u resets=%u misses=%u color_pressure=%u", atlasWidth_, atlasHeight_, glyphs_.size(), atlasGrowCount_, atlasResetCount_, atlasMissCount_, atlasColorPressureCount_);
                     atlasFullReported_ = true;
                 }
                 return false;
@@ -988,6 +991,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
     }
     int paddedWidth = std::max(1, bitmapWidth) + 2;
     int paddedHeight = std::max(1, bitmapHeight) + 2;
+    bool colorBitmap = slot->bitmap.pixel_mode == FT_PIXEL_MODE_BGRA;
     if (shelfX_ + paddedWidth >= atlasWidth_) {
         shelfX_ = 1;
         shelfY_ += shelfHeight_ + 1;
@@ -995,9 +999,11 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
     }
     if (shelfY_ + paddedHeight >= atlasHeight_) {
         if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
-        if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
+        atlasMissCount_++;
+        if (colorBitmap) atlasColorPressureCount_++;
+        else if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph, fallbackMetrics);
         if (!atlasFullReported_) {
-            __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu", atlasWidth_, atlasHeight_, glyphs_.size());
+            __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu color=%d grows=%u resets=%u misses=%u color_pressure=%u", atlasWidth_, atlasHeight_, glyphs_.size(), colorBitmap ? 1 : 0, atlasGrowCount_, atlasResetCount_, atlasMissCount_, atlasColorPressureCount_);
             atlasFullReported_ = true;
         }
         return false;

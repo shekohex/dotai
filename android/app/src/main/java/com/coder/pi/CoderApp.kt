@@ -1239,6 +1239,7 @@ internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("CJK: こんにちは 世界 你好 世界 안녕하세요\r\n")
         append("Arabic: مرحبا بالعالم\r\n")
         append("Fallback: Nerd 󰊢   CJK 表界  Arabic م Glyph �\r\n")
+        append("Atlas stress: ASCII abc XYZ 012 CJK 表語界 Emoji 😀😃😄😁 Symbols ⣿◆󰊢\r\n")
         append("Bidi: ABC مرحبا DEF 123\r\n")
         append("Combining: café áô  Devanagari: कि नमस्ते\r\n")
         append("Emoji modifiers: 👩🏽‍🚀 🧑🏿‍💻 family: 👨‍👩‍👧‍👦\r\n")

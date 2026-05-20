@@ -122,6 +122,10 @@ private:
     bool atlasFullReported_ = false;
     bool atlasGrowing_ = false;
     bool atlasResetting_ = false;
+    uint32_t atlasGrowCount_ = 0;
+    uint32_t atlasResetCount_ = 0;
+    uint32_t atlasMissCount_ = 0;
+    uint32_t atlasColorPressureCount_ = 0;
     bool boldStyleEnabled_ = false;
     uint64_t atlasGeneration_ = 0;
     int shelfX_ = 1;

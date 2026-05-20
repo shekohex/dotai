@@ -418,13 +418,15 @@ Commit:
 
 ## TRGP-7: Split And Bound Atlas/Caching Strategy
 
-Status: not-started
+Status: building
 
 Research:
 
 - Android uses one RGBA atlas for grayscale glyphs, color glyphs, and COLR fallback pixels: `app/src/main/cpp/coder_font.cpp:652-693`.
 - Android grows the atlas up to device max and resets for recent glyphs if full: `app/src/main/cpp/coder_font.cpp:697-714`.
 - Android row rendering restarts up to two times if atlas generation changes during row build: `app/src/main/cpp/coder_renderer.cpp:848-852`.
+- Android atlas pressure before this ticket did not distinguish color glyph pressure from normal text pressure, so large emoji workloads could trigger the same reset path that evicts normal text glyphs: `app/src/main/cpp/coder_font.cpp:922-1004`.
+- Failing sample is a debug-render mixed row containing ASCII, CJK, emoji, braille/geometric/powerline/Nerd symbols, plus existing emoji and fallback rows in `app/src/main/java/com/coder/pi/CoderApp.kt`.
 - Ghostty uses separate grayscale and color atlases: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/SharedGrid.zig:48-92`.
 - Ghostty tracks atlas `modified` and `resized` counters and syncs only changed atlases: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/Atlas.zig:42-51` and `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:1572-1585`.
 - Ghostty grows the specific atlas that receives `AtlasFull`: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/SharedGrid.zig:286-336`.

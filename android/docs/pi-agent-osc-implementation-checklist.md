@@ -156,7 +156,7 @@ Commit:
 
 ## PIOSC-3: Implement Agent OSC Emitter Extension
 
-Status: building
+Status: done
 
 Research:
 
@@ -202,7 +202,13 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-3 commit 63fccb0. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Result: no findings. Existing OSC 9/52/777 paths untouched; Pi OSC uses existing tmux passthrough helpers and encoder. Residual risks: no Android parser/instrumentation smoke for OSC 6767 yet, and no end-to-end OSC 9/52/777 regression run after bundled emitter registration.
+- Validation: `cd ../agent && npm test -- --run ./test/pi-osc-extension.test.ts ./test/pi-osc-encoder.test.ts` passed with 29 tests. `cd ../agent && npm run lint -- src/extensions/pi-osc/extension.ts src/extensions/pi-osc/index.ts src/extensions/definitions-group-c.ts test/pi-osc-extension.test.ts test/pi-osc-encoder.test.ts` passed. `cd ../agent && npx oxfmt --check src/extensions/pi-osc/extension.ts src/extensions/pi-osc/index.ts src/extensions/definitions-group-c.ts test/pi-osc-extension.test.ts test/pi-osc-encoder.test.ts` passed. `cd ../agent && npm run typecheck` remains blocked by unrelated missing `@xterm/addon-serialize`, `@xterm/headless`, and `zigpty` type/module errors in `src/subagent-sdk/pty.ts`.
+
 Commit:
+
+- Implementation: `63fccb0` (`feat(pi-osc): emit agent lifecycle frames`)
 
 ## PIOSC-4: Define V1 Agent Event Payload Schemas
 

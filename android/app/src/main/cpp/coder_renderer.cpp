@@ -42,6 +42,10 @@ static bool isConstrainedSymbolCell(const CoderCell& cell) {
     return false;
 }
 
+static bool isSymbolSpanNeighborCell(const CoderCell& cell, uint32_t background) {
+    return cell.background == background && (cell.codepointCount == 0 || cell.codepoints[0] == ' ' || cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL);
+}
+
 static bool isNarrowPrintableAsciiCell(const CoderCell& cell) {
     return cell.wide == GHOSTTY_CELL_WIDE_NARROW && cell.codepointCount == 1 && cell.codepoints[0] > ' ' && cell.codepoints[0] < 0x7fu;
 }
@@ -296,11 +300,12 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float bg = ((cell.background >> 8) & 255) / 255.0f;
             float bb = ((cell.background >> 16) & 255) / 255.0f;
             addSolidQuad(frameSolidVertices_, gridX0, y0, gridX1, y1, br, bg, bb, 1.0f);
+            bool constrainedSymbolCell = isConstrainedSymbolCell(cell);
             int cellSpan = cell.wide == GHOSTTY_CELL_WIDE_WIDE ? 2 : 1;
+            if (constrainedSymbolCell && cellSpan == 1 && col + 1 < cols && isSymbolSpanNeighborCell(renderCells[row * cols + col + 1], cell.background)) cellSpan = 2;
             float x0 = snapX(-1.0f + (col - visualColumnShift) * cw);
             float x1 = snapX(-1.0f + (col + cellSpan - visualColumnShift) * cw);
             float glyphCursorX = x0;
-            bool constrainedSymbolCell = isConstrainedSymbolCell(cell);
             auto glyphXBounds = [&](const CoderFont::Glyph& glyph, int xOffsetPixels) {
                 float rawX0 = x0 + 2.0f * static_cast<float>(xOffsetPixels) / static_cast<float>(width_);
                 float rawWidth = 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_);

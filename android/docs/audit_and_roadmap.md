@@ -523,15 +523,19 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `REVISIT-SYMBOL-CONSTRAINTS-NEIGHBOR-SPANNING`
-  State: Open
+- [x] `REVISIT-SYMBOL-CONSTRAINTS-NEIGHBOR-SPANNING`
+  State: Fixed
   Source: `review-font-atlas-symbols`
   Related item: `UX-RENDER-SYMBOL-CONSTRAINTS-MISSING`
   Severity: Medium
   Finding: Current symbol work classifies ranges and clamps symbols to one cell, but does not inspect neighboring cells/backgrounds to allow Ghostty-style span decisions for Powerline/box/block glyphs.
   Evidence: `app/src/main/cpp/coder_renderer.cpp:307`.
   Suggested validation: Add Powerline/box samples where expected output requires neighbor-aware spanning.
-  Next action: Implement neighbor-aware constraint width/spanning logic or downgrade original item wording to single-cell clamping.
+  Resolution: Constrained symbol rendering now checks the next cell before clamping. Box/block/Powerline/Nerd Font symbols keep single-cell bounds unless the adjacent cell has the same background and is blank/spacer, in which case the symbol may use a two-cell width constraint. This approximates Ghostty-style neighbor-aware spanning while preserving the previous safe one-cell clamp for occupied or differently colored neighbors.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing debug render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; prior symbol demo screenshot remains `docs/reference/ux-render-symbol-constraints-missing-after.png`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `REVISIT-OSC-C1-CONTROLS-UNSUPPORTED`
   State: Fixed

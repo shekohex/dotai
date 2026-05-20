@@ -597,40 +597,60 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float textAlpha = (cell.flags & 256u) != 0u ? 0.50f : 1.0f;
             const bool blinkHidden = (cell.flags & 512u) != 0u && !blinkPhase;
             bool synthesizeBold = font_.shouldSynthesizeBold(cell.flags);
-            auto addDecorationColor = [&](float y, float thickness, float decorationR, float decorationG, float decorationB) {
-                float dy = thickness * ch;
-                addSolidQuad(frameSolidVertices_, x0, y, x1, y + dy, decorationR, decorationG, decorationB, textAlpha);
+            float decorationPixelY = 2.0f / static_cast<float>(height_);
+            float decorationThicknessPx = std::max(1.0f, std::round(static_cast<float>(font_.glyphHeight()) * 0.045f));
+            float underlineTop = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() + static_cast<int>(decorationThicknessPx)) / static_cast<float>(height_));
+            float underlineBottom = underlineTop - decorationThicknessPx * decorationPixelY;
+            float strikeTop = snapY(y1 - 2.0f * static_cast<float>(font_.baseline() - font_.glyphHeight() / 3) / static_cast<float>(height_));
+            float strikeBottom = strikeTop - decorationThicknessPx * decorationPixelY;
+            float overlineTop = snapY(y1 - decorationPixelY);
+            float overlineBottom = overlineTop - decorationThicknessPx * decorationPixelY;
+            auto addDecorationColor = [&](float bottom, float top, float decorationR, float decorationG, float decorationB) {
+                addSolidQuad(frameSolidVertices_, x0, bottom, x1, top, decorationR, decorationG, decorationB, textAlpha);
             };
-            auto addSegmentedDecorationColor = [&](float y, float thickness, float decorationR, float decorationG, float decorationB, int segments, bool alternating) {
-                float dy = thickness * ch;
-                float segmentWidth = (x1 - x0) / static_cast<float>(segments);
+            auto addSegmentedDecorationColor = [&](float bottom, float top, float decorationR, float decorationG, float decorationB, float segmentPixels, bool alternating) {
+                float segmentWidth = std::max(2.0f / static_cast<float>(width_), 2.0f * segmentPixels / static_cast<float>(width_));
+                int segments = std::max(1, static_cast<int>(std::ceil((x1 - x0) / segmentWidth)));
                 for (int segment = 0; segment < segments; segment++) {
                     if (alternating && (segment % 2) != 0) continue;
                     float sx0 = x0 + static_cast<float>(segment) * segmentWidth;
-                    float sx1 = sx0 + segmentWidth * (alternating ? 0.72f : 0.38f);
-                    addSolidQuad(frameSolidVertices_, sx0, y, sx1, y + dy, decorationR, decorationG, decorationB, textAlpha);
+                    float sx1 = std::min(x1, sx0 + segmentWidth * (alternating ? 0.95f : 0.42f));
+                    addSolidQuad(frameSolidVertices_, sx0, bottom, sx1, top, decorationR, decorationG, decorationB, textAlpha);
                 }
             };
-            auto addDecoration = [&](float y, float thickness) { addDecorationColor(y, thickness, r, g, b); };
+            auto addCurlyDecorationColor = [&](float decorationR, float decorationG, float decorationB) {
+                float amplitude = std::max(decorationThicknessPx * decorationPixelY, ch * 0.045f);
+                int segments = std::max(6, static_cast<int>(std::ceil((x1 - x0) * static_cast<float>(width_) * 0.25f)));
+                float previousX = x0;
+                float previousY = underlineBottom;
+                for (int segment = 1; segment <= segments; segment++) {
+                    float t = static_cast<float>(segment) / static_cast<float>(segments);
+                    float nextX = x0 + (x1 - x0) * t;
+                    float nextY = underlineBottom + amplitude * (0.5f + 0.5f * std::sin(t * 2.0f * static_cast<float>(M_PI)));
+                    addSolidLine(frameSolidVertices_, previousX, previousY, nextX, nextY, decorationThicknessPx, width_, height_, decorationR, decorationG, decorationB, textAlpha);
+                    previousX = nextX;
+                    previousY = nextY;
+                }
+            };
+            auto addDecoration = [&](float bottom, float top) { addDecorationColor(bottom, top, r, g, b); };
             uint32_t underlineStyle = (cell.flags >> 5u) & 7u;
             if ((cell.flags & 4u) != 0u) {
                 float ur = ((cell.underlineColor >> 0) & 255) / 255.0f;
                 float ug = ((cell.underlineColor >> 8) & 255) / 255.0f;
                 float ub = ((cell.underlineColor >> 16) & 255) / 255.0f;
                 if (underlineStyle == 4u) {
-                    addSegmentedDecorationColor(y0 + ch * 0.12f, 0.055f, ur, ug, ub, 6, false);
+                    addSegmentedDecorationColor(underlineBottom, underlineTop, ur, ug, ub, decorationThicknessPx * 3.0f, false);
                 } else if (underlineStyle == 5u) {
-                    addSegmentedDecorationColor(y0 + ch * 0.12f, 0.045f, ur, ug, ub, 4, true);
+                    addSegmentedDecorationColor(underlineBottom, underlineTop, ur, ug, ub, decorationThicknessPx * 5.0f, true);
                 } else if (underlineStyle == 3u) {
-                    addDecorationColor(y0 + ch * 0.09f, 0.035f, ur, ug, ub);
-                    addSegmentedDecorationColor(y0 + ch * 0.17f, 0.035f, ur, ug, ub, 4, true);
+                    addCurlyDecorationColor(ur, ug, ub);
                 } else {
-                    addDecorationColor(y0 + ch * 0.12f, 0.045f, ur, ug, ub);
-                    if (underlineStyle == 2u) addDecorationColor(y0 + ch * 0.20f, 0.045f, ur, ug, ub);
+                    addDecorationColor(underlineBottom, underlineTop, ur, ug, ub);
+                    if (underlineStyle == 2u) addDecorationColor(underlineBottom - decorationThicknessPx * decorationPixelY * 2.0f, underlineTop - decorationThicknessPx * decorationPixelY * 2.0f, ur, ug, ub);
                 }
             }
-            if ((cell.flags & 8u) != 0u) addDecoration(y0 + ch * 0.50f, 0.045f);
-            if ((cell.flags & 16u) != 0u) addDecoration(y1 - ch * 0.14f, 0.045f);
+            if ((cell.flags & 8u) != 0u) addDecoration(strikeBottom, strikeTop);
+            if ((cell.flags & 16u) != 0u) addDecoration(overlineBottom, overlineTop);
             if (blinkHidden || cell.wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cell.wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) continue;
             if (cell.codepointCount == 0) continue;
             if (frameSkipText_[static_cast<size_t>(row * cols + col)] != 0) continue;

@@ -359,14 +359,16 @@ Commit:
 
 ## TRGP-6: Render Decorations As Metric-Aware Sprites
 
-Status: not-started
+Status: building
 
 Research:
 
 - Android encodes underline, strike, overline, underline kind, faint, and blink into `flags`: `app/src/main/cpp/coder_terminal.cpp:682-687`.
 - Android draws underline styles with fixed fractions and segmented quads: `app/src/main/cpp/coder_renderer.cpp:521-550`.
 - Android draws strikethrough and overline as fixed horizontal quads: `app/src/main/cpp/coder_renderer.cpp:552-553`.
+- Current debug fixture covers single, double, curly, dotted, dashed, colored underline, strike, overline, faint, blink, and now wide/emoji/shaped decoration samples in `app/src/main/java/com/coder/pi/CoderApp.kt:1221-1228`.
 - Ghostty renders underline, overline, strikethrough, and cursors through sprite glyphs using grid metrics: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:2949-3148`.
+- Ghostty special sprite implementation derives underline, dotted, dashed, curly, strike, and overline geometry from `metrics.underline_position`, `metrics.underline_thickness`, `metrics.strikethrough_position`, and `metrics.overline_position`: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/sprite/draw/special.zig:12-263`.
 - Ghostty has config knobs for decoration position and thickness: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/config/Config.zig:435-455`.
 
 Plan:

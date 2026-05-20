@@ -135,10 +135,11 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
     }
 
     const descriptors = Object.getOwnPropertyDescriptors(value);
-    for (const key of Object.keys(value)) {
-      const descriptor = descriptors[key];
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = descriptors[String(index)];
       if (
         descriptor === undefined ||
+        descriptor.enumerable !== true ||
         descriptor.get !== undefined ||
         descriptor.set !== undefined
       ) {

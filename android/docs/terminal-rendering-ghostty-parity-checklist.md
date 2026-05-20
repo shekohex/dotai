@@ -541,13 +541,15 @@ Commit:
 
 ## TRGP-9: Render Selection, Links, Cursor, And Highlights With Full Theme Semantics
 
-Status: not-started
+Status: building
 
 Research:
 
 - `CoderTheme` stores `selectionForeground`, but JNI only passes `selectionBackground`: `app/src/main/java/com/coder/pi/CoderTheme.kt:24-25` and `app/src/main/java/com/coder/pi/CoderNative.kt:12`.
 - Native selection overlay only mutates selected cell background: `app/src/main/cpp/coder_terminal.cpp:753-777`.
+- Native snapshot overlay copies from `cells_` into `outputCells` before applying selection, so foreground/background selection changes can be transient and clear without mutating terminal state: `app/src/main/cpp/coder_terminal.cpp:746-777`.
 - Android clickable hyperlinks are resolved from OSC 8 or plain URL text at tap time, but no renderer state visually marks them: `app/src/main/java/com/coder/pi/CoderTerminalView.kt:1581-1595`.
+- Failing samples are themes with non-default `selection-foreground`, selected wide/emoji/shaped rows in debug render, OSC 8 `tap link` fixture, and block/underline/bar cursor rows already present in debug render.
 - Ghostty applies configured selection foreground/background: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:2071-2086` and `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:2808-2855`.
 - Ghostty gives links an underline or double underline depending on existing underline style: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/renderer/generic.zig:2930-2943`.
 - Android cursor drawing supports block/underline/bar modes, but cursor geometry and opacity are local primitives: `app/src/main/cpp/coder_renderer.cpp:858-900`.

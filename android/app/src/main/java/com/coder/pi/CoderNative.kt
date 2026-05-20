@@ -9,7 +9,7 @@ class CoderNative {
     external fun nativeRendererSetFont(rendererHandle: Long, bytes: ByteArray)
     external fun nativeRendererSetFontStyles(rendererHandle: Long, regular: ByteArray, bold: ByteArray?, italic: ByteArray?, boldItalic: ByteArray?, fallback: ByteArray?)
     external fun nativeRendererSetShaderCacheDir(rendererHandle: Long, path: String)
-    external fun nativeSetTerminalTheme(terminalHandle: Long, foreground: Int, background: Int, cursor: Int, selectionBackground: Int, palette: IntArray)
+    external fun nativeSetTerminalTheme(terminalHandle: Long, foreground: Int, background: Int, cursor: Int, selectionForeground: Int, selectionBackground: Int, palette: IntArray)
     external fun nativeRendererSetTheme(rendererHandle: Long, background: Int, cursor: Int, cursorText: Int)
     external fun nativeRendererSetTextOptions(rendererHandle: Long, ligatures: Boolean, contextualAlternates: Boolean, slashedZero: Boolean, stylisticSet1: Boolean, stylisticSet2: Boolean, characterVariant1: Boolean, boldFontStyle: Boolean, cursorBlink: Boolean, cursorMode: Int)
     external fun nativeRendererSetRefreshRate(rendererHandle: Long, refreshRate: Float)

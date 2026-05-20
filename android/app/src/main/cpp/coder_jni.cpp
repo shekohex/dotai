@@ -93,10 +93,10 @@ Java_com_coder_pi_CoderNative_nativeRendererSetShaderCacheDir(JNIEnv* env, jobje
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_coder_pi_CoderNative_nativeSetTerminalTheme(JNIEnv* env, jobject, jlong terminalHandle, jint foreground, jint background, jint cursor, jint selectionBackground, jintArray palette) {
+Java_com_coder_pi_CoderNative_nativeSetTerminalTheme(JNIEnv* env, jobject, jlong terminalHandle, jint foreground, jint background, jint cursor, jint selectionForeground, jint selectionBackground, jintArray palette) {
     jsize length = env->GetArrayLength(palette);
     jint* data = env->GetIntArrayElements(palette, nullptr);
-    terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), static_cast<uint32_t>(selectionBackground), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
+    terminal(reinterpret_cast<NativeTerminal*>(terminalHandle))->setTheme(static_cast<uint32_t>(foreground), static_cast<uint32_t>(background), static_cast<uint32_t>(cursor), static_cast<uint32_t>(selectionForeground), static_cast<uint32_t>(selectionBackground), reinterpret_cast<const uint32_t*>(data), static_cast<size_t>(length));
     env->ReleaseIntArrayElements(palette, data, JNI_ABORT);
 }
 

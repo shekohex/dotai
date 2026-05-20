@@ -336,7 +336,7 @@ void CoderTerminal::setPreedit(const char* data, size_t length) {
     if (preeditCodepoints_ != previous) snapshotGeneration_++;
 }
 
-void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength) {
+void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionForeground, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength) {
     std::lock_guard lock(mutex_);
     if (!terminal_ || !renderState_) return;
     auto makeColor = [](uint32_t color) -> GhosttyColorRgb {
@@ -349,6 +349,7 @@ void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t 
     GhosttyColorRgb foregroundColor = makeColor(foreground);
     GhosttyColorRgb backgroundColor = makeColor(background);
     GhosttyColorRgb cursorColor = makeColor(cursor);
+    selectionForeground_ = selectionForeground;
     selectionBackground_ = selectionBackground;
     const int luminance = static_cast<int>(backgroundColor.r) * 299 + static_cast<int>(backgroundColor.g) * 587 + static_cast<int>(backgroundColor.b) * 114;
     colorScheme_ = luminance > 127000 ? GHOSTTY_COLOR_SCHEME_LIGHT : GHOSTTY_COLOR_SCHEME_DARK;
@@ -774,7 +775,11 @@ bool CoderTerminal::snapshot(int& cols, int& rows, CoderCursor& cursor, std::vec
             const int rowStartCol = screenRow == startRow ? startCol : 0;
             const int rowEndCol = screenRow == endRow ? endCol : cols_ - 1;
             if (dirtyRows && viewportRow < static_cast<int>(dirtyRows->size())) (*dirtyRows)[static_cast<size_t>(viewportRow)] = 1;
-            for (int col = std::max(0, rowStartCol); col <= std::min(cols_ - 1, rowEndCol); col++) outputCells[viewportRow * cols_ + col].background = selectionBackground_;
+            for (int col = std::max(0, rowStartCol); col <= std::min(cols_ - 1, rowEndCol); col++) {
+                auto& selectedCell = outputCells[viewportRow * cols_ + col];
+                selectedCell.foreground = selectionForeground_;
+                selectedCell.background = selectionBackground_;
+            }
         }
     }
     if (!preeditCodepoints_.empty() && cursor_.row >= 0 && cursor_.row < rows_ && cursor_.col >= 0 && cursor_.col < cols_) {

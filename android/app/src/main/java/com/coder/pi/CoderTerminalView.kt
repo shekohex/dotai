@@ -885,7 +885,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun applyTheme(theme: CoderTheme) {
-        if (handle != 0L) native.nativeSetTerminalTheme(handle, theme.foreground, theme.background, theme.cursor, theme.selectionBackground, theme.palette)
+        if (handle != 0L) native.nativeSetTerminalTheme(handle, theme.foreground, theme.background, theme.cursor, theme.selectionForeground, theme.selectionBackground, theme.palette)
         if (rendererHandle != 0L) native.nativeRendererSetTheme(rendererHandle, theme.background, theme.cursor, theme.cursorText)
     }
 

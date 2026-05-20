@@ -47,7 +47,7 @@ public:
     void feed(const uint8_t* data, size_t length);
     void key(int keyCode, int unicodeChar, int metaState);
     void setPreedit(const char* data, size_t length);
-    void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength);
+    void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionForeground, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
     std::vector<uint8_t> scrollInput(int rowDelta, float x, float y);
     bool mouseTracking() const;
@@ -143,6 +143,7 @@ private:
     std::vector<std::string> oscEvents_;
     uint64_t bellCount_ = 0;
     GhosttyColorScheme colorScheme_ = GHOSTTY_COLOR_SCHEME_DARK;
+    uint32_t selectionForeground_ = 0xf8f8f2;
     uint32_t selectionBackground_ = 0x3a3a4a;
     bool oscMetadataEsc_ = false;
     bool oscMetadataActive_ = false;

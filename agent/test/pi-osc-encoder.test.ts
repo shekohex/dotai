@@ -88,6 +88,16 @@ test("invalid envelopes are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
+test("accessor envelope fields are rejected", () => {
+  const envelope: Record<string, unknown> = { ...fixtureEnvelope };
+  Object.defineProperty(envelope, "id", {
+    enumerable: true,
+    get: () => "evt-1",
+  });
+
+  expect(() => createPiOscSequence("hello", envelope)).toThrow(PiOscEncodingError);
+});
+
 test("non-plain top-level data values are rejected", () => {
   expect(() =>
     createPiOscSequence("agent.tool", {

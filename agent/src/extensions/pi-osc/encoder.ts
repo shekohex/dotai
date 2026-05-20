@@ -171,12 +171,56 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
   throw new PiOscEncodingError("Invalid Pi OSC envelope data");
 };
 
-const isPiOscEnvelope = (value: unknown): value is PiOscEnvelope => {
-  try {
-    return Value.Check(PiOscEnvelopeSchema, value);
-  } catch {
-    return false;
+const normalizePiOscEnvelope = (value: unknown): PiOscEnvelope => {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !isPlainRecord(value)
+  ) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope");
   }
+
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope");
+  }
+
+  const normalizedEnvelope: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (
+      descriptor.enumerable !== true ||
+      descriptor.get !== undefined ||
+      descriptor.set !== undefined
+    ) {
+      throw new PiOscEncodingError("Invalid Pi OSC envelope");
+    }
+
+    Object.defineProperty(normalizedEnvelope, key, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  if (
+    normalizedEnvelope.data === null ||
+    typeof normalizedEnvelope.data !== "object" ||
+    !isPlainRecord(normalizedEnvelope.data)
+  ) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+  }
+
+  const serializableEnvelope = {
+    ...normalizedEnvelope,
+    data: normalizePiOscJsonObject(normalizedEnvelope.data, new WeakSet<object>()),
+  };
+
+  if (!Value.Check(PiOscEnvelopeSchema, serializableEnvelope)) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope");
+  }
+
+  return serializableEnvelope;
 };
 
 export const createPiOscSequence = (
@@ -188,18 +232,7 @@ export const createPiOscSequence = (
     throw new PiOscEncodingError(`Unsupported Pi OSC event: ${eventName}`);
   }
 
-  if (!isPiOscEnvelope(envelope)) {
-    throw new PiOscEncodingError("Invalid Pi OSC envelope");
-  }
-
-  if (!isPlainRecord(envelope.data)) {
-    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
-  }
-
-  const serializableEnvelope: PiOscEnvelope = {
-    ...envelope,
-    data: normalizePiOscJsonObject(envelope.data, new WeakSet<object>()),
-  };
+  const serializableEnvelope = normalizePiOscEnvelope(envelope);
   const payload = Buffer.from(JSON.stringify(serializableEnvelope), "utf8").toString("base64url");
   const sequence = `${ESC}]6767;pi;1;${eventName};${payload}${terminator === "bel" ? BEL : ST}`;
 

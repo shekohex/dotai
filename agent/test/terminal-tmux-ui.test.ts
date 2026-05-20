@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
   clearTmuxTitle,
@@ -10,6 +10,7 @@ import {
   getDefaultTmuxTitle,
   isTmuxSession,
   default as terminalTmuxUiExtension,
+  terminalTmuxUiRuntime,
   writeTmuxUiSequence,
 } from "../src/extensions/terminal-tmux-ui.js";
 import { terminalNotifyRuntime } from "../src/extensions/terminal-notify.js";
@@ -18,6 +19,11 @@ const originalTmux = process.env.TMUX;
 const originalSshConnection = process.env.SSH_CONNECTION;
 const originalSshClient = process.env.SSH_CLIENT;
 const originalSshTty = process.env.SSH_TTY;
+const originalTerminalTmuxUi = process.env.PI_TERMINAL_TMUX_UI;
+
+beforeEach(() => {
+  process.env.PI_TERMINAL_TMUX_UI = "1";
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -44,6 +50,12 @@ afterEach(() => {
     delete process.env.SSH_TTY;
   } else {
     process.env.SSH_TTY = originalSshTty;
+  }
+
+  if (originalTerminalTmuxUi === undefined) {
+    delete process.env.PI_TERMINAL_TMUX_UI;
+  } else {
+    process.env.PI_TERMINAL_TMUX_UI = originalTerminalTmuxUi;
   }
 });
 
@@ -148,6 +160,18 @@ test("session_start does nothing without UI", () => {
     },
   );
 
+  expect(writeFileSyncSpy).not.toHaveBeenCalled();
+});
+
+test("writeTmuxUiSequence does nothing when runtime is disabled", () => {
+  process.env.PI_TERMINAL_TMUX_UI = "0";
+  process.env.TMUX = "/tmp/tmux-1000/default,123,0";
+  const execFileSyncSpy = vi.spyOn(terminalNotifyRuntime, "execFileSync");
+  const writeFileSyncSpy = vi.spyOn(terminalNotifyRuntime, "writeFileSync");
+
+  expect(terminalTmuxUiRuntime.isEnabled()).toBeFalsy();
+  expect(writeTmuxUiSequence("\u001b]0;π - agent\u0007")).toBeFalsy();
+  expect(execFileSyncSpy).not.toHaveBeenCalled();
   expect(writeFileSyncSpy).not.toHaveBeenCalled();
 });
 

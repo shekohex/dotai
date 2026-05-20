@@ -173,7 +173,7 @@ export function applyChildToolState(
 
 export function isChildSession(
   childState: ChildBootstrapState | undefined,
-  ctx: ExtensionContext,
+  ctx: Pick<ExtensionContext, "sessionManager">,
 ): childState is ChildBootstrapState {
   if (!childState) {
     return false;

@@ -8,10 +8,12 @@
  * Terminal.app, Windows Terminal, Alacritty
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { isChildSession, readChildState } from "../subagent-sdk/index.js";
+import type { ChildBootstrapState } from "../subagent-sdk/types.js";
 import { isRecord } from "../utils/unknown-data.js";
 
 const ESC = "\u001B";
@@ -149,11 +151,11 @@ const simpleMarkdown = (text: string, width = 80): string => {
   return markdown.render(width).join("\n");
 };
 
-export const formatNotification = (text: string | null): { title: string; body: string } => {
+export const formatNotification = (text: string | null): { title: string; body: string } | null => {
   const simplified = text !== null && text.length > 0 ? simpleMarkdown(text) : "";
   const normalized = simplified.replaceAll(/\s+/g, " ").trim();
   if (!normalized) {
-    return { title: "Ready for input", body: "" };
+    return null;
   }
 
   const maxBody = 200;
@@ -161,10 +163,24 @@ export const formatNotification = (text: string | null): { title: string; body: 
   return { title: "π", body };
 };
 
+export const shouldNotifyAgentEnd = (
+  childState: ChildBootstrapState | undefined,
+  ctx: Pick<ExtensionContext, "sessionManager">,
+): boolean => !isChildSession(childState, ctx);
+
 export default function (pi: ExtensionAPI) {
-  pi.on("agent_end", (event) => {
+  const childState = readChildState();
+  pi.on("agent_end", (event, ctx) => {
+    if (!shouldNotifyAgentEnd(childState, ctx)) {
+      return;
+    }
+
     const lastText = extractLastAssistantText(event.messages ?? []);
-    const { title, body } = formatNotification(lastText);
-    notify(title, body);
+    const notification = formatNotification(lastText);
+    if (notification === null) {
+      return;
+    }
+
+    notify(notification.title, notification.body);
   });
 }

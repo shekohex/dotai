@@ -58,6 +58,8 @@ if (
   process.env.TEST_PI_CODING_AGENT_DIR = configuredAgentDir;
 }
 
+process.env.PI_TERMINAL_TMUX_UI = "0";
+
 afterEach(async () => {
   const agentDir = process.env.TEST_PI_CODING_AGENT_DIR?.trim();
   if (agentDir) {

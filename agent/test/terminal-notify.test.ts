@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
+import type { ChildBootstrapState } from "../src/subagent-sdk/types.js";
 
 import {
   createOsc777Sequence,
@@ -8,6 +9,7 @@ import {
   getTmuxPaneTty,
   isSshSession,
   notify,
+  shouldNotifyAgentEnd,
   terminalNotifyRuntime,
 } from "../src/extensions/terminal-notify.js";
 
@@ -15,6 +17,27 @@ const originalTmux = process.env.TMUX;
 const originalSshConnection = process.env.SSH_CONNECTION;
 const originalSshClient = process.env.SSH_CLIENT;
 const originalSshTty = process.env.SSH_TTY;
+
+const createExtensionContext = (sessionId: string, sessionFile?: string) => ({
+  sessionManager: {
+    getSessionId: () => sessionId,
+    getSessionFile: () => sessionFile,
+  },
+});
+
+const createChildState = (overrides: Partial<ChildBootstrapState> = {}): ChildBootstrapState => ({
+  sessionId: "child-session",
+  sessionPath: "/tmp/child-session.jsonl",
+  parentSessionId: "parent-session",
+  parentSessionPath: "/tmp/parent-session.jsonl",
+  name: "worker",
+  prompt: "work",
+  autoExit: false,
+  handoff: false,
+  tools: [],
+  startedAt: 1,
+  ...overrides,
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -44,8 +67,29 @@ afterEach(() => {
   }
 });
 
-test("formatNotification returns ready title when no assistant text exists", () => {
-  expect(formatNotification(null)).toEqual({ title: "Ready for input", body: "" });
+test("formatNotification returns null when no assistant text exists", () => {
+  expect(formatNotification(null)).toBeNull();
+});
+
+test("shouldNotifyAgentEnd skips current subagent session", () => {
+  const childState = createChildState();
+  const ctx = createExtensionContext("child-session", "/tmp/child-session.jsonl");
+
+  expect(shouldNotifyAgentEnd(childState, ctx)).toBeFalsy();
+});
+
+test("shouldNotifyAgentEnd skips ephemeral subagent session", () => {
+  const childState = createChildState({ persisted: false, sessionPath: undefined });
+  const ctx = createExtensionContext("different-session");
+
+  expect(shouldNotifyAgentEnd(childState, ctx)).toBeFalsy();
+});
+
+test("shouldNotifyAgentEnd allows parent session", () => {
+  const childState = createChildState();
+  const ctx = createExtensionContext("parent-session", "/tmp/parent-session.jsonl");
+
+  expect(shouldNotifyAgentEnd(childState, ctx)).toBeTruthy();
 });
 
 test("formatNotification strips markdown and truncates body", () => {
@@ -180,13 +224,4 @@ test("notify falls back to stdout when tmux write fails", () => {
   notify("π", "done");
 
   expect(stdoutSpy).toHaveBeenCalledWith("\u001b]777;notify;π;done\u0007");
-});
-
-test("notify writes ready for input OSC sequence through runtime stdout", () => {
-  delete process.env.TMUX;
-  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
-
-  notify("Ready for input", "");
-
-  expect(stdoutSpy).toHaveBeenCalledWith("\u001b]777;notify;Ready for input;\u0007");
 });

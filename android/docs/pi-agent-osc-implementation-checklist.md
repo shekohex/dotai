@@ -707,4 +707,4 @@ Review:
 Commit:
 
 - `5bbea6b` `test(pi-osc): assert exact v1 fixtures`
-- `pending` `docs(pi-osc): record final integration audit`
+- `f3331bb` `docs(pi-osc): record final integration audit`

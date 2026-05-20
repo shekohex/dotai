@@ -478,7 +478,7 @@ Commit:
 
 ## PIOSC-9: Add Android UI And Notification Handling For V1 Events
 
-Status: building
+Status: done
 
 Research:
 
@@ -497,9 +497,9 @@ Plan:
 
 Checklist:
 
-- [ ] Surface agent running/progress state in existing terminal UI.
-- [ ] Route `agent.alert` to existing notification behavior.
-- [ ] Keep UI compact and non-disruptive.
+- [x] Surface agent running/progress state in existing terminal UI.
+- [x] Route `agent.alert` to existing notification behavior.
+- [x] Keep UI compact and non-disruptive.
 
 User story:
 
@@ -523,7 +523,16 @@ Acceptance criteria:
 
 Review:
 
+- Implementation review found one UI lifecycle issue: `TerminalSurface` could retain stale `agentStatus` when composed with a different `CoderTerminalView` before the next Pi event.
+- Fixed by refreshing `agentStatus` from `terminalView.agentStateSnapshot()` inside the `DisposableEffect(terminalView)` setup.
+- Second review found no correctness regressions in PIOSC-9 scope. Existing OSC 9/52/777 paths remain unchanged; Pi events reuse existing notification/progress methods.
+- `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalAgentPresentationTest --tests com.coder.pi.TerminalAgentStateTest --no-daemon` passes.
+- `./gradlew compileDebugKotlin --no-daemon` passes.
+
 Commit:
+
+- `d74798a` `feat(pi-osc): surface android agent events`
+- `21076a7` `fix(pi-osc): refresh android agent overlay state`
 
 ## PIOSC-10: Add End-To-End Debug Smoke Flow
 

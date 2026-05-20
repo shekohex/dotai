@@ -223,8 +223,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `PERF-RENDER-SHAPER-RUN-CACHE-MISSING`
-  State: Open
+- [x] `PERF-RENDER-SHAPER-RUN-CACHE-MISSING`
+  State: Fixed
   Type: Performance issue, text shaping
   Summary: Shaped runs are recalculated repeatedly without a bounded run-level shaping cache.
   Impact: HarfBuzz shaping can dominate frame time for repeated prompts, ligatures, Arabic, emoji clusters, and stable rows.
@@ -233,6 +233,11 @@ Required proof schema:
   Goal: Cache shaped run results using a key that includes text, font/style, feature flags, and relevant width constraints.
   Deliverables: Bounded cache with invalidation on font/feature/size changes; proof shaping calls drop on unchanged repeated rows.
   Validation plan: Native build; shaping cache unit test or instrumentation counters; UIAutomator smoke screenshot.
+  Resolution: Added a bounded 256-entry LRU shape cache in `CoderFont`, keyed by codepoint run plus style flags, with invalidation on font data, fallback font data, cell size, and OpenType feature changes.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: repeated identical run calls now return cached `ShapedGlyph` vectors after first miss; unchanged repeated rows avoid repeated `hb_shape` until cache eviction or invalidation.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-shaper-run-cache-missing-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `UX-RENDER-SYMBOL-CONSTRAINTS-MISSING`
   State: Open

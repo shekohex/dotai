@@ -368,12 +368,14 @@ void CoderFont::setFontData(const uint8_t* regularData, size_t regularLength, co
     assignData(primaryFaces_[2].data, italicData, italicLength);
     assignData(primaryFaces_[3].data, boldItalicData, boldItalicLength);
     releaseFace();
+    clearShapeCache();
     if (texture_ != 0) rebuildAtlas();
 }
 
 void CoderFont::setFallbackFontData(const uint8_t* data, size_t length) {
     if (data && length > 0) bundledFallbackData_.assign(data, data + length); else bundledFallbackData_.clear();
     releaseFace();
+    clearShapeCache();
     if (texture_ != 0) rebuildAtlas();
 }
 
@@ -383,6 +385,7 @@ void CoderFont::setCellSize(int width, int height) {
     glyphHeight_ = std::max(1, height);
     baseline_ = static_cast<int>(glyphHeight_ * 0.78f);
     releaseFace();
+    clearShapeCache();
     if (texture_ != 0) rebuildAtlas();
 }
 
@@ -393,6 +396,7 @@ void CoderFont::setOpenTypeFeatures(bool ligatures, bool contextualAlternates, b
     stylisticSet1Enabled_ = stylisticSet1;
     stylisticSet2Enabled_ = stylisticSet2;
     characterVariant1Enabled_ = characterVariant1;
+    clearShapeCache();
 }
 
 bool CoderFont::glyph(uint32_t codepoint, uint32_t flags, Glyph& outGlyph) {
@@ -461,6 +465,27 @@ bool CoderFont::shouldSynthesizeBold(uint32_t flags) const {
 }
 
 std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags) {
+    if (codepointCount < 2) return {};
+    ShapeCacheKey key;
+    key.flags = flags;
+    key.codepoints.assign(codepoints, codepoints + codepointCount);
+    auto existing = shapeCache_.find(key);
+    if (existing != shapeCache_.end()) {
+        shapeCacheOrder_.splice(shapeCacheOrder_.begin(), shapeCacheOrder_, existing->second.second);
+        existing->second.second = shapeCacheOrder_.begin();
+        return existing->second.first;
+    }
+    auto shaped = shapeUncached(codepoints, codepointCount, flags);
+    shapeCacheOrder_.push_front(std::move(key));
+    shapeCache_[shapeCacheOrder_.front()] = {shaped, shapeCacheOrder_.begin()};
+    while (shapeCache_.size() > 256) {
+        shapeCache_.erase(shapeCacheOrder_.back());
+        shapeCacheOrder_.pop_back();
+    }
+    return shaped;
+}
+
+std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags) {
     if (codepointCount < 2) return {};
     bool asciiOnly = true;
     bool emojiCluster = false;
@@ -550,6 +575,17 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints,
         if (fallbackRenderable) return fallbackShaped;
     }
     return shaped;
+}
+
+size_t CoderFont::ShapeCacheKeyHash::operator()(const ShapeCacheKey& key) const {
+    size_t hash = std::hash<uint32_t>{}(key.flags);
+    for (uint32_t codepoint : key.codepoints) hash = (hash * 16777619u) ^ std::hash<uint32_t>{}(codepoint);
+    return hash;
+}
+
+void CoderFont::clearShapeCache() {
+    shapeCache_.clear();
+    shapeCacheOrder_.clear();
 }
 
 std::vector<CoderFont::ShapedGlyph> CoderFont::shapeWithFont(hb_font_t* font, const uint32_t* codepoints, uint32_t codepointCount, uint32_t fallbackIndex, uint32_t primaryIndex) {

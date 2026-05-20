@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <array>
 #include <unordered_map>
+#include <list>
 #include <vector>
 
 #include <ft2build.h>
@@ -83,6 +84,19 @@ private:
     const uint8_t* bitmapBuffer(const FT_Bitmap& bitmap, std::vector<uint8_t>& convertedBuffer, bool& color);
     void releaseFace();
 
+    struct ShapeCacheKey {
+        std::vector<uint32_t> codepoints;
+        uint32_t flags = 0;
+        bool operator==(const ShapeCacheKey& other) const { return flags == other.flags && codepoints == other.codepoints; }
+    };
+
+    struct ShapeCacheKeyHash {
+        size_t operator()(const ShapeCacheKey& key) const;
+    };
+
+    void clearShapeCache();
+    std::vector<ShapedGlyph> shapeUncached(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags);
+
     GLuint texture_ = 0;
     int glyphWidth_ = 18;
     int glyphHeight_ = 36;
@@ -110,4 +124,6 @@ private:
     std::vector<uint8_t> bundledFallbackData_;
     std::vector<FontFace> fallbackFaces_;
     std::unordered_map<uint64_t, Glyph> glyphs_;
+    std::list<ShapeCacheKey> shapeCacheOrder_;
+    std::unordered_map<ShapeCacheKey, std::pair<std::vector<ShapedGlyph>, std::list<ShapeCacheKey>::iterator>, ShapeCacheKeyHash> shapeCache_;
 };

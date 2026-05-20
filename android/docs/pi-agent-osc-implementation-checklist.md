@@ -597,7 +597,7 @@ Research:
 - Agent encoder tests define an exact `hello` ST fixture in `../agent/test/pi-osc-encoder.test.ts` using payload `eyJpZCI6ImV2dC0x...`.
 - Android `TerminalOscEventTest` already decodes Pi OSC payloads, but the test name did not tie the payload to the agent encoder fixture and there was no documented copy process.
 - PIOSC-11 needs command-level validation across `../agent` and Android plus proof Android accepts an agent-generated fixture.
-- Agent `npm run typecheck`, full `npm test`, and full `npm run lint` are currently blocked by pre-existing missing `@xterm/*` / `zigpty` dependency errors in `../agent/src/subagent-sdk/pty.ts`; focused Pi OSC agent checks pass.
+- Initial agent validation exposed stale local dependencies and unrelated brittle tests; dependencies were restored and failing agent tests were fixed during PIOSC-11 validation.
 
 Plan:
 
@@ -614,9 +614,9 @@ Shared fixture:
 
 Checklist:
 
-- [ ] Run agent checks for encoder and extension changes.
-- [ ] Run Android checks for parser and UI changes.
-- [ ] Add shared fixtures or documented fixture copy process.
+- [x] Run agent checks for encoder and extension changes.
+- [x] Run Android checks for parser and UI changes.
+- [x] Add shared fixtures or documented fixture copy process.
 
 User story:
 
@@ -637,7 +637,17 @@ Acceptance criteria:
 
 Review:
 
+- Implementation review found the Android fixture test correctly decodes the exact `fixturePayload` from `../agent/test/pi-osc-encoder.test.ts`; no Pi OSC fixture drift found.
+- `cd ../agent && npm run typecheck` passes after restoring declared local dependencies with `npm install`.
+- Focused agent Pi OSC checks pass: `npm test -- --run ./test/pi-osc-encoder.test.ts ./test/pi-osc-extension.test.ts`, `npm run lint -- --quiet src/extensions/pi-osc test/pi-osc-encoder.test.ts test/pi-osc-extension.test.ts`, and `npm run format:check -- src/extensions/pi-osc test/pi-osc-encoder.test.ts test/pi-osc-extension.test.ts`.
+- Full agent gates pass: `cd ../agent && npm run typecheck && npm test && npm run lint && npm run format:check`.
+- Android checks pass: `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalOscEventTest --tests com.coder.pi.DebugRenderPlaygroundTest --no-daemon`, `./gradlew testDebugUnitTest --no-daemon`, and `./gradlew assembleDebug --no-daemon`.
+- No PIOSC-11 code changes touch existing OSC 9/52/777 behavior.
+
 Commit:
+
+- `1dae3c5` `test(pi-osc): decode agent fixture on android`
+- `8ff4e7a` `fix(agent): stabilize validation tests`
 
 ## PIOSC-12: Final Integration Review And Cleanup
 

@@ -102,7 +102,7 @@ Commit:
 
 ## PIOSC-2: Add Agent OSC Encoding Library
 
-Status: building
+Status: done
 
 Research:
 
@@ -144,7 +144,15 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-2 commits df7d9e4, b1d23f5, 905bdce, dcc3e34, e41a130, e4ebb05, b247f57, 1ea519c, 1dddda8, 5461ac9, 66d5c70, 9a7cb39, and 089574d. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Findings fixed: rejected non-JSON payload values, accepted nested JSON payloads, corrected max-frame boundary, rejected cyclic/toJSON/accessor/symbol-keyed/sparse/extra-property/non-plain malformed payloads, preserved `__proto__` keys, allowed shared acyclic objects, normalized envelope fields before encoding, and normalized arrays manually.
+- Final review result: no findings. Residual risk: no connected Android instrumentation run for OSC smoke in this ticket; Android runtime OSC paths were untouched.
+- Validation: `cd ../agent && npm test -- --run ./test/pi-osc-encoder.test.ts` passed with 25 tests. `cd ../agent && npm run lint -- src/extensions/pi-osc/encoder.ts test/pi-osc-encoder.test.ts` passed. `cd ../agent && npx oxfmt --check src/extensions/pi-osc/encoder.ts src/extensions/pi-osc/index.ts test/pi-osc-encoder.test.ts` passed. `cd ../agent && npm run typecheck` remains blocked by unrelated missing `@xterm/addon-serialize`, `@xterm/headless`, and `zigpty` type/module errors in `src/subagent-sdk/pty.ts`.
+
 Commit:
+
+- Implementation: `df7d9e4` (`feat(pi-osc): add agent encoder`)
+- Review fixes: `b1d23f5` (`fix(pi-osc): reject non-json payload values`), `905bdce` (`fix(pi-osc): accept nested json payloads`), `dcc3e34` (`fix(pi-osc): reject cyclic payloads`), `e41a130` (`fix(pi-osc): allow shared payload objects`), `e4ebb05` (`fix(pi-osc): harden payload normalization`), `b247f57` (`fix(pi-osc): reject non-plain data`), `1ea519c` (`fix(pi-osc): reject accessor payloads`), `1dddda8` (`fix(pi-osc): reject symbol payload keys`), `5461ac9` (`fix(pi-osc): reject extra array properties`), `66d5c70` (`fix(pi-osc): normalize envelope fields`), `9a7cb39` (`fix(pi-osc): validate array descriptors`), `089574d` (`fix(pi-osc): normalize arrays manually`)
 
 ## PIOSC-3: Implement Agent OSC Emitter Extension
 

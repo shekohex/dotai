@@ -314,7 +314,11 @@ fun CoderApp(
         } else {
             runCatching {
                 val api = CoderApi(saved.first, saved.second)
-                CoderSession(saved.first, saved.second, api.me())
+                try {
+                    CoderSession(saved.first, saved.second, api.me())
+                } finally {
+                    api.close()
+                }
             }.onSuccess { authState = AuthState.LoggedIn(it) }.onFailure {
                 sessionStore.clearSession()
                 authState = AuthState.LoggedOut
@@ -383,7 +387,13 @@ fun CoderApp(
                             CustomTabsIntent.Builder().build().launchUrl(context, (baseUrl.trimEnd('/') + "/cli-auth").toUri())
                         }) { baseUrl, token ->
                             val api = CoderApi(baseUrl, token)
-                            runCatching { api.me() }.onSuccess { user ->
+                            runCatching {
+                                try {
+                                    api.me()
+                                } finally {
+                                    api.close()
+                                }
+                            }.onSuccess { user ->
                                 sessionStore.saveSession(baseUrl, token)
                                 authState = AuthState.LoggedIn(CoderSession(baseUrl, token, user))
                             }
@@ -552,6 +562,7 @@ private fun TokenScreen(tokens: UiTokens, baseUrl: String, onReopen: (String) ->
 private fun CoderHomeScreen(session: CoderSession, terminalView: CoderTerminalView, theme: CoderTheme, tokens: UiTokens, sessionStore: CoderSessionStore, activeTerminals: List<ActiveTerminalWindow>, onResumeTerminal: (ActiveTerminalWindow) -> Unit, onCloseTerminal: (ActiveTerminalWindow) -> Unit, onSessionExpired: () -> Unit, onOpenSettings: () -> Unit, onOpenTerminal: (CoderWorkspace, CoderWorkspaceAgent, String) -> Unit) {
     val scope = rememberCoroutineScope()
     val api = remember(session) { CoderApi(session.baseUrl, session.token) }
+    DisposableEffect(api) { onDispose { api.close() } }
     val context = LocalContext.current
     var workspaces by remember { mutableStateOf<List<CoderWorkspace>>(emptyList()) }
     var loadingWorkspaces by remember { mutableStateOf(true) }

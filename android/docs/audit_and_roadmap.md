@@ -552,15 +552,19 @@ Required proof schema:
   Suggested validation: Add targeted UIAutomator coverage for terminal gestures before relying on non-actionable decision as fully reviewed.
   Next action: Track gesture regression test matrix separately from the non-actionable migration decision.
 
-- [ ] `REVISIT-CODERAPI-NONTERMINAL-CLIENTS-NOT-CLOSED`
-  State: Open
+- [x] `REVISIT-CODERAPI-NONTERMINAL-CLIENTS-NOT-CLOSED`
+  State: Fixed
   Source: `review-network-persistence-a11y`
   Related item: `BUG-NETWORK-CODERAPI-HTTPCLIENT-NOT-CLOSED`
   Severity: Medium
   Finding: Terminal-session APIs are closed, but non-terminal `CoderApi` owners remain unclosed, including `CoderHomeScreen` remembered API and one-shot auth probes.
   Evidence: `app/src/main/java/com/coder/pi/CoderApp.kt:554`.
   Suggested validation: Add lifecycle regression for session change/logout/composable disposal and auth probes.
-  Next action: Revisit `CoderApi` ownership outside terminal sessions with `DisposableEffect` or scoped close handling.
+  Resolution: One-shot saved-session restore and token validation now close their `CoderApi` clients in `finally`; `CoderHomeScreen` remembered API is closed from `DisposableEffect` when replaced or disposed.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing debug render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; lifecycle-only fix has no visual surface.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-A11Y-VIRTUAL-LINE-BOUNDS-COLLAPSE-BLANKS`
   State: Open

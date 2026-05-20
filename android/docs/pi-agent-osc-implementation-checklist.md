@@ -590,7 +590,7 @@ Commit:
 
 ## PIOSC-11: Add Cross-Repo Validation
 
-Status: building
+Status: done
 
 Research:
 
@@ -648,6 +648,7 @@ Commit:
 
 - `1dae3c5` `test(pi-osc): decode agent fixture on android`
 - `8ff4e7a` `fix(agent): stabilize validation tests`
+- `5af3710` `docs(pi-osc): record cross-repo validation`
 
 ## PIOSC-12: Final Integration Review And Cleanup
 

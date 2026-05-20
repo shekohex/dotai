@@ -250,8 +250,8 @@ Required proof schema:
   Deliverables: Symbol classification/constraint logic for relevant ranges; screenshot proof with Nerd Font/Powerline sample.
   Validation plan: Native build; UIAutomator screenshot with glyph demo; unit tests for constraint decisions if implemented in C++.
 
-- [ ] `INVESTIGATE-RENDER-LINEAR-BLENDING-SRGB`
-  State: Open
+- [x] `INVESTIGATE-RENDER-LINEAR-BLENDING-SRGB`
+  State: Non-actionable
   Type: Investigation, rendering quality
   Summary: Android renderer uses simple alpha blending without explicit sRGB/linear blending policy or text-weight correction.
   Impact: Text color, contrast, and apparent glyph weight may differ from desktop Ghostty and vary by framebuffer/device behavior.
@@ -260,6 +260,11 @@ Required proof schema:
   Goal: Decide whether Android GLES should enable sRGB/linear blending or text-weight correction, and document device constraints.
   Deliverables: Capability check, visual comparison, or non-actionable decision with evidence; no broad color change without screenshots.
   Validation plan: Device/emulator GL capability log; before/after screenshots if changed; UIAutomator smoke.
+  Resolution: No code change. Investigation found the terminal fragment shader already performs luminance-based coverage correction using sRGB transfer helpers (`linearize`, `unlinearize`) before premultiplied glyph blending in `app/src/main/cpp/shaders/terminal.frag`. Android `GLSurfaceView` default framebuffer colorspace/sRGB capability is device/config dependent, and enabling `GL_FRAMEBUFFER_SRGB` globally without an explicit sRGB EGL surface and before/after visual approval would be a broad color behavior change.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Render smoke screenshot `docs/reference/investigate-render-linear-blending-srgb-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `BUG-NETWORK-CODERAPI-HTTPCLIENT-NOT-CLOSED`
   State: Fixed

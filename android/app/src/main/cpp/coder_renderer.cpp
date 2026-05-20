@@ -254,9 +254,11 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                     float availableWidth = x1 - x0;
                     float drawWidth = std::min(rawWidth, availableWidth);
                     float centeredX0 = x0 + std::max(0.0f, (availableWidth - drawWidth) * 0.5f);
-                    return std::array<float, 2>{snapX(centeredX0), snapX(centeredX0 + drawWidth)};
+                    float snappedX0 = snapX(centeredX0);
+                    return std::array<float, 2>{snappedX0, snappedX0 + drawWidth};
                 }
-                return std::array<float, 2>{snapX(rawX0), snapX(rawX0 + rawWidth)};
+                float snappedX0 = snapX(rawX0);
+                return std::array<float, 2>{snappedX0, snappedX0 + rawWidth};
             };
             uint32_t glyphColor = row == cursor.row && col == cursor.col && cursor.visualStyle == GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK ? cursorTextColor_ : cell.foreground;
             float r = ((glyphColor >> 0) & 255) / 255.0f;

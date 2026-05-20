@@ -46,8 +46,8 @@ Required proof schema:
   Review: No findings.
   Commit: `261ca39`.
 
-- [ ] `BUG-RENDER-GLYPH-SNAP-WIDTH-DISTORTION`
-  State: Open
+- [x] `BUG-RENDER-GLYPH-SNAP-WIDTH-DISTORTION`
+  State: Fixed
   Type: Bug report, rendering correctness
   Summary: Glyph quads snap both left and right edges, which can stretch/shrink glyphs by column position.
   Impact: Same glyph can render with inconsistent pixel width, causing shimmer, distorted ligatures, and uneven monospace text.
@@ -55,6 +55,11 @@ Required proof schema:
   Goal: Preserve exact glyph bitmap width while still aligning origin to pixel grid.
   Deliverables: Origin-only snapping; right edge computed from exact glyph width; screenshot or test covering repeated glyphs/ligatures.
   Validation plan: Native build; UIAutomator screenshot proving terminal text still renders; optional pixel-width check if practical.
+  Resolution: Changed glyph quad bounds to snap only the left/origin edge and compute the right edge from the exact glyph bitmap width for both normal and wide-cell glyph paths.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; `./gradlew :app:installDebug` succeeded for before/after proof installs.
+  UI proof: Before `docs/reference/bug-render-glyph-snap-width-distortion-before.png`; after `docs/reference/bug-render-glyph-snap-width-distortion-after.png`; both captured with `android screen capture` from `pi://debug/render` terminal surface and manually inspected.
+  Review: No findings.
+  Commit: `HEAD` (`fix(render): preserve glyph bitmap width`).
 
 - [ ] `BUG-NATIVE-MOUSE-TRACKING-DATA-RACE`
   State: Open

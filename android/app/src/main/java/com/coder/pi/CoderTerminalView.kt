@@ -50,6 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger
 data class TerminalOscMetadata(val title: String, val pwd: String, val bellCount: Long)
 data class TerminalNotificationContext(val workspaceId: String = "", val workspaceName: String = "", val workspaceDisplayName: String = "", val deepLink: String = "", val iconUri: String = "", val iconUrl: String = "", val terminalId: String = "")
 data class TerminalGestureAction(val id: String, val label: String, val description: String)
+data class TerminalAccessibleLine(val row: Int, val text: String)
 
 private const val TerminalOscNotificationChannelId = TerminalNotificationFormat.defaultOscChannelId
 private const val TerminalOscProgressNotificationChannelId = TerminalNotificationFormat.defaultProgressChannelId
@@ -731,17 +732,17 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             val rows = accessibleLines()
             if (rows.isEmpty()) return 0
             val row = if (cellHeight > 0) (y / cellHeight).toInt() else 0
-            return row.coerceIn(0, rows.lastIndex)
+            return rows.minBy { kotlin.math.abs(it.row - row) }.row
         }
 
         override fun getVisibleVirtualViews(virtualViewIds: MutableList<Int>) {
-            val count = accessibleLines().size.coerceAtLeast(1)
-            for (row in 0 until count) virtualViewIds.add(row)
+            val rows = accessibleLines()
+            if (rows.isEmpty()) virtualViewIds.add(0) else rows.forEach { virtualViewIds.add(it.row) }
         }
 
         override fun onPopulateNodeForVirtualView(virtualViewId: Int, node: AccessibilityNodeInfoCompat) {
             val lines = accessibleLines()
-            val text = lines.getOrNull(virtualViewId).orEmpty().ifBlank { "Terminal has no visible text" }
+            val text = lines.firstOrNull { it.row == virtualViewId }?.text.orEmpty().ifBlank { "Terminal has no visible text" }
             node.text = text
             node.contentDescription = text
             node.className = "android.widget.TextView"
@@ -750,7 +751,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
         override fun onPerformActionForVirtualView(virtualViewId: Int, action: Int, arguments: android.os.Bundle?): Boolean = false
 
-        private fun accessibleLines(): List<String> = snapshotText().map { it.trimEnd() }.take(terminalRows()).filter { it.isNotBlank() }
+        private fun accessibleLines(): List<TerminalAccessibleLine> = terminalAccessibleLines(snapshotText(), terminalRows())
 
         private fun accessibilityLineBounds(row: Int): Rect {
             val top = (row * cellHeight).coerceAtLeast(0)

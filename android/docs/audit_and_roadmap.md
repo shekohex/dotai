@@ -566,15 +566,19 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `REVISIT-A11Y-VIRTUAL-LINE-BOUNDS-COLLAPSE-BLANKS`
-  State: Open
+- [x] `REVISIT-A11Y-VIRTUAL-LINE-BOUNDS-COLLAPSE-BLANKS`
+  State: Fixed
   Source: `review-network-persistence-a11y`
   Related item: `A11Y-TERMINAL-NO-SCREEN-READER-VIRTUAL-NODES`
   Severity: Medium
   Finding: `accessibleLines()` filters blank rows before assigning virtual IDs, but bounds/hit testing treat virtual ID as original terminal row. Leading/interspersed blanks can make TalkBack read wrong line for touch coordinates.
   Evidence: `app/src/main/java/com/coder/pi/CoderTerminalView.kt:753`.
   Suggested validation: Test accessibility snapshot with leading and interspersed blank rows.
-  Next action: Preserve original terminal row indices in accessibility virtual nodes.
+  Resolution: Accessibility virtual nodes now use original terminal row indices as virtual IDs and bounds inputs while filtering blank text rows. Hit testing maps touch row to the nearest nonblank original row instead of compacted list position.
+  Validation: `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalAccessibilityTest` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing debug render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; accessibility row-index proof covered by `TerminalAccessibilityTest`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-NETWORK-HANDOVER-FIXED-WITHOUT-REAL-DEVICE-PROOF`
   State: Open

@@ -418,7 +418,7 @@ Commit:
 
 ## TRGP-7: Split And Bound Atlas/Caching Strategy
 
-Status: building
+Status: done
 
 Research:
 
@@ -440,12 +440,12 @@ Plan:
 
 Checklist:
 
-- [ ] Separate grayscale/text glyphs from color/emoji glyphs.
-- [ ] Track atlas modified/resized generations separately.
-- [ ] Add deterministic behavior for atlas full beyond max texture size.
-- [ ] Avoid recursive glyph allocation loops that repeatedly rebuild rows.
-- [ ] Add stress fixture that fills atlas with mixed text, CJK, emoji, symbols, and fallback glyphs.
-- [ ] Add debug counters or logs for atlas growth/reset/miss rates.
+- [x] Separate grayscale/text glyphs from color/emoji glyphs.
+- [x] Track atlas modified/resized generations separately.
+- [x] Add deterministic behavior for atlas full beyond max texture size.
+- [x] Avoid recursive glyph allocation loops that repeatedly rebuild rows.
+- [x] Add stress fixture that fills atlas with mixed text, CJK, emoji, symbols, and fallback glyphs.
+- [x] Add debug counters or logs for atlas growth/reset/miss rates.
 
 User story:
 
@@ -467,7 +467,15 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-7`.
+- Finding: initial reset budget was cumulative for process lifetime, too strict after atlas growth or font changes. Fixed in `6716596` by adding a scoped reset budget that clears after successful atlas growth.
+- Residual risk: Android still uses one RGBA texture instead of Ghostty's physical grayscale/color atlas split. This slice emulates separation operationally: color/COLR pressure can grow the atlas but cannot reset and evict text glyphs at max texture size, while text reset remains bounded. No live stress screenshot captured; debug render includes a mixed atlas stress row.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed before review and after review fix.
+
 Commit:
+
+- Implementation: `a8c3d39ab4bcc708e9dd9fd22b6a4f39720f9dc8` (`fix(renderer): bound atlas resets under color pressure`).
+- Review fix: `67165961a8ed5cf005dc73dfd86753fe2a9f70d6` (`fix(renderer): scope atlas reset budget`).
 
 ## TRGP-8: Align Kotlin Cell Metrics With Native FreeType Metrics
 

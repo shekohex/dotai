@@ -23,6 +23,25 @@ static bool isEmojiCodepoint(uint32_t codepoint) {
     return codepoint >= 0x1f000 || (codepoint >= 0x2600 && codepoint <= 0x27bf);
 }
 
+static bool isConstrainedSymbolCodepoint(uint32_t codepoint) {
+    return (codepoint >= 0x2500 && codepoint <= 0x259f) ||
+        (codepoint >= 0x25a0 && codepoint <= 0x25ff) ||
+        (codepoint >= 0xe0a0 && codepoint <= 0xe0d7) ||
+        (codepoint >= 0xe200 && codepoint <= 0xe2a9) ||
+        (codepoint >= 0xe5fa && codepoint <= 0xe6b7) ||
+        (codepoint >= 0xea60 && codepoint <= 0xebeb) ||
+        (codepoint >= 0xed00 && codepoint <= 0xf2ff) ||
+        (codepoint >= 0xf000 && codepoint <= 0xf8ff);
+}
+
+static bool isConstrainedSymbolCell(const CoderCell& cell) {
+    if (cell.codepointCount == 0) return false;
+    for (uint32_t index = 0; index < cell.codepointCount; index++) {
+        if (isConstrainedSymbolCodepoint(cell.codepoints[index])) return true;
+    }
+    return false;
+}
+
 static bool isNarrowPrintableAsciiCell(const CoderCell& cell) {
     return cell.wide == GHOSTTY_CELL_WIDE_NARROW && cell.codepointCount == 1 && cell.codepoints[0] > ' ' && cell.codepoints[0] < 0x7fu;
 }
@@ -281,10 +300,11 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             float x0 = snapX(-1.0f + (col - visualColumnShift) * cw);
             float x1 = snapX(-1.0f + (col + cellSpan - visualColumnShift) * cw);
             float glyphCursorX = x0;
+            bool constrainedSymbolCell = isConstrainedSymbolCell(cell);
             auto glyphXBounds = [&](const CoderFont::Glyph& glyph, int xOffsetPixels) {
                 float rawX0 = x0 + 2.0f * static_cast<float>(xOffsetPixels) / static_cast<float>(width_);
                 float rawWidth = 2.0f * static_cast<float>(glyph.width) / static_cast<float>(width_);
-                if (cell.wide == GHOSTTY_CELL_WIDE_WIDE) {
+                if (cell.wide == GHOSTTY_CELL_WIDE_WIDE || constrainedSymbolCell) {
                     float availableWidth = x1 - x0;
                     float drawWidth = std::min(rawWidth, availableWidth);
                     float centeredX0 = x0 + std::max(0.0f, (availableWidth - drawWidth) * 0.5f);

@@ -1190,6 +1190,7 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}[58:2::255:120:80;4mColored underline${esc}[0m\r\n\r\n")
         append("Ligatures: -> => != <= >= === !== && || :: ...\r\n\r\n")
         append("Nerd: 󰊢  λ 󰢱 󰊠 󰘳\r\n")
+        append("Powerline:      Box: ┌─┐ █ ░ ▒ ▓\r\n")
         append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡️\r\n\r\n")
         append("CJK: こんにちは 世界 你好 世界 안녕하세요\r\n")
         append("Arabic: مرحبا بالعالم\r\n")

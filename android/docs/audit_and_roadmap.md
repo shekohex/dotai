@@ -249,8 +249,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `UX-RENDER-SYMBOL-CONSTRAINTS-MISSING`
-  State: Open
+- [x] `UX-RENDER-SYMBOL-CONSTRAINTS-MISSING`
+  State: Fixed
   Type: UX issue, glyph layout quality
   Summary: Symbol-like glyphs, PUA/Nerd Font icons, and terminal graphics do not have Ghostty-style constraint logic for fitting or spanning cells.
   Impact: Powerline, Nerd Font icons, block/box glyphs, and symbols may be clipped, misaligned, or inconsistent versus desktop Ghostty.
@@ -259,6 +259,11 @@ Required proof schema:
   Goal: Improve icon/box/powerline rendering by adopting or approximating Ghostty's symbol constraint rules.
   Deliverables: Symbol classification/constraint logic for relevant ranges; screenshot proof with Nerd Font/Powerline sample.
   Validation plan: Native build; UIAutomator screenshot with glyph demo; unit tests for constraint decisions if implemented in C++.
+  Resolution: Added constrained symbol classification for box/block drawing, Powerline, and common Nerd Font/PUA ranges. Narrow-cell symbol glyphs now use the same bounded/centered glyph width path as wide cells, clamping oversized symbol bitmaps to their cell instead of allowing unstable clipping. Added Powerline/box glyphs to the debug render sample alongside existing Nerd Font icons.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554` and covers the updated debug render surface.
+  UI proof: Render screenshot `docs/reference/ux-render-symbol-constraints-missing-after.png` captured with `android screen capture` from `pi://debug/render`; sample includes `Nerd:` and `Powerline:`/`Box:` rows.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `INVESTIGATE-RENDER-LINEAR-BLENDING-SRGB`
   State: Non-actionable

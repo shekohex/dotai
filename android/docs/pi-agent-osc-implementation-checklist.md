@@ -319,15 +319,26 @@ Commit:
 
 ## PIOSC-6: Parse Pi OSC 6767 In Native Terminal Layer
 
-Status: not-started
+Status: building
 
 Research:
 
+- `CoderTerminal::processOscMetadata` buffers OSC bytes up to `8192`, accepts BEL, ST, and C1 ST, then calls `finishOscMetadata`.
+- Existing native `finishOscMetadata` handles OSC 7, OSC 52, OSC 9 notification/progress, and OSC 777 notify; adding a `6767;pi;1;` branch can preserve all existing branches unchanged.
+- Kotlin `TerminalOscEvent.Pi(eventName, payload)` already exists from PIOSC-5, so native can surface Pi frames as `pi\t<event>\t<payload>` without decoding JSON in C++.
+- Debug render fixture lives in `CoderApp.kt` `debugRenderPlaygroundBytes`, which already emits OSC 9/9;4 smoke bytes through real `CoderTerminalView.feedRemoteOutput`.
+
+Plan:
+
+- Add small native helpers for V1 event allowlist, event-name character validation, and base64url payload validation.
+- Extend `finishOscMetadata` to accept `6767;pi;1;<event>;<payload>` and push `pi\t<event>\t<payload>` for valid frames only.
+- Add debug render Pi OSC frames for `hello`, `agent.run`, and `agent.tool`; add Kotlin unit coverage for Pi raw conversion and run native build/unit validation.
+
 Checklist:
 
-- [ ] Extend native side parser to recognize `OSC 6767;pi;1;...`.
-- [ ] Bound payload size and sanitize event names.
-- [ ] Surface parsed Pi OSC frames to Kotlin as typed events.
+- [x] Extend native side parser to recognize `OSC 6767;pi;1;...`.
+- [x] Bound payload size and sanitize event names.
+- [x] Surface parsed Pi OSC frames to Kotlin as typed events.
 
 User story:
 

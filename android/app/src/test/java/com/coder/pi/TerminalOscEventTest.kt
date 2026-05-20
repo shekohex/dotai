@@ -25,6 +25,12 @@ class TerminalOscEventTest {
     }
 
     @Test
+    fun keepsPiPayloadBase64urlText() {
+        val payload = "eyJpZCI6ImV2dC0xIiwidHMiOjE3NzkyMDAwMDAwMDAsInNvdXJjZSI6ImFnZW50IiwiZGF0YSI6e319"
+        assertEquals(TerminalOscEvent.Pi("agent.run", payload), parseTerminalOscEvent("pi\tagent.run\t$payload"))
+    }
+
+    @Test
     fun ignoresUnknownEvents() {
         assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("unknown\tx\ty"))
         assertEquals(emptyList<TerminalOscEvent>(), arrayOf("unknown\tx\ty").toTerminalOscEvents())

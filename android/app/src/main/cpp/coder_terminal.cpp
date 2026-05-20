@@ -80,6 +80,28 @@ static void recordTerminalMutexMetric(const char* name, std::chrono::steady_cloc
     state.lastReport = end;
 }
 
+static bool isPiOscEventName(const std::string& value) {
+    return value == "hello" || value == "agent.session" || value == "agent.run" || value == "agent.turn" || value == "agent.progress" || value == "agent.tool" || value == "agent.alert" || value == "agent.compaction";
+}
+
+static bool isPiOscEventNameSafe(const std::string& value) {
+    if (value.empty() || value.size() > 32) return false;
+    for (char byte : value) {
+        const bool valid = (byte >= 'a' && byte <= 'z') || byte == '.';
+        if (!valid) return false;
+    }
+    return true;
+}
+
+static bool isPiOscPayloadSafe(const std::string& value) {
+    if (value.empty() || value.size() > 7600) return false;
+    for (char byte : value) {
+        const bool valid = (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') || byte == '-' || byte == '_';
+        if (!valid) return false;
+    }
+    return true;
+}
+
 CoderTerminal::CoderTerminal() = default;
 
 CoderTerminal::~CoderTerminal() {
@@ -858,7 +880,15 @@ void CoderTerminal::processOscMetadata(const uint8_t* data, size_t length) {
 void CoderTerminal::finishOscMetadata() {
     oscMetadataActive_ = false;
     oscMetadataStEsc_ = false;
-    if (oscMetadataBuffer_.rfind("7;", 0) == 0) {
+    if (oscMetadataBuffer_.rfind("6767;pi;1;", 0) == 0) {
+        const size_t eventStart = 10;
+        const size_t separator = oscMetadataBuffer_.find(';', eventStart);
+        if (separator != std::string::npos && separator > eventStart) {
+            const std::string eventName = oscMetadataBuffer_.substr(eventStart, separator - eventStart);
+            const std::string payload = oscMetadataBuffer_.substr(separator + 1);
+            if (isPiOscEventNameSafe(eventName) && isPiOscEventName(eventName) && isPiOscPayloadSafe(payload)) oscEvents_.push_back("pi\t" + eventName + "\t" + payload);
+        }
+    } else if (oscMetadataBuffer_.rfind("7;", 0) == 0) {
         const auto* bytes = reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + 2);
         pwd_ = sanitizeBytes(bytes, oscMetadataBuffer_.size() - 2, 512);
         if (terminal_) {

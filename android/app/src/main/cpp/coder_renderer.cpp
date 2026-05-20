@@ -191,14 +191,22 @@ int CoderRenderer::cellHeight() const {
 }
 
 bool CoderRenderer::updateCachedCells(std::vector<CoderCell> cells, int cols, int rows, const CoderCursor& cursor) {
-    bool changed = cachedCols_ != cols || cachedRows_ != rows || cachedCursorCol_ != cursor.col || cachedCursorRow_ != cursor.row || cachedCursorBlinking_ != cursor.blinking || cachedCursorColorHasValue_ != cursor.colorHasValue || cachedCursorColor_ != cursor.color || cachedCursorVisualStyle_ != cursor.visualStyle || cachedCells_.size() != cells.size();
-    if (!changed) {
-        for (size_t index = 0; index < cells.size(); index++) {
-            if (!(cachedCells_[index] == cells[index])) {
-                changed = true;
-                break;
+    const bool dimensionsChanged = cachedCols_ != cols || cachedRows_ != rows || cachedCells_.size() != cells.size();
+    dirtyRows_.assign(static_cast<size_t>(std::max(rows, 0)), dimensionsChanged ? 1 : 0);
+    bool changed = dimensionsChanged || cachedCursorCol_ != cursor.col || cachedCursorRow_ != cursor.row || cachedCursorBlinking_ != cursor.blinking || cachedCursorColorHasValue_ != cursor.colorHasValue || cachedCursorColor_ != cursor.color || cachedCursorVisualStyle_ != cursor.visualStyle;
+    if (!dimensionsChanged) {
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                size_t index = static_cast<size_t>(row * cols + col);
+                if (!(cachedCells_[index] == cells[index])) {
+                    dirtyRows_[static_cast<size_t>(row)] = 1;
+                    changed = true;
+                    break;
+                }
             }
         }
+        if (cachedCursorRow_ >= 0 && cachedCursorRow_ < rows) dirtyRows_[static_cast<size_t>(cachedCursorRow_)] = 1;
+        if (cursor.row >= 0 && cursor.row < rows) dirtyRows_[static_cast<size_t>(cursor.row)] = 1;
     }
     if (!changed) return false;
     cachedCols_ = cols;
@@ -228,7 +236,9 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             break;
         }
     }
-    bool shouldUploadBuffers = updateCachedCells(std::move(cells), cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || cachedAtlasGeneration_ != font_.atlasGeneration() || (hasBlinkingCells && cachedBlinkPhase_ != blinkPhase);
+    const bool atlasChanged = cachedAtlasGeneration_ != font_.atlasGeneration();
+    const bool blinkChanged = hasBlinkingCells && cachedBlinkPhase_ != blinkPhase;
+    bool shouldUploadBuffers = updateCachedCells(std::move(cells), cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || atlasChanged || blinkChanged;
     const auto& renderCells = cachedCells_;
     cachedCursorVisible_ = cursorVisible;
     cachedBlinkPhase_ = blinkPhase;
@@ -244,7 +254,18 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
         frameVertices_.reserve(renderCells.size() * 6);
         frameSolidVertices_.reserve((renderCells.size() + 1) * 6);
         frameSkipText_.assign(renderCells.size(), 0);
+        const bool rebuildAllRows = rowGlyphVertices_.size() != static_cast<size_t>(rows) || rowSolidVertices_.size() != static_cast<size_t>(rows) || atlasChanged || blinkChanged;
+        if (rowGlyphVertices_.size() != static_cast<size_t>(rows)) rowGlyphVertices_.assign(static_cast<size_t>(rows), {});
+        if (rowSolidVertices_.size() != static_cast<size_t>(rows)) rowSolidVertices_.assign(static_cast<size_t>(rows), {});
         for (int row = 0; row < rows; row++) {
+            const bool rebuildRow = rebuildAllRows || dirtyRows_.empty() || dirtyRows_[static_cast<size_t>(row)] != 0;
+            if (!rebuildRow) {
+                frameVertices_.insert(frameVertices_.end(), rowGlyphVertices_[static_cast<size_t>(row)].begin(), rowGlyphVertices_[static_cast<size_t>(row)].end());
+                frameSolidVertices_.insert(frameSolidVertices_.end(), rowSolidVertices_[static_cast<size_t>(row)].begin(), rowSolidVertices_[static_cast<size_t>(row)].end());
+                continue;
+            }
+            const size_t rowGlyphStart = frameVertices_.size();
+            const size_t rowSolidStart = frameSolidVertices_.size();
             int visualColumnShift = 0;
             for (int col = 0; col < cols; col++) {
                 const auto& cell = renderCells[row * cols + col];
@@ -521,6 +542,8 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 glyphCursorX += 2.0f * static_cast<float>(shapedGlyph.xAdvance) / static_cast<float>(width_);
             }
             }
+            rowGlyphVertices_[static_cast<size_t>(row)].assign(frameVertices_.begin() + static_cast<std::ptrdiff_t>(rowGlyphStart), frameVertices_.end());
+            rowSolidVertices_[static_cast<size_t>(row)].assign(frameSolidVertices_.begin() + static_cast<std::ptrdiff_t>(rowSolidStart), frameSolidVertices_.end());
         }
         if (cursorVisible && cursor.col >= 0 && cursor.row >= 0 && cursor.col < cols && cursor.row < rows) {
             int cursorCol = cursor.wideTail && cursor.col > 0 ? cursor.col - 1 : cursor.col;

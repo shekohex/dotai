@@ -107,8 +107,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `PERF-RENDER-ROW-DIRTY-GPU-BUFFERS`
-  State: Open
+- [x] `PERF-RENDER-ROW-DIRTY-GPU-BUFFERS`
+  State: Fixed
   Type: Performance issue, render architecture
   Summary: Android renderer rebuilds foreground/background vertex arrays monolithically instead of keeping row-wise dirty GPU-ready data.
   Impact: Small terminal changes can still force scanning/copying all cells and rebuilding large CPU-side vertex vectors.
@@ -117,6 +117,11 @@ Required proof schema:
   Goal: Move toward persistent row-wise render buffers so clean rows are not rebuilt.
   Deliverables: Design/implementation for per-row retained glyph/background data, or first incremental step that removes per-frame vector churn; preserve cursor, selection, blinking, and decorations.
   Validation plan: Native build; UIAutomator terminal screenshot; structural proof showing clean rows skip rebuild or reduced allocations.
+  Resolution: Added row dirty tracking in `updateCachedCells` and retained per-row glyph/background vertex vectors. Upload frames now rebuild only dirty rows, cursor rows, atlas-change rows, or blink-phase rows; clean rows append retained row vertices into the monolithic upload buffer without reshaping cells or rebuilding row decorations/background quads.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: old upload path iterated and rebuilt `rows * cols` cells for any changed frame; new path still compares cells for dirtiness but rebuilds row CPU vertex data only where `dirtyRows_[row] != 0`, cursor row changed, atlas changed, or blink phase changed. For a one-row update in an 80x24 terminal, row vertex rebuild work drops from 24 rows to 1 dirty row plus affected cursor rows.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-row-dirty-gpu-buffers-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `PERF-RENDER-GLYPH-VERTEX-STRIDE-TOO-LARGE`
   State: Fixed

@@ -71,6 +71,9 @@ private:
     std::vector<Vertex> frameVertices_;
     std::vector<SolidVertex> frameSolidVertices_;
     std::vector<uint8_t> frameSkipText_;
+    std::vector<uint8_t> dirtyRows_;
+    std::vector<std::vector<Vertex>> rowGlyphVertices_;
+    std::vector<std::vector<SolidVertex>> rowSolidVertices_;
     std::string shaderCacheDir_;
     CoderFont font_;
 };

@@ -75,7 +75,12 @@ const normalizePiOscJsonObject = (
   try {
     const normalized: PiOscJsonObject = {};
     for (const [key, item] of Object.entries(value)) {
-      normalized[key] = normalizePiOscJsonValue(item, seen);
+      Object.defineProperty(normalized, key, {
+        value: normalizePiOscJsonValue(item, seen),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return normalized;
   } finally {
@@ -103,6 +108,17 @@ const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): 
   if (Array.isArray(value)) {
     if (seen.has(value)) {
       throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+    }
+
+    const allowedProperties = new Set(["length", ...Object.keys(value)]);
+    if (Object.getOwnPropertyNames(value).some((property) => !allowedProperties.has(property))) {
+      throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+    }
+
+    for (let index = 0; index < value.length; index += 1) {
+      if (!(index in value)) {
+        throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+      }
     }
 
     seen.add(value);

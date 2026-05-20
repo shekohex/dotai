@@ -120,6 +120,14 @@ test("cyclic payload values are rejected", () => {
   );
 });
 
+test("sparse array payload values are rejected", () => {
+  const items = ["start", , "end"];
+
+  expect(() =>
+    createPiOscSequence("agent.progress", { ...fixtureEnvelope, data: { items } }),
+  ).toThrow(PiOscEncodingError);
+});
+
 test("toJSON payload values are rejected", () => {
   const data: Record<string, unknown> = { title: "safe" };
   Object.defineProperty(data, "toJSON", { value: () => "bad" });
@@ -127,6 +135,15 @@ test("toJSON payload values are rejected", () => {
   expect(() => createPiOscSequence("agent.alert", { ...fixtureEnvelope, data })).toThrow(
     PiOscEncodingError,
   );
+});
+
+test("array toJSON payload values are rejected", () => {
+  const items = ["safe"];
+  Object.defineProperty(items, "toJSON", { value: () => ["bad"] });
+
+  expect(() =>
+    createPiOscSequence("agent.progress", { ...fixtureEnvelope, data: { items } }),
+  ).toThrow(PiOscEncodingError);
 });
 
 test("nested JSON payload values are accepted", () => {
@@ -147,6 +164,17 @@ test("shared acyclic payload values are accepted", () => {
       data: { start: shared, end: shared },
     }),
   ).toContain("]6767;pi;1;agent.tool;");
+});
+
+test("__proto__ payload keys are preserved", () => {
+  const sequence = createPiOscSequence("agent.tool", {
+    ...fixtureEnvelope,
+    data: JSON.parse('{"__proto__":{"name":"bash"}}'),
+  });
+  const payload = sequence.slice(sequence.lastIndexOf(";") + 1, -2);
+  const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+
+  expect(decoded.data.__proto__).toEqual({ name: "bash" });
 });
 
 test("oversized frames are rejected", () => {

@@ -359,7 +359,7 @@ Commit:
 
 ## TRGP-6: Render Decorations As Metric-Aware Sprites
 
-Status: building
+Status: done
 
 Research:
 
@@ -380,11 +380,11 @@ Plan:
 
 Checklist:
 
-- [ ] Replace single and double underline quads with metric-aware primitives.
-- [ ] Replace dotted, dashed, and curly approximations with repeatable sprite geometry.
-- [ ] Normalize strikethrough and overline positions to metrics.
-- [ ] Ensure decorations handle wide cells and shaped glyph ownership.
-- [ ] Add visual regression screenshots for all decoration styles.
+- [x] Replace single and double underline quads with metric-aware primitives.
+- [x] Replace dotted, dashed, and curly approximations with repeatable sprite geometry.
+- [x] Normalize strikethrough and overline positions to metrics.
+- [x] Ensure decorations handle wide cells and shaped glyph ownership.
+- [x] Add visual regression screenshots for all decoration styles.
 
 User story:
 
@@ -406,7 +406,15 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-6`.
+- Findings: no blocking regressions found. Decoration placement now derives from native font baseline/glyph height/thickness, repeat geometry uses pixel-scaled dash/dot lengths, and underline color/faint/blink behavior remains on existing solid layer.
+- Residual risk: implementation is still solid-geometry sprites rather than cached atlas sprite glyphs like Ghostty; acceptable for this Android slice because it preserves rendering behavior without atlas churn. No screenshot captured; debug render fixture contains single, double, curly, dotted, dashed, colored underline, wide-cell, emoji, and shaped-run decoration samples.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed.
+
 Commit:
+
+- Implementation: `575eaf322e878da58d7275d7fac6ed3e57f98e6e` (`fix(renderer): scale text decorations from font metrics`).
+- Review fix: none.
 
 ## TRGP-7: Split And Bound Atlas/Caching Strategy
 

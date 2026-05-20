@@ -484,7 +484,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
         val prefix = if (altLatch) byteArrayOf(0x1b) else byteArrayOf()
         val output = if (shiftLatch && text.length == 1) terminalShiftedChar(text.first()).toString() else text
-        if (prefix.isNotEmpty() || remoteInput != null || output.length != 1) writeInput(prefix + output.toByteArray(Charsets.UTF_8))
+        if (terminalTextInputUsesUtf8(output, prefix.isNotEmpty(), remoteInput != null)) writeInput(prefix + output.toByteArray(Charsets.UTF_8))
         else native.nativeTextInput(handle, output)
         shiftLatch = false
         altLatch = false
@@ -1556,6 +1556,8 @@ fun selectedTerminalFontSizeSp(context: Context): Int {
 fun terminalCellHeightForFontSize(context: Context, fontSizeSp: Int): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSizeSp.coerceIn(8, 32).toFloat(), context.resources.displayMetrics).roundToInt().coerceAtLeast(8)
 
 fun terminalCellWidthForFontSize(fontSizePixels: Int): Int = (fontSizePixels * 0.55f).roundToInt().coerceIn(5, 80)
+
+fun terminalTextInputUsesUtf8(output: String, hasPrefix: Boolean, hasRemoteInput: Boolean): Boolean = hasPrefix || hasRemoteInput || output.length != 1 || output.any { it.code > 0x7f }
 
 fun terminalSetLinkHostAllowed(context: Context, host: String, allowed: Boolean) {
     val normalized = terminalNormalizeLinkHostPattern(host) ?: return

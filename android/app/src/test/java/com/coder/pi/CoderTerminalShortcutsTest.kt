@@ -247,4 +247,11 @@ class CoderTerminalShortcutsTest {
         assertEquals('!', terminalShiftedChar('1'))
         assertEquals('|', terminalShiftedChar('\\'))
     }
+
+    @Test
+    fun textInputUsesUtf8ForSingleNonAsciiCommit() {
+        assertEquals(false, terminalTextInputUsesUtf8("a", false, false))
+        assertEquals(true, terminalTextInputUsesUtf8("é", false, false))
+        assertEquals(true, terminalTextInputUsesUtf8("あ", false, false))
+    }
 }

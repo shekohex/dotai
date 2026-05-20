@@ -307,8 +307,8 @@ Required proof schema:
   Deliverables: Kotlin input connection composing callbacks; native/pre-render overlay or terminal preedit render path; CJK/dead-key manual or automated proof.
   Validation plan: Unit/input test where feasible; UIAutomator screenshot of composing text or exact emulator/IME blocker.
 
-- [ ] `BUG-IME-SINGLE-CODEPOINT-NONASCII-DROPPED`
-  State: Open
+- [x] `BUG-IME-SINGLE-CODEPOINT-NONASCII-DROPPED`
+  State: Fixed
   Type: Bug report, international text input
   Summary: Single non-ASCII committed characters can be dropped by the native text-input JNI path.
   Impact: IME/dead-key users committing one character such as `é`, `ع`, or `あ` may see no terminal input, while multi-character paths use raw UTF-8 bytes.
@@ -316,6 +316,11 @@ Required proof schema:
   Goal: Make committed non-ASCII text reach the terminal consistently for both one-codepoint and multi-codepoint input.
   Deliverables: UTF-8 text-write path for committed text or full Unicode key encoding; regression test for one-character non-ASCII commit; preserved control-key behavior.
   Validation plan: Unit/native input test if feasible; `./gradlew testDebugUnitTest`; UIAutomator or manual IME screenshot showing non-ASCII input.
+  Resolution: Routed single-character committed text through UTF-8 write path when it contains non-ASCII characters, while preserving native key encoding for single ASCII input and existing prefixed/remote/multi-character write behavior.
+  Validation: `./gradlew testDebugUnitTest` passed with `terminalTextInputUsesUtf8("é")` and `terminalTextInputUsesUtf8("あ")` regression coverage; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Before smoke `docs/reference/bug-ime-single-codepoint-nonascii-dropped-before.png` captured but blank due existing launch/render state; after smoke `docs/reference/bug-ime-single-codepoint-nonascii-dropped-after.png` captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `BUG-PASTE-BRACKETED-PASTE-MODE-IGNORED`
   State: Open

@@ -128,11 +128,17 @@ static FT_Color fillColorAt(const PaintFill& fill, float x, float y) {
     return sampleStops(fill.stops, angle);
 }
 
+static const uint8_t* bitmapRow(const FT_Bitmap& bitmap, uint32_t row) {
+    int pitch = bitmap.pitch;
+    if (pitch >= 0) return bitmap.buffer + static_cast<size_t>(row) * static_cast<size_t>(pitch);
+    return bitmap.buffer + static_cast<size_t>(bitmap.rows - 1u - row) * static_cast<size_t>(-pitch);
+}
+
 static void blendMask(std::vector<uint8_t>& target, int targetWidth, int targetHeight, const FT_Bitmap& bitmap, int x, int y, const FT_Color& color) {
     for (uint32_t row = 0; row < bitmap.rows; row++) {
         int targetY = y + static_cast<int>(row);
         if (targetY < 0 || targetY >= targetHeight) continue;
-        const uint8_t* source = bitmap.buffer + row * std::abs(bitmap.pitch);
+        const uint8_t* source = bitmapRow(bitmap, row);
         for (uint32_t col = 0; col < bitmap.width; col++) {
             int targetX = x + static_cast<int>(col);
             if (targetX < 0 || targetX >= targetWidth) continue;
@@ -153,7 +159,7 @@ static void blendMaskFill(std::vector<uint8_t>& target, int targetWidth, int tar
     for (uint32_t row = 0; row < bitmap.rows; row++) {
         int targetY = y + static_cast<int>(row);
         if (targetY < 0 || targetY >= targetHeight) continue;
-        const uint8_t* source = bitmap.buffer + row * std::abs(bitmap.pitch);
+        const uint8_t* source = bitmapRow(bitmap, row);
         for (uint32_t col = 0; col < bitmap.width; col++) {
             int targetX = x + static_cast<int>(col);
             if (targetX < 0 || targetX >= targetWidth) continue;
@@ -877,7 +883,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
 const uint8_t* CoderFont::bitmapBuffer(const FT_Bitmap& bitmap, std::vector<uint8_t>& convertedBuffer, bool& color) {
     convertedBuffer.assign(static_cast<size_t>(bitmap.width * bitmap.rows * 4), 0);
     for (uint32_t y = 0; y < bitmap.rows; y++) {
-        const uint8_t* source = bitmap.buffer + y * std::abs(bitmap.pitch);
+        const uint8_t* source = bitmapRow(bitmap, y);
         uint8_t* target = convertedBuffer.data() + static_cast<size_t>(y * bitmap.width * 4);
         if (bitmap.pixel_mode == FT_PIXEL_MODE_GRAY) {
             for (uint32_t x = 0; x < bitmap.width; x++) {

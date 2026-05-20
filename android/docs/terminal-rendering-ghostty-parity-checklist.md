@@ -113,7 +113,7 @@ Commit:
 
 ## TRGP-2: Replace Complex Script Heuristics With Unified Run Shaping
 
-Status: building
+Status: done
 
 Research:
 
@@ -134,11 +134,11 @@ Plan:
 
 Checklist:
 
-- [ ] Replace Arabic-only run detection with script-agnostic shaping eligibility.
-- [ ] Preserve all grapheme codepoints available from `CoderCell`, not only first codepoint where shaping is required.
-- [ ] Support combining marks and reordered glyphs without manual cell shifts.
-- [ ] Keep spaces and empty cells in runs only when they are required for shaping or cursor behavior.
-- [ ] Add tests or debug fixtures for Arabic, combining accents, Devanagari/Bengali/Chakma-style reorder cases, and mixed Latin/script rows.
+- [x] Replace Arabic-only run detection with script-agnostic shaping eligibility.
+- [x] Preserve all grapheme codepoints available from `CoderCell`, not only first codepoint where shaping is required.
+- [x] Support combining marks and reordered glyphs without manual cell shifts.
+- [x] Keep spaces and empty cells in runs only when they are required for shaping or cursor behavior.
+- [x] Add tests or debug fixtures for Arabic, combining accents, Devanagari/Bengali/Chakma-style reorder cases, and mixed Latin/script rows.
 
 User story:
 
@@ -161,7 +161,15 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-2`.
+- Findings: no blocking correctness regressions found in committed slice. Unified complex run path now precedes Arabic/emoji heuristics and passes explicit codepoint-to-cell clusters into HarfBuzz. Arabic/emoji old branches remain as fallback if unified shaping cannot render, preserving current behavior until `TRGP-4` owns emoji span policy.
+- Residual risk: no pixel-level assertion or live screenshot was captured; visual proof is via `pi://debug/render` fixture rows. Full bidi is still explicitly out of scope; HarfBuzz direction remains forced LTR to match Ghostty renderer assumptions.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed before commit and after the LTR/cluster-span adjustment.
+
 Commit:
+
+- Implementation: `230f523932d1792e8dcd7ff241cffbef95441e53` (`fix(renderer): unify complex script shaping runs`).
+- Review fix: none.
 
 ## TRGP-3: Expand Sprite-Backed Terminal Glyph Coverage
 

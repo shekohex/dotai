@@ -146,6 +146,25 @@ test("non-429 provider responses do not emit alerts", () => {
   expect(stdoutSpy).not.toHaveBeenCalled();
 });
 
+test("tool fields are bounded before emission", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("tool_execution_start", {
+    type: "tool_execution_start",
+    toolCallId: "i".repeat(200),
+    toolName: "n".repeat(200),
+    args: {},
+  });
+
+  const decoded = decodeSequence(stdoutSpy.mock.calls[0]?.[0] ?? "");
+  expect(decoded.envelope.data.toolCallId).toHaveLength(128);
+  expect(decoded.envelope.data.toolName).toHaveLength(128);
+});
+
 test("tmux writes passthrough sequence to pane tty", () => {
   process.env.TMUX = "/tmp/tmux-1000/default,123,0";
   delete process.env.SSH_CONNECTION;

@@ -15,6 +15,9 @@ export const piOscRuntime = {
   randomId: () => randomUUID(),
 };
 
+const boundedText = (value: string, maxLength: number): string =>
+  value.length <= maxLength ? value : value.slice(0, maxLength);
+
 const writePiOscSequence = (sequence: string): void => {
   const paneTty = getTmuxPaneTty();
   if (paneTty === null) {
@@ -104,16 +107,16 @@ export default function piOscExtension(pi: ExtensionAPI): void {
 
   pi.on("tool_execution_start", (event, ctx) => {
     emit("agent.tool", ctx, {
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
+      toolCallId: boundedText(event.toolCallId, 128),
+      toolName: boundedText(event.toolName, 128),
       state: "running",
     });
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
     emit("agent.tool", ctx, {
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
+      toolCallId: boundedText(event.toolCallId, 128),
+      toolName: boundedText(event.toolName, 128),
       state: "complete",
       isError: event.isError,
     });

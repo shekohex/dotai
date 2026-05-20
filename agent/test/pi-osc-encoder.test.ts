@@ -111,6 +111,24 @@ test("non-JSON payload values are rejected", () => {
   ).toThrow(PiOscEncodingError);
 });
 
+test("cyclic payload values are rejected", () => {
+  const data: Record<string, unknown> = {};
+  data.self = data;
+
+  expect(() => createPiOscSequence("agent.tool", { ...fixtureEnvelope, data })).toThrow(
+    PiOscEncodingError,
+  );
+});
+
+test("toJSON payload values are rejected", () => {
+  const data: Record<string, unknown> = { title: "safe" };
+  Object.defineProperty(data, "toJSON", { value: () => "bad" });
+
+  expect(() => createPiOscSequence("agent.alert", { ...fixtureEnvelope, data })).toThrow(
+    PiOscEncodingError,
+  );
+});
+
 test("nested JSON payload values are accepted", () => {
   expect(
     createPiOscSequence("agent.tool", {

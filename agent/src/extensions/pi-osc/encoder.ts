@@ -46,33 +46,74 @@ export class PiOscEncodingError extends Error {
 export const isPiOscV1Event = (eventName: string): eventName is PiOscV1Event =>
   Value.Check(PiOscV1EventSchema, eventName);
 
-const isPiOscJsonValue = (value: unknown): boolean => {
+type PiOscJsonValue = null | boolean | number | string | PiOscJsonArray | PiOscJsonObject;
+
+interface PiOscJsonArray extends Array<PiOscJsonValue> {}
+
+interface PiOscJsonObject {
+  [key: string]: PiOscJsonValue;
+}
+
+const isPlainRecord = (value: object): value is Record<string, unknown> => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+const normalizePiOscJsonObject = (
+  value: Record<string, unknown>,
+  seen: WeakSet<object>,
+): PiOscJsonObject => {
+  if (seen.has(value)) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+  }
+
+  if (Object.getOwnPropertyNames(value).includes("toJSON")) {
+    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+  }
+
+  seen.add(value);
+  const normalized: PiOscJsonObject = {};
+  for (const [key, item] of Object.entries(value)) {
+    normalized[key] = normalizePiOscJsonValue(item, seen);
+  }
+  return normalized;
+};
+
+const normalizePiOscJsonValue = (value: unknown, seen = new WeakSet<object>()): PiOscJsonValue => {
   if (value === null) {
-    return true;
+    return null;
   }
 
   if (typeof value === "string" || typeof value === "boolean") {
-    return true;
+    return value;
   }
 
   if (typeof value === "number") {
-    return Number.isFinite(value);
+    if (!Number.isFinite(value)) {
+      throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+    }
+
+    return value;
   }
 
   if (Array.isArray(value)) {
-    return value.every((item) => isPiOscJsonValue(item));
+    if (seen.has(value)) {
+      throw new PiOscEncodingError("Invalid Pi OSC envelope data");
+    }
+
+    seen.add(value);
+    return value.map((item) => normalizePiOscJsonValue(item, seen));
   }
 
   if (typeof value === "object") {
-    const prototype: unknown = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      return false;
+    if (!isPlainRecord(value) || seen.has(value)) {
+      throw new PiOscEncodingError("Invalid Pi OSC envelope data");
     }
 
-    return Object.values(value).every((item) => isPiOscJsonValue(item));
+    return normalizePiOscJsonObject(value, seen);
   }
 
-  return false;
+  throw new PiOscEncodingError("Invalid Pi OSC envelope data");
 };
 
 export const createPiOscSequence = (
@@ -88,11 +129,11 @@ export const createPiOscSequence = (
     throw new PiOscEncodingError("Invalid Pi OSC envelope");
   }
 
-  if (!isPiOscJsonValue(envelope.data)) {
-    throw new PiOscEncodingError("Invalid Pi OSC envelope data");
-  }
-
-  const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+  const serializableEnvelope: PiOscEnvelope = {
+    ...envelope,
+    data: normalizePiOscJsonObject(envelope.data, new WeakSet<object>()),
+  };
+  const payload = Buffer.from(JSON.stringify(serializableEnvelope), "utf8").toString("base64url");
   const sequence = `${ESC}]6767;pi;1;${eventName};${payload}${terminator === "bel" ? BEL : ST}`;
 
   if (Buffer.byteLength(sequence, "utf8") >= PI_OSC_MAX_BYTES) {

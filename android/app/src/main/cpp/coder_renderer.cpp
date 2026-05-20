@@ -203,7 +203,7 @@ bool CoderRenderer::updateCachedCells(const std::vector<CoderCell>& cells, int c
 
 void CoderRenderer::draw(CoderTerminal& terminal) {
     terminal.pump();
-    if (terminal.synchronizedOutput()) return;
+    if (terminal.synchronizedOutput() && cachedGlyphVertexCount_ > 0) return;
     int cols, rows;
     CoderCursor cursor;
     auto cells = terminal.snapshot(cols, rows, cursor);

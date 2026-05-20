@@ -22,6 +22,26 @@ class CoderSessionStoreTest {
     }
 
     @Test
+    fun workspaceStateKeySeparatesHashCodeCollidingBaseUrls() {
+        val firstBaseUrl = "https://coder.example/Aa"
+        val secondBaseUrl = "https://coder.example/BB"
+
+        assertEquals(firstBaseUrl.hashCode(), secondBaseUrl.hashCode())
+        assertNotEquals(
+            CoderSessionStore.workspaceStateKey(firstBaseUrl, "user", "workspace"),
+            CoderSessionStore.workspaceStateKey(secondBaseUrl, "user", "workspace"),
+        )
+    }
+
+    @Test
+    fun workspaceStateKeyIsStableForSameTarget() {
+        assertEquals(
+            CoderSessionStore.workspaceStateKey("https://coder.example", "user", "workspace"),
+            CoderSessionStore.workspaceStateKey("https://coder.example", "user", "workspace"),
+        )
+    }
+
+    @Test
     fun activeTerminalMetadataCarriesPreviewWithoutChangingIdentity() {
         val metadata = CoderActiveTerminalMetadata("https://coder.example", "user", "workspace", "pi", "agent", "main", "bash", "reconnect", 1L, "line 1\nline 2")
 

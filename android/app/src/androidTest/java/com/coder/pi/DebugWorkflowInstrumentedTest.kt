@@ -33,9 +33,9 @@ class DebugWorkflowInstrumentedTest {
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
 
-        device.wait(Until.hasObject(By.text("DotAI OSC Maple Mono")), 10_000)
+        device.wait(Until.hasObject(By.textStartsWith("DotAI OSC ")), 10_000)
         device.wait(Until.hasObject(By.text("file://coder.example/home/coder/dotai")), 10_000)
-        device.findObject(By.text("DotAI OSC Maple Mono"))?.let { check(it.visibleBounds.width() > 0) }
+        device.findObject(By.textStartsWith("DotAI OSC "))?.let { check(it.visibleBounds.width() > 0) }
             ?: error("Debug render title missing")
         device.findObject(By.text("file://coder.example/home/coder/dotai"))?.let { check(it.visibleBounds.width() > 0) }
             ?: error("Debug render URI missing")

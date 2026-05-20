@@ -7,6 +7,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.io.IOException
 import java.security.GeneralSecurityException
+import java.security.MessageDigest
 import java.util.UUID
 
 class CoderSessionStore(context: Context) {
@@ -29,10 +30,11 @@ class CoderSessionStore(context: Context) {
 
     fun workspaceState(baseUrl: String, userId: String, workspaceId: String): CoderLocalWorkspaceState {
         val key = stateKey(baseUrl, userId, workspaceId)
+        val legacyKey = legacyStateKey(baseUrl, userId, workspaceId)
         return CoderLocalWorkspaceState(
-            alias = localPreferences.getString("$key.alias", null),
-            pinned = localPreferences.getBoolean("$key.pinned", false),
-            iconUri = localPreferences.getString("$key.icon", null),
+            alias = localPreferences.getString("$key.alias", null) ?: localPreferences.getString("$legacyKey.alias", null),
+            pinned = localPreferences.getBoolean("$key.pinned", localPreferences.getBoolean("$legacyKey.pinned", false)),
+            iconUri = localPreferences.getString("$key.icon", null) ?: localPreferences.getString("$legacyKey.icon", null),
         )
     }
 
@@ -84,10 +86,23 @@ class CoderSessionStore(context: Context) {
 
     fun saveActiveTerminal(metadata: CoderActiveTerminalMetadata) {
         val prefix = activeTerminalStorageKey(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
+        val legacyPrefix = legacyActiveTerminalStorageKey(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
         val keys = activeTerminalKeys().toMutableSet()
+        keys.remove(legacyPrefix)
         keys.add(prefix)
         localPreferences.edit {
             putString("active_terminals", keys.joinToString("\n"))
+            remove("$legacyPrefix.base_url")
+            remove("$legacyPrefix.user_id")
+            remove("$legacyPrefix.workspace_id")
+            remove("$legacyPrefix.workspace_name")
+            remove("$legacyPrefix.agent_id")
+            remove("$legacyPrefix.agent_name")
+            remove("$legacyPrefix.command")
+            remove("$legacyPrefix.reconnect_id")
+            remove("$legacyPrefix.workspace_icon_url")
+            remove("$legacyPrefix.updated_at")
+            remove("$legacyPrefix.preview")
             putString("$prefix.base_url", metadata.baseUrl)
             putString("$prefix.user_id", metadata.userId)
             putString("$prefix.workspace_id", metadata.workspaceId)
@@ -144,20 +159,23 @@ class CoderSessionStore(context: Context) {
 
     fun removeActiveTerminal(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) {
         val prefix = activeTerminalStorageKey(baseUrl, userId, workspaceId, agentId, command)
-        val keys = activeTerminalKeys().filterNot { it == prefix }
+        val legacyPrefix = legacyActiveTerminalStorageKey(baseUrl, userId, workspaceId, agentId, command)
+        val keys = activeTerminalKeys().filterNot { it == prefix || it == legacyPrefix }
         localPreferences.edit {
             putString("active_terminals", keys.joinToString("\n"))
-            remove("$prefix.base_url")
-            remove("$prefix.user_id")
-            remove("$prefix.workspace_id")
-            remove("$prefix.workspace_name")
-            remove("$prefix.agent_id")
-            remove("$prefix.agent_name")
-            remove("$prefix.command")
-            remove("$prefix.reconnect_id")
-            remove("$prefix.workspace_icon_url")
-            remove("$prefix.updated_at")
-            remove("$prefix.preview")
+            listOf(prefix, legacyPrefix).forEach {
+                remove("$it.base_url")
+                remove("$it.user_id")
+                remove("$it.workspace_id")
+                remove("$it.workspace_name")
+                remove("$it.agent_id")
+                remove("$it.agent_name")
+                remove("$it.command")
+                remove("$it.reconnect_id")
+                remove("$it.workspace_icon_url")
+                remove("$it.updated_at")
+                remove("$it.preview")
+            }
         }
     }
 
@@ -166,13 +184,21 @@ class CoderSessionStore(context: Context) {
         matches.forEach { removeActiveTerminal(it.baseUrl, it.userId, it.workspaceId, it.agentId, it.command) }
     }
 
-    private fun stateKey(baseUrl: String, userId: String, workspaceId: String) = "${baseUrl.hashCode()}.$userId.$workspaceId"
+    private fun stateKey(baseUrl: String, userId: String, workspaceId: String) = workspaceStateKey(baseUrl, userId, workspaceId)
 
-    private fun reconnectKey(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) = "${stateKey(baseUrl, userId, workspaceId)}.$agentId.${command.hashCode()}.reconnect"
+    private fun legacyStateKey(baseUrl: String, userId: String, workspaceId: String) = "${baseUrl.hashCode()}.$userId.$workspaceId"
+
+    private fun reconnectKey(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String): String {
+        val key = "${stateKey(baseUrl, userId, workspaceId)}.$agentId.${command.hashCode()}.reconnect"
+        val legacyKey = "${legacyStateKey(baseUrl, userId, workspaceId)}.$agentId.${command.hashCode()}.reconnect"
+        return if (localPreferences.contains("$key.id") || !localPreferences.contains("$legacyKey.id")) key else legacyKey
+    }
 
     private fun activeTerminalKeys(): Set<String> = localPreferences.getString("active_terminals", "").orEmpty().lines().filter { it.isNotBlank() }.toSet()
 
     private fun activeTerminalStorageKey(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) = activeTerminalKey(stateKey(baseUrl, userId, workspaceId), agentId, command)
+
+    private fun legacyActiveTerminalStorageKey(baseUrl: String, userId: String, workspaceId: String, agentId: String, command: String) = activeTerminalKey(legacyStateKey(baseUrl, userId, workspaceId), agentId, command)
 
     companion object {
         private const val securePreferencesName = "coder_session"
@@ -199,6 +225,12 @@ class CoderSessionStore(context: Context) {
         }
 
         fun activeTerminalKey(stateKey: String, agentId: String, command: String) = "$stateKey.$agentId.${command.hashCode()}.active"
+
+        fun workspaceStateKey(baseUrl: String, userId: String, workspaceId: String): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(baseUrl.trimEnd('/').lowercase().toByteArray(Charsets.UTF_8))
+            val baseUrlKey = digest.joinToString("") { byte -> "%02x".format(byte) }
+            return "$baseUrlKey.$userId.$workspaceId"
+        }
 
         fun safeDebugLogMessage(value: String): String {
             return value

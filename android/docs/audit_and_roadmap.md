@@ -192,8 +192,8 @@ Required proof schema:
   Goal: Avoid rendering intermediate frames while synchronized output is active, without starving final frame after mode exits.
   Deliverables: Native mode check exposed to renderer or snapshot path; draw skip/present-last behavior; test sequence using DECSET/DECRST 2026 if feasible.
   Validation plan: Native build; terminal smoke screenshot; protocol smoke test or documented manual sequence.
-  Resolution: Added locked `CoderTerminal::synchronizedOutput()` mode accessor and made `CoderRenderer::draw()` return immediately after `pump()` while `GHOSTTY_MODE_SYNC_OUTPUT` is active, preserving the last presented frame until mode exits.
-  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; structural proof is renderer checks mode after pump and before snapshot/upload/draw.
+  Resolution: Added locked `CoderTerminal::synchronizedOutput()` mode accessor and made `CoderRenderer::draw()` return immediately after `pump()` while `GHOSTTY_MODE_SYNC_OUTPUT` is active only after a non-empty glyph frame exists, preserving the last presented frame without allowing a blank initial frame.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; blank after-screenshot regression was found during `BUG-STORE-BASEURL-HASHCODE-COLLISION` proof and fixed by requiring `cachedGlyphVertexCount_ > 0` before sync skip.
   UI proof: Before `docs/reference/bug-render-synced-output-mode-ignored-before.png`; after `docs/reference/bug-render-synced-output-mode-ignored-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
   Review: No findings.
   Commit: HEAD (this commit).
@@ -246,8 +246,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `BUG-STORE-BASEURL-HASHCODE-COLLISION`
-  State: Open
+- [x] `BUG-STORE-BASEURL-HASHCODE-COLLISION`
+  State: Fixed
   Type: Bug report, persistence correctness
   Summary: Workspace state keys use Java/Kotlin `String.hashCode()` for `baseUrl`.
   Impact: Hash collisions can mix workspace aliases, icons, pins, reconnect tokens, or active terminal metadata between different servers.
@@ -255,6 +255,11 @@ Required proof schema:
   Goal: Use collision-resistant stable keying while preserving existing saved data where possible.
   Deliverables: Digest/encoding replacement; migration or compatibility read path; collision regression test using known colliding strings.
   Validation plan: Unit tests for unique prefixes and migration behavior; `./gradlew testDebugUnitTest`.
+  Resolution: Replaced base URL `hashCode()` workspace prefix with SHA-256 hex digest of normalized base URL, kept legacy read paths for workspace state and reconnect tokens, removed both new and legacy active-terminal entries on deletion, and made UI smoke title matching resilient to debug font rotation.
+  Validation: `./gradlew testDebugUnitTest` passed with regression tests for `https://coder.example/Aa` and `https://coder.example/BB` hash collision; first two UI smoke attempts failed with `Debug render title missing` due hardcoded rotating debug title expectation, then `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554` after accepting any `DotAI OSC ` title; `./gradlew :app:externalNativeBuildDebug` passed for synchronized-output guard follow-up.
+  UI proof: Before smoke `docs/reference/bug-store-baseurl-hashcode-collision-before.png`; after smoke `docs/reference/bug-store-baseurl-hashcode-collision-after.png`; both captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `BUG-OSC-PARSER-ADHOC-BYTE-SNIFFING`
   State: Open

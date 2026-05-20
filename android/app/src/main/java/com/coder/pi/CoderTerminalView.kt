@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.graphics.Color
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.content.ClipData
 import android.content.ClipDescription
@@ -38,6 +39,9 @@ import androidx.core.content.getSystemService
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.customview.widget.ExploreByTouchHelper
 import java.net.URI
 import java.net.URL
 import java.lang.ref.WeakReference
@@ -117,6 +121,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var remoteInput: ((ByteArray) -> Unit)? = null
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val pendingRemoteOutput = mutableListOf<ByteArray>()
+    private val accessibilityHelper = TerminalAccessibilityHelper()
     override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
     var onOscMetadataChanged: ((TerminalOscMetadata) -> Unit)? = null
     var onHyperlinkActivated: ((String) -> Unit)? = null
@@ -144,6 +149,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         renderMode = RENDERMODE_CONTINUOUSLY
         isFocusable = true
         isFocusableInTouchMode = true
+        ViewCompat.setAccessibilityDelegate(this, accessibilityHelper)
+        ViewCompat.setImportantForAccessibility(this, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES)
         addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val width = right - left
             val height = bottom - top
@@ -717,6 +724,39 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (handle == 0L) return
         native.nativeSetPreedit(handle, text)
         requestRender()
+    }
+
+    private inner class TerminalAccessibilityHelper : ExploreByTouchHelper(this) {
+        override fun getVirtualViewAt(x: Float, y: Float): Int {
+            val rows = accessibleLines()
+            if (rows.isEmpty()) return 0
+            val row = if (cellHeight > 0) (y / cellHeight).toInt() else 0
+            return row.coerceIn(0, rows.lastIndex)
+        }
+
+        override fun getVisibleVirtualViews(virtualViewIds: MutableList<Int>) {
+            val count = accessibleLines().size.coerceAtLeast(1)
+            for (row in 0 until count) virtualViewIds.add(row)
+        }
+
+        override fun onPopulateNodeForVirtualView(virtualViewId: Int, node: AccessibilityNodeInfoCompat) {
+            val lines = accessibleLines()
+            val text = lines.getOrNull(virtualViewId).orEmpty().ifBlank { "Terminal has no visible text" }
+            node.text = text
+            node.contentDescription = text
+            node.className = "android.widget.TextView"
+            node.setBoundsInParent(accessibilityLineBounds(virtualViewId))
+        }
+
+        override fun onPerformActionForVirtualView(virtualViewId: Int, action: Int, arguments: android.os.Bundle?): Boolean = false
+
+        private fun accessibleLines(): List<String> = snapshotText().map { it.trimEnd() }.take(terminalRows()).filter { it.isNotBlank() }
+
+        private fun accessibilityLineBounds(row: Int): Rect {
+            val top = (row * cellHeight).coerceAtLeast(0)
+            val bottom = (top + cellHeight).coerceAtMost(height.coerceAtLeast(top + cellHeight))
+            return Rect(0, top, width.coerceAtLeast(1), bottom)
+        }
     }
 
     fun setKeyboardAvoidanceOffset(offset: Int) {

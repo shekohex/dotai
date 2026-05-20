@@ -402,8 +402,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `A11Y-TERMINAL-NO-SCREEN-READER-VIRTUAL-NODES`
-  State: Open
+- [x] `A11Y-TERMINAL-NO-SCREEN-READER-VIRTUAL-NODES`
+  State: Fixed
   Type: Accessibility issue
   Summary: `GLSurfaceView` terminal content is not exposed to screen readers.
   Impact: TalkBack users cannot explore visible terminal text through accessible virtual nodes.
@@ -411,6 +411,11 @@ Required proof schema:
   Goal: Expose useful visible terminal text to accessibility services.
   Deliverables: Virtual node support for lines or text ranges; accessible labels; fallback behavior when no terminal text exists.
   Validation plan: Accessibility/UIAutomator smoke; screenshot; document TalkBack manual check if automation cannot assert speech.
+  Resolution: Added an `ExploreByTouchHelper` delegate to `CoderTerminalView` that exposes visible terminal snapshot lines as virtual `TextView` nodes with text/content descriptions and per-line bounds. Empty terminal state exposes fallback text `Terminal has no visible text`.
+  Validation: `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`; `uiautomator dump /data/local/tmp/a11y-terminal.xml` after launching `pi://debug/render` showed virtual terminal line nodes such as `DotAI renderer playground · Maple Mono`, `CJK: ...`, and `Emoji: ...` as `android.widget.TextView` children under the terminal view.
+  UI proof: Accessibility smoke screenshot `docs/reference/a11y-terminal-no-screen-reader-virtual-nodes-after.png` captured with `android screen capture`. TalkBack speech output cannot be asserted in this emulator, but accessibility hierarchy exposes line nodes for screen readers.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `INVESTIGATE-NETWORK-KTOR-CIO-HANDOVER`
   State: Blocked

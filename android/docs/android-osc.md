@@ -225,6 +225,14 @@ Expected Pi OSC states:
 - Pi progress active maps to the existing progress notification path; Pi progress clear cancels it.
 - Existing OSC 9 notification/progress, OSC 52 clipboard clear, and OSC 777 notify smoke frames remain in the same fixture.
 
+Final Pi OSC validation:
+
+- Agent full gates pass: `npm run typecheck`, `npm test`, `npm run lint`, and `npm run format:check` from `../agent`.
+- Android full gates pass: `./gradlew testDebugUnitTest` and `./gradlew assembleDebug` from `android`.
+- Agent encoder tests assert exact ST-terminated V1 fixtures for `hello`, `agent.session`, `agent.run`, `agent.turn`, `agent.progress`, `agent.tool`, `agent.alert`, and `agent.compaction`.
+- Android `TerminalOscEventTest` decodes the exact agent `hello` fixture payload and rejects malformed Pi OSC frames.
+- Debug playground Pi OSC frames decode through the Kotlin typed event path in `DebugRenderPlaygroundTest`.
+
 Widely Seen OSC Families:
 
 - OSC 0 / 1 / 2: window and icon title.

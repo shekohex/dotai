@@ -652,7 +652,7 @@ Commit:
 
 ## PIOSC-12: Final Integration Review And Cleanup
 
-Status: building
+Status: done
 
 Research:
 
@@ -670,9 +670,9 @@ Plan:
 
 Checklist:
 
-- [ ] Review feature for privacy, bounds, malformed input, and UI spam risks.
-- [ ] Remove temporary debug-only code not intentionally kept.
-- [ ] Update implementation docs with final event semantics and validation evidence.
+- [x] Review feature for privacy, bounds, malformed input, and UI spam risks.
+- [x] Remove temporary debug-only code not intentionally kept.
+- [x] Update implementation docs with final event semantics and validation evidence.
 
 User story:
 
@@ -695,4 +695,16 @@ Acceptance criteria:
 
 Review:
 
+- Privacy audit: agent extension emits only lifecycle/session state, turn index, bounded tool call id/name/state/error boolean, compaction state, and a generic provider 429 alert. It does not emit prompts, messages, commands, tool output, provider payloads, or clipboard contents.
+- Bounds audit: agent encoder rejects non-JSON/cyclic/accessor/symbol/sparse payloads and full OSC frames at or above 8192 bytes. Android native parser caps OSC collection at 8192 bytes, validates Pi event names and base64url alphabet before Kotlin, and Kotlin validates strict UTF-8, envelope fields, event payload keys, and string lengths.
+- Malformed input audit: Android tests cover invalid protocol version, unknown event, bad base64url, empty/non-envelope JSON, invalid UTF-8, invalid envelope field types, extra root keys, and invalid payload shape. Malformed Pi frames become `TerminalOscEvent.Ignored`.
+- UI spam audit: Pi `agent.alert` reuses existing `handleOscNotification`/`TerminalNotificationRouter` behavior, including foreground suppression, permission checks, alert rate limit, sanitized text, and existing notification settings. Pi progress reuses existing progress notification path and clears on `agent.progress clear` or `agent.run idle`.
+- Backward compatibility audit: native Pi OSC parsing is an isolated `6767;pi;1;` branch before unchanged OSC 7, OSC 52, OSC 9/9;4, and OSC 777 branches. Typed bridge tests and debug smoke preserve legacy OSC frames.
+- Debug cleanup audit: `pi://debug/render` Pi OSC fixture is intentionally kept as developer smoke coverage and documented in `docs/android-osc.md`; no temporary parser/debug logging code remains.
+- Exact fixture audit: `../agent/test/pi-osc-encoder.test.ts` now asserts exact ST-terminated V1 fixtures for all V1 events.
+- Final validation passes: `cd ../agent && npm run typecheck && npm test && npm run lint && npm run format:check`; `./gradlew testDebugUnitTest --no-daemon`; `./gradlew assembleDebug --no-daemon`.
+
 Commit:
+
+- `5bbea6b` `test(pi-osc): assert exact v1 fixtures`
+- `pending` `docs(pi-osc): record final integration audit`

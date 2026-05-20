@@ -235,7 +235,7 @@ Commit:
 
 ## TRGP-4: Harden Color Emoji And COLR Rendering
 
-Status: building
+Status: done
 
 Research:
 
@@ -258,12 +258,12 @@ Plan:
 
 Checklist:
 
-- [ ] Track text vs emoji presentation through font resolution and glyph rendering.
-- [ ] Keep color glyphs in a color-aware atlas path.
-- [ ] Respect VS15/VS16 where terminal state exposes them.
-- [ ] Replace fixed two-cell collapse with grapheme-width based placement.
-- [ ] Add fallback behavior for unsupported COLRv1 paint/composite cases.
-- [ ] Add fixtures for emoji text presentation, emoji presentation, skin tone, family ZWJ, flags, and unsupported COLRv1 glyphs.
+- [x] Track text vs emoji presentation through font resolution and glyph rendering.
+- [x] Keep color glyphs in a color-aware atlas path.
+- [x] Respect VS15/VS16 where terminal state exposes them.
+- [x] Replace fixed two-cell collapse with grapheme-width based placement.
+- [x] Add fallback behavior for unsupported COLRv1 paint/composite cases.
+- [x] Add fixtures for emoji text presentation, emoji presentation, skin tone, family ZWJ, flags, and unsupported COLRv1 glyphs.
 
 User story:
 
@@ -285,7 +285,15 @@ Acceptance criteria:
 
 Review:
 
+- Review prompt: reviewed committed terminal rendering parity slice for correctness regressions, Ghostty parity gaps, malformed glyph/shaping behavior, atlas/cache failure modes, Android lifecycle/threading issues, and missing tests, focused only on `TRGP-4`.
+- Finding: fallback emoji branch still used hardcoded two-cell collapse if unified shaping failed. Fixed in `add4490` by preserving captured terminal cell span.
+- Residual risk: Android still uses one RGBA atlas rather than Ghostty's split grayscale/color atlases; color-aware shader path and atlas growth/reset logs are current safe behavior. No live screenshot captured; debug render includes `⚡︎`, `⚡️`, skin-tone/ZWJ emoji, family emoji, and flags. Unsupported COLRv1 paints still degrade through logged fallback behavior rather than broad COLRv1 parity.
+- Validation: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug --no-daemon` passed before review and after review fix.
+
 Commit:
+
+- Implementation: `1f787f7660de82aa509bc4aa320660bf9c68fba6` (`fix(renderer): honor emoji presentation selectors`).
+- Review fix: `add4490792cd89d53cb05d5a7d62d1b7f8c472ef` (`fix(renderer): preserve emoji fallback cell spans`).
 
 ## TRGP-5: Normalize Fallback Font Metrics And Selection
 

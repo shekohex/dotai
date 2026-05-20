@@ -37,6 +37,21 @@ bool operator==(const CoderCell& lhs, const CoderCell& rhs) {
         && lhs.wide == rhs.wide;
 }
 
+static bool isWidePreeditCodepoint(uint32_t codepoint) {
+    return codepoint >= 0x1100 &&
+        (codepoint <= 0x115f ||
+            codepoint == 0x2329 || codepoint == 0x232a ||
+            (codepoint >= 0x2e80 && codepoint <= 0xa4cf && codepoint != 0x303f) ||
+            (codepoint >= 0xac00 && codepoint <= 0xd7a3) ||
+            (codepoint >= 0xf900 && codepoint <= 0xfaff) ||
+            (codepoint >= 0xfe10 && codepoint <= 0xfe19) ||
+            (codepoint >= 0xfe30 && codepoint <= 0xfe6f) ||
+            (codepoint >= 0xff00 && codepoint <= 0xff60) ||
+            (codepoint >= 0xffe0 && codepoint <= 0xffe6) ||
+            (codepoint >= 0x1f000 && codepoint <= 0x1fffd) ||
+            (codepoint >= 0x20000 && codepoint <= 0x3fffd));
+}
+
 CoderTerminal::CoderTerminal() = default;
 
 CoderTerminal::~CoderTerminal() {
@@ -671,15 +686,26 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
     }
     cursor = cursor_;
     if (!preeditCodepoints_.empty() && cursor_.row >= 0 && cursor_.row < rows_ && cursor_.col >= 0 && cursor_.col < cols_) {
-        for (size_t index = 0; index < preeditCodepoints_.size(); index++) {
-            int col = cursor_.col + static_cast<int>(index);
+        int col = cursor_.col;
+        for (uint32_t codepoint : preeditCodepoints_) {
             if (col >= cols_) break;
+            const bool wide = isWidePreeditCodepoint(codepoint) && col + 1 < cols_;
             auto& cell = outputCells[cursor_.row * cols_ + col];
             cell.codepoints = {};
-            cell.codepoints[0] = preeditCodepoints_[index];
+            cell.codepoints[0] = codepoint;
             cell.codepointCount = 1;
             cell.flags |= 4u;
-            cell.wide = GHOSTTY_CELL_WIDE_NARROW;
+            cell.wide = wide ? GHOSTTY_CELL_WIDE_WIDE : GHOSTTY_CELL_WIDE_NARROW;
+            if (wide) {
+                auto& tail = outputCells[cursor_.row * cols_ + col + 1];
+                tail.codepoints = {};
+                tail.codepointCount = 0;
+                tail.flags |= 4u;
+                tail.wide = GHOSTTY_CELL_WIDE_SPACER_TAIL;
+                col += 2;
+            } else {
+                col++;
+            }
         }
     }
     return outputCells;

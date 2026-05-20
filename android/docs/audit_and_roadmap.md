@@ -532,15 +532,19 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `REVISIT-IME-PREEDIT-WIDE-CELLS`
-  State: Open
+- [x] `REVISIT-IME-PREEDIT-WIDE-CELLS`
+  State: Fixed
   Source: `review-input-protocol-ux`
   Related item: `UX-IME-PREEDIT-NOT-RENDERED`
   Severity: Medium
   Finding: Preedit overlay writes each composing codepoint into one cell and forces `GHOSTTY_CELL_WIDE_NARROW`, so wide CJK/emoji composing text can overlap or advance incorrectly.
   Evidence: `app/src/main/cpp/coder_terminal.cpp:682`.
   Suggested validation: Add multi-codepoint CJK/emoji preedit tests that verify wide/tail cells.
-  Next action: Make preedit overlay width-aware for East Asian wide and emoji codepoints.
+  Resolution: Preedit overlay now classifies East Asian wide and emoji codepoints, marks them `GHOSTTY_CELL_WIDE_WIDE`, writes a spacer tail cell, and advances by two terminal cells so following composing characters no longer overlap.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.PreeditWideCellsInstrumentedTest` passed with 2 tests on `emulator-5554`; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Existing render smoke from `debugRenderDeepLinkShowsOscDebugSurface`; wide-cell proof covered by `PreeditWideCellsInstrumentedTest` snapshot assertions.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `REVISIT-GESTURE-REGRESSION-COVERAGE`
   State: Open

@@ -1292,6 +1292,7 @@ fun TerminalSurface(
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
         val agentStateHandler: (TerminalAgentStateSnapshot) -> Unit = { agentStatus = it.statusPresentation() }
+        agentStatus = terminalView.agentStateSnapshot().statusPresentation()
         terminalView.onResume()
         terminalView.post { terminalView.forceRefreshSurface() }
         terminalView.onOscMetadataChanged = metadataHandler

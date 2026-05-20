@@ -235,7 +235,7 @@ Commit:
 
 ## TRGP-4: Harden Color Emoji And COLR Rendering
 
-Status: not-started
+Status: building
 
 Research:
 
@@ -243,8 +243,11 @@ Research:
 - Android collapses emoji clusters to two cells when `clusterHasEmoji` is true: `app/src/main/cpp/coder_renderer.cpp:760-789`.
 - Android fallback loading searches bundled fallback and Android emoji/system font paths: `app/src/main/cpp/coder_font.cpp:734-787`.
 - Android attempts solid COLRv1 rendering and logs unsupported paints/composites: `app/src/main/cpp/coder_font.cpp:184-347`.
+- Android treated every variation selector in `U+FE00..U+FE0F` as emoji-cluster evidence, so `VS15` text presentation could incorrectly take the emoji fallback path before this ticket: `app/src/main/cpp/coder_font.cpp:502-527`.
+- Android now routes emoji/color bitmaps through the existing RGBA atlas and shader `glyph.color` path rather than a separate atlas; this keeps color glyphs color-aware but does not yet implement Ghostty's separate grayscale/color atlas split: `app/src/main/cpp/coder_font.cpp:922-1043` and `app/src/main/cpp/coder_renderer.cpp:835-855`.
 - Ghostty chooses color vs text presentation via resolver and renders emoji into a separate color atlas: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/CodepointResolver.zig:304-313` and `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/SharedGrid.zig:286-310`.
 - Ghostty applies emoji-specific cover/center constraints and small padding: `~/.cache/checkouts/github.com/ghostty-org/ghostty/src/font/SharedGrid.zig:297-310`.
+- Failing samples are debug-render visible text vs emoji presentation (`⚡︎` vs `⚡️`), skin-tone/ZWJ emoji (`🧑🏽‍💻`, `👨‍👩‍👧‍👦`), flags (`🇪🇬`, `🇺🇸`), and COLRv1 glyphs that may lack supported Android paints.
 
 Plan:
 

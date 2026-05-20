@@ -472,6 +472,18 @@ bool CoderFont::shouldSynthesizeBold(uint32_t flags) const {
     return index != 0 && primaryFaces_[index].data.empty();
 }
 
+static bool isEmojiPresentationSelector(uint32_t codepoint) {
+    return codepoint == 0xfe0f;
+}
+
+static bool isTextPresentationSelector(uint32_t codepoint) {
+    return codepoint == 0xfe0e;
+}
+
+static bool isEmojiClusterCodepoint(uint32_t codepoint) {
+    return codepoint == 0x200d || isEmojiPresentationSelector(codepoint) || (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff);
+}
+
 std::vector<CoderFont::ShapedGlyph> CoderFont::shape(const uint32_t* codepoints, uint32_t codepointCount, uint32_t flags, int targetAdvance) {
     return shape(codepoints, nullptr, codepointCount, flags, targetAdvance);
 }
@@ -503,11 +515,16 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
     if (codepointCount < 2) return {};
     bool asciiOnly = true;
     bool emojiCluster = false;
+    bool textPresentation = false;
+    bool emojiPresentation = false;
     for (uint32_t index = 0; index < codepointCount; index++) {
         uint32_t codepoint = codepoints[index];
         if (codepoint >= 0x80) asciiOnly = false;
-        if (codepoint == 0x200d || (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff) || (codepoint >= 0xfe00 && codepoint <= 0xfe0f)) emojiCluster = true;
+        if (isEmojiClusterCodepoint(codepoint)) emojiCluster = true;
+        if (isTextPresentationSelector(codepoint)) textPresentation = true;
+        if (isEmojiPresentationSelector(codepoint)) emojiPresentation = true;
     }
+    if (textPresentation && !emojiPresentation) emojiCluster = false;
     if (!ligaturesEnabled_ && asciiOnly) return {};
     uint32_t index = styleIndex(flags);
     if (!loadPrimaryFace(index)) index = 0;
@@ -524,6 +541,11 @@ std::vector<CoderFont::ShapedGlyph> CoderFont::shapeUncached(const uint32_t* cod
     if (primaryRenderable) return shaped;
     if (!loadFallbackFaces()) return shaped;
     if (emojiCluster) {
+        static std::unordered_set<uint32_t> loggedEmojiPresentationFallbacks;
+        if (loggedEmojiPresentationFallbacks.size() < 16) {
+            uint32_t firstCodepoint = codepoints[0];
+            if (loggedEmojiPresentationFallbacks.insert(firstCodepoint).second) __android_log_print(ANDROID_LOG_INFO, "CoderFont", "emoji presentation fallback cp=U+%04X codepoints=%u vs16=%d", firstCodepoint, codepointCount, emojiPresentation ? 1 : 0);
+        }
         for (uint32_t fallbackIndex = 0; fallbackIndex < fallbackFaces_.size(); fallbackIndex++) {
             auto fallbackShaped = shapeWithFont(fallbackFaces_[fallbackIndex].harfbuzzFont, codepoints, clusters, codepointCount, fallbackIndex, UINT32_MAX, targetAdvance);
             bool fallbackRenderable = !fallbackShaped.empty();

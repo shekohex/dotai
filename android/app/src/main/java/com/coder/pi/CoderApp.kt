@@ -1234,7 +1234,7 @@ internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("Legacy sprites: 🬀🬋🮋 Powerline branch:  \r\n")
         append("Box joins: ├─┼─┤ └─┴─┘ ╠═╬═╣ ╚═╩═╝\r\n")
         append("Box dash: ┄┄┄ ┅┅┅ ┆┆┆ ┇┇┇ ╱╲╳\r\n")
-        append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡️\r\n\r\n")
+        append("Emoji: 😀 🧑🏽‍💻 👨‍👩‍👧‍👦 ⚡︎ ⚡️ 🇪🇬 🇺🇸\r\n\r\n")
         append("CJK: こんにちは 世界 你好 世界 안녕하세요\r\n")
         append("Arabic: مرحبا بالعالم\r\n")
         append("Bidi: ABC مرحبا DEF 123\r\n")

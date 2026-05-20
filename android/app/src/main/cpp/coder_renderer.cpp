@@ -324,10 +324,6 @@ static bool drawTerminalSprite(std::vector<SolidVertex>& vertices, uint32_t code
         }
         return true;
     }
-    if (codepoint >= 0x1fb00 && codepoint <= 0x1fbff) {
-        quad(0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-        return true;
-    }
     return false;
 }
 

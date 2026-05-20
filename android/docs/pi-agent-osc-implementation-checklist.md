@@ -319,7 +319,7 @@ Commit:
 
 ## PIOSC-6: Parse Pi OSC 6767 In Native Terminal Layer
 
-Status: building
+Status: done
 
 Research:
 
@@ -362,7 +362,15 @@ Acceptance criteria:
 
 Review:
 
+- Review subagent command: `pi --mode-review --no-session --no-extensions --no-skills --tools read,bash -p "Review committed Pi OSC slice for correctness regressions, malformed input handling, protocol compatibility, Android lifecycle/threading issues, and test gaps. Focus only on PIOSC-6 commits 5d436e3 and 37f8890. Verify existing OSC 9/52/777 behavior is preserved. Return findings by severity with file/line refs, plus residual risks if no findings."`
+- Findings fixed: raised native Pi payload cap to match full Android OSC parser budget instead of dropping valid near-limit frames.
+- Final review result: no findings. Residual risks: no native/instrumented regression test directly feeds valid/malformed `6767` bytes through JNI, and no connected Android lifecycle/threading smoke was run.
+- Validation: `./gradlew :app:externalNativeBuildDebug` passed. `./gradlew compileDebugKotlin` passed. `./gradlew testDebugUnitTest --tests com.coder.pi.TerminalOscEventTest` passed.
+
 Commit:
+
+- Implementation: `5d436e3` (`feat(pi-osc): parse native osc frames`)
+- Review fix: `37f8890` (`fix(pi-osc): accept full native payload budget`)
 
 ## PIOSC-7: Decode And Validate Pi OSC Payloads In Kotlin
 

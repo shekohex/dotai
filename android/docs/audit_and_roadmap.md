@@ -341,8 +341,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `UX-IME-PREEDIT-NOT-RENDERED`
-  State: Open
+- [x] `UX-IME-PREEDIT-NOT-RENDERED`
+  State: Fixed
   Type: UX issue, international text input
   Summary: Android input connection commits text and key events but does not expose composing/preedit text to the renderer.
   Impact: IME users typing CJK, accents, or dead-key compositions cannot see in-progress composition inside the terminal surface before commit.
@@ -351,6 +351,11 @@ Required proof schema:
   Goal: Support visible IME composing text without sending bytes to terminal until commit.
   Deliverables: Kotlin input connection composing callbacks; native/pre-render overlay or terminal preedit render path; CJK/dead-key manual or automated proof.
   Validation plan: Unit/input test where feasible; UIAutomator screenshot of composing text or exact emulator/IME blocker.
+  Resolution: Added `setComposingText` and `finishComposingText` handling in the terminal input connection. Composing text is stored in native terminal state and overlaid at the cursor during snapshot/render with underline styling; `commitText` clears the overlay before sending committed UTF-8 input to the PTY.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#nativePreeditOverlaysSnapshotWithoutWritingInput` passed on `emulator-5554` and verifies CJK preedit appears in snapshot then disappears without committed input; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Smoke screenshot `docs/reference/ux-ime-preedit-not-rendered-after.png` captured with `android screen capture` from `pi://debug/render`; automated real IME composition screenshot is blocked by emulator keyboard/IME composition control, but native CJK preedit overlay is covered by instrumentation.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `BUG-IME-SINGLE-CODEPOINT-NONASCII-DROPPED`
   State: Fixed

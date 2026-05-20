@@ -185,7 +185,18 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE
         return object : BaseInputConnection(this, false) {
             override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
+                setPreeditText("")
                 sendText(text.toString())
+                return true
+            }
+
+            override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
+                setPreeditText(text.toString())
+                return true
+            }
+
+            override fun finishComposingText(): Boolean {
+                setPreeditText("")
                 return true
             }
 
@@ -700,6 +711,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     fun snapshotText(): List<String> {
         if (handle == 0L) return emptyList()
         return native.nativeSnapshotText(handle).toList()
+    }
+
+    private fun setPreeditText(text: String) {
+        if (handle == 0L) return
+        native.nativeSetPreedit(handle, text)
+        requestRender()
     }
 
     fun setKeyboardAvoidanceOffset(offset: Int) {

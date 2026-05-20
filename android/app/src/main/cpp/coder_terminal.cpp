@@ -237,6 +237,34 @@ void CoderTerminal::key(int keyCode, int unicodeChar, int metaState) {
     if (result == GHOSTTY_SUCCESS && written > 0) writePty(reinterpret_cast<const uint8_t*>(output.data()), written);
 }
 
+void CoderTerminal::setPreedit(const char* data, size_t length) {
+    std::lock_guard lock(mutex_);
+    preeditCodepoints_.clear();
+    for (size_t index = 0; index < length;) {
+        unsigned char first = static_cast<unsigned char>(data[index]);
+        uint32_t codepoint = 0;
+        size_t width = 0;
+        if (first < 0x80) {
+            codepoint = first;
+            width = 1;
+        } else if ((first & 0xe0u) == 0xc0u && index + 1 < length) {
+            codepoint = ((first & 0x1fu) << 6u) | (static_cast<unsigned char>(data[index + 1]) & 0x3fu);
+            width = 2;
+        } else if ((first & 0xf0u) == 0xe0u && index + 2 < length) {
+            codepoint = ((first & 0x0fu) << 12u) | ((static_cast<unsigned char>(data[index + 1]) & 0x3fu) << 6u) | (static_cast<unsigned char>(data[index + 2]) & 0x3fu);
+            width = 3;
+        } else if ((first & 0xf8u) == 0xf0u && index + 3 < length) {
+            codepoint = ((first & 0x07u) << 18u) | ((static_cast<unsigned char>(data[index + 1]) & 0x3fu) << 12u) | ((static_cast<unsigned char>(data[index + 2]) & 0x3fu) << 6u) | (static_cast<unsigned char>(data[index + 3]) & 0x3fu);
+            width = 4;
+        } else {
+            index++;
+            continue;
+        }
+        if (codepoint >= 0x20 && codepoint != 0x7f) preeditCodepoints_.push_back(codepoint);
+        index += width;
+    }
+}
+
 void CoderTerminal::setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength) {
     std::lock_guard lock(mutex_);
     if (!terminal_ || !renderState_) return;
@@ -642,6 +670,18 @@ std::vector<CoderCell> CoderTerminal::snapshot(int& cols, int& rows, CoderCursor
         }
     }
     cursor = cursor_;
+    if (!preeditCodepoints_.empty() && cursor_.row >= 0 && cursor_.row < rows_ && cursor_.col >= 0 && cursor_.col < cols_) {
+        for (size_t index = 0; index < preeditCodepoints_.size(); index++) {
+            int col = cursor_.col + static_cast<int>(index);
+            if (col >= cols_) break;
+            auto& cell = outputCells[cursor_.row * cols_ + col];
+            cell.codepoints = {};
+            cell.codepoints[0] = preeditCodepoints_[index];
+            cell.codepointCount = 1;
+            cell.flags |= 4u;
+            cell.wide = GHOSTTY_CELL_WIDE_NARROW;
+        }
+    }
     return outputCells;
 }
 

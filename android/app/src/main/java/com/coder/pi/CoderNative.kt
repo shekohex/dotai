@@ -20,6 +20,7 @@ class CoderNative {
     external fun nativeFocusEvent(handle: Long, focused: Boolean): ByteArray
     external fun nativeFeed(handle: Long, bytes: ByteArray)
     external fun nativeTextInput(handle: Long, text: String)
+    external fun nativeSetPreedit(handle: Long, text: String)
     external fun nativeKeyEvent(handle: Long, keyCode: Int, unicodeChar: Int, metaState: Int)
     external fun nativeScroll(handle: Long, rowDelta: Int)
     external fun nativeScrollInput(handle: Long, rowDelta: Int, x: Float, y: Float): ByteArray

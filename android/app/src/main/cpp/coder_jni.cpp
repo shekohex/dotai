@@ -173,6 +173,15 @@ Java_com_coder_pi_CoderNative_nativeTextInput(JNIEnv* env, jobject, jlong handle
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_coder_pi_CoderNative_nativeSetPreedit(JNIEnv* env, jobject, jlong handle, jstring text) {
+    const char* chars = env->GetStringUTFChars(text, nullptr);
+    if (chars) {
+        terminal(reinterpret_cast<NativeTerminal*>(handle))->setPreedit(chars, std::strlen(chars));
+        env->ReleaseStringUTFChars(text, chars);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_coder_pi_CoderNative_nativeKeyEvent(JNIEnv*, jobject, jlong handle, jint keyCode, jint unicodeChar, jint metaState) {
     terminal(reinterpret_cast<NativeTerminal*>(handle))->key(keyCode, unicodeChar, metaState);
 }

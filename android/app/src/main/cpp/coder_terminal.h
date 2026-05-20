@@ -46,6 +46,7 @@ public:
     std::vector<uint8_t> encodeFocus(bool focused);
     void feed(const uint8_t* data, size_t length);
     void key(int keyCode, int unicodeChar, int metaState);
+    void setPreedit(const char* data, size_t length);
     void setTheme(uint32_t foreground, uint32_t background, uint32_t cursor, uint32_t selectionBackground, const uint32_t* palette, size_t paletteLength);
     void scroll(int rowDelta);
     std::vector<uint8_t> scrollInput(int rowDelta, float x, float y);
@@ -131,6 +132,7 @@ private:
     int cursorRow_ = 0;
     CoderCursor cursor_;
     std::vector<CoderCell> cells_;
+    std::vector<uint32_t> preeditCodepoints_;
     std::string title_;
     std::string pwd_;
     std::string oscMetadataBuffer_;

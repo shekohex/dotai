@@ -93,6 +93,20 @@ class DebugWorkflowInstrumentedTest {
     }
 
     @Test
+    fun nativePreeditOverlaysSnapshotWithoutWritingInput() {
+        val native = CoderNative()
+        val handle = native.nativeInitTerminal(80, 24, 8, 16)
+        try {
+            native.nativeSetPreedit(handle, "あ")
+            check(native.nativeSnapshotText(handle).first().startsWith("あ"))
+            native.nativeSetPreedit(handle, "")
+            check(!native.nativeSnapshotText(handle).first().startsWith("あ"))
+        } finally {
+            native.nativeDisposeTerminal(handle)
+        }
+    }
+
+    @Test
     fun runtimeShortcutsPanelOpensClosesAndHidesAfterShortcutTap() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -212,7 +212,18 @@ Implemented in Android:
 - OSC 9 progress: Android bridges `OSC 9;4;state;progress` into an ongoing native notification with determinate or indeterminate progress, and clears it on state `0`.
 - Notification routing: real workspace terminals prefix notification titles with the workspace name and use `pi://terminal?id=<terminal-session-key>` deep links so tapping a notification resumes the matching terminal/workspace when it is still active.
 - Color scheme query: Android responds to Ghostty VT color-scheme requests from the active terminal theme background.
-- Debug smoke: `pi://debug/render` emits title, PWD, BEL, OSC 8 hyperlink, OSC 52 clipboard, OSC 9 notification/progress, and OSC color sequences through real `CoderTerminalView.feedRemoteOutput`.
+- Debug smoke: `pi://debug/render` emits title, PWD, BEL, OSC 8 hyperlink, OSC 52 clipboard, OSC 9 notification/progress, OSC 777 notification, OSC color sequences, and Pi OSC V1 `hello`, `agent.run`, `agent.progress`, `agent.tool`, and `agent.alert` frames through real `CoderTerminalView.feedRemoteOutput`.
+
+## Pi OSC Debug Smoke
+
+Open `pi://debug/render` in a debug build. The screen feeds fixture bytes through `debugRenderPlaygroundBytes` into a real `CoderTerminalView`, so bytes pass through the native VT parser, Kotlin OSC decoder, per-terminal agent state, and Compose overlay/notification paths.
+
+Expected Pi OSC states:
+
+- Top-right agent overlay appears briefly as `Pi agent` with running/progress/tool state.
+- `agent.alert` routes through the existing terminal notification behavior with sanitized title/body.
+- Pi progress active maps to the existing progress notification path; Pi progress clear cancels it.
+- Existing OSC 9 notification/progress, OSC 52 clipboard clear, and OSC 777 notify smoke frames remain in the same fixture.
 
 Widely Seen OSC Families:
 

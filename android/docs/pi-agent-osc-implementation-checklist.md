@@ -536,9 +536,21 @@ Commit:
 
 ## PIOSC-10: Add End-To-End Debug Smoke Flow
 
-Status: not-started
+Status: building
 
 Research:
+
+- `pi://debug/render` is already documented in `docs/android-osc.md` and feeds `debugRenderPlaygroundBytes` into a real `CoderTerminalView`.
+- Current debug bytes already include OSC title, OSC 7 PWD, OSC 9 notification/progress, `hello`, `agent.run`, and a running `agent.tool` Pi frame.
+- PIOSC-10 still needs active `agent.progress`, completed `agent.tool`, `agent.alert`, Pi progress clear, and explicit debug documentation of expected UI state.
+- Existing OSC 52 and OSC 777 behavior should stay in the same debug fixture so the smoke screen continues to exercise legacy OSC paths alongside Pi OSC.
+
+Plan:
+
+- Extend `debugRenderPlaygroundBytes` with bounded Pi OSC V1 fixture frames for progress active/clear, tool complete, and alert.
+- Add OSC 52 clear/query-safe smoke and OSC 777 notify smoke without changing runtime parser behavior.
+- Document manual `pi://debug/render` validation and expected UI states in `docs/android-osc.md` plus checklist review.
+- Add a unit test that verifies debug bytes contain required Pi and legacy OSC smoke frames.
 
 Checklist:
 

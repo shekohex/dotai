@@ -1195,7 +1195,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
     }
 }
 
-private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
+internal fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
     val esc = "\u001b"
     val sample = buildString {
         append("${esc}[2J${esc}[H")
@@ -1203,11 +1203,18 @@ private fun debugRenderPlaygroundBytes(fontName: String): ByteArray {
         append("${esc}]7;file://coder.example/home/coder/dotai${'\u0007'}")
         append("${esc}]9;OSC notification smoke${'\u0007'}")
         append("${esc}]9;4;1;42${'\u0007'}")
+        append("${esc}]52;c;${'\u0007'}")
+        append("${esc}]777;notify;OSC 777 smoke;Legacy notification path${'\u0007'}")
         append("${esc}]6767;pi;1;hello;eyJpZCI6ImRiZy1oZWxsbyIsInRzIjoxNzc5MjAwMDAwMDAwLCJzb3VyY2UiOiJhZ2VudCIsInNlc3Npb25JZCI6ImRlYnVnIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6MSwiZGF0YSI6eyJwcm90b2NvbCI6MSwiZXh0ZW5zaW9uIjoicGktb3NjIiwidmVyc2lvbiI6MX19${esc}\\")
         append("${esc}]6767;pi;1;agent.run;eyJpZCI6ImRiZy1ydW4iLCJ0cyI6MTc3OTIwMDAwMDAwMSwic291cmNlIjoiYWdlbnQiLCJzZXNzaW9uSWQiOiJkZWJ1ZyIsImN3ZCI6Ii93b3Jrc3BhY2UiLCJzZXEiOjIsImRhdGEiOnsic3RhdGUiOiJydW5uaW5nIn19${esc}\\")
         append("${esc}]6767;pi;1;agent.tool;eyJpZCI6ImRiZy10b29sIiwidHMiOjE3NzkyMDAwMDAwMDIsInNvdXJjZSI6ImFnZW50Iiwic2Vzc2lvbklkIjoiZGVidWciLCJjd2QiOiIvd29ya3NwYWNlIiwic2VxIjozLCJkYXRhIjp7InRvb2xDYWxsSWQiOiJ0b29sLTEiLCJ0b29sTmFtZSI6ImJhc2giLCJzdGF0ZSI6InJ1bm5pbmcifX0${esc}\\")
+        append("${esc}]6767;pi;1;agent.progress;eyJpZCI6ImRiZy1wcm9ncmVzcyIsInRzIjoxNzc5MjAwMDAwMDAzLCJzb3VyY2UiOiJhZ2VudCIsInNlc3Npb25JZCI6ImRlYnVnIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6NCwiZGF0YSI6eyJzdGF0ZSI6ImFjdGl2ZSJ9fQ${esc}\\")
+        append("${esc}]6767;pi;1;agent.tool;eyJpZCI6ImRiZy10b29sLWRvbmUiLCJ0cyI6MTc3OTIwMDAwMDAwNCwic291cmNlIjoiYWdlbnQiLCJzZXNzaW9uSWQiOiJkZWJ1ZyIsImN3ZCI6Ii93b3Jrc3BhY2UiLCJzZXEiOjUsImRhdGEiOnsidG9vbENhbGxJZCI6InRvb2wtMSIsInRvb2xOYW1lIjoiYmFzaCIsInN0YXRlIjoiY29tcGxldGUiLCJpc0Vycm9yIjpmYWxzZSwibGFiZWwiOiJTaGVsbCIsInN1bW1hcnkiOiJEZWJ1ZyBjb21tYW5kIGNvbXBsZXRlIn19${esc}\\")
+        append("${esc}]6767;pi;1;agent.alert;eyJpZCI6ImRiZy1hbGVydCIsInRzIjoxNzc5MjAwMDAwMDA1LCJzb3VyY2UiOiJhZ2VudCIsInNlc3Npb25JZCI6ImRlYnVnIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6NiwiZGF0YSI6eyJraW5kIjoicHJvdmlkZXIiLCJ0aXRsZSI6IlBpIE9TQyBkZWJ1ZyBhbGVydCIsImJvZHkiOiJBZ2VudCBhbGVydCBzbW9rZSIsInNldmVyaXR5IjoiaW5mbyJ9fQ${esc}\\")
+        append("${esc}]6767;pi;1;agent.progress;eyJpZCI6ImRiZy1wcm9ncmVzcy1jbGVhciIsInRzIjoxNzc5MjAwMDAwMDA2LCJzb3VyY2UiOiJhZ2VudCIsInNlc3Npb25JZCI6ImRlYnVnIiwiY3dkIjoiL3dvcmtzcGFjZSIsInNlcSI6NywiZGF0YSI6eyJzdGF0ZSI6ImNsZWFyIn19${esc}\\")
         append("${esc}[1mDotAI renderer playground · $fontName${esc}[0m\r\n")
         append("Real CoderTerminalView + libghostty-vt + native GLES renderer\r\n\r\n")
+        append("Pi OSC: hello, run, progress, tool start/end, alert, clear progress\r\n")
         append("OSC 8: ${esc}]8;;https://example.com${'\u0007'}tap link${esc}]8;;${'\u0007'}  BEL:${'\u0007'}  Color:${esc}]10;#ff5c7a${'\u0007'}fg override${esc}]110${'\u0007'}\r\n\r\n")
         append("Working: ⣾ CoreUI indicator\r\n\r\n")
         append("Shimmer SGR: ${esc}[97mrendering${esc}[39m ${esc}[37mterminal${esc}[39m ${esc}[2mfonts${esc}[22m\r\n\r\n")

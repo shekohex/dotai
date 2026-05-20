@@ -14,6 +14,9 @@
 #include <unistd.h>
 #include <android/log.h>
 
+#include <ghostty/vt/modes.h>
+#include <ghostty/vt/paste.h>
+
 void CoderTerminal::TerminalDeleter::operator()(GhosttyTerminal terminal) const { ghostty_terminal_free(terminal); }
 void CoderTerminal::RenderStateDeleter::operator()(GhosttyRenderState state) const { ghostty_render_state_free(state); }
 void CoderTerminal::RowIteratorDeleter::operator()(GhosttyRenderStateRowIterator iterator) const { ghostty_render_state_row_iterator_free(iterator); }
@@ -159,6 +162,22 @@ void CoderTerminal::pump() {
 void CoderTerminal::writeUtf8(const char* data, int length) {
     std::lock_guard lock(mutex_);
     writePty(reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(std::max(0, length)));
+}
+
+std::vector<uint8_t> CoderTerminal::encodePaste(const uint8_t* data, size_t length) {
+    std::lock_guard lock(mutex_);
+    if (!terminal_ || data == nullptr || length == 0) return {};
+    bool bracketed = false;
+    ghostty_terminal_mode_get(terminal_.get(), GHOSTTY_MODE_BRACKETED_PASTE, &bracketed);
+    std::vector<char> input(data, data + length);
+    size_t written = 0;
+    GhosttyResult result = ghostty_paste_encode(input.data(), input.size(), bracketed, nullptr, 0, &written);
+    if (result != GHOSTTY_OUT_OF_SPACE || written == 0) return {};
+    std::vector<uint8_t> output(written);
+    result = ghostty_paste_encode(input.data(), input.size(), bracketed, reinterpret_cast<char*>(output.data()), output.size(), &written);
+    if (result != GHOSTTY_SUCCESS) return {};
+    output.resize(written);
+    return output;
 }
 
 void CoderTerminal::feed(const uint8_t* data, size_t length) {

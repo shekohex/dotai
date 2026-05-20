@@ -322,8 +322,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `BUG-PASTE-BRACKETED-PASTE-MODE-IGNORED`
-  State: Open
+- [x] `BUG-PASTE-BRACKETED-PASTE-MODE-IGNORED`
+  State: Fixed
   Type: Bug report, protocol/security correctness
   Summary: Clipboard paste writes raw text instead of using Ghostty paste encoding and bracketed paste mode.
   Impact: TUIs and shells that enable bracketed paste cannot distinguish typed input from paste; unsafe pasted newlines/control bytes are not normalized through Ghostty's paste policy.
@@ -331,6 +331,11 @@ Required proof schema:
   Goal: Route clipboard paste through Ghostty paste encoding with current terminal bracketed-paste mode.
   Deliverables: Native paste method or Kotlin/native integration that checks mode 2004 and calls `ghostty_paste_encode`; tests for bracketed and non-bracketed paste; no change to ordinary typed text.
   Validation plan: Native/unit paste tests using DECSET/DECRST 2004; `./gradlew testDebugUnitTest`; UIAutomator terminal paste smoke screenshot.
+  Resolution: Added `nativePaste` JNI path that checks `GHOSTTY_MODE_BRACKETED_PASTE`, encodes clipboard bytes through `ghostty_paste_encode`, and writes encoded paste bytes from `pasteClip` without changing ordinary `sendText` typed input.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew testDebugUnitTest` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#nativePasteUsesBracketedPasteMode` passed on `emulator-5554` and verifies non-bracketed newline to CR plus DECSET 2004 bracket wrapping; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`.
+  UI proof: Smoke screenshot `docs/reference/bug-paste-bracketed-paste-mode-ignored-after.png` captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `BUG-TERMINAL-FOCUS-EVENT-MODE-IGNORED`
   State: Open

@@ -64,6 +64,19 @@ class DebugWorkflowInstrumentedTest {
     }
 
     @Test
+    fun nativePasteUsesBracketedPasteMode() {
+        val native = CoderNative()
+        val handle = native.nativeInitTerminal(80, 24, 8, 16)
+        try {
+            check(String(native.nativePaste(handle, "a\nb".toByteArray())) == "a\rb")
+            native.nativeFeed(handle, "\u001b[?2004h".toByteArray())
+            check(String(native.nativePaste(handle, "a\nb".toByteArray())) == "\u001b[200~a\nb\u001b[201~")
+        } finally {
+            native.nativeDisposeTerminal(handle)
+        }
+    }
+
+    @Test
     fun runtimeShortcutsPanelOpensClosesAndHidesAfterShortcutTap() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

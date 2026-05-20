@@ -16,6 +16,7 @@ class CoderNative {
     external fun nativeRendererSurfaceChanged(terminalHandle: Long, rendererHandle: Long, width: Int, height: Int, cellWidth: Int, cellHeight: Int)
     external fun nativeRendererDrawFrame(terminalHandle: Long, rendererHandle: Long)
     external fun nativeWrite(handle: Long, bytes: ByteArray)
+    external fun nativePaste(handle: Long, bytes: ByteArray): ByteArray
     external fun nativeFeed(handle: Long, bytes: ByteArray)
     external fun nativeTextInput(handle: Long, text: String)
     external fun nativeKeyEvent(handle: Long, keyCode: Int, unicodeChar: Int, metaState: Int)

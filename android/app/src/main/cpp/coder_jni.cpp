@@ -5,6 +5,7 @@
 #include <jni.h>
 #include <memory>
 #include <string>
+#include <vector>
 
 struct JniByteArrayView {
     JNIEnv* env = nullptr;
@@ -133,6 +134,15 @@ Java_com_coder_pi_CoderNative_nativeWrite(JNIEnv* env, jobject, jlong handle, jb
     jbyte* data = env->GetByteArrayElements(bytes, nullptr);
     terminal(reinterpret_cast<NativeTerminal*>(handle))->writeUtf8(reinterpret_cast<const char*>(data), length);
     env->ReleaseByteArrayElements(bytes, data, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_coder_pi_CoderNative_nativePaste(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
+    JniByteArrayView input(env, bytes);
+    std::vector<uint8_t> encoded = terminal(reinterpret_cast<NativeTerminal*>(handle))->encodePaste(input.bytes(), input.size());
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(encoded.size()));
+    if (!encoded.empty()) env->SetByteArrayRegion(result, 0, static_cast<jsize>(encoded.size()), reinterpret_cast<const jbyte*>(encoded.data()));
+    return result;
 }
 
 extern "C" JNIEXPORT void JNICALL

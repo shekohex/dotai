@@ -509,7 +509,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
         val text = clip.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
         if (text.isBlank()) return false
-        sendText(text)
+        writeInput(native.nativePaste(handle, text.toByteArray(Charsets.UTF_8)))
         return true
     }
 

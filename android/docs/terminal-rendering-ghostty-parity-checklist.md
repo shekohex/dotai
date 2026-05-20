@@ -771,3 +771,58 @@ Review:
 Commit:
 
 - Final integration: `c2a5fc33cd0bcd3c3a68755635e1589f9d4c7c0c` (`docs(renderer): complete terminal parity audit`).
+
+## Strategy Re-Audit
+
+Status: done
+
+Scope:
+
+- Rechecked every completed `TRGP-*` item against current Android implementation and Ghostty reference paths.
+- Treated debug rows and build/emulator validation as proof of exercised code paths, not pixel-perfect visual equivalence.
+- Reclassified over-strong claims as documented deltas where Android intentionally does not match Ghostty internals.
+
+Cross-reference findings:
+
+- `TRGP-1`/`TRGP-2` shaped runs: Android now mirrors Ghostty's core HarfBuzz strategy: character cluster level, LTR direction, codepoint-index clusters, and cell-indexed shaped glyph placement. Ghostty reference: `src/font/shaper/harfbuzz.zig:130-255` and `src/font/shaper/run.zig:47-303`. Android reference: `app/src/main/cpp/coder_font.cpp:499-716` and `app/src/main/cpp/coder_renderer.cpp:645-909`. Remaining delta: Android keeps fallback Arabic/emoji special paths after unified shaping fails; acceptable as compatibility fallback, not pure Ghostty architecture.
+- `TRGP-3` sprites: Android grid-renders box, block, braille, selected powerline/branch, and selected geometric shapes. Ghostty has broader z2d sprite modules for full block/box/braille/branch/geometric/powerline/legacy sets. Android intentionally falls back for unsupported legacy/supplement ranges instead of drawing inaccurate placeholders. Proper fix for full parity: port Ghostty sprite families one range at a time with exact per-codepoint geometry tests.
+- `TRGP-4` emoji/COLR: Android respects VS15/VS16 where terminal graphemes expose selectors, routes color glyphs through RGBA atlas/shader path, and preserves terminal cell spans. Ghostty uses presentation-aware resolver constraints and separate color atlas. Proper fix for stronger parity: split Android text/color atlas storage and add targeted COLRv1 fixtures for actual Android emoji-font paint formats.
+- `TRGP-5` fallback metrics: Android normalizes fallback glyph baseline and bounds against terminal cells and isolates cache keys. Ghostty has richer discovered fallback and `default_fallback_adjustment`. Proper fix for stronger parity: add automated imported-font fixtures and metric delta thresholds before changing resolver policy.
+- `TRGP-6` decorations: Android uses metric-derived solid geometry for underline/dotted/dashed/curly/strike/overline. Ghostty renders decorations as sprite glyphs from `special.zig`. Proper fix for full parity: move decorations into shared sprite/atlas path only if pixel-diff shows current solid geometry diverges materially.
+- `TRGP-7` atlas/cache: Android does not physically split grayscale and color atlases. It uses one RGBA atlas with bounded growth/reset behavior and color-pressure safeguards. Ghostty uses separate grayscale/color atlases and separate modified/resized counters. Proper fix for optimized parity: implement true dual atlas textures (`GL_R8` or alpha for text, `GL_RGBA8` for color), separate generations, and per-atlas dirty upload.
+- `TRGP-8` metrics: Android keeps Kotlin cell metrics authoritative and logs FreeType deltas. Ghostty uses one grid metrics model. Proper fix if mismatch appears: add a native metrics query/callback and resize only after native metrics stabilize; do not change now without measured clipping/touch mismatch.
+- `TRGP-9` selection/link/cursor: Android now applies selection foreground/background in snapshot cells. Ghostty also styles links from render-state coverage. Android does not have cheap render-state link coverage and avoids per-frame scrollback scans. Proper fix: expose link ranges from native render state before adding link visuals.
+- `TRGP-10` color/blending: Android remains theme-exact and does not implement Ghostty `minimum-contrast`, Display P3, linear framebuffer selection, or background opacity. Proper fix: add side-by-side screenshot/pixel capture first, then add user-facing minimum contrast only if product wants Ghostty policy.
+- `TRGP-11` images: Android explicitly defers Kitty images. Ghostty exposes image storage/layers and renders Kitty placements. Android keeps storage disabled and has no decoder/texture/layer path. Proper fix: separate image-rendering project with byte limits, decoder callbacks, texture cache, z-layer composition, invalidation, cleanup, and security review.
+
+Confidence:
+
+- Factually confident current strategy is safe and ergonomic for this slice: yes. It improves user-visible terminal rendering without broad renderer rewrites, preserves terminal protocol/IME/cursor/dirty-row behavior, and documents unsupported Ghostty deltas.
+- Factually confident current strategy is full Ghostty parity: no. Full parity requires true dual atlases, exact sprite ports, render-state link coverage, optional minimum contrast/colorspace policy, image layers, and pixel-diff validation.
+- Factually confident current strategy is most optimized possible: no. It is pragmatic. Most optimized next renderer architecture is dual atlas textures plus native-authoritative metrics only after measurement proves need.
+
+Loophole fixes applied in this re-audit:
+
+- Completion language now distinguishes debug fixture proof from screenshot/pixel-diff proof.
+- Atlas language now states Android emulates separation operationally instead of claiming Ghostty's physical atlas split.
+- Link, image, color, sprite, COLRv1, and imported-font metric gaps are explicitly categorized as intentional deltas with concrete proper fixes.
+- Final confidence claim is bounded: safe for shipped slice, not 100% Ghostty parity.
+
+Recommended next tickets if stricter parity is required:
+
+- `TRGP-F1`: add automated screenshot capture and Ghostty side-by-side pixel-diff harness for debug rows.
+- `TRGP-F2`: implement physical text/color atlas split with separate generations and uploads.
+- `TRGP-F3`: port remaining Ghostty sprite families exactly, starting with legacy computing/supplement.
+- `TRGP-F4`: expose native render-state link ranges and render link underline without viewport regex scans.
+- `TRGP-F5`: build imported-font metric fixtures and decide native-authoritative cell metrics from measured thresholds.
+- `TRGP-F6`: evaluate `minimum-contrast` as explicit user setting with screenshot proof.
+- `TRGP-F7`: design Kitty image rendering as separate bounded renderer project.
+
+Validation:
+
+- Re-audit commands: `rg` over checklist, Android renderer/font/terminal paths, and Ghostty font/renderer/reference paths.
+- Prior final validation remains current for implementation commits: `./gradlew :app:externalNativeBuildDebug testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon` and `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface --no-daemon`.
+
+Commit:
+
+- Re-audit: pending.

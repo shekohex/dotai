@@ -36,7 +36,7 @@ private:
     bool loadProgramBinary(GLuint program, const char* name, const char* vertexSource, const char* fragmentSource);
     void saveProgramBinary(GLuint program, const char* name, const char* vertexSource, const char* fragmentSource);
     std::string shaderCachePath(const char* name, const char* vertexSource, const char* fragmentSource) const;
-    bool updateCachedCells(const std::vector<CoderCell>& cells, int cols, int rows, const CoderCursor& cursor);
+    bool updateCachedCells(std::vector<CoderCell> cells, int cols, int rows, const CoderCursor& cursor);
     GLuint program_ = 0;
     GLuint solidProgram_ = 0;
     GLuint vao_ = 0;

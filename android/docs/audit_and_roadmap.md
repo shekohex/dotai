@@ -91,8 +91,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `PERF-RENDER-FULL-SNAPSHOT-COPY-EVERY-FRAME`
-  State: Open
+- [x] `PERF-RENDER-FULL-SNAPSHOT-COPY-EVERY-FRAME`
+  State: Fixed
   Type: Performance issue, render CPU/memory
   Summary: Renderer copies the terminal grid every frame, then copies it again into renderer cache.
   Impact: Large terminals waste CPU and memory bandwidth even when content is unchanged.
@@ -101,6 +101,11 @@ Required proof schema:
   Goal: Reduce or remove full-grid allocation/copy on clean frames while preserving selection overlay.
   Deliverables: Dirty-row transfer, renderer-owned buffers, or measured smaller step; before/after structural proof or measurement.
   Validation plan: Native build; terminal render UIAutomator screenshot; benchmark/trace or allocation reasoning.
+  Resolution: Changed renderer cache update to take the snapshot vector by value and move it into `cachedCells_`, then render from `cachedCells_`. This removes the second full-grid copy on changed frames while preserving existing terminal snapshot and selection overlay behavior.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: old changed-frame cache path copied `N * sizeof(CoderCell)` from `snapshot` return into local cells plus copied another `N * sizeof(CoderCell)` via `cachedCells_ = cells`; new path keeps the snapshot return and replaces the renderer cache transfer with an O(1) vector move, reducing changed-frame full-grid cache-copy bandwidth from `2N` cell copies to `1N` cell copies.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-full-snapshot-copy-every-frame-after.png` captured with `android screen capture` from `pi://debug/render` and manually inspected.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [ ] `PERF-RENDER-ROW-DIRTY-GPU-BUFFERS`
   State: Open

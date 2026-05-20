@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <utility>
 #include <vector>
 
 struct Vertex { float x, y, u, v, r, g, b, br, bg, bb, colorGlyph; };
@@ -178,7 +179,7 @@ int CoderRenderer::cellHeight() const {
     return font_.glyphHeight();
 }
 
-bool CoderRenderer::updateCachedCells(const std::vector<CoderCell>& cells, int cols, int rows, const CoderCursor& cursor) {
+bool CoderRenderer::updateCachedCells(std::vector<CoderCell> cells, int cols, int rows, const CoderCursor& cursor) {
     bool changed = cachedCols_ != cols || cachedRows_ != rows || cachedCursorCol_ != cursor.col || cachedCursorRow_ != cursor.row || cachedCursorBlinking_ != cursor.blinking || cachedCursorColorHasValue_ != cursor.colorHasValue || cachedCursorColor_ != cursor.color || cachedCursorVisualStyle_ != cursor.visualStyle || cachedCells_.size() != cells.size();
     if (!changed) {
         for (size_t index = 0; index < cells.size(); index++) {
@@ -197,7 +198,7 @@ bool CoderRenderer::updateCachedCells(const std::vector<CoderCell>& cells, int c
     cachedCursorColorHasValue_ = cursor.colorHasValue;
     cachedCursorColor_ = cursor.color;
     cachedCursorVisualStyle_ = cursor.visualStyle;
-    cachedCells_ = cells;
+    cachedCells_ = std::move(cells);
     return true;
 }
 
@@ -217,7 +218,8 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             break;
         }
     }
-    bool shouldUploadBuffers = updateCachedCells(cells, cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || (hasBlinkingCells && cachedBlinkPhase_ != blinkPhase);
+    bool shouldUploadBuffers = updateCachedCells(std::move(cells), cols, rows, cursor) || cachedCursorVisible_ != cursorVisible || (hasBlinkingCells && cachedBlinkPhase_ != blinkPhase);
+    const auto& renderCells = cachedCells_;
     cachedCursorVisible_ = cursorVisible;
     cachedBlinkPhase_ = blinkPhase;
     glClearColor(((clearColor_ >> 16u) & 255u) / 255.0f, ((clearColor_ >> 8u) & 255u) / 255.0f, (clearColor_ & 255u) / 255.0f, 1.0f);
@@ -229,17 +231,17 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
     auto snapX = [&](float x) { return -1.0f + std::round(((x + 1.0f) * 0.5f) * static_cast<float>(width_)) * 2.0f / static_cast<float>(width_); };
     auto snapY = [&](float y) { return -1.0f + std::round(((y + 1.0f) * 0.5f) * static_cast<float>(height_)) * 2.0f / static_cast<float>(height_); };
     if (shouldUploadBuffers) {
-        vertices.reserve(cells.size() * 6);
-        solidVertices.reserve((cells.size() + 1) * 6);
-        std::vector<uint8_t> skipText(cells.size(), 0);
+        vertices.reserve(renderCells.size() * 6);
+        solidVertices.reserve((renderCells.size() + 1) * 6);
+        std::vector<uint8_t> skipText(renderCells.size(), 0);
         for (int row = 0; row < rows; row++) {
             int visualColumnShift = 0;
             for (int col = 0; col < cols; col++) {
-            const auto& cell = cells[row * cols + col];
-            float gridX0 = snapX(-1.0f + col * cw);
-            float y0 = snapY(1.0f - (row + 1) * ch);
-            float gridX1 = snapX(-1.0f + (col + 1) * cw);
-            float y1 = snapY(1.0f - row * ch);
+                const auto& cell = renderCells[row * cols + col];
+                float gridX0 = snapX(-1.0f + col * cw);
+                float y0 = snapY(1.0f - (row + 1) * ch);
+                float gridX1 = snapX(-1.0f + (col + 1) * cw);
+                float y1 = snapY(1.0f - row * ch);
             float br = ((cell.background >> 0) & 255) / 255.0f;
             float bg = ((cell.background >> 8) & 255) / 255.0f;
             float bb = ((cell.background >> 16) & 255) / 255.0f;
@@ -312,7 +314,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             if (isNarrowPrintableAsciiCell(cell)) {
                 int runEndCol = col + 1;
                 while (runEndCol < cols) {
-                    const auto& runCell = cells[row * cols + runEndCol];
+                    const auto& runCell = renderCells[row * cols + runEndCol];
                     if (!isNarrowPrintableAsciiCell(runCell)) break;
                     if (runCell.flags != cell.flags || runCell.foreground != cell.foreground) break;
                     if (row == cursor.row && cursor.col >= col && cursor.col <= runEndCol) break;
@@ -321,7 +323,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
                 if (runEndCol - col > 1) {
                     std::array<uint32_t, 64> runCodepoints{};
                     uint32_t runCodepointCount = 0;
-                    for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = cells[row * cols + runCol].codepoints[0];
+                    for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = renderCells[row * cols + runCol].codepoints[0];
                     auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags);
                     bool runRenderable = !runGlyphs.empty();
                     for (const auto& shapedGlyph : runGlyphs) {
@@ -358,17 +360,17 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             if (cell.codepointCount == 1 && isArabicCodepoint(cell.codepoints[0])) {
                 int runEndCol = col + 1;
                 while (runEndCol < cols) {
-                    const auto& runCell = cells[row * cols + runEndCol];
+                    const auto& runCell = renderCells[row * cols + runEndCol];
                     if (!isArabicRunCell(runCell)) break;
                     if (runCell.flags != cell.flags || runCell.foreground != cell.foreground) break;
                     if (row == cursor.row && cursor.col >= col && cursor.col <= runEndCol) break;
                     runEndCol++;
                 }
-                while (runEndCol > col && cells[row * cols + runEndCol - 1].codepointCount == 1 && cells[row * cols + runEndCol - 1].codepoints[0] == ' ') runEndCol--;
+                while (runEndCol > col && renderCells[row * cols + runEndCol - 1].codepointCount == 1 && renderCells[row * cols + runEndCol - 1].codepoints[0] == ' ') runEndCol--;
                 if (runEndCol - col > 1) {
                     std::array<uint32_t, 64> runCodepoints{};
                     uint32_t runCodepointCount = 0;
-                    for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = cells[row * cols + runCol].codepoints[0];
+                    for (int runCol = col; runCol < runEndCol && runCodepointCount < runCodepoints.size(); runCol++) runCodepoints[runCodepointCount++] = renderCells[row * cols + runCol].codepoints[0];
                     auto runGlyphs = font_.shape(runCodepoints.data(), runCodepointCount, cell.flags);
                     bool runRenderable = !runGlyphs.empty();
                     for (const auto& shapedGlyph : runGlyphs) {
@@ -416,9 +418,9 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
             appendCellCodepoints(cell);
             while (clusterCodepointCount > 0 && clusterEndCol + 1 < cols) {
                 int nextCol = clusterEndCol + 1;
-                while (nextCol < cols && (cells[row * cols + nextCol].codepointCount == 0 || cells[row * cols + nextCol].wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || cells[row * cols + nextCol].wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) && nextCol <= clusterEndCol + 2) nextCol++;
+                while (nextCol < cols && (renderCells[row * cols + nextCol].codepointCount == 0 || renderCells[row * cols + nextCol].wide == GHOSTTY_CELL_WIDE_SPACER_HEAD || renderCells[row * cols + nextCol].wide == GHOSTTY_CELL_WIDE_SPACER_TAIL) && nextCol <= clusterEndCol + 2) nextCol++;
                 if (nextCol >= cols) break;
-                const auto& nextCell = cells[row * cols + nextCol];
+                const auto& nextCell = renderCells[row * cols + nextCol];
                 if (nextCell.codepointCount == 0) break;
                 if (clusterCodepoints[clusterCodepointCount - 1] != 0x200d && !isEmojiClusterContinuation(nextCell)) break;
                 clusterEndCol = nextCol;
@@ -512,7 +514,7 @@ void CoderRenderer::draw(CoderTerminal& terminal) {
         }
         if (cursorVisible && cursor.col >= 0 && cursor.row >= 0 && cursor.col < cols && cursor.row < rows) {
             int cursorCol = cursor.wideTail && cursor.col > 0 ? cursor.col - 1 : cursor.col;
-            const auto& cursorCell = cells[cursor.row * cols + cursorCol];
+            const auto& cursorCell = renderCells[cursor.row * cols + cursorCol];
             bool cursorWide = cursor.wideTail || cursorCell.wide == GHOSTTY_CELL_WIDE_WIDE;
             float x0 = -1.0f + cursorCol * cw;
             float y0 = 1.0f - (cursor.row + 1) * ch;

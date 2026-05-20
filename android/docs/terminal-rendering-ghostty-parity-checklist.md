@@ -666,7 +666,7 @@ Commit:
 
 ## TRGP-11: Decide Scope For Terminal Image Layers
 
-Status: building
+Status: review
 
 Research:
 
@@ -677,7 +677,7 @@ Research:
 - Ghostty C API requires non-zero `GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT` and `GHOSTTY_SYS_OPT_DECODE_PNG` before PNG Kitty images can be accepted: `~/.cache/checkouts/github.com/ghostty-org/ghostty/include/ghostty/vt/kitty_graphics.h:37-42` and `~/.cache/checkouts/github.com/ghostty-org/ghostty/include/ghostty/vt/sys.h:141-144`.
 - Android terminal setup does not include `ghostty/vt/kitty_graphics.h`, does not set `GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT`, and does not install a PNG decoder callback, so image data is rejected/ignored by terminal state before rendering: `app/src/main/cpp/coder_terminal.cpp:1-18`.
 - Android renderer currently has only solid background/cell quads and glyph atlas paths; no image texture path exists in `CoderRenderer`: `app/src/main/cpp/coder_renderer.cpp:560-949`.
-- Debug render now carries an explicit Android image-scope row so parity claims do not imply inline image support: `app/src/main/java/com/coder/pi/CoderApp.kt`.
+- Debug render now carries an explicit Android image-scope row with a tiny Kitty direct-transfer probe followed by `after probe`, so safe ignore preserves visible text-grid continuity: `app/src/main/java/com/coder/pi/CoderApp.kt`.
 
 Plan:
 

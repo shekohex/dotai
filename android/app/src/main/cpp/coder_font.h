@@ -72,6 +72,7 @@ private:
 
     bool rebuildAtlas();
     bool growAtlas();
+    bool resetAtlasForRecentGlyphs();
     bool loadPrimaryFace(size_t index);
     bool loadFallbackFaces();
     bool configureFaceSize(FT_Face face);
@@ -98,6 +99,7 @@ private:
     int atlasMaxSize_ = 4096;
     bool atlasFullReported_ = false;
     bool atlasGrowing_ = false;
+    bool atlasResetting_ = false;
     uint64_t atlasGeneration_ = 0;
     int shelfX_ = 1;
     int shelfY_ = 1;

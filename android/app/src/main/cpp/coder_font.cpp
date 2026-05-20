@@ -659,6 +659,16 @@ bool CoderFont::growAtlas() {
     return rebuilt;
 }
 
+bool CoderFont::resetAtlasForRecentGlyphs() {
+    if (atlasResetting_) return false;
+    atlasResetting_ = true;
+    __android_log_print(ANDROID_LOG_WARN, "CoderFont", "resetting full glyph atlas width=%d height=%d glyphs=%zu", atlasWidth_, atlasHeight_, glyphs_.size());
+    bool rebuilt = rebuildAtlas();
+    if (rebuilt) atlasGeneration_++;
+    atlasResetting_ = false;
+    return rebuilt;
+}
+
 bool CoderFont::loadPrimaryFace(size_t index) {
     if (index >= primaryFaces_.size()) return false;
     auto& font = primaryFaces_[index];
@@ -816,6 +826,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
             }
             if (shelfY_ + paddedHeight >= atlasHeight_) {
                 if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph);
+                if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph);
                 if (!atlasFullReported_) {
                     __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu colr=1", atlasWidth_, atlasHeight_, glyphs_.size());
                     atlasFullReported_ = true;
@@ -866,6 +877,7 @@ bool CoderFont::allocateGlyph(uint64_t key, FT_Face face, uint32_t glyphIndex, G
     }
     if (shelfY_ + paddedHeight >= atlasHeight_) {
         if (growAtlas()) return allocateGlyph(key, face, glyphIndex, outGlyph);
+        if (resetAtlasForRecentGlyphs()) return allocateGlyph(key, face, glyphIndex, outGlyph);
         if (!atlasFullReported_) {
             __android_log_print(ANDROID_LOG_WARN, "CoderFont", "glyph atlas full width=%d height=%d glyphs=%zu", atlasWidth_, atlasHeight_, glyphs_.size());
             atlasFullReported_ = true;

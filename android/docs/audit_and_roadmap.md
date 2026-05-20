@@ -160,8 +160,8 @@ Required proof schema:
   Review: No findings.
   Commit: HEAD (this commit).
 
-- [ ] `PERF-RENDER-ATLAS-NO-EVICTION`
-  State: Open
+- [x] `PERF-RENDER-ATLAS-NO-EVICTION`
+  State: Fixed
   Type: Performance/resource scalability issue
   Summary: Glyph atlas grows to max texture size, then new glyph allocation fails permanently.
   Impact: Long sessions with many unique glyphs can lose glyph rendering until renderer/font reset.
@@ -169,6 +169,11 @@ Required proof schema:
   Goal: Keep recent glyphs renderable after atlas pressure.
   Deliverables: LRU eviction/page rotation, or documented smaller first step if implementation risk is high; stress plan with many unique glyphs.
   Validation plan: Native build; glyph stress test if feasible; UIAutomator smoke screenshot.
+  Resolution: Added max-size atlas pressure recovery. If growth cannot proceed and allocation still fails, the font resets atlas pixels, cached glyph metadata, shelf allocator state, and atlas generation, then retries the requested glyph once so recent glyphs can render instead of failing permanently until renderer reset.
+  Validation: `./gradlew :app:externalNativeBuildDebug` passed; `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.DebugWorkflowInstrumentedTest#debugRenderDeepLinkShowsOscDebugSurface` passed on `emulator-5554`. Structural proof: old max-size overflow path returned `false` after `growAtlas()` failed; new path calls `resetAtlasForRecentGlyphs()` and retries allocation with an empty atlas, converting permanent failure into page-rotation-style recovery for current/recent glyphs.
+  UI proof: Render smoke screenshot `docs/reference/perf-render-atlas-no-eviction-after.png` captured with `android screen capture` from `pi://debug/render`.
+  Review: No findings.
+  Commit: HEAD (this commit).
 
 - [x] `PERF-RENDER-ATLAS-GROW-PRESERVE-DATA`
   State: Fixed

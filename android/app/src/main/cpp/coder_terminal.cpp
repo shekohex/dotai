@@ -94,7 +94,7 @@ static bool isPiOscEventNameSafe(const std::string& value) {
 }
 
 static bool isPiOscPayloadSafe(const std::string& value) {
-    if (value.empty() || value.size() > 7600) return false;
+    if (value.empty() || value.size() > 8192) return false;
     for (char byte : value) {
         const bool valid = (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') || byte == '-' || byte == '_';
         if (!valid) return false;

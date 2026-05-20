@@ -886,7 +886,7 @@ void CoderTerminal::finishOscMetadata() {
         if (separator != std::string::npos && separator > eventStart) {
             const std::string eventName = oscMetadataBuffer_.substr(eventStart, separator - eventStart);
             const std::string payload = oscMetadataBuffer_.substr(separator + 1);
-            if (isPiOscEventNameSafe(eventName) && isPiOscEventName(eventName) && isPiOscPayloadSafe(payload)) oscEvents_.push_back("pi\t" + eventName + "\t" + payload);
+            if (isPiOscEventNameSafe(eventName) && isPiOscEventName(eventName) && isPiOscPayloadSafe(payload)) oscEvents_.push_back("pi\t1\t" + eventName + "\t" + payload);
         }
     } else if (oscMetadataBuffer_.rfind("7;", 0) == 0) {
         const auto* bytes = reinterpret_cast<const uint8_t*>(oscMetadataBuffer_.data() + 2);

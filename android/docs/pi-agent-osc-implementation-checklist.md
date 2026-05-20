@@ -374,15 +374,26 @@ Commit:
 
 ## PIOSC-7: Decode And Validate Pi OSC Payloads In Kotlin
 
-Status: not-started
+Status: building
 
 Research:
 
+- Android already depends on `kotlinx.serialization.json`; app code uses `Json { ignoreUnknownKeys = true; explicitNulls = false }` in `CoderApi.kt`.
+- PIOSC-6 currently emits native Pi events as `pi\t<eventName>\t<payload>`, which does not let Kotlin validate protocol version, so this ticket needs the internal bridge to include `1` as `pi\t1\t<eventName>\t<payload>`.
+- `TerminalOscEvent.Pi` currently carries raw event name and payload only; it should become a validated event with decoded envelope and JSON payload data.
+- Local JVM unit tests cannot instantiate `TerminalEngine` because `CoderNative` loads Android JNI library in a way unavailable to plain unit tests; validation can cover Kotlin decoder directly plus native build.
+
+Plan:
+
+- Add Kotlin Pi OSC decoder using `java.util.Base64` URL decoder and `kotlinx.serialization.json`.
+- Validate internal version, allowlisted event names, base64url alphabet/size, envelope `id`/`ts`/`source`/`data`, `source == "agent"`, and compact V1 payload shapes.
+- Update native internal Pi event string to include version, update typed event parser/tests, and keep malformed frames as `Ignored` so UI feed path never throws.
+
 Checklist:
 
-- [ ] Add Kotlin decoder for Pi OSC base64url JSON envelope.
-- [ ] Validate event name, version, envelope required fields, and event payload shape.
-- [ ] Drop invalid events safely.
+- [x] Add Kotlin decoder for Pi OSC base64url JSON envelope.
+- [x] Validate event name, version, envelope required fields, and event payload shape.
+- [x] Drop invalid events safely.
 
 User story:
 

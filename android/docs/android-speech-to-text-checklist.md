@@ -172,7 +172,7 @@ Review:
 
 Commit:
 
-- Implementation: `598f471` (`feat(android): define speech dictation state machine`).
+- Implementation: `03c7379` (`feat(android): define speech dictation state machine`).
 
 ## ASTT-2: Build Debug Speech UX Deep Link
 

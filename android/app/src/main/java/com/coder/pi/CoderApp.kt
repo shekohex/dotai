@@ -2699,6 +2699,8 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
     var promptDialogOpen by remember { mutableStateOf(false) }
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
+    val modelCache = remember(context) { ParakeetModelCache(context) }
+    var modelCacheStatus by remember(context) { mutableStateOf(modelCache.status()) }
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
@@ -2706,8 +2708,11 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 SpeechSettingsStore.setLocalTranscriptionEnabled(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
-            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", "Parakeet model is not downloaded", "Download", tokens) {}
-            SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Model Cache", "No cached model to delete", null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", modelCacheStatus.label, null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Model Cache", if (modelCacheStatus.hasCache) "Remove cached Parakeet files" else "No cached model to delete", if (modelCacheStatus.hasCache) "Delete" else null, tokens) {
+                modelCache.delete()
+                modelCacheStatus = modelCache.status()
+            }
             SettingsValueRow(R.drawable.ic_feather_sliders, "VAD Sensitivity", speechSettings.vadSensitivityLabel(), "+", tokens) {
                 SpeechSettingsStore.setVadSensitivity(context, speechSettings.vadSensitivity + 1)
                 speechSettings = SpeechSettingsStore.values(context)

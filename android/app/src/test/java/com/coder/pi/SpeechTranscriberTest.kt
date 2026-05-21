@@ -34,6 +34,25 @@ class SpeechTranscriberTest {
     }
 
     @Test
+    fun modelCacheStatusLabelsMissingPointerAndIncompletePayloads() {
+        val artifact = ParakeetModelArtifacts.int8
+        val missingFile = File("/tmp/missing-${System.nanoTime()}.tflite")
+        val pointerFile = File.createTempFile("parakeet", ".tflite")
+        val partialFile = File.createTempFile("parakeet-partial", ".tflite")
+        pointerFile.writeText("version https://git-lfs.github.com/spec/v1\n")
+        partialFile.writeBytes(ByteArray(1_024))
+
+        try {
+            assertEquals("Parakeet model is not downloaded", ParakeetModelCacheStatus.from(missingFile, artifact).label)
+            assertEquals("Git LFS pointer, model payload missing", ParakeetModelCacheStatus.from(pointerFile, artifact).label)
+            assertEquals("Incomplete cache (1 KB of 614 MB)", ParakeetModelCacheStatus.from(partialFile, artifact).label)
+        } finally {
+            pointerFile.delete()
+            partialFile.delete()
+        }
+    }
+
+    @Test
     fun overlapMergeRemovesRepeatedWindowText() {
         val merged = SpeechTranscriptOverlapMerger.merge(
             "open settings and explain the failing gradle task",

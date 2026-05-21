@@ -56,6 +56,30 @@ data class ParakeetTokenizerArtifact(
     val url: String = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/main/tokenizer.json",
 )
 
+data class ParakeetModelCacheStatus(
+    val ready: Boolean,
+    val bytesOnDisk: Long,
+    val expectedBytes: Long,
+    val gitLfsPointer: Boolean,
+) {
+    val hasCache: Boolean get() = bytesOnDisk > 0
+    val label: String get() = when {
+        ready -> "Ready (${bytesOnDisk.toHumanBytes()})"
+        gitLfsPointer -> "Git LFS pointer, model payload missing"
+        hasCache -> "Incomplete cache (${bytesOnDisk.toHumanBytes()} of ${expectedBytes.toHumanBytes()})"
+        else -> "Parakeet model is not downloaded"
+    }
+
+    companion object {
+        fun from(modelFile: File, artifact: ParakeetModelArtifact): ParakeetModelCacheStatus {
+            val bytesOnDisk = if (modelFile.isFile) modelFile.length() else 0L
+            val gitLfsPointer = modelFile.isGitLfsPointerFile()
+            val ready = modelFile.isFile && !gitLfsPointer && bytesOnDisk == artifact.sizeBytes && modelFile.sha256OrNull() == artifact.sha256
+            return ParakeetModelCacheStatus(ready, bytesOnDisk, artifact.sizeBytes, gitLfsPointer)
+        }
+    }
+}
+
 data class ParakeetFeatureConfig(
     val sampleRate: Int = 16_000,
     val inputMilliseconds: Int = 5_000,
@@ -82,6 +106,8 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
     val modelFile: File = File(directory, artifact.fileName)
 
     fun isReady(): Boolean = modelFile.isFile && !modelFile.isGitLfsPointerFile() && modelFile.length() == artifact.sizeBytes && modelFile.sha256OrNull() == artifact.sha256
+
+    fun status(): ParakeetModelCacheStatus = ParakeetModelCacheStatus.from(modelFile, artifact)
 
     suspend fun ensureModel(onEvent: (SpeechTranscriberEvent.ModelDownloadProgress) -> Unit = {}): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
@@ -198,6 +224,13 @@ private fun FloatArray.fitTo(size: Int): FloatArray = when {
     this.size == size -> this
     this.size < size -> copyOf(size)
     else -> sliceArray((this.size - size) until this.size)
+}
+
+private fun Long.toHumanBytes(): String = when {
+    this >= 1_000_000_000L -> "${this / 1_000_000_000L} GB"
+    this >= 1_000_000L -> "${this / 1_000_000L} MB"
+    this >= 1_000L -> "${this / 1_000L} KB"
+    else -> "$this B"
 }
 
 class ParakeetTdtLiteRtDecoder(private val compiledModel: CompiledModel) {

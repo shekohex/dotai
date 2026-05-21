@@ -176,12 +176,14 @@ Commit:
 
 ## ASTT-2: Build Debug Speech UX Deep Link
 
-Status: not-started
+Status: review
 
 Research:
 
 - Current app already supports `pi://debug/render` through `MainActivity.handleDeepLink` and debug-only destination switching.
 - Android docs confirm deep links can be tested with `adb shell am start -W -a android.intent.action.VIEW -d <URI> <PACKAGE>`.
+- Android CLI docs search returned `Create Deep Links` and related app-link testing docs for manual `am start` validation.
+- Existing debug render path uses `debugPlaygroundRevision`; speech now mirrors it with `debugSpeechRevision` and `AppDestination.DEBUG_SPEECH`.
 
 Plan:
 
@@ -191,12 +193,12 @@ Plan:
 
 Checklist:
 
-- [ ] Add debug deep link path `speech` beside existing `render` path.
-- [ ] Add `AppDestination.DEBUG_SPEECH` or equivalent debug destination.
-- [ ] Render terminal-themed chat composer with mic button.
-- [ ] Add debug simulation rail hidden from production builds.
-- [ ] Add buttons or test-only controls: start recording, add partial text, finalize transcript, start enhancement, timeout, fail, retry, complete enhancement, submit.
-- [ ] Ensure screen is reachable with Android CLI/ADB.
+- [x] Add debug deep link path `speech` beside existing `render` path.
+- [x] Add `AppDestination.DEBUG_SPEECH` or equivalent debug destination.
+- [x] Render terminal-themed chat composer with mic button.
+- [x] Add debug simulation rail hidden from production builds.
+- [x] Add buttons or test-only controls: start recording, add partial text, finalize transcript, start enhancement, timeout, fail, retry, complete enhancement, submit.
+- [x] Ensure screen is reachable with Android CLI/ADB.
 
 User story:
 
@@ -216,13 +218,15 @@ Acceptance criteria:
 
 Validation:
 
-- `./gradlew compileDebugKotlin --no-daemon`
-- `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech' com.coder.pi`
-- `android layout --device <id> --pretty` confirms expected nodes.
+- `./gradlew compileDebugKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 15s`.
+- `android docs search "Android app links deep link adb am start"` returned Android deep-link docs.
+- `android emulator list` shows `owlchat` available.
+- `adb devices` showed no connected/running devices, so `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech' com.coder.pi` and `android layout --device <id> --pretty` are blocked until a device/emulator is running.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: device reachability is compile-verified but not UI-verified because no Android device is connected.
 
 Commit:
 

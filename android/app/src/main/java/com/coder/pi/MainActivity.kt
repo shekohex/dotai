@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private var deepLinkRevision by mutableIntStateOf(0)
     private var deepLinkTerminalId by mutableStateOf<String?>(null)
     private var debugPlaygroundRevision by mutableIntStateOf(0)
+    private var debugSpeechRevision by mutableIntStateOf(0)
     private var terminalPreferences: SharedPreferences? = null
     private var terminalPreferencesListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
@@ -66,6 +67,7 @@ class MainActivity : AppCompatActivity() {
                 deepLinkTerminalId = deepLinkTerminalId,
                 deepLinkRevision = deepLinkRevision,
                 debugPlaygroundRevision = debugPlaygroundRevision,
+                debugSpeechRevision = debugSpeechRevision,
                 onThemeChanged = {
                     currentTheme = CoderThemes.current(this)
                     terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
@@ -92,7 +94,12 @@ class MainActivity : AppCompatActivity() {
         val uri = intent?.data ?: return
         if (uri.scheme != "pi") return
         if (uri.host == "debug") {
-            if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 && uri.path?.trim('/') == "render") debugPlaygroundRevision++
+            if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                when (uri.path?.trim('/')) {
+                    "render" -> debugPlaygroundRevision++
+                    "speech" -> debugSpeechRevision++
+                }
+            }
             return
         }
         if (uri.host == "terminal") {

@@ -141,7 +141,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
-enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER }
+enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER, DEBUG_SPEECH }
 enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
@@ -210,6 +210,7 @@ fun CoderApp(
     deepLinkTerminalId: String?,
     deepLinkRevision: Int,
     debugPlaygroundRevision: Int,
+    debugSpeechRevision: Int,
     onThemeChanged: () -> Unit,
     onFontChanged: () -> Unit,
     onHideKeyboard: () -> Unit,
@@ -276,6 +277,10 @@ fun CoderApp(
     LaunchedEffect(debugPlaygroundRevision) {
         val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         if (debugBuild && debugPlaygroundRevision > 0) destination = AppDestination.DEBUG_RENDER
+    }
+    LaunchedEffect(debugSpeechRevision) {
+        val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debugBuild && debugSpeechRevision > 0) destination = AppDestination.DEBUG_SPEECH
     }
     DisposableEffect(context) {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -448,6 +453,7 @@ fun CoderApp(
                     )
                 }
                 AppDestination.DEBUG_RENDER -> DebugRenderPlayground(theme, tokens) { destination = AppDestination.HOME }
+                AppDestination.DEBUG_SPEECH -> DebugSpeechPlayground(theme, tokens) { destination = AppDestination.HOME }
                 AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, appShortcutSettingsPage ?: deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
                     onFontChanged()
@@ -1209,6 +1215,100 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
             },
             dismissButton = { TextButton(onClick = { pendingHyperlink = null }) { Text("Cancel", color = tokens.text) } },
         )
+    }
+}
+
+@Composable
+private fun DebugSpeechPlayground(theme: CoderTheme, tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    if (!debugBuild) {
+        Box(Modifier.fillMaxSize().background(tokens.background))
+        return
+    }
+    var displayState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
+    var transcript by remember { mutableStateOf("") }
+    val contract = SpeechDictationUxContract.contractFor(displayState)
+    val fixtures = SpeechDictationUxContract.fixtures
+    fun applySpeechAction(action: SpeechDictationAction) {
+        displayState = SpeechDictationUxContract.transition(displayState, action)
+        when (action) {
+            SpeechDictationAction.DETECT_SPEECH -> transcript = fixtures.partialTranscript
+            SpeechDictationAction.COMPLETE_TRANSCRIPTION -> transcript = fixtures.finalTranscript
+            SpeechDictationAction.COMPLETE_ENHANCEMENT -> transcript = fixtures.enhancedTranscript
+            SpeechDictationAction.RESET, SpeechDictationAction.CANCEL -> transcript = ""
+            else -> Unit
+        }
+    }
+    BackHandler { onBack() }
+    Column(Modifier.fillMaxSize().background(theme.background.toComposeColor()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("Speech UX", color = tokens.text, fontSize = titleSize(), fontWeight = FontWeight.Bold)
+                Text("pi://debug/speech", color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+            }
+            TextButton(onClick = onBack) { Text("Close", color = tokens.accent) }
+        }
+        Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)).background(tokens.surface).border(BorderStroke(1.dp, tokens.separator), RoundedCornerShape(18.dp)).padding(16.dp)) {
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Terminal themed chat composer", color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+                DebugSpeechStateCard(displayState, transcript, contract, tokens)
+                ChatInputBar(tokens = tokens, text = if (contract.canEdit) transcript else "", onTextChanged = { transcript = it }, attachments = emptyList(), onClear = { transcript = "" }, onSubmit = { displayState = SpeechDictationDisplayState.SUBMITTED }, onReturn = {}, onClose = onBack)
+            }
+        }
+        DebugSpeechSimulationRail(displayState, contract, tokens, ::applySpeechAction)
+    }
+}
+
+@Composable
+private fun DebugSpeechStateCard(displayState: SpeechDictationDisplayState, transcript: String, contract: SpeechDictationStateContract, tokens: UiTokens) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(tokens.surfaceHigh).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(contract.accessibility.label, color = tokens.text, fontSize = bodySize(), fontWeight = FontWeight.SemiBold)
+        Text(contract.accessibility.testId, color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+        Text("state=${displayState.name.lowercase()} expanded=${contract.expanded} edit=${contract.canEdit}", color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+        if (transcript.isNotBlank()) Text(transcript, color = tokens.text, fontSize = bodySize())
+    }
+}
+
+@Composable
+private fun DebugSpeechSimulationRail(displayState: SpeechDictationDisplayState, contract: SpeechDictationStateContract, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Simulation", color = tokens.text, fontSize = captionSize(), fontWeight = FontWeight.SemiBold)
+        val actions = listOf(
+            "Start" to SpeechDictationAction.START_RECORDING,
+            "Partial" to SpeechDictationAction.DETECT_SPEECH,
+            "Finalize" to SpeechDictationAction.STOP_RECORDING,
+            "Transcript" to SpeechDictationAction.COMPLETE_TRANSCRIPTION,
+            "Enhance" to SpeechDictationAction.START_ENHANCEMENT,
+            "Timeout" to SpeechDictationAction.TIME_OUT_ENHANCEMENT,
+            "Fail" to SpeechDictationAction.FAIL_ENHANCEMENT,
+            "Retry" to SpeechDictationAction.RETRY_ENHANCEMENT,
+            "Complete" to SpeechDictationAction.COMPLETE_ENHANCEMENT,
+            "Submit Raw" to SpeechDictationAction.SEND_RAW,
+            "Submit Enhanced" to SpeechDictationAction.SEND_ENHANCED,
+            "Cancel" to SpeechDictationAction.CANCEL,
+            "Reset" to SpeechDictationAction.RESET,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            actions.chunked(4).forEach { rowActions ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowActions.forEach { (label, action) ->
+                        val enabled = action in SpeechDictationUxContract.allowedActions(displayState)
+                        DebugSpeechActionButton(label, enabled, tokens) { onAction(action) }
+                    }
+                }
+            }
+        }
+        Text("cancel=${contract.canCancel} retry=${contract.canRetry} raw=${contract.canSendRaw} enhanced=${contract.canSendEnhanced} autoSend=${contract.canAutoSend}", color = tokens.secondary, fontSize = smallCaptionSize(), fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
+private fun RowScope.DebugSpeechActionButton(label: String, enabled: Boolean, tokens: UiTokens, onClick: () -> Unit) {
+    val background = if (enabled) tokens.surface else tokens.surface.copy(alpha = 0.45f)
+    val textColor = if (enabled) tokens.text else tokens.secondary.copy(alpha = 0.55f)
+    Box(Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(12.dp)).background(background).then(if (enabled) Modifier.clickable { hapticClick(); onClick() } else Modifier), contentAlignment = Alignment.Center) {
+        Text(label, color = textColor, fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

@@ -31,4 +31,19 @@ class SpeechTranscriberTest {
 
         assertEquals("open settings explain gradle", merged)
     }
+
+    @Test
+    fun featureExtractorProducesParakeetInputShape() {
+        val config = ParakeetFeatureConfig()
+        val features = ParakeetFeatureExtractor(config).extract(FloatArray(config.inputSamples) { 0.02f }, config.sampleRate)
+
+        assertEquals(128 * 500, features.size)
+    }
+
+    @Test
+    fun tokenizerDecodesSentencePieceMarker() {
+        val tokenizer = ParakeetTokenizer(mapOf(1 to "▁hello", 2 to "▁world"))
+
+        assertEquals("hello world", tokenizer.decode(listOf(1, 2)))
+    }
 }

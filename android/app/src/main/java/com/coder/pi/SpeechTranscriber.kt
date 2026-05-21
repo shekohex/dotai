@@ -3,6 +3,9 @@ package com.coder.pi
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.google.ai.edge.litert.Accelerator
+import com.google.ai.edge.litert.CompiledModel
+import com.google.ai.edge.litert.Environment
 import java.io.File
 import java.net.URL
 import java.security.MessageDigest
@@ -34,6 +37,18 @@ data class ParakeetModelArtifact(
     val sha256: String,
     val sizeBytes: Long,
 )
+
+data class ParakeetFeatureConfig(
+    val sampleRate: Int = 16_000,
+    val inputMilliseconds: Int = 5_000,
+    val nFft: Int = 512,
+    val nMels: Int = 128,
+    val nFrames: Int = 500,
+    val preemphasis: Float = 0.97f,
+) {
+    val inputSamples: Int = sampleRate * inputMilliseconds / 1_000
+    val featureCount: Int = nMels * nFrames
+}
 
 object ParakeetModelArtifacts {
     val int8 = ParakeetModelArtifact(
@@ -86,12 +101,57 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
 }
 
 class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache) : SpeechTranscriber {
+    private var compiledModel: CompiledModel? = null
+
     override suspend fun transcribe(samples: FloatArray, sampleRate: Int, onEvent: (SpeechTranscriberEvent) -> Unit): Result<SpeechTranscriptResult> {
         if (!modelCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
-        return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable))
+        return runCatching {
+            ensureWarmModel()
+            throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
+        }
     }
 
-    override fun close() = Unit
+    private fun ensureWarmModel() {
+        if (compiledModel != null) return
+        compiledModel = CompiledModel.create(modelCache.modelFile.absolutePath, CompiledModel.Options(setOf(Accelerator.CPU)), Environment.create())
+    }
+
+    override fun close() {
+        compiledModel?.close()
+        compiledModel = null
+    }
+}
+
+class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = ParakeetFeatureConfig()) {
+    fun extract(samples: FloatArray, sampleRate: Int): FloatArray {
+        require(sampleRate == config.sampleRate) { "Expected ${config.sampleRate} Hz audio" }
+        val padded = samples.copyOf(config.inputSamples)
+        val emphasized = applyPreemphasis(padded)
+        val features = FloatArray(config.featureCount)
+        val hop = (emphasized.size / config.nFrames).coerceAtLeast(1)
+        for (frame in 0 until config.nFrames) {
+            val start = frame * hop
+            if (start >= emphasized.size) break
+            var energy = 0f
+            val end = minOf(start + hop, emphasized.size)
+            for (index in start until end) energy += emphasized[index] * emphasized[index]
+            val logEnergy = kotlin.math.ln((energy / (end - start).coerceAtLeast(1)) + 1e-6f)
+            for (mel in 0 until config.nMels) features[mel * config.nFrames + frame] = logEnergy
+        }
+        return features
+    }
+
+    private fun applyPreemphasis(samples: FloatArray): FloatArray {
+        if (samples.isEmpty()) return samples
+        val output = FloatArray(samples.size)
+        output[0] = samples[0]
+        for (index in 1 until samples.size) output[index] = samples[index] - config.preemphasis * samples[index - 1]
+        return output
+    }
+}
+
+class ParakeetTokenizer(private val vocabulary: Map<Int, String>) {
+    fun decode(tokenIds: Iterable<Int>): String = tokenIds.mapNotNull(vocabulary::get).joinToString("").replace("▁", " ").trim()
 }
 
 class SpeechTranscriberException(val failure: SpeechTranscriberFailure) : Exception(failure.toString())

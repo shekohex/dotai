@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -170,6 +171,12 @@ class MainActivity : AppCompatActivity() {
         releaseKeepScreenAwake()
         terminalView.onPause()
         super.onPause()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBars(currentTheme ?: CoderThemes.current(this))
+        terminalView.post { terminalView.forceRefreshSurface() }
     }
 
     private fun luminance(rgb: Int): Double {

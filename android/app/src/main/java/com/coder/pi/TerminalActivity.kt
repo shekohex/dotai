@@ -2,6 +2,7 @@ package com.coder.pi
 
 import android.graphics.Color
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -125,6 +126,12 @@ class TerminalActivity : AppCompatActivity() {
         releaseKeepScreenAwake()
         terminalView.onPause()
         super.onPause()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBars(currentTheme ?: CoderThemes.current(this))
+        terminalView.post { terminalView.forceRefreshSurface() }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

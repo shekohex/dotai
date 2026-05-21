@@ -2701,6 +2701,9 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
     val modelCache = remember(context) { ParakeetModelCache(context) }
     var modelCacheStatus by remember(context) { mutableStateOf(modelCache.status()) }
+    var modelDownloadProgress by remember { mutableStateOf<Long?>(null) }
+    var modelDownloadFailed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
@@ -2708,7 +2711,15 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 SpeechSettingsStore.setLocalTranscriptionEnabled(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
-            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", modelCacheStatus.label, null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", modelDownloadProgress?.let { "Downloading ${it.coerceAtMost(100)}%" } ?: if (modelDownloadFailed) "Download failed" else modelCacheStatus.label, if (!modelCacheStatus.ready && modelDownloadProgress == null) "Download" else null, tokens) {
+                if (modelDownloadProgress == null) scope.launch {
+                    modelDownloadProgress = 0
+                    modelDownloadFailed = false
+                    modelDownloadFailed = modelCache.ensureModel { progress -> modelDownloadProgress = if (progress.totalBytes > 0) (progress.bytesRead * 100 / progress.totalBytes).coerceIn(0, 100) else 0 }.isFailure
+                    modelDownloadProgress = null
+                    modelCacheStatus = modelCache.status()
+                }
+            }
             SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Model Cache", if (modelCacheStatus.hasCache) "Remove cached Parakeet files" else "No cached model to delete", if (modelCacheStatus.hasCache) "Delete" else null, tokens) {
                 modelCache.delete()
                 modelCacheStatus = modelCache.status()

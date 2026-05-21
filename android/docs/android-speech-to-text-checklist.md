@@ -234,12 +234,14 @@ Commit:
 
 ## ASTT-3: Implement Dictation Compose Surface With Fake Provider
 
-Status: not-started
+Status: review
 
 Research:
 
 - VoiceInk uses compact-to-expanded animation, read-only live transcript, waveform, progress dots, and collapse after active transcription.
 - Android chat composer already has rounded dock, action rail, text field, attachments, haptics, and send behavior.
+- `DictationInputSurface` now replaces `DictationStubBar` in `ChatInputBar` and is reused by the debug speech playground for non-idle simulated states.
+- Production mic remains fake-provider only: no audio capture, LiteRT, model download, or network behavior added.
 
 Plan:
 
@@ -248,13 +250,13 @@ Plan:
 
 Checklist:
 
-- [ ] Add Compose waveform with 15 animated rounded bars and smoothed meter input.
-- [ ] Add read-only live transcript bubble with auto-scroll/fade behavior.
-- [ ] Add compact chip state for enhancement running.
-- [ ] Add timeout and failure states with retry and send-as-is actions.
-- [ ] Add enhanced-ready state showing enhanced text and submit affordance.
-- [ ] Disable editing while recording/transcribing/enhancing.
-- [ ] Collapse final accepted speech into `chatDraft`.
+- [x] Add Compose waveform with 15 animated rounded bars and smoothed meter input.
+- [x] Add read-only live transcript bubble with auto-scroll/fade behavior.
+- [x] Add compact chip state for enhancement running.
+- [x] Add timeout and failure states with retry and send-as-is actions.
+- [x] Add enhanced-ready state showing enhanced text and submit affordance.
+- [x] Disable editing while recording/transcribing/enhancing.
+- [x] Collapse final accepted speech into `chatDraft`.
 
 User story:
 
@@ -274,12 +276,14 @@ Acceptance criteria:
 
 Validation:
 
-- Compose/unit tests where practical.
-- Debug screen screenshot for each state.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 11s`.
+- `./gradlew compileDebugKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 15s`.
+- Debug screenshots blocked because `adb devices` shows no connected/running devices.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: Compose rendering is compile-verified but not screenshot-verified because no Android device is connected.
 
 Commit:
 

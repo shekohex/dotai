@@ -1252,8 +1252,12 @@ private fun DebugSpeechPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
         Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)).background(tokens.surface).border(BorderStroke(1.dp, tokens.separator), RoundedCornerShape(18.dp)).padding(16.dp)) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Terminal themed chat composer", color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
-                DebugSpeechStateCard(displayState, transcript, contract, tokens)
-                ChatInputBar(tokens = tokens, text = if (contract.canEdit) transcript else "", onTextChanged = { transcript = it }, attachments = emptyList(), onClear = { transcript = "" }, onSubmit = { displayState = SpeechDictationDisplayState.SUBMITTED }, onReturn = {}, onClose = onBack)
+                if (displayState == SpeechDictationDisplayState.IDLE) {
+                    DebugSpeechStateCard(displayState, transcript, contract, tokens)
+                    ChatInputBar(tokens = tokens, text = transcript, onTextChanged = { transcript = it }, attachments = emptyList(), onClear = { transcript = "" }, onSubmit = { displayState = SpeechDictationDisplayState.SUBMITTED }, onReturn = {}, onClose = onBack)
+                } else {
+                    DictationInputSurface(tokens = tokens, displayState = displayState, transcript = transcript, onAction = ::applySpeechAction)
+                }
             }
         }
         DebugSpeechSimulationRail(displayState, contract, tokens, ::applySpeechAction)

@@ -9,7 +9,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import android.Manifest
 import android.net.Uri
-import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -52,7 +51,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -107,8 +105,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var dictationMeter by remember { mutableStateOf(0f) }
     val dictationAudioFrames = remember { mutableListOf<FloatArray>() }
     var partialTranscriptionJob by remember { mutableStateOf<Job?>(null) }
-    var partialTranscriptionFrameCount by remember { mutableIntStateOf(0) }
-    var partialTranscriptionStartedAt by remember { mutableLongStateOf(0L) }
+    var liveChunkEndSample by remember { mutableIntStateOf(16_000) }
+    val liveTranscriptMerger = remember { LiveSpeechTranscriptMerger() }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -131,8 +129,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictationAudioFrames.clear()
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
-        partialTranscriptionFrameCount = 0
-        partialTranscriptionStartedAt = 0L
+        liveChunkEndSample = speechAudioCapture.sampleRate
+        liveTranscriptMerger.reset()
     }
     fun enhanceTranscript(transcript: String) {
         if (!speechSettings.enhancementEnabled || speechEnhancementClient == null || transcript.isBlank()) {
@@ -184,18 +182,20 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     fun maybeTranscribePartialAudio() {
         if (!speechSettings.localTranscriptionEnabled) return
         if (partialTranscriptionJob?.isActive == true) return
-        if (dictationAudioFrames.size - partialTranscriptionFrameCount < 40) return
-        val now = SystemClock.elapsedRealtime()
-        if (partialTranscriptionStartedAt != 0L && now - partialTranscriptionStartedAt < 2_000L) return
-        val snapshot = dictationAudioFrames.takeLastFramesForSamples(speechAudioCapture.sampleRate * 5)
-        if (snapshot.sumOf { it.size } < speechAudioCapture.sampleRate * 2) return
-        partialTranscriptionFrameCount = dictationAudioFrames.size
-        partialTranscriptionStartedAt = now
+        val totalSamples = dictationAudioFrames.totalSampleCount()
+        if (totalSamples < liveChunkEndSample) return
+        val chunkEndSample = liveChunkEndSample
+        val snapshot = dictationAudioFrames.sliceSampleWindow(chunkEndSample - speechAudioCapture.sampleRate * 5, chunkEndSample, speechAudioCapture.sampleRate * 5)
+        liveChunkEndSample += speechAudioCapture.sampleRate
         partialTranscriptionJob = scope.launch {
-            val samples = withContext(Dispatchers.Default) { snapshot.flattenToFloatArray() }
-            val result = speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate)
-            result.getOrNull()?.text?.trim()?.takeIf { it.isNotBlank() }?.let { partialText ->
-                if (dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) dictationTranscript = partialText
+            try {
+                val result = speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate)
+                result.getOrNull()?.text?.trim()?.takeIf { it.isNotBlank() }?.let { partialText ->
+                    if (dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) dictationTranscript = liveTranscriptMerger.merge(partialText)
+                }
+            } finally {
+                partialTranscriptionJob = null
+                maybeTranscribePartialAudio()
             }
         }
     }
@@ -206,8 +206,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictationAudioFrames.clear()
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
-        partialTranscriptionFrameCount = 0
-        partialTranscriptionStartedAt = 0L
+        liveChunkEndSample = speechAudioCapture.sampleRate
+        liveTranscriptMerger.reset()
         dictating = true
         speechAudioCapture.start(
             onFrame = { frame ->
@@ -270,8 +270,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                         dictationAudioFrames.clear()
                         partialTranscriptionJob?.cancel()
                         partialTranscriptionJob = null
-                        partialTranscriptionFrameCount = 0
-                        partialTranscriptionStartedAt = 0L
+                        liveChunkEndSample = speechAudioCapture.sampleRate
+                        liveTranscriptMerger.reset()
                     }
                     SpeechDictationAction.STOP_RECORDING -> {
                         stopDictationCapture()
@@ -358,6 +358,27 @@ private fun List<FloatArray>.takeLastFramesForSamples(maxSamples: Int): List<Flo
         total += frame.size
     }
     return frames.toList()
+}
+
+private fun List<FloatArray>.totalSampleCount(): Int = sumOf { it.size }
+
+private fun List<FloatArray>.sliceSampleWindow(startInclusive: Int, endExclusive: Int, size: Int): FloatArray {
+    val output = FloatArray(size)
+    val normalizedStart = startInclusive.coerceAtLeast(0)
+    var sourceOffset = 0
+    forEach { frame ->
+        val frameStart = sourceOffset
+        val frameEnd = sourceOffset + frame.size
+        val copyStart = maxOf(frameStart, normalizedStart)
+        val copyEnd = minOf(frameEnd, endExclusive)
+        if (copyStart < copyEnd) {
+            val outputOffset = copyStart - startInclusive
+            frame.copyInto(output, outputOffset, copyStart - frameStart, copyEnd - frameStart)
+        }
+        sourceOffset = frameEnd
+        if (sourceOffset >= endExclusive) return@forEach
+    }
+    return output
 }
 
 @Composable

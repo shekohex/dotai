@@ -597,6 +597,7 @@ Commit:
 - Follow-up: `0213be5` (`fix(android): reject parakeet lfs pointer cache`).
 - Follow-up: `46b55ca` (`feat(android): show speech model cache status`).
 - Follow-up: `1884dbe` (`feat(android): add speech model download action`).
+- Follow-up: `24bd40f` (`fix(android): download speech tokenizer with model`).
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 

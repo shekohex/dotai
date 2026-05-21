@@ -2702,6 +2702,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     val modelCache = remember(context) { ParakeetModelCache(context) }
     val tokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
     var modelCacheStatus by remember(context) { mutableStateOf(modelCache.status()) }
+    var tokenizerReady by remember(context) { mutableStateOf(tokenizerCache.isReady()) }
     var modelDownloadProgress by remember { mutableStateOf<Long?>(null) }
     var modelDownloadFailed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -2712,7 +2713,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 SpeechSettingsStore.setLocalTranscriptionEnabled(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
-            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", modelDownloadProgress?.let { "Downloading ${it.coerceAtMost(100)}%" } ?: if (modelDownloadFailed) "Download failed" else modelCacheStatus.label, if (!modelCacheStatus.ready && modelDownloadProgress == null) "Download" else null, tokens) {
+            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", modelDownloadProgress?.let { "Downloading ${it.coerceAtMost(100)}%" } ?: if (modelDownloadFailed) "Download failed" else if (modelCacheStatus.ready && !tokenizerReady) "Tokenizer missing" else modelCacheStatus.label, if ((!modelCacheStatus.ready || !tokenizerReady) && modelDownloadProgress == null) "Download" else null, tokens) {
                 if (modelDownloadProgress == null) scope.launch {
                     modelDownloadProgress = 0
                     modelDownloadFailed = false
@@ -2720,11 +2721,13 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                     modelDownloadFailed = modelResult.isFailure || tokenizerCache.ensureTokenizer().isFailure
                     modelDownloadProgress = null
                     modelCacheStatus = modelCache.status()
+                    tokenizerReady = tokenizerCache.isReady()
                 }
             }
             SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Model Cache", if (modelCacheStatus.hasCache) "Remove cached Parakeet files" else "No cached model to delete", if (modelCacheStatus.hasCache) "Delete" else null, tokens) {
                 modelCache.delete()
                 modelCacheStatus = modelCache.status()
+                tokenizerReady = tokenizerCache.isReady()
             }
             SettingsValueRow(R.drawable.ic_feather_sliders, "VAD Sensitivity", speechSettings.vadSensitivityLabel(), "+", tokens) {
                 SpeechSettingsStore.setVadSensitivity(context, speechSettings.vadSensitivity + 1)

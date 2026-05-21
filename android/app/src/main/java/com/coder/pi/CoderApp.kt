@@ -1288,7 +1288,7 @@ private fun DebugSpeechPlayground(theme: CoderTheme, tokens: UiTokens, initialSt
                 Text("Terminal themed chat composer", color = tokens.secondary, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
                 if (displayState == SpeechDictationDisplayState.IDLE) {
                     DebugSpeechStateCard(displayState, transcript, contract, tokens)
-                    ChatInputBar(tokens = tokens, text = transcript, onTextChanged = { transcript = it }, attachments = emptyList(), onClear = { transcript = "" }, onSubmit = { displayState = SpeechDictationDisplayState.SUBMITTED }, onReturn = {}, onClose = onBack)
+                    ChatInputBar(tokens = tokens, text = transcript, onTextChanged = { transcript = it }, attachments = emptyList(), onClear = { transcript = "" }, onSubmit = { displayState = SpeechDictationDisplayState.SUBMITTED; true }, onReturn = {}, onClose = onBack)
                 } else {
                     DictationInputSurface(tokens = tokens, displayState = displayState, transcript = transcript, onAction = ::applySpeechAction)
                 }
@@ -1547,6 +1547,8 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     var selectedShortcutPanelTab by remember { mutableStateOf<String?>(null) }
     var chatDraft by remember { mutableStateOf("") }
     var chatAttachments by remember { mutableStateOf<List<ChatImageAttachment>>(emptyList()) }
+    var pendingChatSubmitStash by remember { mutableStateOf<String?>(null) }
+    var pendingChatTimeoutJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var replacingAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var toolbarOrder by remember { mutableStateOf(terminalView.toolbarOrder()) }
@@ -1599,6 +1601,17 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
         }
     }
     DisposableEffect(terminalView) {
+        terminalView.onAgentInputSubmitted = {
+            pendingChatTimeoutJob?.cancel()
+            pendingChatTimeoutJob = null
+            if (pendingChatSubmitStash != null) {
+                pendingChatSubmitStash = null
+                chatAttachments = emptyList()
+            }
+        }
+        onDispose { terminalView.onAgentInputSubmitted = null }
+    }
+    DisposableEffect(terminalView) {
         terminalView.onClipboardImagePaste = { uri ->
             chatAttachments = chatAttachments + ChatImageAttachment(uri)
             chatMode = true
@@ -1644,11 +1657,23 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             onCaptionAttachment = { index, caption -> chatAttachments = chatAttachments.mapIndexed { currentIndex, attachment -> if (currentIndex == index) attachment.copy(caption = caption) else attachment } },
             visibleTerminalLines = { terminalView.snapshotText() },
             speechEnhancementClient = speechEnhancementClient,
+            submitLocked = pendingChatSubmitStash != null,
             onClear = { chatDraft = ""; chatAttachments = emptyList() },
             onSubmit = {
-                terminalView.sendText(it)
+                pendingChatTimeoutJob?.cancel()
+                pendingChatSubmitStash = it
+                terminalView.pasteText(it)
                 terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT)
                 if (terminalView.chatAutoSendEnabled()) terminalView.sendKey(KeyEvent.KEYCODE_ENTER)
+                pendingChatTimeoutJob = scope.launch {
+                    delay(2500)
+                    if (pendingChatSubmitStash == it) {
+                        pendingChatSubmitStash = null
+                        chatDraft = appendRestoredChatDraft(chatDraft, it)
+                        Toast.makeText(context, "Message not confirmed. Terminal may be in tmux copy-mode.", Toast.LENGTH_LONG).show()
+                    }
+                }
+                true
             },
             onReturn = { terminalView.sendKey(KeyEvent.KEYCODE_ENTER); terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT) },
         ) {

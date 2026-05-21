@@ -107,7 +107,7 @@ import kotlin.math.pow
 data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
 @Composable
-fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit, modifier: Modifier = Modifier, attachments: List<ChatImageAttachment> = emptyList(), onAttach: () -> Unit = {}, onRemoveAttachment: (Int) -> Unit = {}, onReplaceAttachment: (Int) -> Unit = {}, onCaptionAttachment: (Int, String) -> Unit = { _, _ -> }, visibleTerminalLines: () -> List<String> = { emptyList() }, speechEnhancementClient: SpeechEnhancementClient? = null, onClear: () -> Unit, onSubmit: (String) -> Unit, onReturn: () -> Unit, onClose: () -> Unit) {
+fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit, modifier: Modifier = Modifier, attachments: List<ChatImageAttachment> = emptyList(), onAttach: () -> Unit = {}, onRemoveAttachment: (Int) -> Unit = {}, onReplaceAttachment: (Int) -> Unit = {}, onCaptionAttachment: (Int, String) -> Unit = { _, _ -> }, visibleTerminalLines: () -> List<String> = { emptyList() }, speechEnhancementClient: SpeechEnhancementClient? = null, submitLocked: Boolean = false, onClear: () -> Unit, onSubmit: (String) -> Boolean, onReturn: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var speechSettings by remember(context) { mutableStateOf(SpeechSettingsStore.values(context)) }
@@ -150,8 +150,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
     val submitText = {
-        text.trimEnd().takeIf { it.isNotBlank() }?.let(onSubmit)
-        onTextChanged("")
+        val submitted = text.trimEnd().takeIf { it.isNotBlank() }
+        if (!submitLocked && submitted != null && onSubmit(submitted)) onTextChanged("")
     }
     fun stopDictationCapture() {
         dictationMeter = 0f

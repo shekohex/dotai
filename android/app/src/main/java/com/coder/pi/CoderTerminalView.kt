@@ -145,6 +145,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onClipboardImagePaste: ((Uri) -> Boolean)? = null
     var onNotificationPermissionNeeded: (() -> Unit)? = null
     var onAgentStateChanged: ((TerminalAgentStateSnapshot) -> Unit)? = null
+    var onAgentInputSubmitted: (() -> Unit)? = null
 
     override fun onResume() {
         super.onResume()
@@ -549,6 +550,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
         val text = clip.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
         if (text.isBlank()) return false
+        writeInput(native.nativePaste(handle, text.toByteArray(Charsets.UTF_8)))
+        return true
+    }
+
+    fun pasteText(text: String): Boolean {
+        if (handle == 0L || text.isBlank()) return false
         writeInput(native.nativePaste(handle, text.toByteArray(Charsets.UTF_8)))
         return true
     }
@@ -1382,6 +1389,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun handlePiAgentInputSubmitted() {
+        onAgentInputSubmitted?.invoke()
         if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled()) return
         postOscNotification("π", "Message submitted", false, -1, false, feedbackState = TerminalAlertFeedbackState.SUBMIT)
     }

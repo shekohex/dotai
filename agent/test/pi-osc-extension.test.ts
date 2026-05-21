@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 vi.mock("../src/subagent-sdk/index.js", () => ({
   isChildSession: () => false,
@@ -64,6 +64,12 @@ const decodeSequence = (sequence: string) => {
     envelope: JSON.parse(Buffer.from(payload ?? "", "base64url").toString("utf8")),
   };
 };
+
+beforeEach(() => {
+  vi.spyOn(terminalNotifyRuntime, "execFileSync").mockImplementation(() => {
+    throw new Error("tmux not available");
+  });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();

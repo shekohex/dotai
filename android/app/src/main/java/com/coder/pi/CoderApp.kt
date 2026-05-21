@@ -32,6 +32,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.http.HttpStatusCode
 import androidx.compose.foundation.BorderStroke
@@ -1547,7 +1549,9 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val view = LocalView.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val enhancementHttpClient = remember { HttpClient(OkHttp) }
     var keyboardVisible by remember { mutableStateOf(false) }
     val hardwareKeyboardAvailable = configuration.keyboard != Configuration.KEYBOARD_NOKEYS
     val toolbarHiddenForHardwareKeyboard = terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), hardwareKeyboardAvailable, selectionActive, chatMode)
@@ -1605,6 +1609,16 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
         view.viewTreeObserver.addOnGlobalLayoutListener(listener)
         onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
     }
+    DisposableEffect(enhancementHttpClient) { onDispose { enhancementHttpClient.close() } }
+    val speechSettings = SpeechSettingsStore.values(context)
+    val speechEnhancementClient = remember(speechSettings.enhancementProvider, speechSettings.enhancementBaseUrl, speechSettings.enhancementModel, speechSettings.enhancementEnabled) {
+        val apiKey = SpeechSettingsStore.enhancementApiKey(context)
+        if (!speechSettings.enhancementEnabled || apiKey.isBlank()) null else when (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider)) {
+            SpeechEnhancementProvider.OpenAiCompatible -> OpenAiHttpSpeechEnhancementClient(enhancementHttpClient, speechSettings.enhancementBaseUrl, apiKey, speechSettings.enhancementModel)
+            SpeechEnhancementProvider.Gemini -> GeminiHttpSpeechEnhancementClient(enhancementHttpClient, apiKey, speechSettings.enhancementModel)
+            SpeechEnhancementProvider.Disabled -> null
+        }
+    }
     if (chatMode) {
         ChatInputBar(
             tokens = uiTokens(theme),
@@ -1617,6 +1631,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             onReplaceAttachment = { index -> replacingAttachmentIndex = index; imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             onCaptionAttachment = { index, caption -> chatAttachments = chatAttachments.mapIndexed { currentIndex, attachment -> if (currentIndex == index) attachment.copy(caption = caption) else attachment } },
             visibleTerminalLines = { terminalView.snapshotText() },
+            speechEnhancementClient = speechEnhancementClient,
             onClear = { chatDraft = ""; chatAttachments = emptyList() },
             onSubmit = {
                 terminalView.sendText(it)
@@ -2716,6 +2731,10 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     val context = LocalContext.current
     var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
     var promptDialogOpen by remember { mutableStateOf(false) }
+    var providerDialogOpen by remember { mutableStateOf(false) }
+    var apiKeyDialogOpen by remember { mutableStateOf(false) }
+    var modelDialogOpen by remember { mutableStateOf(false) }
+    var baseUrlDialogOpen by remember { mutableStateOf(false) }
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
@@ -2762,9 +2781,21 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
             }
         }
         SettingsSection("ENHANCEMENT", tokens) {
-            SettingsValueRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", "Provider integration unavailable", "Off", tokens) {}
+            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", speechSettings.enhancementEnabled, tokens) {
+                SpeechSettingsStore.setEnhancementEnabled(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsValueRow(R.drawable.ic_feather_server, "Provider", SpeechEnhancementProvider.byId(speechSettings.enhancementProvider).label, "Select", tokens) { providerDialogOpen = true }
+            if (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider) == SpeechEnhancementProvider.OpenAiCompatible) SettingsValueRow(R.drawable.ic_feather_globe, "Endpoint", speechSettings.enhancementBaseUrl, "Edit", tokens) { baseUrlDialogOpen = true }
+            SettingsValueRow(R.drawable.ic_feather_cpu, "Model", speechSettings.enhancementModel, "Edit", tokens) { modelDialogOpen = true }
+            SettingsValueRow(R.drawable.ic_feather_shield, "API Key", if (SpeechSettingsStore.enhancementApiKey(context).isBlank()) "Missing" else "Stored encrypted", "Edit", tokens) { apiKeyDialogOpen = true }
+            SettingsValueRow(R.drawable.ic_feather_edit_3, "Prompt", "Default VoiceInk-style prompt", "Edit", tokens) { promptDialogOpen = true }
+            SettingsToggleRow(R.drawable.ic_feather_terminal, "Visible Terminal Context", speechSettings.includeVisibleTerminalContext, tokens) {
+                SpeechSettingsStore.setIncludeVisibleTerminalContext(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Target", "Send dictated text to active terminal", null, tokens) {}
-            SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "Transcription stays on device. Enhancement is disabled until a provider is wired.", null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "Transcription stays on device. Enhancement sends transcript and bounded visible context to selected provider.", null, tokens) {}
         }
         item { Text("Audio transcription is local-only through LiteRT Parakeet. Terminal context is bounded to visible terminal text when enabled.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
     }
@@ -2772,6 +2803,26 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         SpeechSettingsStore.setPromptOverride(context, it)
         speechSettings = SpeechSettingsStore.values(context)
         promptDialogOpen = false
+    }
+    if (providerDialogOpen) SpeechChoiceDialog(tokens, "Enhancement Provider", SpeechEnhancementProvider.all.map { it.label }, SpeechEnhancementProvider.byId(speechSettings.enhancementProvider).label, { providerDialogOpen = false }) { label ->
+        SpeechSettingsStore.setEnhancementProvider(context, SpeechEnhancementProvider.all.first { it.label == label }.id)
+        speechSettings = SpeechSettingsStore.values(context)
+        providerDialogOpen = false
+    }
+    if (apiKeyDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement API Key", SpeechSettingsStore.enhancementApiKey(context), "sk-...", { apiKeyDialogOpen = false }) {
+        SpeechSettingsStore.setEnhancementApiKey(context, it)
+        speechSettings = SpeechSettingsStore.values(context)
+        apiKeyDialogOpen = false
+    }
+    if (modelDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement Model", speechSettings.enhancementModel, if (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider) == SpeechEnhancementProvider.Gemini) "gemini-2.5-flash" else "gpt-4o-mini", { modelDialogOpen = false }) {
+        SpeechSettingsStore.setEnhancementModel(context, it)
+        speechSettings = SpeechSettingsStore.values(context)
+        modelDialogOpen = false
+    }
+    if (baseUrlDialogOpen) SpeechSingleLineDialog(tokens, "OpenAI-Compatible Endpoint", speechSettings.enhancementBaseUrl, "https://api.openai.com/v1", { baseUrlDialogOpen = false }) {
+        SpeechSettingsStore.setEnhancementBaseUrl(context, it)
+        speechSettings = SpeechSettingsStore.values(context)
+        baseUrlDialogOpen = false
     }
 }
 
@@ -2781,6 +2832,43 @@ private fun SpeechSettingsValues.vadSensitivityLabel(): String = when (vadSensit
     2 -> "Normal"
     3 -> "High"
     else -> "Very high"
+}
+
+@Composable
+private fun SpeechChoiceDialog(tokens: UiTokens, title: String, options: List<String>, selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = tokens.surfaceHigh,
+        titleContentColor = tokens.text,
+        textContentColor = tokens.secondary,
+        shape = RoundedCornerShape(24.dp),
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { option ->
+                    SettingsValueRow(R.drawable.ic_feather_check, option, null, if (option == selected) "✓" else null, tokens) { onSelect(option) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = tokens.text) } },
+    )
+}
+
+@Composable
+private fun SpeechSingleLineDialog(tokens: UiTokens, title: String, initialValue: String, placeholder: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = tokens.surfaceHigh,
+        titleContentColor = tokens.text,
+        textContentColor = tokens.secondary,
+        shape = RoundedCornerShape(24.dp),
+        title = { Text(title) },
+        text = { CoderTextField(value, { value = it }, placeholder, tokens) },
+        confirmButton = { TextButton(onClick = { onSave(value) }) { Text("Save", color = tokens.accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = tokens.text) } },
+    )
 }
 
 @Composable

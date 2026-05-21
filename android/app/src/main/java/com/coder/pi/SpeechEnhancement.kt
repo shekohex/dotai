@@ -1,7 +1,24 @@
 package com.coder.pi
 
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 data class SpeechEnhancementPromptConfig(
     val maxContextLines: Int = 40,
@@ -68,4 +85,46 @@ class OpenAiCompatibleSpeechEnhancementClient(private val complete: suspend (Str
 
 class GeminiSpeechEnhancementClient(private val complete: suspend (String) -> String) : SpeechEnhancementClient {
     override suspend fun enhance(request: SpeechEnhancementRequest): String = complete(request.prompt)
+}
+
+class OpenAiHttpSpeechEnhancementClient(private val httpClient: HttpClient, private val baseUrl: String, private val apiKey: String, private val model: String) : SpeechEnhancementClient {
+    override suspend fun enhance(request: SpeechEnhancementRequest): String {
+        val response = httpClient.post(baseUrl.trimEnd('/') + "/chat/completions") {
+            bearerAuth(apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject {
+                put("model", JsonPrimitive(model))
+                put("temperature", JsonPrimitive(0.2))
+                put("messages", buildJsonArray {
+                    add(buildJsonObject {
+                        put("role", JsonPrimitive("user"))
+                        put("content", JsonPrimitive(request.prompt))
+                    })
+                })
+            }.toString())
+        }.body<String>()
+        val root = Json.parseToJsonElement(response).jsonObject
+        return root["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content.orEmpty()
+    }
+}
+
+class GeminiHttpSpeechEnhancementClient(private val httpClient: HttpClient, private val apiKey: String, private val model: String) : SpeechEnhancementClient {
+    override suspend fun enhance(request: SpeechEnhancementRequest): String {
+        val response = httpClient.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
+            header("x-goog-api-key", apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject {
+                put("contents", buildJsonArray {
+                    add(buildJsonObject {
+                        put("parts", buildJsonArray {
+                            add(buildJsonObject { put("text", JsonPrimitive(request.prompt)) })
+                        })
+                    })
+                })
+                put("generationConfig", buildJsonObject { put("temperature", JsonPrimitive(0.2)) })
+            }.toString())
+        }.body<String>()
+        val root = Json.parseToJsonElement(response).jsonObject
+        return root["candidates"]?.jsonArray?.firstOrNull()?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content.orEmpty()
+    }
 }

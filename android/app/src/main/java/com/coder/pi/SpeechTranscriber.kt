@@ -277,6 +277,8 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
     private var compiledModel: CompiledModel? = null
     private var inputBuffers: List<TensorBuffer>? = null
     private var outputBuffers: List<TensorBuffer>? = null
+    private var decoder: ParakeetTdtLiteRtDecoder? = null
+    private var tokenizer: ParakeetTokenizer? = null
     private val featureExtractor = ParakeetFeatureExtractor()
 
     override suspend fun transcribe(samples: FloatArray, sampleRate: Int, onEvent: (SpeechTranscriberEvent) -> Unit): Result<SpeechTranscriptResult> {
@@ -291,6 +293,8 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             val model = compiledModel ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val inputs = inputBuffers ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val outputs = outputBuffers ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
+            val activeDecoder = decoder ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
+            val activeTokenizer = tokenizer ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val featureStartedAt = SystemClock.elapsedRealtime()
             val features = featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements)
             val featureMillis = SystemClock.elapsedRealtime() - featureStartedAt
@@ -300,14 +304,13 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             val encodeMillis = SystemClock.elapsedRealtime() - encodeStartedAt
             val decodeStartedAt = SystemClock.elapsedRealtime()
             var firstTokenMillis: Long? = null
-            val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map {
+            val tokenIds = activeDecoder.decode(outputs).map {
                 if (firstTokenMillis == null && it.first != END_OF_SEQUENCE) firstTokenMillis = SystemClock.elapsedRealtime() - startedAt
                 it.first
             }.filter { it != END_OF_SEQUENCE }.toList()
             val decodeMillis = SystemClock.elapsedRealtime() - decodeStartedAt
             val tokenizeStartedAt = SystemClock.elapsedRealtime()
-            val tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
-            val text = tokenizer.decode(tokenIds)
+            val text = activeTokenizer.decode(tokenIds)
             val tokenizeMillis = SystemClock.elapsedRealtime() - tokenizeStartedAt
             val totalMillis = SystemClock.elapsedRealtime() - startedAt
             val metrics = SpeechTranscriptionMetrics(
@@ -349,6 +352,8 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
         compiledModel = model
         inputBuffers = model.createInputBuffers(ENCODE_SIGNATURE)
         outputBuffers = model.createOutputBuffers(ENCODE_SIGNATURE)
+        decoder = ParakeetTdtLiteRtDecoder(model)
+        tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
     }
 
     override fun close() {
@@ -356,6 +361,8 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
         compiledModel = null
         inputBuffers = null
         outputBuffers = null
+        decoder = null
+        tokenizer = null
     }
 
     companion object {
@@ -382,6 +389,16 @@ private fun SpeechAcceleratorMode.toLiteRtAccelerators(): Set<Accelerator> = whe
 }
 
 private fun SpeechTranscriptionMetrics.toLogLine(): String = "speech_metrics total_ms=$totalMillis warmup_ms=$warmupMillis feature_ms=$featureMillis encode_ms=$encodeMillis decode_ms=$decodeMillis tokenize_ms=$tokenizeMillis first_token_ms=${firstTokenMillis ?: -1} tokens=$tokenCount samples=$sampleCount sample_rate=$sampleRate accelerator=$accelerator model_warm=$modelWasWarm"
+
+private fun Int.reverseBits(width: Int): Int {
+    var input = this
+    var output = 0
+    repeat(width) {
+        output = (output shl 1) or (input and 1)
+        input = input shr 1
+    }
+    return output
+}
 
 private val TensorType.numElements: Int
     get() = layout!!.dimensions.fold(1, Int::times)
@@ -466,6 +483,9 @@ class ParakeetTdtLiteRtDecoder(private val compiledModel: CompiledModel) {
 
 class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = ParakeetFeatureConfig()) {
     private val melFilters = createMelFilters()
+    private val window = FloatArray(config.nFft) { index -> (0.5 - 0.5 * cos(2.0 * PI * index / (config.nFft - 1))).toFloat() }
+    private val bitReversal = IntArray(config.nFft) { index -> index.reverseBits(config.nFft.countTrailingZeroBits()) }
+    private val fftTwiddles = createFftTwiddles()
 
     fun extract(samples: FloatArray, sampleRate: Int): FloatArray {
         require(sampleRate == config.sampleRate) { "Expected ${config.sampleRate} Hz audio" }
@@ -473,14 +493,16 @@ class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = Parak
         val emphasized = applyPreemphasis(padded)
         val spectrogram = Array(config.nMels) { FloatArray(config.nFrames) }
         val hop = 160
-        val window = FloatArray(config.nFft) { index -> (0.5 - 0.5 * cos(2.0 * PI * index / (config.nFft - 1))).toFloat() }
+        val real = FloatArray(config.nFft)
+        val imaginary = FloatArray(config.nFft)
+        val power = FloatArray(config.nFft / 2 + 1)
         for (frame in 0 until config.nFrames) {
             val start = frame * hop
-            val power = powerSpectrum(emphasized, start, window)
+            powerSpectrum(emphasized, start, real, imaginary, power)
             for (mel in 0 until config.nMels) {
                 var energy = 0f
                 val filter = melFilters[mel]
-                for (bin in filter.indices) energy += power[bin] * filter[bin]
+                for (index in filter.bins.indices) energy += power[filter.bins[index]] * filter.weights[index]
                 spectrogram[mel][frame] = ln(energy + 2.0f.pow(-24))
             }
         }
@@ -496,41 +518,87 @@ class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = Parak
         return output
     }
 
-    private fun powerSpectrum(samples: FloatArray, start: Int, window: FloatArray): FloatArray {
-        val bins = config.nFft / 2 + 1
-        val power = FloatArray(bins)
-        for (bin in 0 until bins) {
-            var real = 0.0
-            var imaginary = 0.0
-            for (index in 0 until config.nFft) {
-                val sample = samples.getOrElse(start + index) { 0f } * window[index]
-                val angle = 2.0 * PI * bin * index / config.nFft
-                real += sample * cos(angle)
-                imaginary -= sample * sin(angle)
-            }
-            power[bin] = ((real * real + imaginary * imaginary) / config.nFft).toFloat()
+    private fun powerSpectrum(samples: FloatArray, start: Int, real: FloatArray, imaginary: FloatArray, power: FloatArray) {
+        for (index in 0 until config.nFft) {
+            val sourceIndex = start + index
+            val targetIndex = bitReversal[index]
+            real[targetIndex] = (if (sourceIndex in samples.indices) samples[sourceIndex] else 0f) * window[index]
+            imaginary[targetIndex] = 0f
         }
-        return power
+        fft(real, imaginary)
+        for (bin in power.indices) {
+            val realValue = real[bin]
+            val imaginaryValue = imaginary[bin]
+            power[bin] = (realValue * realValue + imaginaryValue * imaginaryValue) / config.nFft
+        }
     }
 
-    private fun createMelFilters(): Array<FloatArray> {
+    private fun fft(real: FloatArray, imaginary: FloatArray) {
+        var size = 2
+        while (size <= config.nFft) {
+            val halfSize = size / 2
+            var offset = 0
+            while (offset < config.nFft) {
+                val twiddles = fftTwiddles.getValue(size)
+                for (index in 0 until halfSize) {
+                    val twiddleReal = twiddles.real[index]
+                    val twiddleImaginary = twiddles.imaginary[index]
+                    val evenIndex = offset + index
+                    val oddIndex = evenIndex + halfSize
+                    val oddReal = real[oddIndex] * twiddleReal - imaginary[oddIndex] * twiddleImaginary
+                    val oddImaginary = real[oddIndex] * twiddleImaginary + imaginary[oddIndex] * twiddleReal
+                    val evenReal = real[evenIndex]
+                    val evenImaginary = imaginary[evenIndex]
+                    real[evenIndex] = evenReal + oddReal
+                    imaginary[evenIndex] = evenImaginary + oddImaginary
+                    real[oddIndex] = evenReal - oddReal
+                    imaginary[oddIndex] = evenImaginary - oddImaginary
+                }
+                offset += size
+            }
+            size *= 2
+        }
+    }
+
+    private fun createMelFilters(): Array<SparseMelFilter> {
         val bins = config.nFft / 2 + 1
         val minMel = hzToMel(0f)
         val maxMel = hzToMel(config.sampleRate / 2f)
         val melPoints = FloatArray(config.nMels + 2) { index -> minMel + (maxMel - minMel) * index / (config.nMels + 1) }
         val binPoints = melPoints.map { mel -> ((config.nFft + 1) * melToHz(mel) / config.sampleRate).toInt().coerceIn(0, bins - 1) }
         return Array(config.nMels) { melIndex ->
-            FloatArray(bins) { bin ->
-                val left = binPoints[melIndex]
-                val center = binPoints[melIndex + 1].coerceAtLeast(left + 1)
-                val right = binPoints[melIndex + 2].coerceAtLeast(center + 1)
-                when (bin) {
+            val left = binPoints[melIndex]
+            val center = binPoints[melIndex + 1].coerceAtLeast(left + 1)
+            val right = binPoints[melIndex + 2].coerceAtLeast(center + 1)
+            val sparseBins = ArrayList<Int>(right - left)
+            val sparseWeights = ArrayList<Float>(right - left)
+            for (bin in left until right) {
+                val weight = when (bin) {
                     in left until center -> (bin - left).toFloat() / (center - left)
-                    in center until right -> (right - bin).toFloat() / (right - center)
-                    else -> 0f
+                    else -> (right - bin).toFloat() / (right - center)
+                }
+                if (weight > 0f) {
+                    sparseBins.add(bin)
+                    sparseWeights.add(weight)
                 }
             }
+            SparseMelFilter(sparseBins.toIntArray(), sparseWeights.toFloatArray())
         }
+    }
+
+    private fun createFftTwiddles(): Map<Int, FftTwiddles> {
+        val twiddles = mutableMapOf<Int, FftTwiddles>()
+        var size = 2
+        while (size <= config.nFft) {
+            val halfSize = size / 2
+            val phaseStep = -2.0 * PI / size
+            twiddles[size] = FftTwiddles(
+                real = FloatArray(halfSize) { index -> cos(phaseStep * index).toFloat() },
+                imaginary = FloatArray(halfSize) { index -> sin(phaseStep * index).toFloat() },
+            )
+            size *= 2
+        }
+        return twiddles
     }
 
     private fun normalizeByMel(spectrogram: Array<FloatArray>) {
@@ -547,6 +615,10 @@ class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = Parak
 
     private fun melToHz(mel: Float): Float = (700.0 * (10.0.pow(mel / 2595.0) - 1.0)).toFloat()
 }
+
+private data class SparseMelFilter(val bins: IntArray, val weights: FloatArray)
+
+private data class FftTwiddles(val real: FloatArray, val imaginary: FloatArray)
 
 class ParakeetTokenizer(private val vocabulary: Map<Int, String>) {
     val vocabularySize: Int get() = vocabulary.size

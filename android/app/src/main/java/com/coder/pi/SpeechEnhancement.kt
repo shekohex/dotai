@@ -51,7 +51,7 @@ interface SpeechEnhancementClient {
 }
 
 class SpeechEnhancementPromptRenderer(private val config: SpeechEnhancementPromptConfig = SpeechEnhancementPromptConfig()) {
-    fun render(template: String, transcript: String, visibleTerminalLines: List<String>): SpeechEnhancementRequest {
+    fun render(template: String, transcript: String, visibleTerminalLines: List<String>, clipboardContext: String = "", customVocabulary: String = ""): SpeechEnhancementRequest {
         val safeTranscript = transcript.trim().take(config.maxTranscriptChars)
         val safeContext = visibleTerminalLines
             .map(::redact)
@@ -60,8 +60,12 @@ class SpeechEnhancementPromptRenderer(private val config: SpeechEnhancementPromp
             .takeLast(config.maxContextLines)
             .joinToString("\n")
             .take(config.maxContextChars)
-        val contextSection = if (safeContext.isBlank()) "" else "\n\n<CONTEXT_INFORMATION>\n$safeContext\n</CONTEXT_INFORMATION>"
-        val systemPrompt = template.trim() + contextSection
+        val safeClipboard = redact(clipboardContext).trim().take(config.maxContextChars)
+        val safeVocabulary = customVocabulary.lines().map(String::trim).filter(String::isNotBlank).distinct().take(200).joinToString(", ").take(config.maxContextChars)
+        val terminalSection = if (safeContext.isBlank()) "" else "\n\n<CONTEXT_INFORMATION>\n$safeContext\n</CONTEXT_INFORMATION>"
+        val clipboardSection = if (safeClipboard.isBlank()) "" else "\n\n<CLIPBOARD_CONTEXT>\n$safeClipboard\n</CLIPBOARD_CONTEXT>"
+        val vocabularySection = if (safeVocabulary.isBlank()) "" else "\n\nThe following are important vocabulary words, proper nouns, and technical terms. When these words or similar-sounding words appear in the <TRANSCRIPT>, ensure they are spelled EXACTLY as shown below:\n<CUSTOM_VOCABULARY>\nImportant Vocabulary: $safeVocabulary\n</CUSTOM_VOCABULARY>"
+        val systemPrompt = template.trim() + terminalSection + clipboardSection + vocabularySection
         val userPrompt = "\n<TRANSCRIPT>\n$safeTranscript\n</TRANSCRIPT>"
         return SpeechEnhancementRequest(prompt = "$systemPrompt\n$userPrompt", transcript = safeTranscript, context = safeContext, systemPrompt = systemPrompt, userPrompt = userPrompt)
     }
@@ -74,7 +78,7 @@ class SpeechEnhancementPromptRenderer(private val config: SpeechEnhancementPromp
     }
 }
 
-class SpeechEnhancer(private val client: SpeechEnhancementClient, private val timeoutMillis: Long = 10_000L, private val retries: Int = 1) {
+class SpeechEnhancer(private val client: SpeechEnhancementClient, private val timeoutMillis: Long = 15_000L, private val retries: Int = 1) {
     suspend fun enhanceOrRaw(request: SpeechEnhancementRequest): SpeechEnhancementResult {
         repeat(retries + 1) { attempt ->
             val result = runCatching { withTimeout(timeoutMillis) { client.enhance(request).trim() } }

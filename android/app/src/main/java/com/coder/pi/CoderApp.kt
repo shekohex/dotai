@@ -150,7 +150,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER, DEBUG_SPEECH }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_MODELS, SPEECH_MODEL_DETAIL, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_MODELS, SPEECH_MODEL_DETAIL, SPEECH_VOCABULARY, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -1782,6 +1782,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
             SettingsPage.SHORTCUT -> shortcutBackPage
             SettingsPage.SPEECH_MODEL_DETAIL -> SettingsPage.SPEECH_MODELS
             SettingsPage.SPEECH_MODELS -> SettingsPage.SPEECH
+            SettingsPage.SPEECH_VOCABULARY -> SettingsPage.SPEECH
             SettingsPage.DEBUG_LOGS -> SettingsPage.CONNECTION
             else -> SettingsPage.ROOT
         }
@@ -1804,9 +1805,10 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.CHAT -> ChatModeSettingsScreen(terminalView, tokens, ::navigateBack)
-        SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, { page = SettingsPage.SPEECH_MODELS }, ::navigateBack)
+        SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, { page = SettingsPage.SPEECH_MODELS }, { page = SettingsPage.SPEECH_VOCABULARY }, ::navigateBack)
         SettingsPage.SPEECH_MODELS -> SpeechModelSettingsScreen(tokens, { selectedSpeechModelId = it; page = SettingsPage.SPEECH_MODEL_DETAIL }, ::navigateBack)
         SettingsPage.SPEECH_MODEL_DETAIL -> SpeechModelDetailScreen(ParakeetModelArtifacts.byId(selectedSpeechModelId), tokens, ::navigateBack)
+        SettingsPage.SPEECH_VOCABULARY -> SpeechVocabularySettingsScreen(tokens, ::navigateBack)
         SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
         SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
         SettingsPage.NOTIFICATIONS -> TerminalNotificationsSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -2737,7 +2739,7 @@ private fun ChatModeSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
 }
 
 @Composable
-private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onModels: () -> Unit, onBack: () -> Unit) {
+private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onModels: () -> Unit, onVocabulary: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
     var promptDialogOpen by remember { mutableStateOf(false) }
@@ -2813,6 +2815,11 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 SpeechSettingsStore.setIncludeVisibleTerminalContext(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
+            SettingsToggleRow(R.drawable.ic_feather_clipboard, "Clipboard Context", speechSettings.includeClipboardContext, tokens) {
+                SpeechSettingsStore.setIncludeClipboardContext(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsValueRow(R.drawable.ic_feather_book, "Custom Vocabulary", "${speechSettings.customVocabulary.lines().count { it.isNotBlank() }} words", "Manage", tokens, chevron = true) { onVocabulary() }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Target", "Send dictated text to active terminal", null, tokens) {}
             SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "Transcription stays on device. Enhancement sends transcript and bounded visible context to selected provider.", null, tokens) {}
         }
@@ -2857,6 +2864,43 @@ private fun SpeechSettingsValues.vadSensitivityLabel(): String = when (vadSensit
     2 -> "Normal"
     3 -> "High"
     else -> "Very high"
+}
+
+@Composable
+private fun SpeechVocabularySettingsScreen(tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var vocabulary by remember { mutableStateOf(SpeechSettingsStore.values(context).customVocabulary) }
+    fun save() {
+        SpeechSettingsStore.setCustomVocabulary(context, vocabulary)
+        vocabulary = SpeechSettingsStore.values(context).customVocabulary
+    }
+    SettingsScaffold("Custom Vocabulary", tokens, onBack) {
+        item {
+            Text(
+                "Add words, proper nouns, function names, file names, and technical terms you use often. One word or phrase per line.",
+                color = tokens.secondary,
+                fontSize = captionSize(),
+                lineHeight = 19.sp,
+                modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 12.dp),
+            )
+        }
+        item {
+            BasicTextField(
+                value = vocabulary,
+                onValueChange = { vocabulary = it.take(8_000) },
+                textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 22.sp),
+                cursorBrush = SolidColor(tokens.accent),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 8.dp).height(280.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(14.dp),
+                decorationBox = { inner -> if (vocabulary.isBlank()) Text("LiteRT\nParakeet\nCoder\nGradle", color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace); inner() },
+            )
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShortcutFooterButton("Clear", tokens.surfaceHigh, tokens.text, Modifier.weight(1f)) { vocabulary = ""; save() }
+                ShortcutFooterButton("Save", tokens.accent, contentColorFor(tokens.accent), Modifier.weight(1f)) { save() }
+            }
+        }
+    }
 }
 
 @Composable

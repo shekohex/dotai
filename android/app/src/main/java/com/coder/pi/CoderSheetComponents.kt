@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import android.Manifest
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.os.Build
@@ -210,7 +211,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             runCatching {
                 val prompt = speechSettings.resolvedPrompt(SpeechSettingsStore.defaultPrompt(context))
                 val contextLines = if (speechSettings.includeVisibleTerminalContext) visibleTerminalLines() else emptyList()
-                val request = speechPromptRenderer.render(prompt, transcript, contextLines)
+                val clipboardText = if (speechSettings.includeClipboardContext) context.currentClipboardText() else ""
+                val request = speechPromptRenderer.render(prompt, transcript, contextLines, clipboardText, speechSettings.customVocabulary)
                 SpeechEnhancer(speechEnhancementClient, timeoutMillis = speechSettings.enhancementTimeoutSeconds * 1_000L).enhanceOrRaw(request)
             }.fold(
                 onSuccess = { result ->
@@ -479,6 +481,11 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         } ?: run { selectedAttachmentIndex = null }
     }
 }
+
+private fun Context.currentClipboardText(): String = runCatching {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+}.getOrDefault("").take(4_000)
 
 @Suppress("DEPRECATION")
 private fun Context.performSpeechEnhancementHaptic(patternId: String) {

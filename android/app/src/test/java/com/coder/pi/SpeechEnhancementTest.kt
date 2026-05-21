@@ -29,6 +29,14 @@ class SpeechEnhancementTest {
     }
 
     @Test
+    fun rendererAddsClipboardAndCustomVocabularySections() {
+        val request = SpeechEnhancementPromptRenderer().render(template, "run litert", emptyList(), "clipboard term", "LiteRT\nParakeet")
+
+        assertTrue(request.systemPrompt.contains("<CLIPBOARD_CONTEXT>\nclipboard term\n</CLIPBOARD_CONTEXT>"))
+        assertTrue(request.systemPrompt.contains("<CUSTOM_VOCABULARY>\nImportant Vocabulary: LiteRT, Parakeet\n</CUSTOM_VOCABULARY>"))
+    }
+
+    @Test
     fun rendererBoundsContextLinesAndChars() {
         val request = SpeechEnhancementPromptRenderer(SpeechEnhancementPromptConfig(maxContextLines = 2, maxContextChars = 12)).render(template, "hello", listOf("one", "two", "three very long"))
 

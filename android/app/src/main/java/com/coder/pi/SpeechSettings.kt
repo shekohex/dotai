@@ -25,6 +25,8 @@ data class SpeechSettingsValues(
     val enhancementModel: String = "gpt-4o-mini",
     val enhancementTimeoutSeconds: Int = 30,
     val enhancementHapticPattern: String = TerminalHapticPatterns.defaultProgressPatternId,
+    val includeClipboardContext: Boolean = false,
+    val customVocabulary: String = "",
 ) {
     fun resolvedPrompt(defaultPrompt: String): String = promptOverride.trim().ifBlank { defaultPrompt }
 }
@@ -47,6 +49,8 @@ object SpeechSettingsStore {
     private const val enhancementModelKey = "speech.enhancement_model"
     private const val enhancementTimeoutSecondsKey = "speech.enhancement_timeout_seconds"
     private const val enhancementHapticPatternKey = "speech.enhancement_haptic_pattern"
+    private const val includeClipboardContextKey = "speech.include_clipboard_context"
+    private const val customVocabularyKey = "speech.custom_vocabulary"
     private const val securePreferencesName = "speech_secure"
     private const val enhancementApiKeyKey = "speech.enhancement_api_key"
 
@@ -69,6 +73,8 @@ object SpeechSettingsStore {
             enhancementModel = preferences.getString(enhancementModelKey, "gpt-4o-mini").orEmpty().ifBlank { "gpt-4o-mini" },
             enhancementTimeoutSeconds = preferences.getInt(enhancementTimeoutSecondsKey, 30).coerceIn(3, 60),
             enhancementHapticPattern = TerminalHapticPatterns.option(preferences.getString(enhancementHapticPatternKey, TerminalHapticPatterns.defaultProgressPatternId).orEmpty()).id,
+            includeClipboardContext = preferences.getBoolean(includeClipboardContextKey, false),
+            customVocabulary = preferences.getString(customVocabularyKey, "").orEmpty(),
         )
     }
 
@@ -109,6 +115,10 @@ object SpeechSettingsStore {
     fun setEnhancementTimeoutSeconds(context: Context, seconds: Int) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putInt(enhancementTimeoutSecondsKey, seconds.coerceIn(3, 60)) }
 
     fun setEnhancementHapticPattern(context: Context, pattern: String) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putString(enhancementHapticPatternKey, TerminalHapticPatterns.option(pattern).id) }
+
+    fun setIncludeClipboardContext(context: Context, enabled: Boolean) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(includeClipboardContextKey, enabled) }
+
+    fun setCustomVocabulary(context: Context, vocabulary: String) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putString(customVocabularyKey, vocabulary.lines().map(String::trim).filter(String::isNotBlank).distinct().take(200).joinToString("\n")) }
 
     fun enhancementApiKey(context: Context): String = securePreferences(context).getString(enhancementApiKeyKey, "").orEmpty()
 

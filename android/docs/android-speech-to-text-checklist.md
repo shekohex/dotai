@@ -924,3 +924,4 @@ Commit:
 - VAD peak gate: `ac0c2be` (`fix(android): improve speech VAD peak detection`).
 - Real-device smoke helper: `aa3ced7` (`test(android): add speech real-device smoke helper`).
 - VoiceInk live window alignment: `046e396` (`perf(android): align live speech window with VoiceInk`).
+- VoiceInk pre-padding review fix: `405dae6` (`fix(android): preserve live speech prepadding`).

@@ -10,6 +10,11 @@ class SpeechChatDraftTest {
     }
 
     @Test
+    fun longFinalSpeechPreservesLiveTranscriptWhenPresent() {
+        assertEquals("Open settings and explain gradle", selectFinalSpeechTranscript("Open settings", "Open settings and explain gradle", sampleCount = 16_000 * 8, sampleRate = 16_000))
+    }
+
+    @Test
     fun finalSpeechFallsBackToLivePartialWhenFinalIsBlank() {
         assertEquals("Open settings and line", selectFinalSpeechTranscript("  ", " Open settings and line "))
     }

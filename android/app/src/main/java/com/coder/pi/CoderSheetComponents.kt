@@ -209,7 +209,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
             result.fold(
                 onSuccess = {
-                    val transcript = selectFinalSpeechTranscript(it.text, dictationTranscript)
+                    val transcript = selectFinalSpeechTranscript(it.text, dictationTranscript, samples.size, speechAudioCapture.sampleRate)
                     if (transcript.isBlank()) {
                         dictationTranscript = "No speech detected."
                         dictationState = SpeechDictationDisplayState.NO_SPEECH
@@ -230,8 +230,10 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         val totalSamples = dictationAudioFrames.totalSampleCount()
         if (totalSamples < liveChunkEndSample) return
         val partialEndSample = totalSamples
-        val snapshot = dictationAudioFrames.sliceSampleWindow((partialEndSample - speechAudioCapture.sampleRate * 15).coerceAtLeast(0), partialEndSample, speechAudioCapture.sampleRate * 15).padTrailingSilence(speechAudioCapture.sampleRate)
-        liveChunkEndSample = totalSamples + speechAudioCapture.sampleRate
+        val liveWindowSamples = speechAudioCapture.sampleRate * 4
+        val trailingSilenceSamples = speechAudioCapture.sampleRate
+        val snapshot = dictationAudioFrames.sliceSampleWindow((partialEndSample - liveWindowSamples).coerceAtLeast(0), partialEndSample, liveWindowSamples).padTrailingSilence(trailingSilenceSamples)
+        liveChunkEndSample = totalSamples + speechAudioCapture.sampleRate / 2
         val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
         if (sessionId != dictationSessionId) return
         if (partialEndSample <= lastAppliedPartialEndSample) return
@@ -397,10 +399,12 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     }
 }
 
-fun selectFinalSpeechTranscript(finalTranscript: String, liveTranscript: String): String {
+fun selectFinalSpeechTranscript(finalTranscript: String, liveTranscript: String, sampleCount: Int = 0, sampleRate: Int = 16_000): String {
     val finalClean = finalTranscript.trim()
+    val liveClean = liveTranscript.trim()
+    if (sampleRate > 0 && sampleCount > sampleRate * 5 && liveClean.isNotBlank()) return liveClean
     if (finalClean.isNotBlank()) return finalClean
-    return liveTranscript.trim()
+    return liveClean
 }
 
 fun mergeSpeechTranscriptIntoDraft(draft: String, transcript: String): String {

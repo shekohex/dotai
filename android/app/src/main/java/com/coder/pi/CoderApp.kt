@@ -1616,11 +1616,11 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             override suspend fun enhance(request: SpeechEnhancementRequest): String {
                 val latestSettings = SpeechSettingsStore.values(context)
                 val apiKey = SpeechSettingsStore.enhancementApiKey(context)
-                if (!latestSettings.enhancementEnabled || apiKey.isBlank()) return request.transcript
+                if (!latestSettings.enhancementEnabled || apiKey.isBlank()) return ""
                 return when (SpeechEnhancementProvider.byId(latestSettings.enhancementProvider)) {
                     SpeechEnhancementProvider.OpenAiCompatible -> OpenAiHttpSpeechEnhancementClient(enhancementHttpClient, latestSettings.enhancementBaseUrl, apiKey, latestSettings.enhancementModel).enhance(request)
                     SpeechEnhancementProvider.Gemini -> GeminiHttpSpeechEnhancementClient(enhancementHttpClient, apiKey, latestSettings.enhancementModel).enhance(request)
-                    SpeechEnhancementProvider.Disabled -> request.transcript
+                    SpeechEnhancementProvider.Disabled -> ""
                 }
             }
         }
@@ -2815,8 +2815,8 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         speechSettings = SpeechSettingsStore.values(context)
         providerDialogOpen = false
     }
-    if (apiKeyDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement API Key", "", if (SpeechSettingsStore.enhancementApiKey(context).isBlank()) "Paste API key" else "New key, blank keeps current", { apiKeyDialogOpen = false }) {
-        if (it.isNotBlank()) SpeechSettingsStore.setEnhancementApiKey(context, it)
+    if (apiKeyDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement API Key", "", if (SpeechSettingsStore.enhancementApiKey(context).isBlank()) "Paste API key" else "New key, blank clears stored key", { apiKeyDialogOpen = false }) {
+        SpeechSettingsStore.setEnhancementApiKey(context, it)
         speechSettings = SpeechSettingsStore.values(context)
         apiKeyDialogOpen = false
     }

@@ -481,6 +481,7 @@ Research:
 - Hugging Face LFS pointer for `parakeet_tdt_0.6b_v3_5s_i8.tflite` gives `sha256:f25e5972fe72048f67272e26d4badfe19d876e0fa19027cb2c6c0e0fc4da692b` and size `614437424`.
 - Added `SpeechTranscriber`, `ParakeetModelCache`, int8 model metadata, verified download/delete path, runtime-unavailable LiteRT placeholder, and overlap transcript merge.
 - Added LiteRT dependency `com.google.ai.edge.litert:litert:2.1.5`, CPU `CompiledModel` warm-load path, `ParakeetFeatureConfig`, bounded feature extractor shape, and basic tokenizer decode skeleton.
+- Added tokenizer cache download path, Hugging Face tokenizer JSON vocab parser, and pure TDT greedy argmax helper tests; full stateful TDT decode integration remains pending.
 
 Plan:
 
@@ -525,6 +526,7 @@ Validation:
 - `./gradlew assembleDebug --no-daemon` passed, `BUILD SUCCESSFUL in 10s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after LiteRT wiring, `BUILD SUCCESSFUL in 47s`.
 - `./gradlew assembleDebug --no-daemon` passed after LiteRT wiring, `BUILD SUCCESSFUL in 25s`.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after tokenizer/TDT helper work, `BUILD SUCCESSFUL in 12s`.
 - Device fixture smoke blocked: no connected/running device.
 
 Review:

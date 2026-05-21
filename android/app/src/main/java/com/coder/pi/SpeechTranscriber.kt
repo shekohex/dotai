@@ -6,6 +6,11 @@ import kotlinx.coroutines.withContext
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.Environment
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.net.URL
 import java.security.MessageDigest
@@ -36,6 +41,11 @@ data class ParakeetModelArtifact(
     val url: String,
     val sha256: String,
     val sizeBytes: Long,
+)
+
+data class ParakeetTokenizerArtifact(
+    val fileName: String = "parakeet_tdt_0.6b_v3_tokenizer.json",
+    val url: String = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/main/tokenizer.json",
 )
 
 data class ParakeetFeatureConfig(
@@ -100,6 +110,22 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
     }
 }
 
+class ParakeetTokenizerCache(private val context: Context, private val artifact: ParakeetTokenizerArtifact = ParakeetTokenizerArtifact()) {
+    private val directory: File = File(context.filesDir, "speech/parakeet")
+    val tokenizerFile: File = File(directory, artifact.fileName)
+
+    fun isReady(): Boolean = tokenizerFile.isFile && tokenizerFile.length() > 0
+
+    suspend fun ensureTokenizer(): Result<File> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (isReady()) return@runCatching tokenizerFile
+            directory.mkdirs()
+            URL(artifact.url).openStream().use { input -> tokenizerFile.outputStream().use { output -> input.copyTo(output) } }
+            tokenizerFile
+        }
+    }
+}
+
 class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache) : SpeechTranscriber {
     private var compiledModel: CompiledModel? = null
 
@@ -152,6 +178,29 @@ class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = Parak
 
 class ParakeetTokenizer(private val vocabulary: Map<Int, String>) {
     fun decode(tokenIds: Iterable<Int>): String = tokenIds.mapNotNull(vocabulary::get).joinToString("").replace("▁", " ").trim()
+
+    companion object {
+        fun fromTokenizerJson(jsonText: String): ParakeetTokenizer {
+            val root = Json.parseToJsonElement(jsonText).jsonObject
+            val vocabularyObject = root["model"]?.jsonObject?.get("vocab")?.jsonObject ?: root["vocab"]?.jsonObject ?: JsonObject(emptyMap())
+            val vocabulary = vocabularyObject.mapNotNull { (token, idElement) ->
+                val id = idElement.jsonPrimitive.intOrNull ?: return@mapNotNull null
+                id to token
+            }.toMap()
+            return ParakeetTokenizer(vocabulary)
+        }
+    }
+}
+
+object TdtGreedyDecoder {
+    fun decode(logitsByStep: List<FloatArray>, blankTokenId: Int, durationCount: Int = 5): List<Int> {
+        return logitsByStep.mapNotNull { logits ->
+            if (logits.size <= durationCount) return@mapNotNull null
+            val tokenLogitEnd = logits.size - durationCount
+            val tokenId = (0 until tokenLogitEnd).maxBy { logits[it] }
+            tokenId.takeIf { it != blankTokenId }
+        }
+    }
 }
 
 class SpeechTranscriberException(val failure: SpeechTranscriberFailure) : Exception(failure.toString())

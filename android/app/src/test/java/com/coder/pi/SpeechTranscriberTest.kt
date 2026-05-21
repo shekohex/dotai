@@ -46,4 +46,27 @@ class SpeechTranscriberTest {
 
         assertEquals("hello world", tokenizer.decode(listOf(1, 2)))
     }
+
+    @Test
+    fun tokenizerParsesHuggingFaceVocabShape() {
+        val tokenizer = ParakeetTokenizer.fromTokenizerJson("""
+            {"model":{"vocab":{"▁open":1,"▁settings":2}}}
+        """.trimIndent())
+
+        assertEquals("open settings", tokenizer.decode(listOf(1, 2)))
+    }
+
+    @Test
+    fun tdtGreedyDecoderSkipsBlankToken() {
+        val decoded = TdtGreedyDecoder.decode(
+            listOf(
+                floatArrayOf(0.1f, 0.9f, 0.2f, 0f, 0f, 0f, 0f, 0f),
+                floatArrayOf(0.1f, 0.2f, 0.95f, 0f, 0f, 0f, 0f, 0f),
+            ),
+            blankTokenId = 2,
+            durationCount = 5,
+        )
+
+        assertEquals(listOf(1), decoded)
+    }
 }

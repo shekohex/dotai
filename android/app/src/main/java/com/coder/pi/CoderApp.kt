@@ -11,6 +11,10 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.ViewGroup
@@ -2797,6 +2801,12 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
             if (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider) == SpeechEnhancementProvider.OpenAiCompatible) SettingsValueRow(R.drawable.ic_feather_globe, "Endpoint", speechSettings.enhancementBaseUrl, "Edit", tokens) { baseUrlDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_cpu, "Model", speechSettings.enhancementModel, "Edit", tokens) { modelDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_clock, "Timeout", "${speechSettings.enhancementTimeoutSeconds}s", "Edit", tokens) { timeoutDialogOpen = true }
+            SettingsValueRow(R.drawable.ic_feather_sliders, "Enhancement Haptic", "Tap to cycle and preview", TerminalHapticPatterns.option(speechSettings.enhancementHapticPattern).label, tokens) {
+                val next = TerminalHapticPatterns.next(speechSettings.enhancementHapticPattern)
+                SpeechSettingsStore.setEnhancementHapticPattern(context, next.id)
+                context.performSpeechEnhancementHaptic(next.id)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
             SettingsValueRow(R.drawable.ic_feather_shield, "API Key", if (enhancementApiKeyStored) "Stored encrypted" else "Missing", "Edit", tokens) { apiKeyDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_edit_3, "Prompt", "Default VoiceInk-style prompt", "Edit", tokens) { promptDialogOpen = true }
             SettingsToggleRow(R.drawable.ic_feather_terminal, "Visible Terminal Context", speechSettings.includeVisibleTerminalContext, tokens) {
@@ -3255,6 +3265,16 @@ private object HapticTarget {
 fun hapticClick() {
     if (!HapticTarget.enabled) return
     HapticTarget.view?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+}
+
+@Suppress("DEPRECATION")
+private fun Context.performSpeechEnhancementHaptic(patternId: String) {
+    if (!getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)) return
+    val pattern = TerminalHapticPatterns.option(patternId)
+    if (pattern.id == "none") return
+    val vibrator = if (Build.VERSION.SDK_INT >= 31) getSystemService(VibratorManager::class.java).defaultVibrator else getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    if (!vibrator.hasVibrator()) return
+    if (Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1)) else vibrator.vibrate(pattern.timings, -1)
 }
 
 private fun android.content.Context.findActivityView(): android.view.View? {

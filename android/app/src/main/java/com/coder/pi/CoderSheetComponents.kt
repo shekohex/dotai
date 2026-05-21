@@ -2,9 +2,19 @@ package com.coder.pi
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import android.Manifest
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -54,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -182,6 +193,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             acceptDictationTranscript(transcript)
             return
         }
+        context.performSpeechEnhancementHaptic(speechSettings.enhancementHapticPattern)
         dictationState = SpeechDictationDisplayState.ENHANCING_COLLAPSED
         enhancementJob?.cancel()
         enhancementJob = scope.launch {
@@ -215,7 +227,11 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         finalTranscriptionJob?.cancel()
         val sessionId = dictationSessionId
         finalTranscriptionJob = scope.launch {
-            val samples = withContext(Dispatchers.Default) { frames.flattenToFloatArray() }
+            val totalSamples = frames.totalSampleCount()
+            val finalEndSample = totalSamples
+            val finalStartSample = lastAppliedPartialEndSample.coerceAtLeast(0)
+            val finalTailFrames = if (finalEndSample > finalStartSample) withContext(Dispatchers.Default) { frames.sliceSampleWindow(finalStartSample, finalEndSample, finalEndSample - finalStartSample) } else FloatArray(0)
+            val samples = if (dictationTranscript.isBlank()) withContext(Dispatchers.Default) { frames.flattenToFloatArray() } else finalTailFrames
             if (sessionId != dictationSessionId) return@launch
             if (!speechSettings.localTranscriptionEnabled || samples.isEmpty()) {
                 dictationTranscript = "Speech transcription unavailable."
@@ -228,7 +244,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                 dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
                 return@launch
             }
-            val result = transcribeFinalSpeech(samples, speechAudioCapture.sampleRate, activeTranscriber, speechTranscriberMutex)
+            val result = if (dictationTranscript.isBlank()) transcribeFinalSpeech(samples, speechAudioCapture.sampleRate, activeTranscriber, speechTranscriberMutex) else transcribeFinalSpeechTail(dictationTranscript, samples, speechAudioCapture.sampleRate, activeTranscriber, speechTranscriberMutex)
             if (sessionId != dictationSessionId) return@launch
             result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
             result.fold(
@@ -446,6 +462,17 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     }
 }
 
+@Suppress("DEPRECATION")
+private fun Context.performSpeechEnhancementHaptic(patternId: String) {
+    val enabled = getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)
+    if (!enabled) return
+    val pattern = TerminalHapticPatterns.option(patternId)
+    if (pattern.id == "none") return
+    val vibrator = if (Build.VERSION.SDK_INT >= 31) getSystemService(VibratorManager::class.java).defaultVibrator else getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    if (!vibrator.hasVibrator()) return
+    if (Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1)) else vibrator.vibrate(pattern.timings, -1)
+}
+
 fun selectFinalSpeechTranscript(finalTranscript: String, liveTranscript: String, sampleCount: Int = 0, sampleRate: Int = 16_000): String {
     val finalClean = finalTranscript.trim()
     val liveClean = liveTranscript.trim()
@@ -473,6 +500,18 @@ suspend fun transcribeFinalSpeech(samples: FloatArray, sampleRate: Int, speechTr
     val text = merger.merge("").trim()
     if (text.isNotBlank()) return Result.success(SpeechTranscriptResult(text, elapsedMillis, lastMetrics ?: SpeechTranscriptionMetrics(totalMillis = elapsedMillis, sampleCount = samples.size, sampleRate = sampleRate)))
     return hasFailure?.let { Result.failure(it) } ?: Result.success(SpeechTranscriptResult("", elapsedMillis, lastMetrics ?: SpeechTranscriptionMetrics(totalMillis = elapsedMillis, sampleCount = samples.size, sampleRate = sampleRate)))
+}
+
+suspend fun transcribeFinalSpeechTail(liveTranscript: String, tailSamples: FloatArray, sampleRate: Int, speechTranscriber: SpeechTranscriber, speechTranscriberMutex: Mutex): Result<SpeechTranscriptResult> {
+    if (tailSamples.isEmpty()) return Result.success(SpeechTranscriptResult(liveTranscript.trim(), 0L))
+    val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(tailSamples, sampleRate) }
+    return result.map { tail ->
+        val merged = LiveSpeechTranscriptMerger(confirmationsNeeded = 1, minWordsToConfirm = 2).run {
+            merge(liveTranscript)
+            merge(tail.text)
+        }
+        SpeechTranscriptResult(merged.ifBlank { liveTranscript }, tail.elapsedMillis, tail.metrics)
+    }
 }
 
 fun finalSpeechChunks(samples: FloatArray, sampleRate: Int): List<FloatArray> {
@@ -801,9 +840,11 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
 
 @Composable
 private fun DictationProcessingStatus(label: String, tokens: UiTokens) {
+    val transition = rememberInfiniteTransition(label = "speech-enhancement-spinner")
+    val rotation by transition.animateFloat(0f, 360f, infiniteRepeatable(tween(900), RepeatMode.Restart), label = "speech-enhancement-spinner-rotation")
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(R.drawable.ic_feather_loader), null, tint = tokens.accent.copy(alpha = 0.9f), modifier = Modifier.size(14.dp))
+            Icon(painterResource(R.drawable.ic_feather_loader), null, tint = tokens.accent.copy(alpha = 0.9f), modifier = Modifier.size(14.dp).graphicsLayer { rotationZ = rotation })
             Text(label, color = tokens.text.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }

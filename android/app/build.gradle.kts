@@ -10,6 +10,7 @@ plugins {
 
 val downloadedFontArchives = layout.projectDirectory.dir("src/main/fontArchives")
 val generatedFontResources = layout.buildDirectory.dir("generated/res/vendorFonts")
+val ktlintCli by configurations.creating
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use(::load)
@@ -152,6 +153,8 @@ tasks.named("preBuild") {
 }
 
 dependencies {
+    ktlintCli(libs.ktlint.cli)
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
@@ -180,4 +183,13 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.uiautomator)
+}
+
+tasks.register<JavaExec>("formatKotlin") {
+    group = "formatting"
+    description = "Formats Kotlin sources with ktlint."
+    classpath = ktlintCli
+    mainClass.set("com.pinterest.ktlint.Main")
+    args("-F", "src/**/*.kt")
+    workingDir = projectDir
 }

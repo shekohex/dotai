@@ -180,7 +180,10 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
         val state = downloadStatus()
         if (state.status != ModelDownloadState.Success) return@withContext false
         val file = downloadDestinationFile()
-        if (!file.isFile || file.sha256OrNull() != artifact.sha256) return@withContext false
+        if (!file.isFile || file.length() != artifact.sizeBytes || file.sha256OrNull() != artifact.sha256) {
+            ResumableModelDownloadStateStore.markFailed(context, artifact, file.length().coerceAtLeast(0), artifact.sizeBytes)
+            return@withContext false
+        }
         directory.mkdirs()
         if (modelFile.exists()) modelFile.delete()
         file.inputStream().use { input -> modelFile.outputStream().use { output -> input.copyTo(output) } }

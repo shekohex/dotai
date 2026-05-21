@@ -123,8 +123,13 @@ class ResumableModelDownloadService : Service() {
                     }
                 }
             }
-            ResumableModelDownloadStateStore.update(this, artifact, ModelDownloadState.Success, downloaded, total, etag, 0, 0)
-            getSystemService(NotificationManager::class.java).notify(NotificationId, notification("Model download complete", downloaded, total, ModelDownloadState.Success, 0, 0, artifact.id))
+            if (downloaded == artifact.sizeBytes) {
+                ResumableModelDownloadStateStore.update(this, artifact, ModelDownloadState.Success, downloaded, total, etag, 0, 0)
+                getSystemService(NotificationManager::class.java).notify(NotificationId, notification("Model download complete", downloaded, total, ModelDownloadState.Success, 0, 0, artifact.id))
+            } else {
+                ResumableModelDownloadStateStore.update(this, artifact, ModelDownloadState.Failed, downloaded, artifact.sizeBytes, etag, 0, -1)
+                getSystemService(NotificationManager::class.java).notify(NotificationId, notification("Model download incomplete", downloaded, artifact.sizeBytes, ModelDownloadState.Failed, 0, -1, artifact.id))
+            }
         } catch (_: Throwable) {
             if (!pauseRequested.get() && !cancelRequested.get() && attempt < MaxRetryCount && hasNetwork()) {
                 Thread.sleep((attempt + 1) * 1_500L)
@@ -312,6 +317,8 @@ object ResumableModelDownloadStateStore {
             if (etag == null) remove("${prefix(artifact)}.etag") else putString("${prefix(artifact)}.etag", etag)
         }
     }
+
+    fun markFailed(context: Context, artifact: ParakeetModelArtifact, downloaded: Long, total: Long) = update(context, artifact, ModelDownloadState.Failed, downloaded, total, etag(context, artifact), 0, -1)
 
     fun clear(context: Context, artifact: ParakeetModelArtifact) {
         context.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE).edit {

@@ -39,7 +39,9 @@ import androidx.core.net.toUri
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpStatusCode
+import io.ktor.serialization.kotlinx.json.json
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1555,7 +1557,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     val view = LocalView.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val enhancementHttpClient = remember { HttpClient(OkHttp) }
+    val enhancementHttpClient = remember { HttpClient(OkHttp) { install(ContentNegotiation) { json(kotlinx.serialization.json.Json { ignoreUnknownKeys = true; explicitNulls = false }) } } }
     var keyboardVisible by remember { mutableStateOf(false) }
     val hardwareKeyboardAvailable = configuration.keyboard != Configuration.KEYBOARD_NOKEYS
     val toolbarHiddenForHardwareKeyboard = terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), hardwareKeyboardAvailable, selectionActive, chatMode)

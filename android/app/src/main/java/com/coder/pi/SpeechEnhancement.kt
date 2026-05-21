@@ -4,7 +4,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.request.bearerAuth
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -12,20 +11,16 @@ import io.ktor.http.isSuccess
 import io.ktor.http.contentType
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 data class SpeechEnhancementPromptConfig(
-    val maxContextLines: Int = 40,
-    val maxContextChars: Int = 4_000,
-    val maxTranscriptChars: Int = 2_000,
+    val maxContextLines: Int = 80,
+    val maxContextChars: Int = 8_000,
+    val maxTranscriptChars: Int = 4_000,
 )
 
 data class SpeechEnhancementRequest(
@@ -100,63 +95,63 @@ class GeminiSpeechEnhancementClient(private val complete: suspend (String) -> St
     override suspend fun enhance(request: SpeechEnhancementRequest): String = complete(request.prompt)
 }
 
+private val speechEnhancementJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
+
 class OpenAiHttpSpeechEnhancementClient(private val httpClient: HttpClient, private val baseUrl: String, private val apiKey: String, private val model: String) : SpeechEnhancementClient {
     override suspend fun enhance(request: SpeechEnhancementRequest): String {
         val response: HttpResponse = httpClient.post(baseUrl.trimEnd('/') + "/chat/completions") {
             bearerAuth(apiKey)
             contentType(ContentType.Application.Json)
-            setBody(buildJsonObject {
-                put("model", JsonPrimitive(model))
-                put("temperature", JsonPrimitive(0.2))
-                put("messages", buildJsonArray {
-                    add(buildJsonObject {
-                        put("role", JsonPrimitive("system"))
-                        put("content", JsonPrimitive(request.systemPrompt))
-                    })
-                    add(buildJsonObject {
-                        put("role", JsonPrimitive("user"))
-                        put("content", JsonPrimitive(request.userPrompt))
-                    })
-                })
-            }.toString())
+            setBody(ChatCompletionRequest(model, listOf(ChatMessage("system", request.systemPrompt), ChatMessage("user", request.userPrompt)), enhancementTemperature(model), enhancementReasoningEffort(model)))
         }
         val body = response.body<String>()
         if (!response.status.isSuccess()) throw SpeechEnhancementHttpException(response.status.value, enhancementErrorMessage(body).ifBlank { response.status.description })
-        val root = Json.parseToJsonElement(body).jsonObject
-        return root["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content.orEmpty()
+        return speechEnhancementJson.decodeFromString<ChatCompletionResponse>(body).choices.firstOrNull()?.message?.content.orEmpty()
     }
 }
 
 class GeminiHttpSpeechEnhancementClient(private val httpClient: HttpClient, private val apiKey: String, private val model: String) : SpeechEnhancementClient {
     override suspend fun enhance(request: SpeechEnhancementRequest): String {
-        val response: HttpResponse = httpClient.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
-            header("x-goog-api-key", apiKey)
+        val response: HttpResponse = httpClient.post("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions") {
+            bearerAuth(apiKey)
             contentType(ContentType.Application.Json)
-            setBody(buildJsonObject {
-                put("contents", buildJsonArray {
-                    add(buildJsonObject {
-                        put("parts", buildJsonArray {
-                            add(buildJsonObject { put("text", JsonPrimitive(request.userPrompt)) })
-                        })
-                    })
-                })
-                put("systemInstruction", buildJsonObject {
-                    put("parts", buildJsonArray {
-                        add(buildJsonObject { put("text", JsonPrimitive(request.systemPrompt)) })
-                    })
-                })
-                put("generationConfig", buildJsonObject { put("temperature", JsonPrimitive(0.2)) })
-            }.toString())
+            setBody(ChatCompletionRequest(model, listOf(ChatMessage("system", request.systemPrompt), ChatMessage("user", request.userPrompt)), enhancementTemperature(model), enhancementReasoningEffort(model)))
         }
         val body = response.body<String>()
         if (!response.status.isSuccess()) throw SpeechEnhancementHttpException(response.status.value, enhancementErrorMessage(body).ifBlank { response.status.description })
-        val root = Json.parseToJsonElement(body).jsonObject
-        return root["candidates"]?.jsonArray?.firstOrNull()?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content.orEmpty()
+        return speechEnhancementJson.decodeFromString<ChatCompletionResponse>(body).choices.firstOrNull()?.message?.content.orEmpty()
     }
 }
 
+@Serializable
+private data class ChatCompletionRequest(
+    val model: String,
+    val messages: List<ChatMessage>,
+    val temperature: Double,
+    @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+)
+
+@Serializable
+private data class ChatMessage(val role: String, val content: String)
+
+@Serializable
+private data class ChatCompletionResponse(val choices: List<ChatChoice> = emptyList())
+
+@Serializable
+private data class ChatChoice(val message: ChatMessage? = null)
+
+private fun enhancementTemperature(model: String): Double = if (model.lowercase().startsWith("gpt-5")) 1.0 else 0.3
+
+private fun enhancementReasoningEffort(model: String): String? = when (model) {
+    "gemini-2.5-flash", "gemini-2.5-flash-lite" -> "none"
+    "gemini-3.1-pro-preview" -> "low"
+    "gemini-2.5-pro", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview" -> "minimal"
+    "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.2" -> "none"
+    else -> null
+}
+
 private fun enhancementErrorMessage(body: String): String = runCatching {
-    val root = Json.parseToJsonElement(body).jsonObject
+    val root = speechEnhancementJson.parseToJsonElement(body).jsonObject
     root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
         ?: root["message"]?.jsonPrimitive?.content
         ?: body.take(180)

@@ -45,6 +45,15 @@ class SpeechEnhancementTest {
     }
 
     @Test
+    fun defaultRendererUsesExpandedBounds() {
+        val request = SpeechEnhancementPromptRenderer().render(template, "x".repeat(5_000), List(100) { "line-$it" })
+
+        assertEquals(4_000, request.transcript.length)
+        assertFalse(request.context.contains("line-0"))
+        assertTrue(request.context.contains("line-99"))
+    }
+
+    @Test
     fun rendererRedactsSecrets() {
         val request = SpeechEnhancementPromptRenderer().render(template, "hello", listOf("curl -H 'Authorization: Bearer abc.def' https://x.test?token=secret&ok=1 api_key=123"))
 

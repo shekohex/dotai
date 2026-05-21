@@ -153,17 +153,26 @@ class ParakeetTokenizerCache(private val context: Context, private val artifact:
     private val directory: File = File(context.filesDir, "speech/parakeet")
     val tokenizerFile: File = File(directory, artifact.fileName)
 
-    fun isReady(): Boolean = tokenizerFile.isFile && tokenizerFile.length() > 0
+    fun isReady(): Boolean = tokenizerFile.isFile && tokenizerFile.length() > 0 && tokenizerFile.isValidParakeetTokenizer()
 
     suspend fun ensureTokenizer(): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
             if (isReady()) return@runCatching tokenizerFile
             directory.mkdirs()
-            URL(artifact.url).openStream().use { input -> tokenizerFile.outputStream().use { output -> input.copyTo(output) } }
+            val tempFile = File(directory, "${artifact.fileName}.part")
+            URL(artifact.url).openStream().use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+            check(tempFile.isValidParakeetTokenizer()) { "Tokenizer integrity failed" }
+            if (tokenizerFile.exists()) tokenizerFile.delete()
+            check(tempFile.renameTo(tokenizerFile)) { "Unable to move tokenizer into cache" }
             tokenizerFile
         }
     }
 }
+
+private fun File.isValidParakeetTokenizer(): Boolean = runCatching {
+    val tokenizer = ParakeetTokenizer.fromTokenizerJson(readText())
+    tokenizer.vocabularySize > 0
+}.getOrDefault(false)
 
 class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, private val tokenizerCache: ParakeetTokenizerCache? = null) : SpeechTranscriber {
     private var compiledModel: CompiledModel? = null
@@ -355,6 +364,8 @@ class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = Parak
 }
 
 class ParakeetTokenizer(private val vocabulary: Map<Int, String>) {
+    val vocabularySize: Int get() = vocabulary.size
+
     fun decode(tokenIds: Iterable<Int>): String = tokenIds.mapNotNull(vocabulary::get).joinToString("").replace("▁", " ").trim()
 
     companion object {

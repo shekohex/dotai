@@ -101,6 +101,8 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
     private var audioRecord: AudioRecord? = null
     @Volatile private var silenced = false
 
+    val sampleRate: Int get() = config.sampleRate
+
     fun hasRecordPermission(): Boolean = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")

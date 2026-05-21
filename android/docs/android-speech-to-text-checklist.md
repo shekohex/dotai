@@ -72,7 +72,7 @@ Objective-to-evidence map:
 - Audio never leaves device for transcription: transcription path is local `LiteRtParakeetTranscriber`; enhancement is separate and optional; privacy audit tests pass.
 - Local Parakeet runs through LiteRT on Pixel 7 Pro or Samsung Tab A9: blocked. Reference model and tokenizer payloads are downloaded and verified, but current `adb devices` shows only `emulator-5554`.
 - Real-device support proof: blocked until Pixel 7 Pro or Samsung Tab A9 is attached for runtime/mic proof.
-- Subagent review loop: blocked because `subagent` tool is unavailable in current toolset; self-review residual risks are recorded per ticket.
+- Subagent review loop: available in this session. Review `ad18e40b-1caa-4bfd-9eb1-733b7c92e4b3` found production blockers for audio-to-transcriber wiring, accepted transcript submit flow, tokenizer atomic validation, VAD settings wiring, and enhancement/context settings wiring; fixes are in progress and target-hardware proof remains blocked.
 
 Target-device proof runbook when Pixel 7 Pro or Samsung Tab A9 is attached:
 
@@ -380,6 +380,7 @@ Validation:
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed again after settings/cache work, `BUILD SUCCESSFUL in 25s`.
 - Enhanced-ready emulator proof after final settings work: `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech?state=ENHANCED_READY' -n com.coder.pi/.MainActivity`, `android layout --device emulator-5554 --pretty -o build/validation/speech/enhanced-ready-layout.json`, and `android screen capture -o build/validation/speech/enhanced-ready.png` succeeded. Layout contains `Speech UX`, `Enhanced transcript ready`, and enhanced fixture text.
 - Final local validation sweep passed: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon`, `./gradlew assembleDebug --no-daemon`, and `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` (`BUILD SUCCESSFUL`, emulator UI journey in `26s`).
+- Review fix validation passed after wiring audio frames into `LiteRtParakeetTranscriber`, accepted transcript submission through `onSubmit`, VAD sensitivity into `SpeechAudioCaptureConfig`, terminal context/prompt rendering into enhancement path, and atomic tokenizer validation: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` (`BUILD SUCCESSFUL in 21s`) and `./gradlew assembleDebug --no-daemon` (`BUILD SUCCESSFUL in 11s`).
 
 Review:
 

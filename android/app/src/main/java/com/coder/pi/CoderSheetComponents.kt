@@ -88,14 +88,18 @@ import kotlinx.coroutines.launch
 data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
 @Composable
-fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit, modifier: Modifier = Modifier, attachments: List<ChatImageAttachment> = emptyList(), onAttach: () -> Unit = {}, onRemoveAttachment: (Int) -> Unit = {}, onReplaceAttachment: (Int) -> Unit = {}, onCaptionAttachment: (Int, String) -> Unit = { _, _ -> }, onClear: () -> Unit, onSubmit: (String) -> Unit, onReturn: () -> Unit, onClose: () -> Unit) {
+fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit, modifier: Modifier = Modifier, attachments: List<ChatImageAttachment> = emptyList(), onAttach: () -> Unit = {}, onRemoveAttachment: (Int) -> Unit = {}, onReplaceAttachment: (Int) -> Unit = {}, onCaptionAttachment: (Int, String) -> Unit = { _, _ -> }, visibleTerminalLines: () -> List<String> = { emptyList() }, speechEnhancementClient: SpeechEnhancementClient? = null, onClear: () -> Unit, onSubmit: (String) -> Unit, onReturn: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val speechAudioCapture = remember(context) { SpeechAudioCapture(context) }
+    val speechSettings = remember(context) { SpeechSettingsStore.values(context) }
+    val speechAudioCapture = remember(context, speechSettings.vadSensitivity) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
+    val speechTranscriber = remember(context) { LiteRtParakeetTranscriber(ParakeetModelCache(context), ParakeetTokenizerCache(context)) }
+    val speechPromptRenderer = remember { SpeechEnhancementPromptRenderer() }
     var dictating by remember { mutableStateOf(false) }
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
     var dictationTranscript by remember { mutableStateOf("") }
     var dictationMeter by remember { mutableStateOf(0f) }
+    var dictationAudioFrames by remember { mutableStateOf<List<FloatArray>>(emptyList()) }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -107,19 +111,69 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictationMeter = 0f
         scope.launch { speechAudioCapture.stop() }
     }
+    fun submitDictationTranscript() {
+        val mergedDraft = mergeSpeechTranscriptIntoDraft(text, dictationTranscript)
+        if (mergedDraft.isNotBlank()) onSubmit(mergedDraft)
+        onTextChanged("")
+        stopDictationCapture()
+        dictating = false
+        dictationState = SpeechDictationDisplayState.IDLE
+        dictationTranscript = ""
+        dictationAudioFrames = emptyList()
+    }
+    fun enhanceTranscript(transcript: String) {
+        if (!speechSettings.enhancementEnabled || speechEnhancementClient == null || transcript.isBlank()) {
+            dictationState = SpeechDictationDisplayState.TRANSCRIPT_READY
+            return
+        }
+        dictationState = SpeechDictationDisplayState.ENHANCING_COLLAPSED
+        scope.launch {
+            val prompt = speechSettings.resolvedPrompt(SpeechSettingsStore.defaultPrompt(context))
+            val contextLines = if (speechSettings.includeVisibleTerminalContext) visibleTerminalLines() else emptyList()
+            val request = speechPromptRenderer.render(prompt, transcript, contextLines)
+            val result = SpeechEnhancer(speechEnhancementClient).enhanceOrRaw(request)
+            dictationTranscript = result.text
+            dictationState = if (result.enhanced) SpeechDictationDisplayState.ENHANCED_READY else SpeechDictationDisplayState.TRANSCRIPT_READY
+        }
+    }
+    fun transcribeDictationAudio(frames: List<FloatArray> = dictationAudioFrames) {
+        val samples = frames.flattenToFloatArray()
+        if (!speechSettings.localTranscriptionEnabled || samples.isEmpty()) {
+            dictationTranscript = "Speech transcription unavailable."
+            dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+            return
+        }
+        scope.launch {
+            val result = speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate)
+            result.fold(
+                onSuccess = {
+                    dictationTranscript = it.text
+                    enhanceTranscript(it.text)
+                },
+                onFailure = {
+                    dictationTranscript = "Speech transcription unavailable."
+                    dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+                },
+            )
+        }
+    }
     fun startDictationCapture() {
         dictationState = SpeechDictationDisplayState.RECORDING_EMPTY
         dictationTranscript = ""
         dictationMeter = 0f
+        dictationAudioFrames = emptyList()
         dictating = true
         speechAudioCapture.start(
             onFrame = { frame ->
                 scope.launch {
+                    val updatedFrames = dictationAudioFrames + frame.samples.copyOf()
+                    dictationAudioFrames = updatedFrames
                     dictationMeter = frame.meter
                     if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
                     if (frame.finalized && dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
                         dictationState = SpeechDictationDisplayState.TRANSCRIBING
                         stopDictationCapture()
+                        transcribeDictationAudio(updatedFrames)
                     }
                 }
             },
@@ -146,7 +200,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             dictating = true
         }
     }
-    DisposableEffect(Unit) { onDispose { speechAudioCapture.stopAsync() } }
+    DisposableEffect(Unit) { onDispose { speechAudioCapture.stopAsync(); speechTranscriber.close() } }
     if (dictating) {
         DictationInputSurface(
             tokens = tokens,
@@ -161,20 +215,18 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     SpeechDictationAction.DETECT_SPEECH -> dictationTranscript = SpeechDictationUxContract.fixtures.partialTranscript
                     SpeechDictationAction.COMPLETE_TRANSCRIPTION -> dictationTranscript = SpeechDictationUxContract.fixtures.finalTranscript
                     SpeechDictationAction.COMPLETE_ENHANCEMENT -> dictationTranscript = SpeechDictationUxContract.fixtures.enhancedTranscript
-                    SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> {
-                        onTextChanged(mergeSpeechTranscriptIntoDraft(text, dictationTranscript))
-                        stopDictationCapture()
-                        dictating = false
-                        dictationState = SpeechDictationDisplayState.IDLE
-                        dictationTranscript = ""
-                    }
+                    SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> submitDictationTranscript()
                     SpeechDictationAction.CANCEL, SpeechDictationAction.RESET -> {
                         stopDictationCapture()
                         dictating = false
                         dictationState = SpeechDictationDisplayState.IDLE
                         dictationTranscript = ""
+                        dictationAudioFrames = emptyList()
                     }
-                    SpeechDictationAction.STOP_RECORDING -> stopDictationCapture()
+                    SpeechDictationAction.STOP_RECORDING -> {
+                        stopDictationCapture()
+                        transcribeDictationAudio()
+                    }
                     else -> Unit
                 }
             },
@@ -222,6 +274,28 @@ fun mergeSpeechTranscriptIntoDraft(draft: String, transcript: String): String {
     if (draft.isBlank()) return cleanTranscript
     val separator = if (draft.endsWith("\n") || draft.endsWith(" ")) "" else " "
     return draft + separator + cleanTranscript
+}
+
+private fun SpeechSettingsValues.toAudioCaptureConfig(): SpeechAudioCaptureConfig {
+    val threshold = when (vadSensitivity.coerceIn(0, 4)) {
+        0 -> 0.024f
+        1 -> 0.018f
+        2 -> 0.012f
+        3 -> 0.008f
+        else -> 0.005f
+    }
+    return SpeechAudioCaptureConfig(silenceThreshold = threshold)
+}
+
+private fun List<FloatArray>.flattenToFloatArray(): FloatArray {
+    val totalSize = sumOf { it.size }
+    val samples = FloatArray(totalSize)
+    var offset = 0
+    forEach { frame ->
+        frame.copyInto(samples, offset)
+        offset += frame.size
+    }
+    return samples
 }
 
 @Composable

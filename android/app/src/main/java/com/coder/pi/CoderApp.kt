@@ -1604,6 +1604,7 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             onRemoveAttachment = { index -> chatAttachments = chatAttachments.filterIndexed { currentIndex, _ -> currentIndex != index } },
             onReplaceAttachment = { index -> replacingAttachmentIndex = index; imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             onCaptionAttachment = { index, caption -> chatAttachments = chatAttachments.mapIndexed { currentIndex, attachment -> if (currentIndex == index) attachment.copy(caption = caption) else attachment } },
+            visibleTerminalLines = { terminalView.snapshotText() },
             onClear = { chatDraft = ""; chatAttachments = emptyList() },
             onSubmit = {
                 terminalView.sendText(it)

@@ -12,6 +12,7 @@ import type { CoreUIState } from "./types.js";
 
 const FOOTER_SIDE_PADDING = 1;
 const FOOTER_TOP_PADDING = 1;
+const TPS_MIN_WIDTH = 96;
 
 type Theme = ExtensionContext["ui"]["theme"];
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -52,7 +53,7 @@ export function bindCoreUI(
           const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
           const leftBottom = appendGoalRuntimeStatus(
             theme,
-            buildTPSStatus(theme, state),
+            buildTPSStatus(theme, state, width),
             footerData.getExtensionStatuses().get(GOAL_STATUS_KEY),
           );
           const rightTop = buildModelStatus(
@@ -86,8 +87,8 @@ export function bindCoreUI(
   });
 }
 
-function buildTPSStatus(theme: Theme, state: CoreUIState): string {
-  if (!state.tpsVisible || !state.tps) {
+export function buildTPSStatus(theme: Theme, state: CoreUIState, width: number): string {
+  if (!state.tpsVisible || !state.tps || width < TPS_MIN_WIDTH) {
     return "";
   }
 
@@ -277,7 +278,7 @@ function formatTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
-function composeFooterLine(left: string, right: string, width: number): string {
+export function composeFooterLine(left: string, right: string, width: number): string {
   if (width <= 0) {
     return "";
   }

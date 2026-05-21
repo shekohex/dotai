@@ -182,6 +182,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
 
     override suspend fun transcribe(samples: FloatArray, sampleRate: Int, onEvent: (SpeechTranscriberEvent) -> Unit): Result<SpeechTranscriptResult> {
         if (!modelCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
+        if (tokenizerCache?.isReady() == false) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
         return runCatching {
             val startedAt = System.currentTimeMillis()
             ensureWarmModel()
@@ -191,7 +192,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             inputs[0].writeFloat(featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements))
             model.run(inputs, outputs, ENCODE_SIGNATURE)
             val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map { it.first }.filter { it != END_OF_SEQUENCE }.toList()
-            val tokenizer = tokenizerCache?.tokenizerFile?.takeIf { it.isFile }?.readText()?.let(ParakeetTokenizer::fromTokenizerJson) ?: ParakeetTokenizer(emptyMap())
+            val tokenizer = tokenizerCache?.tokenizerFile?.readText()?.let(ParakeetTokenizer::fromTokenizerJson) ?: ParakeetTokenizer(emptyMap())
             SpeechTranscriptResult(tokenizer.decode(tokenIds), System.currentTimeMillis() - startedAt)
         }
     }

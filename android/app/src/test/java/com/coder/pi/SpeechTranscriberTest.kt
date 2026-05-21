@@ -95,6 +95,13 @@ class SpeechTranscriberTest {
     }
 
     @Test
+    fun tokenizerExposesEmptyVocabularyForInvalidCacheDetection() {
+        val tokenizer = ParakeetTokenizer.fromTokenizerJson("{}")
+
+        assertEquals(0, tokenizer.vocabularySize)
+    }
+
+    @Test
     fun tdtGreedyDecoderSkipsBlankToken() {
         val decoded = TdtGreedyDecoder.decode(
             listOf(

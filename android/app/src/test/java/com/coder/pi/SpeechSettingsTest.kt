@@ -33,6 +33,13 @@ class SpeechSettingsTest {
     }
 
     @Test
+    fun vadSensitivityMapsToCaptureThresholds() {
+        assertEquals(0.024f, SpeechSettingsValues(vadSensitivity = 0).toAudioCaptureConfig().silenceThreshold)
+        assertEquals(0.012f, SpeechSettingsValues(vadSensitivity = 2).toAudioCaptureConfig().silenceThreshold)
+        assertEquals(0.005f, SpeechSettingsValues(vadSensitivity = 4).toAudioCaptureConfig().silenceThreshold)
+    }
+
+    @Test
     fun bundledPromptContainsTranscriptAndContextPlaceholders() {
         val promptFile = listOf(
             File("src/main/res/raw/speech_enhancement_prompt.txt"),

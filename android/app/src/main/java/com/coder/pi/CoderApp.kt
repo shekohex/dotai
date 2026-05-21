@@ -2736,10 +2736,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
             }
         }
         SettingsSection("ENHANCEMENT", tokens) {
-            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", speechSettings.enhancementEnabled, tokens) {
-                SpeechSettingsStore.setEnhancementEnabled(context, it)
-                speechSettings = SpeechSettingsStore.values(context)
-            }
+            SettingsValueRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", "Provider integration unavailable", "Off", tokens) {}
             SettingsToggleRow(R.drawable.ic_feather_terminal, "Visible Context Only", speechSettings.includeVisibleTerminalContext, tokens) {
                 SpeechSettingsStore.setIncludeVisibleTerminalContext(context, it)
                 speechSettings = SpeechSettingsStore.values(context)

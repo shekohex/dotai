@@ -276,7 +276,7 @@ fun mergeSpeechTranscriptIntoDraft(draft: String, transcript: String): String {
     return draft + separator + cleanTranscript
 }
 
-private fun SpeechSettingsValues.toAudioCaptureConfig(): SpeechAudioCaptureConfig {
+internal fun SpeechSettingsValues.toAudioCaptureConfig(): SpeechAudioCaptureConfig {
     val threshold = when (vadSensitivity.coerceIn(0, 4)) {
         0 -> 0.024f
         1 -> 0.018f

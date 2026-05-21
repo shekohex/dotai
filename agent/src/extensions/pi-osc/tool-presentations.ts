@@ -71,6 +71,16 @@ type ToolArgs = Static<typeof ToolArgsSchema>;
 type ToolResultObject = Static<typeof ToolResultObjectSchema>;
 type InterviewToolUpdate = Static<typeof InterviewToolUpdateSchema>;
 type ToolProgressText = { running: string; complete: string };
+type BashActivity = "bash" | "git" | "reading" | "searching";
+export type ToolTitleActivity =
+  | "bash"
+  | "editing"
+  | "git"
+  | "reading"
+  | "searching"
+  | "web"
+  | "subagent"
+  | "running";
 
 const basename = (value: string): string => {
   const normalized = value.replaceAll("\\", "/");
@@ -122,6 +132,16 @@ const gitSubcommand = (command: string | undefined): string | undefined =>
     ?.trim()
     .match(/^git\s+([a-z][a-z-]*)\b/iu)?.[1]
     ?.toLowerCase();
+
+const bashActivity = (args: ToolArgs | undefined): BashActivity => {
+  const command = args?.command;
+  const executable = firstShellCommand(command);
+  if (executable === "git") return "git";
+  if (executable !== undefined && BASH_READ_COMMANDS.has(executable)) return "reading";
+  if (executable !== undefined && BASH_SEARCH_COMMANDS.has(executable)) return "searching";
+  if (executable !== undefined && BASH_EXPLORE_COMMANDS.has(executable)) return "searching";
+  return "bash";
+};
 
 const bashProgress = (args: ToolArgs | undefined): ToolProgressText => {
   const command = args?.command;
@@ -205,6 +225,22 @@ export const toolLabel = (toolName: string, args: unknown): string | undefined =
   if (TOOL_DISCOVER.has(lowerName)) return "Finding files";
   if (TOOL_LIST.has(lowerName)) return "Listing files";
   return toolProgressText(toolName, parsedArgs)?.running;
+};
+
+export const toolTitleActivity = (toolName: string, args: unknown): ToolTitleActivity => {
+  const parsedArgs = parseToolArgs(args);
+  const lowerName = toolName.toLowerCase();
+  if (TOOL_WRITE.has(lowerName) || TOOL_EDIT.has(lowerName) || TOOL_PATCH.has(lowerName)) {
+    return "editing";
+  }
+  if (TOOL_READ.has(lowerName)) return "reading";
+  if (TOOL_SEARCH.has(lowerName) || TOOL_DISCOVER.has(lowerName) || TOOL_LIST.has(lowerName)) {
+    return "searching";
+  }
+  if (TOOL_WEB_SEARCH.has(lowerName) || TOOL_WEB_FETCH.has(lowerName)) return "web";
+  if (lowerName === "subagent") return "subagent";
+  if (TOOL_BASH.has(lowerName)) return bashActivity(parsedArgs);
+  return "running";
 };
 
 export const toolSummary = (

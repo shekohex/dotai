@@ -33,6 +33,7 @@ const createPi = () => {
     on: (eventName: string, handler: Handler) => {
       handlers.set(eventName, handler);
     },
+    getSessionName: () => undefined,
     emit: (eventName: string, event: Record<string, unknown>, ctx = createContext()) => {
       const handler = handlers.get(eventName);
       if (handler === undefined) {
@@ -45,6 +46,10 @@ const createPi = () => {
 
 const createContext = () => ({
   cwd: "/workspace",
+  hasUI: true,
+  ui: {
+    setTitle: vi.fn(),
+  },
   sessionManager: {
     getSessionId: () => "session-1",
   },
@@ -72,6 +77,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   if (originalTmux === undefined) delete process.env.TMUX;
   else process.env.TMUX = originalTmux;
@@ -101,6 +107,100 @@ test("session_start emits hello and session events to stdout", () => {
   expect(session.envelope.data).toEqual({ state: "started", reason: "startup" });
 });
 
+test("agent lifecycle animates terminal title spinner", () => {
+  vi.useFakeTimers();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContext();
+
+  pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  vi.advanceTimersByTime(100);
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-read",
+      toolName: "read",
+      input: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_execution_start",
+    {
+      type: "tool_execution_start",
+      toolCallId: "tool-read",
+      toolName: "read",
+      args: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  vi.advanceTimersByTime(100);
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-edit",
+      toolName: "edit",
+      input: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_execution_start",
+    {
+      type: "tool_execution_start",
+      toolCallId: "tool-edit",
+      toolName: "edit",
+      args: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-bash",
+      toolName: "bash",
+      input: { command: "npm test" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-git",
+      toolName: "bash",
+      input: { command: "git commit -m fix" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_execution_start",
+    {
+      type: "tool_execution_start",
+      toolCallId: "tool-bash",
+      toolName: "bash",
+      args: { command: "npm test" },
+    },
+    ctx,
+  );
+  pi.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+  expect(ctx.ui.setTitle).toHaveBeenNthCalledWith(1, "π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenNthCalledWith(2, "π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenNthCalledWith(3, "· π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenNthCalledWith(4, "✻ π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("⣾ π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("⠋ π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("- π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("✶ π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("π - workspace");
+});
+
 test("lifecycle events emit every V1 event", () => {
   const pi = createPi();
   const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
@@ -111,11 +211,11 @@ test("lifecycle events emit every V1 event", () => {
   pi.emit("session_start", { type: "session_start", reason: "startup" });
   pi.emit("agent_start", { type: "agent_start" });
   pi.emit("turn_start", { type: "turn_start", turnIndex: 2, timestamp: 1 });
-  pi.emit("tool_execution_start", {
-    type: "tool_execution_start",
+  pi.emit("tool_call", {
+    type: "tool_call",
     toolCallId: "tool-1",
     toolName: "bash",
-    args: { command: "secret" },
+    input: { command: "secret" },
   });
   pi.emit("tool_execution_end", {
     type: "tool_execution_end",
@@ -171,11 +271,11 @@ test.each([
   vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
   piOscExtension(pi);
 
-  pi.emit("tool_execution_start", {
-    type: "tool_execution_start",
+  pi.emit("tool_call", {
+    type: "tool_call",
     toolCallId: "tool-bash",
     toolName: "bash",
-    args: { command, description: "contains secret" },
+    input: { command, description: "contains secret" },
   });
   pi.emit("tool_execution_end", {
     type: "tool_execution_end",
@@ -210,11 +310,11 @@ test.each([
   vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
   piOscExtension(pi);
 
-  pi.emit("tool_execution_start", {
-    type: "tool_execution_start",
+  pi.emit("tool_call", {
+    type: "tool_call",
     toolCallId: "tool-1",
     toolName,
-    args: {},
+    input: {},
   });
   pi.emit("tool_execution_end", {
     type: "tool_execution_end",
@@ -237,11 +337,11 @@ test("tool progress includes safe file labels and summaries", () => {
   vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
   piOscExtension(pi);
 
-  pi.emit("tool_execution_start", {
-    type: "tool_execution_start",
+  pi.emit("tool_call", {
+    type: "tool_call",
     toolCallId: "tool-read",
     toolName: "read",
-    args: { file_path: "/workspace/src/foo.ts" },
+    input: { file_path: "/workspace/src/foo.ts" },
   });
   pi.emit("tool_execution_end", {
     type: "tool_execution_end",
@@ -264,24 +364,88 @@ test("tool progress includes safe file labels and summaries", () => {
   });
 });
 
-test("tool completion carries cached safe label from matching tool call id", () => {
+test("tool execution start does not duplicate pre-execution tool call event", () => {
   const pi = createPi();
   const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
   vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
   piOscExtension(pi);
 
-  pi.emit("tool_execution_start", {
-    type: "tool_execution_start",
-    toolCallId: "tool-a",
-    toolName: "read",
-    args: { file_path: "/workspace/a.ts" },
+  pi.emit("tool_call", {
+    type: "tool_call",
+    toolCallId: "tool-1",
+    toolName: "edit",
+    input: { file_path: "/workspace/src/foo.ts" },
   });
   pi.emit("tool_execution_start", {
     type: "tool_execution_start",
+    toolCallId: "tool-1",
+    toolName: "edit",
+    args: { file_path: "/workspace/src/foo.ts" },
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded).toHaveLength(1);
+  expect(decoded[0]?.envelope.data).toMatchObject({
+    state: "running",
+    label: "Editing foo.ts",
+  });
+});
+
+test("tool completion clears tool-specific title activity", () => {
+  vi.useFakeTimers();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+  const ctx = createContext();
+
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-1",
+      toolName: "edit",
+      input: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_execution_end",
+    {
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      toolName: "edit",
+      result: "ok",
+      isError: false,
+    },
+    ctx,
+  );
+
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("⠋ π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("· π - workspace");
+});
+
+test("tool completion carries cached safe label from matching pre-execution tool call id", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("tool_call", {
+    type: "tool_call",
+    toolCallId: "tool-a",
+    toolName: "read",
+    input: { file_path: "/workspace/a.ts" },
+  });
+  pi.emit("tool_call", {
+    type: "tool_call",
     toolCallId: "tool-b",
     toolName: "read",
-    args: { file_path: "/workspace/b.ts" },
+    input: { file_path: "/workspace/b.ts" },
   });
   pi.emit("tool_execution_end", {
     type: "tool_execution_end",
@@ -307,15 +471,53 @@ test("message updates emit debounced thinking progress", () => {
   vi.spyOn(piOscRuntime, "now").mockImplementation(() => timestamps.shift() ?? 2_000);
   piOscExtension(pi);
 
-  pi.emit("message_update", { type: "message_update", message: {}, assistantMessageEvent: {} });
-  pi.emit("message_update", { type: "message_update", message: {}, assistantMessageEvent: {} });
-  pi.emit("message_update", { type: "message_update", message: {}, assistantMessageEvent: {} });
+  pi.emit("message_update", {
+    type: "message_update",
+    message: {},
+    assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "a", partial: {} },
+  });
+  pi.emit("message_update", {
+    type: "message_update",
+    message: {},
+    assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "b", partial: {} },
+  });
+  pi.emit("message_update", {
+    type: "message_update",
+    message: {},
+    assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "c", partial: {} },
+  });
 
   const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
   expect(decoded).toHaveLength(2);
   expect(decoded.map((item) => item.envelope.data)).toEqual([
     { state: "active", label: "Thinking" },
     { state: "active", label: "Thinking" },
+  ]);
+});
+
+test("message updates classify text and toolcall progress from metadata", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  const timestamps = [1_000, 2_000];
+  vi.spyOn(piOscRuntime, "now").mockImplementation(() => timestamps.shift() ?? 2_000);
+  piOscExtension(pi);
+
+  pi.emit("message_update", {
+    type: "message_update",
+    message: {},
+    assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hello", partial: {} },
+  });
+  pi.emit("message_update", {
+    type: "message_update",
+    message: {},
+    assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: "{}", partial: {} },
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded.map((item) => item.envelope.data)).toEqual([
+    { state: "active", label: "Writing" },
+    { state: "active", label: "Preparing tool" },
   ]);
 });
 
@@ -378,11 +580,11 @@ test("tool fields are bounded before emission", () => {
   vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
   piOscExtension(pi);
 
-  pi.emit("tool_execution_start", {
-    type: "tool_execution_start",
+  pi.emit("tool_call", {
+    type: "tool_call",
     toolCallId: "i".repeat(200),
     toolName: "n".repeat(200),
-    args: {},
+    input: {},
   });
 
   const decoded = decodeSequence(stdoutSpy.mock.calls[0]?.[0] ?? "");

@@ -609,11 +609,13 @@ Commit:
 
 ## ASTT-9: Integrate Terminal Send Behavior
 
-Status: not-started
+Status: review
 
 Research:
 
 - Existing chat submit sends `terminalView.sendText(it)` and then Enter when `chatAutoSendEnabled()` is true.
+- `ChatInputBar` accepted dictation now uses `mergeSpeechTranscriptIntoDraft(text, dictationTranscript)` so accepted speech enters existing `chatDraft` and existing submit path remains the only terminal send path.
+- Cancel/reset path still clears only dictation-local state and never calls `onTextChanged`.
 
 Plan:
 
@@ -622,11 +624,11 @@ Plan:
 
 Checklist:
 
-- [ ] Insert accepted transcript into `chatDraft`.
-- [ ] Respect existing Auto Send setting.
-- [ ] Preserve multiline/list formatting.
-- [ ] Restore keyboard/focus after dictation closes.
-- [ ] Ensure cancel does not alter draft unless user accepted text.
+- [x] Insert accepted transcript into `chatDraft`.
+- [x] Respect existing Auto Send setting.
+- [x] Preserve multiline/list formatting.
+- [x] Restore keyboard/focus after dictation closes.
+- [x] Ensure cancel does not alter draft unless user accepted text.
 
 User story:
 
@@ -645,14 +647,17 @@ Acceptance criteria:
 Validation:
 
 - Focused unit/manual tests.
+- `./gradlew testDebugUnitTest --tests '*SpeechChatDraftTest*' --no-daemon` passed, `BUILD SUCCESSFUL in 11s`.
+- Manual paste-only/paste+Enter smoke blocked: no connected/running device.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: keyboard/focus restoration is inferred from keeping `ChatInputBar` open after accept; not device-verified.
 
 Commit:
 
-- TBD.
+- Implementation: TBD.
 
 ## ASTT-10: Final Privacy, Reliability, And Release Audit
 

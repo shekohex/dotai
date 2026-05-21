@@ -104,7 +104,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     SpeechDictationAction.COMPLETE_TRANSCRIPTION -> dictationTranscript = SpeechDictationUxContract.fixtures.finalTranscript
                     SpeechDictationAction.COMPLETE_ENHANCEMENT -> dictationTranscript = SpeechDictationUxContract.fixtures.enhancedTranscript
                     SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> {
-                        onTextChanged(dictationTranscript)
+                        onTextChanged(mergeSpeechTranscriptIntoDraft(text, dictationTranscript))
                         dictating = false
                         dictationState = SpeechDictationDisplayState.IDLE
                         dictationTranscript = ""
@@ -150,6 +150,14 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             AttachmentDetailsDialog(attachment, tokens, { selectedAttachmentIndex = null }, { onRemoveAttachment(index); selectedAttachmentIndex = null }, { onReplaceAttachment(index); selectedAttachmentIndex = null }) { onCaptionAttachment(index, it) }
         } ?: run { selectedAttachmentIndex = null }
     }
+}
+
+fun mergeSpeechTranscriptIntoDraft(draft: String, transcript: String): String {
+    val cleanTranscript = transcript.trim()
+    if (cleanTranscript.isBlank()) return draft
+    if (draft.isBlank()) return cleanTranscript
+    val separator = if (draft.endsWith("\n") || draft.endsWith(" ")) "" else " "
+    return draft + separator + cleanTranscript
 }
 
 @Composable

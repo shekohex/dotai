@@ -346,6 +346,7 @@ Validation:
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14`, `1/1` tests passed, `BUILD SUCCESSFUL in 57s`.
 - Debug speech layout proof: `build/validation/speech/debug-speech-layout.json`.
 - Debug speech screenshot proof: `build/validation/speech/debug-speech.png`.
+- After mic capture UI wiring, rerunning `SpeechDebugWorkflowInstrumentedTest` exposed a flaky/failing debug action tap path (`Speech-detected state missing` / `Transcribing state missing`). Core unit/build validation still passes; UI journey needs stabilization before ASTT-4 can be marked `done`.
 
 Review:
 
@@ -469,6 +470,8 @@ Validation:
 - Device mic smoke blocked: `adb devices` shows no connected/running devices.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 21s`.
 - `./gradlew assembleDebug --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 11s`.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after reverting flaky debug-rail test changes, `BUILD SUCCESSFUL in 17s`.
+- `./gradlew assembleDebug --no-daemon` passed after reverting flaky debug-rail test changes, `BUILD SUCCESSFUL in 10s`.
 
 Review:
 

@@ -483,12 +483,15 @@ private fun DictationPrimaryAction(displayState: SpeechDictationDisplayState, co
 @Composable
 private fun DictationSecondaryActions(displayState: SpeechDictationDisplayState, contract: SpeechDictationStateContract, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (SpeechDictationAction.STOP_RECORDING in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Stop", tokens) { onAction(SpeechDictationAction.STOP_RECORDING) }
         if (SpeechDictationAction.DETECT_SPEECH in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Add speech", tokens) { onAction(SpeechDictationAction.DETECT_SPEECH) }
+        if (SpeechDictationAction.COMPLETE_TRANSCRIPTION in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Transcript", tokens) { onAction(SpeechDictationAction.COMPLETE_TRANSCRIPTION) }
         if (SpeechDictationAction.START_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Enhance", tokens) { onAction(SpeechDictationAction.START_ENHANCEMENT) }
         if (SpeechDictationAction.TIME_OUT_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Timeout", tokens) { onAction(SpeechDictationAction.TIME_OUT_ENHANCEMENT) }
         if (SpeechDictationAction.FAIL_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Fail", tokens) { onAction(SpeechDictationAction.FAIL_ENHANCEMENT) }
         if (SpeechDictationAction.COMPLETE_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Done", tokens) { onAction(SpeechDictationAction.COMPLETE_ENHANCEMENT) }
         Spacer(Modifier.weight(1f))
+        if (contract.canSendEnhanced) DictationTextAction("Send enhanced", tokens) { onAction(SpeechDictationAction.SEND_ENHANCED) }
         if (contract.canSendRaw && displayState != SpeechDictationDisplayState.TRANSCRIPT_READY) DictationTextAction("Send as-is", tokens) { onAction(SpeechDictationAction.SEND_RAW) }
         if (contract.canCancel) DictationTextAction("Cancel", tokens) { onAction(SpeechDictationAction.CANCEL) }
     }

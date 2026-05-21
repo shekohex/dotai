@@ -102,6 +102,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.KeyEventType
@@ -124,6 +125,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -2681,16 +2683,73 @@ private fun ChatModeSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
 
 @Composable
 private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
+    var promptDialogOpen by remember { mutableStateOf(false) }
+    val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
+            SettingsToggleRow(R.drawable.ic_feather_shield, "Local LiteRT Parakeet", speechSettings.localTranscriptionEnabled, tokens) {
+                SpeechSettingsStore.setLocalTranscriptionEnabled(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", "Parakeet model is not downloaded", "Download", tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Model Cache", "No cached model to delete", null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_sliders, "VAD Sensitivity", speechSettings.vadSensitivityLabel(), "+", tokens) {
+                SpeechSettingsStore.setVadSensitivity(context, speechSettings.vadSensitivity + 1)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
         }
-        SettingsSection("BEHAVIOR", tokens) {
+        SettingsSection("ENHANCEMENT", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", speechSettings.enhancementEnabled, tokens) {
+                SpeechSettingsStore.setEnhancementEnabled(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_terminal, "Visible Context Only", speechSettings.includeVisibleTerminalContext, tokens) {
+                SpeechSettingsStore.setIncludeVisibleTerminalContext(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsValueRow(R.drawable.ic_feather_edit_3, "Prompt Override", if (speechSettings.promptOverride.isBlank()) "Using bundled default prompt" else "Custom prompt set", "Edit", tokens) { promptDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Target", "Send dictated text to active terminal", null, tokens) {}
-            SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "No token or terminal data is logged by this app", null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "Transcription stays on device. Enhancement may send transcript and visible context to your AI provider.", null, tokens) {}
         }
-        item { Text("Speech recognition provider integration is not enabled yet. These settings control the existing chat input surface and how submitted text is sent to the terminal.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+        item { Text("Audio transcription is local-only through LiteRT Parakeet. Terminal context is bounded to visible terminal text when enabled.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
     }
+    if (promptDialogOpen) SpeechPromptOverrideDialog(tokens, speechSettings.promptOverride.ifBlank { defaultPrompt }, { promptDialogOpen = false }) {
+        SpeechSettingsStore.setPromptOverride(context, it)
+        speechSettings = SpeechSettingsStore.values(context)
+        promptDialogOpen = false
+    }
+}
+
+private fun SpeechSettingsValues.vadSensitivityLabel(): String = when (vadSensitivity.coerceIn(0, 4)) {
+    0 -> "Very low"
+    1 -> "Low"
+    2 -> "Normal"
+    3 -> "High"
+    else -> "Very high"
+}
+
+@Composable
+private fun SpeechPromptOverrideDialog(tokens: UiTokens, initialPrompt: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var prompt by remember { mutableStateOf(initialPrompt) }
+    ThemedAlertDialog(
+        onDismissRequest = onDismiss,
+        tokens = tokens,
+        title = { Text("Enhancement Prompt") },
+        text = {
+            BasicTextField(
+                value = prompt,
+                onValueChange = { prompt = it.take(8_000) },
+                textStyle = TextStyle(color = tokens.text, fontSize = captionSize(), fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(tokens.accent),
+                modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)).background(tokens.surfaceHigh).padding(12.dp),
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(prompt) }) { Text("Save", color = tokens.accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = tokens.text) } },
+    )
 }
 
 @Composable

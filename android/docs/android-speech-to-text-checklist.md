@@ -350,12 +350,15 @@ Commit:
 
 ## ASTT-5: Define Speech Architecture And Settings
 
-Status: not-started
+Status: review
 
 Research:
 
 - `SpeechSettingsScreen` currently says speech provider integration is not enabled.
 - Chat Mode settings already have `Enable Chat Mode` and `Auto Send` toggles.
+- Added `SpeechSettingsStore` with SharedPreferences-backed local LiteRT Parakeet, enhancement, visible-context, VAD sensitivity, and prompt override settings.
+- Added bundled raw prompt at `app/src/main/res/raw/speech_enhancement_prompt.txt` with `<TRANSCRIPT>` and `<CONTEXT>` placeholders.
+- Updated `SpeechSettingsScreen` with local transcription, model cache placeholder controls, enhancement toggle, visible-context copy, VAD sensitivity, and editable prompt override dialog.
 
 Plan:
 
@@ -364,12 +367,12 @@ Plan:
 
 Checklist:
 
-- [ ] Add local STT settings scoped to LiteRT Parakeet.
-- [ ] Add model cache status, download, and delete controls.
-- [ ] Add enhancement toggle and editable prompt override.
-- [ ] Add context inclusion toggle with visible-terminal-only copy.
-- [ ] Add VAD sensitivity setting with sane default.
-- [ ] Add default prompt under `app/src/main/res/raw`.
+- [x] Add local STT settings scoped to LiteRT Parakeet.
+- [x] Add model cache status, download, and delete controls.
+- [x] Add enhancement toggle and editable prompt override.
+- [x] Add context inclusion toggle with visible-terminal-only copy.
+- [x] Add VAD sensitivity setting with sane default.
+- [x] Add default prompt under `app/src/main/res/raw`.
 
 User story:
 
@@ -389,10 +392,13 @@ Validation:
 
 - `./gradlew testDebugUnitTest --no-daemon`
 - `./gradlew compileDebugKotlin --no-daemon`
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 9s`.
+- `./gradlew compileDebugKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 5s`.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: model download/delete controls are UI placeholders until model cache implementation ticket.
 
 Commit:
 

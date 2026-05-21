@@ -341,8 +341,8 @@ Validation:
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon`
 - `android screen capture --device <id> -o <file>` when manual proof is needed.
 - `./gradlew compileDebugAndroidTestKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 8s`.
-- Connected execution blocked: `adb devices` shows no connected/running devices.
-- Screenshot proof blocked until connected execution can run.
+- Initial connected execution was blocked before emulator startup.
+- Emulator connected execution now passes for deterministic preset-state speech journey.
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14`, `1/1` tests passed, `BUILD SUCCESSFUL in 57s`.
 - Debug speech layout proof: `build/validation/speech/debug-speech-layout.json`.
 - Debug speech screenshot proof: `build/validation/speech/debug-speech.png`.
@@ -726,7 +726,7 @@ Validation:
 - `grep -R "Log\\.\\|println\\|printStackTrace\\|Timber\\|transcript\\|prompt\\|context\\|audio\\|Bearer\\|api_key\\|request body\\|response" -n app/src/main/java/com/coder/pi app/src/test/java/com/coder/pi | head -240` reviewed speech matches; no raw speech logging found.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 10s`.
 - `./gradlew assembleDebug --no-daemon` passed, `BUILD SUCCESSFUL in 8s`.
-- Device mic smoke blocked: `adb devices` shows no connected/running devices; `android emulator list` shows `owlchat` available but not running.
+- Device mic smoke on target hardware blocked: no Pixel 7 Pro or Samsung Tab A9 is connected in this session.
 - Emulator UI proof: `android emulator start owlchat` started `emulator-5554`; speech UI Automator journey passed; deep link layout/screenshot captured at `build/validation/speech/`.
 
 Review:

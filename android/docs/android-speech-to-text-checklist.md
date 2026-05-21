@@ -814,6 +814,45 @@ Latest Pixel 7 Pro findings from user testing:
 - Transcription is not real-time yet. Need streaming/background partial transcription while user speaks, using small audio segments and VoiceInk-style rolling segments rather than waiting until stop.
 - Downloader must survive repeated install/uninstall testing. Need support importing model/tokenizer from external storage or developer push path so testing does not require redownloading.
 
+Research:
+
+- VoiceInk streaming path reviewed: `StreamingTranscriptionService.swift`, `FluidAudioStreamingProvider.swift`, `WordAgreementEngine.swift`, `MiniRecorderView.swift`, `RecorderComponents.swift`, `AudioVisualizerView.swift`, and `Recorder.swift`.
+- VoiceInk keeps recording active until explicit user stop, streams partial text into a compact live transcript panel, and treats recent words as mutable hypothesis that later passes can correct.
+- Google LiteRT ASR sample reviewed: `MicrophoneAudioSource.kt`, `MainActivity.kt`, and README. Microphone live recognition uses 5-second windows advanced every 1 second, with early zero padding and overlap merge.
+- Android `DownloadManager` research showed system-managed retries but no app-controlled pause/resume API, so custom HTTP Range/ETag downloader is required for user pause/resume.
+
+Checklist:
+
+- Model download UX must show valid actions only for current state.
+- Model download progress notification must remain visible when paused and expose Resume/Cancel.
+- Downloads must support resumable HTTP Range/ETag, metered pause, retry, cancel, verify, import, and developer restore.
+- Speech transcription must not block UI or stop on silence.
+- Live transcription must use rolling overlapping chunks and mutable transcript hypothesis similar to VoiceInk.
+- Enhancement failures must fail open to raw transcript.
+
+User story:
+
+As a Pixel user testing speech input repeatedly, I want model downloads to survive network/install churn and dictation to behave like VoiceInk: I can talk naturally, see live text update/correct itself, pause speaking without ending recording, then explicitly finish and insert/send text.
+
+Implementation guide:
+
+- Keep audio capture foreground-only and user-controlled.
+- Use 5-second live windows with 1-second advancement for Parakeet, matching LiteRT sample microphone semantics.
+- Treat live chunk text as hypothesis, not final truth; allow later chunks to replace/correct the tail.
+- Serialize LiteRT model access because transcriber buffers are shared.
+- Keep model artifacts out of git and restore through ignored local cache or Android file import.
+
+Acceptance criteria:
+
+- Paused download notification persists and offers valid actions.
+- Model page never shows impossible actions or stale ready/download status.
+- Speed/ETA appear only while running.
+- Reinstall testing can restore model/tokenizer without redownloading.
+- Dictation does not freeze UI during final transcription.
+- Dictation does not stop automatically on silence.
+- Live transcript appears while speaking and can correct recent words from later overlapping chunks.
+- Enhancement crash path fails open to raw transcript.
+
 Local model cache plan:
 
 - Local ignored directory: `android/models/`.

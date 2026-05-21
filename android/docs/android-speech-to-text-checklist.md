@@ -346,7 +346,7 @@ Review:
 
 Commit:
 
-- TBD.
+- Implementation: `86e74ba` (`test(android): add debug speech ui journey`).
 
 ## ASTT-5: Define Speech Architecture And Settings
 

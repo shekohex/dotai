@@ -121,6 +121,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     private var activeProgressIndeterminate = true
     private var activeProgressStatusText: String? = null
     private var piAgentProgressStatusRunnable: Runnable? = null
+    private var piAgentProgressHapticRunnable: Runnable? = null
+    private var piAgentProgressActive = false
     private var activePiAgentProgressStatusText: String? = null
     private var activePiAgentProgressElapsedSeconds: Long? = null
     private var progressStatusIndex = 0
@@ -1399,10 +1401,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             NotificationManagerCompat.from(context).cancel(piAgentProgressNotificationId())
             return
         }
+        piAgentProgressActive = true
         activePiAgentProgressStatusText = progress.body.takeIf { it.isNotBlank() }
         activePiAgentProgressElapsedSeconds = progress.elapsedSeconds
         postPiAgentProgressNotification(currentTerminalTitle(), activePiAgentProgressStatusText ?: nextProgressStatusText(), activePiAgentProgressElapsedSeconds)
         schedulePiAgentProgressStatusUpdate()
+        schedulePiAgentProgressHapticPulse()
     }
 
     private fun currentTerminalTitle(): String = if (handle == 0L) "Terminal" else native.nativeTitle(handle).ifBlank { "Terminal" }.take(128)
@@ -1538,7 +1542,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun stopPiAgentProgressStatusUpdates() {
         piAgentProgressStatusRunnable?.let { removeCallbacks(it) }
+        piAgentProgressHapticRunnable?.let { removeCallbacks(it) }
         piAgentProgressStatusRunnable = null
+        piAgentProgressHapticRunnable = null
+        piAgentProgressActive = false
         activePiAgentProgressStatusText = null
         activePiAgentProgressElapsedSeconds = null
     }
@@ -1553,6 +1560,19 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             scheduleProgressHapticPulse()
         }
         progressHapticRunnable = runnable
+        postDelayed(runnable, 1800L)
+    }
+
+    private fun schedulePiAgentProgressHapticPulse() {
+        piAgentProgressHapticRunnable?.let { removeCallbacks(it) }
+        if (!piAgentProgressActive) return
+        val runnable = Runnable {
+            if (piAgentProgressActive && isShown && hasWindowFocus()) {
+                vibrateProgressPattern(oscProgressHapticPattern())
+            }
+            schedulePiAgentProgressHapticPulse()
+        }
+        piAgentProgressHapticRunnable = runnable
         postDelayed(runnable, 1800L)
     }
 

@@ -45,6 +45,18 @@ class TerminalAgentStateTest {
     }
 
     @Test
+    fun preservesToolLabelAcrossCompletion() {
+        val state = TerminalAgentState()
+
+        state.apply(piEvent("agent.tool", """{"toolCallId":"tool-1","toolName":"read","state":"running","label":"Reading foo.ts"}"""))
+        state.apply(piEvent("agent.tool", """{"toolCallId":"tool-1","toolName":"read","state":"complete","isError":false,"summary":"Read file"}"""))
+
+        val tool = state.snapshot().tools.single()
+        assertEquals("Reading foo.ts", tool.label)
+        assertEquals("Read file", tool.summary)
+    }
+
+    @Test
     fun boundsAlertsAndClearsState() {
         val state = TerminalAgentState(maxAlerts = 2)
 

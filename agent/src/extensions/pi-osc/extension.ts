@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
 import { Value } from "typebox/value";
-import { isRecord, readNumber, readString } from "../../utils/unknown-data.js";
 import { GOAL_PROGRESS_EVENT, GoalProgressEventSchema } from "../goal/types.js";
 import {
   createTmuxPassthroughSequence,
@@ -11,41 +10,21 @@ import {
 } from "../terminal-notify.js";
 import { createPiOscSequence, type PiOscEnvelope, type PiOscV1Event } from "./encoder.js";
 import type { PiOscV1Payload } from "./schemas.js";
+import { interviewDetailsFromResult, toolLabel, toolSummary } from "./tool-presentations.js";
 
 export const piOscRuntime = {
   now: () => Date.now(),
   randomId: () => randomUUID(),
 };
 
+const THINKING_LABEL = "Thinking";
+const THINKING_DEBOUNCE_MS = 750;
+
 const boundedText = (value: string, maxLength: number): string =>
   value.length <= maxLength ? value : value.slice(0, maxLength);
 
-const isHttpUrl = (value: string): boolean =>
-  value.startsWith("http://") || value.startsWith("https://");
-
-const interviewDetailsFromResult = (
-  value: unknown,
-): { url: string; title: string; totalQuestions: number | undefined } | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  const details = value.details;
-  if (!isRecord(details)) {
-    return undefined;
-  }
-  if (readString(details.status) !== "queued") {
-    return undefined;
-  }
-  const url = readString(details.url);
-  if (url === undefined || !isHttpUrl(url)) {
-    return undefined;
-  }
-  return {
-    url: boundedText(url, 2048),
-    title: boundedText(readString(details.title) ?? "Interview", 128),
-    totalQuestions: readNumber(details.totalQuestions),
-  };
-};
+const boundedOptionalText = (value: string | undefined, maxLength: number): string | undefined =>
+  value === undefined ? undefined : boundedText(value, maxLength);
 
 const writePiOscSequence = (sequence: string): void => {
   const paneTty = getTmuxPaneTty();
@@ -105,7 +84,9 @@ export const emitPiOscEvent = (
 export default function piOscExtension(pi: ExtensionAPI): void {
   let seq = 0;
   let goalProgressActive = false;
+  let lastThinkingEmittedAt = 0;
   const notifiedInterviewUrls = new Set<string>();
+  const activeToolArgs = new Map<string, unknown>();
   const emit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload): void => {
     seq += 1;
     emitPiOscEvent(eventName, ctx, seq, data);
@@ -163,20 +144,36 @@ export default function piOscExtension(pi: ExtensionAPI): void {
     emit("agent.turn", ctx, { state: "complete", turnIndex: event.turnIndex });
   });
 
+  pi.on("message_update", (_event, ctx) => {
+    const now = piOscRuntime.now();
+    if (now - lastThinkingEmittedAt < THINKING_DEBOUNCE_MS) {
+      return;
+    }
+    lastThinkingEmittedAt = now;
+    emit("agent.progress", ctx, { state: "active", label: THINKING_LABEL });
+  });
+
   pi.on("tool_execution_start", (event, ctx) => {
+    activeToolArgs.set(event.toolCallId, event.args);
+    const label = boundedOptionalText(toolLabel(event.toolName, event.args), 128);
     emit("agent.tool", ctx, {
       toolCallId: boundedText(event.toolCallId, 128),
       toolName: boundedText(event.toolName, 128),
       state: "running",
+      ...(label === undefined ? {} : { label }),
     });
   });
 
   pi.on("tool_execution_end", (event, ctx) => {
+    const args = activeToolArgs.get(event.toolCallId);
+    activeToolArgs.delete(event.toolCallId);
+    const summary = boundedOptionalText(toolSummary(event.toolName, args, event.result), 512);
     emit("agent.tool", ctx, {
       toolCallId: boundedText(event.toolCallId, 128),
       toolName: boundedText(event.toolName, 128),
       state: "complete",
       isError: event.isError,
+      ...(summary === undefined ? {} : { summary }),
     });
   });
 

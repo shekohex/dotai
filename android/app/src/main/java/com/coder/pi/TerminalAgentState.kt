@@ -56,13 +56,14 @@ class TerminalAgentState(
     }
 
     private fun upsertTool(data: JsonObject, metadata: AgentEventMetadata): List<AgentToolState> {
+        val previous = current.tools.lastOrNull { it.toolCallId == data.stringValue("toolCallId") }
         val next = AgentToolState(
             toolCallId = data.stringValue("toolCallId"),
             toolName = data.stringValue("toolName"),
             state = data.stringValue("state"),
             isError = data["isError"]?.jsonPrimitive?.booleanOrNull ?: false,
-            label = data.optionalStringValue("label"),
-            summary = data.optionalStringValue("summary"),
+            label = data.optionalStringValue("label") ?: previous?.label,
+            summary = data.optionalStringValue("summary") ?: previous?.summary,
             event = metadata,
         )
         return (current.tools.filterNot { it.toolCallId == next.toolCallId } + next).takeLast(maxTools)

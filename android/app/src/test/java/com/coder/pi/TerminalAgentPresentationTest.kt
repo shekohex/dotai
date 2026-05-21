@@ -51,21 +51,32 @@ class TerminalAgentPresentationTest {
     }
 
     @Test
+    fun includesFileNameInGenericCompletionSummaryWhenLabelHasContext() {
+        val snapshot = TerminalAgentStateSnapshot(
+            progress = AgentProgressState("active", null, null, metadata()),
+            tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read file", metadata())),
+        )
+
+        assertEquals(TerminalAgentStatusPresentation("Pi agent", "Read foo.ts"), snapshot.statusPresentation())
+        assertEquals(TerminalAgentProgressPresentation(true, "Read foo.ts"), snapshot.progressPresentation())
+    }
+
+    @Test
     fun ignoresProgressClearWhileAgentRunIsStillActive() {
         val snapshot = TerminalAgentStateSnapshot(
             run = AgentRunState("running", metadata()),
             progress = AgentProgressState("clear", null, null, metadata()),
         )
 
-        assertEquals(TerminalAgentProgressPresentation(true, ""), snapshot.progressPresentation())
+        assertEquals(TerminalAgentProgressPresentation(true, "Thinking"), snapshot.progressPresentation())
     }
 
     @Test
-    fun usesWhimsicalStatusWhenNoSpecificActivityExists() {
+    fun showsThinkingStatusWhenNoSpecificActivityExists() {
         val snapshot = TerminalAgentStateSnapshot(progress = AgentProgressState("active", null, null, metadata()))
 
-        assertEquals(TerminalAgentStatusPresentation("Pi agent", "Combobulating..."), snapshot.statusPresentation())
-        assertEquals(TerminalAgentProgressPresentation(true, ""), snapshot.progressPresentation())
+        assertEquals(TerminalAgentStatusPresentation("Pi agent", "Thinking"), snapshot.statusPresentation())
+        assertEquals(TerminalAgentProgressPresentation(true, "Thinking"), snapshot.progressPresentation())
     }
 
     @Test

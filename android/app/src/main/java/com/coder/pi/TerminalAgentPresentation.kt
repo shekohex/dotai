@@ -4,22 +4,38 @@ data class TerminalAgentStatusPresentation(val title: String, val subtitle: Stri
 data class TerminalAgentNotificationPresentation(val title: String, val body: String, val url: String? = null)
 data class TerminalAgentProgressPresentation(val active: Boolean, val body: String = "", val elapsedSeconds: Long? = null)
 
+private const val AgentTitle = "Pi agent"
+private const val ToolStateRunning = "running"
+private const val ToolStateComplete = "complete"
+private const val ProgressStateActive = "active"
+private const val ProgressStateClear = "clear"
+private const val ThinkingText = "Thinking"
+private const val CompactingText = "Compacting context"
+private val ShellTools = setOf("bash", "shell", "sh", "zsh", "fish")
+private val ReadTools = setOf("read", "open")
+private val SearchTools = setOf("grep", "rg", "find", "glob", "ls")
+private val EditTools = setOf("edit", "write", "apply_patch", "patch")
+private val WebTools = setOf("websearch", "web_search", "firecrawl", "webfetch", "web_fetch")
+private val PlanningTools = setOf("todo", "planner", "plan")
+private val ExternalTools = setOf("execute", "resume")
+
 fun TerminalAgentStateSnapshot.statusPresentation(): TerminalAgentStatusPresentation? {
-    val tool = tools.lastOrNull { it.state == "running" }
-    if (tool != null) return TerminalAgentStatusPresentation("Pi agent", tool.activityText())
-    if (compaction?.state == "preparing") return TerminalAgentStatusPresentation("Pi agent", "Compacting context")
-    progress?.goalActivityText()?.let { return TerminalAgentStatusPresentation("Pi agent", it) }
-    if (progress?.state == "active") return TerminalAgentStatusPresentation("Pi agent", whimsicalAgentStatus())
-    if (turn?.state == "running") return TerminalAgentStatusPresentation("Pi agent", whimsicalAgentStatus())
-    if (run?.state == "running") return TerminalAgentStatusPresentation("Pi agent", whimsicalAgentStatus())
+    val tool = tools.lastOrNull { it.state == ToolStateRunning }
+    if (tool != null) return TerminalAgentStatusPresentation(AgentTitle, tool.activityText())
+    tools.lastOrNull { it.state == ToolStateComplete }?.completionText()?.takeIf { it.isNotBlank() }?.let { return TerminalAgentStatusPresentation(AgentTitle, it) }
+    if (compaction?.state == "preparing") return TerminalAgentStatusPresentation(AgentTitle, CompactingText)
+    progress?.goalActivityText()?.let { return TerminalAgentStatusPresentation(AgentTitle, it) }
+    if (progress?.state == ProgressStateActive) return TerminalAgentStatusPresentation(AgentTitle, ThinkingText)
+    if (turn?.state == ToolStateRunning) return TerminalAgentStatusPresentation(AgentTitle, ThinkingText)
+    if (run?.state == ToolStateRunning) return TerminalAgentStatusPresentation(AgentTitle, ThinkingText)
     return null
 }
 
 fun TerminalAgentStateSnapshot.progressPresentation(): TerminalAgentProgressPresentation? {
     val progressState = when {
-        progress?.state == "active" -> progress.progressPresentation()
-        progress?.state == "clear" && run?.state != "running" -> progress.progressPresentation()
-        run?.state == "running" || turn?.state == "running" -> TerminalAgentProgressPresentation(true)
+        progress?.state == ProgressStateActive -> progress.progressPresentation()
+        progress?.state == ProgressStateClear && run?.state != ToolStateRunning -> progress.progressPresentation()
+        run?.state == ToolStateRunning || turn?.state == ToolStateRunning -> TerminalAgentProgressPresentation(true)
         else -> run?.progressPresentation() ?: return null
     }
     if (!progressState.active) return progressState
@@ -27,13 +43,13 @@ fun TerminalAgentStateSnapshot.progressPresentation(): TerminalAgentProgressPres
 }
 
 fun AgentAlertState.notificationPresentation(): TerminalAgentNotificationPresentation = TerminalAgentNotificationPresentation(
-    title = title.agentDisplayText().ifBlank { "Pi agent" }.take(128),
+    title = title.agentDisplayText().ifBlank { AgentTitle }.take(128),
     body = body.agentDisplayText().ifBlank { kind.agentDisplayText() }.take(512),
     url = url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.take(2048),
 )
 
 fun AgentProgressState.progressPresentation(): TerminalAgentProgressPresentation = when (state) {
-    "active" -> TerminalAgentProgressPresentation(true, elapsedSeconds = elapsedSeconds)
+    ProgressStateActive -> TerminalAgentProgressPresentation(true, elapsedSeconds = elapsedSeconds)
     else -> TerminalAgentProgressPresentation(false)
 }
 
@@ -45,10 +61,13 @@ fun AgentRunState.progressPresentation(): TerminalAgentProgressPresentation? = w
 private fun String.agentDisplayText(): String = TerminalNotificationFormat.cleanText(this).replace(Regex("\\s+"), " ").trim()
 
 private fun TerminalAgentStateSnapshot.progressBody(): String {
-    val tool = tools.lastOrNull { it.state == "running" }
+    val tool = tools.lastOrNull { it.state == ToolStateRunning }
     if (tool != null) return tool.activityText()
-    if (compaction?.state == "preparing") return "Compacting context"
+    tools.lastOrNull { it.state == ToolStateComplete }?.completionText()?.takeIf { it.isNotBlank() }?.let { return it }
+    if (compaction?.state == "preparing") return CompactingText
+    progress?.label?.agentDisplayText()?.takeIf { it.isNotBlank() }?.let { return it }
     progress?.goalActivityText()?.let { return it }
+    if (progress?.state == ProgressStateActive || turn?.state == ToolStateRunning || run?.state == ToolStateRunning) return ThinkingText
     return ""
 }
 
@@ -66,19 +85,42 @@ private fun formatAgentDuration(seconds: Long): String {
     return "${remainingSeconds}s"
 }
 
-private fun TerminalAgentStateSnapshot.whimsicalAgentStatus(): String {
-    val messages = WhimsicalStatusMessages.working
-    val seed = progress?.event?.seq ?: turn?.event?.seq ?: run?.event?.seq ?: 0L
-    return messages[seed.mod(messages.size)]
+private fun AgentToolState.activityText(): String = label?.agentDisplayText()?.ifBlank { null } ?: defaultActivityText()
+
+private fun AgentToolState.completionText(): String = namedSummary() ?: when (toolName.lowercase()) {
+    in ShellTools -> "Shell command finished"
+    in ReadTools -> "Read file"
+    in SearchTools -> "Explored files"
+    in EditTools -> "Updated files"
+    in WebTools -> "Research complete"
+    in ExternalTools -> "External tool finished"
+    "subagent" -> "Subagent task finished"
+    "goal" -> "Goal updated"
+    "interview" -> "Interview ready"
+    else -> toolName.agentDisplayText().ifBlank { "Tool complete" }
 }
 
-private fun AgentToolState.activityText(): String = when (toolName.lowercase()) {
-    "bash", "shell", "sh", "zsh", "fish" -> "Bashing"
-    "read", "open" -> "Reading code"
-    "grep", "rg", "find", "glob", "ls" -> "Exploring code"
-    "edit", "write", "apply_patch", "patch" -> "Editing files"
+private fun AgentToolState.namedSummary(): String? {
+    val cleanSummary = summary?.agentDisplayText()?.ifBlank { null } ?: return null
+    val fileName = label?.agentDisplayText()?.substringAfter(" ", "")?.takeIf { it.isNotBlank() }
+    return when {
+        cleanSummary == "Read file" && fileName != null -> "Read $fileName"
+        cleanSummary == "Wrote file" && fileName != null -> "Wrote $fileName"
+        cleanSummary == "Edited file" && fileName != null -> "Edited $fileName"
+        cleanSummary == "Updated files" && fileName != null -> "Updated $fileName"
+        else -> cleanSummary
+    }
+}
+
+private fun AgentToolState.defaultActivityText(): String = when (toolName.lowercase()) {
+    in ShellTools -> "Bashing"
+    in ReadTools -> "Reading code"
+    in SearchTools -> "Exploring code"
+    in EditTools -> "Editing files"
     "review" -> "Reviewing"
-    "websearch", "web_search", "firecrawl" -> "Researching"
-    "todo", "planner", "plan" -> "Planning"
+    in WebTools -> "Researching"
+    in PlanningTools -> "Planning"
+    in ExternalTools -> "Calling external tool"
+    "subagent" -> "Working with subagent"
     else -> toolName.agentDisplayText().ifBlank { "Vibing" }
 }

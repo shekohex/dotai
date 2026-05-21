@@ -144,8 +144,137 @@ test("lifecycle events emit every V1 event", () => {
     toolCallId: "tool-1",
     toolName: "bash",
     state: "running",
+    label: "Bashing",
   });
   expect(JSON.stringify(decoded)).not.toContain("secret");
+});
+
+test.each([
+  ["rg TODO src", "Searching files", "Search finished"],
+  ["fd kt app/src", "Exploring files", "Exploration finished"],
+  ["find app -name '*.kt'", "Exploring files", "Exploration finished"],
+  ["git commit -m fix", "Committing changes", "Git commit finished"],
+  ["git push origin main", "Pushing changes", "Git push finished"],
+  ["./gradlew assembleRelease", "Building project", "Build finished"],
+  ["npm test", "Running tests", "Tests finished"],
+  ["echo hello", "Bashing", "Shell command finished"],
+])("classifies bash command notifications for %s", (command, label, summary) => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("tool_execution_start", {
+    type: "tool_execution_start",
+    toolCallId: "tool-bash",
+    toolName: "bash",
+    args: { command, description: "contains secret" },
+  });
+  pi.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-bash",
+    toolName: "bash",
+    result: "secret output",
+    isError: false,
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded[0]?.envelope.data).toMatchObject({ label });
+  expect(decoded[1]?.envelope.data).toMatchObject({ summary });
+  expect(JSON.stringify(decoded)).not.toContain("secret");
+});
+
+test.each([
+  ["websearch", "Searching web", "Web search complete"],
+  ["webfetch", "Fetching page", "Fetched page"],
+  ["execute", "Executing tool code", "Tool code finished"],
+  ["resume", "Resuming executor", "Executor resumed"],
+  ["goal", "Updating goal", "Goal updated"],
+  ["interview", "Preparing interview", "Interview ready"],
+  ["subagent", "Working with subagent", "Subagent task finished"],
+  ["notify", "Sending notification", "Notification sent"],
+  ["generate_image", "Generating image", "Image generated"],
+  ["session_query", "Querying session", "Session query finished"],
+  ["submit_plan", "Submitting plan", "Plan submitted"],
+])("classifies built-in tool notifications for %s", (toolName, label, summary) => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("tool_execution_start", {
+    type: "tool_execution_start",
+    toolCallId: "tool-1",
+    toolName,
+    args: {},
+  });
+  pi.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-1",
+    toolName,
+    result: "secret output",
+    isError: false,
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded[0]?.envelope.data).toMatchObject({ label });
+  expect(decoded[1]?.envelope.data).toMatchObject({ summary });
+  expect(JSON.stringify(decoded)).not.toContain("secret");
+});
+
+test("tool progress includes safe file labels and summaries", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("tool_execution_start", {
+    type: "tool_execution_start",
+    toolCallId: "tool-read",
+    toolName: "read",
+    args: { file_path: "/workspace/src/foo.ts" },
+  });
+  pi.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-read",
+    toolName: "read",
+    args: { file_path: "/workspace/src/foo.ts" },
+    result: "one\ntwo\nthree",
+    isError: false,
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded[0]?.envelope.data).toMatchObject({
+    state: "running",
+    label: "Reading foo.ts",
+  });
+  expect(decoded[1]?.envelope.data).toMatchObject({
+    state: "complete",
+    summary: "Read foo.ts (3 lines)",
+  });
+});
+
+test("message updates emit debounced thinking progress", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  const timestamps = [1_000, 1_000, 1_200, 2_000, 2_000];
+  vi.spyOn(piOscRuntime, "now").mockImplementation(() => timestamps.shift() ?? 2_000);
+  piOscExtension(pi);
+
+  pi.emit("message_update", { type: "message_update", message: {}, assistantMessageEvent: {} });
+  pi.emit("message_update", { type: "message_update", message: {}, assistantMessageEvent: {} });
+  pi.emit("message_update", { type: "message_update", message: {}, assistantMessageEvent: {} });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded).toHaveLength(2);
+  expect(decoded.map((item) => item.envelope.data)).toEqual([
+    { state: "active", label: "Thinking" },
+    { state: "active", label: "Thinking" },
+  ]);
 });
 
 test("non-429 provider responses do not emit alerts", () => {

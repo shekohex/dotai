@@ -11,12 +11,22 @@ import { completionUsageReport, formatFooterStatus } from "./format.js";
 import {
   assistantTurnTokens,
   isAbortedAssistantMessage,
-  isToolUseAssistantMessage,
+  isErrorAssistantMessage,
   lastAssistantMessageText,
   type AssistantMessageLike,
 } from "./messages.js";
 import { continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
 import { queuedGoalWorkMessageId, staleGoalContinuationMessage } from "./queued-messages.js";
+import {
+  branchContainsEntry,
+  canResumeFromCompactionAnchor,
+  isCurrentSessionPosition,
+  sessionPosition,
+  type GoalCompactionResumeAnchor,
+  type GoalSessionPosition,
+  type GoalStatusContext,
+  type MaybeContinueOptions,
+} from "./session-position.js";
 import {
   applyUsage,
   clearEntry,
@@ -41,16 +51,11 @@ interface GoalAccountingState {
   lastAccountedAt: number | null;
 }
 
-interface GoalStatusContext {
-  ui: Pick<ExtensionContext["ui"], "setStatus">;
-  cwd: string;
-  sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId">;
-}
-
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
 const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
 const GOAL_TOOL_NAME = "goal";
 const COMPACTION_RESUME_DELAY_MS = 150;
+const POST_AGENT_SETTLE_DELAY_MS = 150;
 
 function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
   const parts = [lastAssistantMessageText(ctx) ?? "Goal complete"];
@@ -68,11 +73,16 @@ class GoalRuntime {
   private toolRegistered = false;
   private toolEnabled = false;
   private isCompacting = false;
+  private continuationBlockedByAssistantError = false;
   private continuationPendingAfterCompaction = false;
   private continuationQueuedFor: string | null = null;
   private continuationScheduledFor: string | null = null;
   private continuationTimer: ReturnType<typeof setTimeout> | null = null;
   private compactionResumeTimer: ReturnType<typeof setTimeout> | null = null;
+  private blockedContinuationPosition: GoalSessionPosition | null = null;
+  private compactionResumeAnchor: GoalCompactionResumeAnchor | null = null;
+  private postAgentSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  private postAgentSettlePosition: GoalSessionPosition | null = null;
   private statusContext: GoalStatusContext | null = null;
   private statusRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private readonly accounting: GoalAccountingState = {
@@ -181,13 +191,46 @@ class GoalRuntime {
       clearTimeout(this.compactionResumeTimer);
       this.compactionResumeTimer = null;
     }
+    this.compactionResumeAnchor = null;
+  }
+
+  private clearPostAgentSettleTimer(): void {
+    if (this.postAgentSettleTimer !== null) {
+      clearTimeout(this.postAgentSettleTimer);
+      this.postAgentSettleTimer = null;
+    }
+    this.postAgentSettlePosition = null;
   }
 
   private clearContinuationState(): void {
     this.clearContinuationTimer();
     this.clearCompactionResumeTimer();
+    this.clearPostAgentSettleTimer();
     this.continuationPendingAfterCompaction = false;
+    this.blockedContinuationPosition = null;
     this.continuationQueuedFor = null;
+  }
+
+  private clearScheduledContinuationAttempts(): void {
+    this.clearContinuationTimer();
+    this.clearCompactionResumeTimer();
+    this.clearPostAgentSettleTimer();
+  }
+
+  private suppressCompactionResumeIfPending(): boolean {
+    if (!this.continuationPendingAfterCompaction && this.compactionResumeTimer === null) {
+      return false;
+    }
+
+    this.clearScheduledContinuationAttempts();
+    this.continuationPendingAfterCompaction = false;
+    this.blockedContinuationPosition = null;
+    return true;
+  }
+
+  private blockContinuationAfterAssistantError(): void {
+    this.clearPostAgentSettleTimer();
+    this.continuationBlockedByAssistantError = true;
   }
 
   private clearActiveAccounting(): void {
@@ -386,7 +429,7 @@ class GoalRuntime {
     );
   }
 
-  private maybeContinue(ctx: ExtensionContext): void {
+  private maybeContinue(ctx: ExtensionContext, options: MaybeContinueOptions = {}): void {
     if (
       this.goal === null ||
       this.goal.status !== "active" ||
@@ -395,14 +438,32 @@ class GoalRuntime {
       return;
     }
 
-    if (this.isCompacting || this.isContextNearLimit(ctx)) {
+    if (this.continuationBlockedByAssistantError) {
+      this.continuationPendingAfterCompaction = false;
+      this.blockedContinuationPosition = null;
+      return;
+    }
+
+    if (
+      options.resumeAnchor !== undefined &&
+      !canResumeFromCompactionAnchor(ctx, options.resumeAnchor)
+    ) {
+      this.continuationPendingAfterCompaction = false;
+      this.blockedContinuationPosition = null;
+      return;
+    }
+
+    if (this.isCompacting || this.isContextNearLimit(ctx, options.allowUnknownContext === true)) {
       this.continuationPendingAfterCompaction = true;
+      this.blockedContinuationPosition ??= sessionPosition(ctx);
       return;
     }
 
     this.continuationPendingAfterCompaction = false;
+    this.blockedContinuationPosition = null;
 
     const goalId = this.goal.goalId;
+    const goalPosition = sessionPosition(ctx);
     if (!ctx.isIdle() || ctx.hasPendingMessages()) {
       if (this.continuationScheduledFor === goalId) {
         return;
@@ -412,7 +473,9 @@ class GoalRuntime {
       this.continuationTimer = setTimeout(() => {
         this.continuationTimer = null;
         this.continuationScheduledFor = null;
-        this.maybeContinue(ctx);
+        if (isCurrentSessionPosition(ctx, goalPosition)) {
+          this.maybeContinue(ctx, options);
+        }
       }, CONTINUATION_RETRY_MS);
       this.continuationTimer.unref?.();
       return;
@@ -426,25 +489,70 @@ class GoalRuntime {
     this.sendContinuation(this.goal);
   }
 
-  private scheduleContinuationAfterCompaction(ctx: ExtensionContext): void {
+  private scheduleContinuationAfterAgentSettles(ctx: ExtensionContext): void {
+    if (this.isCompacting) {
+      this.continuationPendingAfterCompaction = true;
+      this.blockedContinuationPosition ??= sessionPosition(ctx);
+      return;
+    }
+
+    if (this.postAgentSettleTimer !== null) {
+      return;
+    }
+
+    this.postAgentSettlePosition = sessionPosition(ctx);
+    this.postAgentSettleTimer = setTimeout(() => {
+      const settlePosition = this.postAgentSettlePosition;
+      this.postAgentSettleTimer = null;
+      this.postAgentSettlePosition = null;
+      if (settlePosition !== null && isCurrentSessionPosition(ctx, settlePosition)) {
+        this.maybeContinue(ctx);
+      }
+    }, POST_AGENT_SETTLE_DELAY_MS);
+    this.postAgentSettleTimer.unref?.();
+  }
+
+  private scheduleContinuationAfterCompaction(
+    event: { compactionEntry: { id: string } },
+    ctx: ExtensionContext,
+  ): void {
     if (!this.continuationPendingAfterCompaction || this.compactionResumeTimer !== null) {
       return;
     }
 
+    const blockedPosition = this.blockedContinuationPosition;
+    if (blockedPosition === null || !branchContainsEntry(ctx, blockedPosition.leafId)) {
+      this.continuationPendingAfterCompaction = false;
+      this.blockedContinuationPosition = null;
+      return;
+    }
+
+    this.compactionResumeAnchor = {
+      ...sessionPosition(ctx),
+      blockedLeafId: blockedPosition.leafId,
+      compactionEntryId: event.compactionEntry.id,
+    };
     this.compactionResumeTimer = setTimeout(() => {
+      const resumeAnchor = this.compactionResumeAnchor;
       this.compactionResumeTimer = null;
-      // Pi exposes successful compaction completion to extensions via session_compact, not compaction_end.
-      // Delay one beat so Pi can finish emitting session-level compaction_end and kick any internal retry first.
-      this.maybeContinue(ctx);
+      this.compactionResumeAnchor = null;
+      if (resumeAnchor === null || !canResumeFromCompactionAnchor(ctx, resumeAnchor)) {
+        this.continuationPendingAfterCompaction = false;
+        this.blockedContinuationPosition = null;
+        return;
+      }
+      // Pi exposes successful compaction completion to extensions via session_compact.
+      // Delay one beat and re-check the branch contains both the blocked leaf and compaction entry.
+      this.maybeContinue(ctx, { allowUnknownContext: true, resumeAnchor });
     }, COMPACTION_RESUME_DELAY_MS);
     this.compactionResumeTimer.unref?.();
   }
 
-  private isContextNearLimit(ctx: ExtensionContext): boolean {
+  private isContextNearLimit(ctx: ExtensionContext, allowUnknownContext: boolean): boolean {
     const usage = ctx.getContextUsage();
     const percent = usage?.percent;
     if (percent === null || percent === undefined || !Number.isFinite(percent)) {
-      return false;
+      return !allowUnknownContext;
     }
 
     return percent >= CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT;
@@ -481,6 +589,7 @@ class GoalRuntime {
   ): { systemPrompt: string } | undefined {
     const continuationGoalId = continuationGoalIdFromPrompt(event.prompt);
     if (continuationGoalId === null) {
+      this.continuationBlockedByAssistantError = false;
       this.clearContinuationState();
       return undefined;
     }
@@ -507,6 +616,7 @@ class GoalRuntime {
   }
 
   private handleTurnStart(_event: object, ctx: ExtensionContext): void {
+    this.continuationBlockedByAssistantError = false;
     this.clearContinuationState();
     this.beginAccounting();
     this.refreshUi(ctx);
@@ -524,11 +634,10 @@ class GoalRuntime {
       return;
     }
 
-    if (isToolUseAssistantMessage(event.message)) {
-      return;
+    if (isErrorAssistantMessage(event.message)) {
+      this.blockContinuationAfterAssistantError();
+      this.suppressCompactionResumeIfPending();
     }
-
-    this.maybeContinue(ctx);
   }
 
   private handleAgentEnd(event: { messages: AssistantMessageLike[] }, ctx: ExtensionContext): void {
@@ -543,35 +652,40 @@ class GoalRuntime {
       return;
     }
 
-    this.maybeContinue(ctx);
+    if (event.messages.some(isErrorAssistantMessage)) {
+      this.blockContinuationAfterAssistantError();
+      if (this.suppressCompactionResumeIfPending()) {
+        return;
+      }
+      return;
+    }
+
+    this.scheduleContinuationAfterAgentSettles(ctx);
   }
 
   private handleSessionBeforeCompact(_event: object, ctx: ExtensionContext): void {
+    if (this.postAgentSettleTimer !== null) {
+      this.continuationPendingAfterCompaction = true;
+      this.blockedContinuationPosition ??= this.postAgentSettlePosition ?? sessionPosition(ctx);
+      this.clearPostAgentSettleTimer();
+    }
     this.isCompacting = true;
     this.accountProgress(ctx, 0);
   }
 
-  private handleSessionCompact(_event: object, ctx: ExtensionContext): void {
+  private handleSessionCompact(
+    event: { compactionEntry: { id: string } },
+    ctx: ExtensionContext,
+  ): void {
     this.isCompacting = false;
+    this.clearPostAgentSettleTimer();
     if (this.goal !== null) {
       this.persistGoal(this.goal, "runtime");
     }
     this.refreshUi(ctx);
-    this.scheduleContinuationAfterCompaction(ctx);
-  }
-
-  private handleCompactionEnd(
-    event: { aborted?: boolean; willRetry?: boolean; errorMessage?: string },
-    ctx: ExtensionContext,
-  ): void {
-    this.isCompacting = false;
-    if (event.aborted === true || event.willRetry === true || event.errorMessage !== undefined) {
-      this.clearCompactionResumeTimer();
-      return;
+    if (this.continuationPendingAfterCompaction) {
+      this.scheduleContinuationAfterCompaction(event, ctx);
     }
-
-    this.clearContinuationTimer();
-    this.scheduleContinuationAfterCompaction(ctx);
   }
 
   private handleSessionShutdown(_event: object, ctx: ExtensionContext): void {
@@ -645,12 +759,6 @@ class GoalRuntime {
     });
     this.pi.on("session_compact", (event, ctx) => {
       this.handleSessionCompact(event, ctx);
-    });
-    this.pi.on("compaction_start", () => {
-      this.isCompacting = true;
-    });
-    this.pi.on("compaction_end", (event, ctx) => {
-      this.handleCompactionEnd(event, ctx);
     });
     this.pi.on("session_shutdown", (event, ctx) => {
       this.handleSessionShutdown(event, ctx);

@@ -61,6 +61,7 @@ function createGoalHarness(
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const registeredTools = new Map<string, GoalRenderableTool>();
   let activeTools: string[] = [];
+  let leafIdOverride: string | null | undefined = undefined;
   const runtime = {
     abortCount: 0,
     idle: options.idle ?? true,
@@ -148,7 +149,7 @@ function createGoalHarness(
     getHeader: () => null,
     getLabel: () => undefined,
     getLeafEntry: () => undefined,
-    getLeafId: () => null,
+    getLeafId: () => leafIdOverride ?? entries.at(-1)?.id ?? null,
     getSessionDir: () => "/tmp",
     getSessionFile: () => undefined,
     getSessionId: () => "session",
@@ -235,6 +236,27 @@ function createGoalHarness(
   }
 
   async function emit(event: string, payload: object): Promise<unknown[]> {
+    if (
+      event === "session_compact" &&
+      "compactionEntry" in payload &&
+      typeof payload.compactionEntry === "object" &&
+      payload.compactionEntry !== null &&
+      "id" in payload.compactionEntry &&
+      typeof payload.compactionEntry.id === "string" &&
+      !entries.some((entry) => entry.id === payload.compactionEntry.id)
+    ) {
+      entries.push({
+        type: "compaction",
+        id: payload.compactionEntry.id,
+        parentId: entries.at(-1)?.id ?? null,
+        timestamp: new Date(0).toISOString(),
+        summary: "summary",
+        firstKeptEntryId: entries[0]?.id ?? "entry-0",
+        tokensBefore: 100,
+        fromHook: false,
+      } as never);
+    }
+
     const results: unknown[] = [];
     for (const handler of handlers.get(event) ?? []) {
       results.push(await handler(payload, ctx));
@@ -267,6 +289,9 @@ function createGoalHarness(
     setContextUsage(percent: number | null | undefined, tokens: number | null = null) {
       runtime.contextUsagePercent = percent;
       runtime.contextUsageTokens = tokens;
+    },
+    setLeafId(leafId: string | null | undefined) {
+      leafIdOverride = leafId;
     },
     get abortCount() {
       return runtime.abortCount;
@@ -317,7 +342,7 @@ function renderGoalCallText(
 }
 
 function assistantMessage(
-  stopReason: "stop" | "aborted" | "length" | "toolUse",
+  stopReason: "stop" | "aborted" | "error" | "length" | "toolUse",
   usage: { input: number; output: number },
 ) {
   return {
@@ -353,13 +378,17 @@ function waitForCompactionResume(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 175));
 }
 
+function waitForPostAgentSettle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 175));
+}
+
 describe("goal extension", () => {
   test("bundled definitions include goal extension", () => {
     expect(groupedExtensionsC.some((definition) => definition.id === "goal")).toBe(true);
   });
 
   test("goal tool is hidden until goal command enables it", async () => {
-    const harness = createGoalHarness();
+    const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
 
     expect(harness.tools.has("goal")).toBe(false);
     expect(harness.activeTools.includes("goal")).toBe(false);
@@ -599,7 +628,7 @@ describe("goal extension", () => {
   });
 
   test("completed turns account tokens and continue active goals", async () => {
-    const harness = createGoalHarness();
+    const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
     await harness.runCommand("ship it");
     harness.sentMessages.length = 0;
 
@@ -610,6 +639,11 @@ describe("goal extension", () => {
       message: assistantMessage("stop", { input: 30, output: 12 }),
       toolResults: [],
     });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await waitForPostAgentSettle();
 
     expect(harness.snapshot().goal?.usage.tokensUsed).toBe(42);
     expect(harness.sentMessages).toHaveLength(1);
@@ -691,7 +725,12 @@ describe("goal extension", () => {
   });
 
   test("agent end waits for idle before continuing", async () => {
-    const harness = createGoalHarness({ idle: false, pendingMessages: true });
+    const harness = createGoalHarness({
+      idle: false,
+      pendingMessages: true,
+      contextUsagePercent: 10,
+      contextUsageTokens: 100,
+    });
     await harness.runCommand("ship it");
     harness.sentMessages.length = 0;
 
@@ -704,6 +743,7 @@ describe("goal extension", () => {
     expect(harness.sentMessages).toHaveLength(0);
     harness.setIdle(true);
     harness.setPendingMessages(false);
+    await waitForPostAgentSettle();
     await waitForContinuationRetry();
 
     expect(harness.sentMessages).toHaveLength(1);
@@ -729,7 +769,133 @@ describe("goal extension", () => {
     expect(harness.sentMessages).toHaveLength(0);
   });
 
-  test("does not continue during compaction but resumes from session compact when usage is unknown", async () => {
+  test("does not continue when context usage is unknown without successful compaction", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await waitForPostAgentSettle();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("post-agent compaction converts settle intent into compaction resume", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+
+    expect(harness.sentMessages).toHaveLength(0);
+
+    harness.setContextUsage(10, 100);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: { id: "compaction-1" },
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("does not resume compaction-pending goal until session compact succeeds", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    harness.setContextUsage(10, 100);
+    await waitForPostAgentSettle();
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("successful session compact permits unknown context continuation", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: { id: "compaction-1" },
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("successful compact after repeated before compact events resumes once", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: { id: "compaction-1" },
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+  });
+
+  test("session compact without pending continuation does not resume goal", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: { id: "compaction-1" },
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("does not resume queued compaction continuation after assistant error", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
     await harness.runCommand("ship it");
     harness.sentMessages.length = 0;
@@ -741,20 +907,98 @@ describe("goal extension", () => {
       messages: [assistantMessage("stop", { input: 30, output: 12 })],
     });
 
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: { id: "compaction-1" },
+      fromExtension: false,
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await waitForCompactionResume();
+
     expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("does not resume post-compaction continuation after session leaf changes", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
 
     harness.setContextUsage(null);
     await harness.emit("session_compact", {
       type: "session_compact",
-      compactionEntry: {},
+      compactionEntry: { id: "compaction-1" },
+      fromExtension: false,
+    });
+    harness.setLeafId("newer-leaf");
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("does not auto-continue after assistant error", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await waitForPostAgentSettle();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("assistant error cancels pending post-agent settle continuation", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await waitForPostAgentSettle();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("session compact after assistant error does not resume before retry outcome", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await harness.emit("session_before_compact", { type: "session_before_compact" });
+    harness.setContextUsage(null);
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: { id: "compaction-1" },
       fromExtension: false,
     });
     await waitForCompactionResume();
 
-    expect(harness.sentMessages).toHaveLength(1);
-    expect(harness.sentMessages[0]?.message.details).toEqual({
-      kind: "continuation",
-      goalId: harness.snapshot().goal?.goalId,
-    });
+    expect(harness.sentMessages).toHaveLength(0);
   });
 });

@@ -31,8 +31,8 @@ export function isAbortedAssistantMessage(message: AssistantMessageLike): boolea
   return message.role === "assistant" && message.stopReason === "aborted";
 }
 
-export function isToolUseAssistantMessage(message: AssistantMessageLike): boolean {
-  return message.role === "assistant" && message.stopReason === "toolUse";
+export function isErrorAssistantMessage(message: AssistantMessageLike): boolean {
+  return message.role === "assistant" && message.stopReason === "error";
 }
 
 function isSessionMessageEntryLike(

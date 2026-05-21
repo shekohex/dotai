@@ -45,7 +45,10 @@ export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage"
 export interface GoalCommandContext {
   cwd: string;
   hasUI: boolean;
-  sessionManager: Pick<ExtensionCommandContext["sessionManager"], "getSessionId">;
+  sessionManager: Pick<
+    ExtensionCommandContext["sessionManager"],
+    "getBranch" | "getLeafId" | "getSessionId"
+  >;
   ui: Pick<ExtensionCommandContext["ui"], "confirm" | "notify" | "setStatus">;
 }
 

@@ -119,24 +119,6 @@ export default function terminalTmuxUiExtension(pi: ExtensionAPI): void {
     updateTitle(ctx);
   });
 
-  pi.on("compaction_start", (_event, ctx) => {
-    if (!terminalTmuxUiRuntime.isEnabled() || !isTmuxSession() || !ctx.hasUI) {
-      return;
-    }
-
-    updateTitle(ctx);
-    emitTmuxProgress(true);
-  });
-
-  pi.on("compaction_end", (_event, ctx) => {
-    if (!terminalTmuxUiRuntime.isEnabled() || !isTmuxSession() || !ctx.hasUI) {
-      return;
-    }
-
-    emitTmuxProgress(false);
-    updateTitle(ctx);
-  });
-
   pi.on("session_shutdown", (_event, ctx) => {
     if (!terminalTmuxUiRuntime.isEnabled() || !isTmuxSession() || !ctx.hasUI) {
       return;

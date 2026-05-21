@@ -222,6 +222,11 @@ Validation:
 - `android docs search "Android app links deep link adb am start"` returned Android deep-link docs.
 - `android emulator list` shows `owlchat` available.
 - `adb devices` showed no connected/running devices, so `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech' com.coder.pi` and `android layout --device <id> --pretty` are blocked until a device/emulator is running.
+- `android emulator start owlchat` started `emulator-5554`.
+- `adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk` succeeded after x86_64 APK failed with `INSTALL_FAILED_NO_MATCHING_ABIS`.
+- `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech' -n com.coder.pi/.MainActivity` launched `com.coder.pi/.MainActivity`, `Status: ok`.
+- `android layout --device emulator-5554 --pretty -o build/validation/speech/debug-speech-layout.json` captured layout containing `Speech UX` and `pi://debug/speech`.
+- `android screen capture -o build/validation/speech/debug-speech.png` captured screenshot.
 
 Review:
 
@@ -338,6 +343,9 @@ Validation:
 - `./gradlew compileDebugAndroidTestKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 8s`.
 - Connected execution blocked: `adb devices` shows no connected/running devices.
 - Screenshot proof blocked until connected execution can run.
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14`, `1/1` tests passed, `BUILD SUCCESSFUL in 57s`.
+- Debug speech layout proof: `build/validation/speech/debug-speech-layout.json`.
+- Debug speech screenshot proof: `build/validation/speech/debug-speech.png`.
 
 Review:
 
@@ -707,6 +715,7 @@ Validation:
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 10s`.
 - `./gradlew assembleDebug --no-daemon` passed, `BUILD SUCCESSFUL in 8s`.
 - Device mic smoke blocked: `adb devices` shows no connected/running devices; `android emulator list` shows `owlchat` available but not running.
+- Emulator UI proof: `android emulator start owlchat` started `emulator-5554`; speech UI Automator journey passed; deep link layout/screenshot captured at `build/validation/speech/`.
 
 Review:
 

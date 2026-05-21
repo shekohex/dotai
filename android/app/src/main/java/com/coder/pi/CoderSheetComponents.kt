@@ -105,12 +105,15 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         val preferences = SpeechSettingsStore.registerChangeListener(context, listener)
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+    val speechModelCache = remember(context, speechSettings.selectedSpeechModelId) { ParakeetModelCache(context, ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId)) }
+    val speechTokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
     val speechAudioCapture = remember(context, speechSettings.vadSensitivity) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
-    val speechTranscriber = remember(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) { LiteRtParakeetTranscriber(ParakeetModelCache(context, ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId)), ParakeetTokenizerCache(context), SpeechAcceleratorMode.byId(speechSettings.accelerator)) }
+    val speechTranscriber = remember(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) { LiteRtParakeetTranscriber(speechModelCache, speechTokenizerCache, SpeechAcceleratorMode.byId(speechSettings.accelerator)) }
     val speechPromptRenderer = remember { SpeechEnhancementPromptRenderer() }
     var dictating by remember { mutableStateOf(false) }
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
     var dictationTranscript by remember { mutableStateOf("") }
+    var dictationRawTranscript by remember { mutableStateOf("") }
     var dictationMeter by remember { mutableStateOf(0f) }
     var dictationWaveformLevels by remember { mutableStateOf(List(15) { 0f }) }
     val dictationAudioFrames = remember { mutableListOf<FloatArray>() }
@@ -160,13 +163,14 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictating = false
         dictationState = SpeechDictationDisplayState.IDLE
         dictationTranscript = ""
+        dictationRawTranscript = ""
         dictationAudioFrames.clear()
         liveChunkEndSample = speechAudioCapture.sampleRate
         liveTranscriptMerger.reset()
         dictationWaveformLevels = List(15) { 0f }
     }
-    fun acceptDictationTranscript() {
-        val mergedDraft = mergeSpeechTranscriptIntoDraft(text, dictationTranscript)
+    fun acceptDictationTranscript(transcript: String = dictationTranscript) {
+        val mergedDraft = mergeSpeechTranscriptIntoDraft(text, transcript)
         if (mergedDraft.isNotBlank()) onTextChanged(mergedDraft)
         stopDictationCapture()
         clearDictationSession()
@@ -223,6 +227,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                         dictationTranscript = "No speech detected."
                         dictationState = SpeechDictationDisplayState.NO_SPEECH
                     } else {
+                        dictationRawTranscript = transcript
                         dictationTranscript = transcript
                         enhanceTranscript(transcript, sessionId)
                     }
@@ -271,6 +276,12 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         }
     }
     fun startDictationCapture() {
+        if (speechSettings.localTranscriptionEnabled && (!speechModelCache.isReady() || !speechTokenizerCache.isReady())) {
+            dictating = true
+            dictationTranscript = if (!speechModelCache.isReady()) "Speech model not ready. Open Speech Models to download or import it." else "Speech tokenizer not ready. Open Speech Models to download or import it."
+            dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+            return
+        }
         dictationSessionId++
         dictationStartedAt = SystemClock.elapsedRealtime()
         firstPartialAt = null
@@ -278,6 +289,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         lastAppliedPartialEndSample = 0
         dictationState = SpeechDictationDisplayState.RECORDING_EMPTY
         dictationTranscript = ""
+        dictationRawTranscript = ""
         dictationMeter = 0f
         dictationAudioFrames.clear()
         partialTranscriptionJob?.cancel()
@@ -358,7 +370,9 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     SpeechDictationAction.DETECT_SPEECH -> dictationTranscript = SpeechDictationUxContract.fixtures.partialTranscript
                     SpeechDictationAction.COMPLETE_TRANSCRIPTION -> dictationTranscript = SpeechDictationUxContract.fixtures.finalTranscript
                     SpeechDictationAction.COMPLETE_ENHANCEMENT -> dictationTranscript = SpeechDictationUxContract.fixtures.enhancedTranscript
-                    SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> acceptDictationTranscript()
+                    SpeechDictationAction.START_ENHANCEMENT, SpeechDictationAction.RETRY_ENHANCEMENT -> enhanceTranscript(dictationRawTranscript.ifBlank { dictationTranscript }, dictationSessionId)
+                    SpeechDictationAction.SEND_RAW -> acceptDictationTranscript(dictationRawTranscript.ifBlank { dictationTranscript })
+                    SpeechDictationAction.SEND_ENHANCED -> acceptDictationTranscript(dictationTranscript)
                     SpeechDictationAction.CANCEL, SpeechDictationAction.RESET -> {
                         stopDictationCapture()
                         clearDictationSession()

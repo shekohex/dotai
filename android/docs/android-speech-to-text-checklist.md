@@ -379,6 +379,7 @@ Validation:
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14` after preset-state rework, `BUILD SUCCESSFUL in 28s`.
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed again after settings/cache work, `BUILD SUCCESSFUL in 25s`.
 - Enhanced-ready emulator proof after final settings work: `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech?state=ENHANCED_READY' -n com.coder.pi/.MainActivity`, `android layout --device emulator-5554 --pretty -o build/validation/speech/enhanced-ready-layout.json`, and `android screen capture -o build/validation/speech/enhanced-ready.png` succeeded. Layout contains `Speech UX`, `Enhanced transcript ready`, and enhanced fixture text.
+- Final local validation sweep passed: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon`, `./gradlew assembleDebug --no-daemon`, and `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` (`BUILD SUCCESSFUL`, emulator UI journey in `26s`).
 
 Review:
 

@@ -834,7 +834,7 @@ Implementation checklist:
 - [x] Hide speed/ETA unless download is running; show paused/completed/failed status copy instead.
 - [x] Make paused notification persistent normal notification with Resume/Cancel actions.
 - [x] Split model download progress into its own notification channel.
-- [ ] Collect Pixel crash logs for enhancement crash and fix.
+- [x] Collect Pixel crash logs for enhancement crash and fix.
 - [x] Remove final transcription UI freeze by moving decode/finalization to background and reporting progress.
 - [ ] Implement streaming partial transcription from rolling audio segments, modeled after VoiceInk behavior.
 
@@ -844,3 +844,4 @@ Validation:
 - Model/tokenizer pull is blocked until Pixel reconnects.
 - Freeze mitigation validation: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `./gradlew assembleDebug --no-daemon` passed, APK installed on Pixel 7 Pro `192.168.1.107:37339`, and `scripts/android-restore-speech-models.sh 192.168.1.107:37339` restored local model/tokenizer after install. Code changes avoid Compose-state audio-frame list copying and run final sample flattening/LiteRT transcribe on `Dispatchers.Default` instead of main.
 - Streaming partial first pass: while recording, the app now snapshots the last ~5 seconds of captured audio every 20 frames and runs a single background partial transcription job at a time. Partial results update the dictation transcript bubble before final end-of-speech transcription. This is a first rolling-segment implementation; still needs real-device tuning against VoiceInk behavior for overlap merge and latency.
+- Enhancement crash follow-up: recent Pixel `logcat -d -t 8000` after reinstall did not include a `FATAL EXCEPTION` or `AndroidRuntime` stacktrace for the reported enhancement crash. Hardened `enhanceTranscript` so prompt rendering, terminal context collection, and provider calls are wrapped in `runCatching`; failures now fail open to raw transcript and return to `TRANSCRIPT_READY` instead of escaping coroutine scope.

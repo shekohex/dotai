@@ -137,12 +137,21 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         }
         dictationState = SpeechDictationDisplayState.ENHANCING_COLLAPSED
         scope.launch {
-            val prompt = speechSettings.resolvedPrompt(SpeechSettingsStore.defaultPrompt(context))
-            val contextLines = if (speechSettings.includeVisibleTerminalContext) visibleTerminalLines() else emptyList()
-            val request = speechPromptRenderer.render(prompt, transcript, contextLines)
-            val result = SpeechEnhancer(speechEnhancementClient).enhanceOrRaw(request)
-            dictationTranscript = result.text
-            dictationState = if (result.enhanced) SpeechDictationDisplayState.ENHANCED_READY else SpeechDictationDisplayState.TRANSCRIPT_READY
+            runCatching {
+                val prompt = speechSettings.resolvedPrompt(SpeechSettingsStore.defaultPrompt(context))
+                val contextLines = if (speechSettings.includeVisibleTerminalContext) visibleTerminalLines() else emptyList()
+                val request = speechPromptRenderer.render(prompt, transcript, contextLines)
+                SpeechEnhancer(speechEnhancementClient).enhanceOrRaw(request)
+            }.fold(
+                onSuccess = { result ->
+                    dictationTranscript = result.text
+                    dictationState = if (result.enhanced) SpeechDictationDisplayState.ENHANCED_READY else SpeechDictationDisplayState.TRANSCRIPT_READY
+                },
+                onFailure = {
+                    dictationTranscript = transcript
+                    dictationState = SpeechDictationDisplayState.TRANSCRIPT_READY
+                },
+            )
         }
     }
     fun transcribeDictationAudio(frames: List<FloatArray> = dictationAudioFrames.toList()) {

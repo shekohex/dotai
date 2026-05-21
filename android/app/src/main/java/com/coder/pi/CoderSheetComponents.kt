@@ -179,7 +179,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     }
     fun enhanceTranscript(transcript: String, sessionId: Int) {
         if (!speechSettings.enhancementEnabled || speechEnhancementClient == null || transcript.isBlank()) {
-            dictationState = SpeechDictationDisplayState.TRANSCRIPT_READY
+            acceptDictationTranscript(transcript)
             return
         }
         dictationState = SpeechDictationDisplayState.ENHANCING_COLLAPSED
@@ -193,13 +193,11 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             }.fold(
                 onSuccess = { result ->
                     if (sessionId != dictationSessionId) return@fold
-                    dictationTranscript = result.text
-                    dictationState = if (result.enhanced) SpeechDictationDisplayState.ENHANCED_READY else SpeechDictationDisplayState.TRANSCRIPT_READY
+                    acceptDictationTranscript(result.text)
                 },
                 onFailure = {
                     if (sessionId != dictationSessionId) return@fold
-                    dictationTranscript = transcript
-                    dictationState = SpeechDictationDisplayState.TRANSCRIPT_READY
+                    acceptDictationTranscript(transcript)
                 },
             )
         }
@@ -798,19 +796,10 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
 
 @Composable
 private fun DictationProcessingStatus(label: String, tokens: UiTokens) {
-    var activeDot by remember(label) { mutableIntStateOf(0) }
-    LaunchedEffect(label) {
-        while (true) {
-            delay(if (label == "Transcribing") 180L else 220L)
-            activeDot = (activeDot + 1) % 7
-        }
-    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, color = tokens.text.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            repeat(5) { index ->
-                Box(Modifier.width(3.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(tokens.text.copy(alpha = if (index <= activeDot.coerceAtMost(4)) 0.85f else 0.25f)))
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(R.drawable.ic_feather_loader), null, tint = tokens.accent.copy(alpha = 0.9f), modifier = Modifier.size(14.dp))
+            Text(label, color = tokens.text.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
 }

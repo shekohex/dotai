@@ -104,7 +104,7 @@ object SpeechSettingsStore {
 
     fun setEnhancementApiKey(context: Context, apiKey: String) = securePreferences(context).edit { putString(enhancementApiKeyKey, apiKey.trim()) }
 
-    fun defaultPrompt(context: Context): String = context.resources.openRawResource(R.raw.speech_enhancement_prompt).bufferedReader().use { it.readText() }.trim()
+    fun defaultPrompt(context: Context): String = context.resources.openRawResource(R.raw.vibe_coding).bufferedReader().use { it.readText() }.trim()
 }
 
 enum class SpeechEnhancementProvider(val id: String, val label: String) {

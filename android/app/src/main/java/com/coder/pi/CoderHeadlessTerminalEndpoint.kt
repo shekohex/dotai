@@ -30,6 +30,8 @@ class CoderHeadlessTerminalEndpoint(
         update.oscEvents.forEach { router.handleOscEvent(it, update.title) }
     }
 
+    fun agentStateSnapshot(): TerminalAgentStateSnapshot = router.agentStateSnapshot()
+
     override fun sendInput(bytes: ByteArray) {
         if (bytes.isEmpty()) return
         remoteInput?.invoke(bytes)

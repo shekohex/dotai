@@ -22,6 +22,8 @@ class TerminalNotificationRouter(
 ) {
     private val agentState = TerminalAgentState()
 
+    fun agentStateSnapshot(): TerminalAgentStateSnapshot = agentState.snapshot()
+
     fun handleOscEvent(event: TerminalOscEvent, terminalTitle: String) {
         when (event) {
             is TerminalOscEvent.Notification -> postNotification(event.title, event.body)

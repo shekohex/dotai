@@ -134,6 +134,15 @@ object TerminalConnectionManager {
         }
     }
 
+    fun agentStatus(terminalId: String): TerminalAgentStatusPresentation? {
+        val runtime = synchronized(sessions) { sessions[terminalId] } ?: return null
+        return when (val endpoint = runtime.proxy.currentEndpoint()) {
+            is CoderHeadlessTerminalEndpoint -> endpoint.agentStateSnapshot().statusPresentation()
+            is CoderTerminalView -> endpoint.agentStateSnapshot().statusPresentation()
+            else -> null
+        }
+    }
+
     private fun attachRendererToExistingSession(terminalId: String, endpoint: CoderTerminalEndpoint): CoderTerminalSession? {
         if (endpoint is CoderTerminalView) endpoint.releaseEngineOwnershipToManager()
         val existing = synchronized(sessions) {

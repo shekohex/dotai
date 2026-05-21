@@ -16,7 +16,12 @@ fun TerminalAgentStateSnapshot.statusPresentation(): TerminalAgentStatusPresenta
 }
 
 fun TerminalAgentStateSnapshot.progressPresentation(): TerminalAgentProgressPresentation? {
-    val progressState = progress?.progressPresentation() ?: run?.progressPresentation() ?: return null
+    val progressState = when {
+        progress?.state == "active" -> progress.progressPresentation()
+        progress?.state == "clear" && run?.state != "running" -> progress.progressPresentation()
+        run?.state == "running" || turn?.state == "running" -> TerminalAgentProgressPresentation(true)
+        else -> run?.progressPresentation() ?: return null
+    }
     if (!progressState.active) return progressState
     return progressState.copy(body = progressBody())
 }

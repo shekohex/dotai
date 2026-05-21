@@ -77,6 +77,7 @@ class TerminalActivity : AppCompatActivity() {
             it.applyTheme(theme)
             it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
             it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
+            it.onAgentStateChanged = { persistTerminalState() }
         }
         terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), workspaceIconUrl = launch.workspaceIconUrl)
         terminalStore?.saveActiveTerminal(terminalMetadata ?: return)
@@ -197,6 +198,8 @@ class TerminalActivity : AppCompatActivity() {
         val nextMetadata = metadata.copy(
             updatedAtMillis = System.currentTimeMillis(),
             preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"),
+            agentStatusTitle = terminalView.agentStateSnapshot().statusPresentation()?.title,
+            agentStatusSubtitle = terminalView.agentStateSnapshot().statusPresentation()?.subtitle,
         )
         terminalMetadata = nextMetadata
         terminalStore?.saveActiveTerminal(nextMetadata)

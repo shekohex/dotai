@@ -51,6 +51,16 @@ class TerminalAgentPresentationTest {
     }
 
     @Test
+    fun ignoresProgressClearWhileAgentRunIsStillActive() {
+        val snapshot = TerminalAgentStateSnapshot(
+            run = AgentRunState("running", metadata()),
+            progress = AgentProgressState("clear", null, null, metadata()),
+        )
+
+        assertEquals(TerminalAgentProgressPresentation(true, ""), snapshot.progressPresentation())
+    }
+
+    @Test
     fun usesWhimsicalStatusWhenNoSpecificActivityExists() {
         val snapshot = TerminalAgentStateSnapshot(progress = AgentProgressState("active", null, null, metadata()))
 

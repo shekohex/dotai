@@ -101,6 +101,8 @@ class CoderSessionStore(context: Context) {
             remove("$legacyPrefix.command")
             remove("$legacyPrefix.reconnect_id")
             remove("$legacyPrefix.workspace_icon_url")
+            remove("$legacyPrefix.agent_status_title")
+            remove("$legacyPrefix.agent_status_subtitle")
             remove("$legacyPrefix.updated_at")
             remove("$legacyPrefix.preview")
             putString("$prefix.base_url", metadata.baseUrl)
@@ -112,6 +114,8 @@ class CoderSessionStore(context: Context) {
             putString("$prefix.command", metadata.command)
             putString("$prefix.reconnect_id", metadata.reconnectId)
             putString("$prefix.workspace_icon_url", metadata.workspaceIconUrl)
+            putString("$prefix.agent_status_title", metadata.agentStatusTitle?.takeIf { it.isNotBlank() })
+            putString("$prefix.agent_status_subtitle", metadata.agentStatusSubtitle?.takeIf { it.isNotBlank() })
             putLong("$prefix.updated_at", metadata.updatedAtMillis)
             putString("$prefix.preview", safePreviewText(metadata.preview).take(600))
         }
@@ -132,6 +136,8 @@ class CoderSessionStore(context: Context) {
                 updatedAtMillis = localPreferences.getLong("$prefix.updated_at", 0L),
                 preview = localPreferences.getString("$prefix.preview", "").orEmpty(),
                 workspaceIconUrl = localPreferences.getString("$prefix.workspace_icon_url", null),
+                agentStatusTitle = localPreferences.getString("$prefix.agent_status_title", null),
+                agentStatusSubtitle = localPreferences.getString("$prefix.agent_status_subtitle", null),
             )
             metadata.takeIf { it.baseUrl == baseUrl && it.userId == userId && now - it.updatedAtMillis <= ttlMillis }
         }.sortedByDescending { it.updatedAtMillis }
@@ -152,6 +158,8 @@ class CoderSessionStore(context: Context) {
                 updatedAtMillis = localPreferences.getLong("$prefix.updated_at", 0L),
                 preview = localPreferences.getString("$prefix.preview", "").orEmpty(),
                 workspaceIconUrl = localPreferences.getString("$prefix.workspace_icon_url", null),
+                agentStatusTitle = localPreferences.getString("$prefix.agent_status_title", null),
+                agentStatusSubtitle = localPreferences.getString("$prefix.agent_status_subtitle", null),
             )
             metadata.takeIf { it.baseUrl == baseUrl && now - it.updatedAtMillis <= ttlMillis }
         }.sortedByDescending { it.updatedAtMillis }
@@ -173,6 +181,8 @@ class CoderSessionStore(context: Context) {
                 remove("$it.command")
                 remove("$it.reconnect_id")
                 remove("$it.workspace_icon_url")
+                remove("$it.agent_status_title")
+                remove("$it.agent_status_subtitle")
                 remove("$it.updated_at")
                 remove("$it.preview")
             }

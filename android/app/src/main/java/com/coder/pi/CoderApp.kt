@@ -343,7 +343,7 @@ fun CoderApp(
                 val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
                 val id = terminalSessionKey(identity)
                 if (terminalSessions.any { it.id == id }) return@forEach
-                val managed = ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis)
+                val managed = ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, TerminalConnectionManager.agentStatus(id) ?: metadata.agentStatusPresentation())
                 terminalSessions.add(managed)
             }
         }
@@ -359,12 +359,12 @@ fun CoderApp(
                     val workspaceLabel = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId).alias ?: metadata.workspaceName
                     val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, workspaceLabel, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
                     val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
-                    terminalSessions.add(ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis))
+                    terminalSessions.add(ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, TerminalConnectionManager.agentStatus(id) ?: metadata.agentStatusPresentation()))
                 }
                 terminalSessions.forEachIndexed { index, managed ->
                     val metadata = metadataById[managed.id] ?: return@forEachIndexed
                     val previewLines = metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5)
-                    terminalSessions[index] = managed.copy(previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis)
+                    terminalSessions[index] = managed.copy(previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis, agentStatus = TerminalConnectionManager.agentStatus(managed.id) ?: metadata.agentStatusPresentation())
                 }
             }
         }
@@ -420,7 +420,7 @@ fun CoderApp(
                             val now = System.currentTimeMillis()
                             val index = terminalSessions.indexOfFirst { session -> session.id == it.id }
                             if (index >= 0) terminalSessions[index] = terminalSessions[index].copy(updatedAtMillis = now)
-                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), workspaceIconUrl = it.launch.workspaceIconUrl))
+                            sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(it.identity.baseUrl, it.identity.userId, it.identity.workspaceId, it.launch.title, it.identity.agentId, it.launch.badge, it.identity.command, it.launch.reconnectId, now, it.previewLines.joinToString("\n"), workspaceIconUrl = it.launch.workspaceIconUrl, agentStatusTitle = it.agentStatus?.title, agentStatusSubtitle = it.agentStatus?.subtitle))
                             TerminalWindowLauncher.open(context, it.launch, it.identity)
                         },
                         onCloseTerminal = {
@@ -441,7 +441,7 @@ fun CoderApp(
                                 return@CoderHomeScreen
                             }
                             sessionStore.saveActiveTerminal(CoderActiveTerminalMetadata(state.session.baseUrl, state.session.user.id, workspace.id, workspace.name, agent.id, agent.name, command, reconnect.id, System.currentTimeMillis(), workspaceIconUrl = workspace.templateIcon))
-                            val managed = ActiveTerminalWindow(id, launch, identity, emptyList(), System.currentTimeMillis())
+                            val managed = ActiveTerminalWindow(id, launch, identity, emptyList(), System.currentTimeMillis(), null)
                             terminalSessions.add(managed)
                             TerminalWindowLauncher.open(context, launch, identity)
                         },
@@ -478,7 +478,13 @@ data class TerminalLaunchRequest(val baseUrl: String, val token: String, val age
 
 data class TerminalIdentity(val baseUrl: String, val userId: String, val workspaceId: String, val agentId: String, val command: String)
 
-private data class ActiveTerminalWindow(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val previewLines: List<String>, val updatedAtMillis: Long)
+private data class ActiveTerminalWindow(val id: String, val launch: TerminalLaunchRequest, val identity: TerminalIdentity, val previewLines: List<String>, val updatedAtMillis: Long, val agentStatus: TerminalAgentStatusPresentation?)
+
+private fun CoderActiveTerminalMetadata.agentStatusPresentation(): TerminalAgentStatusPresentation? {
+    val title = agentStatusTitle?.takeIf { it.isNotBlank() } ?: return null
+    val subtitle = agentStatusSubtitle?.takeIf { it.isNotBlank() } ?: return null
+    return TerminalAgentStatusPresentation(title, subtitle)
+}
 
 private const val MaxActiveTerminalSessions = 10
 
@@ -751,6 +757,14 @@ private fun ActiveCoderSessionCard(managed: ActiveTerminalWindow, tokens: UiToke
         Spacer(Modifier.height(8.dp))
         Text(managed.launch.title, color = tokens.text, fontSize = metrics.bodySize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(relativeTime, color = tokens.secondary, fontSize = smallCaptionSize(), maxLines = 1)
+        managed.agentStatus?.let { status ->
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(tokens.accent))
+                Spacer(Modifier.width(5.dp))
+                Text(status.subtitle, color = tokens.accent, fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+            }
+        }
     }
 }
 
@@ -1304,23 +1318,18 @@ fun TerminalSurface(
 ) {
     var copyModeActive by remember { mutableStateOf(terminalView.copyModeActive()) }
     var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
-    var agentStatus by remember { mutableStateOf(terminalView.agentStateSnapshot().statusPresentation()) }
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     DisposableEffect(terminalView) {
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
-        val agentStateHandler: (TerminalAgentStateSnapshot) -> Unit = { agentStatus = it.statusPresentation() }
-        agentStatus = terminalView.agentStateSnapshot().statusPresentation()
         terminalView.onResume()
         terminalView.post { terminalView.forceRefreshSurface() }
         terminalView.onOscMetadataChanged = metadataHandler
         terminalView.onHyperlinkActivated = hyperlinkHandler
-        terminalView.onAgentStateChanged = agentStateHandler
         onDispose {
             if (terminalView.onOscMetadataChanged === metadataHandler) terminalView.onOscMetadataChanged = null
             if (terminalView.onHyperlinkActivated === hyperlinkHandler) terminalView.onHyperlinkActivated = null
-            if (terminalView.onAgentStateChanged === agentStateHandler) terminalView.onAgentStateChanged = null
             terminalView.onPause()
         }
     }
@@ -1339,12 +1348,6 @@ fun TerminalSurface(
                 Column(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.86f)).padding(horizontal = 10.dp, vertical = 7.dp)) {
                     if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
                     if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
-                }
-            }
-            agentStatus?.let { status ->
-                Column(Modifier.align(Alignment.TopEnd).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(theme.background.toComposeColor().copy(alpha = 0.88f)).padding(horizontal = 10.dp, vertical = 7.dp), horizontalAlignment = Alignment.End) {
-                    Text(status.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
-                    Text(status.subtitle, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
                 }
             }
             statusContent()

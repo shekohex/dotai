@@ -111,4 +111,6 @@ data class CoderActiveTerminalMetadata(
     val updatedAtMillis: Long,
     val preview: String = "",
     val workspaceIconUrl: String? = null,
+    val agentStatusTitle: String? = null,
+    val agentStatusSubtitle: String? = null,
 )

@@ -74,6 +74,16 @@ Objective-to-evidence map:
 - Real-device support proof: blocked until Pixel 7 Pro or Samsung Tab A9 is attached for runtime/mic proof.
 - Subagent review loop: blocked because `subagent` tool is unavailable in current toolset; self-review residual risks are recorded per ticket.
 
+Target-device proof runbook when Pixel 7 Pro or Samsung Tab A9 is attached:
+
+- Confirm target: `adb devices -l` must show Pixel 7 Pro or Samsung Tab A9, not only emulator.
+- Install debug build: `./gradlew assembleDebug --no-daemon && adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`.
+- Open speech settings: `adb shell am start -W -a android.intent.action.VIEW -d 'pi://settings/speech' -n com.coder.pi/.MainActivity`.
+- Use Model Cache Download action, then verify settings shows ready state.
+- Open chat input, tap mic, grant `RECORD_AUDIO`, speak fixture phrase, wait for VAD end/transcription, accept transcript into draft, and verify Auto Send off/on behavior.
+- Record proof: `adb shell getprop ro.product.model`, `adb shell getprop ro.board.platform`, settings screenshot/layout, dictation screenshot/layout, app log excerpt with sanitized timing/failure-only metrics, and command output for `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` plus target smoke result.
+- Do not claim support from emulator inference; emulator remains UI/crash/build smoke only.
+
 ## VoiceInk UI/UX Pattern Inventory
 
 These patterns should shape Android UX before model internals are built:

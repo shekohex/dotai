@@ -221,7 +221,7 @@ Validation:
 - `./gradlew compileDebugKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 15s`.
 - `android docs search "Android app links deep link adb am start"` returned Android deep-link docs.
 - `android emulator list` shows `owlchat` available.
-- `adb devices` showed no connected/running devices, so `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech' com.coder.pi` and `android layout --device <id> --pretty` are blocked until a device/emulator is running.
+- Initial `adb devices` showed no connected/running devices; emulator proof was collected after starting `owlchat`.
 - `android emulator start owlchat` started `emulator-5554`.
 - `adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk` succeeded after x86_64 APK failed with `INSTALL_FAILED_NO_MATCHING_ABIS`.
 - `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech' -n com.coder.pi/.MainActivity` launched `com.coder.pi/.MainActivity`, `Status: ok`.
@@ -231,7 +231,7 @@ Validation:
 Review:
 
 - Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: device reachability is compile-verified but not UI-verified because no Android device is connected.
+- Self-review residual risk: debug playground is emulator-verified, not target-hardware verified.
 
 Commit:
 
@@ -283,12 +283,12 @@ Validation:
 
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 11s`.
 - `./gradlew compileDebugKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 15s`.
-- Debug screenshots blocked because `adb devices` shows no connected/running devices.
+- Initial debug screenshots were blocked before emulator startup; later debug speech screenshots were captured from `emulator-5554`.
 
 Review:
 
 - Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: Compose rendering is compile-verified but not screenshot-verified because no Android device is connected.
+- Self-review residual risk: Compose rendering is unit/build/emulator screenshot verified, not target-hardware verified.
 
 Commit:
 
@@ -470,7 +470,7 @@ Validation:
 - `./gradlew testDebugUnitTest --no-daemon`
 - Device mic smoke.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 17s`.
-- Device mic smoke blocked: `adb devices` shows no connected/running devices.
+- Initial device mic smoke was blocked before emulator startup; target-hardware mic smoke remains blocked because no Pixel 7 Pro or Samsung Tab A9 is attached.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 21s`.
 - `./gradlew assembleDebug --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 11s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after reverting flaky debug-rail test changes, `BUILD SUCCESSFUL in 17s`.
@@ -552,7 +552,7 @@ Validation:
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after log-mel preprocessing, `BUILD SUCCESSFUL in 12s`.
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 12s`.
 - `./gradlew assembleDebug --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 8s`.
-- Device fixture smoke blocked: no connected/running device.
+- Device fixture smoke on target hardware is blocked because no Pixel 7 Pro or Samsung Tab A9 is attached.
 - Current device check: `adb devices` shows only `emulator-5554`; no Pixel 7 Pro or Samsung Tab A9 target device is attached.
 - Current model cache check: `~/.cache/checkouts/huggingface.co/litert-community/parakeet-tdt-0.6b-v3/*.tflite` files are 134-135 byte Git LFS pointer files, not downloaded model payloads, so real fixture transcription cannot run from the local cache.
 - Added explicit Git LFS pointer detection in `ParakeetModelCache.isReady()` so pointer files are treated as missing model payloads, not valid runtime input.
@@ -570,6 +570,7 @@ Commit:
 - Partial implementation: `2e02012` (`feat(android): add parakeet tokenizer helpers`).
 - Partial implementation: `00ae531` (`feat(android): add parakeet log mel preprocessing`).
 - Partial implementation: `8a8ed6d` (`feat(android): wire parakeet TDT decode path`).
+- Follow-up: `0213be5` (`fix(android): reject parakeet lfs pointer cache`).
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 
@@ -672,7 +673,7 @@ Validation:
 
 - Focused unit/manual tests.
 - `./gradlew testDebugUnitTest --tests '*SpeechChatDraftTest*' --no-daemon` passed, `BUILD SUCCESSFUL in 11s`.
-- Manual paste-only/paste+Enter smoke blocked: no connected/running device.
+- Manual paste-only/paste+Enter smoke on target hardware remains blocked because no Pixel 7 Pro or Samsung Tab A9 is attached.
 
 Review:
 

@@ -771,28 +771,28 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
     val showTranscript = hasTranscript && !processingState
     val visibleActions = SpeechDictationUxContract.visibleActionsFor(displayState)
     Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 28.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(Modifier.width(if (showTranscript) 340.dp else 220.dp).clip(RoundedCornerShape(if (showTranscript) 20.dp else 30.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (showTranscript) 20.dp else 30.dp)).animateContentSize()) {
+        Column(Modifier.width(if (showTranscript) 300.dp else 184.dp).clip(RoundedCornerShape(if (showTranscript) 14.dp else 20.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (showTranscript) 14.dp else 20.dp)).animateContentSize()) {
             if (showTranscript) {
-                Column(Modifier.fillMaxWidth().height(74.dp).padding(horizontal = 18.dp, vertical = 9.dp).verticalScroll(scrollState)) {
-                    Text(transcript, color = tokens.text.copy(alpha = 0.88f), fontSize = 14.sp, lineHeight = 19.sp)
+                Column(Modifier.fillMaxWidth().height(74.dp).padding(horizontal = 14.dp, vertical = 9.dp).verticalScroll(scrollState)) {
+                    Text(transcript, color = tokens.text.copy(alpha = 0.88f), fontSize = 13.sp, lineHeight = 18.sp)
                 }
                 Box(Modifier.fillMaxWidth().height(0.7.dp).background(tokens.separator.copy(alpha = 0.55f)))
             }
-            Row(Modifier.fillMaxWidth().height(54.dp).padding(start = 18.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                DictationMiniSideButton(visibleActions.secondary.firstOrNull { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT }, tokens, onAction)
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     if (processingState) {
                         DictationProcessingStatus(if (displayState == SpeechDictationDisplayState.TRANSCRIBING) "Transcribing" else "Enhancing", tokens)
                     } else if (displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
-                        DictationWaveform(active = true, meter = meter, levels = waveformLevels)
+                        DictationWaveform(active = true, meter = meter, levels = waveformLevels, color = tokens.accent)
                     } else {
-                        DictationMetricsSummary(metrics, firstPartialMillis, tokens)
+                        DictationStaticWaveform(tokens)
                     }
                 }
-                Spacer(Modifier.width(10.dp))
                 DictationPrimaryAction(visibleActions.primary, tokens, onAction)
             }
         }
-        DictationSecondaryActions(visibleActions.secondary, tokens, onAction)
+        DictationSecondaryActions(visibleActions.secondary.filterNot { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT }, tokens, onAction)
     }
 }
 
@@ -816,6 +816,13 @@ private fun DictationProcessingStatus(label: String, tokens: UiTokens) {
 }
 
 @Composable
+private fun DictationMiniSideButton(action: SpeechDictationAction?, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
+    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+        if (action != null) Icon(painterResource(action.secondaryIcon()), null, tint = tokens.text.copy(alpha = 0.7f), modifier = Modifier.size(14.dp).clickable { hapticClick(); onAction(action) })
+    }
+}
+
+@Composable
 private fun DictationMetricsSummary(metrics: SpeechTranscriptionMetrics?, firstPartialMillis: Long?, tokens: UiTokens) {
     val text = metrics?.let {
         listOfNotNull(
@@ -830,13 +837,22 @@ private fun DictationMetricsSummary(metrics: SpeechTranscriptionMetrics?, firstP
 }
 
 @Composable
-private fun DictationWaveform(active: Boolean, meter: Float, levels: List<Float>) {
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun DictationWaveform(active: Boolean, meter: Float, levels: List<Float>, color: Color) {
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(15) { index ->
             val weight = 1f - kotlin.math.abs(index - 7) / 8f
             val level = (levels.getOrNull(index) ?: meter).coerceIn(0f, 1f)
             val height = if (active) 4.dp + (24.dp * level.powForWaveform() * (0.7f + weight * 0.3f)) else 4.dp
-            Box(Modifier.width(4.dp).height(height.coerceAtLeast(4.dp)).clip(RoundedCornerShape(6.dp)).background(Color(0xfff04452).copy(alpha = if (active) 0.85f else 0.5f)))
+            Box(Modifier.width(3.dp).height(height.coerceAtLeast(4.dp)).clip(RoundedCornerShape(3.dp)).background(color.copy(alpha = if (active) 0.85f else 0.5f)))
+        }
+    }
+}
+
+@Composable
+private fun DictationStaticWaveform(tokens: UiTokens) {
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(15) {
+            Box(Modifier.width(3.dp).height(4.dp).clip(RoundedCornerShape(3.dp)).background(tokens.secondary.copy(alpha = 0.5f)))
         }
     }
 }
@@ -856,9 +872,9 @@ private fun DictationPrimaryAction(action: SpeechDictationAction?, tokens: UiTok
         SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> R.drawable.ic_feather_arrow_up
         else -> R.drawable.ic_feather_check
     }
-    Box(Modifier.size(48.dp).semantics { contentDescription = action.accessibilityLabel() }.clickable { hapticClick(); onAction(action) }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xfff04452)), contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(19.dp))
+    Box(Modifier.size(22.dp).semantics { contentDescription = action.accessibilityLabel() }.clickable { hapticClick(); onAction(action) }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(22.dp).clip(CircleShape).background(if (action == SpeechDictationAction.STOP_RECORDING) Color(0xfff04452) else Color(0xff4c4c59)), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(12.dp))
         }
     }
 }

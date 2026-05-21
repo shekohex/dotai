@@ -343,7 +343,7 @@ fun CoderApp(
                 val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
                 val id = terminalSessionKey(identity)
                 if (terminalSessions.any { it.id == id }) return@forEach
-                val managed = ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, TerminalConnectionManager.agentStatus(id) ?: metadata.agentStatusPresentation())
+                val managed = ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, activeTerminalAgentStatus(id, metadata))
                 terminalSessions.add(managed)
             }
         }
@@ -359,12 +359,12 @@ fun CoderApp(
                     val workspaceLabel = sessionStore.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId).alias ?: metadata.workspaceName
                     val launch = TerminalLaunchRequest(session.baseUrl, session.token, metadata.agentId, metadata.reconnectId, metadata.command, workspaceLabel, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
                     val identity = TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
-                    terminalSessions.add(ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, TerminalConnectionManager.agentStatus(id) ?: metadata.agentStatusPresentation()))
+                    terminalSessions.add(ActiveTerminalWindow(id, launch, identity, metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5), metadata.updatedAtMillis, activeTerminalAgentStatus(id, metadata)))
                 }
                 terminalSessions.forEachIndexed { index, managed ->
                     val metadata = metadataById[managed.id] ?: return@forEachIndexed
                     val previewLines = metadata.preview.lines().filter { it.isNotBlank() }.takeLast(5)
-                    terminalSessions[index] = managed.copy(previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis, agentStatus = TerminalConnectionManager.agentStatus(managed.id) ?: metadata.agentStatusPresentation())
+                    terminalSessions[index] = managed.copy(previewLines = previewLines, updatedAtMillis = metadata.updatedAtMillis, agentStatus = activeTerminalAgentStatus(managed.id, metadata))
                 }
             }
         }
@@ -485,6 +485,9 @@ private fun CoderActiveTerminalMetadata.agentStatusPresentation(): TerminalAgent
     val subtitle = agentStatusSubtitle?.takeIf { it.isNotBlank() } ?: return null
     return TerminalAgentStatusPresentation(title, subtitle)
 }
+
+private fun activeTerminalAgentStatus(terminalId: String, metadata: CoderActiveTerminalMetadata): TerminalAgentStatusPresentation? =
+    if (TerminalConnectionManager.hasRuntime(terminalId)) TerminalConnectionManager.agentStatus(terminalId) else metadata.agentStatusPresentation()
 
 private const val MaxActiveTerminalSessions = 10
 

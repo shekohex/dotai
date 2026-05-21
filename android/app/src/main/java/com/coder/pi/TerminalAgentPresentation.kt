@@ -20,6 +20,7 @@ private val PlanningTools = setOf("todo", "planner", "plan")
 private val ExternalTools = setOf("execute", "resume")
 
 fun TerminalAgentStateSnapshot.statusPresentation(): TerminalAgentStatusPresentation? {
+    if (run?.state == "idle" || progress?.state == ProgressStateClear) return null
     val tool = tools.lastOrNull { it.state == ToolStateRunning }
     if (tool != null) return TerminalAgentStatusPresentation(AgentTitle, tool.activityText())
     tools.lastOrNull { it.state == ToolStateComplete }?.completionText()?.takeIf { it.isNotBlank() }?.let { return TerminalAgentStatusPresentation(AgentTitle, it) }

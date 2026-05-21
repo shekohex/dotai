@@ -27,7 +27,21 @@ class TerminalAgentPresentationTest {
 
     @Test
     fun clearsStatusWhenAgentIdle() {
-        val snapshot = TerminalAgentStateSnapshot(run = AgentRunState("idle", metadata()))
+        val snapshot = TerminalAgentStateSnapshot(
+            run = AgentRunState("idle", metadata()),
+            tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read foo.ts", metadata())),
+        )
+
+        assertNull(snapshot.statusPresentation())
+    }
+
+    @Test
+    fun clearsStatusWhenProgressClears() {
+        val snapshot = TerminalAgentStateSnapshot(
+            run = AgentRunState("running", metadata()),
+            progress = AgentProgressState("clear", null, null, metadata()),
+            tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read foo.ts", metadata())),
+        )
 
         assertNull(snapshot.statusPresentation())
     }

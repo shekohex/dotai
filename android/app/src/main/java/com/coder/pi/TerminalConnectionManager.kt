@@ -143,6 +143,8 @@ object TerminalConnectionManager {
         }
     }
 
+    fun hasRuntime(terminalId: String): Boolean = synchronized(sessions) { sessions.containsKey(terminalId) }
+
     private fun attachRendererToExistingSession(terminalId: String, endpoint: CoderTerminalEndpoint): CoderTerminalSession? {
         if (endpoint is CoderTerminalView) endpoint.releaseEngineOwnershipToManager()
         val existing = synchronized(sessions) {

@@ -213,6 +213,7 @@ fun CoderApp(
     deepLinkRevision: Int,
     debugPlaygroundRevision: Int,
     debugSpeechRevision: Int,
+    debugSpeechState: String?,
     onThemeChanged: () -> Unit,
     onFontChanged: () -> Unit,
     onHideKeyboard: () -> Unit,
@@ -455,7 +456,7 @@ fun CoderApp(
                     )
                 }
                 AppDestination.DEBUG_RENDER -> DebugRenderPlayground(theme, tokens) { destination = AppDestination.HOME }
-                AppDestination.DEBUG_SPEECH -> DebugSpeechPlayground(theme, tokens) { destination = AppDestination.HOME }
+                AppDestination.DEBUG_SPEECH -> DebugSpeechPlayground(theme, tokens, debugSpeechState) { destination = AppDestination.HOME }
                 AppDestination.SETTINGS -> SettingsNavigator((authState as? AuthState.LoggedIn)?.session, sessionStore, terminalView, theme, tokens, uiRevision, appShortcutSettingsPage ?: deepLinkSettingsPage, deepLinkRevision, onThemeChanged, { key ->
                     terminalView.setFontFamily(key)
                     onFontChanged()
@@ -1221,7 +1222,7 @@ private fun DebugRenderPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
 }
 
 @Composable
-private fun DebugSpeechPlayground(theme: CoderTheme, tokens: UiTokens, onBack: () -> Unit) {
+private fun DebugSpeechPlayground(theme: CoderTheme, tokens: UiTokens, initialStateName: String?, onBack: () -> Unit) {
     val context = LocalContext.current
     val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     if (!debugBuild) {
@@ -1232,6 +1233,17 @@ private fun DebugSpeechPlayground(theme: CoderTheme, tokens: UiTokens, onBack: (
     var transcript by remember { mutableStateOf("") }
     val contract = SpeechDictationUxContract.contractFor(displayState)
     val fixtures = SpeechDictationUxContract.fixtures
+    LaunchedEffect(initialStateName) {
+        val initialState = initialStateName?.let { name -> SpeechDictationDisplayState.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } } ?: return@LaunchedEffect
+        displayState = initialState
+        transcript = when (initialState) {
+            SpeechDictationDisplayState.RECORDING_WITH_SPEECH -> fixtures.partialTranscript
+            SpeechDictationDisplayState.TRANSCRIPT_READY, SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT, SpeechDictationDisplayState.ENHANCEMENT_FAILED -> fixtures.finalTranscript
+            SpeechDictationDisplayState.ENHANCED_READY -> fixtures.enhancedTranscript
+            SpeechDictationDisplayState.SUBMITTED -> fixtures.enhancedTranscript
+            else -> ""
+        }
+    }
     fun applySpeechAction(action: SpeechDictationAction) {
         displayState = SpeechDictationUxContract.transition(displayState, action)
         when (action) {

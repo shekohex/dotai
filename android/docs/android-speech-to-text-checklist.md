@@ -348,6 +348,8 @@ Validation:
 - Debug speech screenshot proof: `build/validation/speech/debug-speech.png`.
 - After mic capture UI wiring, rerunning `SpeechDebugWorkflowInstrumentedTest` exposed a flaky/failing debug action tap path (`Speech-detected state missing` / `Transcribing state missing`). Core unit/build validation still passes; UI journey needs stabilization before ASTT-4 can be marked `done`.
 - Stabilization attempts with coordinate taps, enabled-only content descriptions, topmost text selection, and removing in-test screenshots did not produce a stable connected run; experiments were reverted to avoid committing flaky test behavior.
+- Reworked debug speech deep link to support deterministic state presets: `pi://debug/speech?state=<STATE>`. `SpeechDebugWorkflowInstrumentedTest` now opens each target state directly instead of tapping ambiguous Compose buttons.
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14` after preset-state rework, `BUILD SUCCESSFUL in 28s`.
 
 Review:
 
@@ -473,6 +475,8 @@ Validation:
 - `./gradlew assembleDebug --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 11s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after reverting flaky debug-rail test changes, `BUILD SUCCESSFUL in 17s`.
 - `./gradlew assembleDebug --no-daemon` passed after reverting flaky debug-rail test changes, `BUILD SUCCESSFUL in 10s`.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after preset-state UI journey rework, `BUILD SUCCESSFUL in 8s`.
+- `./gradlew assembleDebug --no-daemon` passed after preset-state UI journey rework, `BUILD SUCCESSFUL in 5s`.
 
 Review:
 

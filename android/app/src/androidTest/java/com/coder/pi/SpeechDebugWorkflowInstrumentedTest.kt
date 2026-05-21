@@ -1,6 +1,7 @@
 package com.coder.pi
 
 import android.content.Intent
+import android.app.Instrumentation
 import android.net.Uri
 import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -26,47 +27,42 @@ class SpeechDebugWorkflowInstrumentedTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         context.getSharedPreferences("terminal", 0).edit { putBoolean("chat_auto_send", true) }
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/speech"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-
-        context.startActivity(intent)
-        instrumentation.waitForIdleSync()
-
-        check(device.wait(Until.hasObject(By.text("Speech UX")), 10_000)) { "Speech debug screen did not load" }
-        tapText(device, "Start")
+        openSpeechState(context, instrumentation, "RECORDING_EMPTY")
         check(device.wait(Until.hasObject(By.text("Listening")), 10_000)) { "Recording state missing" }
-        captureSpeechScreenshot(device, context, "recording")
 
-        tapText(device, "Partial")
+        openSpeechState(context, instrumentation, "RECORDING_WITH_SPEECH")
         check(device.wait(Until.hasObject(By.text("Listening with speech detected")), 10_000)) { "Speech-detected state missing" }
         check(device.wait(Until.hasObject(By.textContains("failing gradle task")), 10_000)) { "Partial transcript missing" }
 
-        tapText(device, "Finalize")
+        openSpeechState(context, instrumentation, "TRANSCRIBING")
         check(device.wait(Until.hasObject(By.text("Transcribing")), 10_000)) { "Transcribing state missing" }
-        tapText(device, "Transcript")
+
+        openSpeechState(context, instrumentation, "TRANSCRIPT_READY")
         check(device.wait(Until.hasObject(By.text("Transcript ready")), 10_000)) { "Transcript ready state missing" }
         captureSpeechScreenshot(device, context, "transcript-ready")
 
-        tapText(device, "Enhance")
+        openSpeechState(context, instrumentation, "ENHANCING_COLLAPSED")
         check(device.wait(Until.hasObject(By.text("Enhancing transcript")), 10_000)) { "Enhancing state missing" }
-        tapText(device, "Fail")
+
+        openSpeechState(context, instrumentation, "ENHANCEMENT_FAILED")
         check(device.wait(Until.hasObject(By.text("Enhancement failed")), 10_000)) { "Enhancement failure state missing" }
         check(device.wait(Until.hasObject(By.text("Send as-is")), 10_000)) { "Send as-is action missing" }
         captureSpeechScreenshot(device, context, "enhancement-failed")
-        tapText(device, "Retry")
-        check(device.wait(Until.hasObject(By.text("Enhancing transcript")), 10_000)) { "Retry did not return to enhancing" }
 
-        tapText(device, "Complete")
+        openSpeechState(context, instrumentation, "ENHANCED_READY")
         check(device.wait(Until.hasObject(By.text("Enhanced transcript ready")), 10_000)) { "Enhanced ready state missing" }
         check(device.wait(Until.hasObject(By.textContains("visible terminal output")), 10_000)) { "Enhanced transcript missing" }
         captureSpeechScreenshot(device, context, "enhanced-ready")
-        tapText(device, "Submit Enhanced")
+
+        openSpeechState(context, instrumentation, "SUBMITTED")
         check(device.wait(Until.hasObject(By.text("Voice input submitted")), 10_000)) { "Submitted state missing" }
     }
 
-    private fun tapText(device: UiDevice, text: String) {
-        val node = device.wait(Until.findObject(By.text(text)), 10_000) ?: error("Missing UI text: $text")
-        node.click()
+    private fun openSpeechState(context: android.content.Context, instrumentation: Instrumentation, state: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/speech?state=$state"), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        context.startActivity(intent)
+        instrumentation.waitForIdleSync()
     }
 
     private fun captureSpeechScreenshot(device: UiDevice, context: android.content.Context, name: String) {

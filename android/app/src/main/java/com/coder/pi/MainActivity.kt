@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private var deepLinkTerminalId by mutableStateOf<String?>(null)
     private var debugPlaygroundRevision by mutableIntStateOf(0)
     private var debugSpeechRevision by mutableIntStateOf(0)
+    private var debugSpeechState by mutableStateOf<String?>(null)
     private var terminalPreferences: SharedPreferences? = null
     private var terminalPreferencesListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
@@ -68,6 +69,7 @@ class MainActivity : AppCompatActivity() {
                 deepLinkRevision = deepLinkRevision,
                 debugPlaygroundRevision = debugPlaygroundRevision,
                 debugSpeechRevision = debugSpeechRevision,
+                debugSpeechState = debugSpeechState,
                 onThemeChanged = {
                     currentTheme = CoderThemes.current(this)
                     terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
@@ -97,7 +99,10 @@ class MainActivity : AppCompatActivity() {
             if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                 when (uri.path?.trim('/')) {
                     "render" -> debugPlaygroundRevision++
-                    "speech" -> debugSpeechRevision++
+                    "speech" -> {
+                        debugSpeechState = uri.getQueryParameter("state")
+                        debugSpeechRevision++
+                    }
                 }
             }
             return

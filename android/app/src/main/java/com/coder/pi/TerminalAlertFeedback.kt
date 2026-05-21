@@ -4,11 +4,11 @@ import android.content.Context
 import androidx.core.content.edit
 
 enum class TerminalAlertFeedbackState(val id: String, val label: String, val defaultSoundId: String, val defaultHapticId: String) {
-    SUCCESS("success", "Idle / Success", "yup-01", TerminalHapticPatterns.defaultSuccessPatternId),
-    SUBMIT("submit", "Message Submitted", "bip-bop-01", "double_tap"),
-    ATTENTION("attention", "Attention Required", "alert-01", TerminalHapticPatterns.defaultAttentionPatternId),
+    SUCCESS("success", "Idle / Success", "bip-bop-05", TerminalHapticPatterns.defaultSuccessPatternId),
+    SUBMIT("submit", "Message Submitted", "staplebops-01", "double_tap"),
+    ATTENTION("attention", "Attention Required", "alert-02", TerminalHapticPatterns.defaultAttentionPatternId),
     INTERRUPTED("interrupted", "Interrupted", "nope-03", "heavy"),
-    ERROR("error", "Error", "nope-01", TerminalHapticPatterns.defaultErrorPatternId),
+    ERROR("error", "Error", "nope-08", TerminalHapticPatterns.defaultErrorPatternId),
 }
 
 object TerminalAlertFeedback {

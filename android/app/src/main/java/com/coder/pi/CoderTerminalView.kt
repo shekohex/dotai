@@ -561,6 +561,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     fun sendKey(keyCode: Int, metaState: Int = 0, unicodeChar: Int = 0) {
         if (handle == 0L) return
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE) playAlertFeedback(TerminalAlertFeedbackState.INTERRUPTED)
         var nextMetaState = terminalMetaStateForOptionAsMeta(metaState, optionAsMetaEnabled())
         if (shiftLatch) nextMetaState = nextMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
         if (ctrlLatch) nextMetaState = nextMetaState or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
@@ -1169,6 +1170,12 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun oscProgressHapticPattern(): String = TerminalHapticPatterns.option(preferences.getString("osc.progress.haptic.pattern", TerminalHapticPatterns.defaultProgressPatternId).orEmpty()).id
+
+    fun playAlertFeedback(state: TerminalAlertFeedbackState) {
+        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled()) return
+        TerminalNotificationSounds.playPreview(context, TerminalAlertFeedback.soundId(context, state))
+        previewOscProgressHapticPattern(TerminalAlertFeedback.hapticId(context, state))
+    }
 
     fun previewOscProgressHapticPattern(pattern: String) {
         vibrateProgressPattern(pattern)

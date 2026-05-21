@@ -1647,9 +1647,10 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
             onClear = { chatDraft = ""; chatAttachments = emptyList() },
             onSubmit = {
                 terminalView.sendText(it)
+                terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT)
                 if (terminalView.chatAutoSendEnabled()) terminalView.sendKey(KeyEvent.KEYCODE_ENTER)
             },
-            onReturn = { terminalView.sendKey(KeyEvent.KEYCODE_ENTER) },
+            onReturn = { terminalView.sendKey(KeyEvent.KEYCODE_ENTER); terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT) },
         ) {
             onShowKeyboard()
             scope.launch {
@@ -1945,6 +1946,7 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
                 context.startActivity(intent)
             }
         }
+        item { Spacer(Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 28.dp)) }
     }
 }
 

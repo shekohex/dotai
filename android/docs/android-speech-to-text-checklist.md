@@ -291,11 +291,13 @@ Commit:
 
 ## ASTT-4: Add UI Automator Speech UX Journey
 
-Status: not-started
+Status: review
 
 Research:
 
 - Android UI Automator docs recommend modern Kotlin DSL with `uiAutomator`, `onElement`, `watchFor(PermissionDialog)`, `waitForStable`, and screenshots.
+- Existing tests use `androidx.test.uiautomator.UiDevice`, `By`, and `Until`; `libs.androidx.uiautomator` is already present in `app/build.gradle.kts`.
+- Added `app/src/androidTest/java/com/coder/pi/SpeechDebugWorkflowInstrumentedTest.kt` to launch `pi://debug/speech`, drive fake state controls, assert visible state labels/transcripts, enable `chat_auto_send`, submit enhanced text, and capture screenshots under app external files.
 
 Plan:
 
@@ -304,15 +306,15 @@ Plan:
 
 Checklist:
 
-- [ ] Add UI Automator dependency if missing.
-- [ ] Add `SpeechDebugWorkflowInstrumentedTest`.
-- [ ] Launch debug deep link with `Intent.ACTION_VIEW`.
-- [ ] Click mic and assert recording waveform.
-- [ ] Simulate partial transcript and assert read-only bubble.
-- [ ] Simulate final transcript and enhancement collapsed chip.
-- [ ] Simulate enhancement failure and assert retry/send-as-is.
-- [ ] Simulate enhancement success and assert enhanced text can submit.
-- [ ] Add auto-send-on-enhanced test path if setting enabled.
+- [x] Add UI Automator dependency if missing.
+- [x] Add `SpeechDebugWorkflowInstrumentedTest`.
+- [x] Launch debug deep link with `Intent.ACTION_VIEW`.
+- [x] Click mic and assert recording waveform.
+- [x] Simulate partial transcript and assert read-only bubble.
+- [x] Simulate final transcript and enhancement collapsed chip.
+- [x] Simulate enhancement failure and assert retry/send-as-is.
+- [x] Simulate enhancement success and assert enhanced text can submit.
+- [x] Add auto-send-on-enhanced test path if setting enabled.
 
 User story:
 
@@ -333,10 +335,14 @@ Validation:
 
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon`
 - `android screen capture --device <id> -o <file>` when manual proof is needed.
+- `./gradlew compileDebugAndroidTestKotlin --no-daemon` passed, `BUILD SUCCESSFUL in 8s`.
+- Connected execution blocked: `adb devices` shows no connected/running devices.
+- Screenshot proof blocked until connected execution can run.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: test compiles but has not run on device/emulator in this session.
 
 Commit:
 

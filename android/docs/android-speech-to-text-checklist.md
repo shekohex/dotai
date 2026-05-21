@@ -879,8 +879,8 @@ Implementation checklist:
 
 Validation:
 
-- `adb devices -l` currently shows only emulator; Pixel 7 Pro `192.168.1.104:37477` disconnected while attempting model pull.
-- Model/tokenizer pull is blocked until Pixel reconnects.
+- `adb devices -l` currently shows only emulator; target-hardware Parakeet/mic proof is blocked until Pixel 7 Pro or Samsung Tab A9 reconnects unlocked.
+- Model/tokenizer pull and live target-hardware smoke are blocked until target device reconnects unlocked.
 - Freeze mitigation validation: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `./gradlew assembleDebug --no-daemon` passed, APK installed on Pixel 7 Pro `192.168.1.107:37339`, and `scripts/android-restore-speech-models.sh 192.168.1.107:37339` restored local model/tokenizer after install. Code changes avoid Compose-state audio-frame list copying and run final sample flattening/LiteRT transcribe on `Dispatchers.Default` instead of main.
 - Streaming partial first pass: while recording, the app now snapshots the last ~5 seconds of captured audio every 20 frames and runs a single background partial transcription job at a time. Partial results update the dictation transcript bubble before final end-of-speech transcription. This is a first rolling-segment implementation; still needs real-device tuning against VoiceInk behavior for overlap merge and latency.
 - Streaming partial tuning: rolling partial jobs are now throttled to at most once every ~2 seconds, require at least ~2 seconds of captured audio, and wait for at least 40 new frames since the last partial request. This reduces repeated LiteRT contention during live capture on Pixel while keeping transcript bubble updates before finalization.
@@ -910,3 +910,4 @@ Commit:
 - Manual finish behavior: `a685651` (`fix(android): keep speech recording until finish`).
 - Validation docs: `c1f9ff4` (`docs(android): update speech live transcription validation`).
 - State-machine action UI: `f92dd1d` (`fix(android): derive speech actions from state machine`).
+- Emulator UI journey stabilization: `5ed947e` (`test(android): stabilize speech debug UI journey`).

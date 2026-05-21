@@ -52,7 +52,7 @@ const createContext = () => ({
 
 const decodeSequence = (sequence: string) => {
   const frame = sequence.startsWith("\u001bPtmux;")
-    ? sequence.slice(8, -2).replaceAll("\u001b\u001b", "\u001b")
+    ? sequence.slice("\u001bPtmux;".length, -2).replaceAll("\u001b\u001b", "\u001b")
     : sequence;
   const body = frame.slice(2, -2);
   const [command, namespace, version, eventName, payload] = body.split(";");
@@ -200,7 +200,7 @@ test("goal progress event emits elapsed progress payload", () => {
   });
 });
 
-test("tmux writes passthrough sequence to pane tty", () => {
+test("tmux writes raw Pi OSC sequence to client tty", () => {
   process.env.TMUX = "/tmp/tmux-1000/default,123,0";
   delete process.env.SSH_CONNECTION;
   delete process.env.SSH_CLIENT;
@@ -219,7 +219,36 @@ test("tmux writes passthrough sequence to pane tty", () => {
 
   expect(writeFileSyncSpy).toHaveBeenCalledWith(
     "/dev/ttys009",
-    expect.stringContaining("\u001bPtmux;\u001b\u001b\u001b]6767;pi;1;agent.run;"),
+    expect.stringContaining("\u001b]6767;pi;1;agent.run;"),
+    { encoding: "utf8" },
+  );
+  expect(stdoutSpy).not.toHaveBeenCalled();
+});
+
+test("tmux falls back to passthrough sequence when client tty raw write fails", () => {
+  process.env.TMUX = "/tmp/tmux-1000/default,123,0";
+  delete process.env.SSH_CONNECTION;
+  delete process.env.SSH_CLIENT;
+  delete process.env.SSH_TTY;
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "execFileSync").mockReturnValue("/dev/ttys009\n");
+  const writeFileSyncSpy = vi
+    .spyOn(terminalNotifyRuntime, "writeFileSync")
+    .mockImplementationOnce(() => {
+      throw new Error("raw unavailable");
+    })
+    .mockImplementation(() => undefined);
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("agent_start", { type: "agent_start" });
+
+  expect(writeFileSyncSpy).toHaveBeenNthCalledWith(
+    2,
+    "/dev/ttys009",
+    expect.stringContaining("\u001bPtmux;\u001b\u001b]6767;pi;1;agent.run;"),
     { encoding: "utf8" },
   );
   expect(stdoutSpy).not.toHaveBeenCalled();

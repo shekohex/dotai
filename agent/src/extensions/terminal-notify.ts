@@ -34,7 +34,7 @@ export const createOsc777Sequence = (title: string, body: string): string =>
   `${ESC}]777;notify;${sanitizeOscField(title)};${sanitizeOscField(body)}${BEL}`;
 
 export const createTmuxPassthroughSequence = (sequence: string): string =>
-  `${ESC}Ptmux;${ESC}${sequence.replaceAll(ESC, `${ESC}${ESC}`)}${ST}`;
+  `${ESC}Ptmux;${sequence.replaceAll(ESC, `${ESC}${ESC}`)}${ST}`;
 
 export const isSshSession = (): boolean =>
   [process.env.SSH_CONNECTION, process.env.SSH_CLIENT, process.env.SSH_TTY].some(

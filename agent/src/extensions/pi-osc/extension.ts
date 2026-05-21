@@ -7,7 +7,6 @@ import {
   createTmuxPassthroughSequence,
   getTmuxClientTty,
   getTmuxPaneTty,
-  isSshSession,
   terminalNotifyRuntime,
 } from "../terminal-notify.js";
 import { createPiOscSequence, type PiOscEnvelope, type PiOscV1Event } from "./encoder.js";
@@ -55,21 +54,19 @@ const writePiOscSequence = (sequence: string): void => {
     return;
   }
 
-  if (isSshSession()) {
-    const clientTty = getTmuxClientTty();
-    if (clientTty !== null) {
-      try {
-        terminalNotifyRuntime.writeFileSync(clientTty, sequence, { encoding: "utf8" });
-        return;
-      } catch {}
+  const clientTty = getTmuxClientTty();
+  if (clientTty !== null) {
+    try {
+      terminalNotifyRuntime.writeFileSync(clientTty, sequence, { encoding: "utf8" });
+      return;
+    } catch {}
 
-      try {
-        terminalNotifyRuntime.writeFileSync(clientTty, createTmuxPassthroughSequence(sequence), {
-          encoding: "utf8",
-        });
-        return;
-      } catch {}
-    }
+    try {
+      terminalNotifyRuntime.writeFileSync(clientTty, createTmuxPassthroughSequence(sequence), {
+        encoding: "utf8",
+      });
+      return;
+    } catch {}
   }
 
   try {

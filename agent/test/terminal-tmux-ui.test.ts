@@ -120,7 +120,7 @@ test("session_start handler uses current ctx session manager instead of captured
 
   expect(writeFileSyncSpy).toHaveBeenCalledWith(
     "/dev/ttys009",
-    "\u001bPtmux;\u001b\u001b\u001b]0;π - fresh-session - project-name\u0007\u001b\\",
+    "\u001bPtmux;\u001b\u001b]0;π - fresh-session - project-name\u0007\u001b\\",
     { encoding: "utf8" },
   );
 });
@@ -204,7 +204,7 @@ test("emitTmuxProgress falls back to pane tty passthrough", () => {
   expect(emitTmuxProgress(true)).toBeTruthy();
   expect(writeFileSyncSpy).toHaveBeenCalledWith(
     "/dev/ttys009",
-    "\u001bPtmux;\u001b\u001b\u001b]9;4;3\u0007\u001b\\",
+    "\u001bPtmux;\u001b\u001b]9;4;3\u0007\u001b\\",
     { encoding: "utf8" },
   );
 });
@@ -245,7 +245,7 @@ test("writeTmuxUiSequence falls back to client tty passthrough after direct writ
   expect(writeFileSyncSpy).toHaveBeenNthCalledWith(
     2,
     "/dev/ttys010",
-    "\u001bPtmux;\u001b\u001b\u001b]0;π - agent\u0007\u001b\\",
+    "\u001bPtmux;\u001b\u001b]0;π - agent\u0007\u001b\\",
     { encoding: "utf8" },
   );
 });

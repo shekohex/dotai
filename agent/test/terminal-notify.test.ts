@@ -112,7 +112,7 @@ test("createOsc777Sequence sanitizes control chars and separators", () => {
 test("createTmuxPassthroughSequence wraps OSC for tmux passthrough", () => {
   const sequence = createTmuxPassthroughSequence("\u001b]777;notify;π;done\u0007");
 
-  expect(sequence).toBe("\u001bPtmux;\u001b\u001b\u001b]777;notify;π;done\u0007\u001b\\");
+  expect(sequence).toBe("\u001bPtmux;\u001b\u001b]777;notify;π;done\u0007\u001b\\");
 });
 
 test("getTmuxPaneTty returns null outside tmux", () => {
@@ -156,7 +156,7 @@ test("notify writes passthrough sequence to tmux pane tty", () => {
 
   expect(writeFileSyncSpy).toHaveBeenCalledWith(
     "/dev/ttys009",
-    "\u001bPtmux;\u001b\u001b\u001b]777;notify;π;done\u0007\u001b\\",
+    "\u001bPtmux;\u001b\u001b]777;notify;π;done\u0007\u001b\\",
     { encoding: "utf8" },
   );
   expect(stdoutSpy).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ test("notify falls back to client tty passthrough after direct client tty failur
   expect(writeFileSyncSpy).toHaveBeenNthCalledWith(
     2,
     "/dev/ttys010",
-    "\u001bPtmux;\u001b\u001b\u001b]777;notify;π;done\u0007\u001b\\",
+    "\u001bPtmux;\u001b\u001b]777;notify;π;done\u0007\u001b\\",
     { encoding: "utf8" },
   );
   expect(stdoutSpy).not.toHaveBeenCalled();

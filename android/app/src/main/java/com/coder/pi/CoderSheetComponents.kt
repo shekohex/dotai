@@ -219,7 +219,12 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                 dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
                 return@launch
             }
-            val activeTranscriber = speechTranscriber ?: return@launch
+            val activeTranscriber = speechTranscriber
+            if (activeTranscriber == null) {
+                dictationTranscript = "Speech model is still warming. Try again in a moment."
+                dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+                return@launch
+            }
             val result = transcribeFinalSpeech(samples, speechAudioCapture.sampleRate, activeTranscriber, speechTranscriberMutex)
             if (sessionId != dictationSessionId) return@launch
             result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
@@ -470,7 +475,7 @@ suspend fun transcribeFinalSpeech(samples: FloatArray, sampleRate: Int, speechTr
 fun finalSpeechChunks(samples: FloatArray, sampleRate: Int): List<FloatArray> {
     if (sampleRate <= 0 || samples.isEmpty()) return emptyList()
     val windowSamples = sampleRate * 4
-    val stepSamples = sampleRate * 3
+    val stepSamples = sampleRate * 2
     val trailingSilenceSamples = sampleRate
     val chunks = mutableListOf<FloatArray>()
     var start = 0
@@ -762,10 +767,12 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
     val scrollState = rememberScrollState()
     LaunchedEffect(transcript) { scrollState.animateScrollTo(scrollState.maxValue) }
     val hasTranscript = transcript.isNotBlank()
+    val processingState = displayState in setOf(SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED)
+    val showTranscript = hasTranscript && !processingState
     val visibleActions = SpeechDictationUxContract.visibleActionsFor(displayState)
     Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 28.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(Modifier.width(if (hasTranscript) 340.dp else 220.dp).clip(RoundedCornerShape(if (hasTranscript) 20.dp else 30.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (hasTranscript) 20.dp else 30.dp)).animateContentSize()) {
-            if (hasTranscript) {
+        Column(Modifier.width(if (showTranscript) 340.dp else 220.dp).clip(RoundedCornerShape(if (showTranscript) 20.dp else 30.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (showTranscript) 20.dp else 30.dp)).animateContentSize()) {
+            if (showTranscript) {
                 Column(Modifier.fillMaxWidth().height(74.dp).padding(horizontal = 18.dp, vertical = 9.dp).verticalScroll(scrollState)) {
                     Text(transcript, color = tokens.text.copy(alpha = 0.88f), fontSize = 14.sp, lineHeight = 19.sp)
                 }
@@ -773,7 +780,9 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
             }
             Row(Modifier.fillMaxWidth().height(54.dp).padding(start = 18.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    if (displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED)) {
+                    if (processingState) {
+                        DictationProcessingStatus(if (displayState == SpeechDictationDisplayState.TRANSCRIBING) "Transcribing" else "Enhancing", tokens)
+                    } else if (displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
                         DictationWaveform(active = true, meter = meter, levels = waveformLevels)
                     } else {
                         DictationMetricsSummary(metrics, firstPartialMillis, tokens)
@@ -784,6 +793,25 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
             }
         }
         DictationSecondaryActions(visibleActions.secondary, tokens, onAction)
+    }
+}
+
+@Composable
+private fun DictationProcessingStatus(label: String, tokens: UiTokens) {
+    var activeDot by remember(label) { mutableIntStateOf(0) }
+    LaunchedEffect(label) {
+        while (true) {
+            delay(if (label == "Transcribing") 180L else 220L)
+            activeDot = (activeDot + 1) % 7
+        }
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, color = tokens.text.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            repeat(5) { index ->
+                Box(Modifier.width(3.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(tokens.text.copy(alpha = if (index <= activeDot.coerceAtMost(4)) 0.85f else 0.25f)))
+            }
+        }
     }
 }
 

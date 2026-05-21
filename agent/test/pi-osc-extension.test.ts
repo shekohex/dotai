@@ -200,6 +200,22 @@ test("goal progress event emits elapsed progress payload", () => {
   });
 });
 
+test("goal clear before active progress is ignored", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.events.emit("goal:progress", {
+    status: "clear",
+    sessionId: "session-1",
+    cwd: "/workspace",
+  });
+
+  expect(stdoutSpy).not.toHaveBeenCalled();
+});
+
 test("tmux writes raw Pi OSC sequence to client tty", () => {
   process.env.TMUX = "/tmp/tmux-1000/default,123,0";
   delete process.env.SSH_CONNECTION;

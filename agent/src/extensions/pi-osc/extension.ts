@@ -104,6 +104,7 @@ export const emitPiOscEvent = (
 
 export default function piOscExtension(pi: ExtensionAPI): void {
   let seq = 0;
+  let goalProgressActive = false;
   const notifiedInterviewUrls = new Set<string>();
   const emit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload): void => {
     seq += 1;
@@ -115,6 +116,10 @@ export default function piOscExtension(pi: ExtensionAPI): void {
       return;
     }
     const goalProgress = Value.Parse(GoalProgressEventSchema, event);
+    if (goalProgress.status === "clear" && !goalProgressActive) {
+      return;
+    }
+    goalProgressActive = goalProgress.status === "active";
     seq += 1;
     writePiOscSequence(
       createPiOscSequence("agent.progress", {

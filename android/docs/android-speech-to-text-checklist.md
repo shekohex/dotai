@@ -70,8 +70,8 @@ Objective-to-evidence map:
 - Optional enhancement with transcript plus terminal context: `SpeechEnhancement.kt` renders bounded `<TRANSCRIPT>` and `<CONTEXT>`, redacts secrets, and tests pass.
 - Insert/send through existing chat draft behavior: `mergeSpeechTranscriptIntoDraft` and `CoderApp.kt` route accepted speech through `chatDraft`; `SpeechChatDraftTest` passes. Target-hardware paste-only/paste+Enter smoke remains blocked.
 - Audio never leaves device for transcription: transcription path is local `LiteRtParakeetTranscriber`; enhancement is separate and optional; privacy audit tests pass.
-- Local Parakeet runs through LiteRT on Pixel 7 Pro or Samsung Tab A9: blocked. Current `adb devices` shows only `emulator-5554`, and cached Parakeet `.tflite` files are Git LFS pointers, not model payloads.
-- Real-device support proof: blocked until Pixel 7 Pro or Samsung Tab A9 is attached with downloaded model/tokenizer payloads.
+- Local Parakeet runs through LiteRT on Pixel 7 Pro or Samsung Tab A9: blocked. Reference model and tokenizer payloads are downloaded and verified, but current `adb devices` shows only `emulator-5554`.
+- Real-device support proof: blocked until Pixel 7 Pro or Samsung Tab A9 is attached for runtime/mic proof.
 - Subagent review loop: blocked because `subagent` tool is unavailable in current toolset; self-review residual risks are recorded per ticket.
 
 ## VoiceInk UI/UX Pattern Inventory
@@ -773,7 +773,7 @@ Validation:
 Review:
 
 - Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: device-only lifecycle cases and real Parakeet support proof remain blocked without connected target device/model.
+- Self-review residual risk: device-only lifecycle cases and real Parakeet support proof remain blocked without connected target device.
 
 Commit:
 

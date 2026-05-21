@@ -2,11 +2,6 @@ package com.coder.pi
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import android.Manifest
 import android.net.Uri
 import android.os.SystemClock
@@ -94,6 +89,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.pow
 
 data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
@@ -116,8 +112,10 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
     var dictationTranscript by remember { mutableStateOf("") }
     var dictationMeter by remember { mutableStateOf(0f) }
+    var dictationWaveformLevels by remember { mutableStateOf(List(15) { 0f }) }
     val dictationAudioFrames = remember { mutableListOf<FloatArray>() }
     var partialTranscriptionJob by remember { mutableStateOf<Job?>(null) }
+    var partialTranscriptionLoopJob by remember { mutableStateOf<Job?>(null) }
     var finalTranscriptionJob by remember { mutableStateOf<Job?>(null) }
     var enhancementJob by remember { mutableStateOf<Job?>(null) }
     var warmModelJob by remember { mutableStateOf<Job?>(null) }
@@ -128,6 +126,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var dictationStartedAt by remember { mutableStateOf(0L) }
     var firstPartialAt by remember { mutableStateOf<Long?>(null) }
     var lastSpeechMetrics by remember { mutableStateOf<SpeechTranscriptionMetrics?>(null) }
+    var lastAppliedPartialEndSample by remember { mutableIntStateOf(0) }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -147,12 +146,15 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         enhancementJob = null
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
+        partialTranscriptionLoopJob?.cancel()
+        partialTranscriptionLoopJob = null
         dictating = false
         dictationState = SpeechDictationDisplayState.IDLE
         dictationTranscript = ""
         dictationAudioFrames.clear()
         liveChunkEndSample = speechAudioCapture.sampleRate
         liveTranscriptMerger.reset()
+        dictationWaveformLevels = List(15) { 0f }
     }
     fun acceptDictationTranscript() {
         val mergedDraft = mergeSpeechTranscriptIntoDraft(text, dictationTranscript)
@@ -188,6 +190,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         }
     }
     fun transcribeDictationAudio(frames: List<FloatArray> = dictationAudioFrames.toList()) {
+        partialTranscriptionLoopJob?.cancel()
+        partialTranscriptionLoopJob = null
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
         finalTranscriptionJob?.cancel()
@@ -221,26 +225,34 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             )
         }
     }
-    fun maybeTranscribePartialAudio() {
+    suspend fun runPartialTranscriptionPass(sessionId: Int) {
         if (!speechSettings.localTranscriptionEnabled) return
-        if (partialTranscriptionJob?.isActive == true) return
         val totalSamples = dictationAudioFrames.totalSampleCount()
         if (totalSamples < liveChunkEndSample) return
-        val sessionId = dictationSessionId
-        val snapshot = dictationAudioFrames.sliceSampleWindow((totalSamples - speechAudioCapture.sampleRate * 15).coerceAtLeast(0), totalSamples, speechAudioCapture.sampleRate * 15).padTrailingSilence(speechAudioCapture.sampleRate)
+        val partialEndSample = totalSamples
+        val snapshot = dictationAudioFrames.sliceSampleWindow((partialEndSample - speechAudioCapture.sampleRate * 15).coerceAtLeast(0), partialEndSample, speechAudioCapture.sampleRate * 15).padTrailingSilence(speechAudioCapture.sampleRate)
         liveChunkEndSample = totalSamples + speechAudioCapture.sampleRate
-        partialTranscriptionJob = scope.launch {
-            try {
-                val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
+        val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
+        if (sessionId != dictationSessionId) return
+        if (partialEndSample <= lastAppliedPartialEndSample) return
+        result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
+        result.getOrNull()?.text?.trim()?.takeIf { it.isNotBlank() }?.let { partialText ->
+            if (dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
+                if (firstPartialAt == null) firstPartialAt = SystemClock.elapsedRealtime()
+                dictationTranscript = liveTranscriptMerger.merge(partialText)
+                lastAppliedPartialEndSample = partialEndSample
+            }
+        }
+    }
+    fun startPartialTranscriptionLoop(sessionId: Int) {
+        partialTranscriptionLoopJob?.cancel()
+        partialTranscriptionLoopJob = scope.launch {
+            while (sessionId == dictationSessionId && dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
+                delay(1_000L)
                 if (sessionId != dictationSessionId) return@launch
-                result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
-                result.getOrNull()?.text?.trim()?.takeIf { it.isNotBlank() }?.let { partialText ->
-                    if (dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
-                        if (firstPartialAt == null) firstPartialAt = SystemClock.elapsedRealtime()
-                        dictationTranscript = liveTranscriptMerger.merge(partialText)
-                    }
-                }
-            } finally {
+                if (dictationState !in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) return@launch
+                if (speechAudioCapture.sampleRate <= 0) continue
+                runPartialTranscriptionPass(sessionId)
                 if (sessionId == dictationSessionId) {
                     partialTranscriptionJob = null
                 }
@@ -252,26 +264,32 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictationStartedAt = SystemClock.elapsedRealtime()
         firstPartialAt = null
         lastSpeechMetrics = null
+        lastAppliedPartialEndSample = 0
         dictationState = SpeechDictationDisplayState.RECORDING_EMPTY
         dictationTranscript = ""
         dictationMeter = 0f
         dictationAudioFrames.clear()
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
+        partialTranscriptionLoopJob?.cancel()
+        partialTranscriptionLoopJob = null
         finalTranscriptionJob?.cancel()
         finalTranscriptionJob = null
         enhancementJob?.cancel()
         enhancementJob = null
         liveChunkEndSample = speechAudioCapture.sampleRate
         liveTranscriptMerger.reset()
+        dictationWaveformLevels = List(15) { 0f }
         dictating = true
+        val sessionId = dictationSessionId
+        startPartialTranscriptionLoop(sessionId)
         speechAudioCapture.start(
             onFrame = { frame ->
                 scope.launch {
                     dictationAudioFrames.add(frame.samples.copyOf())
                     dictationMeter = frame.meter
+                    dictationWaveformLevels = dictationWaveformLevels.drop(1) + frame.meter
                     if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
-                    if (frame.speechDetected && !frame.speechPaused) maybeTranscribePartialAudio()
                 }
             },
             onFailure = { failure ->
@@ -309,13 +327,14 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             }
         }
     }
-    DisposableEffect(speechAudioCapture, speechTranscriber) { onDispose { partialTranscriptionJob?.cancel(); finalTranscriptionJob?.cancel(); enhancementJob?.cancel(); warmModelJob?.cancel(); speechAudioCapture.stopAsync(); speechTranscriber.close() } }
+    DisposableEffect(speechAudioCapture, speechTranscriber) { onDispose { partialTranscriptionLoopJob?.cancel(); partialTranscriptionJob?.cancel(); finalTranscriptionJob?.cancel(); enhancementJob?.cancel(); warmModelJob?.cancel(); speechAudioCapture.stopAsync(); speechTranscriber.close() } }
     if (dictating) {
         DictationInputSurface(
             tokens = tokens,
             displayState = dictationState,
             transcript = dictationTranscript,
             meter = dictationMeter,
+            waveformLevels = dictationWaveformLevels,
             metrics = lastSpeechMetrics,
             firstPartialMillis = firstPartialAt?.let { it - dictationStartedAt },
             modifier = modifier,
@@ -650,7 +669,7 @@ private fun ChatActionRail(tokens: UiTokens, onAttach: () -> Unit, onClose: () -
 }
 
 @Composable
-fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplayState, transcript: String, modifier: Modifier = Modifier, meter: Float = 0f, metrics: SpeechTranscriptionMetrics? = null, firstPartialMillis: Long? = null, onAction: (SpeechDictationAction) -> Unit) {
+fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplayState, transcript: String, modifier: Modifier = Modifier, meter: Float = 0f, waveformLevels: List<Float> = List(15) { 0f }, metrics: SpeechTranscriptionMetrics? = null, firstPartialMillis: Long? = null, onAction: (SpeechDictationAction) -> Unit) {
     val contract = SpeechDictationUxContract.contractFor(displayState)
     val scrollState = rememberScrollState()
     LaunchedEffect(transcript) { scrollState.animateScrollTo(scrollState.maxValue) }
@@ -667,7 +686,7 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
             Row(Modifier.fillMaxWidth().height(54.dp).padding(start = 18.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     if (displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED)) {
-                        DictationWaveform(active = true, meter = meter)
+                        DictationWaveform(active = true, meter = meter, levels = waveformLevels)
                     } else {
                         DictationMetricsSummary(metrics, firstPartialMillis, tokens)
                     }
@@ -695,18 +714,18 @@ private fun DictationMetricsSummary(metrics: SpeechTranscriptionMetrics?, firstP
 }
 
 @Composable
-private fun DictationWaveform(active: Boolean, meter: Float) {
-    val transition = rememberInfiniteTransition(label = "dictation-waveform")
-    val phase by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "dictation-waveform-phase")
+private fun DictationWaveform(active: Boolean, meter: Float, levels: List<Float>) {
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(15) { index ->
             val weight = 1f - kotlin.math.abs(index - 7) / 8f
-            val meterBoost = meter.coerceIn(0f, 1f)
-            val animatedHeight = if (active) 8.dp + (22.dp * (((phase + index * 0.09f) % 1f) * 0.45f + meterBoost) * weight).coerceAtMost(30.dp) else 8.dp + 10.dp * weight
-            Box(Modifier.width(4.dp).height(animatedHeight).clip(RoundedCornerShape(6.dp)).background(Color(0xfff04452)))
+            val level = (levels.getOrNull(index) ?: meter).coerceIn(0f, 1f)
+            val height = if (active) 4.dp + (24.dp * level.powForWaveform() * (0.7f + weight * 0.3f)) else 4.dp
+            Box(Modifier.width(4.dp).height(height.coerceAtLeast(4.dp)).clip(RoundedCornerShape(6.dp)).background(Color(0xfff04452).copy(alpha = if (active) 0.85f else 0.5f)))
         }
     }
 }
+
+private fun Float.powForWaveform(): Float = this.toDouble().pow(0.7).toFloat()
 
 @Composable
 private fun DictationPrimaryAction(action: SpeechDictationAction?, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {

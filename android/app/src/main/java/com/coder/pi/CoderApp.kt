@@ -1326,14 +1326,14 @@ fun TerminalSurface(
     DisposableEffect(terminalView) {
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
-        terminalView.onResume()
+        terminalView.setTerminalForegroundActive(true)
         terminalView.post { terminalView.forceRefreshSurface() }
         terminalView.onOscMetadataChanged = metadataHandler
         terminalView.onHyperlinkActivated = hyperlinkHandler
         onDispose {
             if (terminalView.onOscMetadataChanged === metadataHandler) terminalView.onOscMetadataChanged = null
             if (terminalView.onHyperlinkActivated === hyperlinkHandler) terminalView.onHyperlinkActivated = null
-            terminalView.onPause()
+            terminalView.setTerminalForegroundActive(false)
         }
     }
     Column(modifier.background(theme.background.toComposeColor())) {

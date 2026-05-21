@@ -147,13 +147,18 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     var onAgentStateChanged: ((TerminalAgentStateSnapshot) -> Unit)? = null
 
     override fun onResume() {
-        terminalViewForeground = true
         super.onResume()
+        setTerminalForegroundActive(true)
     }
 
     override fun onPause() {
-        terminalViewForeground = false
+        setTerminalForegroundActive(false)
         super.onPause()
+    }
+
+    fun setTerminalForegroundActive(active: Boolean) {
+        terminalViewForeground = active
+        if (active) post { forceRefreshSurface() }
     }
 
     init {
@@ -191,10 +196,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onSurfaceChanged(gl: javax.microedition.khronos.opengles.GL10?, width: Int, height: Int) {
-        surfaceWidth = width
-        surfaceHeight = height
-        if (handle != 0L && rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp))
-        notifyTerminalSizeChanged()
+        resizeNativeSurface(width, height, true, queueOnGlThread = false)
     }
 
     override fun onDrawFrame(gl: javax.microedition.khronos.opengles.GL10?) {
@@ -779,27 +781,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     fun refreshSurface() {
-        if (handle != 0L && width > 0 && height > 0) {
-            if (surfaceWidth == width && surfaceHeight == height) {
-                requestRender()
-                return
-            }
-            surfaceWidth = width
-            surfaceHeight = height
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
-            notifyTerminalSizeChanged()
-            requestRender()
-        }
+        resizeNativeSurface(width, height, false, queueOnGlThread = true)
     }
 
     fun forceRefreshSurface() {
-        if (handle != 0L && width > 0 && height > 0) {
-            surfaceWidth = width
-            surfaceHeight = height
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, width, height, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
-            notifyTerminalSizeChanged()
-            requestRender()
-        }
+        resizeNativeSurface(width, height, true, queueOnGlThread = true)
     }
 
     fun adjustFontSize(delta: Int) {
@@ -810,10 +796,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         cellHeight = nextHeight
         cellWidth = terminalCellWidthForFontSize(context, nextSizeSp)
         preferences.edit { putInt("fontSizeSp", fontSizeSp).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
-        if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
-            notifyTerminalSizeChanged()
-        }
+        resizeNativeSurface(surfaceWidth, surfaceHeight, true, queueOnGlThread = true)
     }
 
     fun fontSizePoints(): Int {
@@ -828,10 +811,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         cellHeight = nextHeight
         cellWidth = nextWidth
         preferences.edit { putInt("fontSizeSp", fontSizeSp).putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
-        if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
-            notifyTerminalSizeChanged()
-        }
+        resizeNativeSurface(surfaceWidth, surfaceHeight, true, queueOnGlThread = true)
     }
 
     fun setFontFamily(key: String) {
@@ -852,10 +832,31 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         cellHeight = nextHeight
         cellWidth = nextWidth
         preferences.edit { putInt("cellWidth", cellWidth).putInt("cellHeight", cellHeight) }
-        if (handle != 0L && surfaceWidth > 0 && surfaceHeight > 0) {
-            queueEvent { if (rendererHandle != 0L) native.nativeRendererSurfaceChanged(handle, rendererHandle, surfaceWidth, surfaceHeight, cellWidth, cellHeight, terminalFontPixelSize(context, fontSizeSp)) }
-            notifyTerminalSizeChanged()
+        resizeNativeSurface(surfaceWidth, surfaceHeight, true, queueOnGlThread = true)
+    }
+
+    private fun resizeNativeSurface(nextWidth: Int, nextHeight: Int, force: Boolean, queueOnGlThread: Boolean) {
+        if (handle == 0L || rendererHandle == 0L || nextWidth <= 0 || nextHeight <= 0) return
+        val changed = surfaceWidth != nextWidth || surfaceHeight != nextHeight
+        if (!force && !changed) {
+            requestRender()
+            return
         }
+        surfaceWidth = nextWidth
+        surfaceHeight = nextHeight
+        val terminalHandle = handle
+        val currentRendererHandle = rendererHandle
+        val currentCellWidth = cellWidth
+        val currentCellHeight = cellHeight
+        val currentFontPixelSize = terminalFontPixelSize(context, fontSizeSp)
+        val resize = {
+            if (handle == terminalHandle && rendererHandle == currentRendererHandle) {
+                native.nativeRendererSurfaceChanged(terminalHandle, currentRendererHandle, nextWidth, nextHeight, currentCellWidth, currentCellHeight, currentFontPixelSize)
+            }
+        }
+        if (queueOnGlThread) queueEvent(resize) else resize()
+        notifyTerminalSizeChanged()
+        requestRender()
     }
 
     private fun setNativeFont(key: String) {

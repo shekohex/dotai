@@ -174,8 +174,14 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate) }
             result.fold(
                 onSuccess = {
-                    dictationTranscript = it.text
-                    enhanceTranscript(it.text)
+                    val transcript = it.text.trim()
+                    if (transcript.isBlank()) {
+                        dictationTranscript = "No speech detected."
+                        dictationState = SpeechDictationDisplayState.NO_SPEECH
+                    } else {
+                        dictationTranscript = transcript
+                        enhanceTranscript(transcript)
+                    }
                 },
                 onFailure = {
                     dictationTranscript = "Speech transcription unavailable."
@@ -258,6 +264,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                 val nextState = SpeechDictationUxContract.transition(dictationState, action)
                 dictationState = nextState
                 when (action) {
+                    SpeechDictationAction.START_RECORDING -> startDictationCapture()
                     SpeechDictationAction.DETECT_SPEECH -> dictationTranscript = SpeechDictationUxContract.fixtures.partialTranscript
                     SpeechDictationAction.COMPLETE_TRANSCRIPTION -> dictationTranscript = SpeechDictationUxContract.fixtures.finalTranscript
                     SpeechDictationAction.COMPLETE_ENHANCEMENT -> dictationTranscript = SpeechDictationUxContract.fixtures.enhancedTranscript
@@ -625,6 +632,7 @@ private fun DictationPrimaryAction(action: SpeechDictationAction?, tokens: UiTok
         return
     }
     val icon = when (action) {
+        SpeechDictationAction.START_RECORDING -> R.drawable.ic_feather_mic
         SpeechDictationAction.STOP_RECORDING -> R.drawable.ic_feather_send
         SpeechDictationAction.RETRY_ENHANCEMENT -> R.drawable.ic_feather_rotate_ccw
         SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> R.drawable.ic_feather_arrow_up
@@ -638,6 +646,7 @@ private fun DictationPrimaryAction(action: SpeechDictationAction?, tokens: UiTok
 }
 
 private fun SpeechDictationAction.accessibilityLabel(): String = when (this) {
+    SpeechDictationAction.START_RECORDING -> "Retry voice input"
     SpeechDictationAction.STOP_RECORDING -> "Finish voice input"
     SpeechDictationAction.SEND_RAW -> "Send transcript"
     SpeechDictationAction.SEND_ENHANCED -> "Send enhanced transcript"

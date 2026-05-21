@@ -10,6 +10,7 @@ enum class SpeechDictationDisplayState {
     ENHANCEMENT_TIMED_OUT,
     ENHANCEMENT_FAILED,
     ENHANCED_READY,
+    NO_SPEECH,
     SUBMITTED,
     CANCELED,
 }
@@ -84,6 +85,7 @@ object SpeechDictationUxContract {
         SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT to SpeechDictationStateContract(SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT, setOf(SpeechDictationPipelineState.ENHANCEMENT), true, true, true, true, false, false, true, 220, SpeechDictationAccessibility("Enhancement timed out", "speech_enhancement_timed_out")),
         SpeechDictationDisplayState.ENHANCEMENT_FAILED to SpeechDictationStateContract(SpeechDictationDisplayState.ENHANCEMENT_FAILED, setOf(SpeechDictationPipelineState.ENHANCEMENT), true, true, true, true, false, false, true, 220, SpeechDictationAccessibility("Enhancement failed", "speech_enhancement_failed")),
         SpeechDictationDisplayState.ENHANCED_READY to SpeechDictationStateContract(SpeechDictationDisplayState.ENHANCED_READY, setOf(SpeechDictationPipelineState.ENHANCEMENT), true, true, false, true, true, true, true, 220, SpeechDictationAccessibility("Enhanced transcript ready", "speech_enhanced_ready")),
+        SpeechDictationDisplayState.NO_SPEECH to SpeechDictationStateContract(SpeechDictationDisplayState.NO_SPEECH, setOf(SpeechDictationPipelineState.COMPLETE), false, true, true, false, false, false, true, 220, SpeechDictationAccessibility("No speech detected", "speech_no_speech")),
         SpeechDictationDisplayState.SUBMITTED to SpeechDictationStateContract(SpeechDictationDisplayState.SUBMITTED, setOf(SpeechDictationPipelineState.SEND, SpeechDictationPipelineState.COMPLETE), false, false, false, false, false, false, false, 180, SpeechDictationAccessibility("Voice input submitted", "speech_submitted")),
         SpeechDictationDisplayState.CANCELED to SpeechDictationStateContract(SpeechDictationDisplayState.CANCELED, setOf(SpeechDictationPipelineState.COMPLETE), false, false, false, false, false, false, false, 180, SpeechDictationAccessibility("Voice input canceled", "speech_canceled")),
     )
@@ -98,6 +100,7 @@ object SpeechDictationUxContract {
         SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT to SpeechDictationVisibleActions(SpeechDictationAction.SEND_RAW, listOf(SpeechDictationAction.RETRY_ENHANCEMENT, SpeechDictationAction.CANCEL)),
         SpeechDictationDisplayState.ENHANCEMENT_FAILED to SpeechDictationVisibleActions(SpeechDictationAction.SEND_RAW, listOf(SpeechDictationAction.RETRY_ENHANCEMENT, SpeechDictationAction.CANCEL)),
         SpeechDictationDisplayState.ENHANCED_READY to SpeechDictationVisibleActions(SpeechDictationAction.SEND_ENHANCED, listOf(SpeechDictationAction.SEND_RAW, SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.NO_SPEECH to SpeechDictationVisibleActions(SpeechDictationAction.START_RECORDING, listOf(SpeechDictationAction.CANCEL)),
         SpeechDictationDisplayState.SUBMITTED to SpeechDictationVisibleActions(null, emptyList()),
         SpeechDictationDisplayState.CANCELED to SpeechDictationVisibleActions(null, emptyList()),
     )
@@ -112,6 +115,7 @@ object SpeechDictationUxContract {
         SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT to mapOf(SpeechDictationAction.RETRY_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
         SpeechDictationDisplayState.ENHANCEMENT_FAILED to mapOf(SpeechDictationAction.RETRY_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
         SpeechDictationDisplayState.ENHANCED_READY to mapOf(SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.SEND_ENHANCED to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+        SpeechDictationDisplayState.NO_SPEECH to mapOf(SpeechDictationAction.START_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
         SpeechDictationDisplayState.SUBMITTED to mapOf(SpeechDictationAction.RESET to SpeechDictationDisplayState.IDLE),
         SpeechDictationDisplayState.CANCELED to mapOf(SpeechDictationAction.RESET to SpeechDictationDisplayState.IDLE),
     )

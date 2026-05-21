@@ -87,6 +87,8 @@ class SpeechDictationStateTest {
         assertEquals(null, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.ENHANCING_COLLAPSED).primary)
         assertEquals(SpeechDictationAction.SEND_RAW, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.ENHANCEMENT_FAILED).primary)
         assertEquals(SpeechDictationAction.SEND_ENHANCED, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.ENHANCED_READY).primary)
+        assertEquals(SpeechDictationAction.START_RECORDING, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.NO_SPEECH).primary)
+        assertFalse(SpeechDictationAction.SEND_RAW in SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.NO_SPEECH).secondary)
     }
 
     @Test

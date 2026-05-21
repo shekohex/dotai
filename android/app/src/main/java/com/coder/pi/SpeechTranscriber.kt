@@ -94,10 +94,10 @@ data class ParakeetFeatureConfig(
 
 object ParakeetModelArtifacts {
     val int8 = ParakeetModelArtifact(
-        fileName = "parakeet_tdt_0.6b_v3_5s_i8.tflite",
-        url = "https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3/resolve/main/parakeet_tdt_0.6b_v3_5s_i8.tflite",
-        sha256 = "f25e5972fe72048f67272e26d4badfe19d876e0fa19027cb2c6c0e0fc4da692b",
-        sizeBytes = 614_437_424L,
+        fileName = "parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite",
+        url = "https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3/resolve/main/parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite",
+        sha256 = "334745b8bc7fd372b1c213516f0b6338bb827b1a2abb3e77ad35fe6fea5cd16b",
+        sizeBytes = 614_261_072L,
     )
 }
 
@@ -191,7 +191,6 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             val outputs = outputBuffers ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             inputs[0].writeFloat(featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements))
             model.run(inputs, outputs, ENCODE_SIGNATURE)
-            if (isUnsafeReadFloatRuntime()) throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map { it.first }.filter { it != END_OF_SEQUENCE }.toList()
             val tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
             SpeechTranscriptResult(tokenizer.decode(tokenIds), System.currentTimeMillis() - startedAt)
@@ -212,8 +211,6 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
         inputBuffers = null
         outputBuffers = null
     }
-
-    private fun isUnsafeReadFloatRuntime(): Boolean = android.os.Build.MODEL.contains("Pixel 7 Pro", ignoreCase = true) && android.os.Build.VERSION.SDK_INT >= 36
 
     companion object {
         const val ENCODE_SIGNATURE = "encode"

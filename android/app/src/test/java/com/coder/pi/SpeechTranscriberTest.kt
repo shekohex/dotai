@@ -11,9 +11,9 @@ class SpeechTranscriberTest {
     fun parakeetInt8ArtifactMatchesLfsMetadata() {
         val artifact = ParakeetModelArtifacts.int8
 
-        assertEquals("parakeet_tdt_0.6b_v3_5s_i8.tflite", artifact.fileName)
-        assertEquals("f25e5972fe72048f67272e26d4badfe19d876e0fa19027cb2c6c0e0fc4da692b", artifact.sha256)
-        assertEquals(614_437_424L, artifact.sizeBytes)
+        assertEquals("parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite", artifact.fileName)
+        assertEquals("334745b8bc7fd372b1c213516f0b6338bb827b1a2abb3e77ad35fe6fea5cd16b", artifact.sha256)
+        assertEquals(614_261_072L, artifact.sizeBytes)
         assertTrue(artifact.url.contains("huggingface.co/litert-community/parakeet-tdt-0.6b-v3"))
     }
 

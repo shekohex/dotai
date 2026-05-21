@@ -1591,19 +1591,33 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     private fun progressHapticPatternTimings(pattern: String): LongArray = when (pattern) {
-        "heartbeat" -> longArrayOf(0, 38, 72, 58, 180, 32)
-        "spark" -> longArrayOf(0, 18, 34, 18, 34, 26, 80, 18)
-        "wave" -> longArrayOf(0, 28, 52, 42, 52, 58, 52, 42)
-        "typewriter" -> longArrayOf(0, 14, 42, 14, 42, 14, 42, 36)
-        else -> longArrayOf(0, 24, 46, 34, 70, 46)
+        "tick" -> longArrayOf(0, 12)
+        "double_tap" -> longArrayOf(0, 24, 70, 32)
+        "heartbeat" -> longArrayOf(0, 42, 110, 72, 360, 38, 110, 66)
+        "spark" -> longArrayOf(0, 14, 28, 18, 28, 24, 90, 16)
+        "wave" -> longArrayOf(0, 30, 45, 55, 45, 85, 45, 45, 45, 25)
+        "ramp" -> longArrayOf(0, 24, 36, 34, 36, 46, 36, 62)
+        "success" -> longArrayOf(0, 32, 80, 72)
+        "warning" -> longArrayOf(0, 55, 70, 55, 70, 120)
+        "heavy" -> longArrayOf(0, 95)
+        "buzz" -> longArrayOf(0, 28, 35, 28, 35, 28)
+        "typewriter" -> longArrayOf(0, 10, 38, 10, 38, 10, 38, 24)
+        else -> longArrayOf(0, 24, 60, 42, 110, 28)
     }
 
     private fun progressHapticPatternAmplitudes(pattern: String): IntArray = when (pattern) {
-        "heartbeat" -> intArrayOf(0, 160, 0, 225, 0, 110)
-        "spark" -> intArrayOf(0, 90, 0, 130, 0, 190, 0, 110)
-        "wave" -> intArrayOf(0, 75, 0, 120, 0, 180, 0, 105)
-        "typewriter" -> intArrayOf(0, 120, 0, 120, 0, 120, 0, 185)
-        else -> intArrayOf(0, 80, 0, 135, 0, 190)
+        "tick" -> intArrayOf(0, 90)
+        "double_tap" -> intArrayOf(0, 170, 0, 220)
+        "heartbeat" -> intArrayOf(0, 165, 0, 245, 0, 150, 0, 235)
+        "spark" -> intArrayOf(0, 70, 0, 120, 0, 210, 0, 80)
+        "wave" -> intArrayOf(0, 55, 0, 95, 0, 155, 0, 115, 0, 70)
+        "ramp" -> intArrayOf(0, 55, 0, 95, 0, 150, 0, 230)
+        "success" -> intArrayOf(0, 130, 0, 240)
+        "warning" -> intArrayOf(0, 220, 0, 175, 0, 240)
+        "heavy" -> intArrayOf(0, 255)
+        "buzz" -> intArrayOf(0, 190, 0, 190, 0, 190)
+        "typewriter" -> intArrayOf(0, 105, 0, 105, 0, 105, 0, 170)
+        else -> intArrayOf(0, 80, 0, 150, 0, 210)
     }
 
     private fun terminalHapticsEnabled(): Boolean = context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)

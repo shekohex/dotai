@@ -1666,9 +1666,11 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
     val appPreferences = remember(context) { context.getSharedPreferences("app", Context.MODE_PRIVATE) }
     var backgroundTerminals by remember { mutableStateOf(appPreferences.getBoolean("background_terminals", false)) }
     SettingsScaffold("Settings", tokens, onBack) {
-        SettingsSection("TERMINAL", tokens) {
+        SettingsSection("APPEARANCE", tokens) {
             SettingsValueRow(R.drawable.ic_feather_palette, "Theme", null, theme.name, tokens, pro = true, chevron = true, onClick = onTheme)
             SettingsValueRow(R.drawable.ic_feather_type, "Fonts & Size", null, CoderFonts.selectedName(LocalContext.current).also { uiRevision.hashCode() }, tokens, chevron = true, onClick = onFonts)
+        }
+        SettingsSection("TERMINAL", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_terminal, "Background Terminals", backgroundTerminals, tokens) {
                 backgroundTerminals = it
                 appPreferences.edit { putBoolean("background_terminals", it) }
@@ -1677,19 +1679,27 @@ private fun SettingsRootScreen(session: CoderSession?, terminalView: CoderTermin
             SettingsSegmentedControlRow(R.drawable.ic_feather_type, "Cursor Mode", tokens, cursorMode) { cursorMode = it; terminalView.setCursorMode(it) }
             SettingsToggleRow(R.drawable.ic_feather_circle, "Cursor Blink", cursorBlink, tokens) { cursorBlink = it; terminalView.setCursorBlinkEnabled(it) }
             SettingsToggleRow(R.drawable.ic_feather_power, "Keep Screen Awake", keepScreenAwake, tokens) { keepScreenAwake = it; terminalView.setKeepScreenAwakeEnabled(it) }
+        }
+        SettingsSection("INPUT", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_sliders, "Toolbar", "Accessory key rows", null, tokens, chevron = true) { onPlaceholder("Toolbar") }
+            SettingsValueRow(R.drawable.ic_feather_box, "Shortcuts", "Tabs, keys, and custom actions", null, tokens, chevron = true) { onPlaceholder("Shortcuts") }
+            SettingsValueRow(R.drawable.ic_feather_keyboard, "Keyboard", "Hardware and terminal key behavior", null, tokens, chevron = true) { onPlaceholder("Keyboard") }
+            SettingsValueRow(R.drawable.ic_feather_hand, "Gestures", "Touch, scroll, and selection", null, tokens, chevron = true) { onPlaceholder("Gestures") }
+        }
+        SettingsSection("CHAT", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_message_circle, "Chat Mode", "Prompt sheet behavior", null, tokens, chevron = true) { onPlaceholder("Chat Mode") }
+            SettingsValueRow(R.drawable.ic_feather_mic, "Speech", "Dictation and voice input", null, tokens, chevron = true) { onPlaceholder("Speech") }
+        }
+        SettingsSection("FEEDBACK", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_sliders, "Haptic Feedback", hapticFeedback, tokens) {
                 hapticFeedback = it
                 HapticTarget.enabled = it
                 context.getSharedPreferences("app", Context.MODE_PRIVATE).edit { putBoolean("haptic_feedback", it) }
             }
-        }
-        SettingsSection("INPUT", tokens) {
-            SettingsValueRow(R.drawable.ic_feather_sliders, "Toolbar", null, null, tokens, chevron = true) { onPlaceholder("Toolbar") }
-            listOf("Shortcuts" to R.drawable.ic_feather_box, "Keyboard" to R.drawable.ic_feather_keyboard, "Gestures" to R.drawable.ic_feather_hand, "Chat Mode" to R.drawable.ic_feather_message_circle, "Speech" to R.drawable.ic_feather_mic).forEach { (title, icon) -> SettingsValueRow(icon, title, null, null, tokens, chevron = true) { onPlaceholder(title) } }
+            SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "Alerts, progress, sound, haptics", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
         }
         SettingsSection("INTEGRATIONS", tokens) {
             SettingsValueRow(R.drawable.ic_feather_globe, "Links", "Allowed OSC 8 link hosts", null, tokens, chevron = true) { onPlaceholder("Links") }
-            SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "OSC 9 alerts and progress", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
         }
         SettingsSection("GENERAL", tokens) { SettingsValueRow(R.drawable.ic_feather_globe, "Language", null, "Auto", tokens, chevron = true) { onPlaceholder("Language") } }
         if (session != null) {
@@ -1746,13 +1756,7 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
             }
         }
         SettingsSection("PROGRESS HAPTICS", tokens) {
-            listOf(
-                "ripple" to "Ripple",
-                "heartbeat" to "Heartbeat",
-                "spark" to "Spark",
-                "wave" to "Wave",
-                "typewriter" to "Typewriter",
-            ).forEach { (value, label) ->
+            progressHapticOptions().forEach { (value, label) ->
                 SettingsValueRow(R.drawable.ic_feather_sliders, label, "Tap to preview and select", if (hapticPattern == value) "✓" else null, tokens) {
                     hapticPattern = value
                     terminalView.setOscProgressHapticPattern(value)
@@ -1768,6 +1772,21 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
         }
     }
 }
+
+private fun progressHapticOptions(): List<Pair<String, String>> = listOf(
+    "ripple" to "Ripple",
+    "tick" to "Tick",
+    "double_tap" to "Double Tap",
+    "heartbeat" to "Heartbeat",
+    "spark" to "Spark",
+    "wave" to "Wave",
+    "ramp" to "Ramp Up",
+    "success" to "Success",
+    "warning" to "Warning",
+    "heavy" to "Heavy",
+    "buzz" to "Buzz",
+    "typewriter" to "Typewriter",
+)
 
 @Composable
 private fun ThemePickerScreen(tokens: UiTokens, onBack: () -> Unit, onThemeChanged: () -> Unit) {

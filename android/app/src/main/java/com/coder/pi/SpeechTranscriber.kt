@@ -228,6 +228,23 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
         true
     }
 
+    suspend fun importSideLoadedModel(): Boolean = withContext(Dispatchers.IO) {
+        val source = sideLoadedModelFile().takeIf { it.isFile } ?: return@withContext false
+        directory.mkdirs()
+        val tempFile = File(directory, "${artifact.fileName}.import")
+        source.inputStream().use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+        if (tempFile.length() != artifact.sizeBytes || tempFile.sha256OrNull() != artifact.sha256) {
+            tempFile.delete()
+            return@withContext false
+        }
+        if (modelFile.exists()) modelFile.delete()
+        check(tempFile.renameTo(modelFile)) { "Unable to move side-loaded model into cache" }
+        ResumableModelDownloadStateStore.clear(context, artifact)
+        true
+    }
+
+    fun sideLoadedModelFile(): File = File(File(context.getExternalFilesDir(AndroidEnvironment.DIRECTORY_DOWNLOADS), "speech"), artifact.fileName)
+
     fun delete(): Boolean {
         if (!directory.exists()) return true
         return directory.deleteRecursively()
@@ -261,6 +278,16 @@ class ParakeetTokenizerCache(private val context: Context, private val artifact:
     suspend fun ensureTokenizer(): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
             if (isReady()) return@runCatching tokenizerFile
+            val sideLoaded = sideLoadedTokenizerFile()
+            if (sideLoaded.isFile) {
+                directory.mkdirs()
+                val tempFile = File(directory, "${artifact.fileName}.import")
+                sideLoaded.inputStream().use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+                check(tempFile.isValidParakeetTokenizer()) { "Tokenizer integrity failed" }
+                if (tokenizerFile.exists()) tokenizerFile.delete()
+                check(tempFile.renameTo(tokenizerFile)) { "Unable to move side-loaded tokenizer into cache" }
+                return@runCatching tokenizerFile
+            }
             directory.mkdirs()
             val tempFile = File(directory, "${artifact.fileName}.part")
             URL(artifact.url).openStream().use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
@@ -270,6 +297,8 @@ class ParakeetTokenizerCache(private val context: Context, private val artifact:
             tokenizerFile
         }
     }
+
+    fun sideLoadedTokenizerFile(): File = File(File(context.getExternalFilesDir(AndroidEnvironment.DIRECTORY_DOWNLOADS), "speech"), artifact.fileName)
 }
 
 private fun File.isValidParakeetTokenizer(): Boolean = runCatching {

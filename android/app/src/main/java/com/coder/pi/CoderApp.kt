@@ -2848,6 +2848,8 @@ private fun SpeechModelDetailScreen(artifact: ParakeetModelArtifact, tokens: UiT
     }
     val status = cache.status()
     val downloadState = cache.downloadStatus()
+    val sideLoadedModelReady = cache.sideLoadedModelFile().isFile
+    val sideLoadedTokenizerReady = tokenizerCache.sideLoadedTokenizerFile().isFile
     val running = downloadState.status == ModelDownloadState.Running
     val paused = downloadState.status == ModelDownloadState.Paused
     val completedDownload = downloadState.status == ModelDownloadState.Success
@@ -2905,6 +2907,7 @@ private fun SpeechModelDetailScreen(artifact: ParakeetModelArtifact, tokens: UiT
                 !status.ready -> {
                     SettingsValueRow(R.drawable.ic_feather_download_cloud, "Download Model", "Start background resumable download", "Download", tokens) { requestNotificationsIfNeeded(); cache.startDownload(); refreshTick++ }
                     SettingsValueRow(R.drawable.ic_feather_upload, "Import Model File", "Pick an existing .tflite file and verify SHA-256", "Import", tokens) { importLauncher.launch(arrayOf("application/octet-stream", "application/vnd.tensorflow.lite", "*/*")) }
+                    if (sideLoadedModelReady) SettingsValueRow(R.drawable.ic_feather_hard_drive, "Import Side-Loaded Model", "Use ${cache.sideLoadedModelFile().parentFile?.absolutePath.orEmpty()} without network", if (sideLoadedTokenizerReady) "Import" else "Import + Tokenizer", tokens) { scope.launch { cache.importSideLoadedModel(); tokenizerCache.ensureTokenizer(); refreshTick++ } }
                 }
             }
             SettingsValueRow(R.drawable.ic_feather_external_link, "Open Hugging Face", "litert-community/parakeet-tdt-0.6b-v3", "Open", tokens) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3"))) }

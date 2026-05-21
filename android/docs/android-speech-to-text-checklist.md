@@ -402,7 +402,7 @@ Review:
 
 Commit:
 
-- TBD.
+- Implementation: `485bbd1` (`feat(android): add speech settings defaults`).
 
 ## ASTT-6: Implement Audio Capture, Metering, And VAD
 

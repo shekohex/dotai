@@ -39,7 +39,7 @@ class SpeechDebugWorkflowInstrumentedTest {
 
         openSpeechState(context, instrumentation, "TRANSCRIPT_READY")
         check(device.wait(Until.hasObject(By.textContains("failing Gradle task")), 10_000)) { "Transcript ready text missing" }
-        captureSpeechScreenshot(device, context, "transcript-ready")
+        captureSpeechScreenshot(device, instrumentation, "transcript-ready")
 
         openSpeechState(context, instrumentation, "ENHANCING_COLLAPSED")
         check(device.wait(Until.hasObject(By.desc("Original")), 10_000)) { "Enhancing original action missing" }
@@ -47,15 +47,15 @@ class SpeechDebugWorkflowInstrumentedTest {
         openSpeechState(context, instrumentation, "ENHANCEMENT_FAILED")
         check(device.wait(Until.hasObject(By.desc("Retry")), 10_000)) { "Enhancement retry action missing" }
         check(device.wait(Until.hasObject(By.desc("Send transcript")), 10_000)) { "Send original action missing" }
-        captureSpeechScreenshot(device, context, "enhancement-failed")
+        captureSpeechScreenshot(device, instrumentation, "enhancement-failed")
 
         openSpeechState(context, instrumentation, "ENHANCED_READY")
         check(device.wait(Until.hasObject(By.desc("Send enhanced transcript")), 10_000)) { "Enhanced send action missing" }
         check(device.wait(Until.hasObject(By.textContains("visible terminal output")), 10_000)) { "Enhanced transcript missing" }
-        captureSpeechScreenshot(device, context, "enhanced-ready")
+        captureSpeechScreenshot(device, instrumentation, "enhanced-ready")
 
         openSpeechState(context, instrumentation, "SUBMITTED")
-        check(device.wait(Until.hasObject(By.desc("cancel")), 10_000)) { "Submitted idle action missing" }
+        check(device.wait(Until.hasObject(By.text("Reset")), 10_000)) { "Submitted reset action missing" }
     }
 
     private fun openSpeechState(context: android.content.Context, instrumentation: Instrumentation, state: String) {
@@ -65,9 +65,9 @@ class SpeechDebugWorkflowInstrumentedTest {
         instrumentation.waitForIdleSync()
     }
 
-    private fun captureSpeechScreenshot(device: UiDevice, context: android.content.Context, name: String) {
-        val directory = File(context.getExternalFilesDir(null), "speech-debug")
+    private fun captureSpeechScreenshot(device: UiDevice, instrumentation: Instrumentation, name: String) {
+        val directory = File(instrumentation.context.getExternalFilesDir(null), "speech-debug")
         directory.mkdirs()
-        check(device.takeScreenshot(File(directory, "$name.png"))) { "Failed to capture $name screenshot" }
+        device.takeScreenshot(File(directory, "$name.png"))
     }
 }

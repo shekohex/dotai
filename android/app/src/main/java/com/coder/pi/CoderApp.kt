@@ -1611,12 +1611,18 @@ fun TerminalAccessory(theme: CoderTheme, terminalView: CoderTerminalView, select
     }
     DisposableEffect(enhancementHttpClient) { onDispose { enhancementHttpClient.close() } }
     val speechSettings = SpeechSettingsStore.values(context)
-    val speechEnhancementClient = remember(speechSettings.enhancementProvider, speechSettings.enhancementBaseUrl, speechSettings.enhancementModel, speechSettings.enhancementEnabled) {
-        val apiKey = SpeechSettingsStore.enhancementApiKey(context)
-        if (!speechSettings.enhancementEnabled || apiKey.isBlank()) null else when (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider)) {
-            SpeechEnhancementProvider.OpenAiCompatible -> OpenAiHttpSpeechEnhancementClient(enhancementHttpClient, speechSettings.enhancementBaseUrl, apiKey, speechSettings.enhancementModel)
-            SpeechEnhancementProvider.Gemini -> GeminiHttpSpeechEnhancementClient(enhancementHttpClient, apiKey, speechSettings.enhancementModel)
-            SpeechEnhancementProvider.Disabled -> null
+    val speechEnhancementClient = remember(context, enhancementHttpClient) {
+        object : SpeechEnhancementClient {
+            override suspend fun enhance(request: SpeechEnhancementRequest): String {
+                val latestSettings = SpeechSettingsStore.values(context)
+                val apiKey = SpeechSettingsStore.enhancementApiKey(context)
+                if (!latestSettings.enhancementEnabled || apiKey.isBlank()) return request.transcript
+                return when (SpeechEnhancementProvider.byId(latestSettings.enhancementProvider)) {
+                    SpeechEnhancementProvider.OpenAiCompatible -> OpenAiHttpSpeechEnhancementClient(enhancementHttpClient, latestSettings.enhancementBaseUrl, apiKey, latestSettings.enhancementModel).enhance(request)
+                    SpeechEnhancementProvider.Gemini -> GeminiHttpSpeechEnhancementClient(enhancementHttpClient, apiKey, latestSettings.enhancementModel).enhance(request)
+                    SpeechEnhancementProvider.Disabled -> request.transcript
+                }
+            }
         }
     }
     if (chatMode) {
@@ -2809,8 +2815,8 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         speechSettings = SpeechSettingsStore.values(context)
         providerDialogOpen = false
     }
-    if (apiKeyDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement API Key", SpeechSettingsStore.enhancementApiKey(context), "sk-...", { apiKeyDialogOpen = false }) {
-        SpeechSettingsStore.setEnhancementApiKey(context, it)
+    if (apiKeyDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement API Key", "", if (SpeechSettingsStore.enhancementApiKey(context).isBlank()) "Paste API key" else "New key, blank keeps current", { apiKeyDialogOpen = false }) {
+        if (it.isNotBlank()) SpeechSettingsStore.setEnhancementApiKey(context, it)
         speechSettings = SpeechSettingsStore.values(context)
         apiKeyDialogOpen = false
     }

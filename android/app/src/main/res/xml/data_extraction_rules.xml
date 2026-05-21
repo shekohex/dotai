@@ -6,15 +6,13 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="coder_session.xml" />
+        <exclude domain="sharedpref" path="speech_secure.xml" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
         -->
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="speech_secure.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

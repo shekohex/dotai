@@ -586,6 +586,8 @@ Validation:
 - `./gradlew assembleDebug --no-daemon` passed after tokenizer download wiring, `BUILD SUCCESSFUL in 10s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after tokenizer-missing settings status wiring, `BUILD SUCCESSFUL in 18s`.
 - `./gradlew assembleDebug --no-daemon` passed after tokenizer-missing settings status wiring, `BUILD SUCCESSFUL in 10s`.
+- Emulator settings smoke after model/download settings work: `./gradlew assembleDebug --no-daemon`, `adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`, and `adb shell am start -W -a android.intent.action.VIEW -d 'pi://settings/speech' -n com.coder.pi/.MainActivity` succeeded with `Status: ok`.
+- Speech settings layout proof: `build/validation/speech/settings-speech-layout.json` contains `Speech`, `Local LiteRT Parakeet`, `Model Cache`, `Parakeet model is not downloaded`, and `Download`.
 
 Review:
 

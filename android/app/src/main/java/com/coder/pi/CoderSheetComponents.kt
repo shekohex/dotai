@@ -108,7 +108,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     val speechModelCache = remember(context, speechSettings.selectedSpeechModelId) { ParakeetModelCache(context, ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId)) }
     val speechTokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
     val speechAudioCapture = remember(context, speechSettings.vadSensitivity) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
-    val speechTranscriber = remember(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) { LiteRtParakeetTranscriber(speechModelCache, speechTokenizerCache, SpeechAcceleratorMode.byId(speechSettings.accelerator)) }
+    var speechTranscriber by remember(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) { mutableStateOf<LiteRtParakeetTranscriber?>(null) }
     val speechPromptRenderer = remember { SpeechEnhancementPromptRenderer() }
     var dictating by remember { mutableStateOf(false) }
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
@@ -217,7 +217,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                 dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
                 return@launch
             }
-            val result = transcribeFinalSpeech(samples, speechAudioCapture.sampleRate, speechTranscriber, speechTranscriberMutex)
+            val activeTranscriber = speechTranscriber ?: return@launch
+            val result = transcribeFinalSpeech(samples, speechAudioCapture.sampleRate, activeTranscriber, speechTranscriberMutex)
             if (sessionId != dictationSessionId) return@launch
             result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
             result.fold(
@@ -248,7 +249,8 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         val trailingSilenceSamples = liveSpeechTrailingSilenceSamples(speechAudioCapture.sampleRate)
         val snapshot = dictationAudioFrames.sliceSampleWindow(liveSpeechWindowStartSample(partialEndSample, speechAudioCapture.sampleRate), partialEndSample, liveWindowSamples).padTrailingSilence(trailingSilenceSamples)
         liveChunkEndSample = nextLiveSpeechPassSample(totalSamples, speechAudioCapture.sampleRate)
-        val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
+        val activeTranscriber = speechTranscriber ?: return
+        val result = speechTranscriberMutex.withLock { activeTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
         if (sessionId != dictationSessionId) return
         if (partialEndSample <= lastAppliedPartialEndSample) return
         result.getOrNull()?.metrics?.let { lastSpeechMetrics = it }
@@ -344,14 +346,18 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         warmModelJob = null
         if (speechSettings.keepModelWarmEnabled && speechSettings.localTranscriptionEnabled) {
             warmModelJob = scope.launch {
-                while (true) {
-                    lastSpeechMetrics = speechTranscriberMutex.withLock { speechTranscriber.warm() }.getOrNull()
-                    delay(speechSettings.keepModelWarmMinutes * 60_000L)
-                }
+                SpeechWarmModelService.start(context)
+                speechTranscriber = SpeechWarmModelStore.transcriber(context, speechSettings)
+                lastSpeechMetrics = speechTranscriberMutex.withLock { SpeechWarmModelStore.warm(context, speechSettings) }.getOrNull()
             }
+        } else {
+            SpeechWarmModelService.stop(context)
         }
     }
-    DisposableEffect(speechAudioCapture, speechTranscriber) { onDispose { partialTranscriptionLoopJob?.cancel(); partialTranscriptionJob?.cancel(); finalTranscriptionJob?.cancel(); enhancementJob?.cancel(); warmModelJob?.cancel(); speechAudioCapture.stopAsync(); speechTranscriber.close() } }
+    LaunchedEffect(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) {
+        speechTranscriber = SpeechWarmModelStore.transcriber(context, speechSettings)
+    }
+    DisposableEffect(speechAudioCapture) { onDispose { partialTranscriptionLoopJob?.cancel(); partialTranscriptionJob?.cancel(); finalTranscriptionJob?.cancel(); enhancementJob?.cancel(); warmModelJob?.cancel(); speechAudioCapture.stopAsync() } }
     if (dictating) {
         DictationInputSurface(
             tokens = tokens,

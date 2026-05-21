@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import android.Manifest
 import android.net.Uri
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -51,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -106,6 +108,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     val dictationAudioFrames = remember { mutableListOf<FloatArray>() }
     var partialTranscriptionJob by remember { mutableStateOf<Job?>(null) }
     var partialTranscriptionFrameCount by remember { mutableIntStateOf(0) }
+    var partialTranscriptionStartedAt by remember { mutableLongStateOf(0L) }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -129,6 +132,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
         partialTranscriptionFrameCount = 0
+        partialTranscriptionStartedAt = 0L
     }
     fun enhanceTranscript(transcript: String) {
         if (!speechSettings.enhancementEnabled || speechEnhancementClient == null || transcript.isBlank()) {
@@ -180,10 +184,13 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     fun maybeTranscribePartialAudio() {
         if (!speechSettings.localTranscriptionEnabled) return
         if (partialTranscriptionJob?.isActive == true) return
-        if (dictationAudioFrames.size - partialTranscriptionFrameCount < 20) return
+        if (dictationAudioFrames.size - partialTranscriptionFrameCount < 40) return
+        val now = SystemClock.elapsedRealtime()
+        if (partialTranscriptionStartedAt != 0L && now - partialTranscriptionStartedAt < 2_000L) return
         val snapshot = dictationAudioFrames.takeLastFramesForSamples(speechAudioCapture.sampleRate * 5)
-        if (snapshot.isEmpty()) return
+        if (snapshot.sumOf { it.size } < speechAudioCapture.sampleRate * 2) return
         partialTranscriptionFrameCount = dictationAudioFrames.size
+        partialTranscriptionStartedAt = now
         partialTranscriptionJob = scope.launch {
             val samples = withContext(Dispatchers.Default) { snapshot.flattenToFloatArray() }
             val result = speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate)
@@ -200,6 +207,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
         partialTranscriptionFrameCount = 0
+        partialTranscriptionStartedAt = 0L
         dictating = true
         speechAudioCapture.start(
             onFrame = { frame ->
@@ -263,6 +271,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                         partialTranscriptionJob?.cancel()
                         partialTranscriptionJob = null
                         partialTranscriptionFrameCount = 0
+                        partialTranscriptionStartedAt = 0L
                     }
                     SpeechDictationAction.STOP_RECORDING -> {
                         stopDictationCapture()

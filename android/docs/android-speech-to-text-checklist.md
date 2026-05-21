@@ -605,7 +605,7 @@ Review:
 
 Commit:
 
-- Implementation: TBD.
+- Implementation: `7ade932` (`feat(android): add speech enhancement renderer`).
 
 ## ASTT-9: Integrate Terminal Send Behavior
 

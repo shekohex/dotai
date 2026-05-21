@@ -230,10 +230,10 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         val totalSamples = dictationAudioFrames.totalSampleCount()
         if (totalSamples < liveChunkEndSample) return
         val partialEndSample = totalSamples
-        val liveWindowSamples = speechAudioCapture.sampleRate * 4
-        val trailingSilenceSamples = speechAudioCapture.sampleRate
-        val snapshot = dictationAudioFrames.sliceSampleWindow((partialEndSample - liveWindowSamples).coerceAtLeast(0), partialEndSample, liveWindowSamples).padTrailingSilence(trailingSilenceSamples)
-        liveChunkEndSample = totalSamples + speechAudioCapture.sampleRate / 2
+        val liveWindowSamples = liveSpeechWindowSamples(speechAudioCapture.sampleRate)
+        val trailingSilenceSamples = liveSpeechTrailingSilenceSamples(speechAudioCapture.sampleRate)
+        val snapshot = dictationAudioFrames.sliceSampleWindow(liveSpeechWindowStartSample(partialEndSample, speechAudioCapture.sampleRate), partialEndSample, liveWindowSamples).padTrailingSilence(trailingSilenceSamples)
+        liveChunkEndSample = nextLiveSpeechPassSample(totalSamples, speechAudioCapture.sampleRate)
         val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
         if (sessionId != dictationSessionId) return
         if (partialEndSample <= lastAppliedPartialEndSample) return
@@ -448,6 +448,14 @@ private fun List<FloatArray>.takeLastFramesForSamples(maxSamples: Int): List<Flo
     }
     return frames.toList()
 }
+
+fun liveSpeechWindowSamples(sampleRate: Int): Int = sampleRate * 4
+
+fun liveSpeechTrailingSilenceSamples(sampleRate: Int): Int = sampleRate
+
+fun nextLiveSpeechPassSample(totalSamples: Int, sampleRate: Int): Int = totalSamples + sampleRate / 2
+
+fun liveSpeechWindowStartSample(partialEndSample: Int, sampleRate: Int): Int = partialEndSample - liveSpeechWindowSamples(sampleRate)
 
 private fun List<FloatArray>.totalSampleCount(): Int = sumOf { it.size }
 

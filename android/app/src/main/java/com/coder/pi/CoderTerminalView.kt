@@ -1326,6 +1326,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         onAgentStateChanged?.invoke(snapshot)
         when (event.eventName) {
             "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { handlePiAgentNotification(it) }
+            "agent.input" -> handlePiAgentInputSubmitted()
             "agent.aborted" -> handlePiAgentAbort(event.envelope.data.stringValue("message").ifBlank { "Operation aborted" })
             "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { handlePiAgentProgress(it) }
         }
@@ -1371,6 +1372,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(formatNotificationText(notification.title), formatNotificationText(notification.body), false, -1, false, launchUrl = notification.url, feedbackState = feedbackState)) {
             if (oscNotificationToastsEnabled()) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun handlePiAgentInputSubmitted() {
+        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled()) return
+        postOscNotification("π", "Message submitted", false, -1, false, feedbackState = TerminalAlertFeedbackState.SUBMIT)
     }
 
     private fun handlePiAgentAbort(message: String) {

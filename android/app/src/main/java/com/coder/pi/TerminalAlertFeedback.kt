@@ -12,10 +12,7 @@ enum class TerminalAlertFeedbackState(val id: String, val label: String, val def
 }
 
 object TerminalAlertFeedback {
-    fun stateFor(kind: String, severity: String): TerminalAlertFeedbackState = when {
-        kind == "input" -> TerminalAlertFeedbackState.SUBMIT
-        else -> stateForSeverity(severity)
-    }
+    fun stateFor(kind: String, severity: String): TerminalAlertFeedbackState = stateForSeverity(severity)
 
     fun stateForSeverity(severity: String): TerminalAlertFeedbackState = when (severity.lowercase()) {
         "success" -> TerminalAlertFeedbackState.SUCCESS

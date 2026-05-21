@@ -158,16 +158,11 @@ const handleTurnEnd = (
   return true;
 };
 
-const emitInputAlert = (
+const emitInputSubmitted = (
   ctx: ExtensionContext,
   emit: (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void,
 ): { action: "continue" } => {
-  emit("agent.alert", ctx, {
-    kind: "input",
-    severity: "info",
-    title: "π",
-    body: "Message submitted",
-  });
+  emit("agent.input", ctx, { state: "submitted" });
   return { action: "continue" };
 };
 
@@ -225,7 +220,7 @@ export default function piOscExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("input", (_event, ctx) => {
-    return emitInputAlert(ctx, emit);
+    return emitInputSubmitted(ctx, emit);
   });
 
   pi.on("agent_end", (event, ctx) => {

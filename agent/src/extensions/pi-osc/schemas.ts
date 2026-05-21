@@ -51,6 +51,13 @@ export const PiOscAgentProgressPayloadSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const PiOscAgentInputPayloadSchema = Type.Object(
+  {
+    state: Type.Literal("submitted"),
+  },
+  { additionalProperties: false },
+);
+
 export const PiOscAgentToolPayloadSchema = Type.Object(
   {
     toolCallId: BoundedString(128),
@@ -105,6 +112,7 @@ export type PiOscAgentSessionPayload = Static<typeof PiOscAgentSessionPayloadSch
 export type PiOscAgentRunPayload = Static<typeof PiOscAgentRunPayloadSchema>;
 export type PiOscAgentTurnPayload = Static<typeof PiOscAgentTurnPayloadSchema>;
 export type PiOscAgentProgressPayload = Static<typeof PiOscAgentProgressPayloadSchema>;
+export type PiOscAgentInputPayload = Static<typeof PiOscAgentInputPayloadSchema>;
 export type PiOscAgentToolPayload = Static<typeof PiOscAgentToolPayloadSchema>;
 export type PiOscAgentAlertPayload = Static<typeof PiOscAgentAlertPayloadSchema>;
 export type PiOscAgentAbortedPayload = Static<typeof PiOscAgentAbortedPayloadSchema>;
@@ -116,6 +124,7 @@ export type PiOscV1Payload =
   | PiOscAgentRunPayload
   | PiOscAgentTurnPayload
   | PiOscAgentProgressPayload
+  | PiOscAgentInputPayload
   | PiOscAgentToolPayload
   | PiOscAgentAlertPayload
   | PiOscAgentAbortedPayload
@@ -133,6 +142,8 @@ export const getPiOscPayloadSchema = (eventName: PiOscV1Event): TSchema => {
       return PiOscAgentTurnPayloadSchema;
     case "agent.progress":
       return PiOscAgentProgressPayloadSchema;
+    case "agent.input":
+      return PiOscAgentInputPayloadSchema;
     case "agent.tool":
       return PiOscAgentToolPayloadSchema;
     case "agent.alert":

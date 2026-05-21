@@ -38,6 +38,7 @@ class TerminalNotificationRouter(
         val snapshot = agentState.apply(event)
         when (event.eventName) {
             "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body, it.url, TerminalAlertFeedback.stateFor(it.kind, it.severity)) }
+            "agent.input" -> postNotification("π", "Message submitted", feedbackState = TerminalAlertFeedbackState.SUBMIT)
             "agent.aborted" -> postNotification("π", event.envelope.data.stringValue("message").ifBlank { "Operation aborted" }, feedbackState = TerminalAlertFeedbackState.INTERRUPTED)
             "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { postPiAgentProgress(terminalTitle, it) }
         }

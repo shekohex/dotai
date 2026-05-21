@@ -367,6 +367,7 @@ Validation:
 - Stabilization attempts with coordinate taps, enabled-only content descriptions, topmost text selection, and removing in-test screenshots did not produce a stable connected run; experiments were reverted to avoid committing flaky test behavior.
 - Reworked debug speech deep link to support deterministic state presets: `pi://debug/speech?state=<STATE>`. `SpeechDebugWorkflowInstrumentedTest` now opens each target state directly instead of tapping ambiguous Compose buttons.
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14` after preset-state rework, `BUILD SUCCESSFUL in 28s`.
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed again after settings/cache work, `BUILD SUCCESSFUL in 25s`.
 
 Review:
 

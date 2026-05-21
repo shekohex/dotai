@@ -9,6 +9,7 @@ data class SpeechSettingsValues(
     val enhancementEnabled: Boolean = false,
     val includeVisibleTerminalContext: Boolean = true,
     val vadSensitivity: Int = 2,
+    val pauseModelDownloadsOnMeteredNetwork: Boolean = true,
     val promptOverride: String = "",
 ) {
     fun resolvedPrompt(defaultPrompt: String): String = promptOverride.trim().ifBlank { defaultPrompt }
@@ -21,6 +22,7 @@ object SpeechSettingsStore {
     private const val enhancementKey = "speech.enhancement_enabled"
     private const val includeContextKey = "speech.include_visible_terminal_context"
     private const val vadSensitivityKey = "speech.vad_sensitivity"
+    private const val pauseDownloadsOnMeteredKey = "speech.pause_model_downloads_on_metered"
     private const val promptOverrideKey = "speech.prompt_override"
 
     fun values(context: Context): SpeechSettingsValues {
@@ -31,6 +33,7 @@ object SpeechSettingsStore {
             enhancementEnabled = preferences.getBoolean(enhancementKey, false),
             includeVisibleTerminalContext = preferences.getBoolean(includeContextKey, true),
             vadSensitivity = preferences.getInt(vadSensitivityKey, 2).coerceIn(0, 4),
+            pauseModelDownloadsOnMeteredNetwork = preferences.getBoolean(pauseDownloadsOnMeteredKey, true),
             promptOverride = preferences.getString(promptOverrideKey, "").orEmpty(),
         )
     }
@@ -44,6 +47,8 @@ object SpeechSettingsStore {
     fun setIncludeVisibleTerminalContext(context: Context, enabled: Boolean) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(includeContextKey, enabled) }
 
     fun setVadSensitivity(context: Context, sensitivity: Int) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putInt(vadSensitivityKey, sensitivity.coerceIn(0, 4)) }
+
+    fun setPauseModelDownloadsOnMeteredNetwork(context: Context, enabled: Boolean) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(pauseDownloadsOnMeteredKey, enabled) }
 
     fun setPromptOverride(context: Context, prompt: String) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putString(promptOverrideKey, prompt.take(8_000)) }
 

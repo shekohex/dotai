@@ -55,6 +55,10 @@
             android:name=".TerminalConnectionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".ResumableModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

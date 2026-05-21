@@ -144,7 +144,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER, DEBUG_SPEECH }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_MODELS, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_MODELS, SPEECH_MODEL_DETAIL, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -1730,6 +1730,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
     var shortcutBackPage by remember { mutableStateOf(SettingsPage.TOOLBAR) }
     var editingShortcut by remember { mutableStateOf<ShortcutRowDefinition?>(null) }
     var selectedShortcutTab by remember { mutableStateOf(shortcutOverviewTabs(emptyList()).first()) }
+    var selectedSpeechModelId by remember { mutableStateOf(ParakeetModelArtifacts.int8.id) }
     LaunchedEffect(deepLinkRevision) {
         deepLinkSettingsPage?.let { page = it }
     }
@@ -1742,6 +1743,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
             SettingsPage.TEXT -> SettingsPage.FONTS
             SettingsPage.SHORTCUT_TAB -> SettingsPage.SHORTCUTS
             SettingsPage.SHORTCUT -> shortcutBackPage
+            SettingsPage.SPEECH_MODEL_DETAIL -> SettingsPage.SPEECH_MODELS
             SettingsPage.SPEECH_MODELS -> SettingsPage.SPEECH
             SettingsPage.DEBUG_LOGS -> SettingsPage.CONNECTION
             else -> SettingsPage.ROOT
@@ -1766,7 +1768,8 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.CHAT -> ChatModeSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, { page = SettingsPage.SPEECH_MODELS }, ::navigateBack)
-        SettingsPage.SPEECH_MODELS -> SpeechModelSettingsScreen(tokens, ::navigateBack)
+        SettingsPage.SPEECH_MODELS -> SpeechModelSettingsScreen(tokens, { selectedSpeechModelId = it; page = SettingsPage.SPEECH_MODEL_DETAIL }, ::navigateBack)
+        SettingsPage.SPEECH_MODEL_DETAIL -> SpeechModelDetailScreen(ParakeetModelArtifacts.byId(selectedSpeechModelId), tokens, ::navigateBack)
         SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
         SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
         SettingsPage.NOTIFICATIONS -> TerminalNotificationsSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -2709,6 +2712,10 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 SpeechSettingsStore.setLocalTranscriptionEnabled(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
+            SettingsToggleRow(R.drawable.ic_feather_wifi, "Pause Downloads on Metered", speechSettings.pauseModelDownloadsOnMeteredNetwork, tokens) {
+                SpeechSettingsStore.setPauseModelDownloadsOnMeteredNetwork(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
             SettingsValueRow(R.drawable.ic_feather_box, "Models", ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId).title, "Manage", tokens, chevron = true) { onModels() }
             SettingsValueRow(R.drawable.ic_feather_sliders, "VAD Sensitivity", speechSettings.vadSensitivityLabel(), "+", tokens) {
                 SpeechSettingsStore.setVadSensitivity(context, (speechSettings.vadSensitivity + 1) % 5)
@@ -2738,7 +2745,7 @@ private fun SpeechSettingsValues.vadSensitivityLabel(): String = when (vadSensit
 }
 
 @Composable
-private fun SpeechModelSettingsScreen(tokens: UiTokens, onBack: () -> Unit) {
+private fun SpeechModelSettingsScreen(tokens: UiTokens, onModel: (String) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
@@ -2764,7 +2771,7 @@ private fun SpeechModelSettingsScreen(tokens: UiTokens, onBack: () -> Unit) {
                 val cache = remember(context, artifact.id, refreshTick) { ParakeetModelCache(context, artifact) }
                 val status = cache.status()
                 val downloadState = cache.downloadStatus()
-                val downloading = downloadState.status in setOf(android.app.DownloadManager.STATUS_PENDING, android.app.DownloadManager.STATUS_RUNNING, android.app.DownloadManager.STATUS_PAUSED)
+                val downloading = downloadState.status in setOf(ModelDownloadState.Running, ModelDownloadState.Paused)
                 val progress = if (downloadState.totalBytes > 0) (downloadState.bytesDownloaded * 100 / downloadState.totalBytes).coerceIn(0, 100) else 0
                 SpeechModelCard(
                     tokens = tokens,
@@ -2772,50 +2779,22 @@ private fun SpeechModelSettingsScreen(tokens: UiTokens, onBack: () -> Unit) {
                     selected = artifact.id == speechSettings.selectedSpeechModelId,
                     statusText = when {
                         status.ready -> "Ready · ${artifact.sizeBytes.toHumanBytesLabel()}"
-                        downloading -> "Downloading ${progress}% · ${downloadState.bytesDownloaded.toHumanBytesLabel()}"
+                        downloading -> "${if (downloadState.status == ModelDownloadState.Paused) "Paused" else "Downloading"} ${progress}% · ${downloadState.bytesDownloaded.toHumanBytesLabel()} · ${downloadState.bytesPerSecond.toSpeedLabel()} · ETA ${downloadState.etaSeconds.toEtaLabel()}"
                         status.hasCache -> status.label
                         else -> "Not downloaded · ${artifact.sizeBytes.toHumanBytesLabel()}"
                     },
                     progress = if (downloading) progress.toInt() else null,
-                    onSelect = {
-                        SpeechSettingsStore.setSelectedSpeechModelId(context, artifact.id)
-                        speechSettings = SpeechSettingsStore.values(context)
-                    },
-                    onDownload = {
-                        cache.startDownload()
-                        refreshTick++
-                    },
-                    onResume = {
-                        cache.startDownload()
-                        refreshTick++
-                    },
-                    onCancel = {
-                        cache.cancelDownload()
-                        refreshTick++
-                    },
-                    onDelete = {
-                        cache.cancelDownload()
-                        cache.delete()
-                        refreshTick++
-                    },
-                    onFinalize = {
-                        scope.launch {
-                            cache.finalizeDownloadIfComplete()
-                            tokenizerCache.ensureTokenizer()
-                            refreshTick++
-                        }
-                    },
-                    onOpen = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3"))) },
+                    onClick = { onModel(artifact.id) },
                 )
             }
         }
-        item { Text("Downloads use Android DownloadManager. Pause is controlled by the system/network; Cancel stops a download, Resume starts it again. Models are verified with SHA-256 before activation.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+        item { Text("Downloads use Pi's resumable model downloader: HTTP Range, ETag validators, persisted progress, foreground service execution, and optional auto-pause on metered mobile/Wi‑Fi networks.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
     }
 }
 
 @Composable
-private fun SpeechModelCard(tokens: UiTokens, artifact: ParakeetModelArtifact, selected: Boolean, statusText: String, progress: Int?, onSelect: () -> Unit, onDownload: () -> Unit, onResume: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit, onFinalize: () -> Unit, onOpen: () -> Unit) {
-    Column(Modifier.padding(horizontal = spacingLarge(), vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun SpeechModelCard(tokens: UiTokens, artifact: ParakeetModelArtifact, selected: Boolean, statusText: String, progress: Int?, onClick: () -> Unit) {
+    Column(Modifier.padding(horizontal = spacingLarge(), vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onClick() }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(painterResource(if (artifact.precision.contains("Float")) R.drawable.ic_feather_cpu else R.drawable.ic_feather_zap), null, tint = tokens.secondary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
@@ -2824,25 +2803,92 @@ private fun SpeechModelCard(tokens: UiTokens, artifact: ParakeetModelArtifact, s
                 Text(artifact.precision, color = tokens.secondary, fontSize = captionSize())
             }
             if (selected) Text("ACTIVE", color = tokens.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(" ›", color = tokens.secondary, fontSize = 24.sp)
         }
         Text(artifact.recommendedUse, color = tokens.secondary, fontSize = captionSize(), lineHeight = 18.sp)
         Text(statusText, color = tokens.text, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
         if (progress != null) Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(tokens.separator)) { Box(Modifier.fillMaxWidth(progress / 100f).height(6.dp).background(tokens.accent)) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            SpeechModelChip(if (selected) "✓ Selected" else "Use", tokens, selected, onSelect)
-            SpeechModelChip("↓ Download", tokens, false, onDownload)
-            SpeechModelChip("▶ Resume", tokens, false, onResume)
-            SpeechModelChip("× Cancel", tokens, false, onCancel)
-            SpeechModelChip("ⓘ Details", tokens, false, onFinalize)
-            SpeechModelChip("↗ Hugging Face", tokens, false, onOpen)
-            SpeechModelChip("Delete", tokens, false, onDelete)
-        }
     }
 }
 
 @Composable
-private fun SpeechModelChip(label: String, tokens: UiTokens, selected: Boolean, onClick: () -> Unit) {
-    Box(Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(if (selected) tokens.accent.copy(alpha = 0.28f) else tokens.surface).clickable { hapticClick(); onClick() }.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) { Text(label, color = if (selected) tokens.accent else tokens.text, fontSize = captionSize(), fontWeight = FontWeight.SemiBold) }
+private fun SpeechModelDetailScreen(artifact: ParakeetModelArtifact, tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val cache = remember(context, artifact.id, refreshTick) { ParakeetModelCache(context, artifact) }
+    val tokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { cache.importModel(uri); tokenizerCache.ensureTokenizer(); refreshTick++ }
+    }
+    val status = cache.status()
+    val downloadState = cache.downloadStatus()
+    val running = downloadState.status == ModelDownloadState.Running
+    val paused = downloadState.status == ModelDownloadState.Paused
+    val completedDownload = downloadState.status == ModelDownloadState.Success
+    val failedDownload = downloadState.status == ModelDownloadState.Failed
+    val downloading = running || paused
+    val progress = if (downloadState.totalBytes > 0) (downloadState.bytesDownloaded * 100 / downloadState.totalBytes).coerceIn(0, 100) else 0
+    fun requestNotificationsIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(800)
+            refreshTick++
+        }
+    }
+    SettingsScaffold(artifact.title, tokens, onBack) {
+        SettingsSection("OVERVIEW", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_cpu, "Precision", artifact.precision, null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_database, "Download Size", artifact.sizeBytes.toHumanBytesLabel(), null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_info, "Recommended Use", artifact.recommendedUse, null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_shield, "Integrity", artifact.sha256.take(12) + "…", null, tokens) {}
+        }
+        SettingsSection("STATUS", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_hard_drive, "Cache", if (status.ready) "Ready" else status.label, if (status.ready) "✓" else null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_download_cloud, "Download", if (status.ready) "Ready · local model available" else downloadStatusLabel(downloadState, progress), if (status.ready) "Ready" else downloadStatusBadge(downloadState), tokens) {}
+            if (running) {
+                SettingsValueRow(R.drawable.ic_feather_zap, "Speed", if (downloadState.bytesPerSecond > 0) downloadState.bytesPerSecond.toSpeedLabel() else "Starting", null, tokens) {}
+                SettingsValueRow(R.drawable.ic_feather_info, "ETA", downloadState.etaSeconds.toEtaLabel(), null, tokens) {}
+            }
+            SettingsValueRow(R.drawable.ic_feather_check, "Tokenizer", if (tokenizerCache.isReady()) "Ready" else "Required", if (tokenizerCache.isReady()) "✓" else null, tokens) {}
+        }
+        SettingsSection("ACTIONS", tokens) {
+            if (status.ready) {
+                SettingsValueRow(R.drawable.ic_feather_check, "Use This Model", if (speechSettings.selectedSpeechModelId == artifact.id) "Already selected" else "Set as active speech model", if (speechSettings.selectedSpeechModelId == artifact.id) "✓" else "Use", tokens) {
+                    SpeechSettingsStore.setSelectedSpeechModelId(context, artifact.id)
+                    speechSettings = SpeechSettingsStore.values(context)
+                }
+            }
+            when {
+                running -> {
+                    SettingsValueRow(R.drawable.ic_feather_pause, "Pause Download", "Keep partial file and stop network stream", "Pause", tokens) { cache.pauseDownload(); refreshTick++ }
+                    SettingsValueRow(R.drawable.ic_feather_x, "Cancel Download", "Stop and remove partial file", "Cancel", tokens) { cache.cancelDownload(); refreshTick++ }
+                }
+                paused -> {
+                    SettingsValueRow(R.drawable.ic_feather_play, "Resume Download", "Continue with HTTP Range and ETag", "Resume", tokens) { requestNotificationsIfNeeded(); cache.startDownload(); refreshTick++ }
+                    SettingsValueRow(R.drawable.ic_feather_x, "Cancel Download", "Stop and remove partial file", "Cancel", tokens) { cache.cancelDownload(); refreshTick++ }
+                }
+                completedDownload -> {
+                    SettingsValueRow(R.drawable.ic_feather_check, "Verify And Import", "Validate SHA-256, import cache, fetch tokenizer", "Verify", tokens) { scope.launch { cache.finalizeDownloadIfComplete(); tokenizerCache.ensureTokenizer(); refreshTick++ } }
+                }
+                failedDownload -> {
+                    SettingsValueRow(R.drawable.ic_feather_play, "Retry Download", "Resume partial bytes when server allows", "Retry", tokens) { requestNotificationsIfNeeded(); cache.startDownload(); refreshTick++ }
+                    SettingsValueRow(R.drawable.ic_feather_x, "Clear Failed Download", "Remove partial file and reset state", "Clear", tokens) { cache.cancelDownload(); refreshTick++ }
+                }
+                !status.ready -> {
+                    SettingsValueRow(R.drawable.ic_feather_download_cloud, "Download Model", "Start background resumable download", "Download", tokens) { requestNotificationsIfNeeded(); cache.startDownload(); refreshTick++ }
+                    SettingsValueRow(R.drawable.ic_feather_upload, "Import Model File", "Pick an existing .tflite file and verify SHA-256", "Import", tokens) { importLauncher.launch(arrayOf("application/octet-stream", "application/vnd.tensorflow.lite", "*/*")) }
+                }
+            }
+            SettingsValueRow(R.drawable.ic_feather_external_link, "Open Hugging Face", "litert-community/parakeet-tdt-0.6b-v3", "Open", tokens) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3"))) }
+            if (status.ready || status.hasCache || downloadState.bytesDownloaded > 0) SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Local Files", "Remove model cache and download state", "Delete", tokens) { cache.cancelDownload(); cache.delete(); refreshTick++ }
+        }
+        item { Text("Downloader persists partial files and resumes with Range: bytes=<offset>- plus If-Range: <ETag>. If server returns 200 instead of 206, partial file resets. If metered-network pause is enabled, mobile data and metered Wi‑Fi pause automatically.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+    }
 }
 
 private fun Long.toHumanBytesLabel(): String = when {
@@ -2850,6 +2896,38 @@ private fun Long.toHumanBytesLabel(): String = when {
     this >= 1_000_000L -> "${this / 1_000_000L} MB"
     this >= 1_000L -> "${this / 1_000L} KB"
     else -> "$this B"
+}
+
+private fun downloadStatusLabel(state: ModelDownloadState, progress: Long): String = when (state.status) {
+    ModelDownloadState.Idle -> "No active download"
+    ModelDownloadState.Running -> "${progress}% · ${state.bytesDownloaded.toHumanBytesLabel()} / ${state.totalBytes.toHumanBytesLabel()}"
+    ModelDownloadState.Paused -> "Paused at ${progress}% · ${state.bytesDownloaded.toHumanBytesLabel()}"
+    ModelDownloadState.Success -> "Downloaded · ready to verify"
+    ModelDownloadState.Failed -> "Failed · ${state.bytesDownloaded.toHumanBytesLabel()} saved"
+    ModelDownloadState.Canceled -> "Canceled"
+    else -> "Not downloaded"
+}
+
+private fun downloadStatusBadge(state: ModelDownloadState): String? = when (state.status) {
+    ModelDownloadState.Running -> "Active"
+    ModelDownloadState.Paused -> "Paused"
+    ModelDownloadState.Success -> "Verify"
+    ModelDownloadState.Failed -> "Retry"
+    else -> null
+}
+
+private fun Long.toEtaLabel(): String = when {
+    this < 0 -> "--"
+    this < 60 -> "${this}s"
+    this < 3600 -> "${this / 60}m ${this % 60}s"
+    else -> "${this / 3600}h ${(this % 3600) / 60}m"
+}
+
+private fun Long.toSpeedLabel(): String = when {
+    this >= 1024L * 1024L * 1024L -> "%.1f GB/s".format(this / (1024.0 * 1024.0 * 1024.0))
+    this >= 1024L * 1024L -> "%.1f MB/s".format(this / (1024.0 * 1024.0))
+    this >= 1024L -> "%.1f KB/s".format(this / 1024.0)
+    else -> "$this B/s"
 }
 
 @Composable

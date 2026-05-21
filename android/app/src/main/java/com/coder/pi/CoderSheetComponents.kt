@@ -84,6 +84,8 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
@@ -99,7 +101,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
     var dictationTranscript by remember { mutableStateOf("") }
     var dictationMeter by remember { mutableStateOf(0f) }
-    var dictationAudioFrames by remember { mutableStateOf<List<FloatArray>>(emptyList()) }
+    val dictationAudioFrames = remember { mutableListOf<FloatArray>() }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -119,7 +121,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictating = false
         dictationState = SpeechDictationDisplayState.IDLE
         dictationTranscript = ""
-        dictationAudioFrames = emptyList()
+        dictationAudioFrames.clear()
     }
     fun enhanceTranscript(transcript: String) {
         if (!speechSettings.enhancementEnabled || speechEnhancementClient == null || transcript.isBlank()) {
@@ -136,14 +138,14 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             dictationState = if (result.enhanced) SpeechDictationDisplayState.ENHANCED_READY else SpeechDictationDisplayState.TRANSCRIPT_READY
         }
     }
-    fun transcribeDictationAudio(frames: List<FloatArray> = dictationAudioFrames) {
-        val samples = frames.flattenToFloatArray()
-        if (!speechSettings.localTranscriptionEnabled || samples.isEmpty()) {
-            dictationTranscript = "Speech transcription unavailable."
-            dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
-            return
-        }
+    fun transcribeDictationAudio(frames: List<FloatArray> = dictationAudioFrames.toList()) {
         scope.launch {
+            val samples = withContext(Dispatchers.Default) { frames.flattenToFloatArray() }
+            if (!speechSettings.localTranscriptionEnabled || samples.isEmpty()) {
+                dictationTranscript = "Speech transcription unavailable."
+                dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+                return@launch
+            }
             val result = speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate)
             result.fold(
                 onSuccess = {
@@ -161,19 +163,18 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         dictationState = SpeechDictationDisplayState.RECORDING_EMPTY
         dictationTranscript = ""
         dictationMeter = 0f
-        dictationAudioFrames = emptyList()
+        dictationAudioFrames.clear()
         dictating = true
         speechAudioCapture.start(
             onFrame = { frame ->
                 scope.launch {
-                    val updatedFrames = dictationAudioFrames + frame.samples.copyOf()
-                    dictationAudioFrames = updatedFrames
+                    dictationAudioFrames.add(frame.samples.copyOf())
                     dictationMeter = frame.meter
                     if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
                     if (frame.finalized && dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
                         dictationState = SpeechDictationDisplayState.TRANSCRIBING
                         stopDictationCapture()
-                        transcribeDictationAudio(updatedFrames)
+                        transcribeDictationAudio(dictationAudioFrames.toList())
                     }
                 }
             },
@@ -221,7 +222,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                         dictating = false
                         dictationState = SpeechDictationDisplayState.IDLE
                         dictationTranscript = ""
-                        dictationAudioFrames = emptyList()
+                        dictationAudioFrames.clear()
                     }
                     SpeechDictationAction.STOP_RECORDING -> {
                         stopDictationCapture()

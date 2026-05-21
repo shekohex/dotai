@@ -1,10 +1,9 @@
 package com.coder.pi
 
-import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.os.Environment as AndroidEnvironment
-import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.google.ai.edge.litert.Accelerator
@@ -131,8 +130,6 @@ object ParakeetModelArtifacts {
 class ParakeetModelCache(private val context: Context, private val artifact: ParakeetModelArtifact = ParakeetModelArtifacts.int8) {
     private val directory: File = File(context.filesDir, "speech/parakeet")
     val modelFile: File = File(directory, artifact.fileName)
-    private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
-    private val downloadKey = "speech.model_download.${artifact.id}"
 
     fun isReady(): Boolean = modelFile.isFile && !modelFile.isGitLfsPointerFile() && modelFile.length() == artifact.sizeBytes && modelFile.sha256OrNull() == artifact.sha256
 
@@ -142,16 +139,16 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
         runCatching {
             if (isReady()) return@runCatching modelFile
             directory.mkdirs()
-            val manager = context.getSystemService(DownloadManager::class.java)
-            val downloadId = activeDownloadId().takeIf { it != -1L } ?: enqueueDownload(manager)
+            startDownload()
             var tempFile = downloadDestinationFile()
             while (true) {
-                val state = manager.queryModelDownload(downloadId)
+                val state = downloadStatus()
                 onEvent(SpeechTranscriberEvent.ModelDownloadProgress(state.bytesDownloaded, artifact.sizeBytes))
                 when (state.status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> break
-                    DownloadManager.STATUS_FAILED -> error("Model download failed")
-                    else -> SystemClock.sleep(500)
+                    ModelDownloadState.Success -> break
+                    ModelDownloadState.Failed -> error("Model download failed")
+                    ModelDownloadState.Canceled -> error("Model download canceled")
+                    else -> Thread.sleep(500)
                 }
             }
             if (!tempFile.isFile) error("Downloaded model file missing")
@@ -163,31 +160,46 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
             if (modelFile.exists()) modelFile.delete()
             tempFile.inputStream().use { input -> modelFile.outputStream().use { output -> input.copyTo(output) } }
             tempFile.delete()
-            clearDownloadId()
+            ResumableModelDownloadStateStore.clear(context, artifact)
             modelFile
         }
     }
 
-    fun startDownload(): Long = enqueueDownload(context.getSystemService(DownloadManager::class.java))
+    fun startDownload() = ContextCompat.startForegroundService(context, ResumableModelDownloadService.intent(context, ResumableModelDownloadService.StartAction, artifact.id))
 
-    fun downloadStatus(): ModelDownloadState = activeDownloadId().takeIf { it != -1L }?.let { context.getSystemService(DownloadManager::class.java).queryModelDownload(it) } ?: ModelDownloadState(DownloadManager.STATUS_FAILED, 0, artifact.sizeBytes)
+    fun downloadStatus(): ModelDownloadState = ResumableModelDownloadStateStore.state(context, artifact)
 
     fun cancelDownload() {
-        activeDownloadId().takeIf { it != -1L }?.let { context.getSystemService(DownloadManager::class.java).remove(it) }
-        clearDownloadId()
+        ContextCompat.startForegroundService(context, ResumableModelDownloadService.intent(context, ResumableModelDownloadService.CancelAction, artifact.id))
         downloadDestinationFile().delete()
     }
 
+    fun pauseDownload() = ContextCompat.startForegroundService(context, ResumableModelDownloadService.intent(context, ResumableModelDownloadService.PauseAction, artifact.id))
+
     suspend fun finalizeDownloadIfComplete(): Boolean = withContext(Dispatchers.IO) {
         val state = downloadStatus()
-        if (state.status != DownloadManager.STATUS_SUCCESSFUL) return@withContext false
+        if (state.status != ModelDownloadState.Success) return@withContext false
         val file = downloadDestinationFile()
         if (!file.isFile || file.sha256OrNull() != artifact.sha256) return@withContext false
         directory.mkdirs()
         if (modelFile.exists()) modelFile.delete()
         file.inputStream().use { input -> modelFile.outputStream().use { output -> input.copyTo(output) } }
         file.delete()
-        clearDownloadId()
+        ResumableModelDownloadStateStore.clear(context, artifact)
+        true
+    }
+
+    suspend fun importModel(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        directory.mkdirs()
+        val tempFile = File(directory, "${artifact.fileName}.import")
+        context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } } ?: return@withContext false
+        if (tempFile.length() != artifact.sizeBytes || tempFile.sha256OrNull() != artifact.sha256) {
+            tempFile.delete()
+            return@withContext false
+        }
+        if (modelFile.exists()) modelFile.delete()
+        tempFile.renameTo(modelFile)
+        ResumableModelDownloadStateStore.clear(context, artifact)
         true
     }
 
@@ -196,36 +208,17 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
         return directory.deleteRecursively()
     }
 
-    private fun enqueueDownload(manager: DownloadManager): Long {
-        cancelDownload()
-        val request = DownloadManager.Request(Uri.parse(artifact.url))
-            .setTitle(artifact.title)
-            .setDescription("Speech model download")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(false)
-            .setDestinationInExternalFilesDir(context, AndroidEnvironment.DIRECTORY_DOWNLOADS, "speech/${artifact.fileName}.part")
-        val id = manager.enqueue(request)
-        preferences.edit().putLong(downloadKey, id).apply()
-        return id
-    }
-
-    private fun activeDownloadId(): Long = preferences.getLong(downloadKey, -1L)
-
-    private fun clearDownloadId() = preferences.edit().remove(downloadKey).apply()
-
     private fun downloadDestinationFile(): File = File(context.getExternalFilesDir(AndroidEnvironment.DIRECTORY_DOWNLOADS), "speech/${artifact.fileName}.part")
 }
 
-data class ModelDownloadState(val status: Int, val bytesDownloaded: Long, val totalBytes: Long)
-
-private fun DownloadManager.queryModelDownload(id: Long): ModelDownloadState {
-    query(DownloadManager.Query().setFilterById(id)).use { cursor ->
-        if (!cursor.moveToFirst()) return ModelDownloadState(DownloadManager.STATUS_FAILED, 0, 0)
-        val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-        val downloaded = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-        val total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-        return ModelDownloadState(status, downloaded, total.takeIf { it > 0 } ?: 0)
+data class ModelDownloadState(val status: Int, val bytesDownloaded: Long, val totalBytes: Long, val bytesPerSecond: Long = 0, val etaSeconds: Long = -1) {
+    companion object {
+        const val Idle = 0
+        const val Running = 1
+        const val Paused = 2
+        const val Success = 3
+        const val Failed = 4
+        const val Canceled = 5
     }
 }
 
@@ -268,7 +261,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
     override suspend fun transcribe(samples: FloatArray, sampleRate: Int, onEvent: (SpeechTranscriberEvent) -> Unit): Result<SpeechTranscriptResult> {
         if (!modelCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
         if (!tokenizerCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
-        return runCatching {
+        return withContext(Dispatchers.Default) { runCatching {
             val startedAt = System.currentTimeMillis()
             ensureWarmModel()
             val model = compiledModel ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
@@ -279,7 +272,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map { it.first }.filter { it != END_OF_SEQUENCE }.toList()
             val tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
             SpeechTranscriptResult(tokenizer.decode(tokenIds), System.currentTimeMillis() - startedAt)
-        }
+        } }
     }
 
     private fun ensureWarmModel() {

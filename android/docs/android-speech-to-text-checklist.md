@@ -384,6 +384,10 @@ Validation:
 - Target-device proof remains blocked: latest `adb devices -l` only lists `emulator-5554 product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a`; no Pixel 7 Pro or Samsung Tab A9 is attached.
 - Pixel 7 Pro debugging found the previous model artifact was wrong for the implemented TDT decoder. Google LiteRT ASR sample metadata uses `parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite`; app used non-stateful `parakeet_tdt_0.6b_v3_5s_i8.tflite`. Native crash was `JNI DETECTED ERROR IN APPLICATION: java_array == null in TensorBuffer.nativeReadFloat(long)` after stop-recording, inside decoder output reads. Switched artifact URL/file/checksum to the stateful model and removed Pixel-specific fail-closed guard for retest.
 - Model management UX update: moved model controls to a dedicated Speech Models page, added i8/f32 stateful model selection, wired active model preference into `ChatInputBar`, switched model downloads from app-managed `URL.openStream()` to Android `DownloadManager`, added progress polling/cancel/resume/re-verify actions, and fixed VAD sensitivity to wrap from Very High back to Very Low.
+- Download research update: Android `DownloadManager` is the core system service and handles background HTTP downloads, retries, network changes, and reboot recovery, but it does not expose app-controlled pause/resume. True manual resumable downloads require app-owned downloader state using HTTP `Range`, `ETag`/validator checks, persisted byte counts, and a foreground/background service. Next model-download iteration should replace DownloadManager with a speech model download service that supports explicit pause, resume, cancel, verification, and import.
+- GitHub implementation scan: resilient Kotlin downloaders commonly store partial file metadata, send `Range: bytes=<offset>-`, send `If-Range` with `ETag` or `Last-Modified`, validate `206 Partial Content` for resumed transfers, reset partial files on `200 OK`, and use Android connectivity checks/callbacks to pause when network becomes metered or unavailable. Examples found through `gh search code`: `undertaker33/ElymBot` (`ResumableHttpDownloader.kt`), `ignacio82/spatialfin` (`ResumableDownloadWorker.kt`), `joelromanpr/android-essentials` (`TinyDownloaderImpl.kt`), and LibreTube/NewPipe-derived download services for metered-network handling.
+- Current custom downloader status: `ResumableModelDownloadService` now owns model downloads in foreground, persists progress/ETag, resumes with `Range` + `If-Range`, supports pause/resume/cancel, resets partial files when server ignores range, and adds a user option to auto-pause speech model downloads on mobile data or metered Wi‑Fi.
+- Download UX update: model downloads now expose Android progress notifications with progress bar, downloaded/total bytes, adaptive speed units (`B/s`, `KB/s`, `MB/s`, `GB/s`), ETA, and contextual Pause/Resume/Cancel actions. On Android API 36+, downloads use native `Notification.ProgressStyle`, matching the existing terminal agent progress notification pattern, with `NotificationCompat` fallback on older Android. App model cards/detail page show the same speed and ETA. Downloader registers a network callback, pauses on network loss or metered networks when enabled, and retries transient failures with bounded backoff before marking failed.
 
 Review:
 
@@ -794,3 +798,48 @@ Review:
 Commit:
 
 - Implementation: `7f3dbe9` (`test(android): add speech privacy audit`).
+
+## ASTT-11: Speech Model Download UX, Runtime Stability, And Streaming Transcription Follow-Up
+
+Status: open
+
+Latest Pixel 7 Pro findings from user testing:
+
+- Pausing from model-download notification removes notification. Expected: progress notification should become a normal paused download notification with Resume/Cancel actions.
+- Model downloads should use a dedicated download progress notification channel, separate from terminal progress notifications and other speech notifications.
+- When model cache is ready/active, model detail `Download` status currently says `Not downloaded`. Expected: `Ready`, `Active`, or `Imported`, depending state.
+- `Speed` and `ETA` rows show `Waiting for network`/`--` when no download is active. Expected: hide these rows unless running, or show `Not downloading` only in valid states.
+- App crashed during enhancement phase. Need collect `adb logcat`/tombstone when Pixel reconnects and fix root cause.
+- App freezes during final transcription after recording. Transcript succeeds, but UI blocks. Need move heavy final decode/offline transcription fully off UI path and surface progress.
+- Transcription is not real-time yet. Need streaming/background partial transcription while user speaks, using small audio segments and VoiceInk-style rolling segments rather than waiting until stop.
+- Downloader must survive repeated install/uninstall testing. Need support importing model/tokenizer from external storage or developer push path so testing does not require redownloading.
+
+Local model cache plan:
+
+- Local ignored directory: `android/models/`.
+- `android/models/.gitignore` keeps pulled artifacts out of git.
+- Pulled artifacts from Pixel 7 Pro:
+  - `android/models/parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite` (`586M`, SHA-256 `334745b8bc7fd372b1c213516f0b6338bb827b1a2abb3e77ad35fe6fea5cd16b`)
+  - `android/models/parakeet_tdt_0.6b_v3_tokenizer.json` (`1.1M`, SHA-256 `bd321b096832a3f270bd3b2a88823957920f1a5c5ada71114a26ea729d0cbe91`)
+- Restore helper: `scripts/android-restore-speech-models.sh [adb-serial]` pushes cached files back into `files/speech/parakeet/` after reinstall.
+- When Pixel reconnects, pull current app model/tokenizer with `adb shell run-as com.coder.pi ...` into `android/models/`.
+- Later test installs can push those files back into app storage before launch instead of redownloading.
+
+Implementation checklist:
+
+- [x] Pull cached model file and tokenizer JSON from Pixel 7 Pro into `android/models/`.
+- [x] Add developer restore script or documented `adb push` flow for model/tokenizer after reinstall.
+- [x] Add import-from-file action on model detail page using Android document picker.
+- [x] Rework model detail state machine so only valid rows/actions appear for `idle`, `ready`, `running`, `paused`, `success`, `failed`, and `canceled`.
+- [x] Hide speed/ETA unless download is running; show paused/completed/failed status copy instead.
+- [x] Make paused notification persistent normal notification with Resume/Cancel actions.
+- [x] Split model download progress into its own notification channel.
+- [ ] Collect Pixel crash logs for enhancement crash and fix.
+- [x] Remove final transcription UI freeze by moving decode/finalization to background and reporting progress.
+- [ ] Implement streaming partial transcription from rolling audio segments, modeled after VoiceInk behavior.
+
+Validation:
+
+- `adb devices -l` currently shows only emulator; Pixel 7 Pro `192.168.1.104:37477` disconnected while attempting model pull.
+- Model/tokenizer pull is blocked until Pixel reconnects.
+- Freeze mitigation validation: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `./gradlew assembleDebug --no-daemon` passed, APK installed on Pixel 7 Pro `192.168.1.107:37339`, and `scripts/android-restore-speech-models.sh 192.168.1.107:37339` restored local model/tokenizer after install. Code changes avoid Compose-state audio-frame list copying and run final sample flattening/LiteRT transcribe on `Dispatchers.Default` instead of main.

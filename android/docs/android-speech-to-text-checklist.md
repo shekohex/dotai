@@ -230,7 +230,7 @@ Review:
 
 Commit:
 
-- TBD.
+- Implementation: `7c0c48c` (`feat(android): add debug speech playground`).
 
 ## ASTT-3: Implement Dictation Compose Surface With Fake Provider
 

@@ -801,7 +801,7 @@ Commit:
 
 ## ASTT-11: Speech Model Download UX, Runtime Stability, And Streaming Transcription Follow-Up
 
-Status: open
+Status: review
 
 Latest Pixel 7 Pro findings from user testing:
 
@@ -850,3 +850,22 @@ Validation:
 - VoiceInk UI/correction follow-up: live transcript bubble now mirrors VoiceInk mini recorder shape: compact waveform control bar, live transcript panel above it only when partial text exists, no visible `Listening`/test-id/status copy while recording, and the action icon uses a send/finish glyph instead of pause. `LiveSpeechTranscriptMerger` now treats the displayed tail as unconfirmed hypothesis; new overlapping chunks replace that tail, including fuzzy word matches, so misspelled live words can be corrected by later chunks instead of being duplicated.
 - VoiceInk manual-finish follow-up: VAD no longer stops capture after trailing silence. Recording stays active through pauses in speech and only the user finish action stops capture, enters `TRANSCRIBING`, and runs final transcription/enhancement. Pixel post-install log scan after `a685651` found no `FATAL EXCEPTION`, `AndroidRuntime`, app ANR, LiteRT, Tensor, or OOM crash markers for `com.coder.pi`.
 - Enhancement crash follow-up: recent Pixel `logcat -d -t 8000` after reinstall did not include a `FATAL EXCEPTION` or `AndroidRuntime` stacktrace for the reported enhancement crash. Hardened `enhanceTranscript` so prompt rendering, terminal context collection, and provider calls are wrapped in `runCatching`; failures now fail open to raw transcript and return to `TRANSCRIPT_READY` instead of escaping coroutine scope.
+
+Review:
+
+- Subagent review result `730b3009-3485-4a81-b59a-047e2b41aaa7`: patch incorrect before fixes.
+- Finding P1: partial transcription could reschedule after cancellation and race final transcription through shared LiteRT buffers in `CoderSheetComponents.kt`. Fixed by adding `Mutex` around all chat dictation `speechTranscriber.transcribe` calls and only chaining partial chunk processing while still recording.
+- Finding P2: downloader could mark `Success` after clean EOF even when bytes were incomplete in `ResumableModelDownloadService.kt`. Fixed by requiring `downloaded == artifact.sizeBytes` before success and marking failed when final verification rejects downloaded file.
+- Follow-up self-review: compared against VoiceInk `StreamingTranscriptionService.swift`, `FluidAudioStreamingProvider.swift`, `WordAgreementEngine.swift`, `MiniRecorderView.swift`, `RecorderComponents.swift`, and Google LiteRT `MicrophoneAudioSource.kt`/`MainActivity.kt`. Found and fixed two UX/logic gaps: silence was auto-stopping capture, and live transcript merge needed mutable unconfirmed-hypothesis replacement/correction. Residual risk: exact word-timing confirmation cannot match VoiceInk FluidAudio because current Parakeet wrapper returns text only, not token timings/confidences; implemented text-pass agreement/fuzzy correction as closest feasible Android Parakeet path.
+
+Commit:
+
+- Implementation: `98127f7` (`feat(android): improve speech model runtime UX`).
+- Freeze fix: `9984bb4` (`fix(android): move speech transcription off main thread`).
+- Enhancement fail-open: `89b50e6` (`fix(android): fail open speech enhancement`).
+- Partial throttle: `f63ba0b` (`fix(android): throttle partial speech transcription`).
+- Overlapping live chunks: `2c648c0` (`feat(android): stream speech with overlapping chunks`).
+- Live transcript bubble/correction UI: `539aa63` (`feat(android): polish live speech transcript bubble`).
+- Download completion review fix: `2a5c7d1` (`fix(android): guard speech download completion`).
+- Manual finish behavior: `a685651` (`fix(android): keep speech recording until finish`).
+- Validation docs: `c1f9ff4` (`docs(android): update speech live transcription validation`).

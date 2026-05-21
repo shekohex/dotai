@@ -470,13 +470,16 @@ Commit:
 
 ## ASTT-7: Implement Local LiteRT Parakeet Transcriber
 
-Status: not-started
+Status: building
 
 Research:
 
 - Google sample uses `LiteRtRunner`, `TdtDecoder`, log-mel processing, tokenizer, and overlap merge.
 - Parakeet mic path uses 5-second windows with 4-second overlap.
 - Model files are too large for APK bundling.
+- `gradle/libs.versions.toml` has no LiteRT dependency yet, so runtime inference is not wired in this slice.
+- Hugging Face LFS pointer for `parakeet_tdt_0.6b_v3_5s_i8.tflite` gives `sha256:f25e5972fe72048f67272e26d4badfe19d876e0fa19027cb2c6c0e0fc4da692b` and size `614437424`.
+- Added `SpeechTranscriber`, `ParakeetModelCache`, int8 model metadata, verified download/delete path, runtime-unavailable LiteRT placeholder, and overlap transcript merge.
 
 Plan:
 
@@ -486,13 +489,13 @@ Plan:
 
 Checklist:
 
-- [ ] Add `SpeechTranscriber` interface for local provider.
-- [ ] Add model artifact metadata and storage path.
-- [ ] Download model with integrity verification.
+- [x] Add `SpeechTranscriber` interface for local provider.
+- [x] Add model artifact metadata and storage path.
+- [x] Download model with integrity verification.
 - [ ] Load LiteRT `CompiledModel` and pick accelerator safely.
 - [ ] Implement log-mel preprocessing compatible with model metadata.
 - [ ] Implement tokenizer and TDT decode.
-- [ ] Implement overlap transcript merge.
+- [x] Implement overlap transcript merge.
 - [ ] Keep warm model when safe; release on low memory or disposal.
 
 User story:
@@ -517,10 +520,14 @@ Validation:
 - `./gradlew testDebugUnitTest --no-daemon`
 - `./gradlew assembleDebug --no-daemon`
 - Device fixture smoke.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 10s`.
+- `./gradlew assembleDebug --no-daemon` passed, `BUILD SUCCESSFUL in 10s`.
+- Device fixture smoke blocked: no connected/running device.
 
 Review:
 
-- TBD.
+- Not ready for subagent review yet: LiteRT runtime, log-mel, tokenizer/TDT decode, warm model lifecycle, and fixture transcription remain incomplete.
+- Self-review residual risk: current `LiteRtParakeetTranscriber` returns `RuntimeUnavailable` when model exists; this avoids false support claims.
 
 Commit:
 

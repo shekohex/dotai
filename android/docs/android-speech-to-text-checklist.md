@@ -287,7 +287,7 @@ Review:
 
 Commit:
 
-- TBD.
+- Implementation: `185d5eb` (`feat(android): add fake dictation compose surface`).
 
 ## ASTT-4: Add UI Automator Speech UX Journey
 

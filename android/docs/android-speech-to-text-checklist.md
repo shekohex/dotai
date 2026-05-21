@@ -189,11 +189,13 @@ Acceptance criteria:
 Validation:
 
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed on local JVM, `BUILD SUCCESSFUL in 11s`.
+- Review-fix validation: `./gradlew testDebugUnitTest --tests '*SpeechDictationStateTest' --no-daemon` passed, `BUILD SUCCESSFUL in 22s`.
 
 Review:
 
-- Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: reviewer gate from goal cannot be satisfied until tool is available.
+- Subagent review `5817d5a6-6ed9-4652-a2af-24a1d5b23c82` found P2 transition coverage did not target-test every valid transition and P2 `NO_SPEECH` was defined but unreachable through `SpeechDictationUxContract.transition()`.
+- Fixed by adding `COMPLETE_NO_SPEECH` transition from `TRANSCRIBING` to `NO_SPEECH` and adding independent expected-transition tests for every valid state/action target, including request permission, cancel, reset, raw send from enhanced-ready, and no-speech path.
+- Re-review pending after review-fix commit.
 
 Commit:
 

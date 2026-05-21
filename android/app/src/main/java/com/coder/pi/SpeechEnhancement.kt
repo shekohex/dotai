@@ -32,6 +32,8 @@ data class SpeechEnhancementRequest(
     val prompt: String,
     val transcript: String,
     val context: String,
+    val systemPrompt: String = prompt,
+    val userPrompt: String = prompt,
 )
 
 data class SpeechEnhancementResult(
@@ -58,11 +60,10 @@ class SpeechEnhancementPromptRenderer(private val config: SpeechEnhancementPromp
             .takeLast(config.maxContextLines)
             .joinToString("\n")
             .take(config.maxContextChars)
-        val prompt = template
-            .replace("<TRANSCRIPT>", safeTranscript)
-            .replace("<CONTEXT>", safeContext)
-            .replace("<CONTEXT_INFORMATION>", safeContext)
-        return SpeechEnhancementRequest(prompt = prompt, transcript = safeTranscript, context = safeContext)
+        val contextSection = if (safeContext.isBlank()) "" else "\n\n<CONTEXT_INFORMATION>\n$safeContext\n</CONTEXT_INFORMATION>"
+        val systemPrompt = template.trim() + contextSection
+        val userPrompt = "\n<TRANSCRIPT>\n$safeTranscript\n</TRANSCRIPT>"
+        return SpeechEnhancementRequest(prompt = "$systemPrompt\n$userPrompt", transcript = safeTranscript, context = safeContext, systemPrompt = systemPrompt, userPrompt = userPrompt)
     }
 
     private fun redact(value: String): String {
@@ -105,8 +106,12 @@ class OpenAiHttpSpeechEnhancementClient(private val httpClient: HttpClient, priv
                 put("temperature", JsonPrimitive(0.2))
                 put("messages", buildJsonArray {
                     add(buildJsonObject {
+                        put("role", JsonPrimitive("system"))
+                        put("content", JsonPrimitive(request.systemPrompt))
+                    })
+                    add(buildJsonObject {
                         put("role", JsonPrimitive("user"))
-                        put("content", JsonPrimitive(request.prompt))
+                        put("content", JsonPrimitive(request.userPrompt))
                     })
                 })
             }.toString())
@@ -127,8 +132,13 @@ class GeminiHttpSpeechEnhancementClient(private val httpClient: HttpClient, priv
                 put("contents", buildJsonArray {
                     add(buildJsonObject {
                         put("parts", buildJsonArray {
-                            add(buildJsonObject { put("text", JsonPrimitive(request.prompt)) })
+                            add(buildJsonObject { put("text", JsonPrimitive(request.userPrompt)) })
                         })
+                    })
+                })
+                put("systemInstruction", buildJsonObject {
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", JsonPrimitive(request.systemPrompt)) })
                     })
                 })
                 put("generationConfig", buildJsonObject { put("temperature", JsonPrimitive(0.2)) })

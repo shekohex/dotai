@@ -8,21 +8,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpeechEnhancementTest {
-    private val template = "Transcript=<TRANSCRIPT>\nContext=<CONTEXT>"
+    private val template = "Clean up transcript."
 
     @Test
-    fun rendererInjectsTranscriptAndVisibleContext() {
+    fun rendererBuildsVoiceInkStyleSystemAndUserPrompts() {
         val request = SpeechEnhancementPromptRenderer().render(template, "open settings", listOf("gradle failed", "build log"))
 
-        assertTrue(request.prompt.contains("Transcript=open settings"))
-        assertTrue(request.prompt.contains("gradle failed\nbuild log"))
+        assertEquals("\n<TRANSCRIPT>\nopen settings\n</TRANSCRIPT>", request.userPrompt)
+        assertTrue(request.systemPrompt.startsWith("Clean up transcript."))
+        assertTrue(request.systemPrompt.contains("<CONTEXT_INFORMATION>\ngradle failed\nbuild log\n</CONTEXT_INFORMATION>"))
     }
 
     @Test
-    fun rendererInjectsVoiceInkContextInformationPlaceholder() {
+    fun rendererDoesNotReplacePlaceholdersInsideSystemPrompt() {
         val request = SpeechEnhancementPromptRenderer().render("Clean <TRANSCRIPT> using <CONTEXT_INFORMATION>", "run tests", listOf("SpeechEnhancementTest failed"))
 
-        assertTrue(request.prompt.contains("Clean run tests using SpeechEnhancementTest failed"))
+        assertTrue(request.systemPrompt.contains("Clean <TRANSCRIPT> using <CONTEXT_INFORMATION>"))
+        assertTrue(request.userPrompt.contains("run tests"))
+        assertTrue(request.systemPrompt.contains("<CONTEXT_INFORMATION>\nSpeechEnhancementTest failed\n</CONTEXT_INFORMATION>"))
     }
 
     @Test

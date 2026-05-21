@@ -28,34 +28,34 @@ class SpeechDebugWorkflowInstrumentedTest {
         val device = UiDevice.getInstance(instrumentation)
         context.getSharedPreferences("terminal", 0).edit { putBoolean("chat_auto_send", true) }
         openSpeechState(context, instrumentation, "RECORDING_EMPTY")
-        check(device.wait(Until.hasObject(By.text("Listening")), 10_000)) { "Recording state missing" }
+        check(device.wait(Until.hasObject(By.desc("Finish voice input")), 10_000)) { "Recording finish action missing" }
 
         openSpeechState(context, instrumentation, "RECORDING_WITH_SPEECH")
-        check(device.wait(Until.hasObject(By.text("Listening with speech detected")), 10_000)) { "Speech-detected state missing" }
+        check(device.wait(Until.hasObject(By.desc("Finish voice input")), 10_000)) { "Speech-detected finish action missing" }
         check(device.wait(Until.hasObject(By.textContains("failing gradle task")), 10_000)) { "Partial transcript missing" }
 
         openSpeechState(context, instrumentation, "TRANSCRIBING")
-        check(device.wait(Until.hasObject(By.text("Transcribing")), 10_000)) { "Transcribing state missing" }
+        check(device.wait(Until.hasObject(By.desc("Cancel")), 10_000)) { "Transcribing cancel action missing" }
 
         openSpeechState(context, instrumentation, "TRANSCRIPT_READY")
-        check(device.wait(Until.hasObject(By.text("Transcript ready")), 10_000)) { "Transcript ready state missing" }
+        check(device.wait(Until.hasObject(By.textContains("failing Gradle task")), 10_000)) { "Transcript ready text missing" }
         captureSpeechScreenshot(device, context, "transcript-ready")
 
         openSpeechState(context, instrumentation, "ENHANCING_COLLAPSED")
-        check(device.wait(Until.hasObject(By.text("Enhancing transcript")), 10_000)) { "Enhancing state missing" }
+        check(device.wait(Until.hasObject(By.desc("Original")), 10_000)) { "Enhancing original action missing" }
 
         openSpeechState(context, instrumentation, "ENHANCEMENT_FAILED")
-        check(device.wait(Until.hasObject(By.text("Enhancement failed")), 10_000)) { "Enhancement failure state missing" }
-        check(device.wait(Until.hasObject(By.text("Send as-is")), 10_000)) { "Send as-is action missing" }
+        check(device.wait(Until.hasObject(By.desc("Retry")), 10_000)) { "Enhancement retry action missing" }
+        check(device.wait(Until.hasObject(By.desc("Send transcript")), 10_000)) { "Send original action missing" }
         captureSpeechScreenshot(device, context, "enhancement-failed")
 
         openSpeechState(context, instrumentation, "ENHANCED_READY")
-        check(device.wait(Until.hasObject(By.text("Enhanced transcript ready")), 10_000)) { "Enhanced ready state missing" }
+        check(device.wait(Until.hasObject(By.desc("Send enhanced transcript")), 10_000)) { "Enhanced send action missing" }
         check(device.wait(Until.hasObject(By.textContains("visible terminal output")), 10_000)) { "Enhanced transcript missing" }
         captureSpeechScreenshot(device, context, "enhanced-ready")
 
         openSpeechState(context, instrumentation, "SUBMITTED")
-        check(device.wait(Until.hasObject(By.text("Voice input submitted")), 10_000)) { "Submitted state missing" }
+        check(device.wait(Until.hasObject(By.desc("cancel")), 10_000)) { "Submitted idle action missing" }
     }
 
     private fun openSpeechState(context: android.content.Context, instrumentation: Instrumentation, state: String) {

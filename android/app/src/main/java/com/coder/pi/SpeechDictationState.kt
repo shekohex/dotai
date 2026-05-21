@@ -66,6 +66,11 @@ data class SpeechDictationStateContract(
     val accessibility: SpeechDictationAccessibility,
 )
 
+data class SpeechDictationVisibleActions(
+    val primary: SpeechDictationAction?,
+    val secondary: List<SpeechDictationAction>,
+)
+
 object SpeechDictationUxContract {
     val fixtures = SpeechDictationFixtureText()
 
@@ -81,6 +86,20 @@ object SpeechDictationUxContract {
         SpeechDictationDisplayState.ENHANCED_READY to SpeechDictationStateContract(SpeechDictationDisplayState.ENHANCED_READY, setOf(SpeechDictationPipelineState.ENHANCEMENT), true, true, false, true, true, true, true, 220, SpeechDictationAccessibility("Enhanced transcript ready", "speech_enhanced_ready")),
         SpeechDictationDisplayState.SUBMITTED to SpeechDictationStateContract(SpeechDictationDisplayState.SUBMITTED, setOf(SpeechDictationPipelineState.SEND, SpeechDictationPipelineState.COMPLETE), false, false, false, false, false, false, false, 180, SpeechDictationAccessibility("Voice input submitted", "speech_submitted")),
         SpeechDictationDisplayState.CANCELED to SpeechDictationStateContract(SpeechDictationDisplayState.CANCELED, setOf(SpeechDictationPipelineState.COMPLETE), false, false, false, false, false, false, false, 180, SpeechDictationAccessibility("Voice input canceled", "speech_canceled")),
+    )
+
+    private val visibleActions = mapOf(
+        SpeechDictationDisplayState.IDLE to SpeechDictationVisibleActions(null, emptyList()),
+        SpeechDictationDisplayState.RECORDING_EMPTY to SpeechDictationVisibleActions(SpeechDictationAction.STOP_RECORDING, listOf(SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.RECORDING_WITH_SPEECH to SpeechDictationVisibleActions(SpeechDictationAction.STOP_RECORDING, listOf(SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.TRANSCRIBING to SpeechDictationVisibleActions(null, listOf(SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.TRANSCRIPT_READY to SpeechDictationVisibleActions(SpeechDictationAction.SEND_RAW, listOf(SpeechDictationAction.START_ENHANCEMENT, SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.ENHANCING_COLLAPSED to SpeechDictationVisibleActions(null, listOf(SpeechDictationAction.SEND_RAW, SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT to SpeechDictationVisibleActions(SpeechDictationAction.SEND_RAW, listOf(SpeechDictationAction.RETRY_ENHANCEMENT, SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.ENHANCEMENT_FAILED to SpeechDictationVisibleActions(SpeechDictationAction.SEND_RAW, listOf(SpeechDictationAction.RETRY_ENHANCEMENT, SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.ENHANCED_READY to SpeechDictationVisibleActions(SpeechDictationAction.SEND_ENHANCED, listOf(SpeechDictationAction.SEND_RAW, SpeechDictationAction.CANCEL)),
+        SpeechDictationDisplayState.SUBMITTED to SpeechDictationVisibleActions(null, emptyList()),
+        SpeechDictationDisplayState.CANCELED to SpeechDictationVisibleActions(null, emptyList()),
     )
 
     private val transitions = mapOf(
@@ -102,4 +121,6 @@ object SpeechDictationUxContract {
     fun transition(displayState: SpeechDictationDisplayState, action: SpeechDictationAction): SpeechDictationDisplayState = transitions[displayState]?.get(action) ?: error("Invalid speech dictation transition: $displayState + $action")
 
     fun allowedActions(displayState: SpeechDictationDisplayState): Set<SpeechDictationAction> = transitions[displayState].orEmpty().keys
+
+    fun visibleActionsFor(displayState: SpeechDictationDisplayState): SpeechDictationVisibleActions = visibleActions.getValue(displayState)
 }

@@ -68,6 +68,28 @@ class SpeechDictationStateTest {
     }
 
     @Test
+    fun visibleActionsAreAllowedAndNeverDuplicated() {
+        SpeechDictationDisplayState.entries.forEach { state ->
+            val visibleActions = SpeechDictationUxContract.visibleActionsFor(state)
+            val visible = listOfNotNull(visibleActions.primary) + visibleActions.secondary
+            val allowed = SpeechDictationUxContract.allowedActions(state)
+
+            assertEquals("$state visible actions must be unique", visible.toSet().size, visible.size)
+            visible.forEach { action -> assertTrue("$state exposes invalid $action", action in allowed) }
+        }
+    }
+
+    @Test
+    fun visibleActionsEncodeOnePrimaryUserFlow() {
+        assertEquals(SpeechDictationAction.STOP_RECORDING, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.RECORDING_WITH_SPEECH).primary)
+        assertEquals(null, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.TRANSCRIBING).primary)
+        assertEquals(SpeechDictationAction.SEND_RAW, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.TRANSCRIPT_READY).primary)
+        assertEquals(null, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.ENHANCING_COLLAPSED).primary)
+        assertEquals(SpeechDictationAction.SEND_RAW, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.ENHANCEMENT_FAILED).primary)
+        assertEquals(SpeechDictationAction.SEND_ENHANCED, SpeechDictationUxContract.visibleActionsFor(SpeechDictationDisplayState.ENHANCED_READY).primary)
+    }
+
+    @Test
     fun invalidTransitionsThrow() {
         val invalidPairs = SpeechDictationDisplayState.entries.flatMap { state ->
             SpeechDictationAction.entries.filterNot { action -> action in SpeechDictationUxContract.allowedActions(state) }.map { state to it }

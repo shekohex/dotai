@@ -65,6 +65,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -580,21 +582,25 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
     val contract = SpeechDictationUxContract.contractFor(displayState)
     val scrollState = rememberScrollState()
     LaunchedEffect(transcript) { scrollState.animateScrollTo(scrollState.maxValue) }
-    val recording = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)
-    Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 18.dp, vertical = 12.dp).clip(RoundedCornerShape(if (transcript.isNotBlank() && recording) 16.dp else 38.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (transcript.isNotBlank() && recording) 16.dp else 38.dp)).animateContentSize()) {
-        if (transcript.isNotBlank() && recording) {
-            Column(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp, vertical = 7.dp).verticalScroll(scrollState)) {
-                Text(transcript, color = tokens.text.copy(alpha = 0.86f), fontSize = 13.sp, lineHeight = 17.sp)
+    val hasTranscript = transcript.isNotBlank()
+    val visibleActions = SpeechDictationUxContract.visibleActionsFor(displayState)
+    Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 28.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.width(if (hasTranscript) 340.dp else 220.dp).clip(RoundedCornerShape(if (hasTranscript) 20.dp else 30.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (hasTranscript) 20.dp else 30.dp)).animateContentSize()) {
+            if (hasTranscript) {
+                Column(Modifier.fillMaxWidth().height(74.dp).padding(horizontal = 18.dp, vertical = 9.dp).verticalScroll(scrollState)) {
+                    Text(transcript, color = tokens.text.copy(alpha = 0.88f), fontSize = 14.sp, lineHeight = 19.sp)
+                }
+                Box(Modifier.fillMaxWidth().height(0.7.dp).background(tokens.separator.copy(alpha = 0.55f)))
             }
-            Box(Modifier.fillMaxWidth().height(0.7.dp).background(tokens.separator.copy(alpha = 0.65f)))
+            Row(Modifier.fillMaxWidth().height(54.dp).padding(start = 18.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    DictationWaveform(active = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED), meter = meter)
+                }
+                Spacer(Modifier.width(10.dp))
+                DictationPrimaryAction(visibleActions.primary, tokens, onAction)
+            }
         }
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            DictationWaveform(active = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED), meter = meter)
-            Spacer(Modifier.weight(1f))
-            DictationPrimaryAction(displayState, contract, tokens, onAction)
-        }
-        if (!recording) DictationSecondaryActions(displayState, contract, tokens, onAction)
+        DictationSecondaryActions(visibleActions.secondary, tokens, onAction)
     }
 }
 
@@ -613,15 +619,10 @@ private fun DictationWaveform(active: Boolean, meter: Float) {
 }
 
 @Composable
-private fun DictationPrimaryAction(displayState: SpeechDictationDisplayState, contract: SpeechDictationStateContract, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
-    val action = when (displayState) {
-        SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH -> SpeechDictationAction.STOP_RECORDING
-        SpeechDictationDisplayState.TRANSCRIBING -> SpeechDictationAction.COMPLETE_TRANSCRIPTION
-        SpeechDictationDisplayState.TRANSCRIPT_READY -> SpeechDictationAction.SEND_RAW
-        SpeechDictationDisplayState.ENHANCING_COLLAPSED -> SpeechDictationAction.SEND_RAW
-        SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT, SpeechDictationDisplayState.ENHANCEMENT_FAILED -> SpeechDictationAction.RETRY_ENHANCEMENT
-        SpeechDictationDisplayState.ENHANCED_READY -> SpeechDictationAction.SEND_ENHANCED
-        else -> SpeechDictationAction.CANCEL
+private fun DictationPrimaryAction(action: SpeechDictationAction?, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
+    if (action == null) {
+        Spacer(Modifier.size(48.dp))
+        return
     }
     val icon = when (action) {
         SpeechDictationAction.STOP_RECORDING -> R.drawable.ic_feather_send
@@ -629,33 +630,51 @@ private fun DictationPrimaryAction(displayState: SpeechDictationDisplayState, co
         SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> R.drawable.ic_feather_arrow_up
         else -> R.drawable.ic_feather_check
     }
-    val enabled = action in SpeechDictationUxContract.allowedActions(displayState)
-    Box(Modifier.size(58.dp).clip(CircleShape).background(if (enabled) Color(0xfff04452) else tokens.separator).clickable(enabled = enabled) { hapticClick(); onAction(action) }, contentAlignment = Alignment.Center) {
-        Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(26.dp))
+    Box(Modifier.size(48.dp).semantics { contentDescription = action.accessibilityLabel() }.clickable { hapticClick(); onAction(action) }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xfff04452)), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(19.dp))
+        }
+    }
+}
+
+private fun SpeechDictationAction.accessibilityLabel(): String = when (this) {
+    SpeechDictationAction.STOP_RECORDING -> "Finish voice input"
+    SpeechDictationAction.SEND_RAW -> "Send transcript"
+    SpeechDictationAction.SEND_ENHANCED -> "Send enhanced transcript"
+    else -> secondaryLabel()
+}
+
+private fun SpeechDictationAction.secondaryLabel(): String = when (this) {
+    SpeechDictationAction.START_ENHANCEMENT -> "Enhance"
+    SpeechDictationAction.RETRY_ENHANCEMENT -> "Retry"
+    SpeechDictationAction.SEND_RAW -> "Original"
+    SpeechDictationAction.CANCEL -> "Cancel"
+    else -> name.lowercase().replace('_', ' ')
+}
+
+private fun SpeechDictationAction.secondaryIcon(): Int = when (this) {
+    SpeechDictationAction.START_ENHANCEMENT -> R.drawable.ic_feather_zap
+    SpeechDictationAction.RETRY_ENHANCEMENT -> R.drawable.ic_feather_rotate_ccw
+    SpeechDictationAction.SEND_RAW -> R.drawable.ic_feather_arrow_up
+    SpeechDictationAction.CANCEL -> R.drawable.ic_feather_x
+    else -> R.drawable.ic_feather_circle
+}
+
+@Composable
+private fun DictationSecondaryActions(actions: List<SpeechDictationAction>, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
+    if (actions.isEmpty()) return
+    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+        actions.forEach { action ->
+            DictationIconAction(action.secondaryLabel(), action.secondaryIcon(), tokens) { onAction(action) }
+        }
     }
 }
 
 @Composable
-private fun DictationSecondaryActions(displayState: SpeechDictationDisplayState, contract: SpeechDictationStateContract, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (SpeechDictationAction.STOP_RECORDING in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Stop", tokens) { onAction(SpeechDictationAction.STOP_RECORDING) }
-        if (SpeechDictationAction.DETECT_SPEECH in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Add speech", tokens) { onAction(SpeechDictationAction.DETECT_SPEECH) }
-        if (SpeechDictationAction.COMPLETE_TRANSCRIPTION in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Transcript", tokens) { onAction(SpeechDictationAction.COMPLETE_TRANSCRIPTION) }
-        if (SpeechDictationAction.START_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Enhance", tokens) { onAction(SpeechDictationAction.START_ENHANCEMENT) }
-        if (SpeechDictationAction.TIME_OUT_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Timeout", tokens) { onAction(SpeechDictationAction.TIME_OUT_ENHANCEMENT) }
-        if (SpeechDictationAction.FAIL_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Fail", tokens) { onAction(SpeechDictationAction.FAIL_ENHANCEMENT) }
-        if (SpeechDictationAction.COMPLETE_ENHANCEMENT in SpeechDictationUxContract.allowedActions(displayState)) DictationTextAction("Done", tokens) { onAction(SpeechDictationAction.COMPLETE_ENHANCEMENT) }
-        Spacer(Modifier.weight(1f))
-        if (contract.canSendEnhanced) DictationTextAction("Send enhanced", tokens) { onAction(SpeechDictationAction.SEND_ENHANCED) }
-        if (contract.canSendRaw && displayState != SpeechDictationDisplayState.TRANSCRIPT_READY) DictationTextAction("Send as-is", tokens) { onAction(SpeechDictationAction.SEND_RAW) }
-        if (contract.canCancel) DictationTextAction("Cancel", tokens) { onAction(SpeechDictationAction.CANCEL) }
-    }
-}
-
-@Composable
-private fun DictationTextAction(label: String, tokens: UiTokens, onClick: () -> Unit) {
-    Box(Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).clickable { hapticClick(); onClick() }.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-        Text(label, color = tokens.text, fontSize = 12.sp, maxLines = 1)
+private fun DictationIconAction(label: String, icon: Int, tokens: UiTokens, onClick: () -> Unit) {
+    Row(Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).background(tokens.surfaceHigh).semantics { contentDescription = label }.clickable { hapticClick(); onClick() }.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(icon), null, tint = tokens.text, modifier = Modifier.size(17.dp))
+        Text(label, color = tokens.text, fontSize = 13.sp, maxLines = 1)
     }
 }
 

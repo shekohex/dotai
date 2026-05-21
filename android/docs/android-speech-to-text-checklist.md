@@ -913,3 +913,4 @@ Commit:
 - State-machine action UI: `f92dd1d` (`fix(android): derive speech actions from state machine`).
 - Emulator UI journey stabilization: `5ed947e` (`test(android): stabilize speech debug UI journey`).
 - VAD silence pause: `cfba7e2` (`fix(android): pause live speech transcription on silence`).
+- VAD peak gate: `ac0c2be` (`fix(android): improve speech VAD peak detection`).

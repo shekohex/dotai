@@ -378,6 +378,7 @@ Validation:
 - Reworked debug speech deep link to support deterministic state presets: `pi://debug/speech?state=<STATE>`. `SpeechDebugWorkflowInstrumentedTest` now opens each target state directly instead of tapping ambiguous Compose buttons.
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed on `emulator-5554 - 14` after preset-state rework, `BUILD SUCCESSFUL in 28s`.
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.coder.pi.SpeechDebugWorkflowInstrumentedTest --no-daemon` passed again after settings/cache work, `BUILD SUCCESSFUL in 25s`.
+- Enhanced-ready emulator proof after final settings work: `adb shell am start -W -a android.intent.action.VIEW -d 'pi://debug/speech?state=ENHANCED_READY' -n com.coder.pi/.MainActivity`, `android layout --device emulator-5554 --pretty -o build/validation/speech/enhanced-ready-layout.json`, and `android screen capture -o build/validation/speech/enhanced-ready.png` succeeded. Layout contains `Speech UX`, `Enhanced transcript ready`, and enhanced fixture text.
 
 Review:
 

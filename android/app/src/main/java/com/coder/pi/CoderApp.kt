@@ -2749,7 +2749,6 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     var apiKeyDialogOpen by remember { mutableStateOf(false) }
     var modelDialogOpen by remember { mutableStateOf(false) }
     var baseUrlDialogOpen by remember { mutableStateOf(false) }
-    var timeoutDialogOpen by remember { mutableStateOf(false) }
     var enhancementApiKeyStored by remember { mutableStateOf(SpeechSettingsStore.enhancementApiKey(context).isNotBlank()) }
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
     SettingsScaffold("Speech", tokens, onBack) {
@@ -2804,7 +2803,13 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
             SettingsValueRow(R.drawable.ic_feather_server, "Provider", SpeechEnhancementProvider.byId(speechSettings.enhancementProvider).label, "Select", tokens) { providerDialogOpen = true }
             if (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider) == SpeechEnhancementProvider.OpenAiCompatible) SettingsValueRow(R.drawable.ic_feather_globe, "Endpoint", speechSettings.enhancementBaseUrl, "Edit", tokens) { baseUrlDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_cpu, "Model", speechSettings.enhancementModel, "Edit", tokens) { modelDialogOpen = true }
-            SettingsValueRow(R.drawable.ic_feather_clock, "Timeout", "${speechSettings.enhancementTimeoutSeconds}s", "Edit", tokens) { timeoutDialogOpen = true }
+            SettingsSecondsStepperRow(R.drawable.ic_feather_clock, "Timeout", speechSettings.enhancementTimeoutSeconds, tokens, {
+                SpeechSettingsStore.setEnhancementTimeoutSeconds(context, speechSettings.enhancementTimeoutSeconds - 5)
+                speechSettings = SpeechSettingsStore.values(context)
+            }, {
+                SpeechSettingsStore.setEnhancementTimeoutSeconds(context, speechSettings.enhancementTimeoutSeconds + 5)
+                speechSettings = SpeechSettingsStore.values(context)
+            })
             SettingsValueRow(R.drawable.ic_feather_sliders, "Enhancement Haptic", "Tap to cycle and preview", TerminalHapticPatterns.option(speechSettings.enhancementHapticPattern).label, tokens) {
                 val next = TerminalHapticPatterns.next(speechSettings.enhancementHapticPattern)
                 SpeechSettingsStore.setEnhancementHapticPattern(context, next.id)
@@ -2853,10 +2858,16 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         speechSettings = SpeechSettingsStore.values(context)
         baseUrlDialogOpen = false
     }
-    if (timeoutDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement Timeout", speechSettings.enhancementTimeoutSeconds.toString(), "30", { timeoutDialogOpen = false }) {
-        SpeechSettingsStore.setEnhancementTimeoutSeconds(context, it.toIntOrNull() ?: speechSettings.enhancementTimeoutSeconds)
-        speechSettings = SpeechSettingsStore.values(context)
-        timeoutDialogOpen = false
+}
+
+@Composable
+private fun SettingsSecondsStepperRow(icon: Int?, title: String, value: Int, tokens: UiTokens, onMinus: () -> Unit, onPlus: () -> Unit) {
+    SettingsRow(icon, title, null, tokens, {}) {
+        Row(Modifier.clip(RoundedCornerShape(28.dp)).background(tokens.separator).height(34.dp), verticalAlignment = Alignment.CenterVertically) {
+            StepperButton("−", tokens, onMinus)
+            Text("${value}s", color = tokens.text, fontSize = bodySize(), modifier = Modifier.width(54.dp), textAlign = TextAlign.Center)
+            StepperButton("+", tokens, onPlus)
+        }
     }
 }
 
@@ -2871,37 +2882,54 @@ private fun SpeechSettingsValues.vadSensitivityLabel(): String = when (vadSensit
 @Composable
 private fun SpeechVocabularySettingsScreen(tokens: UiTokens, onBack: () -> Unit) {
     val context = LocalContext.current
-    var vocabulary by remember { mutableStateOf(SpeechSettingsStore.values(context).customVocabulary) }
-    fun save() {
-        SpeechSettingsStore.setCustomVocabulary(context, vocabulary)
-        vocabulary = SpeechSettingsStore.values(context).customVocabulary
+    var words by remember { mutableStateOf(SpeechSettingsStore.values(context).customVocabulary.lines().map(String::trim).filter(String::isNotBlank)) }
+    var addDialog by remember { mutableStateOf(false) }
+    var addValue by remember { mutableStateOf("") }
+    var addError by remember { mutableStateOf<String?>(null) }
+    fun persist(next: List<String>) {
+        SpeechSettingsStore.setCustomVocabulary(context, next.joinToString("\n"))
+        words = SpeechSettingsStore.values(context).customVocabulary.lines().map(String::trim).filter(String::isNotBlank)
     }
-    SettingsScaffold("Custom Vocabulary", tokens, onBack) {
-        item {
-            Text(
-                "Add words, proper nouns, function names, file names, and technical terms you use often. One word or phrase per line.",
-                color = tokens.secondary,
-                fontSize = captionSize(),
-                lineHeight = 19.sp,
-                modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 12.dp),
-            )
+    fun addWord() {
+        val value = addValue.trim()
+        if (value.isBlank()) {
+            addError = "Enter a word, phrase, function, file, or technical term"
+            return
         }
-        item {
-            BasicTextField(
-                value = vocabulary,
-                onValueChange = { vocabulary = it.take(8_000) },
-                textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace, lineHeight = 22.sp),
-                cursorBrush = SolidColor(tokens.accent),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 8.dp).height(280.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(14.dp),
-                decorationBox = { inner -> if (vocabulary.isBlank()) Text("LiteRT\nParakeet\nCoder\nGradle", color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace); inner() },
-            )
-        }
-        item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ShortcutFooterButton("Clear", tokens.surfaceHigh, tokens.text, Modifier.weight(1f)) { vocabulary = ""; save() }
-                ShortcutFooterButton("Save", tokens.accent, contentColorFor(tokens.accent), Modifier.weight(1f)) { save() }
+        persist((words + value).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER))
+        addValue = ""
+        addError = null
+        addDialog = false
+    }
+    SettingsScaffold("Custom Vocabulary", tokens, onBack, R.drawable.ic_feather_plus, { addDialog = true }) {
+        SettingsSection("CUSTOM VOCABULARY", tokens) {
+            if (words.isEmpty()) {
+                item {
+                    Text("No vocabulary yet. Add words, proper nouns, function names, file names, and technical terms you use often.", color = tokens.secondary, fontSize = bodySize(), lineHeight = 20.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = spacingLarge(), vertical = 16.dp))
+                }
+            } else {
+                words.forEach { word ->
+                    SettingsRow(R.drawable.ic_feather_book, word, "Used for enhancement spelling context", tokens, {}) {
+                        Text("Remove", color = Color(0xffff5c7a), fontSize = captionSize(), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { persist(words - word) }.padding(horizontal = 10.dp, vertical = 7.dp))
+                    }
+                }
             }
         }
+    }
+    if (addDialog) {
+        ThemedAlertDialog(
+            onDismissRequest = { addDialog = false; addError = null },
+            tokens = tokens,
+            title = { Text("Add vocabulary") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BasicTextField(value = addValue, onValueChange = { addValue = it.take(160); addError = null }, singleLine = true, textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace), cursorBrush = SolidColor(tokens.accent), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tokens.surface).padding(12.dp))
+                    Text(addError ?: "Examples: LiteRT, Parakeet, CoderSheetComponents.kt, runPartialTranscriptionPass", color = if (addError == null) tokens.secondary else Color(0xffff5c7a), fontSize = captionSize(), lineHeight = 18.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = { addWord() }) { Text("Add", color = tokens.accent) } },
+            dismissButton = { TextButton(onClick = { addDialog = false; addError = null }) { Text("Cancel", color = tokens.secondary) } },
+        )
     }
 }
 

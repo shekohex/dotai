@@ -74,4 +74,11 @@ class SpeechChatDraftTest {
         assertTrue(speechWaveformVisualLevel(0.02f) > 0.4f)
         assertEquals(1f, speechWaveformVisualLevel(1f), 0.0f)
     }
+
+    @Test
+    fun enhancementHapticLoopWaitsAfterHeartbeatPattern() {
+        val heartbeatPattern = TerminalHapticPatterns.option("heartbeat")
+
+        assertEquals(heartbeatPattern.timings.sum() + 900L, speechEnhancementHapticRepeatDelayMillis("heartbeat"))
+    }
 }

@@ -1838,7 +1838,16 @@ fun terminalNormalizeLinkHostPattern(value: String): String? {
 }
 
 fun terminalAllowedLinkHosts(context: Context): Set<String> {
-    return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getStringSet("osc.allowed_link_hosts", emptySet()).orEmpty()
+    val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
+    val defaultsInstalledKey = "osc.allowed_link_hosts.defaults_installed"
+    if (!preferences.getBoolean(defaultsInstalledKey, false)) {
+        val defaults = setOf("*.coder.0iq.xyz", "*.github.com", "*.0iq.xyz")
+        preferences.edit {
+            putStringSet("osc.allowed_link_hosts", preferences.getStringSet("osc.allowed_link_hosts", emptySet()).orEmpty() + defaults)
+            putBoolean(defaultsInstalledKey, true)
+        }
+    }
+    return preferences.getStringSet("osc.allowed_link_hosts", emptySet()).orEmpty()
 }
 
 fun selectedTerminalFontSizeSp(context: Context): Int {

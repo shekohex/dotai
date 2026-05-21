@@ -141,6 +141,6 @@ fun SettingsPalettePreview(palette: List<Int>) {
 }
 
 @Composable
-private fun StepperButton(label: String, tokens: UiTokens, onClick: () -> Unit) {
+fun StepperButton(label: String, tokens: UiTokens, onClick: () -> Unit) {
     Box(Modifier.size(34.dp).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) { Text(label, color = tokens.secondary, fontSize = 18.sp) }
 }

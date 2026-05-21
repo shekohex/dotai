@@ -204,7 +204,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         enhancementHapticJob = scope.launch {
             while (sessionId == dictationSessionId && dictationState == SpeechDictationDisplayState.ENHANCING_COLLAPSED) {
                 context.performSpeechEnhancementHaptic(speechSettings.enhancementHapticPattern)
-                delay(1_200L)
+                delay(speechEnhancementHapticRepeatDelayMillis(speechSettings.enhancementHapticPattern))
             }
         }
         enhancementJob = scope.launch {
@@ -486,6 +486,8 @@ private fun Context.currentClipboardText(): String = runCatching {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
 }.getOrDefault("").take(4_000)
+
+fun speechEnhancementHapticRepeatDelayMillis(patternId: String): Long = TerminalHapticPatterns.option(patternId).timings.sum() + 900L
 
 @Suppress("DEPRECATION")
 private fun Context.performSpeechEnhancementHaptic(patternId: String) {

@@ -10,6 +10,7 @@ data class SpeechSettingsValues(
     val enhancementEnabled: Boolean = false,
     val includeVisibleTerminalContext: Boolean = true,
     val vadSensitivity: Int = 2,
+    val soundFeedbackEnabled: Boolean = true,
     val keepModelWarmEnabled: Boolean = true,
     val keepModelWarmMinutes: Int = 15,
     val accelerator: String = SpeechAcceleratorMode.Auto.id,
@@ -26,6 +27,7 @@ object SpeechSettingsStore {
     private const val enhancementKey = "speech.enhancement_enabled"
     private const val includeContextKey = "speech.include_visible_terminal_context"
     private const val vadSensitivityKey = "speech.vad_sensitivity"
+    private const val soundFeedbackEnabledKey = "speech.sound_feedback_enabled"
     private const val keepModelWarmEnabledKey = "speech.keep_model_warm_enabled"
     private const val keepModelWarmMinutesKey = "speech.keep_model_warm_minutes"
     private const val acceleratorKey = "speech.accelerator"
@@ -40,6 +42,7 @@ object SpeechSettingsStore {
             enhancementEnabled = preferences.getBoolean(enhancementKey, false),
             includeVisibleTerminalContext = preferences.getBoolean(includeContextKey, true),
             vadSensitivity = preferences.getInt(vadSensitivityKey, 2).coerceIn(0, 4),
+            soundFeedbackEnabled = preferences.getBoolean(soundFeedbackEnabledKey, true),
             keepModelWarmEnabled = preferences.getBoolean(keepModelWarmEnabledKey, true),
             keepModelWarmMinutes = preferences.getInt(keepModelWarmMinutesKey, 15).coerceIn(1, 60),
             accelerator = preferences.getString(acceleratorKey, SpeechAcceleratorMode.Auto.id).orEmpty().ifBlank { SpeechAcceleratorMode.Auto.id },
@@ -63,6 +66,8 @@ object SpeechSettingsStore {
     fun setIncludeVisibleTerminalContext(context: Context, enabled: Boolean) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(includeContextKey, enabled) }
 
     fun setVadSensitivity(context: Context, sensitivity: Int) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putInt(vadSensitivityKey, sensitivity.coerceIn(0, 4)) }
+
+    fun setSoundFeedbackEnabled(context: Context, enabled: Boolean) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(soundFeedbackEnabledKey, enabled) }
 
     fun setKeepModelWarmEnabled(context: Context, enabled: Boolean) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(keepModelWarmEnabledKey, enabled) }
 

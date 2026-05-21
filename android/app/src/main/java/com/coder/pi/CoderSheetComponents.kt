@@ -110,6 +110,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     val speechAudioCapture = remember(context, speechSettings.vadSensitivity) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
     var speechTranscriber by remember(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) { mutableStateOf<LiteRtParakeetTranscriber?>(null) }
     val speechPromptRenderer = remember { SpeechEnhancementPromptRenderer() }
+    val speechSoundFeedback = remember(context) { SpeechSoundFeedback(context) }
     var dictating by remember { mutableStateOf(false) }
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
     var dictationTranscript by remember { mutableStateOf("") }
@@ -172,6 +173,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     fun acceptDictationTranscript(transcript: String = dictationTranscript) {
         val mergedDraft = mergeSpeechTranscriptIntoDraft(text, transcript)
         if (mergedDraft.isNotBlank()) onTextChanged(mergedDraft)
+        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playStop()
         stopDictationCapture()
         clearDictationSession()
     }
@@ -282,8 +284,10 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             dictating = true
             dictationTranscript = if (!speechModelCache.isReady()) "Speech model not ready. Open Speech Models to download or import it." else "Speech tokenizer not ready. Open Speech Models to download or import it."
             dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+            if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playFailure()
             return
         }
+        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playStart()
         dictationSessionId++
         dictationStartedAt = SystemClock.elapsedRealtime()
         firstPartialAt = null
@@ -327,6 +331,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                         is SpeechAudioCaptureFailure.ReadFailed -> "Microphone capture failed."
                     }
                     dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+                    if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playFailure()
                     stopDictationCapture()
                 }
             },
@@ -380,11 +385,13 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     SpeechDictationAction.SEND_RAW -> acceptDictationTranscript(dictationRawTranscript.ifBlank { dictationTranscript })
                     SpeechDictationAction.SEND_ENHANCED -> acceptDictationTranscript(dictationTranscript)
                     SpeechDictationAction.CANCEL, SpeechDictationAction.RESET -> {
+                        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playCancel()
                         stopDictationCapture()
                         clearDictationSession()
                     }
                     SpeechDictationAction.STOP_RECORDING -> {
                         dictationState = SpeechDictationDisplayState.TRANSCRIBING
+                        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playStop()
                         scope.launch {
                             stopDictationCaptureAndDrainFrames()
                             transcribeDictationAudio()

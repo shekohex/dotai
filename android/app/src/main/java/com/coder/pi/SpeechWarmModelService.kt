@@ -81,6 +81,10 @@ class SpeechWarmModelService : Service() {
                 stopSelf()
                 return
             }
+            val modelCache = ParakeetModelCache(this, ParakeetModelArtifacts.byId(settings.selectedSpeechModelId))
+            val tokenizerCache = ParakeetTokenizerCache(this)
+            if (!modelCache.isReady()) modelCache.importSideLoadedModel()
+            if (!tokenizerCache.isReady()) tokenizerCache.ensureTokenizer()
             val result = SpeechWarmModelStore.warm(this, settings)
             val text = result.getOrNull()?.let { metrics -> "Warm · ${metrics.accelerator} · ${metrics.totalMillis}ms" } ?: "Warm failed"
             getSystemService(NotificationManager::class.java).notify(NotificationId, notification(text))

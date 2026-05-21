@@ -277,6 +277,18 @@ fun CoderApp(
     LaunchedEffect(context) {
         if (context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("background_terminals", false)) TerminalCatchUpWorker.schedule(context) else TerminalCatchUpWorker.cancel(context)
     }
+    DisposableEffect(context) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key?.startsWith("speech.") == true) {
+                val settings = SpeechSettingsStore.values(context)
+                if (settings.keepModelWarmEnabled && settings.localTranscriptionEnabled) SpeechWarmModelService.start(context) else SpeechWarmModelService.stop(context)
+            }
+        }
+        val preferences = SpeechSettingsStore.registerChangeListener(context, listener)
+        val settings = SpeechSettingsStore.values(context)
+        if (settings.keepModelWarmEnabled && settings.localTranscriptionEnabled) SpeechWarmModelService.start(context)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     LaunchedEffect(debugPlaygroundRevision) {
         val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         if (debugBuild && debugPlaygroundRevision > 0) destination = AppDestination.DEBUG_RENDER
@@ -2719,6 +2731,10 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
             SettingsValueRow(R.drawable.ic_feather_box, "Models", ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId).title, "Manage", tokens, chevron = true) { onModels() }
             SettingsValueRow(R.drawable.ic_feather_sliders, "VAD Sensitivity", speechSettings.vadSensitivityLabel(), "+", tokens) {
                 SpeechSettingsStore.setVadSensitivity(context, (speechSettings.vadSensitivity + 1) % 5)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsToggleRow(R.drawable.ic_feather_bell, "Sound Feedback", speechSettings.soundFeedbackEnabled, tokens) {
+                SpeechSettingsStore.setSoundFeedbackEnabled(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
         }

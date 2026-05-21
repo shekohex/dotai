@@ -591,6 +591,7 @@ Commit:
 - Partial implementation: `00ae531` (`feat(android): add parakeet log mel preprocessing`).
 - Partial implementation: `8a8ed6d` (`feat(android): wire parakeet TDT decode path`).
 - Follow-up: `0213be5` (`fix(android): reject parakeet lfs pointer cache`).
+- Follow-up: `46b55ca` (`feat(android): show speech model cache status`).
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 

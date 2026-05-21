@@ -35,4 +35,22 @@ class LiveSpeechTranscriptMergerTest {
         assertEquals("hello", merger.merge("hello"))
         assertEquals("hello", merger.merge("   "))
     }
+
+    @Test
+    fun confirmedPrefixIsNotDuplicatedAfterRepeatedAgreement() {
+        val merger = LiveSpeechTranscriptMerger(confirmationsNeeded = 2, minWordsToConfirm = 3)
+
+        assertEquals("open settings and explain gradle", merger.merge("open settings and explain gradle"))
+        assertEquals("open settings and explain gradle", merger.merge("open settings and explain gradle"))
+        assertEquals("open settings and explain gradle task", merger.merge("explain gradle task"))
+    }
+
+    @Test
+    fun repeatedFullChunkAfterConfirmationDoesNotDuplicateConfirmedPrefix() {
+        val merger = LiveSpeechTranscriptMerger(confirmationsNeeded = 2, minWordsToConfirm = 3)
+
+        assertEquals("one two three four five six seven eight.", merger.merge("one two three four five six seven eight."))
+        assertEquals("one two three four five six seven eight.", merger.merge("one two three four five six seven eight."))
+        assertEquals("one two three four five six seven eight.", merger.merge("one two three four five six seven eight."))
+    }
 }

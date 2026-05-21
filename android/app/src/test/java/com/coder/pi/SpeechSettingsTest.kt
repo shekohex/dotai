@@ -40,6 +40,11 @@ class SpeechSettingsTest {
     }
 
     @Test
+    fun unknownAcceleratorFallsBackToAuto() {
+        assertEquals(SpeechAcceleratorMode.Auto, SpeechAcceleratorMode.byId("unknown"))
+    }
+
+    @Test
     fun bundledPromptContainsTranscriptAndContextPlaceholders() {
         val promptFile = listOf(
             File("src/main/res/raw/speech_enhancement_prompt.txt"),

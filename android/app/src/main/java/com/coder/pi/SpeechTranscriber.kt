@@ -3,6 +3,8 @@ package com.coder.pi
 import android.content.Context
 import android.net.Uri
 import android.os.Environment as AndroidEnvironment
+import android.os.SystemClock
+import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,6 +31,22 @@ import kotlin.math.sqrt
 data class SpeechTranscriptResult(
     val text: String,
     val elapsedMillis: Long,
+    val metrics: SpeechTranscriptionMetrics = SpeechTranscriptionMetrics(totalMillis = elapsedMillis),
+)
+
+data class SpeechTranscriptionMetrics(
+    val totalMillis: Long,
+    val warmupMillis: Long = 0,
+    val featureMillis: Long = 0,
+    val encodeMillis: Long = 0,
+    val decodeMillis: Long = 0,
+    val tokenizeMillis: Long = 0,
+    val firstTokenMillis: Long? = null,
+    val tokenCount: Int = 0,
+    val sampleCount: Int = 0,
+    val sampleRate: Int = 16_000,
+    val accelerator: String = "CPU",
+    val modelWasWarm: Boolean = false,
 )
 
 sealed interface SpeechTranscriberFailure {
@@ -255,7 +273,7 @@ private fun File.isValidParakeetTokenizer(): Boolean = runCatching {
     tokenizer.vocabularySize > 0
 }.getOrDefault(false)
 
-class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, private val tokenizerCache: ParakeetTokenizerCache) : SpeechTranscriber {
+class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, private val tokenizerCache: ParakeetTokenizerCache, private val acceleratorMode: SpeechAcceleratorMode = SpeechAcceleratorMode.Auto) : SpeechTranscriber {
     private var compiledModel: CompiledModel? = null
     private var inputBuffers: List<TensorBuffer>? = null
     private var outputBuffers: List<TensorBuffer>? = null
@@ -265,22 +283,69 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
         if (!modelCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
         if (!tokenizerCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
         return withContext(Dispatchers.Default) { runCatching {
-            val startedAt = System.currentTimeMillis()
+            val startedAt = SystemClock.elapsedRealtime()
+            val modelWasWarm = compiledModel != null
+            val warmupStartedAt = SystemClock.elapsedRealtime()
             ensureWarmModel()
+            val warmupMillis = SystemClock.elapsedRealtime() - warmupStartedAt
             val model = compiledModel ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val inputs = inputBuffers ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val outputs = outputBuffers ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
-            inputs[0].writeFloat(featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements))
+            val featureStartedAt = SystemClock.elapsedRealtime()
+            val features = featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements)
+            val featureMillis = SystemClock.elapsedRealtime() - featureStartedAt
+            inputs[0].writeFloat(features)
+            val encodeStartedAt = SystemClock.elapsedRealtime()
             model.run(inputs, outputs, ENCODE_SIGNATURE)
-            val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map { it.first }.filter { it != END_OF_SEQUENCE }.toList()
+            val encodeMillis = SystemClock.elapsedRealtime() - encodeStartedAt
+            val decodeStartedAt = SystemClock.elapsedRealtime()
+            var firstTokenMillis: Long? = null
+            val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map {
+                if (firstTokenMillis == null && it.first != END_OF_SEQUENCE) firstTokenMillis = SystemClock.elapsedRealtime() - startedAt
+                it.first
+            }.filter { it != END_OF_SEQUENCE }.toList()
+            val decodeMillis = SystemClock.elapsedRealtime() - decodeStartedAt
+            val tokenizeStartedAt = SystemClock.elapsedRealtime()
             val tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
-            SpeechTranscriptResult(tokenizer.decode(tokenIds), System.currentTimeMillis() - startedAt)
+            val text = tokenizer.decode(tokenIds)
+            val tokenizeMillis = SystemClock.elapsedRealtime() - tokenizeStartedAt
+            val totalMillis = SystemClock.elapsedRealtime() - startedAt
+            val metrics = SpeechTranscriptionMetrics(
+                totalMillis = totalMillis,
+                warmupMillis = warmupMillis,
+                featureMillis = featureMillis,
+                encodeMillis = encodeMillis,
+                decodeMillis = decodeMillis,
+                tokenizeMillis = tokenizeMillis,
+                firstTokenMillis = firstTokenMillis,
+                    tokenCount = tokenIds.size,
+                    sampleCount = samples.size,
+                    sampleRate = sampleRate,
+                    accelerator = acceleratorMode.label,
+                    modelWasWarm = modelWasWarm,
+                )
+            Log.i("PiSpeech", metrics.toLogLine())
+            SpeechTranscriptResult(
+                text = text,
+                elapsedMillis = totalMillis,
+                metrics = metrics,
+            )
         } }
     }
 
+    suspend fun warm(): Result<SpeechTranscriptionMetrics> = withContext(Dispatchers.Default) { runCatching {
+        if (!modelCache.isReady()) throw SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing)
+        if (!tokenizerCache.isReady()) throw SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing)
+        val startedAt = SystemClock.elapsedRealtime()
+        val modelWasWarm = compiledModel != null
+        ensureWarmModel()
+        val elapsed = SystemClock.elapsedRealtime() - startedAt
+        SpeechTranscriptionMetrics(totalMillis = elapsed, warmupMillis = elapsed, accelerator = acceleratorMode.label, modelWasWarm = modelWasWarm).also { Log.i("PiSpeech", it.toLogLine()) }
+    } }
+
     private fun ensureWarmModel() {
         if (compiledModel != null) return
-        val model = CompiledModel.create(modelCache.modelFile.absolutePath, CompiledModel.Options(setOf(Accelerator.CPU)), Environment.create())
+        val model = CompiledModel.create(modelCache.modelFile.absolutePath, CompiledModel.Options(acceleratorMode.toLiteRtAccelerators()), Environment.create())
         compiledModel = model
         inputBuffers = model.createInputBuffers(ENCODE_SIGNATURE)
         outputBuffers = model.createOutputBuffers(ENCODE_SIGNATURE)
@@ -307,6 +372,16 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
         fun outputBufferName(index: Int) = "output_$index"
     }
 }
+
+private fun SpeechAcceleratorMode.toLiteRtAccelerators(): Set<Accelerator> = when (this) {
+    SpeechAcceleratorMode.Auto -> setOf(Accelerator.NPU, Accelerator.GPU, Accelerator.CPU)
+    SpeechAcceleratorMode.Cpu -> setOf(Accelerator.CPU)
+    SpeechAcceleratorMode.Gpu -> setOf(Accelerator.GPU)
+    SpeechAcceleratorMode.Npu -> setOf(Accelerator.NPU)
+    SpeechAcceleratorMode.None -> setOf(Accelerator.NONE)
+}
+
+private fun SpeechTranscriptionMetrics.toLogLine(): String = "speech_metrics total_ms=$totalMillis warmup_ms=$warmupMillis feature_ms=$featureMillis encode_ms=$encodeMillis decode_ms=$decodeMillis tokenize_ms=$tokenizeMillis first_token_ms=${firstTokenMillis ?: -1} tokens=$tokenCount samples=$sampleCount sample_rate=$sampleRate accelerator=$accelerator model_warm=$modelWasWarm"
 
 private val TensorType.numElements: Int
     get() = layout!!.dimensions.fold(1, Int::times)

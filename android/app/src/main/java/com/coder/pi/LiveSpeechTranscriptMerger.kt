@@ -19,35 +19,40 @@ class LiveSpeechTranscriptMerger(
     fun merge(chunkText: String): String {
         val chunkWords = chunkText.splitWords()
         if (chunkWords.isEmpty()) return fullText()
-        val nextHypothesis = alignedHypothesis(chunkWords)
-        updateAgreement(nextHypothesis)
-        hypothesisWords = nextHypothesis
-        previousHypothesisWords = nextHypothesis
+        val nextHypothesis = stripConfirmedPrefix(alignedHypothesis(chunkWords))
+        hypothesisWords = updateAgreement(nextHypothesis)
+        previousHypothesisWords = hypothesisWords
         return fullText()
     }
 
     private fun alignedHypothesis(chunkWords: List<String>): List<String> {
-        if (hypothesisWords.isEmpty()) return chunkWords
-        val replacementStart = bestReplacementStart(hypothesisWords, chunkWords)
-        return if (replacementStart != null) hypothesisWords.take(replacementStart) + chunkWords else hypothesisWords + chunkWords
+        val currentWords = confirmedWords + hypothesisWords
+        if (currentWords.isEmpty()) return chunkWords
+        val replacementStart = bestReplacementStart(currentWords, chunkWords)
+        return if (replacementStart != null) currentWords.take(replacementStart) + chunkWords else currentWords + chunkWords
     }
 
-    private fun updateAgreement(nextHypothesis: List<String>) {
-        if (previousHypothesisWords.isEmpty()) return
+    private fun stripConfirmedPrefix(words: List<String>): List<String> {
+        if (confirmedWords.isEmpty()) return words
+        val prefixLength = commonPrefixLength(confirmedWords, words)
+        return if (prefixLength == confirmedWords.size) words.drop(prefixLength) else words
+    }
+
+    private fun updateAgreement(nextHypothesis: List<String>): List<String> {
+        if (previousHypothesisWords.isEmpty()) return nextHypothesis
         val commonPrefixLength = commonPrefixLength(previousHypothesisWords, nextHypothesis)
         if (commonPrefixLength < minWordsToConfirm) {
             consecutiveAgreementCount = 0
-            return
+            return nextHypothesis
         }
         consecutiveAgreementCount++
-        if (consecutiveAgreementCount < confirmationsNeeded) return
+        if (consecutiveAgreementCount < confirmationsNeeded) return nextHypothesis
         val confirmCount = (commonPrefixLength - minWordsToConfirm + 1).coerceAtLeast(0)
-        if (confirmCount == 0) return
+        if (confirmCount == 0) return nextHypothesis
         val newlyConfirmed = nextHypothesis.take(confirmCount)
         confirmedWords = confirmedWords + newlyConfirmed
-        hypothesisWords = nextHypothesis.drop(confirmCount)
-        previousHypothesisWords = hypothesisWords
         consecutiveAgreementCount = 0
+        return nextHypothesis.drop(confirmCount)
     }
 
     private fun fullText(): String = (confirmedWords + hypothesisWords).joinToString(" ").trim()

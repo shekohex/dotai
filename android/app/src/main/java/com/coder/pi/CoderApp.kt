@@ -2722,6 +2722,29 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 speechSettings = SpeechSettingsStore.values(context)
             }
         }
+        SettingsSection("PERFORMANCE", tokens) {
+            SettingsToggleRow(R.drawable.ic_feather_zap, "Keep Model Warm", speechSettings.keepModelWarmEnabled, tokens) {
+                SpeechSettingsStore.setKeepModelWarmEnabled(context, it)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsValueRow(R.drawable.ic_feather_cpu, "Warm Interval", "${speechSettings.keepModelWarmMinutes} min", "+", tokens) {
+                val next = when (speechSettings.keepModelWarmMinutes) {
+                    5 -> 10
+                    10 -> 15
+                    15 -> 30
+                    30 -> 60
+                    else -> 5
+                }
+                SpeechSettingsStore.setKeepModelWarmMinutes(context, next)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+            SettingsValueRow(R.drawable.ic_feather_cpu, "LiteRT Accelerator", SpeechAcceleratorMode.byId(speechSettings.accelerator).label, "+", tokens) {
+                val modes = SpeechAcceleratorMode.all
+                val currentIndex = modes.indexOf(SpeechAcceleratorMode.byId(speechSettings.accelerator)).coerceAtLeast(0)
+                SpeechSettingsStore.setAccelerator(context, modes[(currentIndex + 1) % modes.size].id)
+                speechSettings = SpeechSettingsStore.values(context)
+            }
+        }
         SettingsSection("ENHANCEMENT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", "Provider integration unavailable", "Off", tokens) {}
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Target", "Send dictated text to active terminal", null, tokens) {}

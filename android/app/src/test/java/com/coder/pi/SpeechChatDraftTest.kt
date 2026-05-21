@@ -5,6 +5,21 @@ import org.junit.Test
 
 class SpeechChatDraftTest {
     @Test
+    fun finalSpeechUsesFinalTranscriptWhenPresent() {
+        assertEquals("Open settings.", selectFinalSpeechTranscript(" Open settings. ", "open"))
+    }
+
+    @Test
+    fun finalSpeechFallsBackToLivePartialWhenFinalIsBlank() {
+        assertEquals("Open settings and line", selectFinalSpeechTranscript("  ", " Open settings and line "))
+    }
+
+    @Test
+    fun finalSpeechIsBlankOnlyWhenFinalAndLiveAreBlank() {
+        assertEquals("", selectFinalSpeechTranscript("  ", "\n"))
+    }
+
+    @Test
     fun acceptedSpeechReplacesBlankDraft() {
         assertEquals("open settings", mergeSpeechTranscriptIntoDraft("", " open settings "))
     }

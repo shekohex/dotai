@@ -88,6 +88,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
@@ -107,6 +109,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var partialTranscriptionJob by remember { mutableStateOf<Job?>(null) }
     var liveChunkEndSample by remember { mutableIntStateOf(16_000) }
     val liveTranscriptMerger = remember { LiveSpeechTranscriptMerger() }
+    val speechTranscriberMutex = remember { Mutex() }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -166,7 +169,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                 dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
                 return@launch
             }
-            val result = speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate)
+            val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(samples, speechAudioCapture.sampleRate) }
             result.fold(
                 onSuccess = {
                     dictationTranscript = it.text
@@ -189,13 +192,13 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         liveChunkEndSample += speechAudioCapture.sampleRate
         partialTranscriptionJob = scope.launch {
             try {
-                val result = speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate)
+                val result = speechTranscriberMutex.withLock { speechTranscriber.transcribe(snapshot, speechAudioCapture.sampleRate) }
                 result.getOrNull()?.text?.trim()?.takeIf { it.isNotBlank() }?.let { partialText ->
                     if (dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) dictationTranscript = liveTranscriptMerger.merge(partialText)
                 }
             } finally {
                 partialTranscriptionJob = null
-                maybeTranscribePartialAudio()
+                if (dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) maybeTranscribePartialAudio()
             }
         }
     }
@@ -581,22 +584,21 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
     val contract = SpeechDictationUxContract.contractFor(displayState)
     val scrollState = rememberScrollState()
     LaunchedEffect(transcript) { scrollState.animateScrollTo(scrollState.maxValue) }
-    Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 18.dp, vertical = 12.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth().height(76.dp).clip(RoundedCornerShape(38.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(38.dp)).padding(start = 22.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            DictationWaveform(active = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED), meter = meter)
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(contract.accessibility.label, color = tokens.text, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(contract.accessibility.testId, color = tokens.secondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val recording = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)
+    Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 18.dp, vertical = 12.dp).clip(RoundedCornerShape(if (transcript.isNotBlank() && recording) 16.dp else 38.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (transcript.isNotBlank() && recording) 16.dp else 38.dp)).animateContentSize()) {
+        if (transcript.isNotBlank() && recording) {
+            Column(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp, vertical = 7.dp).verticalScroll(scrollState)) {
+                Text(transcript, color = tokens.text.copy(alpha = 0.86f), fontSize = 13.sp, lineHeight = 17.sp)
             }
+            Box(Modifier.fillMaxWidth().height(0.7.dp).background(tokens.separator.copy(alpha = 0.65f)))
+        }
+        Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.weight(1f))
+            DictationWaveform(active = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED), meter = meter)
+            Spacer(Modifier.weight(1f))
             DictationPrimaryAction(displayState, contract, tokens, onAction)
         }
-        if (contract.expanded && transcript.isNotBlank()) {
-            Column(Modifier.fillMaxWidth().height(86.dp).clip(RoundedCornerShape(22.dp)).background(tokens.surface).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(22.dp)).padding(14.dp).verticalScroll(scrollState)) {
-                Text(transcript, color = tokens.text, fontSize = 17.sp)
-            }
-        }
-        DictationSecondaryActions(displayState, contract, tokens, onAction)
+        if (!recording) DictationSecondaryActions(displayState, contract, tokens, onAction)
     }
 }
 
@@ -626,7 +628,7 @@ private fun DictationPrimaryAction(displayState: SpeechDictationDisplayState, co
         else -> SpeechDictationAction.CANCEL
     }
     val icon = when (action) {
-        SpeechDictationAction.STOP_RECORDING -> R.drawable.ic_feather_pause
+        SpeechDictationAction.STOP_RECORDING -> R.drawable.ic_feather_send
         SpeechDictationAction.RETRY_ENHANCEMENT -> R.drawable.ic_feather_rotate_ccw
         SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> R.drawable.ic_feather_arrow_up
         else -> R.drawable.ic_feather_check

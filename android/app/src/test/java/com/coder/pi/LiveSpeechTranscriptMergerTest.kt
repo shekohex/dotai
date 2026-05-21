@@ -13,6 +13,14 @@ class LiveSpeechTranscriptMergerTest {
     }
 
     @Test
+    fun replacesUnconfirmedTailWhenChunkAutocorrectsWords() {
+        val merger = LiveSpeechTranscriptMerger()
+
+        assertEquals("open the seting pannel", merger.merge("open the seting pannel"))
+        assertEquals("open the setting panel now", merger.merge("setting panel now"))
+    }
+
+    @Test
     fun appendsWhenNoOverlapExists() {
         val merger = LiveSpeechTranscriptMerger()
 

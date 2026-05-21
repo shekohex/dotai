@@ -425,6 +425,7 @@ Research:
 - Added `RECORD_AUDIO` manifest permission.
 - Added `SpeechAudioCapture` using `AudioRecord`, `MediaRecorder.AudioSource.VOICE_RECOGNITION`, mono PCM16, `AudioRecord.getMinBufferSize`, normalized float frames, API 29 recording callback silenced detection, explicit stop/cleanup, max duration, and failure states.
 - Added pure `SpeechVadSegmenter` with smoothed meter, speech start frames, trailing silence finalization, max duration finalization, and reset.
+- Wired `ChatInputBar` mic action to `RECORD_AUDIO` permission request, `SpeechAudioCapture` lifecycle, capture failure states, speech-detected state updates, finalized capture transition, and live meter-driven waveform.
 
 Plan:
 
@@ -466,6 +467,8 @@ Validation:
 - Device mic smoke.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 17s`.
 - Device mic smoke blocked: `adb devices` shows no connected/running devices.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 21s`.
+- `./gradlew assembleDebug --no-daemon` passed after mic UI wiring, `BUILD SUCCESSFUL in 11s`.
 
 Review:
 

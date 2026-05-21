@@ -7,7 +7,12 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import android.Manifest
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,10 +46,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +62,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
@@ -75,14 +83,19 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.launch
 
 data class ChatImageAttachment(val uri: Uri, val caption: String = "")
 
 @Composable
 fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit, modifier: Modifier = Modifier, attachments: List<ChatImageAttachment> = emptyList(), onAttach: () -> Unit = {}, onRemoveAttachment: (Int) -> Unit = {}, onReplaceAttachment: (Int) -> Unit = {}, onCaptionAttachment: (Int, String) -> Unit = { _, _ -> }, onClear: () -> Unit, onSubmit: (String) -> Unit, onReturn: () -> Unit, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val speechAudioCapture = remember(context) { SpeechAudioCapture(context) }
     var dictating by remember { mutableStateOf(false) }
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }
     var dictationTranscript by remember { mutableStateOf("") }
+    var dictationMeter by remember { mutableStateOf(0f) }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -90,11 +103,56 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         text.trimEnd().takeIf { it.isNotBlank() }?.let(onSubmit)
         onTextChanged("")
     }
+    fun stopDictationCapture() {
+        dictationMeter = 0f
+        scope.launch { speechAudioCapture.stop() }
+    }
+    fun startDictationCapture() {
+        dictationState = SpeechDictationDisplayState.RECORDING_EMPTY
+        dictationTranscript = ""
+        dictationMeter = 0f
+        dictating = true
+        speechAudioCapture.start(
+            onFrame = { frame ->
+                scope.launch {
+                    dictationMeter = frame.meter
+                    if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
+                    if (frame.finalized && dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
+                        dictationState = SpeechDictationDisplayState.TRANSCRIBING
+                        stopDictationCapture()
+                    }
+                }
+            },
+            onFailure = { failure ->
+                scope.launch {
+                    dictationTranscript = when (failure) {
+                        SpeechAudioCaptureFailure.PermissionDenied -> "Microphone permission denied."
+                        SpeechAudioCaptureFailure.InitializationFailed -> "Microphone unavailable."
+                        SpeechAudioCaptureFailure.SilencedBySystem -> "Microphone capture was silenced by Android."
+                        is SpeechAudioCaptureFailure.ReadFailed -> "Microphone capture failed."
+                    }
+                    dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+                    stopDictationCapture()
+                }
+            },
+        )
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            startDictationCapture()
+        } else {
+            dictationTranscript = "Microphone permission denied."
+            dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+            dictating = true
+        }
+    }
+    DisposableEffect(Unit) { onDispose { speechAudioCapture.stopAsync() } }
     if (dictating) {
         DictationInputSurface(
             tokens = tokens,
             displayState = dictationState,
             transcript = dictationTranscript,
+            meter = dictationMeter,
             modifier = modifier,
             onAction = { action ->
                 val nextState = SpeechDictationUxContract.transition(dictationState, action)
@@ -105,15 +163,18 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     SpeechDictationAction.COMPLETE_ENHANCEMENT -> dictationTranscript = SpeechDictationUxContract.fixtures.enhancedTranscript
                     SpeechDictationAction.SEND_RAW, SpeechDictationAction.SEND_ENHANCED -> {
                         onTextChanged(mergeSpeechTranscriptIntoDraft(text, dictationTranscript))
+                        stopDictationCapture()
                         dictating = false
                         dictationState = SpeechDictationDisplayState.IDLE
                         dictationTranscript = ""
                     }
                     SpeechDictationAction.CANCEL, SpeechDictationAction.RESET -> {
+                        stopDictationCapture()
                         dictating = false
                         dictationState = SpeechDictationDisplayState.IDLE
                         dictationTranscript = ""
                     }
+                    SpeechDictationAction.STOP_RECORDING -> stopDictationCapture()
                     else -> Unit
                 }
             },
@@ -138,7 +199,10 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             onClose = onClose,
             onClear = onClear,
             canClear = text.isNotBlank() || attachments.isNotEmpty(),
-            onMic = { hapticClick(); dictationState = SpeechDictationDisplayState.RECORDING_EMPTY; dictationTranscript = ""; dictating = true },
+            onMic = {
+                hapticClick()
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startDictationCapture() else audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            },
             sendIcon = if (text.isBlank()) R.drawable.ic_feather_corner_down_left else R.drawable.ic_feather_arrow_up,
             sendAccent = text.isNotBlank(),
             onSend = { if (text.isBlank()) onReturn() else submitText() },
@@ -356,13 +420,13 @@ private fun ChatActionRail(tokens: UiTokens, onAttach: () -> Unit, onClose: () -
 }
 
 @Composable
-fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplayState, transcript: String, modifier: Modifier = Modifier, onAction: (SpeechDictationAction) -> Unit) {
+fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplayState, transcript: String, modifier: Modifier = Modifier, meter: Float = 0f, onAction: (SpeechDictationAction) -> Unit) {
     val contract = SpeechDictationUxContract.contractFor(displayState)
     val scrollState = rememberScrollState()
     LaunchedEffect(transcript) { scrollState.animateScrollTo(scrollState.maxValue) }
     Column(modifier.fillMaxWidth().imePadding().wrapContentHeight().padding(horizontal = 18.dp, vertical = 12.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth().height(76.dp).clip(RoundedCornerShape(38.dp)).background(tokens.surfaceHigh).border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(38.dp)).padding(start = 22.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            DictationWaveform(active = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED))
+            DictationWaveform(active = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED), meter = meter)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(contract.accessibility.label, color = tokens.text, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -380,13 +444,14 @@ fun DictationInputSurface(tokens: UiTokens, displayState: SpeechDictationDisplay
 }
 
 @Composable
-private fun DictationWaveform(active: Boolean) {
+private fun DictationWaveform(active: Boolean, meter: Float) {
     val transition = rememberInfiniteTransition(label = "dictation-waveform")
     val phase by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "dictation-waveform-phase")
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(15) { index ->
             val weight = 1f - kotlin.math.abs(index - 7) / 8f
-            val animatedHeight = if (active) 8.dp + (22.dp * ((phase + index * 0.09f) % 1f) * weight) else 8.dp + 10.dp * weight
+            val meterBoost = meter.coerceIn(0f, 1f)
+            val animatedHeight = if (active) 8.dp + (22.dp * (((phase + index * 0.09f) % 1f) * 0.45f + meterBoost) * weight).coerceAtMost(30.dp) else 8.dp + 10.dp * weight
             Box(Modifier.width(4.dp).height(animatedHeight).clip(RoundedCornerShape(6.dp)).background(Color(0xfff04452)))
         }
     }

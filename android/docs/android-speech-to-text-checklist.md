@@ -57,6 +57,23 @@ Reference paths:
 - Enhancement sends transcript and terminal context upstream, so prompt rendering, settings copy, and redaction need strong bounds.
 - Terminal context must not include secrets, raw tool output, clipboard contents, or hidden scrollback beyond visible text.
 
+## Completion Audit
+
+Status: blocked, not complete.
+
+Objective-to-evidence map:
+
+- Checklist/Jira file exists: this file exists and contains ASTT-1 through ASTT-10 with status, research, checklist, user story, guide, acceptance, review, validation, and commit sections.
+- Mic tap opens dictation UI: `CoderSheetComponents.kt` wires chat mic into dictation state; emulator/debug UX state journey passes via `SpeechDebugWorkflowInstrumentedTest`.
+- Records speech and detects speech end: `SpeechAudioCapture.kt` implements `AudioRecord`, metering, VAD, silence handling, and cleanup; JVM speech tests pass. Target-hardware mic smoke remains blocked.
+- Transcript preview bubble: `DictationInputSurface` renders read-only partial/final transcript states; emulator UI Automator preset journey passes.
+- Optional enhancement with transcript plus terminal context: `SpeechEnhancement.kt` renders bounded `<TRANSCRIPT>` and `<CONTEXT>`, redacts secrets, and tests pass.
+- Insert/send through existing chat draft behavior: `mergeSpeechTranscriptIntoDraft` and `CoderApp.kt` route accepted speech through `chatDraft`; `SpeechChatDraftTest` passes. Target-hardware paste-only/paste+Enter smoke remains blocked.
+- Audio never leaves device for transcription: transcription path is local `LiteRtParakeetTranscriber`; enhancement is separate and optional; privacy audit tests pass.
+- Local Parakeet runs through LiteRT on Pixel 7 Pro or Samsung Tab A9: blocked. Current `adb devices` shows only `emulator-5554`, and cached Parakeet `.tflite` files are Git LFS pointers, not model payloads.
+- Real-device support proof: blocked until Pixel 7 Pro or Samsung Tab A9 is attached with downloaded model/tokenizer payloads.
+- Subagent review loop: blocked because `subagent` tool is unavailable in current toolset; self-review residual risks are recorded per ticket.
+
 ## VoiceInk UI/UX Pattern Inventory
 
 These patterns should shape Android UX before model internals are built:

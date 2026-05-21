@@ -909,4 +909,4 @@ Commit:
 - Download completion review fix: `2a5c7d1` (`fix(android): guard speech download completion`).
 - Manual finish behavior: `a685651` (`fix(android): keep speech recording until finish`).
 - Validation docs: `c1f9ff4` (`docs(android): update speech live transcription validation`).
-- State-machine action UI: `7a700e0` (`fix(android): derive speech actions from state machine`).
+- State-machine action UI: `f92dd1d` (`fix(android): derive speech actions from state machine`).

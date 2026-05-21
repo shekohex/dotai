@@ -553,11 +553,13 @@ Validation:
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 12s`.
 - `./gradlew assembleDebug --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 8s`.
 - Device fixture smoke blocked: no connected/running device.
+- Current device check: `adb devices` shows only `emulator-5554`; no Pixel 7 Pro or Samsung Tab A9 target device is attached.
+- Current model cache check: `~/.cache/checkouts/huggingface.co/litert-community/parakeet-tdt-0.6b-v3/*.tflite` files are 134-135 byte Git LFS pointer files, not downloaded model payloads, so real fixture transcription cannot run from the local cache.
 
 Review:
 
 - Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing downloaded model/tokenizer and no connected target device; NPU path is not claimed.
+- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing downloaded model payloads/tokenizer and no connected target device; NPU path is not claimed.
 
 Commit:
 
@@ -727,6 +729,7 @@ Validation:
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 10s`.
 - `./gradlew assembleDebug --no-daemon` passed, `BUILD SUCCESSFUL in 8s`.
 - Device mic smoke on target hardware blocked: no Pixel 7 Pro or Samsung Tab A9 is connected in this session.
+- Current device check: `adb devices` shows only `emulator-5554`; target-hardware mic, lifecycle, and Parakeet runtime proof remain blocked.
 - Emulator UI proof: `android emulator start owlchat` started `emulator-5554`; speech UI Automator journey passed; deep link layout/screenshot captured at `build/validation/speech/`.
 
 Review:

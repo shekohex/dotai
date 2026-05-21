@@ -921,7 +921,7 @@ Review:
 - Follow-up review `review-speech-accelerator-warm-metrics` found settings were loaded with `remember(context)` and would not reliably apply accelerator/warm changes until recreation, and partial cadence had been changed to 0.5s with catch-up recursion. Fixed by registering a speech preference listener in `ChatInputBar`, restoring 1s partial cadence, and removing recursive catch-up scheduling after a partial job completes.
 - Follow-up review `16e33613-e46f-415f-8e74-ef708ae7a888` for `046e396` found P2 early live windows lost VoiceInk/LiteRT-style pre-padding because the caller clamped negative starts before `sliceSampleWindow`. Fixed by preserving the negative window start so first pass is `[pre-padding][1s audio][1s trailing silence]` instead of left-shifted audio. Added unit coverage for early-window pre-padding.
 - Re-review `cac443a4-ae1b-4a5b-b6d2-5f74384ee10c` found no findings and verdict `patch is correct`; residual risk is that tests prove helper math rather than full snapshot sample layout through `runPartialTranscriptionPass`.
-- Review `d5f0f097-8688-456a-b02c-7a522bd2fc40` found P1 shared LiteRT transcriber race between service warm/close and UI transcription, P2 nullable transcriber could leave UI stuck in `TRANSCRIBING`, and P2 final chunk overlap could duplicate slow boundary words. Fixed in `927e8e9`; re-review pending.
+- Review `d5f0f097-8688-456a-b02c-7a522bd2fc40` found P1 shared LiteRT transcriber race between service warm/close and UI transcription, P2 nullable transcriber could leave UI stuck in `TRANSCRIBING`, and P2 final chunk overlap could duplicate slow boundary words. Fixed in `927e8e9`; re-review `0a768b22-1de3-47ab-8128-b1a369f8df0f` found no findings and verdict `patch is correct`. Residual risks: reviewer did not rerun Pixel UI and final overlap still depends on text-only fuzzy merger.
 
 Commit:
 
@@ -947,3 +947,4 @@ Commit:
 - Warm cache defaults/service: `29abbae` (`perf(android): keep speech model warm by default`), `86654d0` (`perf(android): keep speech model warm in service`).
 - VoiceInk sound feedback: `1d17bf2` (`feat(android): add speech sound feedback`).
 - Warm transcriber serialization and processing chip: `927e8e9` (`fix(android): serialize warm speech transcriber`).
+- Enhancement provider settings: `51684e0` (`feat(android): wire speech enhancement providers`).

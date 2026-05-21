@@ -545,7 +545,7 @@ Commit:
 - Partial implementation: `593c751` (`feat(android): wire parakeet LiteRT loading`).
 - Partial implementation: `2e02012` (`feat(android): add parakeet tokenizer helpers`).
 - Partial implementation: `00ae531` (`feat(android): add parakeet log mel preprocessing`).
-- Partial implementation: TBD.
+- Partial implementation: `8a8ed6d` (`feat(android): wire parakeet TDT decode path`).
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 

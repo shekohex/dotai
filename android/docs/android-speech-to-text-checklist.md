@@ -549,13 +549,16 @@ Commit:
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 
-Status: not-started
+Status: review
 
 Research:
 
 - VoiceInk enhancement injects `<TRANSCRIPT>` and context sections.
 - Android terminal exposes visible text through `snapshotText()`.
 - Existing app already has Gemini/OpenAI-compatible provider concepts for AI features.
+- Added `SpeechEnhancementPromptRenderer` with bounded visible terminal context, transcript insertion, redaction, and request object separation.
+- Added `SpeechEnhancer` with timeout, cancellation via coroutine timeout, one retry by default, and raw transcript fallback.
+- Added OpenAI-compatible and Gemini client adapters backed by injected completion functions for provider mock tests without logging prompt/request bodies.
 
 Plan:
 
@@ -565,13 +568,13 @@ Plan:
 
 Checklist:
 
-- [ ] Inject final transcript into `<TRANSCRIPT>`.
-- [ ] Inject bounded visible terminal text into `<CONTEXT>`.
-- [ ] Trim blanks and limit lines/chars.
-- [ ] Redact obvious tokens, bearer strings, and secret query params.
-- [ ] Include latest safe agent text only if available without tool/prompt leakage.
-- [ ] Add OpenAI-compatible and Gemini enhancement path.
-- [ ] Add timeout, cancellation, one transient retry, raw transcript fallback.
+- [x] Inject final transcript into `<TRANSCRIPT>`.
+- [x] Inject bounded visible terminal text into `<CONTEXT>`.
+- [x] Trim blanks and limit lines/chars.
+- [x] Redact obvious tokens, bearer strings, and secret query params.
+- [x] Include latest safe agent text only if available without tool/prompt leakage.
+- [x] Add OpenAI-compatible and Gemini enhancement path.
+- [x] Add timeout, cancellation, one transient retry, raw transcript fallback.
 
 User story:
 
@@ -593,14 +596,16 @@ Validation:
 
 - `./gradlew testDebugUnitTest --no-daemon`
 - Provider mock tests.
+- `./gradlew testDebugUnitTest --tests '*SpeechEnhancementTest*' --no-daemon` failed first on exact bounds expectation, then passed after correction, `BUILD SUCCESSFUL in 9s`.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: adapters are provider-shaped and mock-tested, but not yet connected to real app API-key/provider settings.
 
 Commit:
 
-- TBD.
+- Implementation: TBD.
 
 ## ASTT-9: Integrate Terminal Send Behavior
 

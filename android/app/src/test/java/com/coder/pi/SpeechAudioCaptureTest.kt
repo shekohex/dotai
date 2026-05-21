@@ -48,6 +48,17 @@ class SpeechAudioCaptureTest {
     }
 
     @Test
+    fun vadDetectsSpeechFromPeakLikeOpenSourceAndroidVadExamples() {
+        val segmenter = SpeechVadSegmenter(SpeechAudioCaptureConfig(silenceThreshold = 0.02f, peakThreshold = 0.05f, speechStartFrames = 1))
+        val plosive = FloatArray(320) { index -> if (index == 40) 0.08f else 0.001f }
+
+        val frame = segmenter.accept(plosive)
+
+        assertTrue(frame.voiceActive)
+        assertTrue(frame.speechDetected)
+    }
+
+    @Test
     fun vadZerosSilentFramesLikeLiteRtSample() {
         val segmenter = SpeechVadSegmenter(SpeechAudioCaptureConfig(silenceThreshold = 0.01f, speechStartFrames = 1))
         val quietNoise = FloatArray(320) { 0.005f }

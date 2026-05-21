@@ -23,6 +23,7 @@ data class SpeechAudioCaptureConfig(
     val sampleRate: Int = 16_000,
     val frameMillis: Int = 20,
     val silenceThreshold: Float = 0.012f,
+    val peakThreshold: Float = 0.045f,
     val speechStartFrames: Int = 3,
     val trailingSilenceMillis: Int = 900,
     val preRollMillis: Int = 400,
@@ -72,9 +73,9 @@ class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
 
     fun accept(samples: FloatArray, silenced: Boolean = false): SpeechAudioFrame {
         totalFrames++
-        val rms = samples.rms()
-        meter = meter * 0.78f + rms * 0.22f
-        val voiceActive = !silenced && rms >= config.silenceThreshold
+        val metrics = samples.metrics()
+        meter = meter * 0.78f + metrics.magnitude * 0.22f
+        val voiceActive = !silenced && (metrics.rms >= config.silenceThreshold || metrics.peak >= config.peakThreshold)
         val normalizedSamples = if (voiceActive) samples else FloatArray(samples.size)
         if (!speechStarted) {
             preRoll.addLast(normalizedSamples.copyOf())
@@ -185,9 +186,16 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
     }
 }
 
-private fun FloatArray.rms(): Float {
-    if (isEmpty()) return 0f
+private data class SpeechSampleMetrics(val rms: Float, val peak: Float, val magnitude: Float)
+
+private fun FloatArray.metrics(): SpeechSampleMetrics {
+    if (isEmpty()) return SpeechSampleMetrics(0f, 0f, 0f)
     var sum = 0.0
-    forEach { sample -> sum += sample * sample }
-    return sqrt(sum / size).toFloat()
+    var peak = 0f
+    forEach { sample ->
+        sum += sample * sample
+        peak = maxOf(peak, kotlin.math.abs(sample))
+    }
+    val rms = sqrt(sum / size).toFloat()
+    return SpeechSampleMetrics(rms = rms, peak = peak, magnitude = maxOf(rms, peak * 0.55f))
 }

@@ -335,7 +335,7 @@ internal fun SpeechSettingsValues.toAudioCaptureConfig(): SpeechAudioCaptureConf
         3 -> 0.008f
         else -> 0.005f
     }
-    return SpeechAudioCaptureConfig(silenceThreshold = threshold)
+    return SpeechAudioCaptureConfig(silenceThreshold = threshold, peakThreshold = threshold * 3.75f)
 }
 
 private fun List<FloatArray>.flattenToFloatArray(): FloatArray {

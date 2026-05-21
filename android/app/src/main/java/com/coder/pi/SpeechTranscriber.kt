@@ -81,7 +81,7 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
     private val directory: File = File(context.filesDir, "speech/parakeet")
     val modelFile: File = File(directory, artifact.fileName)
 
-    fun isReady(): Boolean = modelFile.isFile && modelFile.length() == artifact.sizeBytes && modelFile.sha256OrNull() == artifact.sha256
+    fun isReady(): Boolean = modelFile.isFile && !modelFile.isGitLfsPointerFile() && modelFile.length() == artifact.sizeBytes && modelFile.sha256OrNull() == artifact.sha256
 
     suspend fun ensureModel(onEvent: (SpeechTranscriberEvent.ModelDownloadProgress) -> Unit = {}): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
@@ -116,6 +116,11 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
         if (!directory.exists()) return true
         return directory.deleteRecursively()
     }
+}
+
+internal fun File.isGitLfsPointerFile(): Boolean {
+    if (!isFile || length() > 512L) return false
+    return runCatching { useLines { lines -> lines.firstOrNull()?.startsWith("version https://git-lfs.github.com/spec/v1") == true } }.getOrDefault(false)
 }
 
 class ParakeetTokenizerCache(private val context: Context, private val artifact: ParakeetTokenizerArtifact = ParakeetTokenizerArtifact()) {

@@ -191,6 +191,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             val outputs = outputBuffers ?: throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             inputs[0].writeFloat(featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements))
             model.run(inputs, outputs, ENCODE_SIGNATURE)
+            if (isUnsafeReadFloatRuntime()) throw SpeechTranscriberException(SpeechTranscriberFailure.RuntimeUnavailable)
             val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map { it.first }.filter { it != END_OF_SEQUENCE }.toList()
             val tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
             SpeechTranscriptResult(tokenizer.decode(tokenIds), System.currentTimeMillis() - startedAt)
@@ -211,6 +212,8 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
         inputBuffers = null
         outputBuffers = null
     }
+
+    private fun isUnsafeReadFloatRuntime(): Boolean = android.os.Build.MODEL.contains("Pixel 7 Pro", ignoreCase = true) && android.os.Build.VERSION.SDK_INT >= 36
 
     companion object {
         const val ENCODE_SIGNATURE = "encode"
@@ -248,45 +251,64 @@ class ParakeetTdtLiteRtDecoder(private val compiledModel: CompiledModel) {
     private val outputBuffers = compiledModel.createOutputBuffers(LiteRtParakeetTranscriber.DECODE_SIGNATURE)
     private val maxTimeIndex = compiledModel.getInputTensorType(LiteRtParakeetTranscriber.inputBufferName(0), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements / LiteRtParakeetTranscriber.NUM_FEATURES
     private val tokenCount = compiledModel.getInputTensorType(LiteRtParakeetTranscriber.inputBufferName(1), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements
-    private val logitsOutputType = compiledModel.getOutputTensorType(LiteRtParakeetTranscriber.outputBufferName(0), LiteRtParakeetTranscriber.DECODE_SIGNATURE)
-    private val logitsPerToken = logitsOutputType.numElements / tokenCount / maxTimeIndex
+    private val logitsPerToken = compiledModel.getOutputTensorType(LiteRtParakeetTranscriber.outputBufferName(0), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements / tokenCount / maxTimeIndex
     private val stateCount = compiledModel.getInputTensorType(LiteRtParakeetTranscriber.inputBufferName(2), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements
+    private val decode1InputBuffers = runCatching { compiledModel.createInputBuffers(LiteRtParakeetTranscriber.DECODE_1_SIGNATURE) }.getOrNull()
+    private val decode1OutputBuffers = decode1InputBuffers?.let { compiledModel.createOutputBuffers(LiteRtParakeetTranscriber.DECODE_1_SIGNATURE) }
+    private val stateBuffers = listOf(listOf(inputBuffers[2], inputBuffers[3]), listOf(outputBuffers[1], outputBuffers[2]))
+    private var inputStateBuffersIndex = 0
 
     fun decode(encodeOutputBuffers: List<TensorBuffer>): Sequence<Pair<Int, Int>> = sequence {
-        inputBuffers[2].writeFloat(FloatArray(stateCount))
-        inputBuffers[3].writeFloat(FloatArray(stateCount))
-        val tokenIds = IntArray(tokenCount)
-        tokenIds[0] = LiteRtParakeetTranscriber.DECODE_START_TOKEN_ID
+        stateBuffers[inputStateBuffersIndex].forEach { it.writeFloat(FloatArray(stateCount)) }
+        var inferenceSignature = LiteRtParakeetTranscriber.DECODE_SIGNATURE
+        var inferenceTokenCount = tokenCount
+        var inferenceTokenIdsBuffer = inputBuffers[1]
+        var inferenceTokenIds = IntArray(tokenCount)
+        inferenceTokenIds[0] = LiteRtParakeetTranscriber.DECODE_START_TOKEN_ID
+        var inferenceLogitsBuffer = outputBuffers[0]
         var tokenIndex = 0
         var timeIndex = 0
         while (timeIndex < maxTimeIndex) {
-            inputBuffers[1].writeInt(tokenIds)
-            compiledModel.run(listOf(encodeOutputBuffers[0], inputBuffers[1], inputBuffers[2], inputBuffers[3]), outputBuffers, LiteRtParakeetTranscriber.DECODE_SIGNATURE)
-            val logits = outputBuffers[0].readLogits(logitsOutputType)
-            val stepStart = timeIndex * tokenCount * logitsPerToken
+            inferenceTokenIdsBuffer.writeInt(inferenceTokenIds)
+            compiledModel.run(inputBuffersFor(encodeOutputBuffers, inferenceTokenIdsBuffer), outputBuffersFor(inferenceLogitsBuffer), inferenceSignature)
+            val logits = inferenceLogitsBuffer.readFloat()
+            val stepStart = timeIndex * inferenceTokenCount * logitsPerToken
             val tokenStart = stepStart + tokenIndex * logitsPerToken
             val durationEnd = stepStart + (tokenIndex + 1) * logitsPerToken
             val tokenEnd = durationEnd - LiteRtParakeetTranscriber.NUM_DURATIONS
             val tokenId = (tokenStart until tokenEnd).maxBy { logits[it] } - tokenStart
             if (tokenId != LiteRtParakeetTranscriber.DECODE_START_TOKEN_ID) {
                 yield(tokenId to timeIndex)
-                tokenIndex++
-                if (tokenIndex >= tokenCount - 1) break
-                tokenIds[tokenIndex] = tokenId
+                if (inferenceTokenCount > 1) {
+                    tokenIndex++
+                    if (tokenIndex >= inferenceTokenCount - 1) {
+                        val decode1Inputs = decode1InputBuffers
+                        val decode1Outputs = decode1OutputBuffers
+                        if (decode1Inputs == null || decode1Outputs == null) break
+                        inferenceSignature = LiteRtParakeetTranscriber.DECODE_1_SIGNATURE
+                        inferenceTokenCount = 1
+                        inferenceTokenIdsBuffer = decode1Inputs[1]
+                        inferenceTokenIds = IntArray(1)
+                        inferenceLogitsBuffer = decode1Outputs[0]
+                        tokenIndex = 0
+                    }
+                }
+                inferenceTokenIds[tokenIndex] = tokenId
             }
             val duration = (tokenEnd until durationEnd).maxBy { logits[it] } - tokenEnd
-            timeIndex += if (duration == 0 && tokenId == LiteRtParakeetTranscriber.DECODE_START_TOKEN_ID) 1 else duration.coerceAtLeast(1)
+            timeIndex += if (duration == 0 && tokenId == LiteRtParakeetTranscriber.DECODE_START_TOKEN_ID) 1 else duration
+            if (inferenceTokenCount == 1) inputStateBuffersIndex = 1 - inputStateBuffersIndex
         }
         yield(LiteRtParakeetTranscriber.END_OF_SEQUENCE to maxTimeIndex)
     }
-}
 
-internal fun TensorBuffer.readLogits(tensorType: TensorType): FloatArray = when (tensorType.elementType) {
-    TensorType.ElementType.FLOAT -> readFloat()
-    TensorType.ElementType.INT8 -> readInt8().map { it.toFloat() }.toFloatArray()
-    TensorType.ElementType.INT -> readInt().map { it.toFloat() }.toFloatArray()
-    TensorType.ElementType.INT64 -> readLong().map { it.toFloat() }.toFloatArray()
-    TensorType.ElementType.BOOLEAN -> readBoolean().map { if (it) 1f else 0f }.toFloatArray()
+    private fun inputBuffersFor(encodeOutputBuffers: List<TensorBuffer>, tokenIdsBuffer: TensorBuffer): List<TensorBuffer> = buildList {
+        addAll(encodeOutputBuffers)
+        add(tokenIdsBuffer)
+        addAll(stateBuffers[inputStateBuffersIndex])
+    }
+
+    private fun outputBuffersFor(logitsBuffer: TensorBuffer): List<TensorBuffer> = listOf(logitsBuffer) + stateBuffers[1 - inputStateBuffersIndex]
 }
 
 class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = ParakeetFeatureConfig()) {

@@ -189,11 +189,16 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                 val prompt = speechSettings.resolvedPrompt(SpeechSettingsStore.defaultPrompt(context))
                 val contextLines = if (speechSettings.includeVisibleTerminalContext) visibleTerminalLines() else emptyList()
                 val request = speechPromptRenderer.render(prompt, transcript, contextLines)
-                SpeechEnhancer(speechEnhancementClient).enhanceOrRaw(request)
+                SpeechEnhancer(speechEnhancementClient, timeoutMillis = speechSettings.enhancementTimeoutSeconds * 1_000L).enhanceOrRaw(request)
             }.fold(
                 onSuccess = { result ->
                     if (sessionId != dictationSessionId) return@fold
-                    acceptDictationTranscript(result.text)
+                    if (result.timedOut) {
+                        dictationTranscript = transcript
+                        dictationState = SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT
+                    } else {
+                        acceptDictationTranscript(result.text)
+                    }
                 },
                 onFailure = {
                     if (sessionId != dictationSessionId) return@fold

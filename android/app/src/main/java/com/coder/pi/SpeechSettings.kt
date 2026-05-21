@@ -23,6 +23,7 @@ data class SpeechSettingsValues(
     val enhancementProvider: String = SpeechEnhancementProvider.OpenAiCompatible.id,
     val enhancementBaseUrl: String = "https://api.openai.com/v1",
     val enhancementModel: String = "gpt-4o-mini",
+    val enhancementTimeoutSeconds: Int = 10,
 ) {
     fun resolvedPrompt(defaultPrompt: String): String = promptOverride.trim().ifBlank { defaultPrompt }
 }
@@ -43,6 +44,7 @@ object SpeechSettingsStore {
     private const val enhancementProviderKey = "speech.enhancement_provider"
     private const val enhancementBaseUrlKey = "speech.enhancement_base_url"
     private const val enhancementModelKey = "speech.enhancement_model"
+    private const val enhancementTimeoutSecondsKey = "speech.enhancement_timeout_seconds"
     private const val securePreferencesName = "speech_secure"
     private const val enhancementApiKeyKey = "speech.enhancement_api_key"
 
@@ -63,6 +65,7 @@ object SpeechSettingsStore {
             enhancementProvider = preferences.getString(enhancementProviderKey, SpeechEnhancementProvider.OpenAiCompatible.id).orEmpty().ifBlank { SpeechEnhancementProvider.OpenAiCompatible.id },
             enhancementBaseUrl = preferences.getString(enhancementBaseUrlKey, "https://api.openai.com/v1").orEmpty().ifBlank { "https://api.openai.com/v1" },
             enhancementModel = preferences.getString(enhancementModelKey, "gpt-4o-mini").orEmpty().ifBlank { "gpt-4o-mini" },
+            enhancementTimeoutSeconds = preferences.getInt(enhancementTimeoutSecondsKey, 10).coerceIn(3, 60),
         )
     }
 
@@ -99,6 +102,8 @@ object SpeechSettingsStore {
     fun setEnhancementBaseUrl(context: Context, baseUrl: String) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putString(enhancementBaseUrlKey, baseUrl.trim().trimEnd('/').take(300)) }
 
     fun setEnhancementModel(context: Context, model: String) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putString(enhancementModelKey, model.trim().take(120)) }
+
+    fun setEnhancementTimeoutSeconds(context: Context, seconds: Int) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putInt(enhancementTimeoutSecondsKey, seconds.coerceIn(3, 60)) }
 
     fun enhancementApiKey(context: Context): String = securePreferences(context).getString(enhancementApiKeyKey, "").orEmpty()
 

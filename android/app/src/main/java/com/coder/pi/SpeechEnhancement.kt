@@ -36,6 +36,7 @@ data class SpeechEnhancementResult(
     val text: String,
     val enhanced: Boolean,
     val failedOpen: Boolean,
+    val timedOut: Boolean = false,
 )
 
 interface SpeechEnhancementClient {
@@ -66,14 +67,15 @@ class SpeechEnhancementPromptRenderer(private val config: SpeechEnhancementPromp
     }
 }
 
-class SpeechEnhancer(private val client: SpeechEnhancementClient, private val timeoutMillis: Long = 8_000L, private val retries: Int = 1) {
+class SpeechEnhancer(private val client: SpeechEnhancementClient, private val timeoutMillis: Long = 10_000L, private val retries: Int = 1) {
     suspend fun enhanceOrRaw(request: SpeechEnhancementRequest): SpeechEnhancementResult {
         repeat(retries + 1) { attempt ->
             val result = runCatching { withTimeout(timeoutMillis) { client.enhance(request).trim() } }
             val enhanced = result.getOrNull().orEmpty()
             if (enhanced.isNotBlank()) return SpeechEnhancementResult(enhanced, enhanced = true, failedOpen = false)
             val failure = result.exceptionOrNull()
-            if (failure is TimeoutCancellationException || attempt == retries) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true)
+            if (failure is TimeoutCancellationException) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true, timedOut = true)
+            if (attempt == retries) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true)
         }
         return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true)
     }

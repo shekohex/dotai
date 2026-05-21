@@ -63,5 +63,6 @@ class SpeechEnhancementTest {
         assertEquals("raw text", result.text)
         assertFalse(result.enhanced)
         assertTrue(result.failedOpen)
+        assertTrue(result.timedOut)
     }
 }

@@ -2741,6 +2741,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     var apiKeyDialogOpen by remember { mutableStateOf(false) }
     var modelDialogOpen by remember { mutableStateOf(false) }
     var baseUrlDialogOpen by remember { mutableStateOf(false) }
+    var timeoutDialogOpen by remember { mutableStateOf(false) }
     var enhancementApiKeyStored by remember { mutableStateOf(SpeechSettingsStore.enhancementApiKey(context).isNotBlank()) }
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
     SettingsScaffold("Speech", tokens, onBack) {
@@ -2795,6 +2796,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
             SettingsValueRow(R.drawable.ic_feather_server, "Provider", SpeechEnhancementProvider.byId(speechSettings.enhancementProvider).label, "Select", tokens) { providerDialogOpen = true }
             if (SpeechEnhancementProvider.byId(speechSettings.enhancementProvider) == SpeechEnhancementProvider.OpenAiCompatible) SettingsValueRow(R.drawable.ic_feather_globe, "Endpoint", speechSettings.enhancementBaseUrl, "Edit", tokens) { baseUrlDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_cpu, "Model", speechSettings.enhancementModel, "Edit", tokens) { modelDialogOpen = true }
+            SettingsValueRow(R.drawable.ic_feather_clock, "Timeout", "${speechSettings.enhancementTimeoutSeconds}s", "Edit", tokens) { timeoutDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_shield, "API Key", if (enhancementApiKeyStored) "Stored encrypted" else "Missing", "Edit", tokens) { apiKeyDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_edit_3, "Prompt", "Default VoiceInk-style prompt", "Edit", tokens) { promptDialogOpen = true }
             SettingsToggleRow(R.drawable.ic_feather_terminal, "Visible Terminal Context", speechSettings.includeVisibleTerminalContext, tokens) {
@@ -2831,6 +2833,11 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         SpeechSettingsStore.setEnhancementBaseUrl(context, it)
         speechSettings = SpeechSettingsStore.values(context)
         baseUrlDialogOpen = false
+    }
+    if (timeoutDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement Timeout", speechSettings.enhancementTimeoutSeconds.toString(), "10", { timeoutDialogOpen = false }) {
+        SpeechSettingsStore.setEnhancementTimeoutSeconds(context, it.toIntOrNull() ?: speechSettings.enhancementTimeoutSeconds)
+        speechSettings = SpeechSettingsStore.values(context)
+        timeoutDialogOpen = false
     }
 }
 

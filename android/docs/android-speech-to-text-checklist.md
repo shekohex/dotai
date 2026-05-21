@@ -657,7 +657,7 @@ Review:
 
 Commit:
 
-- Implementation: TBD.
+- Implementation: `095793f` (`feat(android): merge accepted speech into chat draft`).
 
 ## ASTT-10: Final Privacy, Reliability, And Release Audit
 

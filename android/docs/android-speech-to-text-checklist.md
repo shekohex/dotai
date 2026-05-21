@@ -482,6 +482,7 @@ Research:
 - Added `SpeechTranscriber`, `ParakeetModelCache`, int8 model metadata, verified download/delete path, runtime-unavailable LiteRT placeholder, and overlap transcript merge.
 - Added LiteRT dependency `com.google.ai.edge.litert:litert:2.1.5`, CPU `CompiledModel` warm-load path, `ParakeetFeatureConfig`, bounded feature extractor shape, and basic tokenizer decode skeleton.
 - Added tokenizer cache download path, Hugging Face tokenizer JSON vocab parser, and pure TDT greedy argmax helper tests; full stateful TDT decode integration remains pending.
+- Replaced placeholder features with log-mel style preprocessing: 16 kHz 5-second input, preemphasis `0.97`, 512-point DFT power spectrum, 128 mel filters, 500 frames, log guard, and per-mel normalization.
 
 Plan:
 
@@ -495,7 +496,7 @@ Checklist:
 - [x] Add model artifact metadata and storage path.
 - [x] Download model with integrity verification.
 - [x] Load LiteRT `CompiledModel` and pick accelerator safely.
-- [ ] Implement log-mel preprocessing compatible with model metadata.
+- [x] Implement log-mel preprocessing compatible with model metadata.
 - [ ] Implement tokenizer and TDT decode.
 - [x] Implement overlap transcript merge.
 - [ ] Keep warm model when safe; release on low memory or disposal.
@@ -527,11 +528,12 @@ Validation:
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after LiteRT wiring, `BUILD SUCCESSFUL in 47s`.
 - `./gradlew assembleDebug --no-daemon` passed after LiteRT wiring, `BUILD SUCCESSFUL in 25s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after tokenizer/TDT helper work, `BUILD SUCCESSFUL in 12s`.
+- `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after log-mel preprocessing, `BUILD SUCCESSFUL in 12s`.
 - Device fixture smoke blocked: no connected/running device.
 
 Review:
 
-- Not ready for subagent review yet: true log-mel, tokenizer JSON loading, TDT decode, and fixture transcription remain incomplete.
+- Not ready for subagent review yet: stateful TDT decode integration and fixture transcription remain incomplete.
 - Self-review residual risk: current `LiteRtParakeetTranscriber` returns `RuntimeUnavailable` when model exists; this avoids false support claims.
 
 Commit:

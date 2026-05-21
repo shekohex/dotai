@@ -1,6 +1,7 @@
 package com.coder.pi
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +39,7 @@ class SpeechTranscriberTest {
         val features = ParakeetFeatureExtractor(config).extract(FloatArray(config.inputSamples) { 0.02f }, config.sampleRate)
 
         assertEquals(128 * 500, features.size)
+        assertFalse(features.any { it.isNaN() || it.isInfinite() })
     }
 
     @Test

@@ -14,6 +14,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.net.URL
 import java.security.MessageDigest
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 data class SpeechTranscriptResult(
     val text: String,
@@ -149,22 +155,27 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache) : Sp
 }
 
 class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = ParakeetFeatureConfig()) {
+    private val melFilters = createMelFilters()
+
     fun extract(samples: FloatArray, sampleRate: Int): FloatArray {
         require(sampleRate == config.sampleRate) { "Expected ${config.sampleRate} Hz audio" }
         val padded = samples.copyOf(config.inputSamples)
         val emphasized = applyPreemphasis(padded)
-        val features = FloatArray(config.featureCount)
-        val hop = (emphasized.size / config.nFrames).coerceAtLeast(1)
+        val spectrogram = Array(config.nMels) { FloatArray(config.nFrames) }
+        val hop = 160
+        val window = FloatArray(config.nFft) { index -> (0.5 - 0.5 * cos(2.0 * PI * index / (config.nFft - 1))).toFloat() }
         for (frame in 0 until config.nFrames) {
             val start = frame * hop
-            if (start >= emphasized.size) break
-            var energy = 0f
-            val end = minOf(start + hop, emphasized.size)
-            for (index in start until end) energy += emphasized[index] * emphasized[index]
-            val logEnergy = kotlin.math.ln((energy / (end - start).coerceAtLeast(1)) + 1e-6f)
-            for (mel in 0 until config.nMels) features[mel * config.nFrames + frame] = logEnergy
+            val power = powerSpectrum(emphasized, start, window)
+            for (mel in 0 until config.nMels) {
+                var energy = 0f
+                val filter = melFilters[mel]
+                for (bin in filter.indices) energy += power[bin] * filter[bin]
+                spectrogram[mel][frame] = ln(energy + 2.0f.pow(-24))
+            }
         }
-        return features
+        normalizeByMel(spectrogram)
+        return FloatArray(config.featureCount) { index -> spectrogram[index / config.nFrames][index % config.nFrames] }
     }
 
     private fun applyPreemphasis(samples: FloatArray): FloatArray {
@@ -174,6 +185,57 @@ class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = Parak
         for (index in 1 until samples.size) output[index] = samples[index] - config.preemphasis * samples[index - 1]
         return output
     }
+
+    private fun powerSpectrum(samples: FloatArray, start: Int, window: FloatArray): FloatArray {
+        val bins = config.nFft / 2 + 1
+        val power = FloatArray(bins)
+        for (bin in 0 until bins) {
+            var real = 0.0
+            var imaginary = 0.0
+            for (index in 0 until config.nFft) {
+                val sample = samples.getOrElse(start + index) { 0f } * window[index]
+                val angle = 2.0 * PI * bin * index / config.nFft
+                real += sample * cos(angle)
+                imaginary -= sample * sin(angle)
+            }
+            power[bin] = ((real * real + imaginary * imaginary) / config.nFft).toFloat()
+        }
+        return power
+    }
+
+    private fun createMelFilters(): Array<FloatArray> {
+        val bins = config.nFft / 2 + 1
+        val minMel = hzToMel(0f)
+        val maxMel = hzToMel(config.sampleRate / 2f)
+        val melPoints = FloatArray(config.nMels + 2) { index -> minMel + (maxMel - minMel) * index / (config.nMels + 1) }
+        val binPoints = melPoints.map { mel -> ((config.nFft + 1) * melToHz(mel) / config.sampleRate).toInt().coerceIn(0, bins - 1) }
+        return Array(config.nMels) { melIndex ->
+            FloatArray(bins) { bin ->
+                val left = binPoints[melIndex]
+                val center = binPoints[melIndex + 1].coerceAtLeast(left + 1)
+                val right = binPoints[melIndex + 2].coerceAtLeast(center + 1)
+                when (bin) {
+                    in left until center -> (bin - left).toFloat() / (center - left)
+                    in center until right -> (right - bin).toFloat() / (right - center)
+                    else -> 0f
+                }
+            }
+        }
+    }
+
+    private fun normalizeByMel(spectrogram: Array<FloatArray>) {
+        spectrogram.forEach { frames ->
+            val mean = frames.average().toFloat()
+            var variance = 0f
+            frames.forEach { value -> variance += (value - mean) * (value - mean) }
+            val std = sqrt(variance / (frames.size - 1).coerceAtLeast(1)) + 1e-5f
+            for (index in frames.indices) frames[index] = (frames[index] - mean) / std
+        }
+    }
+
+    private fun hzToMel(hz: Float): Float = (2595.0 * kotlin.math.log10(1.0 + hz / 700.0)).toFloat()
+
+    private fun melToHz(mel: Float): Float = (700.0 * (10.0.pow(mel / 2595.0) - 1.0)).toFloat()
 }
 
 class ParakeetTokenizer(private val vocabulary: Map<Int, String>) {

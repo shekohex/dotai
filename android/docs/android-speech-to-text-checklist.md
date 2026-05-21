@@ -601,6 +601,7 @@ Commit:
 - Follow-up: `46b55ca` (`feat(android): show speech model cache status`).
 - Follow-up: `1884dbe` (`feat(android): add speech model download action`).
 - Follow-up: `24bd40f` (`fix(android): download speech tokenizer with model`).
+- Follow-up: `1932201` (`fix(android): show missing speech tokenizer status`).
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 

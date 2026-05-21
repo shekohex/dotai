@@ -34,6 +34,7 @@ fun TerminalAgentStateSnapshot.statusPresentation(): TerminalAgentStatusPresenta
 
 fun TerminalAgentStateSnapshot.progressPresentation(): TerminalAgentProgressPresentation? {
     val progressState = when {
+        tools.any { it.state == ToolStateRunning } -> TerminalAgentProgressPresentation(true)
         progress?.state == ProgressStateActive -> progress.progressPresentation()
         progress?.state == ProgressStateClear && run?.state != ToolStateRunning -> progress.progressPresentation()
         run?.state == ToolStateRunning || turn?.state == ToolStateRunning -> TerminalAgentProgressPresentation(true)
@@ -90,7 +91,9 @@ private fun formatAgentDuration(seconds: Long): String {
 
 private fun AgentToolState.activityText(): String = label?.agentDisplayText()?.ifBlank { null } ?: defaultActivityText()
 
-private fun AgentToolState.completionText(): String = namedSummary() ?: when (toolName.lowercase()) {
+private fun AgentToolState.completionText(): String = if (isError) errorSummary() else successSummary()
+
+private fun AgentToolState.successSummary(): String = namedSummary() ?: when (toolName.lowercase()) {
     in ShellTools -> "Shell command finished"
     in ReadTools -> "Read file"
     in SearchTools -> "Explored files"
@@ -101,6 +104,23 @@ private fun AgentToolState.completionText(): String = namedSummary() ?: when (to
     "goal" -> "Goal updated"
     "interview" -> "Interview ready"
     else -> toolName.agentDisplayText().ifBlank { "Tool complete" }
+}
+
+private fun AgentToolState.errorSummary(): String {
+    val cleanSummary = namedSummary()
+    if (cleanSummary != null) return "$cleanSummary failed"
+    return when (toolName.lowercase()) {
+        in ShellTools -> "Shell command failed"
+        in ReadTools -> "Read failed"
+        in SearchTools -> "Search failed"
+        in EditTools -> "File update failed"
+        in WebTools -> "Research failed"
+        in ExternalTools -> "External tool failed"
+        "subagent" -> "Subagent task failed"
+        "goal" -> "Goal update failed"
+        "interview" -> "Interview failed"
+        else -> toolName.agentDisplayText().ifBlank { "Tool failed" }
+    }
 }
 
 private fun AgentToolState.namedSummary(): String? {

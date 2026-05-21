@@ -92,6 +92,7 @@ const handleAgentEnd = (
   ctx: ExtensionContext,
   childState: ReturnType<typeof readChildState>,
   emit: (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void,
+  abortAlertAlreadyEmitted = false,
 ): void => {
   emit("agent.run", ctx, { state: "idle" });
   emit("agent.progress", ctx, { state: "clear" });
@@ -100,6 +101,7 @@ const handleAgentEnd = (
       (message) => message.role === "assistant" && message.stopReason === "aborted",
     ) === true
   ) {
+    if (abortAlertAlreadyEmitted) return;
     emit("agent.alert", ctx, {
       kind: "runtime",
       severity: "warning",
@@ -134,11 +136,54 @@ const handleProviderResponse = (
   });
 };
 
+const handleTurnEnd = (
+  event: {
+    turnIndex: number;
+    message?: { role?: string; stopReason?: string; errorMessage?: string };
+  },
+  ctx: ExtensionContext,
+  abortAlertEmitted: boolean,
+  emit: (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void,
+): boolean => {
+  emit("agent.turn", ctx, { state: "complete", turnIndex: event.turnIndex });
+  if (
+    event.message?.role !== "assistant" ||
+    event.message.stopReason !== "aborted" ||
+    abortAlertEmitted
+  ) {
+    return abortAlertEmitted;
+  }
+  emit("agent.alert", ctx, {
+    kind: "runtime",
+    severity: "warning",
+    title: "π",
+    body:
+      event.message.errorMessage === "Operation aborted"
+        ? "Operation aborted"
+        : "Agent interrupted",
+  });
+  return true;
+};
+
+const emitInputAlert = (
+  ctx: ExtensionContext,
+  emit: (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void,
+): { action: "continue" } => {
+  emit("agent.alert", ctx, {
+    kind: "input",
+    severity: "info",
+    title: "π",
+    body: "Message submitted",
+  });
+  return { action: "continue" };
+};
+
 export default function piOscExtension(pi: ExtensionAPI): void {
   const childState = readChildState();
   let seq = 0;
   let goalProgressActive = false;
   let lastThinkingEmittedAt = 0;
+  let abortAlertEmitted = false;
   const notifiedInterviewUrls = new Set<string>();
   const activeToolArgs = new Map<string, unknown>();
   const emit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload): void => {
@@ -181,22 +226,17 @@ export default function piOscExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_start", (_event, ctx) => {
+    abortAlertEmitted = false;
     emit("agent.run", ctx, { state: "running" });
     emit("agent.progress", ctx, { state: "active" });
   });
 
   pi.on("input", (_event, ctx) => {
-    emit("agent.alert", ctx, {
-      kind: "input",
-      severity: "info",
-      title: "π",
-      body: "Message submitted",
-    });
-    return { action: "continue" };
+    return emitInputAlert(ctx, emit);
   });
 
   pi.on("agent_end", (event, ctx) => {
-    handleAgentEnd(event, ctx, childState, emit);
+    handleAgentEnd(event, ctx, childState, emit, abortAlertEmitted);
   });
 
   pi.on("turn_start", (event, ctx) => {
@@ -204,7 +244,7 @@ export default function piOscExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("turn_end", (event, ctx) => {
-    emit("agent.turn", ctx, { state: "complete", turnIndex: event.turnIndex });
+    abortAlertEmitted = handleTurnEnd(event, ctx, abortAlertEmitted, emit);
   });
 
   pi.on("message_update", (_event, ctx) => {

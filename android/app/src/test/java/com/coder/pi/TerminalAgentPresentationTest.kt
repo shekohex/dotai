@@ -65,6 +65,25 @@ class TerminalAgentPresentationTest {
     }
 
     @Test
+    fun activeToolDrivesProgressWithoutRunState() {
+        val snapshot = TerminalAgentStateSnapshot(
+            tools = listOf(AgentToolState("tool-1", "read", "running", false, "Reading foo.ts", null, metadata())),
+        )
+
+        assertEquals(TerminalAgentProgressPresentation(true, "Reading foo.ts"), snapshot.progressPresentation())
+    }
+
+    @Test
+    fun failedToolCompletionShowsFailure() {
+        val snapshot = TerminalAgentStateSnapshot(
+            progress = AgentProgressState("active", null, null, metadata()),
+            tools = listOf(AgentToolState("tool-1", "read", "complete", true, "Reading foo.ts", "Read foo.ts", metadata())),
+        )
+
+        assertEquals(TerminalAgentProgressPresentation(true, "Read foo.ts failed"), snapshot.progressPresentation())
+    }
+
+    @Test
     fun includesFileNameInGenericCompletionSummaryWhenLabelHasContext() {
         val snapshot = TerminalAgentStateSnapshot(
             progress = AgentProgressState("active", null, null, metadata()),

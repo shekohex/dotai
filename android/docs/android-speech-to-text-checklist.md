@@ -76,12 +76,10 @@ Objective-to-evidence map:
 
 Target-device proof runbook when Pixel 7 Pro or Samsung Tab A9 is attached:
 
-- Confirm target: `adb devices -l` must show Pixel 7 Pro or Samsung Tab A9, not only emulator.
-- Install debug build: `./gradlew assembleDebug --no-daemon && adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`.
-- Open speech settings: `adb shell am start -W -a android.intent.action.VIEW -d 'pi://settings/speech' -n com.coder.pi/.MainActivity`.
-- Use Model Cache Download action, then verify settings shows ready state.
-- Open chat input, tap mic, grant `RECORD_AUDIO`, speak fixture phrase, wait for VAD end/transcription, accept transcript into draft, and verify Auto Send off/on behavior.
-- Record proof: `adb shell getprop ro.product.model`, `adb shell getprop ro.board.platform`, settings screenshot/layout, dictation screenshot/layout, app log excerpt with sanitized timing/failure-only metrics, and command output for `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` plus target smoke result.
+- Run `scripts/android-speech-real-device-smoke.sh [adb-serial]`; it fails fast unless the target model is Pixel 7 Pro or Samsung Tab A9.
+- The script builds and installs debug app/test APKs, restores cached model/tokenizer when available, opens speech settings, runs the debug speech UI journey, captures settings/debug screenshots, records target model/board/fingerprint, and writes a sanitized log excerpt under `build/validation/speech-real-device/<timestamp>/`.
+- Manual proof still required after script pass: open chat input, tap mic, grant `RECORD_AUDIO`, speak fixture phrase, wait for live partial/final transcription, accept transcript into draft, and verify Auto Send off/on behavior.
+- Record proof: target smoke artifact directory, command output for `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon`, and manual mic smoke notes.
 - Do not claim support from emulator inference; emulator remains UI/crash/build smoke only.
 
 ## VoiceInk UI/UX Pattern Inventory
@@ -879,8 +877,8 @@ Implementation checklist:
 
 Validation:
 
-- `adb devices -l` currently shows only emulator; target-hardware Parakeet/mic proof is blocked until Pixel 7 Pro or Samsung Tab A9 reconnects unlocked.
-- Model/tokenizer pull and live target-hardware smoke are blocked until target device reconnects unlocked.
+- Pixel 7 Pro smoke helper pass: `scripts/android-speech-real-device-smoke.sh` ran against `192.168.1.107:40189`, model `Pixel 7 Pro`, board `gs201`, restored model/tokenizer, installed app/test APKs, launched speech settings, ran `SpeechDebugWorkflowInstrumentedTest` on device with `OK (1 test)`, captured settings/debug screenshots, and wrote sanitized logs under `build/validation/speech-real-device/20260521-183411/`.
+- Manual live mic Parakeet smoke remains required: user must speak into the device so the app can prove live partial/final transcription and accepted transcript draft/send behavior with real microphone input.
 - Freeze mitigation validation: `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `./gradlew assembleDebug --no-daemon` passed, APK installed on Pixel 7 Pro `192.168.1.107:37339`, and `scripts/android-restore-speech-models.sh 192.168.1.107:37339` restored local model/tokenizer after install. Code changes avoid Compose-state audio-frame list copying and run final sample flattening/LiteRT transcribe on `Dispatchers.Default` instead of main.
 - Streaming partial first pass: while recording, the app now snapshots the last ~5 seconds of captured audio every 20 frames and runs a single background partial transcription job at a time. Partial results update the dictation transcript bubble before final end-of-speech transcription. This is a first rolling-segment implementation; still needs real-device tuning against VoiceInk behavior for overlap merge and latency.
 - Streaming partial tuning: rolling partial jobs are now throttled to at most once every ~2 seconds, require at least ~2 seconds of captured audio, and wait for at least 40 new frames since the last partial request. This reduces repeated LiteRT contention during live capture on Pixel while keeping transcript bubble updates before finalization.
@@ -914,3 +912,4 @@ Commit:
 - Emulator UI journey stabilization: `5ed947e` (`test(android): stabilize speech debug UI journey`).
 - VAD silence pause: `cfba7e2` (`fix(android): pause live speech transcription on silence`).
 - VAD peak gate: `ac0c2be` (`fix(android): improve speech VAD peak detection`).
+- Real-device smoke helper: pending commit.

@@ -347,6 +347,7 @@ Validation:
 - Debug speech layout proof: `build/validation/speech/debug-speech-layout.json`.
 - Debug speech screenshot proof: `build/validation/speech/debug-speech.png`.
 - After mic capture UI wiring, rerunning `SpeechDebugWorkflowInstrumentedTest` exposed a flaky/failing debug action tap path (`Speech-detected state missing` / `Transcribing state missing`). Core unit/build validation still passes; UI journey needs stabilization before ASTT-4 can be marked `done`.
+- Stabilization attempts with coordinate taps, enabled-only content descriptions, topmost text selection, and removing in-test screenshots did not produce a stable connected run; experiments were reverted to avoid committing flaky test behavior.
 
 Review:
 

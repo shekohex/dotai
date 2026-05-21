@@ -2737,13 +2737,8 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         }
         SettingsSection("ENHANCEMENT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_message_circle, "Enhance Transcript", "Provider integration unavailable", "Off", tokens) {}
-            SettingsToggleRow(R.drawable.ic_feather_terminal, "Visible Context Only", speechSettings.includeVisibleTerminalContext, tokens) {
-                SpeechSettingsStore.setIncludeVisibleTerminalContext(context, it)
-                speechSettings = SpeechSettingsStore.values(context)
-            }
-            SettingsValueRow(R.drawable.ic_feather_edit_3, "Prompt Override", if (speechSettings.promptOverride.isBlank()) "Using bundled default prompt" else "Custom prompt set", "Edit", tokens) { promptDialogOpen = true }
             SettingsValueRow(R.drawable.ic_feather_terminal, "Terminal Target", "Send dictated text to active terminal", null, tokens) {}
-            SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "Transcription stays on device. Enhancement may send transcript and visible context to your AI provider.", null, tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_shield, "Privacy", "Transcription stays on device. Enhancement is disabled until a provider is wired.", null, tokens) {}
         }
         item { Text("Audio transcription is local-only through LiteRT Parakeet. Terminal context is bounded to visible terminal text when enabled.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
     }

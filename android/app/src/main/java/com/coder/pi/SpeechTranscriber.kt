@@ -174,7 +174,7 @@ private fun File.isValidParakeetTokenizer(): Boolean = runCatching {
     tokenizer.vocabularySize > 0
 }.getOrDefault(false)
 
-class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, private val tokenizerCache: ParakeetTokenizerCache? = null) : SpeechTranscriber {
+class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, private val tokenizerCache: ParakeetTokenizerCache) : SpeechTranscriber {
     private var compiledModel: CompiledModel? = null
     private var inputBuffers: List<TensorBuffer>? = null
     private var outputBuffers: List<TensorBuffer>? = null
@@ -182,7 +182,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
 
     override suspend fun transcribe(samples: FloatArray, sampleRate: Int, onEvent: (SpeechTranscriberEvent) -> Unit): Result<SpeechTranscriptResult> {
         if (!modelCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
-        if (tokenizerCache?.isReady() == false) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
+        if (!tokenizerCache.isReady()) return Result.failure(SpeechTranscriberException(SpeechTranscriberFailure.ModelMissing))
         return runCatching {
             val startedAt = System.currentTimeMillis()
             ensureWarmModel()
@@ -192,7 +192,7 @@ class LiteRtParakeetTranscriber(private val modelCache: ParakeetModelCache, priv
             inputs[0].writeFloat(featureExtractor.extract(samples, sampleRate).fitTo(model.getInputTensorType(inputBufferName(0), ENCODE_SIGNATURE).numElements))
             model.run(inputs, outputs, ENCODE_SIGNATURE)
             val tokenIds = ParakeetTdtLiteRtDecoder(model).decode(outputs).map { it.first }.filter { it != END_OF_SEQUENCE }.toList()
-            val tokenizer = tokenizerCache?.tokenizerFile?.readText()?.let(ParakeetTokenizer::fromTokenizerJson) ?: ParakeetTokenizer(emptyMap())
+            val tokenizer = ParakeetTokenizer.fromTokenizerJson(tokenizerCache.tokenizerFile.readText())
             SpeechTranscriptResult(tokenizer.decode(tokenIds), System.currentTimeMillis() - startedAt)
         }
     }

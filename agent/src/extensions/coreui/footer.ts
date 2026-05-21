@@ -73,7 +73,7 @@ export function bindCoreUI(
           return [
             ...Array.from({ length: FOOTER_TOP_PADDING }, () => " ".repeat(Math.max(0, width))),
             composeFooterLine(left, rightTop, width),
-            composeFooterLine(leftBottom, rightBottom, width),
+            composeFooterLine(leftBottom, rightBottom, width, { priority: "left" }),
           ];
         } catch (error) {
           if (!isStaleSessionReplacementContextError(error)) {
@@ -278,7 +278,14 @@ function formatTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
-export function composeFooterLine(left: string, right: string, width: number): string {
+type FooterLinePriority = "left" | "right";
+
+export function composeFooterLine(
+  left: string,
+  right: string,
+  width: number,
+  options: { priority?: FooterLinePriority } = {},
+): string {
   if (width <= 0) {
     return "";
   }
@@ -290,16 +297,49 @@ export function composeFooterLine(left: string, right: string, width: number): s
     return truncateToWidth(`${sidePadding}${left}${right}${sidePadding}`, width, "");
   }
 
+  if (left.length === 0) {
+    return `${sidePadding}${truncateToWidth(right, innerWidth, "")}${sidePadding}`;
+  }
+
+  if (right.length === 0) {
+    return `${sidePadding}${truncateToWidth(left, innerWidth, "…")}${sidePadding}`;
+  }
+
+  if (options.priority === "left") {
+    return composeLeftPriorityFooterLine(left, right, innerWidth, sidePadding);
+  }
+
   const rightWidth = visibleWidth(right);
   if (rightWidth >= innerWidth) {
     return `${sidePadding}${truncateToWidth(right, innerWidth, "")}${sidePadding}`;
   }
 
-  const gap = left.length > 0 && right.length > 0 ? 1 : 0;
+  const gap = 1;
   const leftBudget = Math.max(0, innerWidth - rightWidth - gap);
   const leftPart = truncateToWidth(left, leftBudget, "…");
   const leftWidth = visibleWidth(leftPart);
   const paddingWidth = Math.max(gap, innerWidth - leftWidth - rightWidth);
 
   return `${sidePadding}${leftPart}${" ".repeat(paddingWidth)}${right}${sidePadding}`;
+}
+
+function composeLeftPriorityFooterLine(
+  left: string,
+  right: string,
+  innerWidth: number,
+  sidePadding: string,
+): string {
+  const leftPart = truncateToWidth(left, innerWidth, "…");
+  const leftWidth = visibleWidth(leftPart);
+  const remainingWidth = innerWidth - leftWidth;
+  if (remainingWidth <= 1) {
+    return `${sidePadding}${leftPart}${sidePadding}`;
+  }
+
+  const rightPart = truncateToWidth(right, remainingWidth - 1, "");
+  if (rightPart.length === 0) {
+    return `${sidePadding}${leftPart}${sidePadding}`;
+  }
+
+  return `${sidePadding}${leftPart}${" ".repeat(Math.max(1, remainingWidth - visibleWidth(rightPart)))}${rightPart}${sidePadding}`;
 }

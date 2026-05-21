@@ -37,6 +37,26 @@ describe("coreui footer", () => {
     expect(composeFooterLine("Pursuing goal", "ctx 10K", 40)).toContain("Pursuing goal");
   });
 
+  test("preserves bottom-left status on narrow terminals with long right status", () => {
+    const line = composeFooterLine(
+      "Pursuing goal",
+      "ctx 999.9M (100%) · $9999.99 · other long status",
+      24,
+      { priority: "left" },
+    );
+
+    expect(line).toContain("Pursuing goal");
+  });
+
+  test("truncates bottom-left status instead of dropping it when extremely narrow", () => {
+    const line = composeFooterLine("Pursuing very long goal", "ctx 999.9M", 12, {
+      priority: "left",
+    });
+
+    expect(line).toContain("Pursuing");
+    expect(line).not.toContain("ctx");
+  });
+
   test("auto hides tps on narrow terminals", () => {
     expect(buildTPSStatus(theme, stateWithTps(true), 95)).toBe("");
     expect(buildTPSStatus(theme, stateWithTps(true), 96)).toContain("tps 12.3");

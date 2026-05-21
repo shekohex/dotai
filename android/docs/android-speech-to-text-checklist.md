@@ -466,7 +466,7 @@ Review:
 
 Commit:
 
-- TBD.
+- Implementation: `6477cfb` (`feat(android): add speech audio capture`).
 
 ## ASTT-7: Implement Local LiteRT Parakeet Transcriber
 

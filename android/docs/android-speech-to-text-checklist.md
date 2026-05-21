@@ -574,6 +574,7 @@ Validation:
 - Current device check: `adb devices` shows only `emulator-5554`; no Pixel 7 Pro or Samsung Tab A9 target device is attached.
 - Reference model cache updated with Git LFS: `parakeet_tdt_0.6b_v3_5s_i8.tflite` and `parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite` are downloaded at `586M` each.
 - `shasum -a 256 ~/.cache/checkouts/huggingface.co/litert-community/parakeet-tdt-0.6b-v3/parakeet_tdt_0.6b_v3_5s_i8.tflite` matches expected `f25e5972fe72048f67272e26d4badfe19d876e0fa19027cb2c6c0e0fc4da692b`.
+- Reference tokenizer cache fetched: `~/.cache/checkouts/huggingface.co/nvidia/parakeet-tdt-0.6b-v3/tokenizer.json` is `1.1M`, SHA-256 `bd321b096832a3f270bd3b2a88823957920f1a5c5ada71114a26ea729d0cbe91`.
 - Added explicit Git LFS pointer detection in `ParakeetModelCache.isReady()` so pointer files are treated as missing model payloads, not valid runtime input.
 - Added settings-facing model cache status labels for missing, Git LFS pointer, incomplete, downloading, failed, tokenizer-missing, and ready cache states, plus download and delete actions for cached Parakeet model/tokenizer files.
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after Git LFS pointer detection, `BUILD SUCCESSFUL in 12s`.
@@ -589,7 +590,7 @@ Validation:
 Review:
 
 - Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing connected target device and app-cache tokenizer/runtime proof; NPU path is not claimed.
+- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing connected target device; NPU path is not claimed.
 
 Commit:
 

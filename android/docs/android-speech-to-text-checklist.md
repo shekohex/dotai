@@ -406,13 +406,17 @@ Commit:
 
 ## ASTT-6: Implement Audio Capture, Metering, And VAD
 
-Status: not-started
+Status: review
 
 Research:
 
 - Google sample `MicrophoneAudioSource.kt` uses `AudioRecord`, `VOICE_RECOGNITION`, mono PCM16, min buffer size, and RMS silence threshold.
 - Android docs warn capture can be silenced when another app has priority.
 - VoiceInk recorder uses smoothed audio meter values to drive UI.
+- Android CLI docs search found Android `Sharing audio input` guidance for capture silencing priority behavior.
+- Added `RECORD_AUDIO` manifest permission.
+- Added `SpeechAudioCapture` using `AudioRecord`, `MediaRecorder.AudioSource.VOICE_RECOGNITION`, mono PCM16, `AudioRecord.getMinBufferSize`, normalized float frames, API 29 recording callback silenced detection, explicit stop/cleanup, max duration, and failure states.
+- Added pure `SpeechVadSegmenter` with smoothed meter, speech start frames, trailing silence finalization, max duration finalization, and reset.
 
 Plan:
 
@@ -422,14 +426,14 @@ Plan:
 
 Checklist:
 
-- [ ] Request and validate `RECORD_AUDIO` before capture.
-- [ ] Use `AudioRecord` with `MediaRecorder.AudioSource.VOICE_RECOGNITION`.
-- [ ] Capture mono PCM16 and convert to normalized float frames.
-- [ ] Use device buffer guidance and `AudioRecord.getMinBufferSize`.
-- [ ] Register recording callback where available to detect silenced capture/device changes.
-- [ ] Emit smoothed meter values for waveform UI.
-- [ ] Implement pre-roll and trailing-silence finalization.
-- [ ] Enforce max recording duration and cleanup on disposal.
+- [x] Request and validate `RECORD_AUDIO` before capture.
+- [x] Use `AudioRecord` with `MediaRecorder.AudioSource.VOICE_RECOGNITION`.
+- [x] Capture mono PCM16 and convert to normalized float frames.
+- [x] Use device buffer guidance and `AudioRecord.getMinBufferSize`.
+- [x] Register recording callback where available to detect silenced capture/device changes.
+- [x] Emit smoothed meter values for waveform UI.
+- [x] Implement pre-roll and trailing-silence finalization.
+- [x] Enforce max recording duration and cleanup on disposal.
 
 User story:
 
@@ -452,10 +456,13 @@ Validation:
 
 - `./gradlew testDebugUnitTest --no-daemon`
 - Device mic smoke.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed, `BUILD SUCCESSFUL in 17s`.
+- Device mic smoke blocked: `adb devices` shows no connected/running devices.
 
 Review:
 
-- TBD.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: audio capture compiles and VAD is unit-tested, but real microphone lifecycle is not device-smoked.
 
 Commit:
 

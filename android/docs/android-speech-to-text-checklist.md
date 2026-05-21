@@ -470,7 +470,7 @@ Commit:
 
 ## ASTT-7: Implement Local LiteRT Parakeet Transcriber
 
-Status: building
+Status: review
 
 Research:
 
@@ -483,6 +483,7 @@ Research:
 - Added LiteRT dependency `com.google.ai.edge.litert:litert:2.1.5`, CPU `CompiledModel` warm-load path, `ParakeetFeatureConfig`, bounded feature extractor shape, and basic tokenizer decode skeleton.
 - Added tokenizer cache download path, Hugging Face tokenizer JSON vocab parser, and pure TDT greedy argmax helper tests; full stateful TDT decode integration remains pending.
 - Replaced placeholder features with log-mel style preprocessing: 16 kHz 5-second input, preemphasis `0.97`, 512-point DFT power spectrum, 128 mel filters, 500 frames, log guard, and per-mel normalization.
+- Added compiled-model encode path, decode signature buffer wiring, TDT greedy token/duration loop, tokenizer cache use, and model release in `close()`.
 
 Plan:
 
@@ -497,9 +498,9 @@ Checklist:
 - [x] Download model with integrity verification.
 - [x] Load LiteRT `CompiledModel` and pick accelerator safely.
 - [x] Implement log-mel preprocessing compatible with model metadata.
-- [ ] Implement tokenizer and TDT decode.
+- [x] Implement tokenizer and TDT decode.
 - [x] Implement overlap transcript merge.
-- [ ] Keep warm model when safe; release on low memory or disposal.
+- [x] Keep warm model when safe; release on low memory or disposal.
 
 User story:
 
@@ -529,12 +530,14 @@ Validation:
 - `./gradlew assembleDebug --no-daemon` passed after LiteRT wiring, `BUILD SUCCESSFUL in 25s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after tokenizer/TDT helper work, `BUILD SUCCESSFUL in 12s`.
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after log-mel preprocessing, `BUILD SUCCESSFUL in 12s`.
+- `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 12s`.
+- `./gradlew assembleDebug --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 8s`.
 - Device fixture smoke blocked: no connected/running device.
 
 Review:
 
-- Not ready for subagent review yet: stateful TDT decode integration and fixture transcription remain incomplete.
-- Self-review residual risk: current `LiteRtParakeetTranscriber` returns `RuntimeUnavailable` when model exists; this avoids false support claims.
+- Subagent review pending: `subagent` tool is unavailable in current toolset.
+- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing downloaded model/tokenizer and no connected target device; NPU path is not claimed.
 
 Commit:
 
@@ -542,6 +545,7 @@ Commit:
 - Partial implementation: `593c751` (`feat(android): wire parakeet LiteRT loading`).
 - Partial implementation: `2e02012` (`feat(android): add parakeet tokenizer helpers`).
 - Partial implementation: `00ae531` (`feat(android): add parakeet log mel preprocessing`).
+- Partial implementation: TBD.
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 

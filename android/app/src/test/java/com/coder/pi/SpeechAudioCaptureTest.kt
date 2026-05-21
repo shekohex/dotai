@@ -18,7 +18,7 @@ class SpeechAudioCaptureTest {
     }
 
     @Test
-    fun vadFinalizesAfterTrailingSilence() {
+    fun vadDoesNotFinalizeAfterTrailingSilence() {
         val segmenter = SpeechVadSegmenter(SpeechAudioCaptureConfig(silenceThreshold = 0.01f, speechStartFrames = 1, trailingSilenceMillis = 60, frameMillis = 20))
         val silence = FloatArray(320) { 0f }
         val speech = FloatArray(320) { 0.08f }
@@ -26,7 +26,7 @@ class SpeechAudioCaptureTest {
         assertTrue(segmenter.accept(speech).speechDetected)
         assertFalse(segmenter.accept(silence).finalized)
         assertFalse(segmenter.accept(silence).finalized)
-        assertTrue(segmenter.accept(silence).finalized)
+        assertFalse(segmenter.accept(silence).finalized)
     }
 
     @Test

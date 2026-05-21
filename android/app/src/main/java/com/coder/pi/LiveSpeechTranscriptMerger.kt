@@ -1,30 +1,56 @@
 package com.coder.pi
 
-class LiveSpeechTranscriptMerger {
-    private var mergedText = ""
+class LiveSpeechTranscriptMerger(
+    private val confirmationsNeeded: Int = 3,
+    private val minWordsToConfirm: Int = 5,
+) {
+    private var confirmedWords: List<String> = emptyList()
+    private var hypothesisWords: List<String> = emptyList()
+    private var previousHypothesisWords: List<String> = emptyList()
+    private var consecutiveAgreementCount = 0
 
     fun reset() {
-        mergedText = ""
+        confirmedWords = emptyList()
+        hypothesisWords = emptyList()
+        previousHypothesisWords = emptyList()
+        consecutiveAgreementCount = 0
     }
 
     fun merge(chunkText: String): String {
-        val current = mergedText.trim()
-        val next = chunkText.trim()
-        if (next.isBlank()) return current
-        if (current.isBlank()) {
-            mergedText = next
-            return mergedText
-        }
-        val currentWords = current.splitWords()
-        val nextWords = next.splitWords()
-        val replacementStart = bestReplacementStart(currentWords, nextWords)
-        mergedText = if (replacementStart != null) {
-            (currentWords.take(replacementStart) + nextWords).joinToString(" ")
-        } else {
-            listOf(current, next).joinToString(" ")
-        }
-        return mergedText
+        val chunkWords = chunkText.splitWords()
+        if (chunkWords.isEmpty()) return fullText()
+        val nextHypothesis = alignedHypothesis(chunkWords)
+        updateAgreement(nextHypothesis)
+        hypothesisWords = nextHypothesis
+        previousHypothesisWords = nextHypothesis
+        return fullText()
     }
+
+    private fun alignedHypothesis(chunkWords: List<String>): List<String> {
+        if (hypothesisWords.isEmpty()) return chunkWords
+        val replacementStart = bestReplacementStart(hypothesisWords, chunkWords)
+        return if (replacementStart != null) hypothesisWords.take(replacementStart) + chunkWords else hypothesisWords + chunkWords
+    }
+
+    private fun updateAgreement(nextHypothesis: List<String>) {
+        if (previousHypothesisWords.isEmpty()) return
+        val commonPrefixLength = commonPrefixLength(previousHypothesisWords, nextHypothesis)
+        if (commonPrefixLength < minWordsToConfirm) {
+            consecutiveAgreementCount = 0
+            return
+        }
+        consecutiveAgreementCount++
+        if (consecutiveAgreementCount < confirmationsNeeded) return
+        val confirmCount = (commonPrefixLength - minWordsToConfirm + 1).coerceAtLeast(0)
+        if (confirmCount == 0) return
+        val newlyConfirmed = nextHypothesis.take(confirmCount)
+        confirmedWords = confirmedWords + newlyConfirmed
+        hypothesisWords = nextHypothesis.drop(confirmCount)
+        previousHypothesisWords = hypothesisWords
+        consecutiveAgreementCount = 0
+    }
+
+    private fun fullText(): String = (confirmedWords + hypothesisWords).joinToString(" ").trim()
 }
 
 private fun String.splitWords(): List<String> = trim().split(Regex("\\s+")).filter { it.isNotBlank() }
@@ -43,6 +69,13 @@ private fun bestReplacementStart(previous: List<String>, next: List<String>): In
         if (matches >= minOverlap && matches.toFloat() / overlap >= 0.55f) return start
     }
     return null
+}
+
+private fun commonPrefixLength(left: List<String>, right: List<String>): Int {
+    val max = minOf(left.size, right.size)
+    var count = 0
+    while (count < max && left[count].normalizedForOverlap().matchesLiveWord(right[count].normalizedForOverlap())) count++
+    return count
 }
 
 private fun String.normalizedForOverlap(): String = lowercase().trim { !it.isLetterOrDigit() }

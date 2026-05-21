@@ -219,11 +219,6 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     dictationMeter = frame.meter
                     if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
                     if (frame.speechDetected) maybeTranscribePartialAudio()
-                    if (frame.finalized && dictationState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
-                        dictationState = SpeechDictationDisplayState.TRANSCRIBING
-                        stopDictationCapture()
-                        transcribeDictationAudio(dictationAudioFrames.toList())
-                    }
                 }
             },
             onFailure = { failure ->
@@ -277,6 +272,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                         liveTranscriptMerger.reset()
                     }
                     SpeechDictationAction.STOP_RECORDING -> {
+                        dictationState = SpeechDictationDisplayState.TRANSCRIBING
                         stopDictationCapture()
                         transcribeDictationAudio()
                     }

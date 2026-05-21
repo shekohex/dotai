@@ -26,12 +26,10 @@ data class SpeechAudioCaptureConfig(
     val speechStartFrames: Int = 3,
     val trailingSilenceMillis: Int = 900,
     val preRollMillis: Int = 400,
-    val maxRecordingMillis: Long = 60_000L,
 ) {
     val frameSamples: Int = (sampleRate * frameMillis / 1_000).coerceAtLeast(1)
     val trailingSilenceFrames: Int = (trailingSilenceMillis / frameMillis).coerceAtLeast(1)
     val preRollFrames: Int = (preRollMillis / frameMillis).coerceAtLeast(1)
-    val maxFrames: Long = (maxRecordingMillis / frameMillis).coerceAtLeast(1)
 }
 
 data class SpeechAudioFrame(
@@ -81,8 +79,7 @@ class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
         } else {
             silenceFrames = if (speech) 0 else silenceFrames + 1
         }
-        val finalized = (speechStarted && silenceFrames >= config.trailingSilenceFrames) || totalFrames >= config.maxFrames
-        return SpeechAudioFrame(samples = samples, meter = meter.coerceIn(0f, 1f), speechDetected = speechStarted, finalized = finalized, silenced = silenced)
+        return SpeechAudioFrame(samples = samples, meter = meter.coerceIn(0f, 1f), speechDetected = speechStarted, finalized = false, silenced = silenced)
     }
 
     fun reset() {
@@ -141,7 +138,6 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
                     val audioFrame = segmenter.accept(frame, silenced)
                     onFrame(audioFrame)
                     if (audioFrame.silenced) onFailure(SpeechAudioCaptureFailure.SilencedBySystem)
-                    if (audioFrame.finalized) break
                 }
             } finally {
                 releaseRecorder(recorder)
